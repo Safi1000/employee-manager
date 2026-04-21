@@ -1,0 +1,928 @@
+import { useEffect, useMemo, useState } from "react";
+import { Plus, Search, Upload, AlertCircle, Loader2, X, Trash2 } from "lucide-react";
+import Header from "../../components/Header";
+import Button from "../../components/Button";
+import Modal from "../../components/Modal";
+import {
+  supabase,
+  EMPLOYEE_DOCS_BUCKET,
+  type Employee,
+  type EmployeeDocument,
+  type Location,
+  type Client,
+} from "../../lib/supabase";
+
+type EmployeeRow = Employee & { location_name: string | null; client_name: string | null };
+type DocumentWithUrl = EmployeeDocument & { publicUrl: string | null };
+
+type FormState = {
+  full_name: string;
+  phone: string;
+  location_id: string;
+  client_id: string;
+  department: string;
+  shift: "day" | "night";
+  base_salary: string;
+  join_date: string;
+  bank_account: string;
+  cnic?: File;
+  passport?: File;
+  other?: FileList;
+};
+
+const emptyForm: FormState = {
+  full_name: "",
+  phone: "",
+  location_id: "",
+  client_id: "",
+  department: "",
+  shift: "day",
+  base_salary: "",
+  join_date: "",
+  bank_account: "",
+};
+
+export default function EmployeeManagement() {
+  const [employees, setEmployees] = useState<EmployeeRow[]>([]);
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const [search, setSearch] = useState("");
+  const [locationFilter, setLocationFilter] = useState("all");
+  const [clientFilter, setClientFilter] = useState("all");
+  const [shiftFilter, setShiftFilter] = useState<"all" | "day" | "night">("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [selectedEmployee, setSelectedEmployee] = useState<EmployeeRow | null>(null);
+  const [selectedDocs, setSelectedDocs] = useState<DocumentWithUrl[]>([]);
+
+  const [form, setForm] = useState<FormState>(emptyForm);
+  const [submitting, setSubmitting] = useState(false);
+
+  const [editForm, setEditForm] = useState<FormState>(emptyForm);
+  const [editStatus, setEditStatus] = useState<EmployeeRow["status"]>("Active");
+  const [editing, setEditing] = useState(false);
+
+  const loadData = async () => {
+    setLoading(true);
+    setError(null);
+    const [locRes, cliRes, empRes] = await Promise.all([
+      supabase.from("locations").select("*").order("name"),
+      supabase.from("clients").select("*").order("name"),
+      supabase
+        .from("employees")
+        .select("*, location:location_id(name), client:client_id(name)")
+        .order("created_at", { ascending: false }),
+    ]);
+    if (locRes.error) setError(locRes.error.message);
+    if (cliRes.error) setError(cliRes.error.message);
+    if (empRes.error) setError(empRes.error.message);
+    setLocations(locRes.data ?? []);
+    setClients(cliRes.data ?? []);
+    setEmployees(
+      (empRes.data ?? []).map((e: any) => ({
+        ...e,
+        location_name: e.location?.name ?? null,
+        client_name: e.client?.name ?? null,
+      }))
+    );
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return employees.filter((e) => {
+      if (
+        q &&
+        !e.full_name.toLowerCase().includes(q) &&
+        !e.employee_code.toLowerCase().includes(q) &&
+        !(e.phone ?? "").toLowerCase().includes(q)
+      )
+        return false;
+      if (locationFilter !== "all" && e.location_id !== locationFilter) return false;
+      if (clientFilter !== "all" && e.client_id !== clientFilter) return false;
+      if (shiftFilter !== "all" && e.shift !== shiftFilter) return false;
+      if (statusFilter !== "all" && e.status !== statusFilter) return false;
+      return true;
+    });
+  }, [employees, search, locationFilter, clientFilter, shiftFilter, statusFilter]);
+
+  const uploadDoc = async (employeeId: string, docType: string, file: File) => {
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const path = `${employeeId}/${Date.now()}_${docType}_${safeName}`;
+    const { error: upErr } = await supabase.storage
+      .from(EMPLOYEE_DOCS_BUCKET)
+      .upload(path, file, { upsert: false });
+    if (upErr) throw upErr;
+    const { error: insErr } = await supabase.from("employee_documents").insert({
+      employee_id: employeeId,
+      doc_type: docType,
+      file_name: file.name,
+      storage_path: path,
+      mime_type: file.type,
+      size_bytes: file.size,
+    });
+    if (insErr) throw insErr;
+  };
+
+  const replaceDoc = async (employeeId: string, docType: string, file: File) => {
+    const { data: existing } = await supabase
+      .from("employee_documents")
+      .select("id, storage_path")
+      .eq("employee_id", employeeId)
+      .eq("doc_type", docType);
+    if (existing && existing.length > 0) {
+      const paths = existing.map((d: any) => d.storage_path);
+      await supabase.storage.from(EMPLOYEE_DOCS_BUCKET).remove(paths);
+      await supabase
+        .from("employee_documents")
+        .delete()
+        .in(
+          "id",
+          existing.map((d: any) => d.id)
+        );
+    }
+    await uploadDoc(employeeId, docType, file);
+  };
+
+  const uploadDocs = async (employeeId: string, f: FormState) => {
+    if (f.cnic) await replaceDoc(employeeId, "CNIC", f.cnic);
+    if (f.passport) await replaceDoc(employeeId, "Passport", f.passport);
+    if (f.other) {
+      for (let i = 0; i < f.other.length; i++) {
+        await uploadDoc(employeeId, "Other", f.other[i]);
+      }
+    }
+  };
+
+  const handleDelete = async (emp: EmployeeRow) => {
+    const confirmed = window.confirm(
+      `Delete ${emp.full_name} (${emp.employee_code})? This will permanently remove the employee and all their uploaded documents.`
+    );
+    if (!confirmed) return;
+    setError(null);
+    try {
+      const { data: docs } = await supabase
+        .from("employee_documents")
+        .select("storage_path")
+        .eq("employee_id", emp.id);
+      const paths = (docs ?? []).map((d: any) => d.storage_path);
+      if (paths.length > 0) {
+        await supabase.storage.from(EMPLOYEE_DOCS_BUCKET).remove(paths);
+      }
+      const { error: delErr } = await supabase.from("employees").delete().eq("id", emp.id);
+      if (delErr) throw delErr;
+      if (selectedEmployee?.id === emp.id) {
+        setIsEditModalOpen(false);
+        setIsViewModalOpen(false);
+        setSelectedEmployee(null);
+      }
+      await loadData();
+    } catch (err: any) {
+      setError(err.message ?? String(err));
+    }
+  };
+
+  const handleAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.full_name.trim()) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const { data, error: insErr } = await supabase
+        .from("employees")
+        .insert({
+          full_name: form.full_name.trim(),
+          phone: form.phone.trim() || null,
+          location_id: form.location_id || null,
+          client_id: form.client_id || null,
+          department: form.department.trim() || null,
+          shift: form.shift,
+          base_salary: form.base_salary ? Number(form.base_salary) : null,
+          join_date: form.join_date || null,
+          bank_account: form.bank_account.trim() || null,
+        })
+        .select()
+        .single();
+      if (insErr) throw insErr;
+      await uploadDocs((data as Employee).id, form);
+      setForm(emptyForm);
+      setIsModalOpen(false);
+      await loadData();
+    } catch (err: any) {
+      setError(err.message ?? String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const openView = async (emp: EmployeeRow) => {
+    setSelectedEmployee(emp);
+    setSelectedDocs([]);
+    setIsViewModalOpen(true);
+    const { data } = await supabase
+      .from("employee_documents")
+      .select("*")
+      .eq("employee_id", emp.id)
+      .order("uploaded_at", { ascending: false });
+    const docs: DocumentWithUrl[] = (data ?? []).map((d: EmployeeDocument) => {
+      const { data: urlData } = supabase.storage
+        .from(EMPLOYEE_DOCS_BUCKET)
+        .getPublicUrl(d.storage_path);
+      return { ...d, publicUrl: urlData.publicUrl };
+    });
+    setSelectedDocs(docs);
+  };
+
+  const openEdit = (emp: EmployeeRow) => {
+    setSelectedEmployee(emp);
+    setEditStatus(emp.status);
+    setEditForm({
+      full_name: emp.full_name,
+      phone: emp.phone ?? "",
+      location_id: emp.location_id ?? "",
+      client_id: emp.client_id ?? "",
+      department: emp.department ?? "",
+      shift: emp.shift,
+      base_salary: emp.base_salary != null ? String(emp.base_salary) : "",
+      join_date: emp.join_date ?? "",
+      bank_account: emp.bank_account ?? "",
+    });
+    setIsEditModalOpen(true);
+  };
+
+  const handleEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedEmployee) return;
+    setEditing(true);
+    setError(null);
+    try {
+      const { error: upErr } = await supabase
+        .from("employees")
+        .update({
+          full_name: editForm.full_name.trim(),
+          phone: editForm.phone.trim() || null,
+          location_id: editForm.location_id || null,
+          client_id: editForm.client_id || null,
+          department: editForm.department.trim() || null,
+          shift: editForm.shift,
+          status: editStatus,
+          base_salary: editForm.base_salary ? Number(editForm.base_salary) : null,
+          join_date: editForm.join_date || null,
+          bank_account: editForm.bank_account.trim() || null,
+        })
+        .eq("id", selectedEmployee.id);
+      if (upErr) throw upErr;
+      await uploadDocs(selectedEmployee.id, editForm);
+      setIsEditModalOpen(false);
+      await loadData();
+    } catch (err: any) {
+      setError(err.message ?? String(err));
+    } finally {
+      setEditing(false);
+    }
+  };
+
+  return (
+    <>
+      <Header
+        title="Employee Management"
+        actions={
+          <Button variant="primary" size="md" onClick={() => setIsModalOpen(true)}>
+            <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
+            Add Employee
+          </Button>
+        }
+      />
+
+      <div className="flex-1 overflow-y-auto p-8">
+        {error && (
+          <div className="mb-4 flex items-start gap-2 p-3 bg-red-50 text-red-700 border border-red-200 rounded-md text-sm">
+            <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
+            <div className="flex-1">{error}</div>
+            <button onClick={() => setError(null)}>
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        <div className="bg-white rounded-lg border border-slate-200">
+          <div className="p-6 border-b border-slate-200">
+            <div className="flex items-center gap-4">
+              <div className="flex-1 relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search by name, phone, or employee ID..."
+                  className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                />
+              </div>
+              <select
+                value={locationFilter}
+                onChange={(e) => setLocationFilter(e.target.value)}
+                className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              >
+                <option value="all">All Locations</option>
+                {locations.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={clientFilter}
+                onChange={(e) => setClientFilter(e.target.value)}
+                className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              >
+                <option value="all">All Clients</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={shiftFilter}
+                onChange={(e) => setShiftFilter(e.target.value as "all" | "day" | "night")}
+                className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              >
+                <option value="all">All Shifts</option>
+                <option value="day">Day</option>
+                <option value="night">Night</option>
+              </select>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              >
+                <option value="all">All Status</option>
+                <option value="Active">Active</option>
+                <option value="On Leave">On Leave</option>
+                <option value="Inactive">Inactive</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-slate-200">
+                  <th className="text-left px-6 py-3 text-sm text-slate-500">Employee ID</th>
+                  <th className="text-left px-6 py-3 text-sm text-slate-500">Name</th>
+                  <th className="text-left px-6 py-3 text-sm text-slate-500">Phone</th>
+                  <th className="text-left px-6 py-3 text-sm text-slate-500">Location</th>
+                  <th className="text-left px-6 py-3 text-sm text-slate-500">Client</th>
+                  <th className="text-left px-6 py-3 text-sm text-slate-500">Shift</th>
+                  <th className="text-left px-6 py-3 text-sm text-slate-500">Status</th>
+                  <th className="text-left px-6 py-3 text-sm text-slate-500">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {loading && (
+                  <tr>
+                    <td colSpan={8} className="px-6 py-10 text-center text-slate-500">
+                      <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
+                      Loading…
+                    </td>
+                  </tr>
+                )}
+                {!loading && filtered.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="px-6 py-10 text-center text-slate-500 text-sm">
+                      No employees yet. Click "Add Employee" to create one.
+                    </td>
+                  </tr>
+                )}
+                {!loading &&
+                  filtered.map((employee) => (
+                    <tr key={employee.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-6 py-4 text-sm text-slate-600 font-mono">{employee.employee_code}</td>
+                      <td className="px-6 py-4 text-sm text-slate-900">{employee.full_name}</td>
+                      <td className="px-6 py-4 text-sm text-slate-600">{employee.phone ?? "—"}</td>
+                      <td className="px-6 py-4 text-sm text-slate-600">{employee.location_name ?? "—"}</td>
+                      <td className="px-6 py-4 text-sm text-slate-600">{employee.client_name ?? "—"}</td>
+                      <td className="px-6 py-4">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs capitalize ${
+                            employee.shift === "day"
+                              ? "bg-amber-50 text-amber-700"
+                              : "bg-indigo-50 text-indigo-700"
+                          }`}
+                        >
+                          {employee.shift}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
+                            employee.status === "Active"
+                              ? "bg-green-50 text-green-700"
+                              : employee.status === "On Leave"
+                              ? "bg-yellow-50 text-yellow-700"
+                              : "bg-slate-100 text-slate-600"
+                          }`}
+                        >
+                          {employee.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 flex gap-2">
+                        <Button variant="ghost" size="sm" onClick={() => openView(employee)}>
+                          View
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => openEdit(employee)}>
+                          Edit
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Add Employee" size="lg">
+        <form className="space-y-6" onSubmit={handleAdd}>
+          <div>
+            <h4 className="text-sm text-slate-900 mb-4">Basic Information</h4>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Full Name *</label>
+                <input
+                  required
+                  type="text"
+                  value={form.full_name}
+                  onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  placeholder="Enter full name"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Phone Number</label>
+                <input
+                  type="tel"
+                  value={form.phone}
+                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  placeholder="+92 300 1234567"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Location</label>
+                <select
+                  value={form.location_id}
+                  onChange={(e) => setForm({ ...form, location_id: e.target.value })}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                >
+                  <option value="">Select location</option>
+                  {locations.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </select>
+                {locations.length === 0 && (
+                  <p className="text-xs text-slate-500 mt-1">
+                    No locations yet. Add them from Settings → Location Management.
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Client</label>
+                <select
+                  value={form.client_id}
+                  onChange={(e) => setForm({ ...form, client_id: e.target.value })}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                >
+                  <option value="">Select client</option>
+                  {clients.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+                {clients.length === 0 && (
+                  <p className="text-xs text-slate-500 mt-1">
+                    No clients yet. Add them from Settings → Client Management.
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Department</label>
+                <input
+                  type="text"
+                  value={form.department}
+                  onChange={(e) => setForm({ ...form, department: e.target.value })}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  placeholder="Enter department"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm text-slate-700 mb-2">Shift *</label>
+                <div className="flex gap-3">
+                  {(["day", "night"] as const).map((s) => (
+                    <label
+                      key={s}
+                      className={`flex-1 flex items-center gap-2 px-4 py-2 border rounded-md cursor-pointer text-sm capitalize ${
+                        form.shift === s
+                          ? "border-slate-900 bg-slate-50"
+                          : "border-slate-200 hover:border-slate-300"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="shift"
+                        value={s}
+                        checked={form.shift === s}
+                        onChange={() => setForm({ ...form, shift: s })}
+                      />
+                      <span>{s} Shift</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-4 border-t border-slate-200">
+            <h4 className="text-sm text-slate-900 mb-4">Employment Details</h4>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Base Salary (PKR)</label>
+                <input
+                  type="number"
+                  value={form.base_salary}
+                  onChange={(e) => setForm({ ...form, base_salary: e.target.value })}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  placeholder="50000"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Join Date</label>
+                <input
+                  type="date"
+                  value={form.join_date}
+                  onChange={(e) => setForm({ ...form, join_date: e.target.value })}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm text-slate-700 mb-1">Bank Account Number</label>
+                <input
+                  type="text"
+                  value={form.bank_account}
+                  onChange={(e) => setForm({ ...form, bank_account: e.target.value })}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  placeholder="e.g., PK36SCBL0000001123456702"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-4 border-t border-slate-200">
+            <h4 className="text-sm text-slate-900 mb-4">Documents</h4>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">CNIC</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="file"
+                    onChange={(e) => setForm({ ...form, cnic: e.target.files?.[0] })}
+                    className="flex-1 px-4 py-2 border border-slate-200 rounded-md text-sm"
+                  />
+                  <Upload className="w-4 h-4 text-slate-400" strokeWidth={1.5} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Passport</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="file"
+                    onChange={(e) => setForm({ ...form, passport: e.target.files?.[0] })}
+                    className="flex-1 px-4 py-2 border border-slate-200 rounded-md text-sm"
+                  />
+                  <Upload className="w-4 h-4 text-slate-400" strokeWidth={1.5} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Other Documents</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="file"
+                    multiple
+                    onChange={(e) => setForm({ ...form, other: e.target.files ?? undefined })}
+                    className="flex-1 px-4 py-2 border border-slate-200 rounded-md text-sm"
+                  />
+                  <Upload className="w-4 h-4 text-slate-400" strokeWidth={1.5} />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 pt-4">
+            <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
+              {submitting ? "Saving…" : "Add Employee"}
+            </Button>
+            <Button variant="secondary" size="md" onClick={() => setIsModalOpen(false)}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        isOpen={isViewModalOpen}
+        onClose={() => setIsViewModalOpen(false)}
+        title="Employee Profile"
+        size="lg"
+      >
+        {selectedEmployee && (
+          <div className="space-y-6">
+            <div>
+              <h4 className="text-sm text-slate-900 mb-4">Basic Information</h4>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <p className="text-slate-500 mb-1">Employee ID</p>
+                  <p className="text-slate-900 font-mono">{selectedEmployee.employee_code}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500 mb-1">Name</p>
+                  <p className="text-slate-900">{selectedEmployee.full_name}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500 mb-1">Phone</p>
+                  <p className="text-slate-900">{selectedEmployee.phone ?? "—"}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500 mb-1">Location</p>
+                  <p className="text-slate-900">{selectedEmployee.location_name ?? "—"}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500 mb-1">Client</p>
+                  <p className="text-slate-900">{selectedEmployee.client_name ?? "—"}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500 mb-1">Department</p>
+                  <p className="text-slate-900">{selectedEmployee.department ?? "—"}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500 mb-1">Shift</p>
+                  <p className="text-slate-900 capitalize">{selectedEmployee.shift}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500 mb-1">Base Salary</p>
+                  <p className="text-slate-900">
+                    {selectedEmployee.base_salary != null
+                      ? `PKR ${selectedEmployee.base_salary.toLocaleString()}`
+                      : "—"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-slate-500 mb-1">Join Date</p>
+                  <p className="text-slate-900">{selectedEmployee.join_date ?? "—"}</p>
+                </div>
+                <div className="col-span-2">
+                  <p className="text-slate-500 mb-1">Bank Account</p>
+                  <p className="text-slate-900 font-mono">{selectedEmployee.bank_account ?? "—"}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500 mb-1">Status</p>
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs bg-green-50 text-green-700">
+                    {selectedEmployee.status}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-slate-200">
+              <h4 className="text-sm text-slate-900 mb-4">Documents</h4>
+              {selectedDocs.length === 0 ? (
+                <p className="text-sm text-slate-500">No documents uploaded yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {selectedDocs.map((d) => (
+                    <div
+                      key={d.id}
+                      className="flex items-center justify-between p-3 border border-slate-200 rounded-lg"
+                    >
+                      <div>
+                        <p className="text-sm text-slate-900">{d.file_name}</p>
+                        <p className="text-xs text-slate-500 mt-0.5">{d.doc_type}</p>
+                      </div>
+                      {d.publicUrl && (
+                        <a
+                          href={d.publicUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-sm text-slate-700 hover:text-slate-900 underline"
+                        >
+                          View
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        isOpen={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
+        title="Edit Employee"
+        size="lg"
+      >
+        {selectedEmployee && (
+          <form className="space-y-6" onSubmit={handleEdit}>
+            <div>
+              <h4 className="text-sm text-slate-900 mb-4">Basic Information</h4>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">Employee ID</label>
+                  <input
+                    type="text"
+                    value={selectedEmployee.employee_code}
+                    disabled
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50 text-slate-500 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">Full Name</label>
+                  <input
+                    required
+                    type="text"
+                    value={editForm.full_name}
+                    onChange={(e) => setEditForm({ ...editForm, full_name: e.target.value })}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">Phone Number</label>
+                  <input
+                    type="tel"
+                    value={editForm.phone}
+                    onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">Location</label>
+                  <select
+                    value={editForm.location_id}
+                    onChange={(e) => setEditForm({ ...editForm, location_id: e.target.value })}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  >
+                    <option value="">Select location</option>
+                    {locations.map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {l.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">Client</label>
+                  <select
+                    value={editForm.client_id}
+                    onChange={(e) => setEditForm({ ...editForm, client_id: e.target.value })}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  >
+                    <option value="">Select client</option>
+                    {clients.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">Department</label>
+                  <input
+                    type="text"
+                    value={editForm.department}
+                    onChange={(e) => setEditForm({ ...editForm, department: e.target.value })}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">Shift</label>
+                  <select
+                    value={editForm.shift}
+                    onChange={(e) =>
+                      setEditForm({ ...editForm, shift: e.target.value as "day" | "night" })
+                    }
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  >
+                    <option value="day">Day</option>
+                    <option value="night">Night</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">Base Salary (PKR)</label>
+                  <input
+                    type="number"
+                    value={editForm.base_salary}
+                    onChange={(e) => setEditForm({ ...editForm, base_salary: e.target.value })}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">Join Date</label>
+                  <input
+                    type="date"
+                    value={editForm.join_date}
+                    onChange={(e) => setEditForm({ ...editForm, join_date: e.target.value })}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-sm text-slate-700 mb-1">Bank Account Number</label>
+                  <input
+                    type="text"
+                    value={editForm.bank_account}
+                    onChange={(e) => setEditForm({ ...editForm, bank_account: e.target.value })}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    placeholder="e.g., PK36SCBL0000001123456702"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">Status</label>
+                  <select
+                    value={editStatus}
+                    onChange={(e) => setEditStatus(e.target.value as EmployeeRow["status"])}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  >
+                    <option value="Active">Active</option>
+                    <option value="On Leave">On Leave</option>
+                    <option value="Inactive">Inactive</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-slate-200">
+              <h4 className="text-sm text-slate-900 mb-4">Add Documents</h4>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">CNIC</label>
+                  <input
+                    type="file"
+                    onChange={(e) => setEditForm({ ...editForm, cnic: e.target.files?.[0] })}
+                    className="flex-1 w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">Passport</label>
+                  <input
+                    type="file"
+                    onChange={(e) => setEditForm({ ...editForm, passport: e.target.files?.[0] })}
+                    className="flex-1 w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">Other Documents</label>
+                  <input
+                    type="file"
+                    multiple
+                    onChange={(e) => setEditForm({ ...editForm, other: e.target.files ?? undefined })}
+                    className="flex-1 w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 pt-4">
+              <Button variant="primary" size="md" className="flex-1" disabled={editing}>
+                {editing ? "Updating…" : "Update Employee"}
+              </Button>
+              <Button variant="secondary" size="md" onClick={() => setIsEditModalOpen(false)}>
+                Cancel
+              </Button>
+              <button
+                type="button"
+                onClick={() => handleDelete(selectedEmployee)}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm text-red-700 hover:bg-red-50 border border-red-200"
+              >
+                <Trash2 className="w-4 h-4" strokeWidth={1.5} />
+                Delete
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
+    </>
+  );
+}
