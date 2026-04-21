@@ -1,9 +1,15 @@
-import { useState } from "react";
-import { Plus, Search, Building2, Download } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Plus, Building2, Download, AlertCircle, X, Loader2, ArrowDownUp, History, Trash2 } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import ExportButton from "../../components/ExportButton";
+import {
+  supabase,
+  type BankAccount,
+  type BankTransaction,
+  type BankTransactionKind,
+} from "../../lib/supabase";
 
 const chartOfAccounts = [
   { id: 1, code: "1000", name: "Assets", type: "Header", balance: 5250000 },
@@ -29,22 +35,321 @@ const payables = [
   { id: 2, vendor: "Vendor Y - Electronics", amount: 280000, dueDate: "2026-04-22", status: "Pending" },
 ];
 
-const bankAccounts = [
-  { id: 1, name: "Allied Bank - Operations", accountNo: "0123456789", balance: 2500000, cashBalance: 500000, accountBalance: 2000000, type: "Current" },
-  { id: 2, name: "HBL - Payroll", accountNo: "9876543210", balance: 1800000, cashBalance: 300000, accountBalance: 1500000, type: "Current" },
-  { id: 3, name: "MCB - Client Receivables", accountNo: "5555666677", balance: 950000, cashBalance: 150000, accountBalance: 800000, type: "Current" },
-];
+const kindLabel: Record<BankTransactionKind, string> = {
+  opening: "Opening",
+  deposit: "Deposit",
+  withdraw_to_cash: "Withdraw to Cash",
+  payroll: "Payroll",
+  reconcile: "Reconcile (Bank)",
+  adjustment: "Adjustment",
+  cash_adjustment: "Cash Adjustment",
+};
 
 export default function Accounting() {
   const [activeTab, setActiveTab] = useState<"chart" | "receivables" | "payables" | "banks">("chart");
+
+  const [banks, setBanks] = useState<BankAccount[]>([]);
+  const [cashBalance, setCashBalance] = useState<number>(0);
+  const [transactions, setTransactions] = useState<BankTransaction[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [isBankModalOpen, setIsBankModalOpen] = useState(false);
   const [isStatementModalOpen, setIsStatementModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isReconcileModalOpen, setIsReconcileModalOpen] = useState(false);
   const [isEditBankModalOpen, setIsEditBankModalOpen] = useState(false);
+  const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
+  const [isLogModalOpen, setIsLogModalOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<any>(null);
-  const [selectedBank, setSelectedBank] = useState<any>(null);
+  const [selectedBank, setSelectedBank] = useState<BankAccount | null>(null);
+
+  const [newBank, setNewBank] = useState({
+    bank_name: "",
+    account_number: "",
+    account_type: "Current" as "Current" | "Savings",
+    opening_balance: "",
+  });
+  const [editBankForm, setEditBankForm] = useState({
+    bank_name: "",
+    account_number: "",
+    account_type: "Current" as "Current" | "Savings",
+  });
+  const [reconcileTarget, setReconcileTarget] = useState<"account" | "cash" | "total">("account");
+  const [reconcileValue, setReconcileValue] = useState("");
+  const [reconcileNotes, setReconcileNotes] = useState("");
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [withdrawNotes, setWithdrawNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const totalAccountBalance = useMemo(
+    () => banks.reduce((acc, b) => acc + Number(b.balance ?? 0), 0),
+    [banks]
+  );
+  const grandTotal = cashBalance + totalAccountBalance;
+
+  const loadAll = async () => {
+    setLoading(true);
+    setError(null);
+    const [banksRes, treasuryRes, txRes] = await Promise.all([
+      supabase.from("bank_accounts").select("*").order("created_at", { ascending: false }),
+      supabase.from("treasury").select("*").limit(1).maybeSingle(),
+      supabase.from("bank_transactions").select("*").order("created_at", { ascending: false }).limit(100),
+    ]);
+    if (banksRes.error) setError(banksRes.error.message);
+    if (treasuryRes.error) setError(treasuryRes.error.message);
+    if (txRes.error) setError(txRes.error.message);
+    setBanks((banksRes.data ?? []) as BankAccount[]);
+    setCashBalance(Number(treasuryRes.data?.cash_balance ?? 0));
+    setTransactions((txRes.data ?? []) as BankTransaction[]);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    loadAll();
+  }, []);
+
+  const applyCashDelta = async (delta: number) => {
+    const { data } = await supabase.from("treasury").select("id, cash_balance").limit(1).maybeSingle();
+    if (!data) {
+      const { error: insErr } = await supabase.from("treasury").insert({ cash_balance: delta });
+      if (insErr) throw insErr;
+      return;
+    }
+    const { error: upErr } = await supabase
+      .from("treasury")
+      .update({ cash_balance: Number(data.cash_balance) + delta, updated_at: new Date().toISOString() })
+      .eq("id", data.id);
+    if (upErr) throw upErr;
+  };
+
+  const logTransaction = async (row: {
+    bank_account_id: string | null;
+    kind: BankTransactionKind;
+    amount: number;
+    cash_delta: number;
+    account_delta: number;
+    description: string | null;
+  }) => {
+    const { error: logErr } = await supabase.from("bank_transactions").insert(row);
+    if (logErr) throw logErr;
+  };
+
+  const handleAddBank = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newBank.bank_name.trim() || !newBank.account_number.trim()) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const opening = newBank.opening_balance ? Number(newBank.opening_balance) : 0;
+      const { data, error: insErr } = await supabase
+        .from("bank_accounts")
+        .insert({
+          bank_name: newBank.bank_name.trim(),
+          account_number: newBank.account_number.trim(),
+          account_type: newBank.account_type,
+          opening_balance: opening,
+          balance: opening,
+        })
+        .select()
+        .single();
+      if (insErr) throw insErr;
+      if (opening !== 0) {
+        await logTransaction({
+          bank_account_id: (data as BankAccount).id,
+          kind: "opening",
+          amount: opening,
+          cash_delta: 0,
+          account_delta: opening,
+          description: `Opening balance for ${newBank.bank_name.trim()}`,
+        });
+      }
+      setNewBank({ bank_name: "", account_number: "", account_type: "Current", opening_balance: "" });
+      setIsBankModalOpen(false);
+      await loadAll();
+    } catch (err: any) {
+      setError(err.message ?? String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const openEditBank = (bank: BankAccount) => {
+    setSelectedBank(bank);
+    setEditBankForm({
+      bank_name: bank.bank_name,
+      account_number: bank.account_number,
+      account_type: bank.account_type,
+    });
+    setIsEditBankModalOpen(true);
+  };
+
+  const handleEditBank = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedBank) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const { error: upErr } = await supabase
+        .from("bank_accounts")
+        .update({
+          bank_name: editBankForm.bank_name.trim(),
+          account_number: editBankForm.account_number.trim(),
+          account_type: editBankForm.account_type,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", selectedBank.id);
+      if (upErr) throw upErr;
+      setIsEditBankModalOpen(false);
+      await loadAll();
+    } catch (err: any) {
+      setError(err.message ?? String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeleteBank = async (bank: BankAccount) => {
+    if (!window.confirm(`Delete "${bank.bank_name} (${bank.account_number})"? Transaction history is preserved (account reference will be cleared).`))
+      return;
+    setError(null);
+    const { error: delErr } = await supabase.from("bank_accounts").delete().eq("id", bank.id);
+    if (delErr) {
+      setError(delErr.message);
+      return;
+    }
+    await loadAll();
+  };
+
+  const openWithdraw = (bank: BankAccount) => {
+    setSelectedBank(bank);
+    setWithdrawAmount("");
+    setWithdrawNotes("");
+    setIsWithdrawModalOpen(true);
+  };
+
+  const handleWithdraw = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedBank) return;
+    const amount = Number(withdrawAmount);
+    if (!amount || amount <= 0) {
+      setError("Enter a positive withdrawal amount.");
+      return;
+    }
+    if (amount > Number(selectedBank.balance)) {
+      setError("Withdrawal exceeds available account balance.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const { error: upErr } = await supabase
+        .from("bank_accounts")
+        .update({
+          balance: Number(selectedBank.balance) - amount,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", selectedBank.id);
+      if (upErr) throw upErr;
+      await applyCashDelta(amount);
+      await logTransaction({
+        bank_account_id: selectedBank.id,
+        kind: "withdraw_to_cash",
+        amount,
+        cash_delta: amount,
+        account_delta: -amount,
+        description:
+          withdrawNotes.trim() ||
+          `Withdraw PKR ${amount.toLocaleString()} from ${selectedBank.bank_name} to cash`,
+      });
+      setIsWithdrawModalOpen(false);
+      await loadAll();
+    } catch (err: any) {
+      setError(err.message ?? String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const openReconcile = (bank: BankAccount) => {
+    setSelectedBank(bank);
+    setReconcileTarget("account");
+    setReconcileValue("");
+    setReconcileNotes("");
+    setIsReconcileModalOpen(true);
+  };
+
+  const handleReconcile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedBank) return;
+    const actual = Number(reconcileValue);
+    if (Number.isNaN(actual)) {
+      setError("Enter a numeric actual balance.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      if (reconcileTarget === "account") {
+        const delta = actual - Number(selectedBank.balance);
+        if (delta !== 0) {
+          const { error: upErr } = await supabase
+            .from("bank_accounts")
+            .update({ balance: actual, updated_at: new Date().toISOString() })
+            .eq("id", selectedBank.id);
+          if (upErr) throw upErr;
+          await logTransaction({
+            bank_account_id: selectedBank.id,
+            kind: "reconcile",
+            amount: Math.abs(delta),
+            cash_delta: 0,
+            account_delta: delta,
+            description:
+              reconcileNotes.trim() ||
+              `Reconcile ${selectedBank.bank_name} account balance → PKR ${actual.toLocaleString()}`,
+          });
+        }
+      } else if (reconcileTarget === "cash") {
+        const delta = actual - cashBalance;
+        if (delta !== 0) {
+          await applyCashDelta(delta);
+          await logTransaction({
+            bank_account_id: null,
+            kind: "cash_adjustment",
+            amount: Math.abs(delta),
+            cash_delta: delta,
+            account_delta: 0,
+            description:
+              reconcileNotes.trim() ||
+              `Reconcile cash balance → PKR ${actual.toLocaleString()}`,
+          });
+        }
+      } else {
+        // total = cash + sum(account balances). Apply delta to cash balance.
+        const delta = actual - grandTotal;
+        if (delta !== 0) {
+          await applyCashDelta(delta);
+          await logTransaction({
+            bank_account_id: null,
+            kind: "adjustment",
+            amount: Math.abs(delta),
+            cash_delta: delta,
+            account_delta: 0,
+            description:
+              reconcileNotes.trim() ||
+              `Reconcile total balance → PKR ${actual.toLocaleString()} (adjusted via cash)`,
+          });
+        }
+      }
+      setIsReconcileModalOpen(false);
+      await loadAll();
+    } catch (err: any) {
+      setError(err.message ?? String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const viewStatement = (client: any) => {
     setSelectedClient(client);
@@ -54,16 +359,6 @@ export default function Accounting() {
   const recordPayment = (client: any) => {
     setSelectedClient(client);
     setIsPaymentModalOpen(true);
-  };
-
-  const reconcileBank = (bank: any) => {
-    setSelectedBank(bank);
-    setIsReconcileModalOpen(true);
-  };
-
-  const editBank = (bank: any) => {
-    setSelectedBank(bank);
-    setIsEditBankModalOpen(true);
   };
 
   return (
@@ -80,16 +375,49 @@ export default function Accounting() {
               </Button>
             )}
             {activeTab === "banks" && (
-              <Button variant="primary" size="md" onClick={() => setIsBankModalOpen(true)}>
-                <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
-                Add Bank Account
-              </Button>
+              <>
+                <Button variant="secondary" size="md" onClick={() => setIsLogModalOpen(true)}>
+                  <History className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                  Transactions
+                </Button>
+                <Button variant="primary" size="md" onClick={() => setIsBankModalOpen(true)}>
+                  <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                  Add Bank Account
+                </Button>
+              </>
             )}
           </>
         }
       />
 
       <div className="flex-1 overflow-y-auto p-8">
+        {error && (
+          <div className="mb-4 flex items-start gap-2 p-3 bg-red-50 text-red-700 border border-red-200 rounded-md text-sm">
+            <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
+            <div className="flex-1">{error}</div>
+            <button onClick={() => setError(null)}>
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {activeTab === "banks" && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+              <p className="text-xs text-green-700 mb-1">Cash Balance (Treasury)</p>
+              <p className="text-2xl text-green-900">PKR {cashBalance.toLocaleString()}</p>
+            </div>
+            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+              <p className="text-xs text-blue-700 mb-1">Total Account Balance</p>
+              <p className="text-2xl text-blue-900">PKR {totalAccountBalance.toLocaleString()}</p>
+            </div>
+            <div className="bg-slate-900 p-4 rounded-lg">
+              <p className="text-xs text-slate-300 mb-1">Total Balance</p>
+              <p className="text-2xl text-white">PKR {grandTotal.toLocaleString()}</p>
+            </div>
+          </div>
+        )}
+
         <div className="bg-white rounded-lg border border-slate-200 mb-6">
           <div className="p-6 border-b border-slate-200">
             <div className="flex gap-2">
@@ -251,29 +579,61 @@ export default function Accounting() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {bankAccounts.map((bank) => (
-                    <tr key={bank.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <Building2 className="w-4 h-4 text-blue-600" strokeWidth={1.5} />
-                          <span className="text-sm text-slate-900">{bank.name}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{bank.accountNo}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{bank.type}</td>
-                      <td className="px-6 py-4 text-sm text-green-600">PKR {bank.cashBalance?.toLocaleString()}</td>
-                      <td className="px-6 py-4 text-sm text-blue-600">PKR {bank.accountBalance?.toLocaleString()}</td>
-                      <td className="px-6 py-4 text-sm font-semibold text-slate-900">PKR {bank.balance.toLocaleString()}</td>
-                      <td className="px-6 py-4 flex gap-2">
-                        <Button variant="ghost" size="sm" onClick={() => reconcileBank(bank)}>
-                          Reconcile
-                        </Button>
-                        <Button variant="ghost" size="sm" onClick={() => editBank(bank)}>
-                          Edit
-                        </Button>
+                  {loading && (
+                    <tr>
+                      <td colSpan={7} className="px-6 py-10 text-center text-slate-500">
+                        <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
+                        Loading…
                       </td>
                     </tr>
-                  ))}
+                  )}
+                  {!loading && banks.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">
+                        No bank accounts yet. Click "Add Bank Account" to create one.
+                      </td>
+                    </tr>
+                  )}
+                  {!loading &&
+                    banks.map((bank) => {
+                      const acct = Number(bank.balance ?? 0);
+                      const total = cashBalance + acct;
+                      return (
+                        <tr key={bank.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-2">
+                              <Building2 className="w-4 h-4 text-blue-600" strokeWidth={1.5} />
+                              <span className="text-sm text-slate-900">{bank.bank_name}</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-slate-600 font-mono">{bank.account_number}</td>
+                          <td className="px-6 py-4 text-sm text-slate-600">{bank.account_type}</td>
+                          <td className="px-6 py-4 text-sm text-green-600">PKR {cashBalance.toLocaleString()}</td>
+                          <td className="px-6 py-4 text-sm text-blue-600">PKR {acct.toLocaleString()}</td>
+                          <td className="px-6 py-4 text-sm font-semibold text-slate-900">PKR {total.toLocaleString()}</td>
+                          <td className="px-6 py-4 flex gap-2 flex-wrap">
+                            <Button variant="ghost" size="sm" onClick={() => openWithdraw(bank)}>
+                              <ArrowDownUp className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
+                              Withdraw
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => openReconcile(bank)}>
+                              Reconcile
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => openEditBank(bank)}>
+                              Edit
+                            </Button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteBank(bank)}
+                              className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-red-700 hover:bg-red-50"
+                              title="Delete bank account"
+                            >
+                              <Trash2 className="w-4 h-4" strokeWidth={1.5} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
               </table>
             </div>
@@ -319,47 +679,130 @@ export default function Accounting() {
       </Modal>
 
       <Modal isOpen={isBankModalOpen} onClose={() => setIsBankModalOpen(false)} title="Add Bank Account" size="md">
-        <form className="space-y-4">
+        <form className="space-y-4" onSubmit={handleAddBank}>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Bank Name</label>
+            <label className="block text-sm text-slate-700 mb-1">Bank Name *</label>
             <input
+              required
               type="text"
+              value={newBank.bank_name}
+              onChange={(e) => setNewBank({ ...newBank, bank_name: e.target.value })}
               className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
               placeholder="e.g., Allied Bank"
             />
           </div>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Account Number</label>
+            <label className="block text-sm text-slate-700 mb-1">Account Number *</label>
             <input
+              required
               type="text"
+              value={newBank.account_number}
+              onChange={(e) => setNewBank({ ...newBank, account_number: e.target.value })}
               className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
               placeholder="Enter account number"
             />
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Account Type</label>
-            <select className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent">
-              <option>Current</option>
-              <option>Savings</option>
+            <select
+              value={newBank.account_type}
+              onChange={(e) => setNewBank({ ...newBank, account_type: e.target.value as "Current" | "Savings" })}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+            >
+              <option value="Current">Current</option>
+              <option value="Savings">Savings</option>
             </select>
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Opening Balance (PKR)</label>
             <input
               type="number"
+              value={newBank.opening_balance}
+              onChange={(e) => setNewBank({ ...newBank, opening_balance: e.target.value })}
               className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
               placeholder="0"
             />
+            <p className="text-xs text-slate-500 mt-1">
+              Seeded into Account Balance and logged as an opening transaction.
+            </p>
           </div>
           <div className="flex items-center gap-3 pt-4">
-            <Button variant="primary" size="md" className="flex-1">
-              Add Bank Account
+            <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
+              {submitting ? "Saving…" : "Add Bank Account"}
             </Button>
             <Button variant="secondary" size="md" onClick={() => setIsBankModalOpen(false)}>
               Cancel
             </Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal isOpen={isWithdrawModalOpen} onClose={() => setIsWithdrawModalOpen(false)} title="Withdraw to Cash" size="md">
+        {selectedBank && (
+          <form className="space-y-4" onSubmit={handleWithdraw}>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Bank Account</label>
+              <input
+                type="text"
+                value={`${selectedBank.bank_name} · ${selectedBank.account_number}`}
+                disabled
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Account Balance</label>
+                <input
+                  type="text"
+                  value={`PKR ${Number(selectedBank.balance).toLocaleString()}`}
+                  disabled
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Cash Balance</label>
+                <input
+                  type="text"
+                  value={`PKR ${cashBalance.toLocaleString()}`}
+                  disabled
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Amount to Withdraw (PKR) *</label>
+              <input
+                required
+                type="number"
+                min={1}
+                value={withdrawAmount}
+                onChange={(e) => setWithdrawAmount(e.target.value)}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                placeholder="0"
+              />
+              <p className="text-xs text-slate-500 mt-1">
+                Deducts from Account Balance and adds to Cash Balance.
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Notes</label>
+              <textarea
+                value={withdrawNotes}
+                onChange={(e) => setWithdrawNotes(e.target.value)}
+                rows={2}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+              />
+            </div>
+            <div className="flex items-center gap-3 pt-2">
+              <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
+                {submitting ? "Processing…" : "Withdraw"}
+              </Button>
+              <Button variant="secondary" size="md" onClick={() => setIsWithdrawModalOpen(false)}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        )}
       </Modal>
 
       <Modal isOpen={isStatementModalOpen} onClose={() => setIsStatementModalOpen(false)} title="Client Statement" size="lg">
@@ -416,7 +859,7 @@ export default function Accounting() {
             <label className="block text-sm text-slate-700 mb-1">Client</label>
             <input
               type="text"
-              value={selectedClient?.client}
+              value={selectedClient?.client ?? ""}
               disabled
               className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
             />
@@ -425,7 +868,7 @@ export default function Accounting() {
             <label className="block text-sm text-slate-700 mb-1">Outstanding Amount</label>
             <input
               type="text"
-              value={`PKR ${selectedClient?.amount.toLocaleString()}`}
+              value={selectedClient ? `PKR ${selectedClient.amount.toLocaleString()}` : ""}
               disabled
               className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
             />
@@ -435,14 +878,13 @@ export default function Accounting() {
             <input
               type="number"
               className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
-              placeholder="Enter payment amount"
             />
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Payment Date</label>
             <input
               type="date"
-              defaultValue={new Date().toISOString().split('T')[0]}
+              defaultValue={new Date().toISOString().split("T")[0]}
               className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
             />
           </div>
@@ -453,14 +895,6 @@ export default function Accounting() {
               <option>Cash</option>
               <option>Cheque</option>
             </select>
-          </div>
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Reference Number</label>
-            <input
-              type="text"
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
-              placeholder="Enter reference number"
-            />
           </div>
           <div className="flex items-center gap-3 pt-4">
             <Button variant="primary" size="md" className="flex-1">
@@ -473,100 +907,203 @@ export default function Accounting() {
         </form>
       </Modal>
 
-      <Modal isOpen={isReconcileModalOpen} onClose={() => setIsReconcileModalOpen(false)} title="Reconcile Bank Account" size="md">
-        <form className="space-y-4">
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Bank Account</label>
-            <input
-              type="text"
-              value={selectedBank?.name}
-              disabled
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
-            />
-          </div>
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Current System Balance</label>
-            <input
-              type="text"
-              value={`PKR ${selectedBank?.balance.toLocaleString()}`}
-              disabled
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
-            />
-          </div>
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Actual Bank Balance (PKR)</label>
-            <input
-              type="number"
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
-              placeholder="Enter actual bank balance"
-            />
-          </div>
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Reconciliation Date</label>
-            <input
-              type="date"
-              defaultValue={new Date().toISOString().split('T')[0]}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
-            />
-          </div>
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Notes</label>
-            <textarea
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
-              rows={3}
-              placeholder="Enter reconciliation notes"
-            />
-          </div>
-          <div className="flex items-center gap-3 pt-4">
-            <Button variant="primary" size="md" className="flex-1">
-              Complete Reconciliation
-            </Button>
-            <Button variant="secondary" size="md" onClick={() => setIsReconcileModalOpen(false)}>
-              Cancel
-            </Button>
-          </div>
-        </form>
+      <Modal isOpen={isReconcileModalOpen} onClose={() => setIsReconcileModalOpen(false)} title="Reconcile" size="md">
+        {selectedBank && (
+          <form className="space-y-4" onSubmit={handleReconcile}>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Bank Account</label>
+              <input
+                type="text"
+                value={`${selectedBank.bank_name} · ${selectedBank.account_number}`}
+                disabled
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-2">Reconcile Against</label>
+              <div className="grid grid-cols-3 gap-2">
+                {(["account", "cash", "total"] as const).map((t) => (
+                  <label
+                    key={t}
+                    className={`flex items-center justify-center gap-2 px-3 py-2 border rounded-md cursor-pointer text-sm capitalize ${
+                      reconcileTarget === t
+                        ? "border-slate-900 bg-slate-50"
+                        : "border-slate-200 hover:border-slate-300"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="rec-target"
+                      checked={reconcileTarget === t}
+                      onChange={() => setReconcileTarget(t)}
+                    />
+                    <span>{t === "account" ? "Account Balance" : t === "cash" ? "Cash Balance" : "Total Balance"}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Current System Balance</label>
+              <input
+                type="text"
+                value={`PKR ${(reconcileTarget === "account"
+                  ? Number(selectedBank.balance)
+                  : reconcileTarget === "cash"
+                  ? cashBalance
+                  : grandTotal
+                ).toLocaleString()}`}
+                disabled
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Actual Balance (PKR) *</label>
+              <input
+                required
+                type="number"
+                value={reconcileValue}
+                onChange={(e) => setReconcileValue(e.target.value)}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+              />
+              <p className="text-xs text-slate-500 mt-1">
+                {reconcileTarget === "account" && "Updates this bank account's balance."}
+                {reconcileTarget === "cash" && "Updates the global cash balance."}
+                {reconcileTarget === "total" && "Adjusts the cash balance to match the desired total."}
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Notes</label>
+              <textarea
+                value={reconcileNotes}
+                onChange={(e) => setReconcileNotes(e.target.value)}
+                rows={2}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+              />
+            </div>
+            <div className="flex items-center gap-3 pt-2">
+              <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
+                {submitting ? "Saving…" : "Complete Reconciliation"}
+              </Button>
+              <Button variant="secondary" size="md" onClick={() => setIsReconcileModalOpen(false)}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        )}
       </Modal>
 
       <Modal isOpen={isEditBankModalOpen} onClose={() => setIsEditBankModalOpen(false)} title="Edit Bank Account" size="md">
-        <form className="space-y-4">
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Bank Name</label>
-            <input
-              type="text"
-              defaultValue={selectedBank?.name}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
-              placeholder="e.g., Allied Bank"
-            />
-          </div>
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Account Number</label>
-            <input
-              type="text"
-              defaultValue={selectedBank?.accountNo}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
-              placeholder="Enter account number"
-            />
-          </div>
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Account Type</label>
-            <select
-              defaultValue={selectedBank?.type}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
-            >
-              <option>Current</option>
-              <option>Savings</option>
-            </select>
-          </div>
-          <div className="flex items-center gap-3 pt-4">
-            <Button variant="primary" size="md" className="flex-1">
-              Update Account
+        {selectedBank && (
+          <form className="space-y-4" onSubmit={handleEditBank}>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Bank Name</label>
+              <input
+                required
+                type="text"
+                value={editBankForm.bank_name}
+                onChange={(e) => setEditBankForm({ ...editBankForm, bank_name: e.target.value })}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Account Number</label>
+              <input
+                required
+                type="text"
+                value={editBankForm.account_number}
+                onChange={(e) => setEditBankForm({ ...editBankForm, account_number: e.target.value })}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Account Type</label>
+              <select
+                value={editBankForm.account_type}
+                onChange={(e) => setEditBankForm({ ...editBankForm, account_type: e.target.value as "Current" | "Savings" })}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+              >
+                <option value="Current">Current</option>
+                <option value="Savings">Savings</option>
+              </select>
+            </div>
+            <p className="text-xs text-slate-500">
+              Balance cannot be edited here — use Reconcile to adjust.
+            </p>
+            <div className="flex items-center gap-3 pt-4">
+              <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
+                {submitting ? "Saving…" : "Update Account"}
+              </Button>
+              <Button variant="secondary" size="md" onClick={() => setIsEditBankModalOpen(false)}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      <Modal isOpen={isLogModalOpen} onClose={() => setIsLogModalOpen(false)} title="Transaction Log" size="lg">
+        <div className="max-h-[60vh] overflow-y-auto">
+          {transactions.length === 0 ? (
+            <p className="text-sm text-slate-500">No transactions yet.</p>
+          ) : (
+            <table className="w-full">
+              <thead className="sticky top-0 bg-white">
+                <tr className="border-b border-slate-200">
+                  <th className="text-left px-3 py-2 text-xs text-slate-500">Date</th>
+                  <th className="text-left px-3 py-2 text-xs text-slate-500">Kind</th>
+                  <th className="text-left px-3 py-2 text-xs text-slate-500">Bank</th>
+                  <th className="text-right px-3 py-2 text-xs text-slate-500">Account Δ</th>
+                  <th className="text-right px-3 py-2 text-xs text-slate-500">Cash Δ</th>
+                  <th className="text-left px-3 py-2 text-xs text-slate-500">Description</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {transactions.map((t) => {
+                  const bank = banks.find((b) => b.id === t.bank_account_id);
+                  return (
+                    <tr key={t.id}>
+                      <td className="px-3 py-2 text-xs text-slate-600">
+                        {t.created_at ? new Date(t.created_at).toLocaleString() : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-slate-700">{kindLabel[t.kind]}</td>
+                      <td className="px-3 py-2 text-xs text-slate-700">{bank?.bank_name ?? "—"}</td>
+                      <td
+                        className={`px-3 py-2 text-xs text-right font-mono ${
+                          Number(t.account_delta) > 0
+                            ? "text-emerald-700"
+                            : Number(t.account_delta) < 0
+                            ? "text-red-700"
+                            : "text-slate-500"
+                        }`}
+                      >
+                        {Number(t.account_delta) > 0 ? "+" : ""}
+                        {Number(t.account_delta).toLocaleString()}
+                      </td>
+                      <td
+                        className={`px-3 py-2 text-xs text-right font-mono ${
+                          Number(t.cash_delta) > 0
+                            ? "text-emerald-700"
+                            : Number(t.cash_delta) < 0
+                            ? "text-red-700"
+                            : "text-slate-500"
+                        }`}
+                      >
+                        {Number(t.cash_delta) > 0 ? "+" : ""}
+                        {Number(t.cash_delta).toLocaleString()}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-slate-600">{t.description ?? "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+          <div className="flex items-center gap-3 pt-4 border-t border-slate-200 mt-4">
+            <Button variant="secondary" size="md" className="ml-auto" onClick={() => setIsLogModalOpen(false)}>
+              Close
             </Button>
-            <Button variant="secondary" size="md" onClick={() => setIsEditBankModalOpen(false)}>
-              Cancel
-            </Button>
           </div>
-        </form>
+        </div>
       </Modal>
     </>
   );

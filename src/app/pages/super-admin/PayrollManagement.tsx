@@ -1,36 +1,513 @@
-import { useState } from "react";
-import { Search, Download } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Search, Download, AlertCircle, X, Loader2 } from "lucide-react";
+import jsPDF from "jspdf";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
+import {
+  supabase,
+  type Employee,
+  type Location,
+  type Client,
+  type BankAccount,
+  type Payslip,
+  type PaymentMode,
+  type PayslipStatus,
+} from "../../lib/supabase";
 
-const employees = [
-  { id: 1, name: "Muhammad Usman", baseSalary: 50000, presentDays: 22, absentDays: 0, workingDays: 22, salaryCleared: true },
-  { id: 2, name: "Ayesha Malik", baseSalary: 55000, presentDays: 21, absentDays: 1, workingDays: 22, salaryCleared: true },
-  { id: 3, name: "Bilal Ahmed", baseSalary: 48000, presentDays: 22, absentDays: 0, workingDays: 22, salaryCleared: false },
-  { id: 4, name: "Zainab Hassan", baseSalary: 52000, presentDays: 20, absentDays: 2, workingDays: 22, salaryCleared: false },
-  { id: 5, name: "Hamza Khan", baseSalary: 60000, presentDays: 22, absentDays: 0, workingDays: 22, salaryCleared: true },
-];
+type EmployeeRow = Employee & { location_name: string | null; client_name: string | null };
+
+type RowState = {
+  employee: EmployeeRow;
+  period_month: string;
+  working_days: number;
+  present_days: number;
+  absent_days: number;
+  leave_days: number;
+  base_salary: number;
+  per_day_salary: number | null;
+  bonus: number;
+  deductions: number;
+  advance: number;
+  final_salary: number;
+  net_salary: number;
+  payment_mode: PaymentMode;
+  bank_account_id: string | null;
+  status: PayslipStatus;
+  disbursed: boolean;
+  disbursed_at: string | null;
+  notes: string | null;
+  payslip_id: string | null;
+};
+
+const firstOfMonth = (d: Date) => {
+  const y = d.getFullYear();
+  const m = d.getMonth();
+  const mm = String(m + 1).padStart(2, "0");
+  return `${y}-${mm}-01`;
+};
+const endOfMonthStr = (periodMonth: string) => {
+  const [y, m] = periodMonth.split("-").map(Number);
+  const last = new Date(y, m, 0).getDate();
+  const mm = String(m).padStart(2, "0");
+  const dd = String(last).padStart(2, "0");
+  return `${y}-${mm}-${dd}`;
+};
+const formatPeriod = (p: string) => {
+  const [y, m] = p.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+};
 
 export default function PayrollManagement() {
-  const [selectedEmployee, setSelectedEmployee] = useState<number | null>(null);
-  const [bonus, setBonus] = useState(0);
-  const [deduction, setDeduction] = useState(0);
-  const [isPayslipModalOpen, setIsPayslipModalOpen] = useState(false);
-  const [payslipEmployee, setPayslipEmployee] = useState<any>(null);
+  const today = new Date();
+  const currentPeriod = firstOfMonth(today);
 
-  const calculateSalary = (baseSalary: number, presentDays: number, workingDays: number) => {
-    const perDaySalary = baseSalary / workingDays;
-    const calculatedSalary = perDaySalary * presentDays;
-    return Math.round(calculatedSalary + bonus - deduction);
+  const [employees, setEmployees] = useState<EmployeeRow[]>([]);
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [banks, setBanks] = useState<BankAccount[]>([]);
+  const [payslipsMap, setPayslipsMap] = useState<Map<string, Payslip>>(new Map());
+  const [attendanceAgg, setAttendanceAgg] = useState<Map<string, { present: number; absent: number; leave: number }>>(
+    new Map()
+  );
+  const [workingDaysSetting, setWorkingDaysSetting] = useState(22);
+  const [cashBalance, setCashBalance] = useState(0);
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const [search, setSearch] = useState("");
+  const [shiftFilter, setShiftFilter] = useState<"all" | "day" | "night">("all");
+  const [locationFilter, setLocationFilter] = useState("all");
+  const [clientFilter, setClientFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "Cleared" | "Pending">("all");
+  const [disbursedFilter, setDisbursedFilter] = useState<"all" | "yes" | "no">("all");
+
+  const [periodOptions, setPeriodOptions] = useState<string[]>([currentPeriod]);
+  const [selectedPeriod, setSelectedPeriod] = useState(currentPeriod);
+
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [rowEdits, setRowEdits] = useState<Map<string, Partial<RowState>>>(new Map());
+  const [savingId, setSavingId] = useState<string | null>(null);
+
+  const [isPayslipModalOpen, setIsPayslipModalOpen] = useState(false);
+  const [payslipData, setPayslipData] = useState<RowState | null>(null);
+
+  useEffect(() => {
+    const opts: string[] = [];
+    for (let i = 0; i <= 6; i++) {
+      const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+      opts.push(firstOfMonth(d));
+    }
+    setPeriodOptions(opts);
+  }, []);
+
+  const loadPeriodData = async (period: string) => {
+    const start = period;
+    const end = endOfMonthStr(period);
+    const [attRes, payRes] = await Promise.all([
+      supabase
+        .from("attendance_records")
+        .select("employee_id, status, attendance_date")
+        .gte("attendance_date", start)
+        .lte("attendance_date", end),
+      supabase.from("payslips").select("*").eq("period_month", period),
+    ]);
+    const agg = new Map<string, { present: number; absent: number; leave: number }>();
+    (attRes.data ?? []).forEach((a: any) => {
+      const cur = agg.get(a.employee_id) ?? { present: 0, absent: 0, leave: 0 };
+      if (a.status === "Present") cur.present += 1;
+      if (a.status === "Absent") cur.absent += 1;
+      if (a.status === "Leave") cur.leave += 1;
+      agg.set(a.employee_id, cur);
+    });
+    setAttendanceAgg(agg);
+    const pMap = new Map<string, Payslip>();
+    (payRes.data ?? []).forEach((p: any) => pMap.set(p.employee_id, p));
+    setPayslipsMap(pMap);
+    setRowEdits(new Map());
+    setSelectedId(null);
   };
 
-  const generatePayslip = (employee: any) => {
-    setPayslipEmployee(employee);
+  const loadAll = async () => {
+    setLoading(true);
+    setError(null);
+
+    const sixAgo = new Date(today.getFullYear(), today.getMonth() - 6, 1);
+    const cutoff = firstOfMonth(sixAgo);
+    await supabase.from("payslips").delete().lt("period_month", cutoff);
+
+    const [empRes, locRes, cliRes, bankRes, treaRes, setRes] = await Promise.all([
+      supabase
+        .from("employees")
+        .select("*, location:location_id(name), client:client_id(name)")
+        .order("employee_code"),
+      supabase.from("locations").select("*").order("name"),
+      supabase.from("clients").select("*").order("name"),
+      supabase.from("bank_accounts").select("*").order("bank_name"),
+      supabase.from("treasury").select("*").limit(1).maybeSingle(),
+      supabase.from("app_settings").select("value").eq("key", "working_days_per_month").maybeSingle(),
+    ]);
+
+    if (empRes.error) setError(empRes.error.message);
+    setEmployees(
+      (empRes.data ?? []).map((e: any) => ({
+        ...e,
+        location_name: e.location?.name ?? null,
+        client_name: e.client?.name ?? null,
+      }))
+    );
+    setLocations(locRes.data ?? []);
+    setClients(cliRes.data ?? []);
+    setBanks((bankRes.data ?? []) as BankAccount[]);
+    setCashBalance(Number(treaRes.data?.cash_balance ?? 0));
+    const wdRaw = setRes.data?.value;
+    const wd = typeof wdRaw === "number" ? wdRaw : Number(wdRaw);
+    if (!Number.isNaN(wd) && wd > 0) setWorkingDaysSetting(wd);
+
+    await loadPeriodData(selectedPeriod);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    loadAll();
+  }, []);
+
+  useEffect(() => {
+    if (!loading) loadPeriodData(selectedPeriod);
+  }, [selectedPeriod]);
+
+  const rows = useMemo<RowState[]>(() => {
+    return employees.map((emp) => {
+      const existing = payslipsMap.get(emp.id);
+      const att = attendanceAgg.get(emp.id) ?? { present: 0, absent: 0, leave: 0 };
+      const defaults: RowState = {
+        employee: emp,
+        period_month: selectedPeriod,
+        working_days: existing?.working_days ?? workingDaysSetting,
+        present_days: att.present,
+        absent_days: att.absent,
+        leave_days: att.leave,
+        base_salary: Number(existing?.base_salary ?? emp.base_salary ?? 0),
+        per_day_salary:
+          existing?.per_day_salary != null ? Number(existing.per_day_salary) : emp.per_day_salary,
+        bonus: Number(existing?.bonus ?? 0),
+        deductions: Number(existing?.deductions ?? 0),
+        advance: Number(existing?.advance ?? 0),
+        final_salary: 0,
+        net_salary: 0,
+        payment_mode: (existing?.payment_mode ?? "Cash") as PaymentMode,
+        bank_account_id: existing?.bank_account_id ?? null,
+        status: (existing?.status ?? "Pending") as PayslipStatus,
+        disbursed: existing?.disbursed ?? false,
+        disbursed_at: existing?.disbursed_at ?? null,
+        notes: existing?.notes ?? null,
+        payslip_id: existing?.id ?? null,
+      };
+      const edits = rowEdits.get(emp.id) ?? {};
+      const merged = { ...defaults, ...edits };
+      merged.final_salary = Math.max(0, merged.base_salary + merged.bonus - merged.deductions);
+      merged.net_salary = merged.final_salary - merged.advance;
+      return merged;
+    });
+  }, [employees, payslipsMap, attendanceAgg, selectedPeriod, workingDaysSetting, rowEdits]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return rows.filter((r) => {
+      const e = r.employee;
+      if (
+        q &&
+        !e.full_name.toLowerCase().includes(q) &&
+        !e.employee_code.toLowerCase().includes(q) &&
+        !(e.phone ?? "").toLowerCase().includes(q)
+      )
+        return false;
+      if (shiftFilter !== "all" && e.shift !== shiftFilter) return false;
+      if (locationFilter !== "all" && e.location_id !== locationFilter) return false;
+      if (clientFilter !== "all" && e.client_id !== clientFilter) return false;
+      if (statusFilter !== "all" && r.status !== statusFilter) return false;
+      if (disbursedFilter !== "all" && (disbursedFilter === "yes" ? !r.disbursed : r.disbursed)) return false;
+      return true;
+    });
+  }, [rows, search, shiftFilter, locationFilter, clientFilter, statusFilter, disbursedFilter]);
+
+  const selectedRow = useMemo(
+    () => rows.find((r) => r.employee.id === selectedId) ?? null,
+    [rows, selectedId]
+  );
+
+  const updateEdit = (employeeId: string, patch: Partial<RowState>) => {
+    setRowEdits((prev) => {
+      const next = new Map(prev);
+      const current = next.get(employeeId) ?? {};
+      next.set(employeeId, { ...current, ...patch });
+      return next;
+    });
+  };
+
+  const savePayslip = async (row: RowState): Promise<void> => {
+    const payload = {
+      employee_id: row.employee.id,
+      period_month: row.period_month,
+      working_days: row.working_days,
+      present_days: row.present_days,
+      absent_days: row.absent_days,
+      leave_days: row.leave_days,
+      base_salary: row.base_salary,
+      per_day_salary: row.per_day_salary,
+      bonus: row.bonus,
+      deductions: row.deductions,
+      advance: row.advance,
+      final_salary: row.final_salary,
+      net_salary: row.net_salary,
+      payment_mode: row.payment_mode,
+      bank_account_id: row.payment_mode === "Bank" ? row.bank_account_id : null,
+      status: row.status,
+      disbursed: row.disbursed,
+      disbursed_at: row.disbursed_at,
+      notes: row.notes,
+      updated_at: new Date().toISOString(),
+    };
+    const { error: upErr } = await supabase
+      .from("payslips")
+      .upsert(payload, { onConflict: "employee_id,period_month" });
+    if (upErr) throw upErr;
+  };
+
+  const handleSaveRow = async (row: RowState) => {
+    setSavingId(row.employee.id);
+    setError(null);
+    try {
+      await savePayslip(row);
+      setRowEdits((prev) => {
+        const next = new Map(prev);
+        next.delete(row.employee.id);
+        return next;
+      });
+      await loadPeriodData(selectedPeriod);
+    } catch (err: any) {
+      setError(err.message ?? String(err));
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const toggleStatus = async (row: RowState) => {
+    const next: PayslipStatus = row.status === "Cleared" ? "Pending" : "Cleared";
+    setSavingId(row.employee.id);
+    try {
+      await savePayslip({ ...row, status: next });
+      await loadPeriodData(selectedPeriod);
+    } catch (err: any) {
+      setError(err.message ?? String(err));
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const toggleDisbursed = async (row: RowState) => {
+    setSavingId(row.employee.id);
+    setError(null);
+    try {
+      if (!row.disbursed) {
+        if (row.net_salary <= 0) {
+          setError("Net salary must be greater than 0 to disburse.");
+          return;
+        }
+        if (row.payment_mode === "Bank") {
+          if (!row.bank_account_id) {
+            setError("Select a bank account before disbursing.");
+            return;
+          }
+          const bank = banks.find((b) => b.id === row.bank_account_id);
+          if (!bank) {
+            setError("Bank account not found.");
+            return;
+          }
+          if (row.net_salary > Number(bank.balance)) {
+            setError("Selected bank account balance is insufficient.");
+            return;
+          }
+          const { error: bErr } = await supabase
+            .from("bank_accounts")
+            .update({
+              balance: Number(bank.balance) - row.net_salary,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", bank.id);
+          if (bErr) throw bErr;
+          await supabase.from("bank_transactions").insert({
+            bank_account_id: bank.id,
+            kind: "payroll",
+            amount: row.net_salary,
+            cash_delta: 0,
+            account_delta: -row.net_salary,
+            description: `Payroll ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
+          });
+        } else {
+          if (row.net_salary > cashBalance) {
+            setError("Cash balance is insufficient.");
+            return;
+          }
+          const { data: trea } = await supabase
+            .from("treasury")
+            .select("id, cash_balance")
+            .limit(1)
+            .maybeSingle();
+          if (trea) {
+            await supabase
+              .from("treasury")
+              .update({
+                cash_balance: Number(trea.cash_balance) - row.net_salary,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", trea.id);
+          }
+          await supabase.from("bank_transactions").insert({
+            bank_account_id: null,
+            kind: "payroll",
+            amount: row.net_salary,
+            cash_delta: -row.net_salary,
+            account_delta: 0,
+            description: `Payroll (cash) ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
+          });
+        }
+        await savePayslip({
+          ...row,
+          disbursed: true,
+          disbursed_at: new Date().toISOString(),
+          status: "Cleared",
+        });
+      } else {
+        if (row.payment_mode === "Bank" && row.bank_account_id) {
+          const bank = banks.find((b) => b.id === row.bank_account_id);
+          if (bank) {
+            await supabase
+              .from("bank_accounts")
+              .update({
+                balance: Number(bank.balance) + row.net_salary,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", bank.id);
+          }
+          await supabase.from("bank_transactions").insert({
+            bank_account_id: row.bank_account_id,
+            kind: "payroll",
+            amount: row.net_salary,
+            cash_delta: 0,
+            account_delta: row.net_salary,
+            description: `Reverse payroll ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
+          });
+        } else {
+          const { data: trea } = await supabase
+            .from("treasury")
+            .select("id, cash_balance")
+            .limit(1)
+            .maybeSingle();
+          if (trea) {
+            await supabase
+              .from("treasury")
+              .update({
+                cash_balance: Number(trea.cash_balance) + row.net_salary,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", trea.id);
+          }
+          await supabase.from("bank_transactions").insert({
+            bank_account_id: null,
+            kind: "payroll",
+            amount: row.net_salary,
+            cash_delta: row.net_salary,
+            account_delta: 0,
+            description: `Reverse payroll (cash) ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
+          });
+        }
+        await savePayslip({ ...row, disbursed: false, disbursed_at: null });
+      }
+      await loadAll();
+    } catch (err: any) {
+      setError(err.message ?? String(err));
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const openPayslipModal = async (row: RowState) => {
+    setError(null);
+    try {
+      await savePayslip(row);
+      setRowEdits((prev) => {
+        const next = new Map(prev);
+        next.delete(row.employee.id);
+        return next;
+      });
+      await loadPeriodData(selectedPeriod);
+    } catch (err: any) {
+      setError(err.message ?? String(err));
+    }
+    setPayslipData(row);
     setIsPayslipModalOpen(true);
   };
 
-  const selectedEmp = employees.find((emp) => emp.id === selectedEmployee);
+  const downloadPdf = (row: RowState) => {
+    const doc = new jsPDF({ unit: "pt", format: "a4" });
+    let y = 60;
+    doc.setFontSize(18);
+    doc.text("Payslip", 40, y);
+    y += 24;
+    doc.setFontSize(11);
+    doc.setTextColor(90);
+    doc.text(`Period: ${formatPeriod(row.period_month)}`, 40, y);
+    y += 16;
+    doc.text(`Employee: ${row.employee.full_name} (${row.employee.employee_code})`, 40, y);
+    y += 16;
+    if (row.employee.phone) {
+      doc.text(`Phone: ${row.employee.phone}`, 40, y);
+      y += 16;
+    }
+    y += 10;
+    doc.setTextColor(0);
+    doc.setFontSize(13);
+    doc.text("Summary", 40, y);
+    y += 18;
+    doc.setFontSize(11);
+    const line = (label: string, value: string) => {
+      doc.text(label, 40, y);
+      doc.text(value, 520, y, { align: "right" });
+      y += 16;
+    };
+    line("Working Days", String(row.working_days));
+    line("Present Days", String(row.present_days));
+    line("Absent Days", String(row.absent_days));
+    line("Leave Days", String(row.leave_days));
+    y += 6;
+    line("Base Salary", `PKR ${row.base_salary.toLocaleString()}`);
+    if (row.per_day_salary != null)
+      line("Per Day Salary", `PKR ${Number(row.per_day_salary).toLocaleString()}`);
+    line("Bonus", `PKR ${row.bonus.toLocaleString()}`);
+    line("Deductions", `PKR ${row.deductions.toLocaleString()}`);
+    y += 4;
+    doc.setFontSize(12);
+    line("Final Salary (Base + Bonus − Deductions)", `PKR ${row.final_salary.toLocaleString()}`);
+    doc.setFontSize(11);
+    line("Advance", `PKR ${row.advance.toLocaleString()}`);
+    y += 6;
+    doc.setFontSize(14);
+    line("Net Salary", `PKR ${row.net_salary.toLocaleString()}`);
+    y += 10;
+    doc.setFontSize(11);
+    line("Payment Mode", row.payment_mode);
+    if (row.payment_mode === "Bank" && row.bank_account_id) {
+      const bank = banks.find((b) => b.id === row.bank_account_id);
+      if (bank) line("Bank Account", `${bank.bank_name} · ${bank.account_number}`);
+    }
+    line("Status", row.status);
+    line("Disbursed", row.disbursed ? "Yes" : "No");
+    doc.save(`payslip_${row.employee.employee_code}_${row.period_month}.pdf`);
+  };
+
+  const isCurrent = selectedPeriod === currentPeriod;
 
   return (
     <>
@@ -38,30 +515,108 @@ export default function PayrollManagement() {
         title="Payroll Management"
         actions={
           <>
-            <Button variant="secondary" size="md">
-              <Download className="w-4 h-4 mr-2" strokeWidth={1.5} />
-              Export CSV
-            </Button>
-            <Button variant="primary" size="md">
-              <Download className="w-4 h-4 mr-2" strokeWidth={1.5} />
-              Export PDF
-            </Button>
+            <div className="text-xs text-slate-500 flex flex-col items-end mr-2">
+              <span>Cash: PKR {cashBalance.toLocaleString()}</span>
+              <span>Working Days: {workingDaysSetting}</span>
+            </div>
           </>
         }
       />
 
       <div className="flex-1 overflow-y-auto p-8">
+        {error && (
+          <div className="mb-4 flex items-start gap-2 p-3 bg-red-50 text-red-700 border border-red-200 rounded-md text-sm">
+            <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
+            <div className="flex-1">{error}</div>
+            <button onClick={() => setError(null)}>
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">
             <div className="bg-white rounded-lg border border-slate-200">
-              <div className="p-6 border-b border-slate-200">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />
-                  <input
-                    type="text"
-                    placeholder="Search employees..."
-                    className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                  />
+              <div className="p-6 border-b border-slate-200 space-y-3">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="flex-1 min-w-[220px] relative">
+                    <Search
+                      className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
+                      strokeWidth={1.5}
+                    />
+                    <input
+                      type="text"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder="Search by employee ID, name, or phone…"
+                      className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    />
+                  </div>
+                  <select
+                    value={selectedPeriod}
+                    onChange={(e) => setSelectedPeriod(e.target.value)}
+                    className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                  >
+                    {periodOptions.map((p) => (
+                      <option key={p} value={p}>
+                        {formatPeriod(p)}
+                        {p === currentPeriod ? " (Current)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <select
+                    value={shiftFilter}
+                    onChange={(e) => setShiftFilter(e.target.value as "all" | "day" | "night")}
+                    className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  >
+                    <option value="all">All Shifts</option>
+                    <option value="day">Day</option>
+                    <option value="night">Night</option>
+                  </select>
+                  <select
+                    value={locationFilter}
+                    onChange={(e) => setLocationFilter(e.target.value)}
+                    className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  >
+                    <option value="all">All Locations</option>
+                    {locations.map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {l.name}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={clientFilter}
+                    onChange={(e) => setClientFilter(e.target.value)}
+                    className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  >
+                    <option value="all">All Clients</option>
+                    {clients.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value as "all" | "Cleared" | "Pending")}
+                    className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  >
+                    <option value="all">All Status</option>
+                    <option value="Pending">Pending</option>
+                    <option value="Cleared">Cleared</option>
+                  </select>
+                  <select
+                    value={disbursedFilter}
+                    onChange={(e) => setDisbursedFilter(e.target.value as "all" | "yes" | "no")}
+                    className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  >
+                    <option value="all">All Disbursed</option>
+                    <option value="yes">Disbursed</option>
+                    <option value="no">Not Disbursed</option>
+                  </select>
                 </div>
               </div>
 
@@ -69,56 +624,114 @@ export default function PayrollManagement() {
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-slate-200">
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Employee Name</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Base Salary</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Present Days</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Final Salary</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Status</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Actions</th>
+                      <th className="text-left px-4 py-3 text-xs text-slate-500">Employee</th>
+                      <th className="text-left px-4 py-3 text-xs text-slate-500">Attendance</th>
+                      <th className="text-left px-4 py-3 text-xs text-slate-500">Base</th>
+                      <th className="text-left px-4 py-3 text-xs text-slate-500">Net Salary</th>
+                      <th className="text-left px-4 py-3 text-xs text-slate-500">Status</th>
+                      <th className="text-left px-4 py-3 text-xs text-slate-500">Disbursed</th>
+                      <th className="text-left px-4 py-3 text-xs text-slate-500">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
-                    {employees.map((employee) => (
-                      <tr
-                        key={employee.id}
-                        className={`hover:bg-slate-50 transition-colors cursor-pointer ${
-                          selectedEmployee === employee.id ? "bg-slate-50" : ""
-                        }`}
-                        onClick={() => setSelectedEmployee(employee.id)}
-                      >
-                        <td className="px-6 py-4 text-sm text-slate-900">{employee.name}</td>
-                        <td className="px-6 py-4 text-sm text-slate-600">
-                          PKR {employee.baseSalary.toLocaleString()}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-slate-600">
-                          {employee.presentDays}/{employee.workingDays}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-slate-900">
-                          PKR{" "}
-                          {calculateSalary(
-                            employee.baseSalary,
-                            employee.presentDays,
-                            employee.workingDays
-                          ).toLocaleString()}
-                        </td>
-                        <td className="px-6 py-4">
-                          <span
-                            className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
-                              employee.salaryCleared
-                                ? "bg-green-50 text-green-700"
-                                : "bg-amber-50 text-amber-700"
-                            }`}
-                          >
-                            {employee.salaryCleared ? "Cleared" : "Pending"}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <Button variant="ghost" size="sm">
-                            View
-                          </Button>
+                    {loading && (
+                      <tr>
+                        <td colSpan={7} className="px-6 py-10 text-center text-slate-500">
+                          <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
+                          Loading…
                         </td>
                       </tr>
-                    ))}
+                    )}
+                    {!loading && filtered.length === 0 && (
+                      <tr>
+                        <td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">
+                          No employees match the current filters.
+                        </td>
+                      </tr>
+                    )}
+                    {!loading &&
+                      filtered.map((row) => {
+                        const e = row.employee;
+                        return (
+                          <tr
+                            key={e.id}
+                            className={`hover:bg-slate-50 transition-colors cursor-pointer ${
+                              selectedId === e.id ? "bg-slate-50" : ""
+                            }`}
+                            onClick={() => setSelectedId(e.id)}
+                          >
+                            <td className="px-4 py-3">
+                              <div className="text-sm text-slate-900">{e.full_name}</div>
+                              <div className="text-xs text-slate-500 font-mono">
+                                {e.employee_code}
+                                {e.phone ? ` · ${e.phone}` : ""}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-xs text-slate-600">
+                              <div>
+                                <span className="text-green-700">P {row.present_days}</span>
+                                {" / "}
+                                <span className="text-red-700">A {row.absent_days}</span>
+                                {" / "}
+                                <span className="text-amber-700">L {row.leave_days}</span>
+                              </div>
+                              <div className="text-slate-400">of {row.working_days} wd</div>
+                            </td>
+                            <td className="px-4 py-3 text-sm text-slate-700">
+                              PKR {row.base_salary.toLocaleString()}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-slate-900">
+                              PKR {row.net_salary.toLocaleString()}
+                            </td>
+                            <td className="px-4 py-3">
+                              <button
+                                type="button"
+                                disabled={savingId === e.id}
+                                onClick={(ev) => {
+                                  ev.stopPropagation();
+                                  toggleStatus(row);
+                                }}
+                                className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
+                                  row.status === "Cleared"
+                                    ? "bg-green-50 text-green-700 hover:bg-green-100"
+                                    : "bg-amber-50 text-amber-700 hover:bg-amber-100"
+                                }`}
+                              >
+                                {row.status}
+                              </button>
+                            </td>
+                            <td className="px-4 py-3">
+                              <button
+                                type="button"
+                                disabled={savingId === e.id}
+                                onClick={(ev) => {
+                                  ev.stopPropagation();
+                                  toggleDisbursed(row);
+                                }}
+                                className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
+                                  row.disbursed
+                                    ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                                }`}
+                              >
+                                {row.disbursed ? "Disbursed" : "Not Disbursed"}
+                              </button>
+                            </td>
+                            <td className="px-4 py-3">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(ev: React.MouseEvent) => {
+                                  ev.stopPropagation();
+                                  openPayslipModal(row);
+                                }}
+                              >
+                                Payslip
+                              </Button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                   </tbody>
                 </table>
               </div>
@@ -126,162 +739,305 @@ export default function PayrollManagement() {
           </div>
 
           <div className="lg:col-span-1">
-            <div className="bg-white rounded-lg border border-slate-200 p-6">
-              <h3 className="text-base mb-6 text-slate-900">Salary Calculation</h3>
+            <div className="bg-white rounded-lg border border-slate-200 p-6 sticky top-4">
+              <h3 className="text-base mb-4 text-slate-900">
+                Salary Calculation
+                {!isCurrent && (
+                  <span className="ml-2 text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded">
+                    History
+                  </span>
+                )}
+              </h3>
 
-              {selectedEmp ? (
-                <div className="space-y-4">
-                  <div className="pb-4 border-b border-slate-200">
-                    <p className="text-sm text-slate-500 mb-1">Employee</p>
-                    <p className="text-base text-slate-900">{selectedEmp.name}</p>
+              {selectedRow ? (
+                <div className="space-y-3 text-sm">
+                  <div className="pb-3 border-b border-slate-200">
+                    <p className="text-xs text-slate-500">Employee</p>
+                    <p className="text-slate-900">{selectedRow.employee.full_name}</p>
+                    <p className="text-xs text-slate-500 font-mono">{selectedRow.employee.employee_code}</p>
                   </div>
 
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-slate-600">Base Salary</span>
-                      <span className="text-sm text-slate-900">PKR {selectedEmp.baseSalary.toLocaleString()}</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Working</span>
+                      <span>{selectedRow.working_days}</span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-slate-600">Working Days</span>
-                      <span className="text-sm text-slate-900">{selectedEmp.workingDays}</span>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Present</span>
+                      <span className="text-green-600">{selectedRow.present_days}</span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-slate-600">Present Days</span>
-                      <span className="text-sm text-green-600">{selectedEmp.presentDays}</span>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Absent</span>
+                      <span className="text-red-600">{selectedRow.absent_days}</span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-slate-600">Absent Days</span>
-                      <span className="text-sm text-red-600">{selectedEmp.absentDays}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-slate-600">Per Day Salary</span>
-                      <span className="text-sm text-slate-900">
-                        PKR {Math.round(selectedEmp.baseSalary / selectedEmp.workingDays).toLocaleString()}
-                      </span>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Leave</span>
+                      <span className="text-amber-600">{selectedRow.leave_days}</span>
                     </div>
                   </div>
 
-                  <div className="pt-4 border-t border-slate-200 space-y-3">
+                  <div className="pt-3 border-t border-slate-200 grid grid-cols-2 gap-2">
                     <div>
-                      <label className="block text-sm text-slate-700 mb-1">Bonus (PKR)</label>
+                      <label className="block text-xs text-slate-500 mb-1">Base Salary</label>
                       <input
                         type="number"
-                        value={bonus}
-                        onChange={(e) => setBonus(Number(e.target.value))}
-                        className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                        placeholder="0"
+                        value={selectedRow.base_salary}
+                        onChange={(e) =>
+                          updateEdit(selectedRow.employee.id, { base_salary: Number(e.target.value) })
+                        }
+                        className="w-full px-2 py-1 border border-slate-200 rounded text-sm"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm text-slate-700 mb-1">Deduction (PKR)</label>
+                      <label className="block text-xs text-slate-500 mb-1">Per Day (display)</label>
                       <input
                         type="number"
-                        value={deduction}
-                        onChange={(e) => setDeduction(Number(e.target.value))}
-                        className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                        placeholder="0"
+                        value={selectedRow.per_day_salary ?? ""}
+                        disabled
+                        className="w-full px-2 py-1 border border-slate-200 rounded text-sm bg-slate-50 text-slate-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">Bonus</label>
+                      <input
+                        type="number"
+                        value={selectedRow.bonus}
+                        onChange={(e) =>
+                          updateEdit(selectedRow.employee.id, { bonus: Number(e.target.value) })
+                        }
+                        className="w-full px-2 py-1 border border-slate-200 rounded text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">Deductions</label>
+                      <input
+                        type="number"
+                        value={selectedRow.deductions}
+                        onChange={(e) =>
+                          updateEdit(selectedRow.employee.id, { deductions: Number(e.target.value) })
+                        }
+                        className="w-full px-2 py-1 border border-slate-200 rounded text-sm"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-xs text-slate-500 mb-1">Advance</label>
+                      <input
+                        type="number"
+                        value={selectedRow.advance}
+                        onChange={(e) =>
+                          updateEdit(selectedRow.employee.id, { advance: Number(e.target.value) })
+                        }
+                        className="w-full px-2 py-1 border border-slate-200 rounded text-sm"
                       />
                     </div>
                   </div>
 
-                  <div className="pt-4 border-t border-slate-200">
-                    <div className="flex justify-between items-center mb-4">
-                      <span className="text-base text-slate-900">Final Salary</span>
-                      <span className="text-xl text-slate-900">
-                        PKR{" "}
-                        {calculateSalary(
-                          selectedEmp.baseSalary,
-                          selectedEmp.presentDays,
-                          selectedEmp.workingDays
-                        ).toLocaleString()}
-                      </span>
+                  <div className="pt-3 border-t border-slate-200 space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Final Salary</span>
+                      <span className="text-slate-900">PKR {selectedRow.final_salary.toLocaleString()}</span>
                     </div>
-                    <Button variant="primary" size="md" className="w-full" onClick={() => generatePayslip(selectedEmp)}>
-                      Generate Payslip
+                    <div className="flex justify-between">
+                      <span className="text-base text-slate-900">Net Salary</span>
+                      <span className="text-lg text-slate-900">PKR {selectedRow.net_salary.toLocaleString()}</span>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 border-t border-slate-200 space-y-2">
+                    <label className="block text-xs text-slate-500">Payment Mode</label>
+                    <select
+                      value={selectedRow.payment_mode}
+                      onChange={(e) =>
+                        updateEdit(selectedRow.employee.id, {
+                          payment_mode: e.target.value as PaymentMode,
+                        })
+                      }
+                      className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                    >
+                      <option value="Cash">Cash</option>
+                      <option value="Bank">Bank</option>
+                    </select>
+                    {selectedRow.payment_mode === "Bank" && (
+                      <select
+                        value={selectedRow.bank_account_id ?? ""}
+                        onChange={(e) =>
+                          updateEdit(selectedRow.employee.id, {
+                            bank_account_id: e.target.value || null,
+                          })
+                        }
+                        className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                      >
+                        <option value="">Select bank account</option>
+                        {banks.map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.bank_name} · {b.account_number} (PKR {Number(b.balance).toLocaleString()})
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 pt-3 border-t border-slate-200">
+                    <Button
+                      variant={selectedRow.status === "Cleared" ? "secondary" : "primary"}
+                      size="sm"
+                      onClick={() => toggleStatus(selectedRow)}
+                    >
+                      {selectedRow.status === "Cleared" ? "Mark Pending" : "Mark Cleared"}
+                    </Button>
+                    <Button
+                      variant={selectedRow.disbursed ? "secondary" : "primary"}
+                      size="sm"
+                      onClick={() => toggleDisbursed(selectedRow)}
+                    >
+                      {selectedRow.disbursed ? "Un-disburse" : "Disburse"}
+                    </Button>
+                  </div>
+
+                  <div className="flex gap-2 pt-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => handleSaveRow(selectedRow)}
+                      disabled={savingId === selectedRow.employee.id}
+                    >
+                      {savingId === selectedRow.employee.id ? "Saving…" : "Save"}
+                    </Button>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => openPayslipModal(selectedRow)}
+                    >
+                      Payslip
                     </Button>
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-slate-500 text-center py-8">Select an employee to view salary details</p>
+                <p className="text-sm text-slate-500 text-center py-8">
+                  Select an employee row to view &amp; edit their payslip for {formatPeriod(selectedPeriod)}.
+                </p>
               )}
             </div>
           </div>
         </div>
       </div>
 
-      <Modal isOpen={isPayslipModalOpen} onClose={() => setIsPayslipModalOpen(false)} title="Payslip Preview" size="lg">
-        <div className="space-y-4 bg-white">
-          <div className="text-center pb-4 border-b border-slate-200">
-            <h3 className="text-lg text-slate-900">Company Name</h3>
-            <p className="text-sm text-slate-500">Payslip for {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className="text-sm text-slate-500 mb-1">Employee Name</p>
-              <p className="text-sm text-slate-900">{payslipEmployee?.name}</p>
+      <Modal
+        isOpen={isPayslipModalOpen}
+        onClose={() => setIsPayslipModalOpen(false)}
+        title="Payslip Preview"
+        size="lg"
+      >
+        {payslipData && (
+          <div className="space-y-4 bg-white">
+            <div className="text-center pb-4 border-b border-slate-200">
+              <h3 className="text-lg text-slate-900">Payslip</h3>
+              <p className="text-sm text-slate-500">{formatPeriod(payslipData.period_month)}</p>
             </div>
-            <div>
-              <p className="text-sm text-slate-500 mb-1">Employee ID</p>
-              <p className="text-sm text-slate-900">EMP-{String(payslipEmployee?.id).padStart(4, '0')}</p>
-            </div>
-          </div>
 
-          <div className="pt-4 border-t border-slate-200">
-            <h4 className="text-sm text-slate-900 mb-3">Earnings</h4>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-slate-600">Base Salary</span>
-                <span className="text-slate-900">PKR {payslipEmployee?.baseSalary.toLocaleString()}</span>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <p className="text-slate-500 mb-1">Employee</p>
+                <p className="text-slate-900">{payslipData.employee.full_name}</p>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-600">Working Days</span>
-                <span className="text-slate-900">{payslipEmployee?.workingDays}</span>
+              <div>
+                <p className="text-slate-500 mb-1">Employee ID</p>
+                <p className="text-slate-900 font-mono">{payslipData.employee.employee_code}</p>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-600">Present Days</span>
-                <span className="text-green-600">{payslipEmployee?.presentDays}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-600">Per Day Salary</span>
-                <span className="text-slate-900">PKR {payslipEmployee ? Math.round(payslipEmployee.baseSalary / payslipEmployee.workingDays).toLocaleString() : 0}</span>
+              {payslipData.employee.phone && (
+                <div>
+                  <p className="text-slate-500 mb-1">Phone</p>
+                  <p className="text-slate-900">{payslipData.employee.phone}</p>
+                </div>
+              )}
+              <div>
+                <p className="text-slate-500 mb-1">Payment Mode</p>
+                <p className="text-slate-900">{payslipData.payment_mode}</p>
               </div>
             </div>
-          </div>
 
-          <div className="pt-4 border-t border-slate-200">
-            <h4 className="text-sm text-slate-900 mb-3">Deductions</h4>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-slate-600">Absent Days</span>
-                <span className="text-red-600">{payslipEmployee?.absentDays}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-600">Deduction Amount</span>
-                <span className="text-red-600">PKR {payslipEmployee ? (Math.round(payslipEmployee.baseSalary / payslipEmployee.workingDays) * payslipEmployee.absentDays).toLocaleString() : 0}</span>
+            <div className="pt-4 border-t border-slate-200">
+              <h4 className="text-sm text-slate-900 mb-3">Attendance</h4>
+              <div className="grid grid-cols-4 gap-2 text-sm">
+                <div className="bg-slate-50 p-2 rounded">
+                  <p className="text-xs text-slate-500">Working</p>
+                  <p className="text-slate-900">{payslipData.working_days}</p>
+                </div>
+                <div className="bg-green-50 p-2 rounded">
+                  <p className="text-xs text-green-700">Present</p>
+                  <p className="text-green-900">{payslipData.present_days}</p>
+                </div>
+                <div className="bg-red-50 p-2 rounded">
+                  <p className="text-xs text-red-700">Absent</p>
+                  <p className="text-red-900">{payslipData.absent_days}</p>
+                </div>
+                <div className="bg-amber-50 p-2 rounded">
+                  <p className="text-xs text-amber-700">Leave</p>
+                  <p className="text-amber-900">{payslipData.leave_days}</p>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="pt-4 border-t-2 border-slate-300">
-            <div className="flex justify-between items-center mb-4">
-              <span className="text-base text-slate-900">Net Salary</span>
-              <span className="text-xl text-slate-900">
-                PKR {payslipEmployee ? calculateSalary(payslipEmployee.baseSalary, payslipEmployee.presentDays, payslipEmployee.workingDays).toLocaleString() : 0}
-              </span>
+            <div className="pt-4 border-t border-slate-200">
+              <h4 className="text-sm text-slate-900 mb-3">Earnings &amp; Deductions</h4>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Base Salary</span>
+                  <span className="text-slate-900">PKR {payslipData.base_salary.toLocaleString()}</span>
+                </div>
+                {payslipData.per_day_salary != null && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Per Day Salary (display)</span>
+                    <span className="text-slate-900">
+                      PKR {Number(payslipData.per_day_salary).toLocaleString()}
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Bonus</span>
+                  <span className="text-green-600">+ PKR {payslipData.bonus.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Deductions</span>
+                  <span className="text-red-600">− PKR {payslipData.deductions.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between pt-2 border-t border-slate-200">
+                  <span className="text-slate-700">Final Salary</span>
+                  <span className="text-slate-900">PKR {payslipData.final_salary.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Advance</span>
+                  <span className="text-red-600">− PKR {payslipData.advance.toLocaleString()}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t-2 border-slate-300">
+              <div className="flex justify-between items-center">
+                <span className="text-base text-slate-900">Net Salary</span>
+                <span className="text-xl text-slate-900">
+                  PKR {payslipData.net_salary.toLocaleString()}
+                </span>
+              </div>
+              <div className="mt-2 flex justify-between text-xs text-slate-500">
+                <span>Status: {payslipData.status}</span>
+                <span>Disbursed: {payslipData.disbursed ? "Yes" : "No"}</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 pt-4 border-t border-slate-200">
+              <Button variant="primary" size="md" className="flex-1" onClick={() => downloadPdf(payslipData)}>
+                <Download className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                Download PDF
+              </Button>
+              <Button variant="secondary" size="md" onClick={() => setIsPayslipModalOpen(false)}>
+                Close
+              </Button>
             </div>
           </div>
-
-          <div className="flex items-center gap-3 pt-4 border-t border-slate-200">
-            <Button variant="primary" size="md" className="flex-1">
-              <Download className="w-4 h-4 mr-2" strokeWidth={1.5} />
-              Download PDF
-            </Button>
-            <Button variant="secondary" size="md" onClick={() => setIsPayslipModalOpen(false)}>
-              Close
-            </Button>
-          </div>
-        </div>
+        )}
       </Modal>
     </>
   );

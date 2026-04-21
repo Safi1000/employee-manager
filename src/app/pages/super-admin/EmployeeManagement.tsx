@@ -23,6 +23,7 @@ type FormState = {
   department: string;
   shift: "day" | "night";
   base_salary: string;
+  per_day_salary: string;
   join_date: string;
   bank_account: string;
   cnic?: File;
@@ -38,6 +39,7 @@ const emptyForm: FormState = {
   department: "",
   shift: "day",
   base_salary: "",
+  per_day_salary: "",
   join_date: "",
   bank_account: "",
 };
@@ -208,6 +210,7 @@ export default function EmployeeManagement() {
           department: form.department.trim() || null,
           shift: form.shift,
           base_salary: form.base_salary ? Number(form.base_salary) : null,
+          per_day_salary: form.per_day_salary ? Number(form.per_day_salary) : null,
           join_date: form.join_date || null,
           bank_account: form.bank_account.trim() || null,
         })
@@ -254,6 +257,7 @@ export default function EmployeeManagement() {
       department: emp.department ?? "",
       shift: emp.shift,
       base_salary: emp.base_salary != null ? String(emp.base_salary) : "",
+      per_day_salary: emp.per_day_salary != null ? String(emp.per_day_salary) : "",
       join_date: emp.join_date ?? "",
       bank_account: emp.bank_account ?? "",
     });
@@ -277,6 +281,7 @@ export default function EmployeeManagement() {
           shift: editForm.shift,
           status: editStatus,
           base_salary: editForm.base_salary ? Number(editForm.base_salary) : null,
+          per_day_salary: editForm.per_day_salary ? Number(editForm.per_day_salary) : null,
           join_date: editForm.join_date || null,
           bank_account: editForm.bank_account.trim() || null,
         })
@@ -569,6 +574,16 @@ export default function EmployeeManagement() {
                 />
               </div>
               <div>
+                <label className="block text-sm text-slate-700 mb-1">Per Day Salary (PKR)</label>
+                <input
+                  type="number"
+                  value={form.per_day_salary}
+                  onChange={(e) => setForm({ ...form, per_day_salary: e.target.value })}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  placeholder="2500"
+                />
+              </div>
+              <div>
                 <label className="block text-sm text-slate-700 mb-1">Join Date</label>
                 <input
                   type="date"
@@ -685,6 +700,14 @@ export default function EmployeeManagement() {
                   <p className="text-slate-900">
                     {selectedEmployee.base_salary != null
                       ? `PKR ${selectedEmployee.base_salary.toLocaleString()}`
+                      : "—"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-slate-500 mb-1">Per Day Salary</p>
+                  <p className="text-slate-900">
+                    {selectedEmployee.per_day_salary != null
+                      ? `PKR ${selectedEmployee.per_day_salary.toLocaleString()}`
                       : "—"}
                   </p>
                 </div>
@@ -836,6 +859,15 @@ export default function EmployeeManagement() {
                     type="number"
                     value={editForm.base_salary}
                     onChange={(e) => setEditForm({ ...editForm, base_salary: e.target.value })}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">Per Day Salary (PKR)</label>
+                  <input
+                    type="number"
+                    value={editForm.per_day_salary}
+                    onChange={(e) => setEditForm({ ...editForm, per_day_salary: e.target.value })}
                     className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                   />
                 </div>
