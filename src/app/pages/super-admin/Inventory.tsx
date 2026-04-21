@@ -1,54 +1,355 @@
-import { useState } from "react";
-import { Plus, Shield, Users as UsersIcon, MapPin } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Plus, Shield, Users as UsersIcon, MapPin, AlertCircle, Loader2, X, Trash2 } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
-import ExportButton from "../../components/ExportButton";
+import {
+  supabase,
+  type InventoryItem,
+  type InventoryKind,
+  type Issuance,
+  type Location,
+  type Employee,
+  type ReturnCondition,
+} from "../../lib/supabase";
 
-const weaponsInventory = [
-  { id: 1, type: "Glock 17", serialNo: "GL-001-2024", status: "Issued", location: "F-10 Islamabad", issuedTo: "Muhammad Usman", licenseExpiry: "2026-12-15" },
-  { id: 2, type: "Glock 17", serialNo: "GL-002-2024", status: "Available", location: "F-10 Islamabad", issuedTo: "-", licenseExpiry: "2026-12-15" },
-  { id: 3, type: "Shotgun", serialNo: "SG-001-2024", status: "Issued", location: "F-7 Islamabad", issuedTo: "Ali Raza", licenseExpiry: "2026-11-20" },
-  { id: 4, type: "Rifle", serialNo: "RF-001-2024", status: "Maintenance", location: "F-10 Islamabad", issuedTo: "-", licenseExpiry: "2027-01-10" },
-];
+type ItemRow = InventoryItem & {
+  location_name: string | null;
+  issued_to_name: string | null;
+  active_issuance_id: string | null;
+};
 
-const uniformsInventory = [
-  { id: 1, type: "Security Guard Uniform", size: "L", quantity: 45, location: "F-10 Islamabad", status: "In Stock" },
-  { id: 2, type: "Security Guard Uniform", size: "M", quantity: 32, location: "F-10 Islamabad", status: "In Stock" },
-  { id: 3, type: "Tactical Vest", size: "L", quantity: 15, location: "F-7 Islamabad", status: "Low Stock" },
-  { id: 4, type: "Boots", size: "42", quantity: 8, location: "F-10 Islamabad", status: "Low Stock" },
-];
+type IssuanceRow = Issuance & {
+  employee_name: string;
+  employee_code: string;
+  item_type: string;
+  item_kind: InventoryKind;
+  serial_number: string | null;
+  size: string | null;
+  location_name: string | null;
+};
 
-const issuanceRecords = [
-  { id: 1, employee: "Muhammad Usman", item: "Glock 17 (GL-001-2024)", type: "Weapon", location: "F-10 Islamabad", issuedDate: "2026-01-15", returnDate: "-" },
-  { id: 2, employee: "Ayesha Malik", item: "Security Guard Uniform (L)", type: "Uniform", location: "F-10 Islamabad", issuedDate: "2026-02-01", returnDate: "-" },
-  { id: 3, employee: "Ali Raza", item: "Shotgun (SG-001-2024)", type: "Weapon", location: "F-7 Islamabad", issuedDate: "2026-01-20", returnDate: "-" },
-  { id: 4, employee: "Bilal Ahmed", item: "Tactical Vest (L)", type: "Uniform", location: "F-7 Islamabad", issuedDate: "2026-03-10", returnDate: "-" },
-];
+type AddItemForm = {
+  kind: InventoryKind;
+  item_type: string;
+  serial_number: string;
+  size: string;
+  quantity: string;
+  location_id: string;
+  license_expiry: string;
+  notes: string;
+};
+
+const emptyAddItem: AddItemForm = {
+  kind: "weapon",
+  item_type: "",
+  serial_number: "",
+  size: "",
+  quantity: "1",
+  location_id: "",
+  license_expiry: "",
+  notes: "",
+};
+
+type IssueForm = {
+  kind: InventoryKind;
+  item_id: string;
+  employee_id: string;
+  issue_date: string;
+  notes: string;
+};
+
+const today = () => new Date().toISOString().split("T")[0];
+
+const emptyIssueForm = (): IssueForm => ({
+  kind: "weapon",
+  item_id: "",
+  employee_id: "",
+  issue_date: today(),
+  notes: "",
+});
+
+type ReturnForm = {
+  return_date: string;
+  condition: ReturnCondition;
+  notes: string;
+};
+
+const emptyReturnForm = (): ReturnForm => ({
+  return_date: today(),
+  condition: "Good",
+  notes: "",
+});
+
+const LOW_STOCK_THRESHOLD = 10;
+
+const uniformStockStatus = (qty: number) =>
+  qty === 0 ? "Out of Stock" : qty <= LOW_STOCK_THRESHOLD ? "Low Stock" : "In Stock";
 
 export default function Inventory() {
   const [activeTab, setActiveTab] = useState<"weapons" | "uniforms" | "issuance">("weapons");
-  const [isIssueModalOpen, setIsIssueModalOpen] = useState(false);
-  const [isWeaponDetailsModalOpen, setIsWeaponDetailsModalOpen] = useState(false);
-  const [isUniformStockModalOpen, setIsUniformStockModalOpen] = useState(false);
-  const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
-  const [selectedWeapon, setSelectedWeapon] = useState<any>(null);
-  const [selectedUniform, setSelectedUniform] = useState<any>(null);
-  const [selectedIssuance, setSelectedIssuance] = useState<any>(null);
 
-  const viewWeaponDetails = (weapon: any) => {
-    setSelectedWeapon(weapon);
-    setIsWeaponDetailsModalOpen(true);
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [items, setItems] = useState<ItemRow[]>([]);
+  const [issuances, setIssuances] = useState<IssuanceRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const [isAddItemOpen, setIsAddItemOpen] = useState(false);
+  const [addForm, setAddForm] = useState<AddItemForm>(emptyAddItem);
+  const [addSubmitting, setAddSubmitting] = useState(false);
+
+  const [isIssueOpen, setIsIssueOpen] = useState(false);
+  const [issueForm, setIssueForm] = useState<IssueForm>(emptyIssueForm());
+  const [issueSubmitting, setIssueSubmitting] = useState(false);
+
+  const [viewWeapon, setViewWeapon] = useState<ItemRow | null>(null);
+  const [stockItem, setStockItem] = useState<ItemRow | null>(null);
+  const [stockQty, setStockQty] = useState("0");
+  const [stockSubmitting, setStockSubmitting] = useState(false);
+
+  const [returnIssuance, setReturnIssuance] = useState<IssuanceRow | null>(null);
+  const [returnForm, setReturnForm] = useState<ReturnForm>(emptyReturnForm());
+  const [returnSubmitting, setReturnSubmitting] = useState(false);
+
+  const loadAll = async () => {
+    setLoading(true);
+    setError(null);
+    const [locRes, empRes, itemsRes, issRes] = await Promise.all([
+      supabase.from("locations").select("*").order("name"),
+      supabase.from("employees").select("id, full_name, employee_code").order("full_name"),
+      supabase
+        .from("inventory_items")
+        .select("*, location:location_id(name)")
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("issuances")
+        .select(
+          "*, employee:employee_id(full_name, employee_code), item:item_id(item_type, kind, serial_number, size), location:location_id(name)"
+        )
+        .order("issue_date", { ascending: false }),
+    ]);
+
+    if (locRes.error) setError(locRes.error.message);
+    if (empRes.error) setError(empRes.error.message);
+    if (itemsRes.error) setError(itemsRes.error.message);
+    if (issRes.error) setError(issRes.error.message);
+
+    const activeByItem = new Map<string, { employee_name: string; issuance_id: string }>();
+    for (const raw of issRes.data ?? []) {
+      const r = raw as any;
+      if (!r.return_date) {
+        activeByItem.set(r.item_id, {
+          employee_name: r.employee?.full_name ?? "—",
+          issuance_id: r.id,
+        });
+      }
+    }
+
+    setLocations(locRes.data ?? []);
+    setEmployees((empRes.data ?? []) as Employee[]);
+    setItems(
+      ((itemsRes.data ?? []) as any[]).map((r) => {
+        const active = activeByItem.get(r.id);
+        return {
+          ...r,
+          location_name: r.location?.name ?? null,
+          issued_to_name: active?.employee_name ?? null,
+          active_issuance_id: active?.issuance_id ?? null,
+        } as ItemRow;
+      })
+    );
+    setIssuances(
+      ((issRes.data ?? []) as any[]).map((r) => ({
+        ...r,
+        employee_name: r.employee?.full_name ?? "—",
+        employee_code: r.employee?.employee_code ?? "",
+        item_type: r.item?.item_type ?? "—",
+        item_kind: (r.item?.kind ?? "weapon") as InventoryKind,
+        serial_number: r.item?.serial_number ?? null,
+        size: r.item?.size ?? null,
+        location_name: r.location?.name ?? null,
+      }))
+    );
+    setLoading(false);
   };
 
-  const manageUniformStock = (uniform: any) => {
-    setSelectedUniform(uniform);
-    setIsUniformStockModalOpen(true);
+  useEffect(() => {
+    loadAll();
+  }, []);
+
+  const weapons = useMemo(() => items.filter((i) => i.kind === "weapon"), [items]);
+  const uniforms = useMemo(() => items.filter((i) => i.kind === "uniform"), [items]);
+
+  const issuableItems = useMemo(
+    () =>
+      items.filter((i) =>
+        issueForm.kind === "weapon"
+          ? i.kind === "weapon" && i.status === "Available"
+          : i.kind === "uniform" && i.quantity > 0
+      ),
+    [items, issueForm.kind]
+  );
+
+  const handleAddItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!addForm.item_type.trim()) return;
+    setAddSubmitting(true);
+    setError(null);
+    try {
+      const payload = {
+        kind: addForm.kind,
+        item_type: addForm.item_type.trim(),
+        serial_number: addForm.kind === "weapon" ? addForm.serial_number.trim() || null : null,
+        size: addForm.kind === "uniform" ? addForm.size.trim() || null : null,
+        quantity: addForm.kind === "uniform" ? Math.max(0, Number(addForm.quantity) || 0) : 1,
+        location_id: addForm.location_id || null,
+        license_expiry: addForm.kind === "weapon" && addForm.license_expiry ? addForm.license_expiry : null,
+        notes: addForm.notes.trim() || null,
+        status: "Available" as const,
+      };
+      const { error: insErr } = await supabase.from("inventory_items").insert(payload);
+      if (insErr) throw insErr;
+      setAddForm(emptyAddItem);
+      setIsAddItemOpen(false);
+      await loadAll();
+    } catch (err: any) {
+      setError(err.message ?? String(err));
+    } finally {
+      setAddSubmitting(false);
+    }
   };
 
-  const markReturned = (issuance: any) => {
-    setSelectedIssuance(issuance);
-    setIsReturnModalOpen(true);
+  const handleDeleteItem = async (item: ItemRow) => {
+    const label =
+      item.kind === "weapon"
+        ? `${item.item_type}${item.serial_number ? ` (${item.serial_number})` : ""}`
+        : `${item.item_type}${item.size ? ` — ${item.size}` : ""}`;
+    if (!window.confirm(`Delete ${label}? All related issuance records will also be removed.`)) return;
+    setError(null);
+    const { error: delErr } = await supabase.from("inventory_items").delete().eq("id", item.id);
+    if (delErr) {
+      setError(delErr.message);
+      return;
+    }
+    await loadAll();
+  };
+
+  const openIssueModal = () => {
+    setIssueForm(emptyIssueForm());
+    setIsIssueOpen(true);
+  };
+
+  const handleIssue = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!issueForm.item_id || !issueForm.employee_id) return;
+    setIssueSubmitting(true);
+    setError(null);
+    try {
+      const item = items.find((i) => i.id === issueForm.item_id);
+      if (!item) throw new Error("Selected item not found");
+
+      const { error: insErr } = await supabase.from("issuances").insert({
+        item_id: item.id,
+        employee_id: issueForm.employee_id,
+        location_id: item.location_id,
+        issue_date: issueForm.issue_date,
+        notes: issueForm.notes.trim() || null,
+      });
+      if (insErr) throw insErr;
+
+      if (item.kind === "weapon") {
+        const { error: upErr } = await supabase
+          .from("inventory_items")
+          .update({ status: "Issued", updated_at: new Date().toISOString() })
+          .eq("id", item.id);
+        if (upErr) throw upErr;
+      } else {
+        const { error: upErr } = await supabase
+          .from("inventory_items")
+          .update({ quantity: item.quantity - 1, updated_at: new Date().toISOString() })
+          .eq("id", item.id);
+        if (upErr) throw upErr;
+      }
+
+      setIsIssueOpen(false);
+      setIssueForm(emptyIssueForm());
+      await loadAll();
+    } catch (err: any) {
+      setError(err.message ?? String(err));
+    } finally {
+      setIssueSubmitting(false);
+    }
+  };
+
+  const openReturn = (iss: IssuanceRow) => {
+    setReturnIssuance(iss);
+    setReturnForm(emptyReturnForm());
+  };
+
+  const handleReturn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!returnIssuance) return;
+    setReturnSubmitting(true);
+    setError(null);
+    try {
+      const { error: upIssErr } = await supabase
+        .from("issuances")
+        .update({
+          return_date: returnForm.return_date,
+          condition: returnForm.condition,
+          notes: returnForm.notes.trim() || null,
+        })
+        .eq("id", returnIssuance.id);
+      if (upIssErr) throw upIssErr;
+
+      const item = items.find((i) => i.id === returnIssuance.item_id);
+      if (item) {
+        if (item.kind === "weapon") {
+          await supabase
+            .from("inventory_items")
+            .update({ status: "Available", updated_at: new Date().toISOString() })
+            .eq("id", item.id);
+        } else {
+          await supabase
+            .from("inventory_items")
+            .update({ quantity: item.quantity + 1, updated_at: new Date().toISOString() })
+            .eq("id", item.id);
+        }
+      }
+
+      setReturnIssuance(null);
+      await loadAll();
+    } catch (err: any) {
+      setError(err.message ?? String(err));
+    } finally {
+      setReturnSubmitting(false);
+    }
+  };
+
+  const openStock = (item: ItemRow) => {
+    setStockItem(item);
+    setStockQty(String(item.quantity));
+  };
+
+  const handleStockUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!stockItem) return;
+    const next = Math.max(0, Number(stockQty) || 0);
+    setStockSubmitting(true);
+    setError(null);
+    const { error: upErr } = await supabase
+      .from("inventory_items")
+      .update({ quantity: next, updated_at: new Date().toISOString() })
+      .eq("id", stockItem.id);
+    setStockSubmitting(false);
+    if (upErr) {
+      setError(upErr.message);
+      return;
+    }
+    setStockItem(null);
+    await loadAll();
   };
 
   return (
@@ -57,8 +358,11 @@ export default function Inventory() {
         title="Inventory & Asset Logistics"
         actions={
           <>
-            <ExportButton onExport={() => console.log("Export")} />
-            <Button variant="primary" size="md" onClick={() => setIsIssueModalOpen(true)}>
+            <Button variant="secondary" size="md" onClick={() => setIsAddItemOpen(true)}>
+              <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
+              Add Item
+            </Button>
+            <Button variant="primary" size="md" onClick={openIssueModal}>
               <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
               Issue Item
             </Button>
@@ -67,14 +371,26 @@ export default function Inventory() {
       />
 
       <div className="flex-1 overflow-y-auto p-8">
+        {error && (
+          <div className="mb-4 flex items-start gap-2 p-3 bg-red-50 text-red-700 border border-red-200 rounded-md text-sm">
+            <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
+            <div className="flex-1">{error}</div>
+            <button onClick={() => setError(null)}>
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         <div className="bg-white rounded-lg border border-slate-200">
           <div className="p-6 border-b border-slate-200">
             <div className="flex gap-2">
-              {([
-                { key: "weapons", label: "Weapons Inventory" },
-                { key: "uniforms", label: "Uniforms & Gear" },
-                { key: "issuance", label: "Issuance Tracking" },
-              ] as const).map((tab) => (
+              {(
+                [
+                  { key: "weapons", label: "Weapons Inventory" },
+                  { key: "uniforms", label: "Uniforms & Gear" },
+                  { key: "issuance", label: "Issuance Tracking" },
+                ] as const
+              ).map((tab) => (
                 <button
                   key={tab.key}
                   onClick={() => setActiveTab(tab.key)}
@@ -105,38 +421,67 @@ export default function Inventory() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {weaponsInventory.map((weapon) => (
-                    <tr key={weapon.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <Shield className="w-4 h-4 text-red-600" strokeWidth={1.5} />
-                          <span className="text-sm text-slate-900">{weapon.type}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{weapon.serialNo}</td>
-                      <td className="px-6 py-4">
-                        <span
-                          className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
-                            weapon.status === "Issued"
-                              ? "bg-blue-50 text-blue-700"
-                              : weapon.status === "Available"
-                              ? "bg-green-50 text-green-700"
-                              : "bg-amber-50 text-amber-700"
-                          }`}
-                        >
-                          {weapon.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{weapon.location}</td>
-                      <td className="px-6 py-4 text-sm text-slate-900">{weapon.issuedTo}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{weapon.licenseExpiry}</td>
-                      <td className="px-6 py-4">
-                        <Button variant="ghost" size="sm" onClick={() => viewWeaponDetails(weapon)}>
-                          View Details
-                        </Button>
+                  {loading && (
+                    <tr>
+                      <td colSpan={7} className="px-6 py-10 text-center text-slate-500">
+                        <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                       </td>
                     </tr>
-                  ))}
+                  )}
+                  {!loading && weapons.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">
+                        No weapons yet. Click "Add Item" to register one.
+                      </td>
+                    </tr>
+                  )}
+                  {!loading &&
+                    weapons.map((weapon) => (
+                      <tr key={weapon.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-2">
+                            <Shield className="w-4 h-4 text-red-600" strokeWidth={1.5} />
+                            <span className="text-sm text-slate-900">{weapon.item_type}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-slate-600 font-mono">
+                          {weapon.serial_number ?? "—"}
+                        </td>
+                        <td className="px-6 py-4">
+                          <span
+                            className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
+                              weapon.status === "Issued"
+                                ? "bg-blue-50 text-blue-700"
+                                : weapon.status === "Available"
+                                ? "bg-green-50 text-green-700"
+                                : "bg-amber-50 text-amber-700"
+                            }`}
+                          >
+                            {weapon.status}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-slate-600">{weapon.location_name ?? "—"}</td>
+                        <td className="px-6 py-4 text-sm text-slate-900">
+                          {weapon.issued_to_name ?? "—"}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-slate-600">
+                          {weapon.license_expiry ?? "—"}
+                        </td>
+                        <td className="px-6 py-4 flex gap-1">
+                          <Button variant="ghost" size="sm" onClick={() => setViewWeapon(weapon)}>
+                            View
+                          </Button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteItem(weapon)}
+                            className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-red-700 hover:bg-red-50"
+                            title="Delete weapon"
+                          >
+                            <Trash2 className="w-4 h-4" strokeWidth={1.5} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
                 </tbody>
               </table>
             </div>
@@ -156,40 +501,68 @@ export default function Inventory() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {uniformsInventory.map((uniform) => (
-                    <tr key={uniform.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <UsersIcon className="w-4 h-4 text-blue-600" strokeWidth={1.5} />
-                          <span className="text-sm text-slate-900">{uniform.type}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{uniform.size}</td>
-                      <td className="px-6 py-4 text-sm text-slate-900">{uniform.quantity}</td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <MapPin className="w-4 h-4 text-slate-400" strokeWidth={1.5} />
-                          <span className="text-sm text-slate-600">{uniform.location}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span
-                          className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
-                            uniform.status === "In Stock"
-                              ? "bg-green-50 text-green-700"
-                              : "bg-amber-50 text-amber-700"
-                          }`}
-                        >
-                          {uniform.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <Button variant="ghost" size="sm" onClick={() => manageUniformStock(uniform)}>
-                          Manage Stock
-                        </Button>
+                  {loading && (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-10 text-center text-slate-500">
+                        <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                       </td>
                     </tr>
-                  ))}
+                  )}
+                  {!loading && uniforms.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-10 text-center text-slate-500 text-sm">
+                        No uniforms/gear yet. Click "Add Item" to add stock.
+                      </td>
+                    </tr>
+                  )}
+                  {!loading &&
+                    uniforms.map((u) => {
+                      const stat = uniformStockStatus(u.quantity);
+                      return (
+                        <tr key={u.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-2">
+                              <UsersIcon className="w-4 h-4 text-blue-600" strokeWidth={1.5} />
+                              <span className="text-sm text-slate-900">{u.item_type}</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-slate-600">{u.size ?? "—"}</td>
+                          <td className="px-6 py-4 text-sm text-slate-900">{u.quantity}</td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-2">
+                              <MapPin className="w-4 h-4 text-slate-400" strokeWidth={1.5} />
+                              <span className="text-sm text-slate-600">{u.location_name ?? "—"}</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span
+                              className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
+                                stat === "In Stock"
+                                  ? "bg-green-50 text-green-700"
+                                  : stat === "Low Stock"
+                                  ? "bg-amber-50 text-amber-700"
+                                  : "bg-red-50 text-red-700"
+                              }`}
+                            >
+                              {stat}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 flex gap-1">
+                            <Button variant="ghost" size="sm" onClick={() => openStock(u)}>
+                              Manage Stock
+                            </Button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteItem(u)}
+                              className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-red-700 hover:bg-red-50"
+                              title="Delete item"
+                            >
+                              <Trash2 className="w-4 h-4" strokeWidth={1.5} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
               </table>
             </div>
@@ -206,35 +579,87 @@ export default function Inventory() {
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Location</th>
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Issued Date</th>
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Return Date</th>
+                    <th className="text-left px-6 py-3 text-sm text-slate-500">Condition</th>
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {issuanceRecords.map((record) => (
-                    <tr key={record.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-6 py-4 text-sm text-slate-900">{record.employee}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{record.item}</td>
-                      <td className="px-6 py-4">
-                        <span
-                          className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
-                            record.type === "Weapon"
-                              ? "bg-red-50 text-red-700"
-                              : "bg-blue-50 text-blue-700"
-                          }`}
-                        >
-                          {record.type}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{record.location}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{record.issuedDate}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{record.returnDate}</td>
-                      <td className="px-6 py-4">
-                        <Button variant="ghost" size="sm" onClick={() => markReturned(record)}>
-                          Mark Returned
-                        </Button>
+                  {loading && (
+                    <tr>
+                      <td colSpan={8} className="px-6 py-10 text-center text-slate-500">
+                        <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                       </td>
                     </tr>
-                  ))}
+                  )}
+                  {!loading && issuances.length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="px-6 py-10 text-center text-slate-500 text-sm">
+                        No issuances yet. Click "Issue Item" to record one.
+                      </td>
+                    </tr>
+                  )}
+                  {!loading &&
+                    issuances.map((r) => {
+                      const detail =
+                        r.item_kind === "weapon"
+                          ? r.serial_number ?? "—"
+                          : r.size ?? "—";
+                      return (
+                        <tr key={r.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="px-6 py-4 text-sm text-slate-900">
+                            <div>{r.employee_name}</div>
+                            <div className="text-xs text-slate-500 font-mono">{r.employee_code}</div>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-slate-600">
+                            {r.item_type} <span className="text-slate-400">({detail})</span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span
+                              className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs capitalize ${
+                                r.item_kind === "weapon"
+                                  ? "bg-red-50 text-red-700"
+                                  : "bg-blue-50 text-blue-700"
+                              }`}
+                            >
+                              {r.item_kind}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-slate-600">
+                            {r.location_name ?? "—"}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-slate-600">{r.issue_date}</td>
+                          <td className="px-6 py-4 text-sm text-slate-600">
+                            {r.return_date ?? "—"}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-slate-600">
+                            {r.condition ? (
+                              <span
+                                className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
+                                  r.condition === "Good"
+                                    ? "bg-green-50 text-green-700"
+                                    : r.condition === "Fair"
+                                    ? "bg-amber-50 text-amber-700"
+                                    : "bg-red-50 text-red-700"
+                                }`}
+                              >
+                                {r.condition}
+                              </span>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
+                          <td className="px-6 py-4">
+                            {r.return_date ? (
+                              <span className="text-xs text-slate-400">Returned</span>
+                            ) : (
+                              <Button variant="ghost" size="sm" onClick={() => openReturn(r)}>
+                                Mark Returned
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
               </table>
             </div>
@@ -242,188 +667,442 @@ export default function Inventory() {
         </div>
       </div>
 
-      <Modal isOpen={isIssueModalOpen} onClose={() => setIsIssueModalOpen(false)} title="Issue Item" size="md">
-        <form className="space-y-4">
+      <Modal
+        isOpen={isAddItemOpen}
+        onClose={() => {
+          setIsAddItemOpen(false);
+          setAddForm(emptyAddItem);
+        }}
+        title="Add Inventory Item"
+        size="md"
+      >
+        <form className="space-y-4" onSubmit={handleAddItem}>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Item Type</label>
-            <select className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent">
-              <option>Weapon</option>
-              <option>Uniform</option>
-            </select>
+            <label className="block text-sm text-slate-700 mb-2">Kind *</label>
+            <div className="flex gap-3">
+              {(["weapon", "uniform"] as const).map((k) => (
+                <label
+                  key={k}
+                  className={`flex-1 flex items-center gap-2 px-4 py-2 border rounded-md cursor-pointer text-sm capitalize ${
+                    addForm.kind === k
+                      ? "border-slate-900 bg-slate-50"
+                      : "border-slate-200 hover:border-slate-300"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="add-kind"
+                    value={k}
+                    checked={addForm.kind === k}
+                    onChange={() => setAddForm({ ...addForm, kind: k })}
+                  />
+                  <span>{k}</span>
+                </label>
+              ))}
+            </div>
           </div>
+
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Select Item</label>
-            <select className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent">
-              <option>Glock 17 (GL-002-2024)</option>
-              <option>Security Guard Uniform (L)</option>
-            </select>
+            <label className="block text-sm text-slate-700 mb-1">Item Type *</label>
+            <input
+              required
+              type="text"
+              value={addForm.item_type}
+              onChange={(e) => setAddForm({ ...addForm, item_type: e.target.value })}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              placeholder={addForm.kind === "weapon" ? "e.g., Glock 17" : "e.g., Security Guard Uniform"}
+            />
           </div>
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Issue To (Employee)</label>
-            <select className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent">
-              <option>Muhammad Usman</option>
-              <option>Ayesha Malik</option>
-              <option>Bilal Ahmed</option>
-            </select>
-          </div>
+
+          {addForm.kind === "weapon" ? (
+            <>
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Serial Number</label>
+                <input
+                  type="text"
+                  value={addForm.serial_number}
+                  onChange={(e) => setAddForm({ ...addForm, serial_number: e.target.value })}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  placeholder="GL-001-2024"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">License Expiry</label>
+                <input
+                  type="date"
+                  value={addForm.license_expiry}
+                  onChange={(e) => setAddForm({ ...addForm, license_expiry: e.target.value })}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">Size</label>
+                  <input
+                    type="text"
+                    value={addForm.size}
+                    onChange={(e) => setAddForm({ ...addForm, size: e.target.value })}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    placeholder="S / M / L / 42"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">Quantity *</label>
+                  <input
+                    required
+                    type="number"
+                    min="0"
+                    value={addForm.quantity}
+                    onChange={(e) => setAddForm({ ...addForm, quantity: e.target.value })}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  />
+                </div>
+              </div>
+            </>
+          )}
+
           <div>
             <label className="block text-sm text-slate-700 mb-1">Location</label>
-            <select className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent">
-              <option>F-10 Islamabad</option>
-              <option>F-7 Islamabad</option>
+            <select
+              value={addForm.location_id}
+              onChange={(e) => setAddForm({ ...addForm, location_id: e.target.value })}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+            >
+              <option value="">Select location</option>
+              {locations.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
             </select>
+            {locations.length === 0 && (
+              <p className="text-xs text-slate-500 mt-1">
+                No locations yet. Add them from Settings → Location Management.
+              </p>
+            )}
           </div>
+
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Issue Date</label>
-            <input
-              type="date"
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+            <label className="block text-sm text-slate-700 mb-1">Notes</label>
+            <textarea
+              value={addForm.notes}
+              onChange={(e) => setAddForm({ ...addForm, notes: e.target.value })}
+              rows={2}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              placeholder="Optional notes"
             />
           </div>
+
           <div className="flex items-center gap-3 pt-4">
-            <Button variant="primary" size="md" className="flex-1">
-              Issue Item
+            <Button variant="primary" size="md" className="flex-1" disabled={addSubmitting}>
+              {addSubmitting ? "Saving…" : "Add Item"}
             </Button>
-            <Button variant="secondary" size="md" onClick={() => setIsIssueModalOpen(false)}>
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => {
+                setIsAddItemOpen(false);
+                setAddForm(emptyAddItem);
+              }}
+            >
               Cancel
             </Button>
           </div>
         </form>
       </Modal>
 
-      <Modal isOpen={isWeaponDetailsModalOpen} onClose={() => setIsWeaponDetailsModalOpen(false)} title="Weapon Details" size="md">
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className="text-sm text-slate-500 mb-1">Type</p>
-              <p className="text-sm text-slate-900">{selectedWeapon?.type}</p>
-            </div>
-            <div>
-              <p className="text-sm text-slate-500 mb-1">Serial Number</p>
-              <p className="text-sm text-slate-900">{selectedWeapon?.serialNo}</p>
-            </div>
-            <div>
-              <p className="text-sm text-slate-500 mb-1">Status</p>
-              <span
-                className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
-                  selectedWeapon?.status === "Issued"
-                    ? "bg-blue-50 text-blue-700"
-                    : selectedWeapon?.status === "Available"
-                    ? "bg-green-50 text-green-700"
-                    : "bg-amber-50 text-amber-700"
-                }`}
-              >
-                {selectedWeapon?.status}
-              </span>
-            </div>
-            <div>
-              <p className="text-sm text-slate-500 mb-1">Location</p>
-              <p className="text-sm text-slate-900">{selectedWeapon?.location}</p>
-            </div>
-            <div>
-              <p className="text-sm text-slate-500 mb-1">Issued To</p>
-              <p className="text-sm text-slate-900">{selectedWeapon?.issuedTo}</p>
-            </div>
-            <div>
-              <p className="text-sm text-slate-500 mb-1">License Expiry</p>
-              <p className="text-sm text-slate-900">{selectedWeapon?.licenseExpiry}</p>
+      <Modal
+        isOpen={isIssueOpen}
+        onClose={() => {
+          setIsIssueOpen(false);
+          setIssueForm(emptyIssueForm());
+        }}
+        title="Issue Item"
+        size="md"
+      >
+        <form className="space-y-4" onSubmit={handleIssue}>
+          <div>
+            <label className="block text-sm text-slate-700 mb-2">Item Type *</label>
+            <div className="flex gap-3">
+              {(["weapon", "uniform"] as const).map((k) => (
+                <label
+                  key={k}
+                  className={`flex-1 flex items-center gap-2 px-4 py-2 border rounded-md cursor-pointer text-sm capitalize ${
+                    issueForm.kind === k
+                      ? "border-slate-900 bg-slate-50"
+                      : "border-slate-200 hover:border-slate-300"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="issue-kind"
+                    value={k}
+                    checked={issueForm.kind === k}
+                    onChange={() => setIssueForm({ ...issueForm, kind: k, item_id: "" })}
+                  />
+                  <span>{k}</span>
+                </label>
+              ))}
             </div>
           </div>
-          <div className="pt-4 border-t border-slate-200">
-            <Button variant="secondary" size="md" className="w-full" onClick={() => setIsWeaponDetailsModalOpen(false)}>
-              Close
-            </Button>
-          </div>
-        </div>
-      </Modal>
 
-      <Modal isOpen={isUniformStockModalOpen} onClose={() => setIsUniformStockModalOpen(false)} title="Manage Stock" size="md">
-        <form className="space-y-4">
           <div>
-            <p className="text-sm text-slate-900 mb-4">
-              {selectedUniform?.type} - Size {selectedUniform?.size}
-            </p>
+            <label className="block text-sm text-slate-700 mb-1">Select Item *</label>
+            <select
+              required
+              value={issueForm.item_id}
+              onChange={(e) => setIssueForm({ ...issueForm, item_id: e.target.value })}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+            >
+              <option value="">Select item</option>
+              {issuableItems.map((i) => {
+                const label =
+                  i.kind === "weapon"
+                    ? `${i.item_type}${i.serial_number ? ` (${i.serial_number})` : ""}${i.location_name ? ` · ${i.location_name}` : ""}`
+                    : `${i.item_type}${i.size ? ` (${i.size})` : ""} · ${i.quantity} in stock${i.location_name ? ` · ${i.location_name}` : ""}`;
+                return (
+                  <option key={i.id} value={i.id}>
+                    {label}
+                  </option>
+                );
+              })}
+            </select>
+            {issuableItems.length === 0 && (
+              <p className="text-xs text-slate-500 mt-1">
+                No {issueForm.kind === "weapon" ? "available weapons" : "uniforms in stock"}.
+              </p>
+            )}
           </div>
+
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Current Quantity</label>
+            <label className="block text-sm text-slate-700 mb-1">Issue To (Employee) *</label>
+            <select
+              required
+              value={issueForm.employee_id}
+              onChange={(e) => setIssueForm({ ...issueForm, employee_id: e.target.value })}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+            >
+              <option value="">Select employee</option>
+              {employees.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.full_name} ({e.employee_code})
+                </option>
+              ))}
+            </select>
+            {employees.length === 0 && (
+              <p className="text-xs text-slate-500 mt-1">
+                No employees yet. Add them from Employees.
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Issue Date *</label>
             <input
-              type="number"
-              defaultValue={selectedUniform?.quantity}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+              required
+              type="date"
+              value={issueForm.issue_date}
+              onChange={(e) => setIssueForm({ ...issueForm, issue_date: e.target.value })}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
             />
           </div>
+
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Add/Remove Stock</label>
-            <div className="flex gap-3">
+            <label className="block text-sm text-slate-700 mb-1">Notes</label>
+            <textarea
+              value={issueForm.notes}
+              onChange={(e) => setIssueForm({ ...issueForm, notes: e.target.value })}
+              rows={2}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              placeholder="Optional notes about this issuance"
+            />
+          </div>
+
+          <div className="flex items-center gap-3 pt-4">
+            <Button
+              variant="primary"
+              size="md"
+              className="flex-1"
+              disabled={issueSubmitting || issuableItems.length === 0 || employees.length === 0}
+            >
+              {issueSubmitting ? "Issuing…" : "Issue Item"}
+            </Button>
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => {
+                setIsIssueOpen(false);
+                setIssueForm(emptyIssueForm());
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        isOpen={viewWeapon !== null}
+        onClose={() => setViewWeapon(null)}
+        title="Weapon Details"
+        size="md"
+      >
+        {viewWeapon && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <p className="text-slate-500 mb-1">Type</p>
+                <p className="text-slate-900">{viewWeapon.item_type}</p>
+              </div>
+              <div>
+                <p className="text-slate-500 mb-1">Serial Number</p>
+                <p className="text-slate-900 font-mono">{viewWeapon.serial_number ?? "—"}</p>
+              </div>
+              <div>
+                <p className="text-slate-500 mb-1">Status</p>
+                <span
+                  className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
+                    viewWeapon.status === "Issued"
+                      ? "bg-blue-50 text-blue-700"
+                      : viewWeapon.status === "Available"
+                      ? "bg-green-50 text-green-700"
+                      : "bg-amber-50 text-amber-700"
+                  }`}
+                >
+                  {viewWeapon.status}
+                </span>
+              </div>
+              <div>
+                <p className="text-slate-500 mb-1">Location</p>
+                <p className="text-slate-900">{viewWeapon.location_name ?? "—"}</p>
+              </div>
+              <div>
+                <p className="text-slate-500 mb-1">Issued To</p>
+                <p className="text-slate-900">{viewWeapon.issued_to_name ?? "—"}</p>
+              </div>
+              <div>
+                <p className="text-slate-500 mb-1">License Expiry</p>
+                <p className="text-slate-900">{viewWeapon.license_expiry ?? "—"}</p>
+              </div>
+              <div className="col-span-2">
+                <p className="text-slate-500 mb-1">Notes</p>
+                <p className="text-slate-900">{viewWeapon.notes ?? "—"}</p>
+              </div>
+            </div>
+            <div className="pt-4 border-t border-slate-200">
+              <Button variant="secondary" size="md" className="w-full" onClick={() => setViewWeapon(null)}>
+                Close
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        isOpen={stockItem !== null}
+        onClose={() => setStockItem(null)}
+        title="Manage Stock"
+        size="md"
+      >
+        {stockItem && (
+          <form className="space-y-4" onSubmit={handleStockUpdate}>
+            <p className="text-sm text-slate-900">
+              {stockItem.item_type}
+              {stockItem.size ? ` — Size ${stockItem.size}` : ""}
+            </p>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Quantity</label>
               <input
                 type="number"
-                placeholder="Enter quantity"
-                className="flex-1 px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                min="0"
+                value={stockQty}
+                onChange={(e) => setStockQty(e.target.value)}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
               />
-              <select className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent">
-                <option>Add</option>
-                <option>Remove</option>
-              </select>
+              <p className="text-xs text-slate-500 mt-1">
+                Low stock threshold: {LOW_STOCK_THRESHOLD}. Issuing decrements, returning increments automatically.
+              </p>
             </div>
-          </div>
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Notes</label>
-            <textarea
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
-              rows={3}
-              placeholder="Enter notes about stock update"
-            />
-          </div>
-          <div className="flex items-center gap-3 pt-4">
-            <Button variant="primary" size="md" className="flex-1">
-              Update Stock
-            </Button>
-            <Button variant="secondary" size="md" onClick={() => setIsUniformStockModalOpen(false)}>
-              Cancel
-            </Button>
-          </div>
-        </form>
+            <div className="flex items-center gap-3 pt-4">
+              <Button variant="primary" size="md" className="flex-1" disabled={stockSubmitting}>
+                {stockSubmitting ? "Saving…" : "Update Stock"}
+              </Button>
+              <Button variant="secondary" size="md" onClick={() => setStockItem(null)}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        )}
       </Modal>
 
-      <Modal isOpen={isReturnModalOpen} onClose={() => setIsReturnModalOpen(false)} title="Mark Item as Returned" size="md">
-        <form className="space-y-4">
-          <div>
-            <p className="text-sm text-slate-900 mb-1">Employee: {selectedIssuance?.employee}</p>
-            <p className="text-sm text-slate-600 mb-4">Item: {selectedIssuance?.item}</p>
-          </div>
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Return Date</label>
-            <input
-              type="date"
-              defaultValue={new Date().toISOString().split('T')[0]}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
-            />
-          </div>
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Condition</label>
-            <select className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent">
-              <option>Good</option>
-              <option>Fair</option>
-              <option>Damaged</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Notes</label>
-            <textarea
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
-              rows={3}
-              placeholder="Enter any notes about the return"
-            />
-          </div>
-          <div className="flex items-center gap-3 pt-4">
-            <Button variant="primary" size="md" className="flex-1">
-              Mark as Returned
-            </Button>
-            <Button variant="secondary" size="md" onClick={() => setIsReturnModalOpen(false)}>
-              Cancel
-            </Button>
-          </div>
-        </form>
+      <Modal
+        isOpen={returnIssuance !== null}
+        onClose={() => setReturnIssuance(null)}
+        title="Mark Item as Returned"
+        size="md"
+      >
+        {returnIssuance && (
+          <form className="space-y-4" onSubmit={handleReturn}>
+            <div>
+              <p className="text-sm text-slate-900 mb-1">
+                Employee: {returnIssuance.employee_name}
+              </p>
+              <p className="text-sm text-slate-600">
+                Item: {returnIssuance.item_type}
+                {returnIssuance.item_kind === "weapon" && returnIssuance.serial_number
+                  ? ` (${returnIssuance.serial_number})`
+                  : returnIssuance.size
+                  ? ` (${returnIssuance.size})`
+                  : ""}
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Return Date *</label>
+              <input
+                required
+                type="date"
+                value={returnForm.return_date}
+                onChange={(e) => setReturnForm({ ...returnForm, return_date: e.target.value })}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Condition *</label>
+              <select
+                value={returnForm.condition}
+                onChange={(e) =>
+                  setReturnForm({ ...returnForm, condition: e.target.value as ReturnCondition })
+                }
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              >
+                <option value="Good">Good</option>
+                <option value="Fair">Fair</option>
+                <option value="Damaged">Damaged</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Notes</label>
+              <textarea
+                value={returnForm.notes}
+                onChange={(e) => setReturnForm({ ...returnForm, notes: e.target.value })}
+                rows={3}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                placeholder="Any notes about the return"
+              />
+            </div>
+            <div className="flex items-center gap-3 pt-4">
+              <Button variant="primary" size="md" className="flex-1" disabled={returnSubmitting}>
+                {returnSubmitting ? "Saving…" : "Mark as Returned"}
+              </Button>
+              <Button variant="secondary" size="md" onClick={() => setReturnIssuance(null)}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        )}
       </Modal>
     </>
   );

@@ -56,3 +56,34 @@ export type EmployeeDocument = {
   size_bytes: number | null;
   uploaded_at?: string;
 };
+
+export type InventoryKind = "weapon" | "uniform";
+export type InventoryStatus = "Available" | "Issued" | "Maintenance";
+export type ReturnCondition = "Good" | "Fair" | "Damaged";
+
+export type InventoryItem = {
+  id: string;
+  kind: InventoryKind;
+  item_type: string;
+  serial_number: string | null;
+  size: string | null;
+  quantity: number;
+  location_id: string | null;
+  license_expiry: string | null;
+  status: InventoryStatus;
+  notes: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type Issuance = {
+  id: string;
+  item_id: string;
+  employee_id: string;
+  location_id: string | null;
+  issue_date: string;
+  return_date: string | null;
+  condition: ReturnCondition | null;
+  notes: string | null;
+  created_at?: string;
+};
