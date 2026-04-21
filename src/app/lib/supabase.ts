@@ -6,6 +6,7 @@ const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 export const supabase = createClient(url, anonKey);
 
 export const EMPLOYEE_DOCS_BUCKET = "employee-documents";
+export const EXPENSE_RECEIPTS_BUCKET = "expense-receipts";
 
 export type Location = {
   id: string;
@@ -104,7 +105,8 @@ export type BankTransactionKind =
   | "payroll"
   | "reconcile"
   | "adjustment"
-  | "cash_adjustment";
+  | "cash_adjustment"
+  | "expense";
 
 export type BankTransaction = {
   id: string;
@@ -156,4 +158,40 @@ export type Issuance = {
   condition: ReturnCondition | null;
   notes: string | null;
   created_at?: string;
+};
+
+export type ExpenseCategory = {
+  id: string;
+  name: string;
+  created_at?: string;
+};
+
+export type Vendor = {
+  id: string;
+  name: string;
+  created_at?: string;
+};
+
+export type ExpensePaymentMode = "Cash" | "Bank" | "Payable";
+export type PayableStatus = "Pending" | "Paid";
+
+export type Expense = {
+  id: string;
+  category_id: string | null;
+  client_id: string | null;
+  vendor_id: string | null;
+  description: string | null;
+  amount: number;
+  expense_date: string;
+  payment_mode: ExpensePaymentMode;
+  bank_account_id: string | null;
+  due_date: string | null;
+  payable_status: PayableStatus | null;
+  paid_via: "Cash" | "Bank" | null;
+  paid_bank_account_id: string | null;
+  paid_at: string | null;
+  receipt_path: string | null;
+  notes: string | null;
+  created_at?: string;
+  updated_at?: string;
 };

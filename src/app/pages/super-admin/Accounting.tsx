@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Building2, Download, AlertCircle, X, Loader2, ArrowDownUp, History, Trash2 } from "lucide-react";
+import { Plus, Building2, Download, AlertCircle, X, Loader2, ArrowDownUp, History, Trash2, CheckCircle2, RotateCcw } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -9,7 +9,17 @@ import {
   type BankAccount,
   type BankTransaction,
   type BankTransactionKind,
+  type Expense,
+  type Vendor,
+  type ExpenseCategory,
+  type Client,
 } from "../../lib/supabase";
+
+type PayableRow = Expense & {
+  vendor?: Vendor | null;
+  category?: ExpenseCategory | null;
+  client?: Client | null;
+};
 
 const chartOfAccounts = [
   { id: 1, code: "1000", name: "Assets", type: "Header", balance: 5250000 },
@@ -30,11 +40,6 @@ const receivables = [
   { id: 4, client: "Client D - Event Security", amount: 290000, dueDate: "2026-05-10", status: "Pending" },
 ];
 
-const payables = [
-  { id: 1, vendor: "Vendor X - Uniforms", amount: 150000, dueDate: "2026-04-20", status: "Pending" },
-  { id: 2, vendor: "Vendor Y - Electronics", amount: 280000, dueDate: "2026-04-22", status: "Pending" },
-];
-
 const kindLabel: Record<BankTransactionKind, string> = {
   opening: "Opening",
   deposit: "Deposit",
@@ -43,6 +48,17 @@ const kindLabel: Record<BankTransactionKind, string> = {
   reconcile: "Reconcile (Bank)",
   adjustment: "Adjustment",
   cash_adjustment: "Cash Adjustment",
+  expense: "Expense",
+};
+
+const todayStr = () => new Date().toISOString().slice(0, 10);
+
+type PayableDisplayStatus = "Pending" | "Paid" | "Overdue";
+
+const payableDisplayStatus = (row: PayableRow): PayableDisplayStatus => {
+  if (row.payable_status === "Paid") return "Paid";
+  if (row.due_date && row.due_date < todayStr()) return "Overdue";
+  return "Pending";
 };
 
 export default function Accounting() {
@@ -51,6 +67,8 @@ export default function Accounting() {
   const [banks, setBanks] = useState<BankAccount[]>([]);
   const [cashBalance, setCashBalance] = useState<number>(0);
   const [transactions, setTransactions] = useState<BankTransaction[]>([]);
+  const [payables, setPayables] = useState<PayableRow[]>([]);
+  const [payableStatusFilter, setPayableStatusFilter] = useState<"all" | "pending" | "paid" | "overdue">("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,8 +80,12 @@ export default function Accounting() {
   const [isEditBankModalOpen, setIsEditBankModalOpen] = useState(false);
   const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
   const [isLogModalOpen, setIsLogModalOpen] = useState(false);
+  const [isMarkPaidModalOpen, setIsMarkPaidModalOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<any>(null);
   const [selectedBank, setSelectedBank] = useState<BankAccount | null>(null);
+  const [selectedPayable, setSelectedPayable] = useState<PayableRow | null>(null);
+  const [markPaidVia, setMarkPaidVia] = useState<"Cash" | "Bank">("Cash");
+  const [markPaidBankId, setMarkPaidBankId] = useState<string>("");
 
   const [newBank, setNewBank] = useState({
     bank_name: "",
@@ -92,17 +114,24 @@ export default function Accounting() {
   const loadAll = async () => {
     setLoading(true);
     setError(null);
-    const [banksRes, treasuryRes, txRes] = await Promise.all([
+    const [banksRes, treasuryRes, txRes, payablesRes] = await Promise.all([
       supabase.from("bank_accounts").select("*").order("created_at", { ascending: false }),
       supabase.from("treasury").select("*").limit(1).maybeSingle(),
       supabase.from("bank_transactions").select("*").order("created_at", { ascending: false }).limit(100),
+      supabase
+        .from("expenses")
+        .select("*, vendor:vendor_id(id,name), category:category_id(id,name), client:client_id(id,name,client_code)")
+        .eq("payment_mode", "Payable")
+        .order("due_date", { ascending: true, nullsFirst: false }),
     ]);
     if (banksRes.error) setError(banksRes.error.message);
     if (treasuryRes.error) setError(treasuryRes.error.message);
     if (txRes.error) setError(txRes.error.message);
+    if (payablesRes.error) setError(payablesRes.error.message);
     setBanks((banksRes.data ?? []) as BankAccount[]);
     setCashBalance(Number(treasuryRes.data?.cash_balance ?? 0));
     setTransactions((txRes.data ?? []) as BankTransaction[]);
+    setPayables((payablesRes.data ?? []) as PayableRow[]);
     setLoading(false);
   };
 
@@ -131,9 +160,25 @@ export default function Accounting() {
     cash_delta: number;
     account_delta: number;
     description: string | null;
+    reference_id?: string | null;
   }) => {
     const { error: logErr } = await supabase.from("bank_transactions").insert(row);
     if (logErr) throw logErr;
+  };
+
+  const applyBankDelta = async (bankId: string, delta: number) => {
+    const { data: bank, error: selErr } = await supabase
+      .from("bank_accounts")
+      .select("balance")
+      .eq("id", bankId)
+      .maybeSingle();
+    if (selErr) throw selErr;
+    if (!bank) throw new Error("Bank account not found.");
+    const { error: upErr } = await supabase
+      .from("bank_accounts")
+      .update({ balance: Number(bank.balance) + delta, updated_at: new Date().toISOString() })
+      .eq("id", bankId);
+    if (upErr) throw upErr;
   };
 
   const handleAddBank = async (e: React.FormEvent) => {
@@ -351,6 +396,162 @@ export default function Accounting() {
     }
   };
 
+  const openMarkPaid = (row: PayableRow) => {
+    setSelectedPayable(row);
+    setMarkPaidVia("Cash");
+    setMarkPaidBankId(banks[0]?.id ?? "");
+    setIsMarkPaidModalOpen(true);
+  };
+
+  const handleMarkPaid = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPayable) return;
+    const amount = Number(selectedPayable.amount);
+    if (!amount || amount <= 0) {
+      setError("Invalid payable amount.");
+      return;
+    }
+    if (markPaidVia === "Cash" && amount > cashBalance) {
+      setError("Insufficient cash balance.");
+      return;
+    }
+    if (markPaidVia === "Bank") {
+      if (!markPaidBankId) {
+        setError("Select a bank account.");
+        return;
+      }
+      const bank = banks.find((b) => b.id === markPaidBankId);
+      if (!bank) {
+        setError("Bank account not found.");
+        return;
+      }
+      if (amount > Number(bank.balance)) {
+        setError("Insufficient bank balance.");
+        return;
+      }
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const nowIso = new Date().toISOString();
+      const vendorName = selectedPayable.vendor?.name ?? "vendor";
+      if (markPaidVia === "Cash") {
+        await applyCashDelta(-amount);
+        await logTransaction({
+          bank_account_id: null,
+          kind: "expense",
+          amount,
+          cash_delta: -amount,
+          account_delta: 0,
+          description: `Payable settled (cash) · ${vendorName}`,
+          reference_id: selectedPayable.id,
+        });
+      } else {
+        await applyBankDelta(markPaidBankId, -amount);
+        await logTransaction({
+          bank_account_id: markPaidBankId,
+          kind: "expense",
+          amount,
+          cash_delta: 0,
+          account_delta: -amount,
+          description: `Payable settled (bank) · ${vendorName}`,
+          reference_id: selectedPayable.id,
+        });
+      }
+      const { error: upErr } = await supabase
+        .from("expenses")
+        .update({
+          payable_status: "Paid",
+          paid_via: markPaidVia,
+          paid_bank_account_id: markPaidVia === "Bank" ? markPaidBankId : null,
+          paid_at: nowIso,
+          updated_at: nowIso,
+        })
+        .eq("id", selectedPayable.id);
+      if (upErr) throw upErr;
+      setIsMarkPaidModalOpen(false);
+      setSelectedPayable(null);
+      await loadAll();
+    } catch (err: any) {
+      setError(err.message ?? String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleRevertToPending = async (row: PayableRow) => {
+    if (row.payable_status !== "Paid") return;
+    if (!window.confirm(`Revert payment for "${row.vendor?.name ?? "vendor"}" back to Pending? The original deduction will be reversed.`))
+      return;
+    setError(null);
+    try {
+      const amount = Number(row.amount);
+      const vendorName = row.vendor?.name ?? "vendor";
+      if (row.paid_via === "Cash") {
+        await applyCashDelta(amount);
+        await logTransaction({
+          bank_account_id: null,
+          kind: "expense",
+          amount,
+          cash_delta: amount,
+          account_delta: 0,
+          description: `Payable reverted to pending (cash refund) · ${vendorName}`,
+          reference_id: row.id,
+        });
+      } else if (row.paid_via === "Bank" && row.paid_bank_account_id) {
+        await applyBankDelta(row.paid_bank_account_id, amount);
+        await logTransaction({
+          bank_account_id: row.paid_bank_account_id,
+          kind: "expense",
+          amount,
+          cash_delta: 0,
+          account_delta: amount,
+          description: `Payable reverted to pending (bank refund) · ${vendorName}`,
+          reference_id: row.id,
+        });
+      }
+      const { error: upErr } = await supabase
+        .from("expenses")
+        .update({
+          payable_status: "Pending",
+          paid_via: null,
+          paid_bank_account_id: null,
+          paid_at: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", row.id);
+      if (upErr) throw upErr;
+      await loadAll();
+    } catch (err: any) {
+      setError(err.message ?? String(err));
+    }
+  };
+
+  const filteredPayables = useMemo(() => {
+    if (payableStatusFilter === "all") return payables;
+    return payables.filter((p) => {
+      const status = payableDisplayStatus(p);
+      if (payableStatusFilter === "pending") return status === "Pending";
+      if (payableStatusFilter === "paid") return status === "Paid";
+      if (payableStatusFilter === "overdue") return status === "Overdue";
+      return true;
+    });
+  }, [payables, payableStatusFilter]);
+
+  const payablesSummary = useMemo(() => {
+    let pendingTotal = 0;
+    let paidTotal = 0;
+    let overdueTotal = 0;
+    for (const p of payables) {
+      const status = payableDisplayStatus(p);
+      const amt = Number(p.amount);
+      if (status === "Pending") pendingTotal += amt;
+      else if (status === "Paid") paidTotal += amt;
+      else if (status === "Overdue") overdueTotal += amt;
+    }
+    return { pendingTotal, paidTotal, overdueTotal };
+  }, [payables]);
+
   const viewStatement = (client: any) => {
     setSelectedClient(client);
     setIsStatementModalOpen(true);
@@ -530,38 +731,120 @@ export default function Accounting() {
           )}
 
           {activeTab === "payables" && (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-slate-200">
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Vendor</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Amount Due</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Due Date</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {payables.map((item) => (
-                    <tr key={item.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-6 py-4 text-sm text-slate-900">{item.vendor}</td>
-                      <td className="px-6 py-4 text-sm text-red-600">PKR {item.amount.toLocaleString()}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{item.dueDate}</td>
-                      <td className="px-6 py-4">
-                        <span
-                          className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
-                            item.status === "Overdue"
-                              ? "bg-red-50 text-red-700"
-                              : "bg-amber-50 text-amber-700"
-                          }`}
-                        >
-                          {item.status}
-                        </span>
-                      </td>
-                    </tr>
+            <>
+              <div className="p-6 border-b border-slate-200 flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-slate-500">Status:</span>
+                  {(["all", "pending", "overdue", "paid"] as const).map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => setPayableStatusFilter(s)}
+                      className={`px-3 py-1 rounded-md text-xs capitalize transition-colors ${
+                        payableStatusFilter === s
+                          ? "bg-slate-900 text-white"
+                          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                      }`}
+                    >
+                      {s}
+                    </button>
                   ))}
-                </tbody>
-              </table>
-            </div>
+                </div>
+                <div className="ml-auto flex flex-wrap gap-3 text-xs">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-amber-50 text-amber-800">
+                    Pending: PKR {payablesSummary.pendingTotal.toLocaleString()}
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-red-50 text-red-700">
+                    Overdue: PKR {payablesSummary.overdueTotal.toLocaleString()}
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-emerald-50 text-emerald-700">
+                    Paid: PKR {payablesSummary.paidTotal.toLocaleString()}
+                  </span>
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-slate-200">
+                      <th className="text-left px-6 py-3 text-sm text-slate-500">Vendor</th>
+                      <th className="text-left px-6 py-3 text-sm text-slate-500">Category</th>
+                      <th className="text-left px-6 py-3 text-sm text-slate-500">Client</th>
+                      <th className="text-left px-6 py-3 text-sm text-slate-500">Amount Due</th>
+                      <th className="text-left px-6 py-3 text-sm text-slate-500">Expense Date</th>
+                      <th className="text-left px-6 py-3 text-sm text-slate-500">Due Date</th>
+                      <th className="text-left px-6 py-3 text-sm text-slate-500">Status</th>
+                      <th className="text-left px-6 py-3 text-sm text-slate-500">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {loading && (
+                      <tr>
+                        <td colSpan={8} className="px-6 py-10 text-center text-slate-500">
+                          <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
+                          Loading…
+                        </td>
+                      </tr>
+                    )}
+                    {!loading && filteredPayables.length === 0 && (
+                      <tr>
+                        <td colSpan={8} className="px-6 py-10 text-center text-slate-500 text-sm">
+                          {payables.length === 0
+                            ? "No payables yet. Create an expense with payment mode 'Payable' to see it here."
+                            : "No payables match the selected filter."}
+                        </td>
+                      </tr>
+                    )}
+                    {!loading &&
+                      filteredPayables.map((item) => {
+                        const status = payableDisplayStatus(item);
+                        const statusClass =
+                          status === "Paid"
+                            ? "bg-emerald-50 text-emerald-700"
+                            : status === "Overdue"
+                            ? "bg-red-50 text-red-700"
+                            : "bg-amber-50 text-amber-700";
+                        return (
+                          <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                            <td className="px-6 py-4 text-sm text-slate-900">{item.vendor?.name ?? "—"}</td>
+                            <td className="px-6 py-4 text-sm text-slate-600">{item.category?.name ?? "—"}</td>
+                            <td className="px-6 py-4 text-sm text-slate-600">
+                              {item.client?.name ?? <span className="text-slate-400">Office</span>}
+                            </td>
+                            <td className="px-6 py-4 text-sm text-red-600">
+                              PKR {Number(item.amount).toLocaleString()}
+                            </td>
+                            <td className="px-6 py-4 text-sm text-slate-600">{item.expense_date}</td>
+                            <td className="px-6 py-4 text-sm text-slate-600">{item.due_date ?? "—"}</td>
+                            <td className="px-6 py-4">
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${statusClass}`}>
+                                {status}
+                              </span>
+                              {status === "Paid" && item.paid_via && (
+                                <div className="text-[10px] text-slate-500 mt-1">
+                                  via {item.paid_via}
+                                  {item.paid_at ? ` · ${new Date(item.paid_at).toLocaleDateString()}` : ""}
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-6 py-4">
+                              {item.payable_status === "Paid" ? (
+                                <Button variant="ghost" size="sm" onClick={() => handleRevertToPending(item)}>
+                                  <RotateCcw className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
+                                  Revert
+                                </Button>
+                              ) : (
+                                <Button variant="ghost" size="sm" onClick={() => openMarkPaid(item)}>
+                                  <CheckCircle2 className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
+                                  Mark Paid
+                                </Button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
 
           {activeTab === "banks" && (
@@ -1034,6 +1317,93 @@ export default function Accounting() {
                 {submitting ? "Saving…" : "Update Account"}
               </Button>
               <Button variant="secondary" size="md" onClick={() => setIsEditBankModalOpen(false)}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      <Modal isOpen={isMarkPaidModalOpen} onClose={() => setIsMarkPaidModalOpen(false)} title="Mark Payable as Paid" size="md">
+        {selectedPayable && (
+          <form className="space-y-4" onSubmit={handleMarkPaid}>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Vendor</label>
+                <input
+                  type="text"
+                  value={selectedPayable.vendor?.name ?? "—"}
+                  disabled
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Amount Due</label>
+                <input
+                  type="text"
+                  value={`PKR ${Number(selectedPayable.amount).toLocaleString()}`}
+                  disabled
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-2">Pay Via *</label>
+              <div className="grid grid-cols-2 gap-2">
+                {(["Cash", "Bank"] as const).map((v) => (
+                  <label
+                    key={v}
+                    className={`flex items-center justify-center gap-2 px-3 py-2 border rounded-md cursor-pointer text-sm ${
+                      markPaidVia === v
+                        ? "border-slate-900 bg-slate-50"
+                        : "border-slate-200 hover:border-slate-300"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="mark-paid-via"
+                      checked={markPaidVia === v}
+                      onChange={() => setMarkPaidVia(v)}
+                    />
+                    <span>{v}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            {markPaidVia === "Cash" && (
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Cash Balance</label>
+                <input
+                  type="text"
+                  value={`PKR ${cashBalance.toLocaleString()}`}
+                  disabled
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
+                />
+              </div>
+            )}
+            {markPaidVia === "Bank" && (
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Bank Account *</label>
+                <select
+                  required
+                  value={markPaidBankId}
+                  onChange={(e) => setMarkPaidBankId(e.target.value)}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                >
+                  <option value="">Select bank account…</option>
+                  {banks.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.bank_name} · {b.account_number} (PKR {Number(b.balance).toLocaleString()})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div className="flex items-center gap-3 pt-2">
+              <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
+                {submitting ? "Processing…" : "Confirm Payment"}
+              </Button>
+              <Button variant="secondary" size="md" onClick={() => setIsMarkPaidModalOpen(false)}>
                 Cancel
               </Button>
             </div>
