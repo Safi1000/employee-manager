@@ -110,7 +110,8 @@ export type BankTransactionKind =
   | "adjustment"
   | "cash_adjustment"
   | "expense"
-  | "receipt";
+  | "receipt"
+  | "advance";
 
 export type BankTransaction = {
   id: string;
@@ -189,6 +190,30 @@ export type Invoice = {
   notes: string | null;
   created_at?: string;
   updated_at?: string;
+};
+
+export type Advance = {
+  id: string;
+  employee_id: string;
+  client_id: string | null;
+  amount: number;
+  advance_date: string;
+  payment_mode: "Cash" | "Bank";
+  bank_account_id: string | null;
+  notes: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type InvoicePayment = {
+  id: string;
+  invoice_id: string;
+  amount: number;
+  payment_date: string;
+  payment_mode: "Cash" | "Bank";
+  bank_account_id: string | null;
+  notes: string | null;
+  created_at?: string;
 };
 
 export type ExpensePaymentMode = "Cash" | "Bank" | "Payable";

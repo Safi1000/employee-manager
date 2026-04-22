@@ -74,6 +74,7 @@ export default function PayrollManagement() {
   const [attendanceAgg, setAttendanceAgg] = useState<Map<string, { present: number; absent: number; leave: number }>>(
     new Map()
   );
+  const [advancesByEmployee, setAdvancesByEmployee] = useState<Map<string, number>>(new Map());
   const [cashBalance, setCashBalance] = useState(0);
 
   const [isBulkDisburseOpen, setIsBulkDisburseOpen] = useState(false);
@@ -113,13 +114,18 @@ export default function PayrollManagement() {
   const loadPeriodData = async (period: string) => {
     const start = period;
     const end = endOfMonthStr(period);
-    const [attRes, payRes] = await Promise.all([
+    const [attRes, payRes, advRes] = await Promise.all([
       supabase
         .from("attendance_records")
         .select("employee_id, status, attendance_date")
         .gte("attendance_date", start)
         .lte("attendance_date", end),
       supabase.from("payslips").select("*").eq("period_month", period),
+      supabase
+        .from("advances")
+        .select("employee_id, amount")
+        .gte("advance_date", start)
+        .lte("advance_date", end),
     ]);
     const agg = new Map<string, { present: number; absent: number; leave: number }>();
     (attRes.data ?? []).forEach((a: any) => {
@@ -133,6 +139,11 @@ export default function PayrollManagement() {
     const pMap = new Map<string, Payslip>();
     (payRes.data ?? []).forEach((p: any) => pMap.set(p.employee_id, p));
     setPayslipsMap(pMap);
+    const advMap = new Map<string, number>();
+    (advRes.data ?? []).forEach((a: any) => {
+      advMap.set(a.employee_id, (advMap.get(a.employee_id) ?? 0) + Number(a.amount));
+    });
+    setAdvancesByEmployee(advMap);
     setRowEdits(new Map());
     setSelectedId(null);
   };
@@ -188,6 +199,7 @@ export default function PayrollManagement() {
       const att = attendanceAgg.get(emp.id) ?? { present: 0, absent: 0, leave: 0 };
       const baseSal = Number(existing?.base_salary ?? emp.base_salary ?? 0);
       const perDay = baseSal > 0 ? baseSal / daysThisPeriod : null;
+      const computedAdvance = advancesByEmployee.get(emp.id) ?? 0;
       const defaults: RowState = {
         employee: emp,
         period_month: selectedPeriod,
@@ -199,7 +211,7 @@ export default function PayrollManagement() {
         per_day_salary: perDay,
         bonus: Number(existing?.bonus ?? 0),
         deductions: Number(existing?.deductions ?? 0),
-        advance: Number(existing?.advance ?? 0),
+        advance: computedAdvance,
         final_salary: 0,
         net_salary: 0,
         payment_mode: (existing?.payment_mode ?? "Cash") as PaymentMode,
@@ -212,6 +224,8 @@ export default function PayrollManagement() {
       };
       const edits = rowEdits.get(emp.id) ?? {};
       const merged = { ...defaults, ...edits };
+      // Advance is always computed from the advances table — never editable in Payroll
+      merged.advance = computedAdvance;
       merged.final_salary = Math.max(0, merged.base_salary + merged.bonus - merged.deductions);
       merged.net_salary = merged.final_salary - merged.advance;
       if (merged.base_salary > 0) {
@@ -219,7 +233,7 @@ export default function PayrollManagement() {
       }
       return merged;
     });
-  }, [employees, payslipsMap, attendanceAgg, selectedPeriod, rowEdits]);
+  }, [employees, payslipsMap, attendanceAgg, advancesByEmployee, selectedPeriod, rowEdits]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -944,15 +958,18 @@ export default function PayrollManagement() {
                       />
                     </div>
                     <div className="col-span-2">
-                      <label className="block text-xs text-slate-500 mb-1">Advance</label>
+                      <label className="block text-xs text-slate-500 mb-1">
+                        Advance <span className="text-slate-400">(from Expenses · Advances)</span>
+                      </label>
                       <input
                         type="number"
                         value={selectedRow.advance}
-                        onChange={(e) =>
-                          updateEdit(selectedRow.employee.id, { advance: Number(e.target.value) })
-                        }
-                        className="w-full px-2 py-1 border border-slate-200 rounded text-sm"
+                        disabled
+                        className="w-full px-2 py-1 border border-slate-200 rounded text-sm bg-slate-50 text-slate-500"
                       />
+                      <p className="text-xs text-slate-400 mt-1">
+                        Sum of advances recorded for {formatPeriod(selectedPeriod)}. Edit in Expenses → Advances.
+                      </p>
                     </div>
                   </div>
 

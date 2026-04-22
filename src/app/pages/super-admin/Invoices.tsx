@@ -10,6 +10,7 @@ import {
   Download,
   Upload,
   Building2,
+  Wallet,
 } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -19,19 +20,33 @@ import {
   INVOICE_ATTACHMENTS_BUCKET,
   type Client,
   type Invoice,
+  type BankAccount,
+  type BankTransactionKind,
+  type InvoicePayment,
 } from "../../lib/supabase";
 
 type InvoiceRow = Invoice & { client?: { name: string; client_code: string } | null };
+
+type PaymentRow = InvoicePayment & {
+  bank?: { bank_name: string } | null;
+};
 
 type InvoiceForm = {
   client_id: string;
   invoice_number: string;
   invoice_date: string;
   invoice_amount: string;
-  amount_received: string;
   notes: string;
   attachment_file: File | null;
   existing_attachment_path: string | null;
+};
+
+type PaymentForm = {
+  amount: string;
+  payment_date: string;
+  payment_mode: "Cash" | "Bank";
+  bank_account_id: string;
+  notes: string;
 };
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
@@ -41,15 +56,23 @@ const emptyForm = (): InvoiceForm => ({
   invoice_number: "",
   invoice_date: todayStr(),
   invoice_amount: "",
-  amount_received: "",
   notes: "",
   attachment_file: null,
   existing_attachment_path: null,
 });
 
+const emptyPaymentForm = (): PaymentForm => ({
+  amount: "",
+  payment_date: todayStr(),
+  payment_mode: "Cash",
+  bank_account_id: "",
+  notes: "",
+});
+
 export default function Invoices() {
   const [clients, setClients] = useState<Client[]>([]);
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
+  const [banks, setBanks] = useState<BankAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,28 +85,51 @@ export default function Invoices() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editForm, setEditForm] = useState<InvoiceForm>(emptyForm());
+  const [editInvoice, setEditInvoice] = useState<InvoiceRow | null>(null);
+  const [editPayments, setEditPayments] = useState<PaymentRow[]>([]);
   const [editSubmitting, setEditSubmitting] = useState(false);
+
+  const [isPaymentOpen, setIsPaymentOpen] = useState(false);
+  const [paymentInvoice, setPaymentInvoice] = useState<InvoiceRow | null>(null);
+  const [paymentForm, setPaymentForm] = useState<PaymentForm>(emptyPaymentForm());
+  const [paymentSubmitting, setPaymentSubmitting] = useState(false);
 
   const loadAll = async () => {
     setLoading(true);
     setError(null);
-    const [cliRes, invRes] = await Promise.all([
+    const [cliRes, invRes, bankRes] = await Promise.all([
       supabase.from("clients").select("*").order("name"),
       supabase
         .from("invoices")
         .select("*, client:client_id(name, client_code)")
         .order("invoice_date", { ascending: false }),
+      supabase.from("bank_accounts").select("*").order("bank_name"),
     ]);
     if (cliRes.error) setError(cliRes.error.message);
     if (invRes.error) setError(invRes.error.message);
+    if (bankRes.error) setError(bankRes.error.message);
     setClients((cliRes.data ?? []) as Client[]);
     setInvoices((invRes.data ?? []) as InvoiceRow[]);
+    setBanks((bankRes.data ?? []) as BankAccount[]);
     setLoading(false);
   };
 
   useEffect(() => {
     loadAll();
   }, []);
+
+  const loadPaymentsFor = async (invoiceId: string) => {
+    const { data, error: pErr } = await supabase
+      .from("invoice_payments")
+      .select("*, bank:bank_account_id(bank_name)")
+      .eq("invoice_id", invoiceId)
+      .order("payment_date", { ascending: false });
+    if (pErr) {
+      setError(pErr.message);
+      return;
+    }
+    setEditPayments((data ?? []) as PaymentRow[]);
+  };
 
   const filteredInvoices = useMemo(() => {
     if (!clientFilter) return invoices;
@@ -133,15 +179,54 @@ export default function Invoices() {
     URL.revokeObjectURL(url);
   };
 
+  const applyCashDelta = async (delta: number) => {
+    const { data } = await supabase.from("treasury").select("id, cash_balance").limit(1).maybeSingle();
+    if (!data) {
+      const { error: insErr } = await supabase.from("treasury").insert({ cash_balance: delta });
+      if (insErr) throw insErr;
+      return;
+    }
+    const { error: upErr } = await supabase
+      .from("treasury")
+      .update({ cash_balance: Number(data.cash_balance) + delta, updated_at: new Date().toISOString() })
+      .eq("id", data.id);
+    if (upErr) throw upErr;
+  };
+
+  const applyBankDelta = async (bankId: string, delta: number) => {
+    const { data: bank, error: selErr } = await supabase
+      .from("bank_accounts")
+      .select("balance")
+      .eq("id", bankId)
+      .maybeSingle();
+    if (selErr) throw selErr;
+    if (!bank) throw new Error("Bank account not found.");
+    const { error: upErr } = await supabase
+      .from("bank_accounts")
+      .update({ balance: Number(bank.balance) + delta, updated_at: new Date().toISOString() })
+      .eq("id", bankId);
+    if (upErr) throw upErr;
+  };
+
+  const logTransaction = async (row: {
+    bank_account_id: string | null;
+    kind: BankTransactionKind;
+    amount: number;
+    cash_delta: number;
+    account_delta: number;
+    description: string | null;
+    reference_id?: string | null;
+  }) => {
+    const { error: logErr } = await supabase.from("bank_transactions").insert(row);
+    if (logErr) throw logErr;
+  };
+
   const validateForm = (f: InvoiceForm): string | null => {
     if (!f.client_id) return "Select a client.";
     if (!f.invoice_number.trim()) return "Enter an invoice number.";
     if (!f.invoice_date) return "Select an invoice date.";
     const amt = Number(f.invoice_amount);
     if (!amt || amt <= 0) return "Enter a positive invoice amount.";
-    const received = f.amount_received ? Number(f.amount_received) : 0;
-    if (received < 0) return "Amount received cannot be negative.";
-    if (received > amt) return "Amount received cannot exceed invoice amount.";
     return null;
   };
 
@@ -156,7 +241,6 @@ export default function Invoices() {
     setError(null);
     try {
       const invAmt = Number(form.invoice_amount);
-      const recAmt = form.amount_received ? Number(form.amount_received) : 0;
       const { data, error: insErr } = await supabase
         .from("invoices")
         .insert({
@@ -164,20 +248,20 @@ export default function Invoices() {
           invoice_number: form.invoice_number.trim(),
           invoice_date: form.invoice_date,
           invoice_amount: invAmt,
-          amount_received: recAmt,
+          amount_received: 0,
           notes: form.notes.trim() || null,
           attachment_path: null,
         })
         .select()
         .single();
       if (insErr) throw insErr;
-      let path: string | null = null;
+      const inv = data as Invoice;
       if (form.attachment_file) {
-        path = await uploadAttachment((data as Invoice).id, form.attachment_file);
+        const path = await uploadAttachment(inv.id, form.attachment_file);
         const { error: upErr } = await supabase
           .from("invoices")
           .update({ attachment_path: path, updated_at: new Date().toISOString() })
-          .eq("id", (data as Invoice).id);
+          .eq("id", inv.id);
         if (upErr) throw upErr;
       }
       setForm(emptyForm());
@@ -190,19 +274,21 @@ export default function Invoices() {
     }
   };
 
-  const openEdit = (row: InvoiceRow) => {
+  const openEdit = async (row: InvoiceRow) => {
     setEditingId(row.id);
+    setEditInvoice(row);
     setEditForm({
       client_id: row.client_id,
       invoice_number: row.invoice_number,
       invoice_date: row.invoice_date,
       invoice_amount: String(row.invoice_amount),
-      amount_received: String(row.amount_received),
       notes: row.notes ?? "",
       attachment_file: null,
       existing_attachment_path: row.attachment_path,
     });
+    setEditPayments([]);
     setIsEditOpen(true);
+    await loadPaymentsFor(row.id);
   };
 
   const handleEdit = async (e: React.FormEvent) => {
@@ -222,7 +308,6 @@ export default function Invoices() {
         path = await uploadAttachment(editingId, editForm.attachment_file);
       }
       const invAmt = Number(editForm.invoice_amount);
-      const recAmt = editForm.amount_received ? Number(editForm.amount_received) : 0;
       const { error: upErr } = await supabase
         .from("invoices")
         .update({
@@ -230,7 +315,6 @@ export default function Invoices() {
           invoice_number: editForm.invoice_number.trim(),
           invoice_date: editForm.invoice_date,
           invoice_amount: invAmt,
-          amount_received: recAmt,
           notes: editForm.notes.trim() || null,
           attachment_path: path,
           updated_at: new Date().toISOString(),
@@ -239,6 +323,8 @@ export default function Invoices() {
       if (upErr) throw upErr;
       setIsEditOpen(false);
       setEditingId(null);
+      setEditInvoice(null);
+      setEditPayments([]);
       setEditForm(emptyForm());
       await loadAll();
     } catch (e: any) {
@@ -277,6 +363,105 @@ export default function Invoices() {
       setError(e.message ?? String(e));
     }
   };
+
+  const openPayment = (row: InvoiceRow) => {
+    setPaymentInvoice(row);
+    setPaymentForm(emptyPaymentForm());
+    setIsPaymentOpen(true);
+  };
+
+  const handleRecordPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!paymentInvoice) return;
+    const amt = Number(paymentForm.amount);
+    if (!amt || amt <= 0) {
+      setError("Enter a positive payment amount.");
+      return;
+    }
+    const outstanding =
+      Number(paymentInvoice.invoice_amount) - Number(paymentInvoice.amount_received);
+    if (amt > outstanding + 0.0001) {
+      setError(`Payment cannot exceed outstanding of PKR ${outstanding.toLocaleString()}.`);
+      return;
+    }
+    if (!paymentForm.payment_date) {
+      setError("Select a payment date.");
+      return;
+    }
+    if (paymentForm.payment_mode === "Bank" && !paymentForm.bank_account_id) {
+      setError("Select a bank account for Bank payments.");
+      return;
+    }
+    setPaymentSubmitting(true);
+    setError(null);
+    try {
+      const bankId =
+        paymentForm.payment_mode === "Bank" ? paymentForm.bank_account_id : null;
+      const { data: payRow, error: payErr } = await supabase
+        .from("invoice_payments")
+        .insert({
+          invoice_id: paymentInvoice.id,
+          amount: amt,
+          payment_date: paymentForm.payment_date,
+          payment_mode: paymentForm.payment_mode,
+          bank_account_id: bankId,
+          notes: paymentForm.notes.trim() || null,
+        })
+        .select()
+        .single();
+      if (payErr) throw payErr;
+
+      const newReceived = Number(paymentInvoice.amount_received) + amt;
+      const { error: invUpErr } = await supabase
+        .from("invoices")
+        .update({ amount_received: newReceived, updated_at: new Date().toISOString() })
+        .eq("id", paymentInvoice.id);
+      if (invUpErr) throw invUpErr;
+
+      const clientName = paymentInvoice.client?.name ?? "Client";
+      const desc = `Payment received (${paymentForm.payment_mode.toLowerCase()}) · ${clientName} · Invoice ${paymentInvoice.invoice_number}`;
+      if (paymentForm.payment_mode === "Cash") {
+        await applyCashDelta(amt);
+        await logTransaction({
+          bank_account_id: null,
+          kind: "receipt",
+          amount: amt,
+          cash_delta: amt,
+          account_delta: 0,
+          description: desc,
+          reference_id: (payRow as InvoicePayment).id,
+        });
+      } else {
+        await applyBankDelta(bankId!, amt);
+        await logTransaction({
+          bank_account_id: bankId,
+          kind: "receipt",
+          amount: amt,
+          cash_delta: 0,
+          account_delta: amt,
+          description: desc,
+          reference_id: (payRow as InvoicePayment).id,
+        });
+      }
+
+      setIsPaymentOpen(false);
+      setPaymentInvoice(null);
+      setPaymentForm(emptyPaymentForm());
+      await loadAll();
+    } catch (e: any) {
+      setError(e.message ?? String(e));
+    } finally {
+      setPaymentSubmitting(false);
+    }
+  };
+
+  const editInvoiceAmount = Number(editForm.invoice_amount) || 0;
+  const editReceived = editInvoice ? Number(editInvoice.amount_received) : 0;
+  const editOutstanding = Math.max(0, editInvoiceAmount - editReceived);
+
+  const paymentOutstanding = paymentInvoice
+    ? Number(paymentInvoice.invoice_amount) - Number(paymentInvoice.amount_received)
+    : 0;
 
   return (
     <>
@@ -377,6 +562,7 @@ export default function Invoices() {
                 {!loading &&
                   filteredInvoices.map((inv) => {
                     const outstanding = Number(inv.invoice_amount) - Number(inv.amount_received);
+                    const isSettled = outstanding <= 0;
                     return (
                       <tr key={inv.id} className="hover:bg-slate-50 transition-colors">
                         <td className="px-6 py-4 text-sm text-slate-900 font-mono">
@@ -428,6 +614,16 @@ export default function Invoices() {
                           )}
                         </td>
                         <td className="px-6 py-4 flex gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openPayment(inv)}
+                            disabled={isSettled}
+                            title={isSettled ? "Invoice fully paid" : "Record payment"}
+                          >
+                            <Wallet className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
+                            Record Payment
+                          </Button>
                           <Button variant="ghost" size="sm" onClick={() => openEdit(inv)}>
                             <Pencil className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
                             Edit
@@ -460,7 +656,13 @@ export default function Invoices() {
         size="md"
       >
         <form className="space-y-4" onSubmit={handleAdd}>
-          <InvoiceFields form={form} setForm={setForm} clients={clients} allowClearAttachment={false} onClearAttachment={() => {}} />
+          <InvoiceFields
+            form={form}
+            setForm={setForm}
+            clients={clients}
+            allowClearAttachment={false}
+            onClearAttachment={() => {}}
+          />
           <div className="flex items-center gap-3 pt-4">
             <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
               {submitting ? "Saving…" : "Create Invoice"}
@@ -484,6 +686,8 @@ export default function Invoices() {
         onClose={() => {
           setIsEditOpen(false);
           setEditingId(null);
+          setEditInvoice(null);
+          setEditPayments([]);
           setEditForm(emptyForm());
         }}
         title="Edit Invoice"
@@ -497,6 +701,74 @@ export default function Invoices() {
             allowClearAttachment
             onClearAttachment={clearEditAttachment}
           />
+
+          <div className="grid grid-cols-3 gap-2">
+            <div className="p-2 rounded-md border border-blue-200 bg-blue-50">
+              <p className="text-[11px] text-blue-700">Invoice Amount</p>
+              <p className="text-sm text-blue-900">
+                PKR {editInvoiceAmount.toLocaleString()}
+              </p>
+            </div>
+            <div className="p-2 rounded-md border border-green-200 bg-green-50">
+              <p className="text-[11px] text-green-700">Received</p>
+              <p className="text-sm text-green-900">
+                PKR {editReceived.toLocaleString()}
+              </p>
+            </div>
+            <div className="p-2 rounded-md border border-amber-200 bg-amber-50">
+              <p className="text-[11px] text-amber-700">Outstanding</p>
+              <p className="text-sm text-amber-900">
+                PKR {editOutstanding.toLocaleString()}
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm text-slate-700">Payment History</label>
+              <span className="text-xs text-slate-500">
+                {editPayments.length} payment{editPayments.length === 1 ? "" : "s"}
+              </span>
+            </div>
+            <div className="rounded-md border border-slate-200 max-h-48 overflow-y-auto">
+              {editPayments.length === 0 ? (
+                <div className="p-3 text-sm text-slate-500 text-center">
+                  No payments recorded yet. Use "Record Payment" from the invoice list.
+                </div>
+              ) : (
+                <table className="w-full">
+                  <thead className="bg-slate-50 sticky top-0">
+                    <tr>
+                      <th className="text-left px-3 py-2 text-xs text-slate-500">Date</th>
+                      <th className="text-right px-3 py-2 text-xs text-slate-500">Amount</th>
+                      <th className="text-left px-3 py-2 text-xs text-slate-500">Mode</th>
+                      <th className="text-left px-3 py-2 text-xs text-slate-500">Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {editPayments.map((p) => (
+                      <tr key={p.id}>
+                        <td className="px-3 py-2 text-xs text-slate-600">{p.payment_date}</td>
+                        <td className="px-3 py-2 text-xs text-green-700 text-right">
+                          PKR {Number(p.amount).toLocaleString()}
+                        </td>
+                        <td className="px-3 py-2 text-xs text-slate-700">
+                          {p.payment_mode}
+                          {p.payment_mode === "Bank" && p.bank?.bank_name
+                            ? ` · ${p.bank.bank_name}`
+                            : ""}
+                        </td>
+                        <td className="px-3 py-2 text-xs text-slate-500 truncate max-w-[180px]">
+                          {p.notes ?? "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+
           <div className="flex items-center gap-3 pt-4">
             <Button variant="primary" size="md" className="flex-1" disabled={editSubmitting}>
               {editSubmitting ? "Saving…" : "Update Invoice"}
@@ -507,7 +779,157 @@ export default function Invoices() {
               onClick={() => {
                 setIsEditOpen(false);
                 setEditingId(null);
+                setEditInvoice(null);
+                setEditPayments([]);
                 setEditForm(emptyForm());
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        isOpen={isPaymentOpen}
+        onClose={() => {
+          setIsPaymentOpen(false);
+          setPaymentInvoice(null);
+          setPaymentForm(emptyPaymentForm());
+        }}
+        title="Record Payment"
+        size="md"
+      >
+        <form className="space-y-4" onSubmit={handleRecordPayment}>
+          {paymentInvoice && (
+            <div className="grid grid-cols-3 gap-2">
+              <div className="p-2 rounded-md border border-blue-200 bg-blue-50">
+                <p className="text-[11px] text-blue-700">Invoice Amount</p>
+                <p className="text-sm text-blue-900">
+                  PKR {Number(paymentInvoice.invoice_amount).toLocaleString()}
+                </p>
+              </div>
+              <div className="p-2 rounded-md border border-green-200 bg-green-50">
+                <p className="text-[11px] text-green-700">Received</p>
+                <p className="text-sm text-green-900">
+                  PKR {Number(paymentInvoice.amount_received).toLocaleString()}
+                </p>
+              </div>
+              <div className="p-2 rounded-md border border-amber-200 bg-amber-50">
+                <p className="text-[11px] text-amber-700">Outstanding</p>
+                <p className="text-sm text-amber-900">
+                  PKR {paymentOutstanding.toLocaleString()}
+                </p>
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Amount (PKR) *</label>
+              <input
+                required
+                type="number"
+                min="0"
+                step="0.01"
+                value={paymentForm.amount}
+                onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Payment Date *</label>
+              <input
+                required
+                type="date"
+                value={paymentForm.payment_date}
+                onChange={(e) =>
+                  setPaymentForm({ ...paymentForm, payment_date: e.target.value })
+                }
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Payment Mode *</label>
+            <div className="flex gap-2">
+              {(["Cash", "Bank"] as const).map((mode) => (
+                <label
+                  key={mode}
+                  className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm border cursor-pointer ${
+                    paymentForm.payment_mode === mode
+                      ? "bg-slate-900 text-white border-slate-900"
+                      : "bg-white text-slate-700 border-slate-200 hover:border-slate-300"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="payment_mode"
+                    className="hidden"
+                    checked={paymentForm.payment_mode === mode}
+                    onChange={() =>
+                      setPaymentForm({
+                        ...paymentForm,
+                        payment_mode: mode,
+                        bank_account_id: mode === "Cash" ? "" : paymentForm.bank_account_id,
+                      })
+                    }
+                  />
+                  {mode}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {paymentForm.payment_mode === "Bank" && (
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Bank Account *</label>
+              <select
+                required
+                value={paymentForm.bank_account_id}
+                onChange={(e) =>
+                  setPaymentForm({ ...paymentForm, bank_account_id: e.target.value })
+                }
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              >
+                <option value="">Select bank account</option>
+                {banks.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.bank_name} — {b.account_number}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Notes</label>
+            <textarea
+              value={paymentForm.notes}
+              onChange={(e) => setPaymentForm({ ...paymentForm, notes: e.target.value })}
+              rows={2}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              placeholder="Optional notes"
+            />
+          </div>
+
+          <div className="flex items-center gap-3 pt-4">
+            <Button
+              variant="primary"
+              size="md"
+              className="flex-1"
+              disabled={paymentSubmitting}
+            >
+              {paymentSubmitting ? "Recording…" : "Record Payment"}
+            </Button>
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => {
+                setIsPaymentOpen(false);
+                setPaymentInvoice(null);
+                setPaymentForm(emptyPaymentForm());
               }}
             >
               Cancel
@@ -532,10 +954,6 @@ function InvoiceFields({
   allowClearAttachment: boolean;
   onClearAttachment: () => void;
 }) {
-  const outstanding = Math.max(
-    0,
-    (Number(form.invoice_amount) || 0) - (Number(form.amount_received) || 0)
-  );
   return (
     <>
       <div>
@@ -577,35 +995,17 @@ function InvoiceFields({
           />
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-sm text-slate-700 mb-1">Invoice Amount (PKR) *</label>
-          <input
-            required
-            type="number"
-            min="0"
-            step="0.01"
-            value={form.invoice_amount}
-            onChange={(e) => setForm({ ...form, invoice_amount: e.target.value })}
-            className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-          />
-        </div>
-        <div>
-          <label className="block text-sm text-slate-700 mb-1">Amount Received (PKR)</label>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={form.amount_received}
-            onChange={(e) => setForm({ ...form, amount_received: e.target.value })}
-            className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-            placeholder="0"
-          />
-        </div>
-      </div>
-      <div className="p-3 bg-amber-50 rounded-md border border-amber-200 text-sm">
-        <span className="text-amber-700">Outstanding:</span>{" "}
-        <span className="text-amber-900">PKR {outstanding.toLocaleString()}</span>
+      <div>
+        <label className="block text-sm text-slate-700 mb-1">Invoice Amount (PKR) *</label>
+        <input
+          required
+          type="number"
+          min="0"
+          step="0.01"
+          value={form.invoice_amount}
+          onChange={(e) => setForm({ ...form, invoice_amount: e.target.value })}
+          className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+        />
       </div>
       <div>
         <label className="block text-sm text-slate-700 mb-1">Attachment</label>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Search, Upload, AlertCircle, X, Loader2, Trash2, Download } from "lucide-react";
+import { Plus, Search, Upload, AlertCircle, X, Loader2, Trash2, Download, Pencil } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -13,6 +13,8 @@ import {
   type Client,
   type Vendor,
   type BankAccount,
+  type Employee,
+  type Advance,
 } from "../../lib/supabase";
 
 type ExpenseRow = Expense & {
@@ -20,6 +22,33 @@ type ExpenseRow = Expense & {
   client_name: string | null;
   vendor_name: string | null;
   bank_name: string | null;
+};
+
+type AdvanceRow = Advance & {
+  employee_name: string;
+  employee_code: string;
+  client_name: string | null;
+  bank_name: string | null;
+};
+
+type AdvanceForm = {
+  client_id: string;
+  employee_id: string;
+  amount: string;
+  advance_date: string;
+  payment_mode: "Cash" | "Bank";
+  bank_account_id: string;
+  notes: string;
+};
+
+const emptyAdvanceForm: AdvanceForm = {
+  client_id: "",
+  employee_id: "",
+  amount: "",
+  advance_date: new Date().toISOString().slice(0, 10),
+  payment_mode: "Cash",
+  bank_account_id: "",
+  notes: "",
 };
 
 type ExpenseForm = {
@@ -50,7 +79,10 @@ const emptyForm: ExpenseForm = {
 };
 
 export default function Expenses() {
+  const [activeTab, setActiveTab] = useState<"expenses" | "advances">("expenses");
   const [expenses, setExpenses] = useState<ExpenseRow[]>([]);
+  const [advances, setAdvances] = useState<AdvanceRow[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -58,6 +90,20 @@ export default function Expenses() {
   const [cashBalance, setCashBalance] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [isAdvAddOpen, setIsAdvAddOpen] = useState(false);
+  const [advForm, setAdvForm] = useState<AdvanceForm>(emptyAdvanceForm);
+  const [advEmpSearch, setAdvEmpSearch] = useState("");
+  const [advSubmitting, setAdvSubmitting] = useState(false);
+
+  const [isAdvEditOpen, setIsAdvEditOpen] = useState(false);
+  const [advEditing, setAdvEditing] = useState<AdvanceRow | null>(null);
+  const [advEditForm, setAdvEditForm] = useState<AdvanceForm>(emptyAdvanceForm);
+  const [advEditEmpSearch, setAdvEditEmpSearch] = useState("");
+
+  const [advSearch, setAdvSearch] = useState("");
+  const [advClientFilter, setAdvClientFilter] = useState<string>("all");
+  const [advModeFilter, setAdvModeFilter] = useState<"all" | "Cash" | "Bank">("all");
 
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
@@ -88,7 +134,7 @@ export default function Expenses() {
   const loadAll = async () => {
     setLoading(true);
     setError(null);
-    const [expRes, catRes, cliRes, venRes, bankRes, treaRes] = await Promise.all([
+    const [expRes, catRes, cliRes, venRes, bankRes, treaRes, empRes, advRes] = await Promise.all([
       supabase
         .from("expenses")
         .select("*, category:category_id(name), client:client_id(name), vendor:vendor_id(name), bank:bank_account_id(bank_name)")
@@ -99,9 +145,16 @@ export default function Expenses() {
       supabase.from("vendors").select("*").order("name"),
       supabase.from("bank_accounts").select("*").order("bank_name"),
       supabase.from("treasury").select("*").limit(1).maybeSingle(),
+      supabase.from("employees").select("*").order("employee_code"),
+      supabase
+        .from("advances")
+        .select("*, employee:employee_id(full_name, employee_code), client:client_id(name), bank:bank_account_id(bank_name)")
+        .order("advance_date", { ascending: false })
+        .order("created_at", { ascending: false }),
     ]);
     if (expRes.error) setError(expRes.error.message);
     if (catRes.error) setError(catRes.error.message);
+    if (advRes.error) setError(advRes.error.message);
     setExpenses(
       (expRes.data ?? []).map((e: any) => ({
         ...e,
@@ -116,12 +169,74 @@ export default function Expenses() {
     setVendors((venRes.data ?? []) as Vendor[]);
     setBanks((bankRes.data ?? []) as BankAccount[]);
     setCashBalance(Number(treaRes.data?.cash_balance ?? 0));
+    setEmployees((empRes.data ?? []) as Employee[]);
+    setAdvances(
+      (advRes.data ?? []).map((a: any) => ({
+        ...a,
+        employee_name: a.employee?.full_name ?? "—",
+        employee_code: a.employee?.employee_code ?? "",
+        client_name: a.client?.name ?? null,
+        bank_name: a.bank?.bank_name ?? null,
+      }))
+    );
     setLoading(false);
   };
 
   useEffect(() => {
     loadAll();
   }, []);
+
+  const filteredAdvances = useMemo(() => {
+    const q = advSearch.trim().toLowerCase();
+    return advances.filter((a) => {
+      if (q) {
+        const hay = `${a.employee_name} ${a.employee_code} ${a.client_name ?? ""} ${a.notes ?? ""}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      if (advClientFilter !== "all") {
+        if (advClientFilter === "none" && a.client_id) return false;
+        if (advClientFilter !== "none" && a.client_id !== advClientFilter) return false;
+      }
+      if (advModeFilter !== "all" && a.payment_mode !== advModeFilter) return false;
+      return true;
+    });
+  }, [advances, advSearch, advClientFilter, advModeFilter]);
+
+  const advTotals = useMemo(() => {
+    const t = { count: filteredAdvances.length, total: 0 };
+    for (const a of filteredAdvances) t.total += Number(a.amount);
+    return t;
+  }, [filteredAdvances]);
+
+  const addAdvEmployeeOptions = useMemo(() => {
+    const q = advEmpSearch.trim().toLowerCase();
+    let list = employees;
+    if (advForm.client_id) list = list.filter((e) => e.client_id === advForm.client_id);
+    if (q) {
+      list = list.filter(
+        (e) =>
+          e.full_name.toLowerCase().includes(q) ||
+          e.employee_code.toLowerCase().includes(q) ||
+          (e.phone ?? "").toLowerCase().includes(q)
+      );
+    }
+    return list.slice(0, 25);
+  }, [employees, advForm.client_id, advEmpSearch]);
+
+  const editAdvEmployeeOptions = useMemo(() => {
+    const q = advEditEmpSearch.trim().toLowerCase();
+    let list = employees;
+    if (advEditForm.client_id) list = list.filter((e) => e.client_id === advEditForm.client_id);
+    if (q) {
+      list = list.filter(
+        (e) =>
+          e.full_name.toLowerCase().includes(q) ||
+          e.employee_code.toLowerCase().includes(q) ||
+          (e.phone ?? "").toLowerCase().includes(q)
+      );
+    }
+    return list.slice(0, 25);
+  }, [employees, advEditForm.client_id, advEditEmpSearch]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -488,6 +603,238 @@ export default function Expenses() {
     setIsViewOpen(true);
   };
 
+  const logAdvanceTransaction = async (args: {
+    bank_account_id: string | null;
+    amount: number;
+    cash_delta: number;
+    account_delta: number;
+    description: string;
+    reference_id: string | null;
+  }) => {
+    const { error: txErr } = await supabase.from("bank_transactions").insert({
+      bank_account_id: args.bank_account_id,
+      kind: "advance",
+      amount: args.amount,
+      cash_delta: args.cash_delta,
+      account_delta: args.account_delta,
+      description: args.description,
+      reference_id: args.reference_id,
+    });
+    if (txErr) throw txErr;
+  };
+
+  const describeAdvance = (empName: string, empCode: string, clientName: string | null) => {
+    return `Advance · ${empCode} ${empName}${clientName ? ` (${clientName})` : ""}`;
+  };
+
+  const validateAdvance = (f: AdvanceForm, existingAmount?: number): string | null => {
+    if (!f.employee_id) return "Select an employee.";
+    const amt = Number(f.amount);
+    if (!amt || amt <= 0) return "Enter a positive amount.";
+    if (!f.advance_date) return "Select a date.";
+    if (f.payment_mode === "Bank" && !f.bank_account_id) return "Select a bank account.";
+    if (f.payment_mode === "Cash") {
+      const budget = cashBalance + (existingAmount ?? 0);
+      if (amt > budget) return "Cash balance is insufficient.";
+    }
+    if (f.payment_mode === "Bank") {
+      const bank = banks.find((b) => b.id === f.bank_account_id);
+      if (bank) {
+        const budget = Number(bank.balance) + (existingAmount ?? 0);
+        if (amt > budget) return "Selected bank balance is insufficient.";
+      }
+    }
+    return null;
+  };
+
+  const resetAdvAddModal = () => {
+    setAdvForm(emptyAdvanceForm);
+    setAdvEmpSearch("");
+    setIsAdvAddOpen(false);
+  };
+
+  const handleAddAdvance = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const err = validateAdvance(advForm);
+    if (err) {
+      setError(err);
+      return;
+    }
+    setAdvSubmitting(true);
+    setError(null);
+    try {
+      const amount = Number(advForm.amount);
+      const emp = employees.find((x) => x.id === advForm.employee_id);
+      const client = advForm.client_id ? clients.find((c) => c.id === advForm.client_id) ?? null : null;
+      const { data: inserted, error: insErr } = await supabase
+        .from("advances")
+        .insert({
+          employee_id: advForm.employee_id,
+          client_id: advForm.client_id || null,
+          amount,
+          advance_date: advForm.advance_date,
+          payment_mode: advForm.payment_mode,
+          bank_account_id: advForm.payment_mode === "Bank" ? advForm.bank_account_id : null,
+          notes: advForm.notes.trim() || null,
+        })
+        .select()
+        .single();
+      if (insErr) throw insErr;
+      const advId = (inserted as Advance).id;
+      const desc = describeAdvance(emp?.full_name ?? "", emp?.employee_code ?? "", client?.name ?? null);
+      if (advForm.payment_mode === "Cash") {
+        await applyCashDelta(-amount);
+        await logAdvanceTransaction({
+          bank_account_id: null,
+          amount,
+          cash_delta: -amount,
+          account_delta: 0,
+          description: desc,
+          reference_id: advId,
+        });
+      } else {
+        await applyBankDelta(advForm.bank_account_id, -amount);
+        await logAdvanceTransaction({
+          bank_account_id: advForm.bank_account_id,
+          amount,
+          cash_delta: 0,
+          account_delta: -amount,
+          description: desc,
+          reference_id: advId,
+        });
+      }
+      resetAdvAddModal();
+      await loadAll();
+    } catch (err: any) {
+      setError(err.message ?? String(err));
+    } finally {
+      setAdvSubmitting(false);
+    }
+  };
+
+  const openAdvEdit = (adv: AdvanceRow) => {
+    setAdvEditing(adv);
+    setAdvEditForm({
+      client_id: adv.client_id ?? "",
+      employee_id: adv.employee_id,
+      amount: String(adv.amount),
+      advance_date: adv.advance_date,
+      payment_mode: adv.payment_mode,
+      bank_account_id: adv.bank_account_id ?? "",
+      notes: adv.notes ?? "",
+    });
+    setAdvEditEmpSearch(`${adv.employee_name} (${adv.employee_code})`);
+    setIsAdvEditOpen(true);
+  };
+
+  const reverseAdvancePayment = async (adv: AdvanceRow) => {
+    const amount = Number(adv.amount);
+    const desc = `Reverse advance · ${adv.employee_code} ${adv.employee_name}${adv.client_name ? ` (${adv.client_name})` : ""}`;
+    if (adv.payment_mode === "Cash") {
+      await applyCashDelta(amount);
+      await logAdvanceTransaction({
+        bank_account_id: null,
+        amount,
+        cash_delta: amount,
+        account_delta: 0,
+        description: desc,
+        reference_id: adv.id,
+      });
+    } else if (adv.payment_mode === "Bank" && adv.bank_account_id) {
+      await applyBankDelta(adv.bank_account_id, amount);
+      await logAdvanceTransaction({
+        bank_account_id: adv.bank_account_id,
+        amount,
+        cash_delta: 0,
+        account_delta: amount,
+        description: desc,
+        reference_id: adv.id,
+      });
+    }
+  };
+
+  const handleEditAdvance = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!advEditing) return;
+    const sameAccountAsBefore =
+      advEditForm.payment_mode === advEditing.payment_mode &&
+      (advEditForm.payment_mode === "Cash" ||
+        advEditForm.bank_account_id === advEditing.bank_account_id);
+    const existingAmount = sameAccountAsBefore ? Number(advEditing.amount) : 0;
+    const err = validateAdvance(advEditForm, existingAmount);
+    if (err) {
+      setError(err);
+      return;
+    }
+    setAdvSubmitting(true);
+    setError(null);
+    try {
+      await reverseAdvancePayment(advEditing);
+      const amount = Number(advEditForm.amount);
+      const emp = employees.find((x) => x.id === advEditForm.employee_id);
+      const client = advEditForm.client_id
+        ? clients.find((c) => c.id === advEditForm.client_id) ?? null
+        : null;
+      const { error: upErr } = await supabase
+        .from("advances")
+        .update({
+          employee_id: advEditForm.employee_id,
+          client_id: advEditForm.client_id || null,
+          amount,
+          advance_date: advEditForm.advance_date,
+          payment_mode: advEditForm.payment_mode,
+          bank_account_id: advEditForm.payment_mode === "Bank" ? advEditForm.bank_account_id : null,
+          notes: advEditForm.notes.trim() || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", advEditing.id);
+      if (upErr) throw upErr;
+      const desc = describeAdvance(emp?.full_name ?? "", emp?.employee_code ?? "", client?.name ?? null);
+      if (advEditForm.payment_mode === "Cash") {
+        await applyCashDelta(-amount);
+        await logAdvanceTransaction({
+          bank_account_id: null,
+          amount,
+          cash_delta: -amount,
+          account_delta: 0,
+          description: desc,
+          reference_id: advEditing.id,
+        });
+      } else {
+        await applyBankDelta(advEditForm.bank_account_id, -amount);
+        await logAdvanceTransaction({
+          bank_account_id: advEditForm.bank_account_id,
+          amount,
+          cash_delta: 0,
+          account_delta: -amount,
+          description: desc,
+          reference_id: advEditing.id,
+        });
+      }
+      setIsAdvEditOpen(false);
+      setAdvEditing(null);
+      await loadAll();
+    } catch (err: any) {
+      setError(err.message ?? String(err));
+    } finally {
+      setAdvSubmitting(false);
+    }
+  };
+
+  const handleDeleteAdvance = async (adv: AdvanceRow) => {
+    if (!window.confirm(`Delete advance of PKR ${Number(adv.amount).toLocaleString()} to ${adv.employee_name}? Cash/Bank movement will be reversed.`))
+      return;
+    setError(null);
+    try {
+      await reverseAdvancePayment(adv);
+      const { error: delErr } = await supabase.from("advances").delete().eq("id", adv.id);
+      if (delErr) throw delErr;
+      await loadAll();
+    } catch (err: any) {
+      setError(err.message ?? String(err));
+    }
+  };
+
   const getReceiptUrl = (path: string): string | null => {
     const { data } = supabase.storage.from(EXPENSE_RECEIPTS_BUCKET).getPublicUrl(path);
     return data.publicUrl ?? null;
@@ -620,13 +967,31 @@ export default function Expenses() {
         actions={
           <>
             <ExportButton onExport={() => console.log("Export")} />
-            <Button variant="secondary" size="md" onClick={() => setIsVendorModalOpen(true)}>
-              Manage Vendors
-            </Button>
-            <Button variant="primary" size="md" onClick={() => setIsAddOpen(true)}>
-              <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
-              Add Expense
-            </Button>
+            {activeTab === "expenses" && (
+              <Button variant="secondary" size="md" onClick={() => setIsVendorModalOpen(true)}>
+                Manage Vendors
+              </Button>
+            )}
+            {activeTab === "expenses" && (
+              <Button variant="primary" size="md" onClick={() => setIsAddOpen(true)}>
+                <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                Add Expense
+              </Button>
+            )}
+            {activeTab === "advances" && (
+              <Button
+                variant="primary"
+                size="md"
+                onClick={() => {
+                  setAdvForm(emptyAdvanceForm);
+                  setAdvEmpSearch("");
+                  setIsAdvAddOpen(true);
+                }}
+              >
+                <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                Add Advance
+              </Button>
+            )}
           </>
         }
       />
@@ -642,6 +1007,24 @@ export default function Expenses() {
           </div>
         )}
 
+        <div className="flex items-center gap-2 mb-6">
+          {(["expenses", "advances"] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setActiveTab(t)}
+              className={`px-4 py-2 rounded-md text-sm transition-colors ${
+                activeTab === t
+                  ? "bg-slate-900 text-white"
+                  : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+              }`}
+            >
+              {t === "expenses" ? "Expenses" : "Advances"}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === "expenses" && (
         <div className="bg-white rounded-lg border border-slate-200 mb-6">
           <div className="p-6 border-b border-slate-200">
             <div className="flex items-center gap-3 flex-wrap">
@@ -775,7 +1158,9 @@ export default function Expenses() {
             </table>
           </div>
         </div>
+        )}
 
+        {activeTab === "expenses" && (
         <div className="bg-white rounded-lg border border-slate-200 p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-base text-slate-900">Category Management</h3>
@@ -812,7 +1197,182 @@ export default function Expenses() {
             </div>
           )}
         </div>
+        )}
+
+        {activeTab === "advances" && (
+          <div className="bg-white rounded-lg border border-slate-200">
+            <div className="p-6 border-b border-slate-200">
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex-1 min-w-[220px] relative">
+                  <Search
+                    className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
+                    strokeWidth={1.5}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Search employee, code, client, notes…"
+                    value={advSearch}
+                    onChange={(e) => setAdvSearch(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  />
+                </div>
+                <select
+                  value={advClientFilter}
+                  onChange={(e) => setAdvClientFilter(e.target.value)}
+                  className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                >
+                  <option value="all">All Clients</option>
+                  <option value="none">No Client</option>
+                  {clients.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={advModeFilter}
+                  onChange={(e) => setAdvModeFilter(e.target.value as "all" | "Cash" | "Bank")}
+                  className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                >
+                  <option value="all">All Modes</option>
+                  <option value="Cash">Cash</option>
+                  <option value="Bank">Bank</option>
+                </select>
+                <div className="ml-auto text-xs text-slate-500">
+                  {advTotals.count} advance{advTotals.count === 1 ? "" : "s"} · PKR {advTotals.total.toLocaleString()}
+                </div>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-slate-200">
+                    <th className="text-left px-4 py-3 text-xs text-slate-500">Date</th>
+                    <th className="text-left px-4 py-3 text-xs text-slate-500">Employee</th>
+                    <th className="text-left px-4 py-3 text-xs text-slate-500">Client</th>
+                    <th className="text-right px-4 py-3 text-xs text-slate-500">Amount</th>
+                    <th className="text-left px-4 py-3 text-xs text-slate-500">Mode</th>
+                    <th className="text-left px-4 py-3 text-xs text-slate-500">Notes</th>
+                    <th className="text-left px-4 py-3 text-xs text-slate-500">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {loading && (
+                    <tr>
+                      <td colSpan={7} className="px-6 py-10 text-center text-slate-500">
+                        <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
+                        Loading…
+                      </td>
+                    </tr>
+                  )}
+                  {!loading && filteredAdvances.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">
+                        No advances yet. Click "Add Advance" to record one.
+                      </td>
+                    </tr>
+                  )}
+                  {!loading &&
+                    filteredAdvances.map((adv) => (
+                      <tr key={adv.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-4 py-3 text-sm text-slate-600">{adv.advance_date}</td>
+                        <td className="px-4 py-3 text-sm text-slate-900">
+                          <div>{adv.employee_name}</div>
+                          <div className="text-xs text-slate-500 font-mono">{adv.employee_code}</div>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-slate-700">
+                          {adv.client_name ?? <span className="text-slate-400 italic">—</span>}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-right text-slate-900">
+                          PKR {Number(adv.amount).toLocaleString()}
+                        </td>
+                        <td className="px-4 py-3 text-sm">
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded text-xs ${
+                              adv.payment_mode === "Cash"
+                                ? "bg-green-50 text-green-700"
+                                : "bg-blue-50 text-blue-700"
+                            }`}
+                          >
+                            {adv.payment_mode}
+                            {adv.bank_name ? ` · ${adv.bank_name}` : ""}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-slate-600 max-w-xs truncate">
+                          {adv.notes ?? "—"}
+                        </td>
+                        <td className="px-4 py-3 flex gap-1">
+                          <Button variant="ghost" size="sm" onClick={() => openAdvEdit(adv)}>
+                            <Pencil className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
+                            Edit
+                          </Button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteAdvance(adv)}
+                            className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-red-700 hover:bg-red-50"
+                            title="Delete advance"
+                          >
+                            <Trash2 className="w-4 h-4" strokeWidth={1.5} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
+
+      <Modal
+        isOpen={isAdvAddOpen}
+        onClose={resetAdvAddModal}
+        title="Add Advance"
+        size="md"
+      >
+        <form className="space-y-4" onSubmit={handleAddAdvance}>
+          {renderAdvanceFields(advForm, setAdvForm, advEmpSearch, setAdvEmpSearch, addAdvEmployeeOptions)}
+          <div className="flex items-center gap-3 pt-4">
+            <Button variant="primary" size="md" className="flex-1" disabled={advSubmitting}>
+              {advSubmitting ? "Saving…" : "Add Advance"}
+            </Button>
+            <Button variant="secondary" size="md" onClick={resetAdvAddModal}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        isOpen={isAdvEditOpen}
+        onClose={() => {
+          setIsAdvEditOpen(false);
+          setAdvEditing(null);
+        }}
+        title="Edit Advance"
+        size="md"
+      >
+        {advEditing && (
+          <form className="space-y-4" onSubmit={handleEditAdvance}>
+            {renderAdvanceFields(advEditForm, setAdvEditForm, advEditEmpSearch, setAdvEditEmpSearch, editAdvEmployeeOptions)}
+            <div className="flex items-center gap-3 pt-4">
+              <Button variant="primary" size="md" className="flex-1" disabled={advSubmitting}>
+                {advSubmitting ? "Saving…" : "Update Advance"}
+              </Button>
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={() => {
+                  setIsAdvEditOpen(false);
+                  setAdvEditing(null);
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
 
       <Modal
         isOpen={isAddOpen}
@@ -1081,6 +1641,185 @@ export default function Expenses() {
       </Modal>
     </>
   );
+
+  function renderAdvanceFields(
+    state: AdvanceForm,
+    setState: (f: AdvanceForm) => void,
+    empQuery: string,
+    setEmpQuery: (s: string) => void,
+    empOptions: Employee[]
+  ) {
+    const selectedEmp = state.employee_id ? employees.find((e) => e.id === state.employee_id) ?? null : null;
+    return (
+      <>
+        <div>
+          <label className="block text-sm text-slate-700 mb-1">Client (optional)</label>
+          <select
+            value={state.client_id}
+            onChange={(e) => {
+              const newClientId = e.target.value;
+              const emp = employees.find((x) => x.id === state.employee_id);
+              const keep = !newClientId || !emp || emp.client_id === newClientId;
+              setState({
+                ...state,
+                client_id: newClientId,
+                employee_id: keep ? state.employee_id : "",
+              });
+              if (!keep) setEmpQuery("");
+            }}
+            className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+          >
+            <option value="">No client (direct)</option>
+            {clients.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-slate-500 mt-1">
+            When set, the employee list below is filtered to that client's employees.
+          </p>
+        </div>
+        <div>
+          <label className="block text-sm text-slate-700 mb-1">Employee *</label>
+          {selectedEmp ? (
+            <div className="flex items-center justify-between px-3 py-2 border border-slate-200 rounded-md bg-slate-50">
+              <div className="text-sm">
+                <div className="text-slate-900">{selectedEmp.full_name}</div>
+                <div className="text-xs text-slate-500 font-mono">
+                  {selectedEmp.employee_code}
+                  {selectedEmp.phone ? ` · ${selectedEmp.phone}` : ""}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setState({ ...state, employee_id: "" })}
+                className="text-xs text-slate-500 hover:text-slate-900"
+              >
+                Change
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />
+                <input
+                  type="text"
+                  placeholder="Search by name, code, or phone…"
+                  value={empQuery}
+                  onChange={(e) => setEmpQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                />
+              </div>
+              <div className="mt-2 max-h-40 overflow-y-auto border border-slate-200 rounded-md">
+                {empOptions.length === 0 ? (
+                  <div className="px-3 py-2 text-xs text-slate-500">No employees match.</div>
+                ) : (
+                  empOptions.map((emp) => (
+                    <button
+                      key={emp.id}
+                      type="button"
+                      onClick={() => {
+                        setState({ ...state, employee_id: emp.id });
+                        setEmpQuery("");
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 border-b border-slate-100 last:border-b-0"
+                    >
+                      <div className="text-slate-900">{emp.full_name}</div>
+                      <div className="text-xs text-slate-500 font-mono">
+                        {emp.employee_code}
+                        {emp.phone ? ` · ${emp.phone}` : ""}
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </>
+          )}
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Amount (PKR) *</label>
+            <input
+              required
+              type="number"
+              min={0}
+              step="0.01"
+              value={state.amount}
+              onChange={(e) => setState({ ...state, amount: e.target.value })}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Date *</label>
+            <input
+              required
+              type="date"
+              value={state.advance_date}
+              onChange={(e) => setState({ ...state, advance_date: e.target.value })}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+            />
+          </div>
+        </div>
+        <div>
+          <label className="block text-sm text-slate-700 mb-1">Payment Mode *</label>
+          <div className="grid grid-cols-2 gap-2">
+            {(["Cash", "Bank"] as const).map((m) => (
+              <label
+                key={m}
+                className={`flex items-center justify-center gap-2 px-3 py-2 border rounded-md cursor-pointer text-sm ${
+                  state.payment_mode === m
+                    ? "border-slate-900 bg-slate-50"
+                    : "border-slate-200 hover:border-slate-300"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="adv_payment_mode"
+                  checked={state.payment_mode === m}
+                  onChange={() =>
+                    setState({
+                      ...state,
+                      payment_mode: m,
+                      bank_account_id: m === "Cash" ? "" : state.bank_account_id,
+                    })
+                  }
+                />
+                <span>{m}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+        {state.payment_mode === "Bank" && (
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Bank Account *</label>
+            <select
+              required
+              value={state.bank_account_id}
+              onChange={(e) => setState({ ...state, bank_account_id: e.target.value })}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+            >
+              <option value="">Select bank account</option>
+              {banks.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.bank_name} · {b.account_number} (PKR {Number(b.balance).toLocaleString()})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+        <div>
+          <label className="block text-sm text-slate-700 mb-1">Notes</label>
+          <textarea
+            value={state.notes}
+            onChange={(e) => setState({ ...state, notes: e.target.value })}
+            rows={2}
+            className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+          />
+        </div>
+      </>
+    );
+  }
 
   function renderExpenseForm(
     state: ExpenseForm,
