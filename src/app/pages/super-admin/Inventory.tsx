@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Shield, Users as UsersIcon, MapPin, AlertCircle, Loader2, X, Trash2 } from "lucide-react";
+import { Plus, Shield, Users as UsersIcon, MapPin, AlertCircle, Loader2, X, Trash2, Package, Building2 } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -10,6 +10,7 @@ import {
   type Issuance,
   type Location,
   type Employee,
+  type Client,
   type ReturnCondition,
 } from "../../lib/supabase";
 
@@ -17,11 +18,14 @@ type ItemRow = InventoryItem & {
   location_name: string | null;
   issued_to_name: string | null;
   active_issuance_id: string | null;
+  active_issuance_count: number;
 };
 
 type IssuanceRow = Issuance & {
-  employee_name: string;
-  employee_code: string;
+  target_kind: "employee" | "client";
+  target_name: string;
+  target_code: string;
+  employee_shift: "day" | "night" | null;
   item_type: string;
   item_kind: InventoryKind;
   serial_number: string | null;
@@ -54,7 +58,9 @@ const emptyAddItem: AddItemForm = {
 type IssueForm = {
   kind: InventoryKind;
   item_id: string;
+  target: "employee" | "client";
   employee_id: string;
+  client_id: string;
   issue_date: string;
   notes: string;
 };
@@ -64,7 +70,9 @@ const today = () => new Date().toISOString().split("T")[0];
 const emptyIssueForm = (): IssueForm => ({
   kind: "weapon",
   item_id: "",
+  target: "employee",
   employee_id: "",
+  client_id: "",
   issue_date: today(),
   notes: "",
 });
@@ -86,15 +94,34 @@ const LOW_STOCK_THRESHOLD = 10;
 const uniformStockStatus = (qty: number) =>
   qty === 0 ? "Out of Stock" : qty <= LOW_STOCK_THRESHOLD ? "Low Stock" : "In Stock";
 
+type FilterState = {
+  location_id: string;
+  date_from: string;
+  date_to: string;
+  client_id: string;
+  shift: "" | "day" | "night";
+};
+
+const emptyFilters: FilterState = {
+  location_id: "",
+  date_from: "",
+  date_to: "",
+  client_id: "",
+  shift: "",
+};
+
 export default function Inventory() {
   const [activeTab, setActiveTab] = useState<"weapons" | "uniforms" | "issuance">("weapons");
 
   const [locations, setLocations] = useState<Location[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
   const [items, setItems] = useState<ItemRow[]>([]);
   const [issuances, setIssuances] = useState<IssuanceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [filters, setFilters] = useState<FilterState>(emptyFilters);
 
   const [isAddItemOpen, setIsAddItemOpen] = useState(false);
   const [addForm, setAddForm] = useState<AddItemForm>(emptyAddItem);
@@ -116,9 +143,10 @@ export default function Inventory() {
   const loadAll = async () => {
     setLoading(true);
     setError(null);
-    const [locRes, empRes, itemsRes, issRes] = await Promise.all([
+    const [locRes, empRes, cliRes, itemsRes, issRes] = await Promise.all([
       supabase.from("locations").select("*").order("name"),
-      supabase.from("employees").select("id, full_name, employee_code").order("full_name"),
+      supabase.from("employees").select("id, full_name, employee_code, shift").order("full_name"),
+      supabase.from("clients").select("*").order("name"),
       supabase
         .from("inventory_items")
         .select("*, location:location_id(name)")
@@ -126,51 +154,66 @@ export default function Inventory() {
       supabase
         .from("issuances")
         .select(
-          "*, employee:employee_id(full_name, employee_code), item:item_id(item_type, kind, serial_number, size), location:location_id(name)"
+          "*, employee:employee_id(full_name, employee_code, shift), client:client_id(name, client_code), item:item_id(item_type, kind, serial_number, size), location:location_id(name)"
         )
         .order("issue_date", { ascending: false }),
     ]);
 
     if (locRes.error) setError(locRes.error.message);
     if (empRes.error) setError(empRes.error.message);
+    if (cliRes.error) setError(cliRes.error.message);
     if (itemsRes.error) setError(itemsRes.error.message);
     if (issRes.error) setError(issRes.error.message);
 
-    const activeByItem = new Map<string, { employee_name: string; issuance_id: string }>();
+    const activeByItem = new Map<string, { name: string; issuance_id: string; count: number }>();
     for (const raw of issRes.data ?? []) {
       const r = raw as any;
       if (!r.return_date) {
-        activeByItem.set(r.item_id, {
-          employee_name: r.employee?.full_name ?? "—",
-          issuance_id: r.id,
-        });
+        const existing = activeByItem.get(r.item_id);
+        const name = r.employee?.full_name ?? r.client?.name ?? "—";
+        if (existing) {
+          activeByItem.set(r.item_id, {
+            name: existing.count === 0 ? name : `${existing.name}, ${name}`,
+            issuance_id: existing.issuance_id,
+            count: existing.count + 1,
+          });
+        } else {
+          activeByItem.set(r.item_id, { name, issuance_id: r.id, count: 1 });
+        }
       }
     }
 
     setLocations(locRes.data ?? []);
     setEmployees((empRes.data ?? []) as Employee[]);
+    setClients((cliRes.data ?? []) as Client[]);
     setItems(
       ((itemsRes.data ?? []) as any[]).map((r) => {
         const active = activeByItem.get(r.id);
         return {
           ...r,
           location_name: r.location?.name ?? null,
-          issued_to_name: active?.employee_name ?? null,
+          issued_to_name: active?.name ?? null,
           active_issuance_id: active?.issuance_id ?? null,
+          active_issuance_count: active?.count ?? 0,
         } as ItemRow;
       })
     );
     setIssuances(
-      ((issRes.data ?? []) as any[]).map((r) => ({
-        ...r,
-        employee_name: r.employee?.full_name ?? "—",
-        employee_code: r.employee?.employee_code ?? "",
-        item_type: r.item?.item_type ?? "—",
-        item_kind: (r.item?.kind ?? "weapon") as InventoryKind,
-        serial_number: r.item?.serial_number ?? null,
-        size: r.item?.size ?? null,
-        location_name: r.location?.name ?? null,
-      }))
+      ((issRes.data ?? []) as any[]).map((r) => {
+        const isClient = !!r.client_id;
+        return {
+          ...r,
+          target_kind: (isClient ? "client" : "employee") as "employee" | "client",
+          target_name: isClient ? r.client?.name ?? "—" : r.employee?.full_name ?? "—",
+          target_code: isClient ? r.client?.client_code ?? "" : r.employee?.employee_code ?? "",
+          employee_shift: (r.employee?.shift ?? null) as "day" | "night" | null,
+          item_type: r.item?.item_type ?? "—",
+          item_kind: (r.item?.kind ?? "weapon") as InventoryKind,
+          serial_number: r.item?.serial_number ?? null,
+          size: r.item?.size ?? null,
+          location_name: r.location?.name ?? null,
+        };
+      })
     );
     setLoading(false);
   };
@@ -179,17 +222,79 @@ export default function Inventory() {
     loadAll();
   }, []);
 
-  const weapons = useMemo(() => items.filter((i) => i.kind === "weapon"), [items]);
-  const uniforms = useMemo(() => items.filter((i) => i.kind === "uniform"), [items]);
+  const matchesFilters = (iss: IssuanceRow): boolean => {
+    if (filters.location_id && iss.location_id !== filters.location_id) return false;
+    if (filters.date_from && iss.issue_date < filters.date_from) return false;
+    if (filters.date_to && iss.issue_date > filters.date_to) return false;
+    if (filters.client_id && iss.client_id !== filters.client_id) return false;
+    if (filters.shift) {
+      if (iss.target_kind !== "employee") return false;
+      if (iss.employee_shift !== filters.shift) return false;
+    }
+    return true;
+  };
+
+  const filteredIssuances = useMemo(() => issuances.filter(matchesFilters), [issuances, filters]);
+
+  const issuedItemIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const r of filteredIssuances) {
+      if (!r.return_date) ids.add(r.item_id);
+    }
+    return ids;
+  }, [filteredIssuances]);
+
+  const filteredItems = useMemo(() => {
+    return items.filter((i) => {
+      if (filters.location_id && i.location_id !== filters.location_id) return false;
+      return true;
+    });
+  }, [items, filters.location_id]);
+
+  const weapons = useMemo(() => filteredItems.filter((i) => i.kind === "weapon"), [filteredItems]);
+  const uniforms = useMemo(() => filteredItems.filter((i) => i.kind === "uniform"), [filteredItems]);
+
+  const filtersActive =
+    !!(filters.location_id || filters.date_from || filters.date_to || filters.client_id || filters.shift);
+
+  const weaponsSummary = useMemo(() => {
+    let issuedEmp = 0;
+    let issuedClient = 0;
+    for (const r of filteredIssuances) {
+      if (r.item_kind !== "weapon" || r.return_date) continue;
+      if (r.target_kind === "client") issuedClient += 1;
+      else issuedEmp += 1;
+    }
+    const total = filtersActive ? issuedEmp + issuedClient : weapons.length;
+    const inOffice = filtersActive
+      ? 0
+      : weapons.filter((w) => w.status !== "Issued").length;
+    return { total, issuedEmp, issuedClient, inOffice };
+  }, [filteredIssuances, weapons, filtersActive]);
+
+  const uniformsSummary = useMemo(() => {
+    let issuedEmp = 0;
+    let issuedClient = 0;
+    for (const r of filteredIssuances) {
+      if (r.item_kind !== "uniform" || r.return_date) continue;
+      if (r.target_kind === "client") issuedClient += 1;
+      else issuedEmp += 1;
+    }
+    const inStock = filtersActive
+      ? 0
+      : uniforms.reduce((sum, u) => sum + (u.quantity || 0), 0);
+    const total = filtersActive ? issuedEmp + issuedClient : inStock + issuedEmp + issuedClient;
+    return { total, issuedEmp, issuedClient, inOffice: inStock };
+  }, [filteredIssuances, uniforms, filtersActive]);
 
   const issuableItems = useMemo(
     () =>
-      items.filter((i) =>
+      filteredItems.filter((i) =>
         issueForm.kind === "weapon"
-          ? i.kind === "weapon" && i.status === "Available"
+          ? i.kind === "weapon" && (i.active_issuance_count ?? 0) < 2
           : i.kind === "uniform" && i.quantity > 0
       ),
-    [items, issueForm.kind]
+    [filteredItems, issueForm.kind]
   );
 
   const handleAddItem = async (e: React.FormEvent) => {
@@ -243,16 +348,46 @@ export default function Inventory() {
 
   const handleIssue = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!issueForm.item_id || !issueForm.employee_id) return;
+    if (!issueForm.item_id) return;
+    if (issueForm.target === "employee" && !issueForm.employee_id) return;
+    if (issueForm.target === "client" && !issueForm.client_id) return;
     setIssueSubmitting(true);
     setError(null);
     try {
       const item = items.find((i) => i.id === issueForm.item_id);
       if (!item) throw new Error("Selected item not found");
 
+      if (item.kind === "weapon") {
+        const { data: activeRaw, error: actErr } = await supabase
+          .from("issuances")
+          .select("id, employee_id, client_id, employee:employee_id(shift)")
+          .eq("item_id", item.id)
+          .is("return_date", null);
+        if (actErr) throw actErr;
+        const active = (activeRaw ?? []) as any[];
+        if (active.length >= 2) {
+          throw new Error("This weapon already has 2 active issuances. Mark one as returned first.");
+        }
+        if (issueForm.target === "employee") {
+          const emp = employees.find((e) => e.id === issueForm.employee_id);
+          const thisShift = emp?.shift ?? null;
+          for (const a of active) {
+            if (a.employee_id) {
+              const otherShift = a.employee?.shift ?? null;
+              if (otherShift && thisShift && otherShift === thisShift) {
+                throw new Error(
+                  `This weapon is already issued to an employee on the ${thisShift} shift. Alternate shifts are required.`
+                );
+              }
+            }
+          }
+        }
+      }
+
       const { error: insErr } = await supabase.from("issuances").insert({
         item_id: item.id,
-        employee_id: issueForm.employee_id,
+        employee_id: issueForm.target === "employee" ? issueForm.employee_id : null,
+        client_id: issueForm.target === "client" ? issueForm.client_id : null,
         location_id: item.location_id,
         issue_date: issueForm.issue_date,
         notes: issueForm.notes.trim() || null,
@@ -307,9 +442,13 @@ export default function Inventory() {
       const item = items.find((i) => i.id === returnIssuance.item_id);
       if (item) {
         if (item.kind === "weapon") {
+          const remaining = Math.max(0, (item.active_issuance_count ?? 0) - 1);
           await supabase
             .from("inventory_items")
-            .update({ status: "Available", updated_at: new Date().toISOString() })
+            .update({
+              status: remaining > 0 ? "Issued" : "Available",
+              updated_at: new Date().toISOString(),
+            })
             .eq("id", item.id);
         } else {
           await supabase
@@ -352,6 +491,8 @@ export default function Inventory() {
     await loadAll();
   };
 
+  const resetFilters = () => setFilters(emptyFilters);
+
   return (
     <>
       <Header
@@ -380,6 +521,108 @@ export default function Inventory() {
             </button>
           </div>
         )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+          <div className="bg-white rounded-lg border border-slate-200 p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Shield className="w-4 h-4 text-red-600" strokeWidth={1.5} />
+              <h3 className="text-sm text-slate-900">Weapons</h3>
+            </div>
+            <div className="grid grid-cols-4 gap-3">
+              <SummaryCell label="Total" value={weaponsSummary.total} />
+              <SummaryCell label="To Employees" value={weaponsSummary.issuedEmp} accent="blue" />
+              <SummaryCell label="To Clients" value={weaponsSummary.issuedClient} accent="purple" />
+              <SummaryCell label="In Office" value={weaponsSummary.inOffice} accent="green" />
+            </div>
+          </div>
+          <div className="bg-white rounded-lg border border-slate-200 p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Package className="w-4 h-4 text-blue-600" strokeWidth={1.5} />
+              <h3 className="text-sm text-slate-900">Uniforms &amp; Gear</h3>
+            </div>
+            <div className="grid grid-cols-4 gap-3">
+              <SummaryCell label="Total" value={uniformsSummary.total} />
+              <SummaryCell label="To Employees" value={uniformsSummary.issuedEmp} accent="blue" />
+              <SummaryCell label="To Clients" value={uniformsSummary.issuedClient} accent="purple" />
+              <SummaryCell label="In Office" value={uniformsSummary.inOffice} accent="green" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg border border-slate-200 p-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">Location</label>
+              <select
+                value={filters.location_id}
+                onChange={(e) => setFilters({ ...filters, location_id: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              >
+                <option value="">All</option>
+                {locations.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">From</label>
+              <input
+                type="date"
+                value={filters.date_from}
+                onChange={(e) => setFilters({ ...filters, date_from: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">To</label>
+              <input
+                type="date"
+                value={filters.date_to}
+                onChange={(e) => setFilters({ ...filters, date_to: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">Client</label>
+              <select
+                value={filters.client_id}
+                onChange={(e) => setFilters({ ...filters, client_id: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              >
+                <option value="">All</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">Shift</label>
+              <select
+                value={filters.shift}
+                onChange={(e) => setFilters({ ...filters, shift: e.target.value as FilterState["shift"] })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              >
+                <option value="">All</option>
+                <option value="day">Day</option>
+                <option value="night">Night</option>
+              </select>
+            </div>
+            <div>
+              <Button variant="secondary" size="md" className="w-full" onClick={resetFilters}>
+                Reset
+              </Button>
+            </div>
+          </div>
+          {filtersActive && (
+            <p className="text-xs text-slate-500 mt-2">
+              Filters active. Summary cards and tables reflect matching issuance records.
+            </p>
+          )}
+        </div>
 
         <div className="bg-white rounded-lg border border-slate-200">
           <div className="p-6 border-b border-slate-200">
@@ -431,57 +674,60 @@ export default function Inventory() {
                   {!loading && weapons.length === 0 && (
                     <tr>
                       <td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">
-                        No weapons yet. Click "Add Item" to register one.
+                        No weapons match current filters.
                       </td>
                     </tr>
                   )}
                   {!loading &&
-                    weapons.map((weapon) => (
-                      <tr key={weapon.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-2">
-                            <Shield className="w-4 h-4 text-red-600" strokeWidth={1.5} />
-                            <span className="text-sm text-slate-900">{weapon.item_type}</span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-slate-600 font-mono">
-                          {weapon.serial_number ?? "—"}
-                        </td>
-                        <td className="px-6 py-4">
-                          <span
-                            className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
-                              weapon.status === "Issued"
-                                ? "bg-blue-50 text-blue-700"
-                                : weapon.status === "Available"
-                                ? "bg-green-50 text-green-700"
-                                : "bg-amber-50 text-amber-700"
-                            }`}
-                          >
-                            {weapon.status}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-slate-600">{weapon.location_name ?? "—"}</td>
-                        <td className="px-6 py-4 text-sm text-slate-900">
-                          {weapon.issued_to_name ?? "—"}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-slate-600">
-                          {weapon.license_expiry ?? "—"}
-                        </td>
-                        <td className="px-6 py-4 flex gap-1">
-                          <Button variant="ghost" size="sm" onClick={() => setViewWeapon(weapon)}>
-                            View
-                          </Button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteItem(weapon)}
-                            className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-red-700 hover:bg-red-50"
-                            title="Delete weapon"
-                          >
-                            <Trash2 className="w-4 h-4" strokeWidth={1.5} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    weapons
+                      .filter((w) => (filtersActive ? issuedItemIds.has(w.id) : true))
+                      .map((weapon) => (
+                        <tr key={weapon.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-2">
+                              <Shield className="w-4 h-4 text-red-600" strokeWidth={1.5} />
+                              <span className="text-sm text-slate-900">{weapon.item_type}</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-slate-600 font-mono">
+                            {weapon.serial_number ?? "—"}
+                          </td>
+                          <td className="px-6 py-4">
+                            <span
+                              className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
+                                weapon.status === "Issued"
+                                  ? "bg-blue-50 text-blue-700"
+                                  : weapon.status === "Available"
+                                  ? "bg-green-50 text-green-700"
+                                  : "bg-amber-50 text-amber-700"
+                              }`}
+                            >
+                              {weapon.status}
+                              {weapon.active_issuance_count > 1 && ` · ${weapon.active_issuance_count}x`}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-slate-600">{weapon.location_name ?? "—"}</td>
+                          <td className="px-6 py-4 text-sm text-slate-900">
+                            {weapon.issued_to_name ?? "—"}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-slate-600">
+                            {weapon.license_expiry ?? "—"}
+                          </td>
+                          <td className="px-6 py-4 flex gap-1">
+                            <Button variant="ghost" size="sm" onClick={() => setViewWeapon(weapon)}>
+                              View
+                            </Button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteItem(weapon)}
+                              className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-red-700 hover:bg-red-50"
+                              title="Delete weapon"
+                            >
+                              <Trash2 className="w-4 h-4" strokeWidth={1.5} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
                 </tbody>
               </table>
             </div>
@@ -511,58 +757,60 @@ export default function Inventory() {
                   {!loading && uniforms.length === 0 && (
                     <tr>
                       <td colSpan={6} className="px-6 py-10 text-center text-slate-500 text-sm">
-                        No uniforms/gear yet. Click "Add Item" to add stock.
+                        No uniforms match current filters.
                       </td>
                     </tr>
                   )}
                   {!loading &&
-                    uniforms.map((u) => {
-                      const stat = uniformStockStatus(u.quantity);
-                      return (
-                        <tr key={u.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-2">
-                              <UsersIcon className="w-4 h-4 text-blue-600" strokeWidth={1.5} />
-                              <span className="text-sm text-slate-900">{u.item_type}</span>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 text-sm text-slate-600">{u.size ?? "—"}</td>
-                          <td className="px-6 py-4 text-sm text-slate-900">{u.quantity}</td>
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-2">
-                              <MapPin className="w-4 h-4 text-slate-400" strokeWidth={1.5} />
-                              <span className="text-sm text-slate-600">{u.location_name ?? "—"}</span>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <span
-                              className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
-                                stat === "In Stock"
-                                  ? "bg-green-50 text-green-700"
-                                  : stat === "Low Stock"
-                                  ? "bg-amber-50 text-amber-700"
-                                  : "bg-red-50 text-red-700"
-                              }`}
-                            >
-                              {stat}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 flex gap-1">
-                            <Button variant="ghost" size="sm" onClick={() => openStock(u)}>
-                              Manage Stock
-                            </Button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteItem(u)}
-                              className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-red-700 hover:bg-red-50"
-                              title="Delete item"
-                            >
-                              <Trash2 className="w-4 h-4" strokeWidth={1.5} />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    uniforms
+                      .filter((u) => (filtersActive ? issuedItemIds.has(u.id) : true))
+                      .map((u) => {
+                        const stat = uniformStockStatus(u.quantity);
+                        return (
+                          <tr key={u.id} className="hover:bg-slate-50 transition-colors">
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-2">
+                                <UsersIcon className="w-4 h-4 text-blue-600" strokeWidth={1.5} />
+                                <span className="text-sm text-slate-900">{u.item_type}</span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-sm text-slate-600">{u.size ?? "—"}</td>
+                            <td className="px-6 py-4 text-sm text-slate-900">{u.quantity}</td>
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-2">
+                                <MapPin className="w-4 h-4 text-slate-400" strokeWidth={1.5} />
+                                <span className="text-sm text-slate-600">{u.location_name ?? "—"}</span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <span
+                                className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
+                                  stat === "In Stock"
+                                    ? "bg-green-50 text-green-700"
+                                    : stat === "Low Stock"
+                                    ? "bg-amber-50 text-amber-700"
+                                    : "bg-red-50 text-red-700"
+                                }`}
+                              >
+                                {stat}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 flex gap-1">
+                              <Button variant="ghost" size="sm" onClick={() => openStock(u)}>
+                                Manage Stock
+                              </Button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteItem(u)}
+                                className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-red-700 hover:bg-red-50"
+                                title="Delete item"
+                              >
+                                <Trash2 className="w-4 h-4" strokeWidth={1.5} />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                 </tbody>
               </table>
             </div>
@@ -573,7 +821,7 @@ export default function Inventory() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-slate-200">
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Employee</th>
+                    <th className="text-left px-6 py-3 text-sm text-slate-500">Issued To</th>
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Item</th>
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Type</th>
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Location</th>
@@ -591,15 +839,15 @@ export default function Inventory() {
                       </td>
                     </tr>
                   )}
-                  {!loading && issuances.length === 0 && (
+                  {!loading && filteredIssuances.length === 0 && (
                     <tr>
                       <td colSpan={8} className="px-6 py-10 text-center text-slate-500 text-sm">
-                        No issuances yet. Click "Issue Item" to record one.
+                        No issuances match current filters.
                       </td>
                     </tr>
                   )}
                   {!loading &&
-                    issuances.map((r) => {
+                    filteredIssuances.map((r) => {
                       const detail =
                         r.item_kind === "weapon"
                           ? r.serial_number ?? "—"
@@ -607,8 +855,15 @@ export default function Inventory() {
                       return (
                         <tr key={r.id} className="hover:bg-slate-50 transition-colors">
                           <td className="px-6 py-4 text-sm text-slate-900">
-                            <div>{r.employee_name}</div>
-                            <div className="text-xs text-slate-500 font-mono">{r.employee_code}</div>
+                            <div className="flex items-center gap-2">
+                              {r.target_kind === "client" ? (
+                                <Building2 className="w-3.5 h-3.5 text-purple-600" strokeWidth={1.5} />
+                              ) : (
+                                <UsersIcon className="w-3.5 h-3.5 text-blue-600" strokeWidth={1.5} />
+                              )}
+                              <span>{r.target_name}</span>
+                            </div>
+                            <div className="text-xs text-slate-500 font-mono ml-5">{r.target_code}</div>
                           </td>
                           <td className="px-6 py-4 text-sm text-slate-600">
                             {r.item_type} <span className="text-slate-400">({detail})</span>
@@ -859,9 +1114,11 @@ export default function Inventory() {
             >
               <option value="">Select item</option>
               {issuableItems.map((i) => {
+                const activeNote =
+                  i.kind === "weapon" && (i.active_issuance_count ?? 0) === 1 ? " · 1 active" : "";
                 const label =
                   i.kind === "weapon"
-                    ? `${i.item_type}${i.serial_number ? ` (${i.serial_number})` : ""}${i.location_name ? ` · ${i.location_name}` : ""}`
+                    ? `${i.item_type}${i.serial_number ? ` (${i.serial_number})` : ""}${i.location_name ? ` · ${i.location_name}` : ""}${activeNote}`
                     : `${i.item_type}${i.size ? ` (${i.size})` : ""} · ${i.quantity} in stock${i.location_name ? ` · ${i.location_name}` : ""}`;
                 return (
                   <option key={i.id} value={i.id}>
@@ -872,32 +1129,88 @@ export default function Inventory() {
             </select>
             {issuableItems.length === 0 && (
               <p className="text-xs text-slate-500 mt-1">
-                No {issueForm.kind === "weapon" ? "available weapons" : "uniforms in stock"}.
+                No {issueForm.kind === "weapon" ? "issuable weapons" : "uniforms in stock"}.
+              </p>
+            )}
+            {issueForm.kind === "weapon" && (
+              <p className="text-xs text-slate-500 mt-1">
+                Weapons can be issued to at most 2 employees, and those employees must be on alternate shifts.
               </p>
             )}
           </div>
 
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Issue To (Employee) *</label>
-            <select
-              required
-              value={issueForm.employee_id}
-              onChange={(e) => setIssueForm({ ...issueForm, employee_id: e.target.value })}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-            >
-              <option value="">Select employee</option>
-              {employees.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.full_name} ({e.employee_code})
-                </option>
+            <label className="block text-sm text-slate-700 mb-2">Issue To *</label>
+            <div className="flex gap-3">
+              {(["employee", "client"] as const).map((t) => (
+                <label
+                  key={t}
+                  className={`flex-1 flex items-center gap-2 px-4 py-2 border rounded-md cursor-pointer text-sm capitalize ${
+                    issueForm.target === t
+                      ? "border-slate-900 bg-slate-50"
+                      : "border-slate-200 hover:border-slate-300"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="issue-target"
+                    value={t}
+                    checked={issueForm.target === t}
+                    onChange={() =>
+                      setIssueForm({ ...issueForm, target: t, employee_id: "", client_id: "" })
+                    }
+                  />
+                  <span>{t}</span>
+                </label>
               ))}
-            </select>
-            {employees.length === 0 && (
-              <p className="text-xs text-slate-500 mt-1">
-                No employees yet. Add them from Employees.
-              </p>
-            )}
+            </div>
           </div>
+
+          {issueForm.target === "employee" ? (
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Employee *</label>
+              <select
+                required
+                value={issueForm.employee_id}
+                onChange={(e) => setIssueForm({ ...issueForm, employee_id: e.target.value })}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              >
+                <option value="">Select employee</option>
+                {employees.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.full_name} ({e.employee_code}) · {e.shift}
+                  </option>
+                ))}
+              </select>
+              {employees.length === 0 && (
+                <p className="text-xs text-slate-500 mt-1">
+                  No employees yet. Add them from Employees.
+                </p>
+              )}
+            </div>
+          ) : (
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Client *</label>
+              <select
+                required
+                value={issueForm.client_id}
+                onChange={(e) => setIssueForm({ ...issueForm, client_id: e.target.value })}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              >
+                <option value="">Select client</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} ({c.client_code})
+                  </option>
+                ))}
+              </select>
+              {clients.length === 0 && (
+                <p className="text-xs text-slate-500 mt-1">
+                  No clients yet. Add them from Settings.
+                </p>
+              )}
+            </div>
+          )}
 
           <div>
             <label className="block text-sm text-slate-700 mb-1">Issue Date *</label>
@@ -926,7 +1239,12 @@ export default function Inventory() {
               variant="primary"
               size="md"
               className="flex-1"
-              disabled={issueSubmitting || issuableItems.length === 0 || employees.length === 0}
+              disabled={
+                issueSubmitting ||
+                issuableItems.length === 0 ||
+                (issueForm.target === "employee" && employees.length === 0) ||
+                (issueForm.target === "client" && clients.length === 0)
+              }
             >
               {issueSubmitting ? "Issuing…" : "Issue Item"}
             </Button>
@@ -1048,7 +1366,7 @@ export default function Inventory() {
           <form className="space-y-4" onSubmit={handleReturn}>
             <div>
               <p className="text-sm text-slate-900 mb-1">
-                Employee: {returnIssuance.employee_name}
+                {returnIssuance.target_kind === "client" ? "Client" : "Employee"}: {returnIssuance.target_name}
               </p>
               <p className="text-sm text-slate-600">
                 Item: {returnIssuance.item_type}
@@ -1105,5 +1423,30 @@ export default function Inventory() {
         )}
       </Modal>
     </>
+  );
+}
+
+function SummaryCell({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: number;
+  accent?: "blue" | "purple" | "green";
+}) {
+  const colour =
+    accent === "blue"
+      ? "text-blue-700"
+      : accent === "purple"
+      ? "text-purple-700"
+      : accent === "green"
+      ? "text-green-700"
+      : "text-slate-900";
+  return (
+    <div className="text-center">
+      <p className="text-xs text-slate-500 mb-1">{label}</p>
+      <p className={`text-2xl ${colour}`}>{value}</p>
+    </div>
   );
 }

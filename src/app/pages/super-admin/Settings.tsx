@@ -12,6 +12,7 @@ type ClientRow = {
   name: string;
   email: string | null;
   phone: string | null;
+  allowed_leaves_per_month: number;
   employees: number;
 };
 
@@ -20,10 +21,6 @@ export default function Settings() {
   const [clients, setClients] = useState<ClientRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const [workingDays, setWorkingDays] = useState<number>(22);
-  const [savingWorkingDays, setSavingWorkingDays] = useState(false);
-  const [workingDaysSaved, setWorkingDaysSaved] = useState(false);
 
   const [locAddOpen, setLocAddOpen] = useState(false);
   const [newLocName, setNewLocName] = useState("");
@@ -34,29 +31,26 @@ export default function Settings() {
   const [newClientName, setNewClientName] = useState("");
   const [newClientEmail, setNewClientEmail] = useState("");
   const [newClientPhone, setNewClientPhone] = useState("");
+  const [newClientAllowedLeaves, setNewClientAllowedLeaves] = useState<number>(0);
 
   const [clientEditingId, setClientEditingId] = useState<string | null>(null);
   const [editClientName, setEditClientName] = useState("");
   const [editClientEmail, setEditClientEmail] = useState("");
   const [editClientPhone, setEditClientPhone] = useState("");
+  const [editClientAllowedLeaves, setEditClientAllowedLeaves] = useState<number>(0);
 
   const [submitting, setSubmitting] = useState(false);
 
   const loadAll = async () => {
     setLoading(true);
     setError(null);
-    const [empRes, locRes, cliRes, settingsRes] = await Promise.all([
+    const [empRes, locRes, cliRes] = await Promise.all([
       supabase.from("employees").select("location_id, client_id"),
       supabase.from("locations").select("id, name").order("name"),
       supabase
         .from("clients")
-        .select("id, client_code, name, email, phone")
+        .select("id, client_code, name, email, phone, allowed_leaves_per_month")
         .order("client_code"),
-      supabase
-        .from("app_settings")
-        .select("value")
-        .eq("key", "working_days_per_month")
-        .maybeSingle(),
     ]);
 
     const locCounts: Record<string, number> = {};
@@ -83,13 +77,10 @@ export default function Settings() {
         name: r.name,
         email: r.email,
         phone: r.phone,
+        allowed_leaves_per_month: Number(r.allowed_leaves_per_month ?? 0),
         employees: cliCounts[r.id] ?? 0,
       }))
     );
-
-    const wdRaw = settingsRes.data?.value;
-    const wd = typeof wdRaw === "number" ? wdRaw : Number(wdRaw);
-    if (!Number.isNaN(wd) && wd > 0) setWorkingDays(wd);
 
     setLoading(false);
   };
@@ -152,6 +143,7 @@ export default function Settings() {
       name: newClientName.trim(),
       email: newClientEmail.trim() || null,
       phone: newClientPhone.trim() || null,
+      allowed_leaves_per_month: Math.max(0, Math.floor(Number(newClientAllowedLeaves) || 0)),
     });
     setSubmitting(false);
     if (insErr) {
@@ -161,6 +153,7 @@ export default function Settings() {
     setNewClientName("");
     setNewClientEmail("");
     setNewClientPhone("");
+    setNewClientAllowedLeaves(0);
     setClientAddOpen(false);
     await loadAll();
   };
@@ -170,6 +163,7 @@ export default function Settings() {
     setEditClientName(row.name);
     setEditClientEmail(row.email ?? "");
     setEditClientPhone(row.phone ?? "");
+    setEditClientAllowedLeaves(row.allowed_leaves_per_month ?? 0);
   };
 
   const handleSaveClientEdit = async (id: string) => {
@@ -180,6 +174,7 @@ export default function Settings() {
         name: editClientName.trim(),
         email: editClientEmail.trim() || null,
         phone: editClientPhone.trim() || null,
+        allowed_leaves_per_month: Math.max(0, Math.floor(Number(editClientAllowedLeaves) || 0)),
       })
       .eq("id", id);
     if (upErr) {
@@ -202,25 +197,6 @@ export default function Settings() {
       return;
     }
     await loadAll();
-  };
-
-  const handleSaveWorkingDays = async () => {
-    if (!workingDays || workingDays < 1 || workingDays > 31) {
-      setError("Working days must be between 1 and 31");
-      return;
-    }
-    setSavingWorkingDays(true);
-    setError(null);
-    const { error: upErr } = await supabase
-      .from("app_settings")
-      .upsert({ key: "working_days_per_month", value: workingDays, updated_at: new Date().toISOString() });
-    setSavingWorkingDays(false);
-    if (upErr) {
-      setError(upErr.message);
-      return;
-    }
-    setWorkingDaysSaved(true);
-    setTimeout(() => setWorkingDaysSaved(false), 2000);
   };
 
   const renderLocations = () => (
@@ -355,6 +331,17 @@ export default function Settings() {
                       className="px-3 py-1.5 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
                     />
                   </div>
+                  <div>
+                    <label className="block text-xs text-slate-600 mb-1">Allowed Leaves / Month</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={31}
+                      value={editClientAllowedLeaves}
+                      onChange={(e) => setEditClientAllowedLeaves(Number(e.target.value))}
+                      className="w-40 px-3 py-1.5 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                    />
+                  </div>
                   <div className="flex gap-2">
                     <Button variant="primary" size="sm" onClick={() => handleSaveClientEdit(row.id)}>
                       Save
@@ -372,7 +359,7 @@ export default function Settings() {
                       <span className="text-xs font-mono text-slate-500">{row.client_code}</span>
                     </div>
                     <p className="text-xs text-slate-500 mt-1">
-                      {row.employees} employees
+                      {row.employees} employees · {row.allowed_leaves_per_month} leaves/mo
                       {row.email ? ` · ${row.email}` : ""}
                       {row.phone ? ` · ${row.phone}` : ""}
                     </p>
@@ -416,32 +403,6 @@ export default function Settings() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           {renderLocations()}
           {renderClients()}
-        </div>
-
-        <div className="bg-white rounded-lg border border-slate-200 p-6 mb-6">
-          <h3 className="text-base mb-6 text-slate-900">Salary Rules</h3>
-          <div className="space-y-4 max-w-lg">
-            <div>
-              <label className="block text-sm text-slate-700 mb-2">Working Days per Month</label>
-              <input
-                type="number"
-                min={1}
-                max={31}
-                value={workingDays}
-                onChange={(e) => setWorkingDays(Number(e.target.value))}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-              />
-              <p className="text-xs text-slate-500 mt-1">
-                Used as the default working days when computing payroll for each employee.
-              </p>
-            </div>
-            <div className="flex items-center gap-3 mt-4">
-              <Button variant="primary" size="md" onClick={handleSaveWorkingDays} disabled={savingWorkingDays}>
-                {savingWorkingDays ? "Saving…" : "Save Rules"}
-              </Button>
-              {workingDaysSaved && <span className="text-xs text-emerald-700">Saved.</span>}
-            </div>
-          </div>
         </div>
 
         <div className="bg-white rounded-lg border border-slate-200 p-6">
@@ -594,6 +555,18 @@ export default function Settings() {
               placeholder="+92 300 1234567"
             />
           </div>
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Allowed Leaves / Month</label>
+            <input
+              type="number"
+              min={0}
+              max={31}
+              value={newClientAllowedLeaves}
+              onChange={(e) => setNewClientAllowedLeaves(Number(e.target.value))}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              placeholder="0"
+            />
+          </div>
           <p className="text-xs text-slate-500">A unique Client ID (CLI-…) is generated automatically.</p>
           <div className="flex items-center gap-3 pt-4">
             <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
@@ -607,6 +580,7 @@ export default function Settings() {
                 setNewClientName("");
                 setNewClientEmail("");
                 setNewClientPhone("");
+                setNewClientAllowedLeaves(0);
               }}
             >
               Cancel

@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Building2, Download, AlertCircle, X, Loader2, ArrowDownUp, History, Trash2, CheckCircle2, RotateCcw } from "lucide-react";
+import { Plus, Building2, Download, AlertCircle, X, Loader2, ArrowDownUp, History, Trash2, CheckCircle2, RotateCcw, FileText, Pencil } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import ExportButton from "../../components/ExportButton";
 import {
   supabase,
+  INVOICE_ATTACHMENTS_BUCKET,
   type BankAccount,
   type BankTransaction,
   type BankTransactionKind,
@@ -13,12 +14,20 @@ import {
   type Vendor,
   type ExpenseCategory,
   type Client,
+  type Invoice,
 } from "../../lib/supabase";
 
 type PayableRow = Expense & {
   vendor?: Vendor | null;
   category?: ExpenseCategory | null;
   client?: Client | null;
+};
+
+type ReceivableRow = Client & {
+  total_invoiced: number;
+  total_received: number;
+  outstanding: number;
+  invoices: Invoice[];
 };
 
 const chartOfAccounts = [
@@ -33,13 +42,6 @@ const chartOfAccounts = [
   { id: 9, code: "5000", name: "Expenses", type: "Header", balance: 845000 },
 ];
 
-const receivables = [
-  { id: 1, client: "Client A - Security Services", amount: 450000, dueDate: "2026-04-25", status: "Pending" },
-  { id: 2, client: "Client B - Guard Deployment", amount: 380000, dueDate: "2026-04-30", status: "Pending" },
-  { id: 3, client: "Client C - Facility Management", amount: 520000, dueDate: "2026-05-05", status: "Overdue" },
-  { id: 4, client: "Client D - Event Security", amount: 290000, dueDate: "2026-05-10", status: "Pending" },
-];
-
 const kindLabel: Record<BankTransactionKind, string> = {
   opening: "Opening",
   deposit: "Deposit",
@@ -49,6 +51,7 @@ const kindLabel: Record<BankTransactionKind, string> = {
   adjustment: "Adjustment",
   cash_adjustment: "Cash Adjustment",
   expense: "Expense",
+  receipt: "Receipt",
 };
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
@@ -68,6 +71,7 @@ export default function Accounting() {
   const [cashBalance, setCashBalance] = useState<number>(0);
   const [transactions, setTransactions] = useState<BankTransaction[]>([]);
   const [payables, setPayables] = useState<PayableRow[]>([]);
+  const [receivables, setReceivables] = useState<ReceivableRow[]>([]);
   const [payableStatusFilter, setPayableStatusFilter] = useState<"all" | "pending" | "paid" | "overdue">("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -76,16 +80,24 @@ export default function Accounting() {
   const [isBankModalOpen, setIsBankModalOpen] = useState(false);
   const [isStatementModalOpen, setIsStatementModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [isOpeningBalanceOpen, setIsOpeningBalanceOpen] = useState(false);
   const [isReconcileModalOpen, setIsReconcileModalOpen] = useState(false);
   const [isEditBankModalOpen, setIsEditBankModalOpen] = useState(false);
   const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
   const [isLogModalOpen, setIsLogModalOpen] = useState(false);
   const [isMarkPaidModalOpen, setIsMarkPaidModalOpen] = useState(false);
-  const [selectedClient, setSelectedClient] = useState<any>(null);
+  const [selectedClient, setSelectedClient] = useState<ReceivableRow | null>(null);
   const [selectedBank, setSelectedBank] = useState<BankAccount | null>(null);
   const [selectedPayable, setSelectedPayable] = useState<PayableRow | null>(null);
   const [markPaidVia, setMarkPaidVia] = useState<"Cash" | "Bank">("Cash");
   const [markPaidBankId, setMarkPaidBankId] = useState<string>("");
+
+  const [openingBalanceValue, setOpeningBalanceValue] = useState<string>("");
+  const [paymentInvoiceId, setPaymentInvoiceId] = useState<string>("");
+  const [paymentAmount, setPaymentAmount] = useState<string>("");
+  const [paymentVia, setPaymentVia] = useState<"Cash" | "Bank">("Bank");
+  const [paymentBankId, setPaymentBankId] = useState<string>("");
+  const [paymentNotes, setPaymentNotes] = useState<string>("");
 
   const [newBank, setNewBank] = useState({
     bank_name: "",
@@ -114,7 +126,7 @@ export default function Accounting() {
   const loadAll = async () => {
     setLoading(true);
     setError(null);
-    const [banksRes, treasuryRes, txRes, payablesRes] = await Promise.all([
+    const [banksRes, treasuryRes, txRes, payablesRes, clientsRes, invoicesRes] = await Promise.all([
       supabase.from("bank_accounts").select("*").order("created_at", { ascending: false }),
       supabase.from("treasury").select("*").limit(1).maybeSingle(),
       supabase.from("bank_transactions").select("*").order("created_at", { ascending: false }).limit(100),
@@ -123,15 +135,43 @@ export default function Accounting() {
         .select("*, vendor:vendor_id(id,name), category:category_id(id,name), client:client_id(id,name,client_code)")
         .eq("payment_mode", "Payable")
         .order("due_date", { ascending: true, nullsFirst: false }),
+      supabase.from("clients").select("*").order("name"),
+      supabase.from("invoices").select("*").order("invoice_date", { ascending: false }),
     ]);
     if (banksRes.error) setError(banksRes.error.message);
     if (treasuryRes.error) setError(treasuryRes.error.message);
     if (txRes.error) setError(txRes.error.message);
     if (payablesRes.error) setError(payablesRes.error.message);
+    if (clientsRes.error) setError(clientsRes.error.message);
+    if (invoicesRes.error) setError(invoicesRes.error.message);
     setBanks((banksRes.data ?? []) as BankAccount[]);
     setCashBalance(Number(treasuryRes.data?.cash_balance ?? 0));
     setTransactions((txRes.data ?? []) as BankTransaction[]);
     setPayables((payablesRes.data ?? []) as PayableRow[]);
+
+    const allClients = (clientsRes.data ?? []) as Client[];
+    const allInvoices = (invoicesRes.data ?? []) as Invoice[];
+    const byClient = new Map<string, Invoice[]>();
+    for (const inv of allInvoices) {
+      const arr = byClient.get(inv.client_id) ?? [];
+      arr.push(inv);
+      byClient.set(inv.client_id, arr);
+    }
+    const rec: ReceivableRow[] = allClients.map((c) => {
+      const invs = byClient.get(c.id) ?? [];
+      const total_invoiced = invs.reduce((s, i) => s + Number(i.invoice_amount), 0);
+      const total_received = invs.reduce((s, i) => s + Number(i.amount_received), 0);
+      const outstanding = Number(c.opening_balance ?? 0) + total_invoiced - total_received;
+      return {
+        ...c,
+        total_invoiced,
+        total_received,
+        outstanding,
+        invoices: invs,
+      };
+    });
+    setReceivables(rec);
+
     setLoading(false);
   };
 
@@ -552,14 +592,130 @@ export default function Accounting() {
     return { pendingTotal, paidTotal, overdueTotal };
   }, [payables]);
 
-  const viewStatement = (client: any) => {
+  const viewStatement = (client: ReceivableRow) => {
     setSelectedClient(client);
     setIsStatementModalOpen(true);
   };
 
-  const recordPayment = (client: any) => {
+  const recordPayment = (client: ReceivableRow) => {
     setSelectedClient(client);
+    const openInvoice = client.invoices.find(
+      (i) => Number(i.invoice_amount) - Number(i.amount_received) > 0
+    );
+    setPaymentInvoiceId(openInvoice?.id ?? "");
+    setPaymentAmount("");
+    setPaymentVia("Bank");
+    setPaymentBankId(banks[0]?.id ?? "");
+    setPaymentNotes("");
     setIsPaymentModalOpen(true);
+  };
+
+  const openEditOpeningBalance = (client: ReceivableRow) => {
+    setSelectedClient(client);
+    setOpeningBalanceValue(String(client.opening_balance ?? 0));
+    setIsOpeningBalanceOpen(true);
+  };
+
+  const handleSaveOpeningBalance = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedClient) return;
+    const nextVal = Number(openingBalanceValue);
+    if (!Number.isFinite(nextVal) || nextVal < 0) {
+      setError("Enter a non-negative opening balance.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const { error: upErr } = await supabase
+        .from("clients")
+        .update({ opening_balance: nextVal })
+        .eq("id", selectedClient.id);
+      if (upErr) throw upErr;
+      setIsOpeningBalanceOpen(false);
+      await loadAll();
+    } catch (e: any) {
+      setError(e.message ?? String(e));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleRecordPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedClient) return;
+    if (!paymentInvoiceId) {
+      setError("Select an invoice to apply this payment to.");
+      return;
+    }
+    const amount = Number(paymentAmount);
+    if (!amount || amount <= 0) {
+      setError("Enter a positive payment amount.");
+      return;
+    }
+    const invoice = selectedClient.invoices.find((i) => i.id === paymentInvoiceId);
+    if (!invoice) {
+      setError("Selected invoice not found.");
+      return;
+    }
+    const openAmount = Number(invoice.invoice_amount) - Number(invoice.amount_received);
+    if (amount > openAmount) {
+      setError(`Payment exceeds the outstanding amount on this invoice (PKR ${openAmount.toLocaleString()}).`);
+      return;
+    }
+    if (paymentVia === "Bank" && !paymentBankId) {
+      setError("Select the bank account that received the payment.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      if (paymentVia === "Cash") {
+        await applyCashDelta(amount);
+        await logTransaction({
+          bank_account_id: null,
+          kind: "receipt",
+          amount,
+          cash_delta: amount,
+          account_delta: 0,
+          description: `Payment received (cash) · ${selectedClient.name} · Invoice ${invoice.invoice_number}`,
+          reference_id: invoice.id,
+        });
+      } else {
+        await applyBankDelta(paymentBankId, amount);
+        await logTransaction({
+          bank_account_id: paymentBankId,
+          kind: "receipt",
+          amount,
+          cash_delta: 0,
+          account_delta: amount,
+          description: `Payment received (bank) · ${selectedClient.name} · Invoice ${invoice.invoice_number}`,
+          reference_id: invoice.id,
+        });
+      }
+      const { error: upErr } = await supabase
+        .from("invoices")
+        .update({
+          amount_received: Number(invoice.amount_received) + amount,
+          notes: paymentNotes.trim()
+            ? `${invoice.notes ? invoice.notes + "\n" : ""}[${new Date().toISOString().slice(0, 10)}] Payment PKR ${amount.toLocaleString()} via ${paymentVia}: ${paymentNotes.trim()}`
+            : invoice.notes,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", invoice.id);
+      if (upErr) throw upErr;
+      setIsPaymentModalOpen(false);
+      await loadAll();
+    } catch (e: any) {
+      setError(e.message ?? String(e));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const viewInvoiceAttachment = (path: string) => {
+    const { data } = supabase.storage.from(INVOICE_ATTACHMENTS_BUCKET).getPublicUrl(path);
+    if (data?.publicUrl) window.open(data.publicUrl, "_blank");
   };
 
   return (
@@ -692,39 +848,91 @@ export default function Accounting() {
                 <thead>
                   <tr className="border-b border-slate-200">
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Client</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Amount Due</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Due Date</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Status</th>
+                    <th className="text-right px-6 py-3 text-sm text-slate-500">Opening Balance</th>
+                    <th className="text-right px-6 py-3 text-sm text-slate-500">Invoiced</th>
+                    <th className="text-right px-6 py-3 text-sm text-slate-500">Received</th>
+                    <th className="text-right px-6 py-3 text-sm text-slate-500">Outstanding</th>
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {receivables.map((item) => (
-                    <tr key={item.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-6 py-4 text-sm text-slate-900">{item.client}</td>
-                      <td className="px-6 py-4 text-sm text-blue-600">PKR {item.amount.toLocaleString()}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{item.dueDate}</td>
-                      <td className="px-6 py-4">
-                        <span
-                          className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
-                            item.status === "Overdue"
-                              ? "bg-red-50 text-red-700"
-                              : "bg-amber-50 text-amber-700"
-                          }`}
-                        >
-                          {item.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 flex gap-2">
-                        <Button variant="ghost" size="sm" onClick={() => viewStatement(item)}>
-                          View Statement
-                        </Button>
-                        <Button variant="ghost" size="sm" onClick={() => recordPayment(item)}>
-                          Record Payment
-                        </Button>
+                  {loading && (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-10 text-center text-slate-500">
+                        <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                       </td>
                     </tr>
-                  ))}
+                  )}
+                  {!loading && receivables.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-10 text-center text-slate-500 text-sm">
+                        No clients yet. Add them from Settings.
+                      </td>
+                    </tr>
+                  )}
+                  {!loading &&
+                    receivables.map((item) => {
+                      const canEditOpening = item.outstanding === 0;
+                      return (
+                        <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="px-6 py-4 text-sm text-slate-900">
+                            <div className="flex items-center gap-2">
+                              <Building2 className="w-3.5 h-3.5 text-slate-400" strokeWidth={1.5} />
+                              <span>{item.name}</span>
+                            </div>
+                            <div className="text-xs text-slate-500 font-mono ml-5">{item.client_code}</div>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-slate-700 text-right">
+                            <div className="inline-flex items-center gap-2 justify-end">
+                              <span>PKR {Number(item.opening_balance ?? 0).toLocaleString()}</span>
+                              <button
+                                type="button"
+                                disabled={!canEditOpening}
+                                onClick={() => openEditOpeningBalance(item)}
+                                className={`inline-flex items-center justify-center w-6 h-6 rounded ${
+                                  canEditOpening
+                                    ? "text-slate-600 hover:bg-slate-100"
+                                    : "text-slate-300 cursor-not-allowed"
+                                }`}
+                                title={
+                                  canEditOpening
+                                    ? "Edit opening balance"
+                                    : "Clear outstanding balance before editing opening balance"
+                                }
+                              >
+                                <Pencil className="w-3 h-3" strokeWidth={1.5} />
+                              </button>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-blue-600 text-right">
+                            PKR {item.total_invoiced.toLocaleString()}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-green-600 text-right">
+                            PKR {item.total_received.toLocaleString()}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-right">
+                            <span className={item.outstanding > 0 ? "text-amber-600" : "text-green-600"}>
+                              PKR {item.outstanding.toLocaleString()}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 flex gap-2">
+                            <Button variant="ghost" size="sm" onClick={() => viewStatement(item)}>
+                              View Statement
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => recordPayment(item)}
+                              disabled={item.invoices.every(
+                                (i) => Number(i.invoice_amount) - Number(i.amount_received) <= 0
+                              )}
+                            >
+                              Record Payment
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
               </table>
             </div>
@@ -1089,105 +1297,247 @@ export default function Accounting() {
       </Modal>
 
       <Modal isOpen={isStatementModalOpen} onClose={() => setIsStatementModalOpen(false)} title="Client Statement" size="lg">
-        <div className="space-y-4">
-          <div className="pb-4 border-b border-slate-200">
-            <h3 className="text-base text-slate-900">{selectedClient?.client}</h3>
-          </div>
+        {selectedClient && (
+          <div className="space-y-4">
+            <div className="pb-4 border-b border-slate-200">
+              <h3 className="text-base text-slate-900">{selectedClient.name}</h3>
+              <p className="text-xs text-slate-500 font-mono">{selectedClient.client_code}</p>
+            </div>
 
-          <div className="grid grid-cols-3 gap-4">
-            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-              <p className="text-sm text-blue-700 mb-1">Total Invoiced</p>
-              <p className="text-xl text-blue-900">PKR {selectedClient?.amount.toLocaleString()}</p>
-            </div>
-            <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-              <p className="text-sm text-green-700 mb-1">Amount Paid</p>
-              <p className="text-xl text-green-900">PKR 0</p>
-            </div>
-            <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
-              <p className="text-sm text-amber-700 mb-1">Outstanding</p>
-              <p className="text-xl text-amber-900">PKR {selectedClient?.amount.toLocaleString()}</p>
-            </div>
-          </div>
-
-          <div className="pt-4 border-t border-slate-200">
-            <h4 className="text-sm text-slate-900 mb-3">Transaction History</h4>
-            <div className="space-y-2">
-              <div className="p-3 bg-slate-50 rounded-lg">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <p className="text-sm text-slate-900">Invoice #{selectedClient?.id}001</p>
-                    <p className="text-xs text-slate-500">{selectedClient?.dueDate}</p>
-                  </div>
-                  <span className="text-sm text-blue-600">PKR {selectedClient?.amount.toLocaleString()}</span>
-                </div>
+            <div className="grid grid-cols-4 gap-3">
+              <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                <p className="text-xs text-slate-600 mb-1">Opening Balance</p>
+                <p className="text-lg text-slate-900">PKR {Number(selectedClient.opening_balance ?? 0).toLocaleString()}</p>
+              </div>
+              <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+                <p className="text-xs text-blue-700 mb-1">Total Invoiced</p>
+                <p className="text-lg text-blue-900">PKR {selectedClient.total_invoiced.toLocaleString()}</p>
+              </div>
+              <div className="bg-green-50 p-3 rounded-lg border border-green-200">
+                <p className="text-xs text-green-700 mb-1">Received</p>
+                <p className="text-lg text-green-900">PKR {selectedClient.total_received.toLocaleString()}</p>
+              </div>
+              <div className="bg-amber-50 p-3 rounded-lg border border-amber-200">
+                <p className="text-xs text-amber-700 mb-1">Outstanding</p>
+                <p className="text-lg text-amber-900">PKR {selectedClient.outstanding.toLocaleString()}</p>
               </div>
             </div>
-          </div>
 
-          <div className="flex items-center gap-3 pt-4 border-t border-slate-200">
-            <Button variant="primary" size="md" className="flex-1">
-              <Download className="w-4 h-4 mr-2" strokeWidth={1.5} />
-              Download Statement
-            </Button>
-            <Button variant="secondary" size="md" onClick={() => setIsStatementModalOpen(false)}>
-              Close
-            </Button>
+            <div className="pt-4 border-t border-slate-200">
+              <h4 className="text-sm text-slate-900 mb-3">Invoices</h4>
+              {selectedClient.invoices.length === 0 ? (
+                <p className="text-sm text-slate-500">No invoices yet for this client.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-slate-200">
+                        <th className="text-left px-3 py-2 text-xs text-slate-500">Invoice #</th>
+                        <th className="text-left px-3 py-2 text-xs text-slate-500">Date</th>
+                        <th className="text-right px-3 py-2 text-xs text-slate-500">Amount</th>
+                        <th className="text-right px-3 py-2 text-xs text-slate-500">Received</th>
+                        <th className="text-right px-3 py-2 text-xs text-slate-500">Outstanding</th>
+                        <th className="text-left px-3 py-2 text-xs text-slate-500">Attachment</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {selectedClient.invoices.map((inv) => {
+                        const out = Number(inv.invoice_amount) - Number(inv.amount_received);
+                        return (
+                          <tr key={inv.id}>
+                            <td className="px-3 py-2 text-xs font-mono text-slate-900">{inv.invoice_number}</td>
+                            <td className="px-3 py-2 text-xs text-slate-600">{inv.invoice_date}</td>
+                            <td className="px-3 py-2 text-xs text-right text-blue-600">
+                              PKR {Number(inv.invoice_amount).toLocaleString()}
+                            </td>
+                            <td className="px-3 py-2 text-xs text-right text-green-600">
+                              PKR {Number(inv.amount_received).toLocaleString()}
+                            </td>
+                            <td className="px-3 py-2 text-xs text-right">
+                              <span className={out > 0 ? "text-amber-600" : "text-green-600"}>
+                                PKR {out.toLocaleString()}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-xs">
+                              {inv.attachment_path ? (
+                                <button
+                                  type="button"
+                                  onClick={() => viewInvoiceAttachment(inv.attachment_path!)}
+                                  className="text-blue-600 hover:text-blue-700 inline-flex items-center gap-1"
+                                >
+                                  <FileText className="w-3 h-3" strokeWidth={1.5} />
+                                  View
+                                </button>
+                              ) : (
+                                <span className="text-slate-400">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3 pt-4 border-t border-slate-200">
+              <Button variant="primary" size="md" className="flex-1" onClick={() => window.print()}>
+                <Download className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                Print / Save PDF
+              </Button>
+              <Button variant="secondary" size="md" onClick={() => setIsStatementModalOpen(false)}>
+                Close
+              </Button>
+            </div>
           </div>
-        </div>
+        )}
+      </Modal>
+
+      <Modal isOpen={isOpeningBalanceOpen} onClose={() => setIsOpeningBalanceOpen(false)} title="Edit Opening Balance" size="md">
+        {selectedClient && (
+          <form className="space-y-4" onSubmit={handleSaveOpeningBalance}>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Client</label>
+              <input
+                type="text"
+                value={selectedClient.name}
+                disabled
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Opening Balance (PKR) *</label>
+              <input
+                required
+                type="number"
+                min="0"
+                step="0.01"
+                value={openingBalanceValue}
+                onChange={(e) => setOpeningBalanceValue(e.target.value)}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              />
+              <p className="text-xs text-slate-500 mt-1">
+                Editable only while the client has no outstanding balance. Adds on top of invoice totals.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 pt-2">
+              <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
+                {submitting ? "Saving…" : "Save"}
+              </Button>
+              <Button variant="secondary" size="md" onClick={() => setIsOpeningBalanceOpen(false)}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        )}
       </Modal>
 
       <Modal isOpen={isPaymentModalOpen} onClose={() => setIsPaymentModalOpen(false)} title="Record Payment" size="md">
-        <form className="space-y-4">
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Client</label>
-            <input
-              type="text"
-              value={selectedClient?.client ?? ""}
-              disabled
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
-            />
-          </div>
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Outstanding Amount</label>
-            <input
-              type="text"
-              value={selectedClient ? `PKR ${selectedClient.amount.toLocaleString()}` : ""}
-              disabled
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
-            />
-          </div>
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Payment Amount (PKR)</label>
-            <input
-              type="number"
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
-            />
-          </div>
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Payment Date</label>
-            <input
-              type="date"
-              defaultValue={new Date().toISOString().split("T")[0]}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
-            />
-          </div>
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Payment Method</label>
-            <select className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent">
-              <option>Bank Transfer</option>
-              <option>Cash</option>
-              <option>Cheque</option>
-            </select>
-          </div>
-          <div className="flex items-center gap-3 pt-4">
-            <Button variant="primary" size="md" className="flex-1">
-              Record Payment
-            </Button>
-            <Button variant="secondary" size="md" onClick={() => setIsPaymentModalOpen(false)}>
-              Cancel
-            </Button>
-          </div>
-        </form>
+        {selectedClient && (
+          <form className="space-y-4" onSubmit={handleRecordPayment}>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Client</label>
+              <input
+                type="text"
+                value={selectedClient.name}
+                disabled
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Apply to Invoice *</label>
+              <select
+                required
+                value={paymentInvoiceId}
+                onChange={(e) => setPaymentInvoiceId(e.target.value)}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              >
+                <option value="">Select an open invoice…</option>
+                {selectedClient.invoices
+                  .filter((i) => Number(i.invoice_amount) - Number(i.amount_received) > 0)
+                  .map((i) => {
+                    const out = Number(i.invoice_amount) - Number(i.amount_received);
+                    return (
+                      <option key={i.id} value={i.id}>
+                        {i.invoice_number} · {i.invoice_date} · Outstanding PKR {out.toLocaleString()}
+                      </option>
+                    );
+                  })}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Payment Amount (PKR) *</label>
+              <input
+                required
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={paymentAmount}
+                onChange={(e) => setPaymentAmount(e.target.value)}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-2">Received Via *</label>
+              <div className="grid grid-cols-2 gap-2">
+                {(["Cash", "Bank"] as const).map((v) => (
+                  <label
+                    key={v}
+                    className={`flex items-center justify-center gap-2 px-3 py-2 border rounded-md cursor-pointer text-sm ${
+                      paymentVia === v
+                        ? "border-slate-900 bg-slate-50"
+                        : "border-slate-200 hover:border-slate-300"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="pay-via"
+                      checked={paymentVia === v}
+                      onChange={() => setPaymentVia(v)}
+                    />
+                    <span>{v}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            {paymentVia === "Bank" && (
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Bank Account *</label>
+                <select
+                  required
+                  value={paymentBankId}
+                  onChange={(e) => setPaymentBankId(e.target.value)}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                >
+                  <option value="">Select bank account…</option>
+                  {banks.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.bank_name} · {b.account_number}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Notes</label>
+              <textarea
+                value={paymentNotes}
+                onChange={(e) => setPaymentNotes(e.target.value)}
+                rows={2}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              />
+            </div>
+            <div className="flex items-center gap-3 pt-2">
+              <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
+                {submitting ? "Recording…" : "Record Payment"}
+              </Button>
+              <Button variant="secondary" size="md" onClick={() => setIsPaymentModalOpen(false)}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        )}
       </Modal>
 
       <Modal isOpen={isReconcileModalOpen} onClose={() => setIsReconcileModalOpen(false)} title="Reconcile" size="md">

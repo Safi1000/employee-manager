@@ -26,7 +26,6 @@ type ExpenseForm = {
   category_id: string;
   client_id: string;
   vendor_id: string;
-  vendor_name_new: string;
   description: string;
   amount: string;
   expense_date: string;
@@ -41,7 +40,6 @@ const emptyForm: ExpenseForm = {
   category_id: "",
   client_id: "",
   vendor_id: "",
-  vendor_name_new: "",
   description: "",
   amount: "",
   expense_date: new Date().toISOString().slice(0, 10),
@@ -80,6 +78,12 @@ export default function Expenses() {
   const [catMode, setCatMode] = useState<"add" | "edit">("add");
   const [catInput, setCatInput] = useState("");
   const [catEditingId, setCatEditingId] = useState<string | null>(null);
+
+  const [isVendorModalOpen, setIsVendorModalOpen] = useState(false);
+  const [vendorMode, setVendorMode] = useState<"add" | "edit">("add");
+  const [vendorName, setVendorName] = useState("");
+  const [vendorAccountNumber, setVendorAccountNumber] = useState("");
+  const [vendorEditingId, setVendorEditingId] = useState<string | null>(null);
 
   const loadAll = async () => {
     setLoading(true);
@@ -192,25 +196,6 @@ export default function Expenses() {
     await supabase.storage.from(EXPENSE_RECEIPTS_BUCKET).remove([path]);
   };
 
-  const resolveVendorId = async (form: ExpenseForm): Promise<string | null> => {
-    if (form.payment_mode !== "Payable") return null;
-    if (form.vendor_id) return form.vendor_id;
-    const name = form.vendor_name_new.trim();
-    if (!name) return null;
-    const { data, error: insErr } = await supabase
-      .from("vendors")
-      .insert({ name })
-      .select()
-      .single();
-    if (insErr) {
-      // possibly unique conflict — look up existing
-      const { data: existing } = await supabase.from("vendors").select("*").ilike("name", name).maybeSingle();
-      if (existing) return (existing as Vendor).id;
-      throw insErr;
-    }
-    return (data as Vendor).id;
-  };
-
   const describeExpense = (catId: string, client: string | null, desc: string | null) => {
     const cat = categories.find((c) => c.id === catId)?.name ?? "Expense";
     const who = client ? `(${client})` : "(Office)";
@@ -229,6 +214,10 @@ export default function Expenses() {
       setError("Select a due date for Payable expense.");
       return;
     }
+    if (form.payment_mode === "Payable" && !form.vendor_id) {
+      setError("Select a vendor for Payable expense. Add one via Manage Vendors.");
+      return;
+    }
     if (form.payment_mode === "Cash" && amount > cashBalance) {
       setError("Cash balance is insufficient.");
       return;
@@ -243,7 +232,7 @@ export default function Expenses() {
     setSubmitting(true);
     setError(null);
     try {
-      const vendorId = await resolveVendorId(form);
+      const vendorId = form.payment_mode === "Payable" ? form.vendor_id || null : null;
       const clientName = form.client_id ? clients.find((c) => c.id === form.client_id)?.name ?? null : null;
 
       const { data: inserted, error: insErr } = await supabase
@@ -310,7 +299,6 @@ export default function Expenses() {
       category_id: expense.category_id ?? "",
       client_id: expense.client_id ?? "",
       vendor_id: expense.vendor_id ?? "",
-      vendor_name_new: "",
       description: expense.description ?? "",
       amount: String(expense.amount),
       expense_date: expense.expense_date,
@@ -382,6 +370,10 @@ export default function Expenses() {
       setError("Select a due date for Payable expense.");
       return;
     }
+    if (editForm.payment_mode === "Payable" && !editForm.vendor_id) {
+      setError("Select a vendor for Payable expense. Add one via Manage Vendors.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -404,7 +396,7 @@ export default function Expenses() {
         }
       }
 
-      const vendorId = await resolveVendorId(editForm);
+      const vendorId = editForm.payment_mode === "Payable" ? editForm.vendor_id || null : null;
       const clientName = editForm.client_id ? clients.find((c) => c.id === editForm.client_id)?.name ?? null : null;
 
       let receiptPath: string | null = selected.receipt_path;
@@ -547,6 +539,63 @@ export default function Expenses() {
       setError(err.message ?? String(err));
     }
   };
+  const openVendorAdd = () => {
+    setVendorMode("add");
+    setVendorName("");
+    setVendorAccountNumber("");
+    setVendorEditingId(null);
+  };
+  const openVendorEdit = (v: Vendor) => {
+    setVendorMode("edit");
+    setVendorName(v.name);
+    setVendorAccountNumber(v.account_number ?? "");
+    setVendorEditingId(v.id);
+  };
+  const handleSaveVendor = async () => {
+    const n = vendorName.trim();
+    if (!n) {
+      setError("Vendor name is required.");
+      return;
+    }
+    setError(null);
+    try {
+      if (vendorMode === "add") {
+        const { error: insErr } = await supabase
+          .from("vendors")
+          .insert({ name: n, account_number: vendorAccountNumber.trim() || null });
+        if (insErr) throw insErr;
+      } else if (vendorEditingId) {
+        const { error: upErr } = await supabase
+          .from("vendors")
+          .update({ name: n, account_number: vendorAccountNumber.trim() || null })
+          .eq("id", vendorEditingId);
+        if (upErr) throw upErr;
+      }
+      openVendorAdd();
+      await loadAll();
+    } catch (err: any) {
+      setError(err.message ?? String(err));
+    }
+  };
+  const handleDeleteVendor = async (v: Vendor) => {
+    const usedBy = expenses.filter((e) => e.vendor_id === v.id).length;
+    if (
+      !window.confirm(
+        usedBy > 0
+          ? `Delete vendor "${v.name}"? ${usedBy} expense${usedBy === 1 ? "" : "s"} using it will have the vendor cleared.`
+          : `Delete vendor "${v.name}"?`
+      )
+    )
+      return;
+    const { error: delErr } = await supabase.from("vendors").delete().eq("id", v.id);
+    if (delErr) {
+      setError(delErr.message);
+      return;
+    }
+    if (vendorEditingId === v.id) openVendorAdd();
+    await loadAll();
+  };
+
   const handleDeleteCategory = async (c: ExpenseCategory) => {
     const usedBy = expenses.filter((e) => e.category_id === c.id).length;
     if (!window.confirm(
@@ -571,6 +620,9 @@ export default function Expenses() {
         actions={
           <>
             <ExportButton onExport={() => console.log("Export")} />
+            <Button variant="secondary" size="md" onClick={() => setIsVendorModalOpen(true)}>
+              Manage Vendors
+            </Button>
             <Button variant="primary" size="md" onClick={() => setIsAddOpen(true)}>
               <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
               Add Expense
@@ -918,6 +970,89 @@ export default function Expenses() {
       </Modal>
 
       <Modal
+        isOpen={isVendorModalOpen}
+        onClose={() => setIsVendorModalOpen(false)}
+        title="Manage Vendors"
+        size="md"
+      >
+        <div className="space-y-4">
+          <div className="space-y-3">
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">
+                {vendorMode === "add" ? "New Vendor Name *" : "Vendor Name *"}
+              </label>
+              <input
+                type="text"
+                value={vendorName}
+                onChange={(e) => setVendorName(e.target.value)}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                placeholder="e.g., Acme Supplies"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Account Number</label>
+              <input
+                type="text"
+                value={vendorAccountNumber}
+                onChange={(e) => setVendorAccountNumber(e.target.value)}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                placeholder="Vendor's bank account number"
+              />
+              <p className="text-xs text-slate-500 mt-1">
+                Stored here so you can copy-paste it when paying the vendor from your banking app.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="primary" size="sm" onClick={handleSaveVendor}>
+                {vendorMode === "add" ? "Add Vendor" : "Save Changes"}
+              </Button>
+              {vendorMode === "edit" && (
+                <Button variant="secondary" size="sm" onClick={openVendorAdd}>
+                  Cancel Edit
+                </Button>
+              )}
+            </div>
+          </div>
+
+          <div className="pt-3 border-t border-slate-200">
+            <p className="text-xs text-slate-500 mb-2">Existing Vendors</p>
+            {vendors.length === 0 ? (
+              <p className="text-sm text-slate-500">No vendors yet.</p>
+            ) : (
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {vendors.map((v) => (
+                  <div
+                    key={v.id}
+                    className="flex items-center justify-between p-2.5 border border-slate-200 rounded-md"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm text-slate-900 truncate">{v.name}</p>
+                      {v.account_number && (
+                        <p className="text-xs text-slate-500 font-mono truncate">{v.account_number}</p>
+                      )}
+                    </div>
+                    <div className="flex gap-1 flex-shrink-0">
+                      <Button variant="ghost" size="sm" onClick={() => openVendorEdit(v)}>
+                        Edit
+                      </Button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteVendor(v)}
+                        className="inline-flex items-center justify-center px-2 py-1 rounded-md text-red-700 hover:bg-red-50"
+                        title="Delete vendor"
+                      >
+                        <Trash2 className="w-4 h-4" strokeWidth={1.5} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
         isOpen={isCatModalOpen}
         onClose={() => setIsCatModalOpen(false)}
         title={catMode === "add" ? "Add Category" : "Edit Category"}
@@ -1062,33 +1197,26 @@ export default function Expenses() {
           )}
           {state.payment_mode === "Payable" && (
             <>
-              <div>
+              <div className="col-span-2">
                 <label className="block text-sm text-slate-700 mb-1">Vendor *</label>
                 <select
+                  required
                   value={state.vendor_id}
                   onChange={(e) => setState({ ...state, vendor_id: e.target.value })}
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
                 >
-                  <option value="">New vendor…</option>
+                  <option value="">Select vendor</option>
                   {vendors.map((v) => (
                     <option key={v.id} value={v.id}>
-                      {v.name}
+                      {v.name}{v.account_number ? ` · ${v.account_number}` : ""}
                     </option>
                   ))}
                 </select>
-              </div>
-              <div>
-                <label className="block text-sm text-slate-700 mb-1">
-                  {state.vendor_id ? "Selected" : "New vendor name"}
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g., Vendor X"
-                  disabled={!!state.vendor_id}
-                  value={state.vendor_id ? vendors.find((v) => v.id === state.vendor_id)?.name ?? "" : state.vendor_name_new}
-                  onChange={(e) => setState({ ...state, vendor_name_new: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm disabled:bg-slate-50 disabled:text-slate-500"
-                />
+                {vendors.length === 0 && (
+                  <p className="text-xs text-slate-500 mt-1">
+                    No vendors yet. Add one via the <span className="font-medium">Manage Vendors</span> button.
+                  </p>
+                )}
               </div>
               <div className="col-span-2">
                 <label className="block text-sm text-slate-700 mb-1">Due Date *</label>

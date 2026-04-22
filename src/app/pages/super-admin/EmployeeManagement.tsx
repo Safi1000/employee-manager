@@ -44,6 +44,19 @@ const emptyForm: FormState = {
   bank_account: "",
 };
 
+const daysInCurrentMonth = () => {
+  const d = new Date();
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+};
+
+const computePerDay = (baseStr: string): string => {
+  const base = Number(baseStr);
+  if (!Number.isFinite(base) || base <= 0) return "";
+  const days = daysInCurrentMonth();
+  const pd = base / days;
+  return pd.toFixed(2);
+};
+
 export default function EmployeeManagement() {
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
@@ -249,6 +262,7 @@ export default function EmployeeManagement() {
   const openEdit = (emp: EmployeeRow) => {
     setSelectedEmployee(emp);
     setEditStatus(emp.status);
+    const baseStr = emp.base_salary != null ? String(emp.base_salary) : "";
     setEditForm({
       full_name: emp.full_name,
       phone: emp.phone ?? "",
@@ -256,8 +270,8 @@ export default function EmployeeManagement() {
       client_id: emp.client_id ?? "",
       department: emp.department ?? "",
       shift: emp.shift,
-      base_salary: emp.base_salary != null ? String(emp.base_salary) : "",
-      per_day_salary: emp.per_day_salary != null ? String(emp.per_day_salary) : "",
+      base_salary: baseStr,
+      per_day_salary: computePerDay(baseStr),
       join_date: emp.join_date ?? "",
       bank_account: emp.bank_account ?? "",
     });
@@ -568,7 +582,10 @@ export default function EmployeeManagement() {
                 <input
                   type="number"
                   value={form.base_salary}
-                  onChange={(e) => setForm({ ...form, base_salary: e.target.value })}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setForm({ ...form, base_salary: v, per_day_salary: computePerDay(v) });
+                  }}
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                   placeholder="50000"
                 />
@@ -577,11 +594,15 @@ export default function EmployeeManagement() {
                 <label className="block text-sm text-slate-700 mb-1">Per Day Salary (PKR)</label>
                 <input
                   type="number"
+                  disabled
                   value={form.per_day_salary}
-                  onChange={(e) => setForm({ ...form, per_day_salary: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                  placeholder="2500"
+                  readOnly
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50 text-slate-500 cursor-not-allowed"
+                  placeholder="Auto = Base ÷ days in month"
                 />
+                <p className="text-xs text-slate-500 mt-1">
+                  Auto-computed: Base Salary ÷ {daysInCurrentMonth()} days this month.
+                </p>
               </div>
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Join Date</label>
@@ -858,7 +879,10 @@ export default function EmployeeManagement() {
                   <input
                     type="number"
                     value={editForm.base_salary}
-                    onChange={(e) => setEditForm({ ...editForm, base_salary: e.target.value })}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setEditForm({ ...editForm, base_salary: v, per_day_salary: computePerDay(v) });
+                    }}
                     className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                   />
                 </div>
@@ -866,10 +890,14 @@ export default function EmployeeManagement() {
                   <label className="block text-sm text-slate-700 mb-1">Per Day Salary (PKR)</label>
                   <input
                     type="number"
+                    disabled
+                    readOnly
                     value={editForm.per_day_salary}
-                    onChange={(e) => setEditForm({ ...editForm, per_day_salary: e.target.value })}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50 text-slate-500 cursor-not-allowed"
                   />
+                  <p className="text-xs text-slate-500 mt-1">
+                    Auto-computed: Base Salary ÷ {daysInCurrentMonth()} days this month.
+                  </p>
                 </div>
                 <div>
                   <label className="block text-sm text-slate-700 mb-1">Join Date</label>

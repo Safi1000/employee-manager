@@ -57,6 +57,10 @@ const formatPeriod = (p: string) => {
   const [y, m] = p.split("-").map(Number);
   return new Date(y, m - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
 };
+const daysInMonth = (periodMonth: string) => {
+  const [y, m] = periodMonth.split("-").map(Number);
+  return new Date(y, m, 0).getDate();
+};
 
 export default function PayrollManagement() {
   const today = new Date();
@@ -70,8 +74,12 @@ export default function PayrollManagement() {
   const [attendanceAgg, setAttendanceAgg] = useState<Map<string, { present: number; absent: number; leave: number }>>(
     new Map()
   );
-  const [workingDaysSetting, setWorkingDaysSetting] = useState(22);
   const [cashBalance, setCashBalance] = useState(0);
+
+  const [isBulkDisburseOpen, setIsBulkDisburseOpen] = useState(false);
+  const [bulkMode, setBulkMode] = useState<PaymentMode>("Cash");
+  const [bulkBankId, setBulkBankId] = useState<string>("");
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -137,7 +145,7 @@ export default function PayrollManagement() {
     const cutoff = firstOfMonth(sixAgo);
     await supabase.from("payslips").delete().lt("period_month", cutoff);
 
-    const [empRes, locRes, cliRes, bankRes, treaRes, setRes] = await Promise.all([
+    const [empRes, locRes, cliRes, bankRes, treaRes] = await Promise.all([
       supabase
         .from("employees")
         .select("*, location:location_id(name), client:client_id(name)")
@@ -146,7 +154,6 @@ export default function PayrollManagement() {
       supabase.from("clients").select("*").order("name"),
       supabase.from("bank_accounts").select("*").order("bank_name"),
       supabase.from("treasury").select("*").limit(1).maybeSingle(),
-      supabase.from("app_settings").select("value").eq("key", "working_days_per_month").maybeSingle(),
     ]);
 
     if (empRes.error) setError(empRes.error.message);
@@ -161,9 +168,6 @@ export default function PayrollManagement() {
     setClients(cliRes.data ?? []);
     setBanks((bankRes.data ?? []) as BankAccount[]);
     setCashBalance(Number(treaRes.data?.cash_balance ?? 0));
-    const wdRaw = setRes.data?.value;
-    const wd = typeof wdRaw === "number" ? wdRaw : Number(wdRaw);
-    if (!Number.isNaN(wd) && wd > 0) setWorkingDaysSetting(wd);
 
     await loadPeriodData(selectedPeriod);
     setLoading(false);
@@ -178,19 +182,21 @@ export default function PayrollManagement() {
   }, [selectedPeriod]);
 
   const rows = useMemo<RowState[]>(() => {
+    const daysThisPeriod = daysInMonth(selectedPeriod);
     return employees.map((emp) => {
       const existing = payslipsMap.get(emp.id);
       const att = attendanceAgg.get(emp.id) ?? { present: 0, absent: 0, leave: 0 };
+      const baseSal = Number(existing?.base_salary ?? emp.base_salary ?? 0);
+      const perDay = baseSal > 0 ? baseSal / daysThisPeriod : null;
       const defaults: RowState = {
         employee: emp,
         period_month: selectedPeriod,
-        working_days: existing?.working_days ?? workingDaysSetting,
+        working_days: daysThisPeriod,
         present_days: att.present,
         absent_days: att.absent,
         leave_days: att.leave,
-        base_salary: Number(existing?.base_salary ?? emp.base_salary ?? 0),
-        per_day_salary:
-          existing?.per_day_salary != null ? Number(existing.per_day_salary) : emp.per_day_salary,
+        base_salary: baseSal,
+        per_day_salary: perDay,
         bonus: Number(existing?.bonus ?? 0),
         deductions: Number(existing?.deductions ?? 0),
         advance: Number(existing?.advance ?? 0),
@@ -208,9 +214,12 @@ export default function PayrollManagement() {
       const merged = { ...defaults, ...edits };
       merged.final_salary = Math.max(0, merged.base_salary + merged.bonus - merged.deductions);
       merged.net_salary = merged.final_salary - merged.advance;
+      if (merged.base_salary > 0) {
+        merged.per_day_salary = merged.base_salary / daysThisPeriod;
+      }
       return merged;
     });
-  }, [employees, payslipsMap, attendanceAgg, selectedPeriod, workingDaysSetting, rowEdits]);
+  }, [employees, payslipsMap, attendanceAgg, selectedPeriod, rowEdits]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -433,6 +442,110 @@ export default function PayrollManagement() {
     }
   };
 
+  const handleBulkDisburse = async () => {
+    setError(null);
+    const candidates = filtered.filter((r) => !r.disbursed && r.net_salary > 0);
+    if (candidates.length === 0) {
+      setError("No pending rows in the current filter to disburse.");
+      return;
+    }
+    if (bulkMode === "Bank" && !bulkBankId) {
+      setError("Select a bank account for bulk disbursement.");
+      return;
+    }
+    const total = candidates.reduce((s, r) => s + r.net_salary, 0);
+    if (bulkMode === "Cash") {
+      if (total > cashBalance) {
+        setError(`Cash balance (PKR ${cashBalance.toLocaleString()}) is insufficient for PKR ${total.toLocaleString()}.`);
+        return;
+      }
+    } else {
+      const bank = banks.find((b) => b.id === bulkBankId);
+      if (!bank) {
+        setError("Selected bank account not found.");
+        return;
+      }
+      if (total > Number(bank.balance)) {
+        setError(
+          `Bank balance (PKR ${Number(bank.balance).toLocaleString()}) is insufficient for PKR ${total.toLocaleString()}.`
+        );
+        return;
+      }
+    }
+    setBulkSubmitting(true);
+    try {
+      for (const row of candidates) {
+        const net = row.net_salary;
+        if (bulkMode === "Bank") {
+          const { data: bankNow } = await supabase
+            .from("bank_accounts")
+            .select("id, balance, bank_name, account_number")
+            .eq("id", bulkBankId)
+            .single();
+          if (!bankNow) throw new Error("Bank account not found mid-bulk.");
+          if (net > Number(bankNow.balance)) {
+            throw new Error(`Bank balance exhausted at ${row.employee.employee_code}.`);
+          }
+          await supabase
+            .from("bank_accounts")
+            .update({
+              balance: Number(bankNow.balance) - net,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", bulkBankId);
+          await supabase.from("bank_transactions").insert({
+            bank_account_id: bulkBankId,
+            kind: "payroll",
+            amount: net,
+            cash_delta: 0,
+            account_delta: -net,
+            description: `Payroll ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
+          });
+        } else {
+          const { data: trea } = await supabase
+            .from("treasury")
+            .select("id, cash_balance")
+            .limit(1)
+            .maybeSingle();
+          if (!trea) throw new Error("Treasury row missing.");
+          if (net > Number(trea.cash_balance)) {
+            throw new Error(`Cash exhausted at ${row.employee.employee_code}.`);
+          }
+          await supabase
+            .from("treasury")
+            .update({
+              cash_balance: Number(trea.cash_balance) - net,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", trea.id);
+          await supabase.from("bank_transactions").insert({
+            bank_account_id: null,
+            kind: "payroll",
+            amount: net,
+            cash_delta: -net,
+            account_delta: 0,
+            description: `Payroll (cash) ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
+          });
+        }
+        await savePayslip({
+          ...row,
+          payment_mode: bulkMode,
+          bank_account_id: bulkMode === "Bank" ? bulkBankId : null,
+          disbursed: true,
+          disbursed_at: new Date().toISOString(),
+          status: "Cleared",
+        });
+      }
+      setIsBulkDisburseOpen(false);
+      await loadAll();
+    } catch (err: any) {
+      setError(err.message ?? String(err));
+      await loadAll();
+    } finally {
+      setBulkSubmitting(false);
+    }
+  };
+
   const openPayslipModal = async (row: RowState) => {
     setError(null);
     try {
@@ -514,12 +627,23 @@ export default function PayrollManagement() {
       <Header
         title="Payroll Management"
         actions={
-          <>
+          <div className="flex items-center gap-3">
             <div className="text-xs text-slate-500 flex flex-col items-end mr-2">
               <span>Cash: PKR {cashBalance.toLocaleString()}</span>
-              <span>Working Days: {workingDaysSetting}</span>
+              <span>Days in {formatPeriod(selectedPeriod)}: {daysInMonth(selectedPeriod)}</span>
             </div>
-          </>
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => {
+                setBulkMode("Cash");
+                setBulkBankId("");
+                setIsBulkDisburseOpen(true);
+              }}
+            >
+              Mark All as Disbursed
+            </Button>
+          </div>
         }
       />
 
@@ -1038,6 +1162,104 @@ export default function PayrollManagement() {
             </div>
           </div>
         )}
+      </Modal>
+
+      <Modal
+        isOpen={isBulkDisburseOpen}
+        onClose={() => setIsBulkDisburseOpen(false)}
+        title="Mark All as Disbursed"
+        size="md"
+      >
+        {(() => {
+          const candidates = filtered.filter((r) => !r.disbursed && r.net_salary > 0);
+          const total = candidates.reduce((s, r) => s + r.net_salary, 0);
+          return (
+            <div className="space-y-4">
+              <div className="bg-slate-50 border border-slate-200 rounded-md p-3 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Rows matching filter</span>
+                  <span className="text-slate-900">{candidates.length}</span>
+                </div>
+                <div className="flex justify-between mt-1">
+                  <span className="text-slate-600">Total to disburse</span>
+                  <span className="text-slate-900">PKR {total.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between mt-1">
+                  <span className="text-slate-600">Period</span>
+                  <span className="text-slate-900">{formatPeriod(selectedPeriod)}</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm text-slate-700 mb-2">Payment Mode</label>
+                <div className="flex gap-3">
+                  {(["Cash", "Bank"] as const).map((m) => (
+                    <label
+                      key={m}
+                      className={`flex-1 flex items-center gap-2 px-4 py-2 border rounded-md cursor-pointer text-sm ${
+                        bulkMode === m
+                          ? "border-slate-900 bg-slate-50"
+                          : "border-slate-200 hover:border-slate-300"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="bulk-mode"
+                        checked={bulkMode === m}
+                        onChange={() => setBulkMode(m)}
+                      />
+                      <span>{m}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {bulkMode === "Bank" && (
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">Bank Account</label>
+                  <select
+                    value={bulkBankId}
+                    onChange={(e) => setBulkBankId(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  >
+                    <option value="">Select bank account</option>
+                    {banks.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.bank_name} · {b.account_number} (PKR {Number(b.balance).toLocaleString()})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {bulkMode === "Cash" && (
+                <p className="text-xs text-slate-500">
+                  Current cash balance: PKR {cashBalance.toLocaleString()}.
+                </p>
+              )}
+
+              <div className="flex items-center gap-3 pt-2">
+                <Button
+                  variant="primary"
+                  size="md"
+                  className="flex-1"
+                  onClick={handleBulkDisburse}
+                  disabled={bulkSubmitting || candidates.length === 0}
+                >
+                  {bulkSubmitting ? "Disbursing…" : `Disburse ${candidates.length} Payslip${candidates.length === 1 ? "" : "s"}`}
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="md"
+                  onClick={() => setIsBulkDisburseOpen(false)}
+                  disabled={bulkSubmitting}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          );
+        })()}
       </Modal>
     </>
   );

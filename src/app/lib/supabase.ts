@@ -7,6 +7,7 @@ export const supabase = createClient(url, anonKey);
 
 export const EMPLOYEE_DOCS_BUCKET = "employee-documents";
 export const EXPENSE_RECEIPTS_BUCKET = "expense-receipts";
+export const INVOICE_ATTACHMENTS_BUCKET = "invoice-attachments";
 
 export type Location = {
   id: string;
@@ -20,6 +21,8 @@ export type Client = {
   name: string;
   email: string | null;
   phone: string | null;
+  allowed_leaves_per_month: number;
+  opening_balance: number;
   created_at?: string;
 };
 
@@ -106,7 +109,8 @@ export type BankTransactionKind =
   | "reconcile"
   | "adjustment"
   | "cash_adjustment"
-  | "expense";
+  | "expense"
+  | "receipt";
 
 export type BankTransaction = {
   id: string;
@@ -151,7 +155,8 @@ export type Payslip = {
 export type Issuance = {
   id: string;
   item_id: string;
-  employee_id: string;
+  employee_id: string | null;
+  client_id: string | null;
   location_id: string | null;
   issue_date: string;
   return_date: string | null;
@@ -169,7 +174,21 @@ export type ExpenseCategory = {
 export type Vendor = {
   id: string;
   name: string;
+  account_number: string | null;
   created_at?: string;
+};
+
+export type Invoice = {
+  id: string;
+  client_id: string;
+  invoice_number: string;
+  invoice_date: string;
+  invoice_amount: number;
+  amount_received: number;
+  attachment_path: string | null;
+  notes: string | null;
+  created_at?: string;
+  updated_at?: string;
 };
 
 export type ExpensePaymentMode = "Cash" | "Bank" | "Payable";
