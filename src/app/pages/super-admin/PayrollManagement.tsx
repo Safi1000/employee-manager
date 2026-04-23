@@ -38,6 +38,11 @@ type RowState = {
   disbursed_at: string | null;
   notes: string | null;
   payslip_id: string | null;
+  override_leaves: boolean;
+  allowed_leaves: number;
+  effective_present_days: number;
+  effective_absent_days: number;
+  extra_leave_absent: number;
 };
 
 const firstOfMonth = (d: Date) => {
@@ -192,14 +197,22 @@ export default function PayrollManagement() {
     if (!loading) loadPeriodData(selectedPeriod);
   }, [selectedPeriod]);
 
+  const clientAllowedLeaves = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const c of clients) {
+      m.set(c.id, Number(c.allowed_leaves_per_month ?? 0));
+    }
+    return m;
+  }, [clients]);
+
   const rows = useMemo<RowState[]>(() => {
     const daysThisPeriod = daysInMonth(selectedPeriod);
     return employees.map((emp) => {
       const existing = payslipsMap.get(emp.id);
       const att = attendanceAgg.get(emp.id) ?? { present: 0, absent: 0, leave: 0 };
       const baseSal = Number(existing?.base_salary ?? emp.base_salary ?? 0);
-      const perDay = baseSal > 0 ? baseSal / daysThisPeriod : null;
       const computedAdvance = advancesByEmployee.get(emp.id) ?? 0;
+      const allowed = emp.client_id ? clientAllowedLeaves.get(emp.client_id) ?? 0 : 0;
       const defaults: RowState = {
         employee: emp,
         period_month: selectedPeriod,
@@ -208,7 +221,7 @@ export default function PayrollManagement() {
         absent_days: att.absent,
         leave_days: att.leave,
         base_salary: baseSal,
-        per_day_salary: perDay,
+        per_day_salary: null,
         bonus: Number(existing?.bonus ?? 0),
         deductions: Number(existing?.deductions ?? 0),
         advance: computedAdvance,
@@ -221,19 +234,43 @@ export default function PayrollManagement() {
         disbursed_at: existing?.disbursed_at ?? null,
         notes: existing?.notes ?? null,
         payslip_id: existing?.id ?? null,
+        override_leaves: existing?.override_leaves ?? false,
+        allowed_leaves: allowed,
+        effective_present_days: 0,
+        effective_absent_days: 0,
+        extra_leave_absent: 0,
       };
       const edits = rowEdits.get(emp.id) ?? {};
       const merged = { ...defaults, ...edits };
-      // Advance is always computed from the advances table — never editable in Payroll
       merged.advance = computedAdvance;
-      merged.final_salary = Math.max(0, merged.base_salary + merged.bonus - merged.deductions);
-      merged.net_salary = merged.final_salary - merged.advance;
-      if (merged.base_salary > 0) {
-        merged.per_day_salary = merged.base_salary / daysThisPeriod;
+      merged.allowed_leaves = allowed;
+
+      const rawLeaves = merged.leave_days;
+      const rawPresent = merged.present_days;
+      const rawAbsent = merged.absent_days;
+      let countableLeaves: number;
+      let extraLeaveAbsent: number;
+      if (merged.override_leaves) {
+        countableLeaves = rawLeaves;
+        extraLeaveAbsent = 0;
+      } else {
+        countableLeaves = Math.min(rawLeaves, merged.allowed_leaves);
+        extraLeaveAbsent = Math.max(0, rawLeaves - merged.allowed_leaves);
       }
+      merged.effective_present_days = rawPresent + countableLeaves;
+      merged.extra_leave_absent = extraLeaveAbsent;
+      merged.effective_absent_days = rawAbsent + extraLeaveAbsent;
+
+      const perDay = daysThisPeriod > 0 && merged.base_salary > 0
+        ? merged.base_salary / daysThisPeriod
+        : 0;
+      merged.per_day_salary = perDay > 0 ? perDay : null;
+      const earned = perDay * merged.effective_present_days;
+      merged.final_salary = Math.max(0, earned + merged.bonus - merged.deductions);
+      merged.net_salary = Math.max(0, merged.final_salary - merged.advance);
       return merged;
     });
-  }, [employees, payslipsMap, attendanceAgg, advancesByEmployee, selectedPeriod, rowEdits]);
+  }, [employees, payslipsMap, attendanceAgg, advancesByEmployee, clientAllowedLeaves, selectedPeriod, rowEdits]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -302,6 +339,7 @@ export default function PayrollManagement() {
       disbursed: row.disbursed,
       disbursed_at: row.disbursed_at,
       notes: row.notes,
+      override_leaves: row.override_leaves,
       updated_at: new Date().toISOString(),
     };
     const { error: upErr } = await supabase
@@ -620,15 +658,21 @@ export default function PayrollManagement() {
     line("Present Days", String(row.present_days));
     line("Absent Days", String(row.absent_days));
     line("Leave Days", String(row.leave_days));
+    line("Allowed Leaves", String(row.allowed_leaves));
+    if (row.override_leaves) line("Leave Override", "Yes (all leaves paid)");
+    if (row.extra_leave_absent > 0)
+      line("Absent due to extra leaves", String(row.extra_leave_absent));
+    line("Effective Paid Days", `${row.effective_present_days} / ${row.working_days}`);
     y += 6;
     line("Base Salary", `PKR ${row.base_salary.toLocaleString()}`);
     if (row.per_day_salary != null)
       line("Per Day Salary", `PKR ${Number(row.per_day_salary).toLocaleString()}`);
+    line("Earned (Per Day × Paid Days)", `PKR ${Math.round((row.per_day_salary ?? 0) * row.effective_present_days).toLocaleString()}`);
     line("Bonus", `PKR ${row.bonus.toLocaleString()}`);
     line("Deductions", `PKR ${row.deductions.toLocaleString()}`);
     y += 4;
     doc.setFontSize(12);
-    line("Final Salary (Base + Bonus − Deductions)", `PKR ${row.final_salary.toLocaleString()}`);
+    line("Final Salary (Earned + Bonus − Deductions)", `PKR ${row.final_salary.toLocaleString()}`);
     doc.setFontSize(11);
     line("Advance", `PKR ${row.advance.toLocaleString()}`);
     y += 6;
@@ -1018,6 +1062,61 @@ export default function PayrollManagement() {
                   </div>
 
                   <div className="pt-3 border-t border-slate-200 space-y-2">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500">Allowed Leaves</span>
+                      <span className="text-slate-700">{selectedRow.allowed_leaves}</span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500">Leaves Taken</span>
+                      <span className="text-slate-700">{selectedRow.leave_days}</span>
+                    </div>
+                    {!selectedRow.override_leaves && selectedRow.extra_leave_absent > 0 && (
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-500">Absent due to extra leaves</span>
+                        <span className="text-red-600">+{selectedRow.extra_leave_absent}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500">Effective Paid Days</span>
+                      <span className="text-slate-900">
+                        {selectedRow.effective_present_days} / {selectedRow.working_days}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500">Per Day × Paid Days</span>
+                      <span className="text-slate-700">
+                        PKR {Number(selectedRow.per_day_salary ?? 0).toLocaleString()} ×{" "}
+                        {selectedRow.effective_present_days} = PKR{" "}
+                        {Math.round(
+                          (selectedRow.per_day_salary ?? 0) *
+                            selectedRow.effective_present_days
+                        ).toLocaleString()}
+                      </span>
+                    </div>
+                    <label className="flex items-center gap-2 text-xs pt-1">
+                      <input
+                        type="checkbox"
+                        checked={selectedRow.override_leaves}
+                        onChange={(e) =>
+                          updateEdit(selectedRow.employee.id, {
+                            override_leaves: e.target.checked,
+                          })
+                        }
+                        className="rounded border-slate-300"
+                      />
+                      <span className="text-slate-700">
+                        Allow full payment despite extra leaves
+                      </span>
+                    </label>
+                    {selectedRow.override_leaves && (
+                      <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-1">
+                        Override on — all {selectedRow.leave_days} leaves counted as paid days.
+                        Remember to click Save.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="pt-3 border-t border-slate-200 space-y-2">
                     <div className="flex justify-between">
                       <span className="text-slate-500">Final Salary</span>
                       <span className="text-slate-900">PKR {selectedRow.final_salary.toLocaleString()}</span>
@@ -1169,17 +1268,49 @@ export default function PayrollManagement() {
               <h4 className="text-sm text-slate-900 mb-3">Earnings &amp; Deductions</h4>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
+                  <span className="text-slate-600">Allowed Leaves</span>
+                  <span className="text-slate-900">{payslipData.allowed_leaves}</span>
+                </div>
+                {payslipData.override_leaves && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Leave Override</span>
+                    <span className="text-emerald-700">Yes (all leaves paid)</span>
+                  </div>
+                )}
+                {payslipData.extra_leave_absent > 0 && !payslipData.override_leaves && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Absent (extra leaves)</span>
+                    <span className="text-red-600">{payslipData.extra_leave_absent}</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Effective Paid Days</span>
+                  <span className="text-slate-900">
+                    {payslipData.effective_present_days} / {payslipData.working_days}
+                  </span>
+                </div>
+                <div className="flex justify-between">
                   <span className="text-slate-600">Base Salary</span>
                   <span className="text-slate-900">PKR {payslipData.base_salary.toLocaleString()}</span>
                 </div>
                 {payslipData.per_day_salary != null && (
                   <div className="flex justify-between">
-                    <span className="text-slate-600">Per Day Salary (display)</span>
+                    <span className="text-slate-600">Per Day Salary</span>
                     <span className="text-slate-900">
                       PKR {Number(payslipData.per_day_salary).toLocaleString()}
                     </span>
                   </div>
                 )}
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Earned (Per Day × Paid Days)</span>
+                  <span className="text-slate-900">
+                    PKR{" "}
+                    {Math.round(
+                      (payslipData.per_day_salary ?? 0) *
+                        payslipData.effective_present_days
+                    ).toLocaleString()}
+                  </span>
+                </div>
                 <div className="flex justify-between">
                   <span className="text-slate-600">Bonus</span>
                   <span className="text-green-600">+ PKR {payslipData.bonus.toLocaleString()}</span>
@@ -1238,7 +1369,7 @@ export default function PayrollManagement() {
             <div className="space-y-4">
               <div className="bg-slate-50 border border-slate-200 rounded-md p-3 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-slate-600">Rows matching filter</span>
+                  <span className="text-slate-600">Visible non-disbursed rows</span>
                   <span className="text-slate-900">{candidates.length}</span>
                 </div>
                 <div className="flex justify-between mt-1">
@@ -1249,6 +1380,10 @@ export default function PayrollManagement() {
                   <span className="text-slate-600">Period</span>
                   <span className="text-slate-900">{formatPeriod(selectedPeriod)}</span>
                 </div>
+                <p className="text-xs text-slate-500 mt-2">
+                  Only employees currently visible under the active filters will be
+                  disbursed.
+                </p>
               </div>
 
               <div>

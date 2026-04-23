@@ -149,6 +149,7 @@ export type Payslip = {
   disbursed: boolean;
   disbursed_at: string | null;
   notes: string | null;
+  override_leaves: boolean;
   created_at?: string;
   updated_at?: string;
 };
