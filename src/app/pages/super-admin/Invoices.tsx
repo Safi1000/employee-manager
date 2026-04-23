@@ -94,6 +94,11 @@ export default function Invoices() {
   const [paymentForm, setPaymentForm] = useState<PaymentForm>(emptyPaymentForm());
   const [paymentSubmitting, setPaymentSubmitting] = useState(false);
 
+  const [isEditPaymentOpen, setIsEditPaymentOpen] = useState(false);
+  const [editingPayment, setEditingPayment] = useState<PaymentRow | null>(null);
+  const [editPaymentForm, setEditPaymentForm] = useState<PaymentForm>(emptyPaymentForm());
+  const [editPaymentSubmitting, setEditPaymentSubmitting] = useState(false);
+
   const loadAll = async () => {
     setLoading(true);
     setError(null);
@@ -455,12 +460,184 @@ export default function Invoices() {
     }
   };
 
+  const openEditPayment = (p: PaymentRow) => {
+    setEditingPayment(p);
+    setEditPaymentForm({
+      amount: String(p.amount),
+      payment_date: p.payment_date,
+      payment_mode: p.payment_mode,
+      bank_account_id: p.bank_account_id ?? "",
+      notes: p.notes ?? "",
+    });
+    setIsEditPaymentOpen(true);
+  };
+
+  const reverseOldPaymentEffects = async (p: PaymentRow, invoiceNumber: string, clientName: string) => {
+    const oldAmt = Number(p.amount);
+    const desc = `Payment edit reversal (${p.payment_mode.toLowerCase()}) · ${clientName} · Invoice ${invoiceNumber}`;
+    if (p.payment_mode === "Cash") {
+      await applyCashDelta(-oldAmt);
+      await logTransaction({
+        bank_account_id: null,
+        kind: "receipt",
+        amount: oldAmt,
+        cash_delta: -oldAmt,
+        account_delta: 0,
+        description: desc,
+        reference_id: p.id,
+      });
+    } else if (p.bank_account_id) {
+      await applyBankDelta(p.bank_account_id, -oldAmt);
+      await logTransaction({
+        bank_account_id: p.bank_account_id,
+        kind: "receipt",
+        amount: oldAmt,
+        cash_delta: 0,
+        account_delta: -oldAmt,
+        description: desc,
+        reference_id: p.id,
+      });
+    }
+  };
+
+  const handleEditPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingPayment || !editInvoice) return;
+    const newAmt = Number(editPaymentForm.amount);
+    if (!newAmt || newAmt <= 0) {
+      setError("Enter a positive payment amount.");
+      return;
+    }
+    if (!editPaymentForm.payment_date) {
+      setError("Select a payment date.");
+      return;
+    }
+    if (editPaymentForm.payment_mode === "Bank" && !editPaymentForm.bank_account_id) {
+      setError("Select a bank account for Bank payments.");
+      return;
+    }
+    const oldAmt = Number(editingPayment.amount);
+    const currentReceived = Number(editInvoice.amount_received);
+    const receivedWithoutThis = currentReceived - oldAmt;
+    const maxAllowed = Number(editInvoice.invoice_amount) - receivedWithoutThis;
+    if (newAmt > maxAllowed + 0.0001) {
+      setError(`Amount exceeds invoice total. Max allowed: PKR ${maxAllowed.toLocaleString()}.`);
+      return;
+    }
+    setEditPaymentSubmitting(true);
+    setError(null);
+    try {
+      const invoiceNumber = editInvoice.invoice_number;
+      const clientName = editInvoice.client?.name ?? "Client";
+
+      await reverseOldPaymentEffects(editingPayment, invoiceNumber, clientName);
+
+      const newBankId =
+        editPaymentForm.payment_mode === "Bank" ? editPaymentForm.bank_account_id : null;
+      const desc = `Payment updated (${editPaymentForm.payment_mode.toLowerCase()}) · ${clientName} · Invoice ${invoiceNumber}`;
+      if (editPaymentForm.payment_mode === "Cash") {
+        await applyCashDelta(newAmt);
+        await logTransaction({
+          bank_account_id: null,
+          kind: "receipt",
+          amount: newAmt,
+          cash_delta: newAmt,
+          account_delta: 0,
+          description: desc,
+          reference_id: editingPayment.id,
+        });
+      } else {
+        await applyBankDelta(newBankId!, newAmt);
+        await logTransaction({
+          bank_account_id: newBankId,
+          kind: "receipt",
+          amount: newAmt,
+          cash_delta: 0,
+          account_delta: newAmt,
+          description: desc,
+          reference_id: editingPayment.id,
+        });
+      }
+
+      const { error: upPayErr } = await supabase
+        .from("invoice_payments")
+        .update({
+          amount: newAmt,
+          payment_date: editPaymentForm.payment_date,
+          payment_mode: editPaymentForm.payment_mode,
+          bank_account_id: newBankId,
+          notes: editPaymentForm.notes.trim() || null,
+        })
+        .eq("id", editingPayment.id);
+      if (upPayErr) throw upPayErr;
+
+      const newReceived = receivedWithoutThis + newAmt;
+      const { error: invUpErr } = await supabase
+        .from("invoices")
+        .update({ amount_received: newReceived, updated_at: new Date().toISOString() })
+        .eq("id", editInvoice.id);
+      if (invUpErr) throw invUpErr;
+
+      setIsEditPaymentOpen(false);
+      setEditingPayment(null);
+      setEditPaymentForm(emptyPaymentForm());
+      await loadAll();
+      const refreshedInv = (await supabase
+        .from("invoices")
+        .select("*, client:client_id(name, client_code)")
+        .eq("id", editInvoice.id)
+        .maybeSingle()).data as InvoiceRow | null;
+      if (refreshedInv) setEditInvoice(refreshedInv);
+      await loadPaymentsFor(editInvoice.id);
+    } catch (e: any) {
+      setError(e.message ?? String(e));
+    } finally {
+      setEditPaymentSubmitting(false);
+    }
+  };
+
+  const handleDeletePayment = async (p: PaymentRow) => {
+    if (!editInvoice) return;
+    if (!window.confirm(`Delete this PKR ${Number(p.amount).toLocaleString()} payment? The amount will be reversed from balances.`)) return;
+    setError(null);
+    try {
+      const invoiceNumber = editInvoice.invoice_number;
+      const clientName = editInvoice.client?.name ?? "Client";
+      await reverseOldPaymentEffects(p, invoiceNumber, clientName);
+      const { error: delErr } = await supabase
+        .from("invoice_payments")
+        .delete()
+        .eq("id", p.id);
+      if (delErr) throw delErr;
+      const newReceived = Number(editInvoice.amount_received) - Number(p.amount);
+      const { error: invUpErr } = await supabase
+        .from("invoices")
+        .update({ amount_received: newReceived, updated_at: new Date().toISOString() })
+        .eq("id", editInvoice.id);
+      if (invUpErr) throw invUpErr;
+      await loadAll();
+      const refreshedInv = (await supabase
+        .from("invoices")
+        .select("*, client:client_id(name, client_code)")
+        .eq("id", editInvoice.id)
+        .maybeSingle()).data as InvoiceRow | null;
+      if (refreshedInv) setEditInvoice(refreshedInv);
+      await loadPaymentsFor(editInvoice.id);
+    } catch (e: any) {
+      setError(e.message ?? String(e));
+    }
+  };
+
   const editInvoiceAmount = Number(editForm.invoice_amount) || 0;
   const editReceived = editInvoice ? Number(editInvoice.amount_received) : 0;
   const editOutstanding = Math.max(0, editInvoiceAmount - editReceived);
 
   const paymentOutstanding = paymentInvoice
     ? Number(paymentInvoice.invoice_amount) - Number(paymentInvoice.amount_received)
+    : 0;
+
+  const editPaymentMaxAllowed = editingPayment && editInvoice
+    ? Number(editInvoice.invoice_amount) - (Number(editInvoice.amount_received) - Number(editingPayment.amount))
     : 0;
 
   return (
@@ -743,6 +920,7 @@ export default function Invoices() {
                       <th className="text-right px-3 py-2 text-xs text-slate-500">Amount</th>
                       <th className="text-left px-3 py-2 text-xs text-slate-500">Mode</th>
                       <th className="text-left px-3 py-2 text-xs text-slate-500">Notes</th>
+                      <th className="text-right px-3 py-2 text-xs text-slate-500">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
@@ -758,8 +936,28 @@ export default function Invoices() {
                             ? ` · ${p.bank.bank_name}`
                             : ""}
                         </td>
-                        <td className="px-3 py-2 text-xs text-slate-500 truncate max-w-[180px]">
+                        <td className="px-3 py-2 text-xs text-slate-500 truncate max-w-[140px]">
                           {p.notes ?? "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => openEditPayment(p)}
+                              className="p-1 rounded text-blue-600 hover:bg-blue-50"
+                              title="Edit payment"
+                            >
+                              <Pencil className="w-3.5 h-3.5" strokeWidth={1.5} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeletePayment(p)}
+                              className="p-1 rounded text-red-600 hover:bg-red-50"
+                              title="Delete payment"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -930,6 +1128,157 @@ export default function Invoices() {
                 setIsPaymentOpen(false);
                 setPaymentInvoice(null);
                 setPaymentForm(emptyPaymentForm());
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        isOpen={isEditPaymentOpen}
+        onClose={() => {
+          setIsEditPaymentOpen(false);
+          setEditingPayment(null);
+          setEditPaymentForm(emptyPaymentForm());
+        }}
+        title="Edit Payment"
+        size="md"
+      >
+        <form className="space-y-4" onSubmit={handleEditPayment}>
+          {editingPayment && editInvoice && (
+            <div className="p-3 rounded-md border border-slate-200 bg-slate-50 text-xs text-slate-600 space-y-1">
+              <div className="flex justify-between">
+                <span>Invoice</span>
+                <span className="font-mono text-slate-900">{editInvoice.invoice_number}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Original amount</span>
+                <span className="text-slate-900">
+                  PKR {Number(editingPayment.amount).toLocaleString()}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span>Max allowed</span>
+                <span className="text-slate-900">
+                  PKR {editPaymentMaxAllowed.toLocaleString()}
+                </span>
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Amount (PKR) *</label>
+              <input
+                required
+                type="number"
+                min="0"
+                step="0.01"
+                value={editPaymentForm.amount}
+                onChange={(e) =>
+                  setEditPaymentForm({ ...editPaymentForm, amount: e.target.value })
+                }
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Payment Date *</label>
+              <input
+                required
+                type="date"
+                value={editPaymentForm.payment_date}
+                onChange={(e) =>
+                  setEditPaymentForm({ ...editPaymentForm, payment_date: e.target.value })
+                }
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Payment Mode *</label>
+            <div className="flex gap-2">
+              {(["Cash", "Bank"] as const).map((mode) => (
+                <label
+                  key={mode}
+                  className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm border cursor-pointer ${
+                    editPaymentForm.payment_mode === mode
+                      ? "bg-slate-900 text-white border-slate-900"
+                      : "bg-white text-slate-700 border-slate-200 hover:border-slate-300"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="edit_payment_mode"
+                    className="hidden"
+                    checked={editPaymentForm.payment_mode === mode}
+                    onChange={() =>
+                      setEditPaymentForm({
+                        ...editPaymentForm,
+                        payment_mode: mode,
+                        bank_account_id:
+                          mode === "Cash" ? "" : editPaymentForm.bank_account_id,
+                      })
+                    }
+                  />
+                  {mode}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {editPaymentForm.payment_mode === "Bank" && (
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Bank Account *</label>
+              <select
+                required
+                value={editPaymentForm.bank_account_id}
+                onChange={(e) =>
+                  setEditPaymentForm({ ...editPaymentForm, bank_account_id: e.target.value })
+                }
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              >
+                <option value="">Select bank account</option>
+                {banks.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.bank_name} — {b.account_number}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Notes</label>
+            <textarea
+              value={editPaymentForm.notes}
+              onChange={(e) =>
+                setEditPaymentForm({ ...editPaymentForm, notes: e.target.value })
+              }
+              rows={2}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              placeholder="Optional notes"
+            />
+          </div>
+
+          <div className="flex items-center gap-3 pt-4">
+            <Button
+              variant="primary"
+              size="md"
+              className="flex-1"
+              disabled={editPaymentSubmitting}
+            >
+              {editPaymentSubmitting ? "Saving…" : "Save Changes"}
+            </Button>
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => {
+                setIsEditPaymentOpen(false);
+                setEditingPayment(null);
+                setEditPaymentForm(emptyPaymentForm());
               }}
             >
               Cancel

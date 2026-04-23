@@ -260,6 +260,18 @@ export default function PayrollManagement() {
     [rows, selectedId]
   );
 
+  const payrollTotals = useMemo(() => {
+    let disbursed = 0;
+    let notDisbursed = 0;
+    let advance = 0;
+    for (const r of filtered) {
+      advance += r.advance;
+      if (r.disbursed) disbursed += r.net_salary;
+      else notDisbursed += r.net_salary;
+    }
+    return { disbursed, notDisbursed, advance };
+  }, [filtered]);
+
   const updateEdit = (employeeId: string, patch: Partial<RowState>) => {
     setRowEdits((prev) => {
       const next = new Map(prev);
@@ -671,6 +683,38 @@ export default function PayrollManagement() {
             </button>
           </div>
         )}
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="bg-emerald-50 p-4 rounded-lg border border-emerald-200">
+            <p className="text-xs text-emerald-700 mb-1">Total Disbursed</p>
+            <p className="text-2xl text-emerald-900">
+              PKR {payrollTotals.disbursed.toLocaleString()}
+            </p>
+            <p className="text-xs text-emerald-700/70 mt-0.5">
+              {filtered.filter((r) => r.disbursed).length} payslip
+              {filtered.filter((r) => r.disbursed).length === 1 ? "" : "s"}
+            </p>
+          </div>
+          <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
+            <p className="text-xs text-amber-700 mb-1">Total Not Disbursed</p>
+            <p className="text-2xl text-amber-900">
+              PKR {payrollTotals.notDisbursed.toLocaleString()}
+            </p>
+            <p className="text-xs text-amber-700/70 mt-0.5">
+              {filtered.filter((r) => !r.disbursed).length} payslip
+              {filtered.filter((r) => !r.disbursed).length === 1 ? "" : "s"}
+            </p>
+          </div>
+          <div className="bg-rose-50 p-4 rounded-lg border border-rose-200">
+            <p className="text-xs text-rose-700 mb-1">Total Advance</p>
+            <p className="text-2xl text-rose-900">
+              PKR {payrollTotals.advance.toLocaleString()}
+            </p>
+            <p className="text-xs text-rose-700/70 mt-0.5">
+              for {formatPeriod(selectedPeriod)}
+            </p>
+          </div>
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">
