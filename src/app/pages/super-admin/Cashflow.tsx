@@ -14,13 +14,13 @@ import {
   Legend,
 } from "recharts";
 import { supabase } from "../../lib/supabase";
-import type { BankTransaction, Expense, Payslip } from "../../lib/supabase";
+import type { Expense, Invoice, Payslip } from "../../lib/supabase";
 import { TrendingUp, TrendingDown, Wallet } from "lucide-react";
 
 type Row = {
   key: string;
   label: string;
-  income: number;
+  revenue: number;
   expenses: number;
   payroll: number;
   net: number;
@@ -69,7 +69,7 @@ const currency = (n: number) =>
   `PKR ${Math.round(n).toLocaleString("en-PK")}`;
 
 export default function Cashflow() {
-  const [bankTx, setBankTx] = useState<BankTransaction[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [payslips, setPayslips] = useState<Payslip[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,12 +86,11 @@ export default function Cashflow() {
       try {
         const sinceMonthIso = `${windowStart}-01`;
 
-        const [txRes, psRes, exRes] = await Promise.all([
+        const [invRes, psRes, exRes] = await Promise.all([
           supabase
-            .from("bank_transactions")
-            .select("*")
-            .gte("created_at", sinceMonthIso)
-            .order("created_at", { ascending: true }),
+            .from("invoices")
+            .select("invoice_amount, invoice_date")
+            .gte("invoice_date", sinceMonthIso),
           supabase
             .from("payslips")
             .select("*")
@@ -103,12 +102,12 @@ export default function Cashflow() {
             .gte("expense_date", sinceMonthIso),
         ]);
 
-        if (txRes.error) throw txRes.error;
+        if (invRes.error) throw invRes.error;
         if (psRes.error) throw psRes.error;
         if (exRes.error) throw exRes.error;
 
         if (cancelled) return;
-        setBankTx((txRes.data ?? []) as BankTransaction[]);
+        setInvoices((invRes.data ?? []) as Invoice[]);
         setPayslips((psRes.data ?? []) as Payslip[]);
         setExpenses((exRes.data ?? []) as Expense[]);
       } catch (e: any) {
@@ -123,12 +122,14 @@ export default function Cashflow() {
   }, [windowStart]);
 
   const rows: Row[] = useMemo(() => {
-    const incomeByMonth = new Map<string, number>();
-    for (const tx of bankTx) {
-      const key = monthKeyFromIso(tx.created_at ?? null);
+    const revenueByMonth = new Map<string, number>();
+    for (const inv of invoices) {
+      const key = monthKeyFromIso(inv.invoice_date);
       if (!key) continue;
-      const delta = Number(tx.account_delta ?? 0) + Number(tx.cash_delta ?? 0);
-      incomeByMonth.set(key, (incomeByMonth.get(key) ?? 0) + delta);
+      revenueByMonth.set(
+        key,
+        (revenueByMonth.get(key) ?? 0) + Number(inv.invoice_amount ?? 0),
+      );
     }
 
     const payrollByMonth = new Map<string, number>();
@@ -161,25 +162,25 @@ export default function Cashflow() {
     }
 
     return months.map(({ key, label }) => {
-      const income = incomeByMonth.get(key) ?? 0;
+      const revenue = revenueByMonth.get(key) ?? 0;
       const payroll = payrollByMonth.get(key) ?? 0;
       const exp = expensesByMonth.get(key) ?? 0;
       return {
         key,
         label,
-        income,
+        revenue,
         expenses: exp,
         payroll,
-        net: income - payroll - exp,
+        net: revenue - payroll - exp,
       };
     });
-  }, [bankTx, payslips, expenses, months]);
+  }, [invoices, payslips, expenses, months]);
 
   const totals = useMemo(() => {
-    const income = rows.reduce((s, r) => s + r.income, 0);
+    const revenue = rows.reduce((s, r) => s + r.revenue, 0);
     const payroll = rows.reduce((s, r) => s + r.payroll, 0);
     const exp = rows.reduce((s, r) => s + r.expenses, 0);
-    return { income, payroll, expenses: exp, net: income - payroll - exp };
+    return { revenue, payroll, expenses: exp, net: revenue - payroll - exp };
   }, [rows]);
 
   const windowLabel =
@@ -198,8 +199,8 @@ export default function Cashflow() {
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
           <SummaryTile
-            label="Net Bank/Cash Change"
-            value={currency(totals.income)}
+            label="Revenue"
+            value={currency(totals.revenue)}
             icon={<Wallet className="w-5 h-5 text-emerald-600" />}
             accent="emerald"
             subtitle={windowLabel}
@@ -223,7 +224,7 @@ export default function Cashflow() {
             value={currency(totals.net)}
             icon={<TrendingUp className="w-5 h-5 text-slate-700" />}
             accent={totals.net >= 0 ? "emerald" : "rose"}
-            subtitle="Income − Payroll − Expenses"
+            subtitle="Revenue − Payroll − Expenses"
           />
         </div>
 
@@ -232,9 +233,9 @@ export default function Cashflow() {
             <div>
               <h2 className="text-base text-slate-900">Monthly Cashflow</h2>
               <p className="text-xs text-slate-500 mt-1">
-                Income = net change in bank + cash balances. Payroll = disbursed
-                net salaries. Expenses include Cash/Bank expenses and paid
-                payables.
+                Revenue = sum of invoice amounts by invoice date. Payroll =
+                disbursed net salaries. Expenses include Cash/Bank expenses and
+                paid payables.
               </p>
             </div>
             <Button
@@ -266,10 +267,10 @@ export default function Cashflow() {
                   <Legend />
                   <Line
                     type="monotone"
-                    dataKey="income"
+                    dataKey="revenue"
                     stroke="#10b981"
                     strokeWidth={2}
-                    name="Income (Net Δ)"
+                    name="Revenue"
                   />
                   <Line
                     type="monotone"
@@ -294,7 +295,7 @@ export default function Cashflow() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           <div className="bg-white rounded-lg border border-slate-200 p-6">
             <h3 className="text-base mb-6 text-slate-900">
-              Income vs Expenses
+              Revenue vs Expenses
             </h3>
             {loading ? (
               <div className="h-[300px] flex items-center justify-center text-slate-500 text-sm">
@@ -314,10 +315,10 @@ export default function Cashflow() {
                   />
                   <Legend />
                   <Bar
-                    dataKey="income"
+                    dataKey="revenue"
                     fill="#10b981"
                     radius={[4, 4, 0, 0]}
-                    name="Income"
+                    name="Revenue"
                   />
                   <Bar
                     dataKey="expenses"
@@ -369,7 +370,7 @@ export default function Cashflow() {
               <thead>
                 <tr className="bg-slate-50 text-slate-600 text-xs uppercase tracking-wide">
                   <th className="px-6 py-3 text-left">Month</th>
-                  <th className="px-6 py-3 text-right">Income (Net Δ)</th>
+                  <th className="px-6 py-3 text-right">Revenue</th>
                   <th className="px-6 py-3 text-right">Payroll</th>
                   <th className="px-6 py-3 text-right">Expenses</th>
                   <th className="px-6 py-3 text-right">Net</th>
@@ -384,10 +385,10 @@ export default function Cashflow() {
                     <td className="px-6 py-3 text-slate-900">{r.label}</td>
                     <td
                       className={`px-6 py-3 text-right ${
-                        r.income >= 0 ? "text-emerald-600" : "text-rose-600"
+                        r.revenue >= 0 ? "text-emerald-600" : "text-rose-600"
                       }`}
                     >
-                      {currency(r.income)}
+                      {currency(r.revenue)}
                     </td>
                     <td className="px-6 py-3 text-right text-slate-700">
                       {currency(r.payroll)}
@@ -420,7 +421,7 @@ export default function Cashflow() {
                   <tr className="border-t border-slate-200 bg-slate-50 text-slate-900">
                     <td className="px-6 py-3">Total</td>
                     <td className="px-6 py-3 text-right">
-                      {currency(totals.income)}
+                      {currency(totals.revenue)}
                     </td>
                     <td className="px-6 py-3 text-right">
                       {currency(totals.payroll)}

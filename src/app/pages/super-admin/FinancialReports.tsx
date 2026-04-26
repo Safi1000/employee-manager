@@ -32,7 +32,9 @@ type ClientStatementRow = Client & {
   invoices: Invoice[];
 };
 
-const currentMonthKey = () => new Date().toISOString().slice(0, 7);
+const monthKeyFromDate = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+const currentMonthKey = () => monthKeyFromDate(new Date());
 
 const firstOfMonth = (periodMonth: string) => `${periodMonth}-01`;
 const lastOfMonth = (periodMonth: string) => {
@@ -80,7 +82,7 @@ export default function FinancialReports() {
     const d = new Date();
     d.setDate(1);
     for (let i = 0; i < 12; i += 1) {
-      opts.push(d.toISOString().slice(0, 7));
+      opts.push(monthKeyFromDate(d));
       d.setMonth(d.getMonth() - 1);
     }
     return opts;

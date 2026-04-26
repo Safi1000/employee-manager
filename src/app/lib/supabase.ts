@@ -196,6 +196,8 @@ export type Vendor = {
   created_at?: string;
 };
 
+export type InvoiceStatus = "Pending" | "Delivered";
+
 export type Invoice = {
   id: string;
   client_id: string;
@@ -205,6 +207,7 @@ export type Invoice = {
   amount_received: number;
   attachment_path: string | null;
   notes: string | null;
+  status: InvoiceStatus;
   created_at?: string;
   updated_at?: string;
 };

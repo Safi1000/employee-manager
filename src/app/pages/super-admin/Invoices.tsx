@@ -20,6 +20,7 @@ import {
   INVOICE_ATTACHMENTS_BUCKET,
   type Client,
   type Invoice,
+  type InvoiceStatus,
   type BankAccount,
   type BankTransactionKind,
   type InvoicePayment,
@@ -353,6 +354,21 @@ export default function Invoices() {
       await loadAll();
     } catch (e: any) {
       setError(e.message ?? String(e));
+    }
+  };
+
+  const handleStatusChange = async (row: InvoiceRow, next: InvoiceStatus) => {
+    if (row.status === next) return;
+    setError(null);
+    const prev = row.status;
+    setInvoices((cur) => cur.map((i) => (i.id === row.id ? { ...i, status: next } : i)));
+    const { error: upErr } = await supabase
+      .from("invoices")
+      .update({ status: next, updated_at: new Date().toISOString() })
+      .eq("id", row.id);
+    if (upErr) {
+      setError(upErr.message);
+      setInvoices((cur) => cur.map((i) => (i.id === row.id ? { ...i, status: prev } : i)));
     }
   };
 
@@ -717,6 +733,7 @@ export default function Invoices() {
                   <th className="text-right px-6 py-3 text-sm text-slate-500">Invoice Amount</th>
                   <th className="text-right px-6 py-3 text-sm text-slate-500">Received</th>
                   <th className="text-right px-6 py-3 text-sm text-slate-500">Outstanding</th>
+                  <th className="text-left px-6 py-3 text-sm text-slate-500">Status</th>
                   <th className="text-left px-6 py-3 text-sm text-slate-500">Attachment</th>
                   <th className="text-left px-6 py-3 text-sm text-slate-500">Actions</th>
                 </tr>
@@ -724,14 +741,14 @@ export default function Invoices() {
               <tbody className="divide-y divide-slate-200">
                 {loading && (
                   <tr>
-                    <td colSpan={8} className="px-6 py-10 text-center text-slate-500">
+                    <td colSpan={9} className="px-6 py-10 text-center text-slate-500">
                       <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                     </td>
                   </tr>
                 )}
                 {!loading && filteredInvoices.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="px-6 py-10 text-center text-slate-500 text-sm">
+                    <td colSpan={9} className="px-6 py-10 text-center text-slate-500 text-sm">
                       No invoices yet. Click "New Invoice" to create one.
                     </td>
                   </tr>
@@ -765,6 +782,22 @@ export default function Invoices() {
                           <span className={outstanding > 0 ? "text-amber-600" : "text-green-600"}>
                             PKR {outstanding.toLocaleString()}
                           </span>
+                        </td>
+                        <td className="px-6 py-4 text-sm">
+                          <select
+                            value={inv.status}
+                            onChange={(e) =>
+                              handleStatusChange(inv, e.target.value as InvoiceStatus)
+                            }
+                            className={`text-xs rounded-md px-2 py-1 border focus:outline-none focus:ring-2 focus:ring-slate-900 ${
+                              inv.status === "Delivered"
+                                ? "bg-green-50 text-green-700 border-green-200"
+                                : "bg-amber-50 text-amber-700 border-amber-200"
+                            }`}
+                          >
+                            <option value="Pending">Pending</option>
+                            <option value="Delivered">Delivered</option>
+                          </select>
                         </td>
                         <td className="px-6 py-4 text-sm">
                           {inv.attachment_path ? (
