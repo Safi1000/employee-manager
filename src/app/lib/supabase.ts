@@ -15,6 +15,8 @@ export type Location = {
   created_at?: string;
 };
 
+export type ClientType = "security_services" | "guard_deployment";
+
 export type Client = {
   id: string;
   client_code: string;
@@ -23,8 +25,22 @@ export type Client = {
   phone: string | null;
   allowed_leaves_per_month: number;
   opening_balance: number;
+  client_type: ClientType;
   created_at?: string;
 };
+
+export const HARDCODED_EXPENSE_CATEGORIES = [
+  "Weapons & Ammunition",
+  "Uniform",
+  "Equipment & Supplies",
+  "Transportation & Fuel",
+  "Utilities & Rent",
+  "Insurance & Licenses",
+  "Taxes",
+] as const;
+
+export const isHardcodedCategory = (name: string) =>
+  (HARDCODED_EXPENSE_CATEGORIES as readonly string[]).includes(name);
 
 export type Employee = {
   id: string;

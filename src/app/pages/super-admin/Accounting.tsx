@@ -30,18 +30,6 @@ type ReceivableRow = Client & {
   invoices: Invoice[];
 };
 
-const chartOfAccounts = [
-  { id: 1, code: "1000", name: "Assets", type: "Header", balance: 5250000 },
-  { id: 2, code: "1100", name: "Current Assets", type: "Subheader", balance: 5250000 },
-  { id: 3, code: "1110", name: "Cash and Bank", type: "Detail", balance: 5250000 },
-  { id: 4, code: "2000", name: "Liabilities", type: "Header", balance: 1200000 },
-  { id: 5, code: "2100", name: "Current Liabilities", type: "Subheader", balance: 1200000 },
-  { id: 6, code: "2110", name: "Accounts Payable", type: "Detail", balance: 1200000 },
-  { id: 7, code: "3000", name: "Equity", type: "Header", balance: 4050000 },
-  { id: 8, code: "4000", name: "Revenue", type: "Header", balance: 1640000 },
-  { id: 9, code: "5000", name: "Expenses", type: "Header", balance: 845000 },
-];
-
 const kindLabel: Record<BankTransactionKind, string> = {
   opening: "Opening",
   deposit: "Deposit",
@@ -65,7 +53,7 @@ const payableDisplayStatus = (row: PayableRow): PayableDisplayStatus => {
 };
 
 export default function Accounting() {
-  const [activeTab, setActiveTab] = useState<"chart" | "receivables" | "payables" | "banks">("chart");
+  const [activeTab, setActiveTab] = useState<"receivables" | "payables" | "banks">("receivables");
 
   const [banks, setBanks] = useState<BankAccount[]>([]);
   const [cashBalance, setCashBalance] = useState<number>(0);
@@ -76,7 +64,6 @@ export default function Accounting() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [isBankModalOpen, setIsBankModalOpen] = useState(false);
   const [isStatementModalOpen, setIsStatementModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
@@ -122,6 +109,36 @@ export default function Accounting() {
     [banks]
   );
   const grandTotal = cashBalance + totalAccountBalance;
+
+  const receivableTotals = useMemo(() => {
+    let opening = 0;
+    let invoiced = 0;
+    let received = 0;
+    let outstanding = 0;
+    for (const r of receivables) {
+      opening += Number(r.opening_balance ?? 0);
+      invoiced += r.total_invoiced;
+      received += r.total_received;
+      outstanding += r.outstanding;
+    }
+    return { opening, invoiced, received, outstanding };
+  }, [receivables]);
+
+  const payableTotals = useMemo(() => {
+    let total = 0;
+    let pending = 0;
+    let paid = 0;
+    let overdue = 0;
+    for (const p of payables) {
+      const amt = Number(p.amount);
+      total += amt;
+      const st = payableDisplayStatus(p);
+      if (st === "Pending") pending += amt;
+      else if (st === "Paid") paid += amt;
+      else if (st === "Overdue") overdue += amt;
+    }
+    return { total, pending, paid, overdue };
+  }, [payables]);
 
   const loadAll = async () => {
     setLoading(true);
@@ -725,12 +742,6 @@ export default function Accounting() {
         actions={
           <>
             <ExportButton onExport={() => console.log("Export")} />
-            {activeTab === "chart" && (
-              <Button variant="primary" size="md" onClick={() => setIsAccountModalOpen(true)}>
-                <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
-                Add Account
-              </Button>
-            )}
             {activeTab === "banks" && (
               <>
                 <Button variant="secondary" size="md" onClick={() => setIsLogModalOpen(true)}>
@@ -775,10 +786,68 @@ export default function Accounting() {
           </div>
         )}
 
+        {activeTab === "receivables" && (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+              <p className="text-xs text-slate-600 mb-1">Opening Balance</p>
+              <p className="text-xl text-slate-900">
+                PKR {receivableTotals.opening.toLocaleString()}
+              </p>
+            </div>
+            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+              <p className="text-xs text-blue-700 mb-1">Total Invoiced</p>
+              <p className="text-xl text-blue-900">
+                PKR {receivableTotals.invoiced.toLocaleString()}
+              </p>
+            </div>
+            <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+              <p className="text-xs text-green-700 mb-1">Total Received</p>
+              <p className="text-xl text-green-900">
+                PKR {receivableTotals.received.toLocaleString()}
+              </p>
+            </div>
+            <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
+              <p className="text-xs text-amber-700 mb-1">Outstanding</p>
+              <p className="text-xl text-amber-900">
+                PKR {receivableTotals.outstanding.toLocaleString()}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "payables" && (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div className="bg-slate-900 p-4 rounded-lg">
+              <p className="text-xs text-slate-300 mb-1">Total Payable</p>
+              <p className="text-xl text-white">
+                PKR {payableTotals.total.toLocaleString()}
+              </p>
+            </div>
+            <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
+              <p className="text-xs text-amber-700 mb-1">Pending</p>
+              <p className="text-xl text-amber-900">
+                PKR {payableTotals.pending.toLocaleString()}
+              </p>
+            </div>
+            <div className="bg-red-50 p-4 rounded-lg border border-red-200">
+              <p className="text-xs text-red-700 mb-1">Overdue</p>
+              <p className="text-xl text-red-900">
+                PKR {payableTotals.overdue.toLocaleString()}
+              </p>
+            </div>
+            <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+              <p className="text-xs text-green-700 mb-1">Paid</p>
+              <p className="text-xl text-green-900">
+                PKR {payableTotals.paid.toLocaleString()}
+              </p>
+            </div>
+          </div>
+        )}
+
         <div className="bg-white rounded-lg border border-slate-200 mb-6">
           <div className="p-6 border-b border-slate-200">
             <div className="flex gap-2">
-              {(["chart", "receivables", "payables", "banks"] as const).map((tab) => (
+              {(["receivables", "payables", "banks"] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
@@ -788,7 +857,6 @@ export default function Accounting() {
                       : "text-slate-600 hover:bg-slate-100"
                   }`}
                 >
-                  {tab === "chart" && "Chart of Accounts"}
                   {tab === "receivables" && "Client Receivables"}
                   {tab === "payables" && "Accounts Payable"}
                   {tab === "banks" && "Bank Accounts"}
@@ -796,51 +864,6 @@ export default function Accounting() {
               ))}
             </div>
           </div>
-
-          {activeTab === "chart" && (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-slate-200">
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Code</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Account Name</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Type</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Balance</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {chartOfAccounts.map((account) => (
-                    <tr
-                      key={account.id}
-                      className={`hover:bg-slate-50 transition-colors ${
-                        account.type === "Header" ? "bg-blue-50" : account.type === "Subheader" ? "bg-slate-50" : ""
-                      }`}
-                    >
-                      <td className="px-6 py-4 text-sm text-slate-900">{account.code}</td>
-                      <td
-                        className={`px-6 py-4 text-sm ${
-                          account.type === "Header" ? "text-slate-900" : "text-slate-700"
-                        }`}
-                        style={{ paddingLeft: account.type === "Detail" ? "3rem" : "1.5rem" }}
-                      >
-                        {account.name}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{account.type}</td>
-                      <td className="px-6 py-4 text-sm text-slate-900">PKR {account.balance.toLocaleString()}</td>
-                      <td className="px-6 py-4">
-                        {account.type === "Detail" && (
-                          <Button variant="ghost" size="sm">
-                            Edit
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
 
           {activeTab === "receivables" && (
             <div className="overflow-x-auto">
@@ -1131,43 +1154,6 @@ export default function Accounting() {
           )}
         </div>
       </div>
-
-      <Modal isOpen={isAccountModalOpen} onClose={() => setIsAccountModalOpen(false)} title="Add Account" size="md">
-        <form className="space-y-4">
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Account Code</label>
-            <input
-              type="text"
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
-              placeholder="e.g., 1120"
-            />
-          </div>
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Account Name</label>
-            <input
-              type="text"
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
-              placeholder="Enter account name"
-            />
-          </div>
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Account Type</label>
-            <select className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent">
-              <option>Header</option>
-              <option>Subheader</option>
-              <option>Detail</option>
-            </select>
-          </div>
-          <div className="flex items-center gap-3 pt-4">
-            <Button variant="primary" size="md" className="flex-1">
-              Add Account
-            </Button>
-            <Button variant="secondary" size="md" onClick={() => setIsAccountModalOpen(false)}>
-              Cancel
-            </Button>
-          </div>
-        </form>
-      </Modal>
 
       <Modal isOpen={isBankModalOpen} onClose={() => setIsBankModalOpen(false)} title="Add Bank Account" size="md">
         <form className="space-y-4" onSubmit={handleAddBank}>

@@ -3,7 +3,7 @@ import { Plus, Loader2, AlertCircle, X, Trash2 } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
-import { supabase } from "../../lib/supabase";
+import { supabase, type ClientType } from "../../lib/supabase";
 
 type LocationRow = { id: string; name: string; employees: number };
 type ClientRow = {
@@ -13,8 +13,12 @@ type ClientRow = {
   email: string | null;
   phone: string | null;
   allowed_leaves_per_month: number;
+  client_type: ClientType;
   employees: number;
 };
+
+const clientTypeLabel = (t: ClientType) =>
+  t === "security_services" ? "Security Services" : "Guard Deployment";
 
 export default function Settings() {
   const [locations, setLocations] = useState<LocationRow[]>([]);
@@ -32,12 +36,14 @@ export default function Settings() {
   const [newClientEmail, setNewClientEmail] = useState("");
   const [newClientPhone, setNewClientPhone] = useState("");
   const [newClientAllowedLeaves, setNewClientAllowedLeaves] = useState<number>(0);
+  const [newClientType, setNewClientType] = useState<ClientType>("security_services");
 
   const [clientEditingId, setClientEditingId] = useState<string | null>(null);
   const [editClientName, setEditClientName] = useState("");
   const [editClientEmail, setEditClientEmail] = useState("");
   const [editClientPhone, setEditClientPhone] = useState("");
   const [editClientAllowedLeaves, setEditClientAllowedLeaves] = useState<number>(0);
+  const [editClientType, setEditClientType] = useState<ClientType>("security_services");
 
   const [submitting, setSubmitting] = useState(false);
 
@@ -49,7 +55,7 @@ export default function Settings() {
       supabase.from("locations").select("id, name").order("name"),
       supabase
         .from("clients")
-        .select("id, client_code, name, email, phone, allowed_leaves_per_month")
+        .select("id, client_code, name, email, phone, allowed_leaves_per_month, client_type")
         .order("client_code"),
     ]);
 
@@ -78,6 +84,7 @@ export default function Settings() {
         email: r.email,
         phone: r.phone,
         allowed_leaves_per_month: Number(r.allowed_leaves_per_month ?? 0),
+        client_type: (r.client_type ?? "security_services") as ClientType,
         employees: cliCounts[r.id] ?? 0,
       }))
     );
@@ -144,6 +151,7 @@ export default function Settings() {
       email: newClientEmail.trim() || null,
       phone: newClientPhone.trim() || null,
       allowed_leaves_per_month: Math.max(0, Math.floor(Number(newClientAllowedLeaves) || 0)),
+      client_type: newClientType,
     });
     setSubmitting(false);
     if (insErr) {
@@ -154,6 +162,7 @@ export default function Settings() {
     setNewClientEmail("");
     setNewClientPhone("");
     setNewClientAllowedLeaves(0);
+    setNewClientType("security_services");
     setClientAddOpen(false);
     await loadAll();
   };
@@ -164,6 +173,7 @@ export default function Settings() {
     setEditClientEmail(row.email ?? "");
     setEditClientPhone(row.phone ?? "");
     setEditClientAllowedLeaves(row.allowed_leaves_per_month ?? 0);
+    setEditClientType(row.client_type ?? "security_services");
   };
 
   const handleSaveClientEdit = async (id: string) => {
@@ -175,6 +185,7 @@ export default function Settings() {
         email: editClientEmail.trim() || null,
         phone: editClientPhone.trim() || null,
         allowed_leaves_per_month: Math.max(0, Math.floor(Number(editClientAllowedLeaves) || 0)),
+        client_type: editClientType,
       })
       .eq("id", id);
     if (upErr) {
@@ -331,16 +342,29 @@ export default function Settings() {
                       className="px-3 py-1.5 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
                     />
                   </div>
-                  <div>
-                    <label className="block text-xs text-slate-600 mb-1">Allowed Leaves / Month</label>
-                    <input
-                      type="number"
-                      min={0}
-                      max={31}
-                      value={editClientAllowedLeaves}
-                      onChange={(e) => setEditClientAllowedLeaves(Number(e.target.value))}
-                      className="w-40 px-3 py-1.5 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
-                    />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs text-slate-600 mb-1">Allowed Leaves / Month</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={31}
+                        value={editClientAllowedLeaves}
+                        onChange={(e) => setEditClientAllowedLeaves(Number(e.target.value))}
+                        className="w-full px-3 py-1.5 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-600 mb-1">Client Type</label>
+                      <select
+                        value={editClientType}
+                        onChange={(e) => setEditClientType(e.target.value as ClientType)}
+                        className="w-full px-3 py-1.5 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                      >
+                        <option value="security_services">Security Services</option>
+                        <option value="guard_deployment">Guard Deployment</option>
+                      </select>
+                    </div>
                   </div>
                   <div className="flex gap-2">
                     <Button variant="primary" size="sm" onClick={() => handleSaveClientEdit(row.id)}>
@@ -359,6 +383,9 @@ export default function Settings() {
                       <span className="text-xs font-mono text-slate-500">{row.client_code}</span>
                     </div>
                     <p className="text-xs text-slate-500 mt-1">
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 mr-2">
+                        {clientTypeLabel(row.client_type)}
+                      </span>
                       {row.employees} employees · {row.allowed_leaves_per_month} leaves/mo
                       {row.email ? ` · ${row.email}` : ""}
                       {row.phone ? ` · ${row.phone}` : ""}
@@ -554,6 +581,17 @@ export default function Settings() {
               className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
               placeholder="+92 300 1234567"
             />
+          </div>
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Client Type</label>
+            <select
+              value={newClientType}
+              onChange={(e) => setNewClientType(e.target.value as ClientType)}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+            >
+              <option value="security_services">Security Services</option>
+              <option value="guard_deployment">Guard Deployment</option>
+            </select>
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Allowed Leaves / Month</label>

@@ -7,6 +7,7 @@ import ExportButton from "../../components/ExportButton";
 import {
   supabase,
   EXPENSE_RECEIPTS_BUCKET,
+  isHardcodedCategory,
   type Expense,
   type ExpenseCategory,
   type ExpensePaymentMode,
@@ -252,6 +253,22 @@ export default function Expenses() {
       return true;
     });
   }, [expenses, search, categoryFilter, clientFilter, modeFilter]);
+
+  const expenseMetrics = useMemo(() => {
+    let total = 0;
+    const byCategory = new Map<string, { id: string | null; name: string; total: number }>();
+    for (const e of filtered) {
+      const amt = Number(e.amount);
+      total += amt;
+      const key = e.category_id ?? "__none__";
+      const name = e.category_name ?? "Uncategorized";
+      const cur = byCategory.get(key) ?? { id: e.category_id, name, total: 0 };
+      cur.total += amt;
+      byCategory.set(key, cur);
+    }
+    const perCategory = Array.from(byCategory.values()).sort((a, b) => b.total - a.total);
+    return { total, perCategory };
+  }, [filtered]);
 
   const applyCashDelta = async (delta: number) => {
     const { data } = await supabase.from("treasury").select("id, cash_balance").limit(1).maybeSingle();
@@ -871,6 +888,10 @@ export default function Expenses() {
   const handleSaveCategory = async () => {
     const name = catInput.trim();
     if (!name) return;
+    if (catMode === "add" && isHardcodedCategory(name)) {
+      setError(`"${name}" is a reserved system category.`);
+      return;
+    }
     setError(null);
     try {
       if (catMode === "add") {
@@ -944,6 +965,10 @@ export default function Expenses() {
   };
 
   const handleDeleteCategory = async (c: ExpenseCategory) => {
+    if (isHardcodedCategory(c.name)) {
+      setError(`"${c.name}" is a system category and cannot be deleted.`);
+      return;
+    }
     const usedBy = expenses.filter((e) => e.category_id === c.id).length;
     if (!window.confirm(
       usedBy > 0
@@ -1023,6 +1048,38 @@ export default function Expenses() {
             </button>
           ))}
         </div>
+
+        {activeTab === "expenses" && (
+          <div className="mb-6 grid grid-cols-1 lg:grid-cols-4 gap-4">
+            <div className="bg-slate-900 p-4 rounded-lg">
+              <p className="text-xs text-slate-300 mb-1">Total Expenses</p>
+              <p className="text-2xl text-white">PKR {expenseMetrics.total.toLocaleString()}</p>
+              <p className="text-[11px] text-slate-400 mt-1">
+                {filtered.length} entr{filtered.length === 1 ? "y" : "ies"} in current filter
+              </p>
+            </div>
+            <div className="lg:col-span-3 bg-white p-4 rounded-lg border border-slate-200">
+              <p className="text-xs text-slate-500 mb-2">By Category</p>
+              {expenseMetrics.perCategory.length === 0 ? (
+                <p className="text-sm text-slate-500">No expenses match the current filter.</p>
+              ) : (
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-40 overflow-y-auto">
+                  {expenseMetrics.perCategory.map((c) => (
+                    <div
+                      key={c.id ?? c.name}
+                      className="flex items-center justify-between px-3 py-1.5 rounded border border-slate-100 bg-slate-50"
+                    >
+                      <span className="text-xs text-slate-700 truncate">{c.name}</span>
+                      <span className="text-xs text-slate-900 ml-2">
+                        PKR {c.total.toLocaleString()}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {activeTab === "expenses" && (
         <div className="bg-white rounded-lg border border-slate-200 mb-6">
@@ -1173,27 +1230,43 @@ export default function Expenses() {
             <p className="text-sm text-slate-500">No categories yet. Add one to start categorizing expenses.</p>
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-              {categories.map((category) => (
-                <div
-                  key={category.id}
-                  className="p-3 border border-slate-200 rounded-lg flex items-center justify-between"
-                >
-                  <span className="text-sm text-slate-900 truncate">{category.name}</span>
-                  <div className="flex gap-1 flex-shrink-0">
-                    <Button variant="ghost" size="sm" onClick={() => openCatEdit(category)}>
-                      Edit
-                    </Button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteCategory(category)}
-                      className="inline-flex items-center justify-center px-2 py-1 rounded-md text-red-700 hover:bg-red-50"
-                      title="Delete category"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
-                    </button>
+              {categories.map((category) => {
+                const locked = isHardcodedCategory(category.name);
+                return (
+                  <div
+                    key={category.id}
+                    className={`p-3 border rounded-lg flex items-center justify-between ${
+                      locked ? "border-slate-300 bg-slate-50" : "border-slate-200"
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <span className="text-sm text-slate-900 truncate block">{category.name}</span>
+                      {locked && (
+                        <span className="text-[10px] uppercase tracking-wide text-slate-500">
+                          System
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex gap-1 flex-shrink-0">
+                      {!locked && (
+                        <>
+                          <Button variant="ghost" size="sm" onClick={() => openCatEdit(category)}>
+                            Edit
+                          </Button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCategory(category)}
+                            className="inline-flex items-center justify-center px-2 py-1 rounded-md text-red-700 hover:bg-red-50"
+                            title="Delete category"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

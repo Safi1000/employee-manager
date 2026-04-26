@@ -592,11 +592,13 @@ export default function Inventory() {
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
               >
                 <option value="">All</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
+                {clients
+                  .filter((c) => c.client_type === "security_services")
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
               </select>
             </div>
             <div>
@@ -1198,15 +1200,17 @@ export default function Inventory() {
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
               >
                 <option value="">Select client</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} ({c.client_code})
-                  </option>
-                ))}
+                {clients
+                  .filter((c) => c.client_type === "security_services")
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} ({c.client_code})
+                    </option>
+                  ))}
               </select>
-              {clients.length === 0 && (
+              {clients.filter((c) => c.client_type === "security_services").length === 0 && (
                 <p className="text-xs text-slate-500 mt-1">
-                  No clients yet. Add them from Settings.
+                  No Security Services clients yet. Add them from Settings.
                 </p>
               )}
             </div>
@@ -1243,7 +1247,7 @@ export default function Inventory() {
                 issueSubmitting ||
                 issuableItems.length === 0 ||
                 (issueForm.target === "employee" && employees.length === 0) ||
-                (issueForm.target === "client" && clients.length === 0)
+                (issueForm.target === "client" && clients.filter((c) => c.client_type === "security_services").length === 0)
               }
             >
               {issueSubmitting ? "Issuing…" : "Issue Item"}
