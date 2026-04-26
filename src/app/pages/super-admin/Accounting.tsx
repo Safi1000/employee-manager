@@ -1086,16 +1086,14 @@ export default function Accounting() {
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Bank Name</th>
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Account Number</th>
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Type</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Cash Balance</th>
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Account Balance</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Total Balance</th>
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {loading && (
                     <tr>
-                      <td colSpan={7} className="px-6 py-10 text-center text-slate-500">
+                      <td colSpan={5} className="px-6 py-10 text-center text-slate-500">
                         <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
                         Loading…
                       </td>
@@ -1103,7 +1101,7 @@ export default function Accounting() {
                   )}
                   {!loading && banks.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">
+                      <td colSpan={5} className="px-6 py-10 text-center text-slate-500 text-sm">
                         No bank accounts yet. Click "Add Bank Account" to create one.
                       </td>
                     </tr>
@@ -1111,7 +1109,6 @@ export default function Accounting() {
                   {!loading &&
                     banks.map((bank) => {
                       const acct = Number(bank.balance ?? 0);
-                      const total = cashBalance + acct;
                       return (
                         <tr key={bank.id} className="hover:bg-slate-50 transition-colors">
                           <td className="px-6 py-4">
@@ -1122,9 +1119,7 @@ export default function Accounting() {
                           </td>
                           <td className="px-6 py-4 text-sm text-slate-600 font-mono">{bank.account_number}</td>
                           <td className="px-6 py-4 text-sm text-slate-600">{bank.account_type}</td>
-                          <td className="px-6 py-4 text-sm text-green-600">PKR {cashBalance.toLocaleString()}</td>
                           <td className="px-6 py-4 text-sm text-blue-600">PKR {acct.toLocaleString()}</td>
-                          <td className="px-6 py-4 text-sm font-semibold text-slate-900">PKR {total.toLocaleString()}</td>
                           <td className="px-6 py-4 flex gap-2 flex-wrap">
                             <Button variant="ghost" size="sm" onClick={() => openWithdraw(bank)}>
                               <ArrowDownUp className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
