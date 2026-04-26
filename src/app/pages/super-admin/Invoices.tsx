@@ -15,6 +15,7 @@ import {
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
+import ClientFilterSelect from "../../components/ClientFilterSelect";
 import {
   supabase,
   INVOICE_ATTACHMENTS_BUCKET,
@@ -52,10 +53,27 @@ type PaymentForm = {
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
+const currentMonthStr = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+};
+
+const monthLabel = (iso: string | null | undefined) => {
+  if (!iso) return "—";
+  const [yStr, mStr] = iso.slice(0, 7).split("-");
+  const y = Number(yStr);
+  const m = Number(mStr);
+  if (!y || !m) return iso;
+  return new Date(y, m - 1, 1).toLocaleDateString(undefined, {
+    month: "long",
+    year: "numeric",
+  });
+};
+
 const emptyForm = (): InvoiceForm => ({
   client_id: "",
   invoice_number: "",
-  invoice_date: todayStr(),
+  invoice_date: currentMonthStr(),
   invoice_amount: "",
   notes: "",
   attachment_file: null,
@@ -252,7 +270,7 @@ export default function Invoices() {
         .insert({
           client_id: form.client_id,
           invoice_number: form.invoice_number.trim(),
-          invoice_date: form.invoice_date,
+          invoice_date: `${form.invoice_date.slice(0, 7)}-01`,
           invoice_amount: invAmt,
           amount_received: 0,
           notes: form.notes.trim() || null,
@@ -286,7 +304,7 @@ export default function Invoices() {
     setEditForm({
       client_id: row.client_id,
       invoice_number: row.invoice_number,
-      invoice_date: row.invoice_date,
+      invoice_date: row.invoice_date.slice(0, 7),
       invoice_amount: String(row.invoice_amount),
       notes: row.notes ?? "",
       attachment_file: null,
@@ -319,7 +337,7 @@ export default function Invoices() {
         .update({
           client_id: editForm.client_id,
           invoice_number: editForm.invoice_number.trim(),
-          invoice_date: editForm.invoice_date,
+          invoice_date: `${editForm.invoice_date.slice(0, 7)}-01`,
           invoice_amount: invAmt,
           notes: editForm.notes.trim() || null,
           attachment_path: path,
@@ -705,18 +723,11 @@ export default function Invoices() {
           <div className="p-4 border-b border-slate-200 flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2">
               <label className="text-sm text-slate-600">Client:</label>
-              <select
+              <ClientFilterSelect
+                clients={clients}
                 value={clientFilter}
-                onChange={(e) => setClientFilter(e.target.value)}
-                className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-              >
-                <option value="">All Clients</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} ({c.client_code})
-                  </option>
-                ))}
-              </select>
+                onChange={setClientFilter}
+              />
             </div>
             <div className="ml-auto text-sm text-slate-500">
               {filteredInvoices.length} invoice{filteredInvoices.length === 1 ? "" : "s"}
@@ -729,7 +740,7 @@ export default function Invoices() {
                 <tr className="border-b border-slate-200">
                   <th className="text-left px-6 py-3 text-sm text-slate-500">Invoice #</th>
                   <th className="text-left px-6 py-3 text-sm text-slate-500">Client</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Invoice Date</th>
+                  <th className="text-left px-6 py-3 text-sm text-slate-500">Invoice Month</th>
                   <th className="text-right px-6 py-3 text-sm text-slate-500">Invoice Amount</th>
                   <th className="text-right px-6 py-3 text-sm text-slate-500">Received</th>
                   <th className="text-right px-6 py-3 text-sm text-slate-500">Outstanding</th>
@@ -771,7 +782,7 @@ export default function Invoices() {
                             {inv.client?.client_code ?? ""}
                           </div>
                         </td>
-                        <td className="px-6 py-4 text-sm text-slate-600">{inv.invoice_date}</td>
+                        <td className="px-6 py-4 text-sm text-slate-600">{monthLabel(inv.invoice_date)}</td>
                         <td className="px-6 py-4 text-sm text-blue-600 text-right">
                           PKR {Number(inv.invoice_amount).toLocaleString()}
                         </td>
@@ -1367,10 +1378,10 @@ function InvoiceFields({
           />
         </div>
         <div>
-          <label className="block text-sm text-slate-700 mb-1">Invoice Date *</label>
+          <label className="block text-sm text-slate-700 mb-1">Invoice Month *</label>
           <input
             required
-            type="date"
+            type="month"
             value={form.invoice_date}
             onChange={(e) => setForm({ ...form, invoice_date: e.target.value })}
             className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"

@@ -3,6 +3,7 @@ import { Search, FileText, Download, AlertCircle, Loader2, X, Upload } from "luc
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
+import ClientFilterSelect from "../../components/ClientFilterSelect";
 import {
   supabase,
   EMPLOYEE_DOCS_BUCKET,
@@ -23,7 +24,7 @@ type DocumentWithUrl = EmployeeDocument & { publicUrl: string | null };
 
 type EditForm = {
   cnic?: File;
-  passport?: File;
+  police_verification?: File;
   other?: FileList;
 };
 
@@ -189,7 +190,7 @@ export default function Documents() {
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editing) return;
-    if (!editForm.cnic && !editForm.passport && (!editForm.other || editForm.other.length === 0)) {
+    if (!editForm.cnic && !editForm.police_verification && (!editForm.other || editForm.other.length === 0)) {
       setEditing(null);
       return;
     }
@@ -197,7 +198,7 @@ export default function Documents() {
     setError(null);
     try {
       if (editForm.cnic) await replaceDoc(editing.id, "CNIC", editForm.cnic);
-      if (editForm.passport) await replaceDoc(editing.id, "Passport", editForm.passport);
+      if (editForm.police_verification) await replaceDoc(editing.id, "Police Verification", editForm.police_verification);
       if (editForm.other) {
         for (let i = 0; i < editForm.other.length; i++) {
           await uploadDoc(editing.id, "Other", editForm.other[i]);
@@ -291,18 +292,12 @@ export default function Documents() {
                   </option>
                 ))}
               </select>
-              <select
+              <ClientFilterSelect
+                clients={clients}
                 value={clientFilter}
-                onChange={(e) => setClientFilter(e.target.value)}
-                className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-              >
-                <option value="all">All Clients</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+                onChange={setClientFilter}
+                allValue="all"
+              />
               <select
                 value={shiftFilter}
                 onChange={(e) => setShiftFilter(e.target.value as "all" | "day" | "night")}
@@ -549,7 +544,7 @@ export default function Documents() {
             </div>
 
             <p className="text-xs text-slate-500">
-              Uploading a CNIC or Passport replaces the existing one. "Other" documents are appended.
+              Uploading a CNIC or Police Verification replaces the existing one. "Other" documents are appended.
               Leave fields empty to skip them.
             </p>
 
@@ -562,10 +557,10 @@ export default function Documents() {
               />
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Passport</label>
+              <label className="block text-sm text-slate-700 mb-1">Police Verification</label>
               <input
                 type="file"
-                onChange={(e) => setEditForm({ ...editForm, passport: e.target.files?.[0] })}
+                onChange={(e) => setEditForm({ ...editForm, police_verification: e.target.files?.[0] })}
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
               />
             </div>

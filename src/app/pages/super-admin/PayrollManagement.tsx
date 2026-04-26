@@ -4,6 +4,7 @@ import jsPDF from "jspdf";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
+import ClientFilterSelect from "../../components/ClientFilterSelect";
 import {
   supabase,
   type Employee,
@@ -813,18 +814,12 @@ export default function PayrollManagement() {
                       </option>
                     ))}
                   </select>
-                  <select
+                  <ClientFilterSelect
+                    clients={clients}
                     value={clientFilter}
-                    onChange={(e) => setClientFilter(e.target.value)}
-                    className="px-3 py-2 border border-slate-200 rounded-md text-sm"
-                  >
-                    <option value="all">All Clients</option>
-                    {clients.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setClientFilter}
+                    allValue="all"
+                  />
                   <select
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value as "all" | "Cleared" | "Pending")}

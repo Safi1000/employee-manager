@@ -4,6 +4,7 @@ import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import ExportButton from "../../components/ExportButton";
+import ClientFilterSelect from "../../components/ClientFilterSelect";
 import {
   supabase,
   EXPENSE_RECEIPTS_BUCKET,
@@ -1110,19 +1111,13 @@ export default function Expenses() {
                   </option>
                 ))}
               </select>
-              <select
+              <ClientFilterSelect
+                clients={clients}
                 value={clientFilter}
-                onChange={(e) => setClientFilter(e.target.value)}
-                className="px-3 py-2 border border-slate-200 rounded-md text-sm"
-              >
-                <option value="all">All Clients</option>
-                <option value="office">Office (no client)</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+                onChange={setClientFilter}
+                allValue="all"
+                extraOption={{ value: "office", label: "Office (no client)" }}
+              />
               <select
                 value={modeFilter}
                 onChange={(e) => setModeFilter(e.target.value as "all" | ExpensePaymentMode)}

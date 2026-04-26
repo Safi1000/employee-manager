@@ -3,6 +3,7 @@ import { Plus, Shield, Users as UsersIcon, MapPin, AlertCircle, Loader2, X, Tras
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
+import ClientFilterSelect from "../../components/ClientFilterSelect";
 import {
   supabase,
   type InventoryItem,
@@ -586,20 +587,13 @@ export default function Inventory() {
             </div>
             <div>
               <label className="block text-xs text-slate-500 mb-1">Client</label>
-              <select
+              <ClientFilterSelect
+                clients={clients}
                 value={filters.client_id}
-                onChange={(e) => setFilters({ ...filters, client_id: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-              >
-                <option value="">All</option>
-                {clients
-                  .filter((c) => c.client_type === "security_services")
-                  .map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-              </select>
+                onChange={(v) => setFilters({ ...filters, client_id: v })}
+                allLabel="All"
+                filterFn={(c) => c.client_type === "security_services"}
+              />
             </div>
             <div>
               <label className="block text-xs text-slate-500 mb-1">Shift</label>

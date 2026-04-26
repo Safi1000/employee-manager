@@ -4,6 +4,7 @@ import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import ExportButton from "../../components/ExportButton";
+import ClientFilterSelect from "../../components/ClientFilterSelect";
 import {
   supabase,
   type AttendanceStatus,
@@ -312,18 +313,12 @@ export default function AttendanceManagement() {
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-2">Client</label>
-              <select
+              <ClientFilterSelect
+                clients={clients}
                 value={clientFilter}
-                onChange={(e) => setClientFilter(e.target.value)}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-              >
-                <option value="all">All Clients</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+                onChange={setClientFilter}
+                allValue="all"
+              />
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-2">Location</label>

@@ -34,7 +34,12 @@ type ClientStatementRow = Client & {
 
 const monthKeyFromDate = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-const currentMonthKey = () => monthKeyFromDate(new Date());
+const previousMonthKey = () => {
+  const d = new Date();
+  d.setDate(1);
+  d.setMonth(d.getMonth() - 1);
+  return monthKeyFromDate(d);
+};
 
 const firstOfMonth = (periodMonth: string) => `${periodMonth}-01`;
 const lastOfMonth = (periodMonth: string) => {
@@ -59,7 +64,7 @@ export default function FinancialReports() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loadingClients, setLoadingClients] = useState(true);
 
-  const [chartPeriod, setChartPeriod] = useState<string>(currentMonthKey());
+  const [chartPeriod, setChartPeriod] = useState<string>(previousMonthKey());
   const [chartInvoices, setChartInvoices] = useState<Invoice[]>([]);
   const [chartExpenses, setChartExpenses] = useState<Expense[]>([]);
   const [chartCategories, setChartCategories] = useState<ExpenseCategory[]>([]);
@@ -69,13 +74,13 @@ export default function FinancialReports() {
 
   type PlInvoiceRow = { invoice_amount: number; client?: { client_type: ClientType } | null };
   type PlExpenseRow = { amount: number; category?: { name: string } | null };
-  const [plPeriod, setPlPeriod] = useState<string>(currentMonthKey());
+  const [plPeriod, setPlPeriod] = useState<string>(previousMonthKey());
   const [plInvoices, setPlInvoices] = useState<PlInvoiceRow[]>([]);
   const [plPayslips, setPlPayslips] = useState<{ final_salary: number }[]>([]);
   const [plExpenses, setPlExpenses] = useState<PlExpenseRow[]>([]);
   const [loadingPl, setLoadingPl] = useState(false);
 
-  const [statementPeriod, setStatementPeriod] = useState<string>(currentMonthKey());
+  const [statementPeriod, setStatementPeriod] = useState<string>(previousMonthKey());
 
   const chartPeriodOptions = useMemo(() => {
     const opts: string[] = [];
@@ -195,6 +200,10 @@ export default function FinancialReports() {
     let transportation = 0;
     let utilities = 0;
     let insurance = 0;
+    let licenses = 0;
+    let eobi = 0;
+    let iessi = 0;
+    let pessi = 0;
     let taxes = 0;
     let operating = 0;
     for (const e of plExpenses) {
@@ -203,12 +212,17 @@ export default function FinancialReports() {
       if (name === "Equipment & Supplies") equipment += amt;
       else if (name === "Transportation & Fuel") transportation += amt;
       else if (name === "Utilities & Rent") utilities += amt;
-      else if (name === "Insurance & Licenses") insurance += amt;
+      else if (name === "Insurance") insurance += amt;
+      else if (name === "Licenses") licenses += amt;
+      else if (name === "EOBI") eobi += amt;
+      else if (name === "IESSI") iessi += amt;
+      else if (name === "PESSI") pessi += amt;
       else if (name === "Taxes") taxes += amt;
       else if (!isHardcodedCategory(name)) operating += amt;
     }
     const totalRevenue = securityRevenue + guardRevenue;
-    const totalExpenses = payroll + equipment + transportation + utilities + insurance + operating;
+    const totalExpenses =
+      payroll + equipment + transportation + utilities + insurance + licenses + eobi + iessi + pessi + operating;
     const grossProfit = totalRevenue - totalExpenses;
     const netProfit = grossProfit - taxes;
     return {
@@ -220,6 +234,10 @@ export default function FinancialReports() {
       transportation,
       utilities,
       insurance,
+      licenses,
+      eobi,
+      iessi,
+      pessi,
       operating,
       totalExpenses,
       grossProfit,
@@ -327,8 +345,8 @@ export default function FinancialReports() {
             <div className="flex gap-2">
               {([
                 { key: "pl", label: "Profit & Loss" },
-                { key: "chart", label: "Chart of Accounts" },
                 { key: "clients", label: "Client Statements" },
+                { key: "chart", label: "Chart of Accounts" },
                 { key: "partnership", label: "Partnership Report" },
               ] as const).map((tab) => (
                 <button
@@ -409,7 +427,11 @@ export default function FinancialReports() {
                         { name: "Equipment & Supplies", amount: plFigures.equipment },
                         { name: "Transportation & Fuel", amount: plFigures.transportation },
                         { name: "Utilities & Rent", amount: plFigures.utilities },
-                        { name: "Insurance & Licenses", amount: plFigures.insurance },
+                        { name: "Insurance", amount: plFigures.insurance },
+                        { name: "Licenses", amount: plFigures.licenses },
+                        { name: "EOBI", amount: plFigures.eobi },
+                        { name: "IESSI", amount: plFigures.iessi },
+                        { name: "PESSI", amount: plFigures.pessi },
                       ].map((item) => (
                         <div key={item.name} className="flex justify-between items-center pl-4">
                           <span className="text-sm text-slate-600">{item.name}</span>

@@ -35,7 +35,11 @@ export const HARDCODED_EXPENSE_CATEGORIES = [
   "Equipment & Supplies",
   "Transportation & Fuel",
   "Utilities & Rent",
-  "Insurance & Licenses",
+  "Insurance",
+  "Licenses",
+  "EOBI",
+  "IESSI",
+  "PESSI",
   "Taxes",
 ] as const;
 

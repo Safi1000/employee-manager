@@ -3,6 +3,7 @@ import { Plus, Search, Upload, AlertCircle, Loader2, X, Trash2 } from "lucide-re
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
+import ClientFilterSelect from "../../components/ClientFilterSelect";
 import {
   supabase,
   EMPLOYEE_DOCS_BUCKET,
@@ -27,7 +28,7 @@ type FormState = {
   join_date: string;
   bank_account: string;
   cnic?: File;
-  passport?: File;
+  police_verification?: File;
   other?: FileList;
 };
 
@@ -171,7 +172,7 @@ export default function EmployeeManagement() {
 
   const uploadDocs = async (employeeId: string, f: FormState) => {
     if (f.cnic) await replaceDoc(employeeId, "CNIC", f.cnic);
-    if (f.passport) await replaceDoc(employeeId, "Passport", f.passport);
+    if (f.police_verification) await replaceDoc(employeeId, "Police Verification", f.police_verification);
     if (f.other) {
       for (let i = 0; i < f.other.length; i++) {
         await uploadDoc(employeeId, "Other", f.other[i]);
@@ -210,6 +211,10 @@ export default function EmployeeManagement() {
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.full_name.trim()) return;
+    if (!form.client_id) {
+      setError("Select a client.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -219,7 +224,7 @@ export default function EmployeeManagement() {
           full_name: form.full_name.trim(),
           phone: form.phone.trim() || null,
           location_id: form.location_id || null,
-          client_id: form.client_id || null,
+          client_id: form.client_id,
           department: form.department.trim() || null,
           shift: form.shift,
           base_salary: form.base_salary ? Number(form.base_salary) : null,
@@ -359,18 +364,12 @@ export default function EmployeeManagement() {
                   </option>
                 ))}
               </select>
-              <select
+              <ClientFilterSelect
+                clients={clients}
                 value={clientFilter}
-                onChange={(e) => setClientFilter(e.target.value)}
-                className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-              >
-                <option value="all">All Clients</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+                onChange={setClientFilter}
+                allValue="all"
+              />
               <select
                 value={shiftFilter}
                 onChange={(e) => setShiftFilter(e.target.value as "all" | "day" | "night")}
@@ -518,8 +517,9 @@ export default function EmployeeManagement() {
                 )}
               </div>
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Client</label>
+                <label className="block text-sm text-slate-700 mb-1">Client *</label>
                 <select
+                  required
                   value={form.client_id}
                   onChange={(e) => setForm({ ...form, client_id: e.target.value })}
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -641,11 +641,11 @@ export default function EmployeeManagement() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Passport</label>
+                <label className="block text-sm text-slate-700 mb-1">Police Verification</label>
                 <div className="flex items-center gap-3">
                   <input
                     type="file"
-                    onChange={(e) => setForm({ ...form, passport: e.target.files?.[0] })}
+                    onChange={(e) => setForm({ ...form, police_verification: e.target.files?.[0] })}
                     className="flex-1 px-4 py-2 border border-slate-200 rounded-md text-sm"
                   />
                   <Upload className="w-4 h-4 text-slate-400" strokeWidth={1.5} />
@@ -945,10 +945,10 @@ export default function EmployeeManagement() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-700 mb-1">Passport</label>
+                  <label className="block text-sm text-slate-700 mb-1">Police Verification</label>
                   <input
                     type="file"
-                    onChange={(e) => setEditForm({ ...editForm, passport: e.target.files?.[0] })}
+                    onChange={(e) => setEditForm({ ...editForm, police_verification: e.target.files?.[0] })}
                     className="flex-1 w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
                   />
                 </div>
