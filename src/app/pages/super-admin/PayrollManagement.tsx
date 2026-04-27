@@ -81,7 +81,7 @@ export default function PayrollManagement() {
     new Map()
   );
   const [advancesByEmployee, setAdvancesByEmployee] = useState<Map<string, number>>(new Map());
-  const [leaveAllowanceOverrides, setLeaveAllowanceOverrides] = useState<Map<string, number>>(new Map());
+  const [priorLeavesByMonth, setPriorLeavesByMonth] = useState<Map<string, Map<string, number>>>(new Map());
   const [cashBalance, setCashBalance] = useState(0);
 
   const [isBulkDisburseOpen, setIsBulkDisburseOpen] = useState(false);
@@ -121,7 +121,14 @@ export default function PayrollManagement() {
   const loadPeriodData = async (period: string) => {
     const start = period;
     const end = endOfMonthStr(period);
-    const [attRes, payRes, advRes, mlaRes] = await Promise.all([
+    const [yStr, mStr] = period.split("-");
+    const py = Number(yStr);
+    const pm = Number(mStr);
+    const carryWindowStart = new Date(py, pm - 1 - 12, 1);
+    const carryWindowStartIso = `${carryWindowStart.getFullYear()}-${String(
+      carryWindowStart.getMonth() + 1
+    ).padStart(2, "0")}-01`;
+    const [attRes, payRes, advRes, attHistRes] = await Promise.all([
       supabase
         .from("attendance_records")
         .select("employee_id, status, attendance_date")
@@ -134,9 +141,11 @@ export default function PayrollManagement() {
         .gte("advance_date", start)
         .lte("advance_date", end),
       supabase
-        .from("monthly_leave_allowances")
-        .select("employee_id, allowed_leaves")
-        .eq("period_month", period),
+        .from("attendance_records")
+        .select("employee_id, attendance_date")
+        .eq("status", "Leave")
+        .gte("attendance_date", carryWindowStartIso)
+        .lt("attendance_date", start),
     ]);
     const agg = new Map<string, { present: number; absent: number; leave: number }>();
     (attRes.data ?? []).forEach((a: any) => {
@@ -155,11 +164,15 @@ export default function PayrollManagement() {
       advMap.set(a.employee_id, (advMap.get(a.employee_id) ?? 0) + Number(a.amount));
     });
     setAdvancesByEmployee(advMap);
-    const mlaMap = new Map<string, number>();
-    (mlaRes.data ?? []).forEach((m: any) => {
-      mlaMap.set(m.employee_id, Number(m.allowed_leaves));
+    const histMap = new Map<string, Map<string, number>>();
+    (attHistRes.data ?? []).forEach((r: any) => {
+      const date: string = r.attendance_date;
+      const key = date.slice(0, 7);
+      if (!histMap.has(r.employee_id)) histMap.set(r.employee_id, new Map());
+      const empMap = histMap.get(r.employee_id)!;
+      empMap.set(key, (empMap.get(key) ?? 0) + 1);
     });
-    setLeaveAllowanceOverrides(mlaMap);
+    setPriorLeavesByMonth(histMap);
     setRowEdits(new Map());
     setSelectedId(null);
   };
@@ -216,6 +229,43 @@ export default function PayrollManagement() {
     return m;
   }, [clients]);
 
+  const clientCarryEnabled = useMemo(() => {
+    const m = new Map<string, boolean>();
+    for (const c of clients) {
+      m.set(c.id, !!(c as any).leave_carry_forward);
+    }
+    return m;
+  }, [clients]);
+
+  const carriedAllowance = useMemo(() => {
+    const out = new Map<string, number>();
+    if (!selectedPeriod) return out;
+    const [pyStr, pmStr] = selectedPeriod.split("-");
+    const py = Number(pyStr);
+    const pm = Number(pmStr);
+    const monthKeys: string[] = [];
+    for (let i = 12; i >= 1; i -= 1) {
+      const d = new Date(py, pm - 1 - i, 1);
+      monthKeys.push(
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+      );
+    }
+    for (const emp of employees) {
+      if (!emp.client_id) continue;
+      if (!clientCarryEnabled.get(emp.client_id)) continue;
+      const base = clientAllowedLeaves.get(emp.client_id) ?? 0;
+      const empLeaves = priorLeavesByMonth.get(emp.id) ?? new Map<string, number>();
+      let allowed = base;
+      for (const k of monthKeys) {
+        const used = empLeaves.get(k) ?? 0;
+        const unused = Math.max(0, allowed - used);
+        allowed = base + unused;
+      }
+      out.set(emp.id, allowed);
+    }
+    return out;
+  }, [employees, clientCarryEnabled, clientAllowedLeaves, priorLeavesByMonth, selectedPeriod]);
+
   const rows = useMemo<RowState[]>(() => {
     const daysThisPeriod = daysInMonth(selectedPeriod);
     return employees.map((emp) => {
@@ -224,8 +274,8 @@ export default function PayrollManagement() {
       const baseSal = Number(existing?.base_salary ?? emp.base_salary ?? 0);
       const computedAdvance = advancesByEmployee.get(emp.id) ?? 0;
       const baseAllowed = emp.client_id ? clientAllowedLeaves.get(emp.client_id) ?? 0 : 0;
-      const overrideAllowed = leaveAllowanceOverrides.get(emp.id);
-      const allowed = overrideAllowed ?? baseAllowed;
+      const carryAllowed = carriedAllowance.get(emp.id);
+      const allowed = carryAllowed ?? baseAllowed;
       const defaults: RowState = {
         employee: emp,
         period_month: selectedPeriod,
@@ -283,7 +333,7 @@ export default function PayrollManagement() {
       merged.net_salary = Math.max(0, merged.final_salary - merged.advance);
       return merged;
     });
-  }, [employees, payslipsMap, attendanceAgg, advancesByEmployee, clientAllowedLeaves, leaveAllowanceOverrides, selectedPeriod, rowEdits]);
+  }, [employees, payslipsMap, attendanceAgg, advancesByEmployee, clientAllowedLeaves, carriedAllowance, selectedPeriod, rowEdits]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

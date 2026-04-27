@@ -26,6 +26,7 @@ export type Client = {
   allowed_leaves_per_month: number;
   opening_balance: number;
   client_type: ClientType;
+  leave_carry_forward: boolean;
   created_at?: string;
 };
 
