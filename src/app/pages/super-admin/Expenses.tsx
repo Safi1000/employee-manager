@@ -6,6 +6,14 @@ import Modal from "../../components/Modal";
 import ExportButton from "../../components/ExportButton";
 import ClientFilterSelect from "../../components/ClientFilterSelect";
 import {
+  PieChart,
+  Pie,
+  Cell,
+  Tooltip as RTooltip,
+  ResponsiveContainer,
+  Legend,
+} from "recharts";
+import {
   supabase,
   EXPENSE_RECEIPTS_BUCKET,
   isHardcodedCategory,
@@ -18,6 +26,21 @@ import {
   type Employee,
   type Advance,
 } from "../../lib/supabase";
+
+const PIE_COLORS = [
+  "#3b82f6",
+  "#10b981",
+  "#f59e0b",
+  "#ef4444",
+  "#8b5cf6",
+  "#ec4899",
+  "#14b8a6",
+  "#f97316",
+  "#06b6d4",
+  "#84cc16",
+  "#a855f7",
+  "#64748b",
+];
 
 type ExpenseRow = Expense & {
   category_name: string | null;
@@ -1051,32 +1074,75 @@ export default function Expenses() {
         </div>
 
         {activeTab === "expenses" && (
-          <div className="mb-6 grid grid-cols-1 lg:grid-cols-4 gap-4">
-            <div className="bg-slate-900 p-4 rounded-lg">
-              <p className="text-xs text-slate-300 mb-1">Total Expenses</p>
-              <p className="text-2xl text-white">PKR {expenseMetrics.total.toLocaleString()}</p>
-              <p className="text-[11px] text-slate-400 mt-1">
-                {filtered.length} entr{filtered.length === 1 ? "y" : "ies"} in current filter
-              </p>
+          <div className="mb-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="lg:col-span-1 flex flex-col gap-4">
+              <div className="bg-slate-900 p-4 rounded-lg">
+                <p className="text-xs text-slate-300 mb-1">Total Expenses</p>
+                <p className="text-2xl text-white">
+                  PKR {expenseMetrics.total.toLocaleString()}
+                </p>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  {filtered.length} entr{filtered.length === 1 ? "y" : "ies"} in current filter
+                </p>
+              </div>
+              <div className="bg-white p-4 rounded-lg border border-slate-200 flex-1">
+                <p className="text-xs text-slate-500 mb-2">By Category</p>
+                {expenseMetrics.perCategory.length === 0 ? (
+                  <p className="text-sm text-slate-500">
+                    No expenses match the current filter.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 gap-2 max-h-64 overflow-y-auto">
+                    {expenseMetrics.perCategory.map((c, i) => (
+                      <div
+                        key={c.id ?? c.name}
+                        className="flex items-center justify-between px-3 py-1.5 rounded border border-slate-100 bg-slate-50"
+                      >
+                        <span className="flex items-center gap-2 text-xs text-slate-700 truncate">
+                          <span
+                            className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0"
+                            style={{ background: PIE_COLORS[i % PIE_COLORS.length] }}
+                          />
+                          {c.name}
+                        </span>
+                        <span className="text-xs text-slate-900 ml-2">
+                          PKR {c.total.toLocaleString()}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-            <div className="lg:col-span-3 bg-white p-4 rounded-lg border border-slate-200">
-              <p className="text-xs text-slate-500 mb-2">By Category</p>
+            <div className="lg:col-span-2 bg-white p-4 rounded-lg border border-slate-200">
+              <p className="text-xs text-slate-500 mb-2">Category Breakdown</p>
               {expenseMetrics.perCategory.length === 0 ? (
-                <p className="text-sm text-slate-500">No expenses match the current filter.</p>
-              ) : (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-40 overflow-y-auto">
-                  {expenseMetrics.perCategory.map((c) => (
-                    <div
-                      key={c.id ?? c.name}
-                      className="flex items-center justify-between px-3 py-1.5 rounded border border-slate-100 bg-slate-50"
-                    >
-                      <span className="text-xs text-slate-700 truncate">{c.name}</span>
-                      <span className="text-xs text-slate-900 ml-2">
-                        PKR {c.total.toLocaleString()}
-                      </span>
-                    </div>
-                  ))}
+                <div className="h-64 flex items-center justify-center text-sm text-slate-500">
+                  No expenses match the current filter.
                 </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={280}>
+                  <PieChart>
+                    <Pie
+                      data={expenseMetrics.perCategory}
+                      dataKey="total"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={100}
+                      innerRadius={50}
+                      paddingAngle={2}
+                    >
+                      {expenseMetrics.perCategory.map((_, i) => (
+                        <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <RTooltip
+                      formatter={(v: number) => `PKR ${Number(v).toLocaleString()}`}
+                    />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
               )}
             </div>
           </div>

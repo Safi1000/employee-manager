@@ -72,6 +72,10 @@ export default function Accounting() {
   const [isEditBankModalOpen, setIsEditBankModalOpen] = useState(false);
   const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
   const [isLogModalOpen, setIsLogModalOpen] = useState(false);
+  const [isReceivablesLogOpen, setIsReceivablesLogOpen] = useState(false);
+  const [isPayablesLogOpen, setIsPayablesLogOpen] = useState(false);
+  const [logBankFilter, setLogBankFilter] = useState<string>("all");
+  const [logScope, setLogScope] = useState<"all" | "cash" | "account">("all");
   const [isMarkPaidModalOpen, setIsMarkPaidModalOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<ReceivableRow | null>(null);
   const [selectedBank, setSelectedBank] = useState<BankAccount | null>(null);
@@ -124,6 +128,36 @@ export default function Accounting() {
     return { opening, invoiced, received, outstanding };
   }, [receivables]);
 
+  const balanceLedger = useMemo(() => {
+    const ledger = new Map<string, { cash?: { before: number; after: number }; bank?: { before: number; after: number } }>();
+    const sortedAsc = [...transactions].sort((a, b) => {
+      const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return ta - tb;
+    });
+    let cashRunning = 0;
+    const bankRunning = new Map<string, number>();
+    for (const t of sortedAsc) {
+      const cd = Number(t.cash_delta) || 0;
+      const ad = Number(t.account_delta) || 0;
+      const entry: { cash?: { before: number; after: number }; bank?: { before: number; after: number } } = {};
+      if (cd !== 0) {
+        const before = cashRunning;
+        const after = before + cd;
+        entry.cash = { before, after };
+        cashRunning = after;
+      }
+      if (ad !== 0 && t.bank_account_id) {
+        const before = bankRunning.get(t.bank_account_id) ?? 0;
+        const after = before + ad;
+        entry.bank = { before, after };
+        bankRunning.set(t.bank_account_id, after);
+      }
+      ledger.set(t.id, entry);
+    }
+    return ledger;
+  }, [transactions]);
+
   const payableTotals = useMemo(() => {
     let total = 0;
     let pending = 0;
@@ -146,7 +180,7 @@ export default function Accounting() {
     const [banksRes, treasuryRes, txRes, payablesRes, clientsRes, invoicesRes] = await Promise.all([
       supabase.from("bank_accounts").select("*").order("created_at", { ascending: false }),
       supabase.from("treasury").select("*").limit(1).maybeSingle(),
-      supabase.from("bank_transactions").select("*").order("created_at", { ascending: false }).limit(100),
+      supabase.from("bank_transactions").select("*").order("created_at", { ascending: false }),
       supabase
         .from("expenses")
         .select("*, vendor:vendor_id(id,name), category:category_id(id,name), client:client_id(id,name,client_code)")
@@ -744,7 +778,15 @@ export default function Accounting() {
             <ExportButton onExport={() => console.log("Export")} />
             {activeTab === "banks" && (
               <>
-                <Button variant="secondary" size="md" onClick={() => setIsLogModalOpen(true)}>
+                <Button
+                  variant="secondary"
+                  size="md"
+                  onClick={() => {
+                    setLogBankFilter("all");
+                    setLogScope("all");
+                    setIsLogModalOpen(true);
+                  }}
+                >
                   <History className="w-4 h-4 mr-2" strokeWidth={1.5} />
                   Transactions
                 </Button>
@@ -753,6 +795,34 @@ export default function Accounting() {
                   Add Bank Account
                 </Button>
               </>
+            )}
+            {activeTab === "receivables" && (
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={() => {
+                  setLogBankFilter("all");
+                  setLogScope("all");
+                  setIsReceivablesLogOpen(true);
+                }}
+              >
+                <History className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                History
+              </Button>
+            )}
+            {activeTab === "payables" && (
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={() => {
+                  setLogBankFilter("all");
+                  setLogScope("all");
+                  setIsPayablesLogOpen(true);
+                }}
+              >
+                <History className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                History
+              </Button>
             )}
           </>
         }
@@ -1743,69 +1813,222 @@ export default function Accounting() {
       </Modal>
 
       <Modal isOpen={isLogModalOpen} onClose={() => setIsLogModalOpen(false)} title="Transaction Log" size="lg">
-        <div className="max-h-[60vh] overflow-y-auto">
-          {transactions.length === 0 ? (
-            <p className="text-sm text-slate-500">No transactions yet.</p>
-          ) : (
-            <table className="w-full">
-              <thead className="sticky top-0 bg-white">
-                <tr className="border-b border-slate-200">
-                  <th className="text-left px-3 py-2 text-xs text-slate-500">Date</th>
-                  <th className="text-left px-3 py-2 text-xs text-slate-500">Kind</th>
-                  <th className="text-left px-3 py-2 text-xs text-slate-500">Bank</th>
-                  <th className="text-right px-3 py-2 text-xs text-slate-500">Account Δ</th>
-                  <th className="text-right px-3 py-2 text-xs text-slate-500">Cash Δ</th>
-                  <th className="text-left px-3 py-2 text-xs text-slate-500">Description</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {transactions.map((t) => {
-                  const bank = banks.find((b) => b.id === t.bank_account_id);
-                  return (
-                    <tr key={t.id}>
-                      <td className="px-3 py-2 text-xs text-slate-600">
-                        {t.created_at ? new Date(t.created_at).toLocaleString() : "—"}
-                      </td>
-                      <td className="px-3 py-2 text-xs text-slate-700">{kindLabel[t.kind]}</td>
-                      <td className="px-3 py-2 text-xs text-slate-700">{bank?.bank_name ?? "—"}</td>
-                      <td
-                        className={`px-3 py-2 text-xs text-right font-mono ${
-                          Number(t.account_delta) > 0
-                            ? "text-emerald-700"
-                            : Number(t.account_delta) < 0
-                            ? "text-red-700"
-                            : "text-slate-500"
-                        }`}
-                      >
-                        {Number(t.account_delta) > 0 ? "+" : ""}
-                        {Number(t.account_delta).toLocaleString()}
-                      </td>
-                      <td
-                        className={`px-3 py-2 text-xs text-right font-mono ${
-                          Number(t.cash_delta) > 0
-                            ? "text-emerald-700"
-                            : Number(t.cash_delta) < 0
-                            ? "text-red-700"
-                            : "text-slate-500"
-                        }`}
-                      >
-                        {Number(t.cash_delta) > 0 ? "+" : ""}
-                        {Number(t.cash_delta).toLocaleString()}
-                      </td>
-                      <td className="px-3 py-2 text-xs text-slate-600">{t.description ?? "—"}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-          <div className="flex items-center gap-3 pt-4 border-t border-slate-200 mt-4">
-            <Button variant="secondary" size="md" className="ml-auto" onClick={() => setIsLogModalOpen(false)}>
-              Close
-            </Button>
-          </div>
-        </div>
+        <HistoryBody
+          transactions={transactions}
+          banks={banks}
+          balanceLedger={balanceLedger}
+          bankFilter={logBankFilter}
+          setBankFilter={setLogBankFilter}
+          scope={logScope}
+          setScope={setLogScope}
+          onClose={() => setIsLogModalOpen(false)}
+          emptyText="No transactions yet."
+        />
+      </Modal>
+
+      <Modal
+        isOpen={isReceivablesLogOpen}
+        onClose={() => setIsReceivablesLogOpen(false)}
+        title="Receivables History"
+        size="lg"
+      >
+        <HistoryBody
+          transactions={transactions.filter((t) => t.kind === "receipt")}
+          banks={banks}
+          balanceLedger={balanceLedger}
+          bankFilter={logBankFilter}
+          setBankFilter={setLogBankFilter}
+          scope={logScope}
+          setScope={setLogScope}
+          onClose={() => setIsReceivablesLogOpen(false)}
+          emptyText="No receipts recorded yet."
+        />
+      </Modal>
+
+      <Modal
+        isOpen={isPayablesLogOpen}
+        onClose={() => setIsPayablesLogOpen(false)}
+        title="Payables History"
+        size="lg"
+      >
+        <HistoryBody
+          transactions={transactions.filter((t) => t.kind === "expense")}
+          banks={banks}
+          balanceLedger={balanceLedger}
+          bankFilter={logBankFilter}
+          setBankFilter={setLogBankFilter}
+          scope={logScope}
+          setScope={setLogScope}
+          onClose={() => setIsPayablesLogOpen(false)}
+          emptyText="No payable settlements yet."
+        />
       </Modal>
     </>
+  );
+}
+
+type LedgerEntry = {
+  cash?: { before: number; after: number };
+  bank?: { before: number; after: number };
+};
+
+function HistoryBody({
+  transactions,
+  banks,
+  balanceLedger,
+  bankFilter,
+  setBankFilter,
+  scope,
+  setScope,
+  onClose,
+  emptyText,
+}: {
+  transactions: BankTransaction[];
+  banks: BankAccount[];
+  balanceLedger: Map<string, LedgerEntry>;
+  bankFilter: string;
+  setBankFilter: (v: string) => void;
+  scope: "all" | "cash" | "account";
+  setScope: (s: "all" | "cash" | "account") => void;
+  onClose: () => void;
+  emptyText: string;
+}) {
+  const filtered = transactions.filter((t) => {
+    if (bankFilter !== "all") {
+      if (bankFilter === "__cash__") {
+        if (Number(t.cash_delta) === 0) return false;
+      } else {
+        if (t.bank_account_id !== bankFilter) return false;
+      }
+    }
+    if (scope === "cash" && Number(t.cash_delta) === 0) return false;
+    if (scope === "account" && Number(t.account_delta) === 0) return false;
+    return true;
+  });
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-3 items-center pb-3 border-b border-slate-200">
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-slate-500">Account</label>
+          <select
+            value={bankFilter}
+            onChange={(e) => setBankFilter(e.target.value)}
+            className="px-3 py-1.5 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+          >
+            <option value="all">All accounts</option>
+            <option value="__cash__">Cash (Treasury)</option>
+            {banks.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.bank_name} · {b.account_number}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-1">
+          {(["all", "cash", "account"] as const).map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setScope(s)}
+              className={`px-3 py-1.5 rounded-md text-xs ${
+                scope === s
+                  ? "bg-slate-900 text-white"
+                  : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+              }`}
+            >
+              {s === "all" ? "All" : s === "cash" ? "Cash only" : "Account only"}
+            </button>
+          ))}
+        </div>
+        <span className="ml-auto text-xs text-slate-500">
+          {filtered.length} entr{filtered.length === 1 ? "y" : "ies"}
+        </span>
+      </div>
+
+      <div className="max-h-[60vh] overflow-y-auto">
+        {filtered.length === 0 ? (
+          <p className="text-sm text-slate-500 py-6 text-center">{emptyText}</p>
+        ) : (
+          <table className="w-full">
+            <thead className="sticky top-0 bg-white">
+              <tr className="border-b border-slate-200">
+                <th className="text-left px-3 py-2 text-xs text-slate-500">Date</th>
+                <th className="text-left px-3 py-2 text-xs text-slate-500">Kind</th>
+                <th className="text-left px-3 py-2 text-xs text-slate-500">Account</th>
+                <th className="text-right px-3 py-2 text-xs text-slate-500">Δ</th>
+                <th className="text-right px-3 py-2 text-xs text-slate-500">Before → After</th>
+                <th className="text-left px-3 py-2 text-xs text-slate-500">Description</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200">
+              {filtered.map((t) => {
+                const bank = banks.find((b) => b.id === t.bank_account_id);
+                const ledger = balanceLedger.get(t.id) ?? {};
+                const cd = Number(t.cash_delta);
+                const ad = Number(t.account_delta);
+                return (
+                  <tr key={t.id}>
+                    <td className="px-3 py-2 text-xs text-slate-600">
+                      {t.created_at ? new Date(t.created_at).toLocaleString() : "—"}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-slate-700">{kindLabel[t.kind]}</td>
+                    <td className="px-3 py-2 text-xs text-slate-700">
+                      {ad !== 0 && bank ? bank.bank_name : cd !== 0 ? "Cash" : "—"}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-right font-mono">
+                      {ad !== 0 && (
+                        <div
+                          className={
+                            ad > 0 ? "text-emerald-700" : ad < 0 ? "text-red-700" : "text-slate-500"
+                          }
+                        >
+                          {ad > 0 ? "+" : ""}
+                          {ad.toLocaleString()}
+                        </div>
+                      )}
+                      {cd !== 0 && (
+                        <div
+                          className={
+                            cd > 0 ? "text-emerald-700" : cd < 0 ? "text-red-700" : "text-slate-500"
+                          }
+                        >
+                          {cd > 0 ? "+" : ""}
+                          {cd.toLocaleString()}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-right font-mono text-slate-700">
+                      {ledger.bank && (
+                        <div>
+                          <span className="text-slate-400">Bank </span>
+                          {ledger.bank.before.toLocaleString()} →{" "}
+                          {ledger.bank.after.toLocaleString()}
+                        </div>
+                      )}
+                      {ledger.cash && (
+                        <div>
+                          <span className="text-slate-400">Cash </span>
+                          {ledger.cash.before.toLocaleString()} →{" "}
+                          {ledger.cash.after.toLocaleString()}
+                        </div>
+                      )}
+                      {!ledger.bank && !ledger.cash && <span className="text-slate-400">—</span>}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-slate-600">{t.description ?? "—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div className="flex items-center gap-3 pt-4 border-t border-slate-200">
+        <Button variant="secondary" size="md" className="ml-auto" onClick={onClose}>
+          Close
+        </Button>
+      </div>
+    </div>
   );
 }
