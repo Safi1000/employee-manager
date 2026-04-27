@@ -240,6 +240,48 @@ export type InvoicePayment = {
   created_at?: string;
 };
 
+export const COMPLIANCE_CATEGORIES = [
+  "License",
+  "Tax",
+  "HR",
+  "Payroll",
+  "Inventory",
+  "Client",
+  "Invoice",
+  "Operations",
+  "Other",
+] as const;
+export type ComplianceCategory = (typeof COMPLIANCE_CATEGORIES)[number];
+
+export type CompliancePriority = "critical" | "high" | "medium" | "low";
+
+export type ImportantDate = {
+  id: string;
+  title: string;
+  due_date: string;
+  category: ComplianceCategory;
+  priority: CompliancePriority;
+  advance_notice_days: number;
+  notes: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type RecurringFrequency = "Daily" | "Weekly" | "Monthly" | "Yearly";
+
+export type RecurringAlert = {
+  id: string;
+  name: string;
+  category: ComplianceCategory;
+  frequency: RecurringFrequency;
+  trigger_day: string;
+  advance_notice_days: number;
+  active: boolean;
+  notes: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
 export type ExpensePaymentMode = "Cash" | "Bank" | "Payable";
 export type PayableStatus = "Pending" | "Paid";
 
