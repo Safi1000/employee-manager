@@ -171,7 +171,7 @@ export default function FinancialReports() {
         supabase
           .from("payslips")
           .select("final_salary")
-          .eq("period_month", plPeriod),
+          .eq("period_month", `${plPeriod}-01`),
         supabase
           .from("expenses")
           .select("amount, expense_date, category_id, category:category_id(name)")
@@ -254,7 +254,7 @@ export default function FinancialReports() {
       const [cliRes, invRes, psRes, empRes, expRes] = await Promise.all([
         supabase.from("clients").select("*").order("name"),
         supabase.from("invoices").select("*").gte("invoice_date", start).lte("invoice_date", end),
-        supabase.from("payslips").select("*").eq("period_month", statementPeriod),
+        supabase.from("payslips").select("*").eq("period_month", `${statementPeriod}-01`),
         supabase
           .from("employees")
           .select(

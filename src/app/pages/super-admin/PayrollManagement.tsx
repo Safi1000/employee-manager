@@ -81,6 +81,7 @@ export default function PayrollManagement() {
     new Map()
   );
   const [advancesByEmployee, setAdvancesByEmployee] = useState<Map<string, number>>(new Map());
+  const [leaveAllowanceOverrides, setLeaveAllowanceOverrides] = useState<Map<string, number>>(new Map());
   const [cashBalance, setCashBalance] = useState(0);
 
   const [isBulkDisburseOpen, setIsBulkDisburseOpen] = useState(false);
@@ -120,7 +121,7 @@ export default function PayrollManagement() {
   const loadPeriodData = async (period: string) => {
     const start = period;
     const end = endOfMonthStr(period);
-    const [attRes, payRes, advRes] = await Promise.all([
+    const [attRes, payRes, advRes, mlaRes] = await Promise.all([
       supabase
         .from("attendance_records")
         .select("employee_id, status, attendance_date")
@@ -132,6 +133,10 @@ export default function PayrollManagement() {
         .select("employee_id, amount")
         .gte("advance_date", start)
         .lte("advance_date", end),
+      supabase
+        .from("monthly_leave_allowances")
+        .select("employee_id, allowed_leaves")
+        .eq("period_month", period),
     ]);
     const agg = new Map<string, { present: number; absent: number; leave: number }>();
     (attRes.data ?? []).forEach((a: any) => {
@@ -150,6 +155,11 @@ export default function PayrollManagement() {
       advMap.set(a.employee_id, (advMap.get(a.employee_id) ?? 0) + Number(a.amount));
     });
     setAdvancesByEmployee(advMap);
+    const mlaMap = new Map<string, number>();
+    (mlaRes.data ?? []).forEach((m: any) => {
+      mlaMap.set(m.employee_id, Number(m.allowed_leaves));
+    });
+    setLeaveAllowanceOverrides(mlaMap);
     setRowEdits(new Map());
     setSelectedId(null);
   };
@@ -213,7 +223,9 @@ export default function PayrollManagement() {
       const att = attendanceAgg.get(emp.id) ?? { present: 0, absent: 0, leave: 0 };
       const baseSal = Number(existing?.base_salary ?? emp.base_salary ?? 0);
       const computedAdvance = advancesByEmployee.get(emp.id) ?? 0;
-      const allowed = emp.client_id ? clientAllowedLeaves.get(emp.client_id) ?? 0 : 0;
+      const baseAllowed = emp.client_id ? clientAllowedLeaves.get(emp.client_id) ?? 0 : 0;
+      const overrideAllowed = leaveAllowanceOverrides.get(emp.id);
+      const allowed = overrideAllowed ?? baseAllowed;
       const defaults: RowState = {
         employee: emp,
         period_month: selectedPeriod,
@@ -271,7 +283,7 @@ export default function PayrollManagement() {
       merged.net_salary = Math.max(0, merged.final_salary - merged.advance);
       return merged;
     });
-  }, [employees, payslipsMap, attendanceAgg, advancesByEmployee, clientAllowedLeaves, selectedPeriod, rowEdits]);
+  }, [employees, payslipsMap, attendanceAgg, advancesByEmployee, clientAllowedLeaves, leaveAllowanceOverrides, selectedPeriod, rowEdits]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

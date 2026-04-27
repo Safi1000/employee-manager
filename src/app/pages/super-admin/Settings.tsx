@@ -20,6 +20,21 @@ type ClientRow = {
 const clientTypeLabel = (t: ClientType) =>
   t === "security_services" ? "Security Services" : "Guard Deployment";
 
+const previousMonthKey = () => {
+  const d = new Date();
+  d.setDate(1);
+  d.setMonth(d.getMonth() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+};
+
+const formatMonthLabel = (firstOfMonthIso: string) => {
+  const [y, m] = firstOfMonthIso.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString(undefined, {
+    month: "long",
+    year: "numeric",
+  });
+};
+
 export default function Settings() {
   const [locations, setLocations] = useState<LocationRow[]>([]);
   const [clients, setClients] = useState<ClientRow[]>([]);
@@ -44,6 +59,9 @@ export default function Settings() {
   const [editClientPhone, setEditClientPhone] = useState("");
   const [editClientAllowedLeaves, setEditClientAllowedLeaves] = useState<number>(0);
   const [editClientType, setEditClientType] = useState<ClientType>("security_services");
+  const [carryForwardMonth, setCarryForwardMonth] = useState<string>(previousMonthKey());
+  const [carryForwardSubmitting, setCarryForwardSubmitting] = useState(false);
+  const [carryForwardMessage, setCarryForwardMessage] = useState<string | null>(null);
 
   const [submitting, setSubmitting] = useState(false);
 
@@ -174,6 +192,8 @@ export default function Settings() {
     setEditClientPhone(row.phone ?? "");
     setEditClientAllowedLeaves(row.allowed_leaves_per_month ?? 0);
     setEditClientType(row.client_type ?? "security_services");
+    setCarryForwardMessage(null);
+    setCarryForwardMonth(previousMonthKey());
   };
 
   const handleSaveClientEdit = async (id: string) => {
@@ -194,6 +214,91 @@ export default function Settings() {
     }
     setClientEditingId(null);
     await loadAll();
+  };
+
+  const handleCarryForward = async (clientId: string, baseAllowed: number) => {
+    setCarryForwardSubmitting(true);
+    setCarryForwardMessage(null);
+    setError(null);
+    try {
+      const [yStr, mStr] = carryForwardMonth.split("-");
+      const sy = Number(yStr);
+      const sm = Number(mStr);
+      if (!sy || !sm) {
+        setError("Pick a valid source month.");
+        return;
+      }
+      const sourceFirst = `${yStr}-${mStr}-01`;
+      const sourceLastDay = new Date(sy, sm, 0).getDate();
+      const sourceLast = `${yStr}-${mStr}-${String(sourceLastDay).padStart(2, "0")}`;
+      const nextDate = new Date(sy, sm, 1);
+      const ny = nextDate.getFullYear();
+      const nm = nextDate.getMonth() + 1;
+      const nextFirst = `${ny}-${String(nm).padStart(2, "0")}-01`;
+
+      const { data: emps, error: empErr } = await supabase
+        .from("employees")
+        .select("id")
+        .eq("client_id", clientId);
+      if (empErr) throw empErr;
+      const empIds = (emps ?? []).map((e: any) => e.id as string);
+      if (empIds.length === 0) {
+        setCarryForwardMessage("No employees linked to this client.");
+        return;
+      }
+
+      const { data: overrides, error: oErr } = await supabase
+        .from("monthly_leave_allowances")
+        .select("employee_id, allowed_leaves")
+        .eq("period_month", sourceFirst)
+        .in("employee_id", empIds);
+      if (oErr) throw oErr;
+      const overrideMap = new Map<string, number>();
+      (overrides ?? []).forEach((o: any) =>
+        overrideMap.set(o.employee_id, Number(o.allowed_leaves))
+      );
+
+      const { data: leaves, error: lErr } = await supabase
+        .from("attendance_records")
+        .select("employee_id")
+        .eq("status", "Leave")
+        .gte("attendance_date", sourceFirst)
+        .lte("attendance_date", sourceLast)
+        .in("employee_id", empIds);
+      if (lErr) throw lErr;
+      const leaveCount = new Map<string, number>();
+      (leaves ?? []).forEach((l: any) => {
+        leaveCount.set(l.employee_id, (leaveCount.get(l.employee_id) ?? 0) + 1);
+      });
+
+      const upserts = empIds.map((eid) => {
+        const sourceAllowed = overrideMap.get(eid) ?? baseAllowed;
+        const used = leaveCount.get(eid) ?? 0;
+        const unused = Math.max(0, sourceAllowed - used);
+        const nextAllowed = baseAllowed + unused;
+        return {
+          employee_id: eid,
+          period_month: nextFirst,
+          allowed_leaves: nextAllowed,
+          updated_at: new Date().toISOString(),
+        };
+      });
+
+      const { error: upErr } = await supabase
+        .from("monthly_leave_allowances")
+        .upsert(upserts, { onConflict: "employee_id,period_month" });
+      if (upErr) throw upErr;
+
+      setCarryForwardMessage(
+        `Forwarded unused leaves for ${empIds.length} employee${
+          empIds.length === 1 ? "" : "s"
+        } from ${formatMonthLabel(sourceFirst)} → ${formatMonthLabel(nextFirst)}.`
+      );
+    } catch (e: any) {
+      setError(e.message ?? String(e));
+    } finally {
+      setCarryForwardSubmitting(false);
+    }
   };
 
   const handleDeleteClient = async (row: ClientRow) => {
@@ -365,6 +470,39 @@ export default function Settings() {
                         <option value="guard_deployment">Guard Deployment</option>
                       </select>
                     </div>
+                  </div>
+                  <div className="border-t border-slate-200 pt-3 space-y-2">
+                    <label className="block text-xs text-slate-600">Leave Carry-Forward</label>
+                    <div className="flex items-end gap-2 flex-wrap">
+                      <div>
+                        <label className="block text-[11px] text-slate-500 mb-1">Source Month</label>
+                        <input
+                          type="month"
+                          value={carryForwardMonth}
+                          onChange={(e) => setCarryForwardMonth(e.target.value)}
+                          className="px-3 py-1.5 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                        />
+                      </div>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={carryForwardSubmitting || !carryForwardMonth}
+                        onClick={() =>
+                          handleCarryForward(row.id, row.allowed_leaves_per_month)
+                        }
+                      >
+                        {carryForwardSubmitting
+                          ? "Forwarding…"
+                          : "Forward Unused Leaves"}
+                      </Button>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      Carries each employee's unused leaves from the source month into the next
+                      month's allowance. Idempotent — re-running re-computes from current data.
+                    </p>
+                    {carryForwardMessage && (
+                      <p className="text-xs text-green-700">{carryForwardMessage}</p>
+                    )}
                   </div>
                   <div className="flex gap-2">
                     <Button variant="primary" size="sm" onClick={() => handleSaveClientEdit(row.id)}>
