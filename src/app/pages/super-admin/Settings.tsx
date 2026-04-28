@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Loader2, AlertCircle, X, Trash2 } from "lucide-react";
+import { Plus, Loader2, AlertCircle, X, Trash2, Mail, Send } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -50,6 +50,98 @@ export default function Settings() {
 
   const [submitting, setSubmitting] = useState(false);
 
+  const [notificationEmail, setNotificationEmail] = useState("");
+  const [notificationSenderEmail, setNotificationSenderEmail] = useState("info@techxserve.com");
+  const [notificationLoading, setNotificationLoading] = useState(true);
+  const [notificationSaving, setNotificationSaving] = useState(false);
+  const [notificationSavedAt, setNotificationSavedAt] = useState<string | null>(null);
+  const [notificationTesting, setNotificationTesting] = useState(false);
+  const [notificationMessage, setNotificationMessage] = useState<string | null>(null);
+  const [notificationError, setNotificationError] = useState<string | null>(null);
+
+  const loadNotificationSettings = async () => {
+    setNotificationLoading(true);
+    const { data, error: nErr } = await supabase
+      .from("notification_settings")
+      .select("recipient_email, sender_email")
+      .limit(1)
+      .maybeSingle();
+    if (!nErr && data) {
+      setNotificationEmail(data.recipient_email ?? "");
+      setNotificationSenderEmail(data.sender_email ?? "info@techxserve.com");
+    }
+    setNotificationLoading(false);
+  };
+
+  const saveNotificationSettings = async () => {
+    setNotificationSaving(true);
+    setNotificationError(null);
+    setNotificationMessage(null);
+    try {
+      const { data: existing } = await supabase
+        .from("notification_settings")
+        .select("id")
+        .limit(1)
+        .maybeSingle();
+      const trimmed = notificationEmail.trim();
+      if (existing?.id) {
+        const { error: upErr } = await supabase
+          .from("notification_settings")
+          .update({
+            recipient_email: trimmed || null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", existing.id);
+        if (upErr) throw upErr;
+      } else {
+        const { error: insErr } = await supabase
+          .from("notification_settings")
+          .insert({ recipient_email: trimmed || null });
+        if (insErr) throw insErr;
+      }
+      setNotificationSavedAt(new Date().toLocaleTimeString());
+    } catch (e: any) {
+      setNotificationError(e?.message ?? String(e));
+    } finally {
+      setNotificationSaving(false);
+    }
+  };
+
+  const sendTestEmail = async () => {
+    setNotificationTesting(true);
+    setNotificationError(null);
+    setNotificationMessage(null);
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const token = session?.session?.access_token;
+      const url = `${(import.meta as any).env.VITE_SUPABASE_URL}/functions/v1/send-compliance-alerts?test=1`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token ?? (import.meta as any).env.VITE_SUPABASE_ANON_KEY}`,
+          "Content-Type": "application/json",
+          apikey: (import.meta as any).env.VITE_SUPABASE_ANON_KEY,
+        },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = body?.error?.message ?? body?.error ?? `HTTP ${res.status}`;
+        throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+      }
+      if (body?.sent === false) {
+        setNotificationMessage(body?.reason ?? "No items to send today.");
+      } else {
+        setNotificationMessage(
+          `Test email sent to ${body?.recipient ?? notificationEmail}. Check inbox / spam.`
+        );
+      }
+    } catch (e: any) {
+      setNotificationError(e?.message ?? String(e));
+    } finally {
+      setNotificationTesting(false);
+    }
+  };
+
   const loadAll = async () => {
     setLoading(true);
     setError(null);
@@ -98,6 +190,7 @@ export default function Settings() {
 
   useEffect(() => {
     loadAll();
+    loadNotificationSettings();
   }, []);
 
   const handleAddLocation = async (e: React.FormEvent) => {
@@ -458,6 +551,97 @@ export default function Settings() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           {renderLocations()}
           {renderClients()}
+        </div>
+
+        <div className="bg-white rounded-lg border border-slate-200 p-6 mb-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Mail className="w-4 h-4 text-slate-600" strokeWidth={1.5} />
+            <h3 className="text-base text-slate-900">Notifications</h3>
+          </div>
+          <p className="text-xs text-slate-500 mb-4">
+            Compliance alerts and recurring reminders are sent as a daily email digest from{" "}
+            <span className="font-mono">{notificationSenderEmail}</span> to the address below.
+          </p>
+
+          {notificationError && (
+            <div className="mb-3 flex items-start gap-2 p-3 bg-red-50 text-red-700 border border-red-200 rounded-md text-sm">
+              <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
+              <div className="flex-1">{notificationError}</div>
+              <button onClick={() => setNotificationError(null)}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+          {notificationMessage && (
+            <div className="mb-3 flex items-start gap-2 p-3 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md text-sm">
+              <div className="flex-1">{notificationMessage}</div>
+              <button onClick={() => setNotificationMessage(null)}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Recipient Email</label>
+              <input
+                type="email"
+                value={notificationEmail}
+                disabled={notificationLoading}
+                onChange={(e) => setNotificationEmail(e.target.value)}
+                placeholder="you@example.com"
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+              />
+              <p className="text-[11px] text-slate-500 mt-1">
+                Where the daily digest and triggered alerts will be sent.
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Sender</label>
+              <input
+                type="email"
+                value={notificationSenderEmail}
+                disabled
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50 text-slate-500"
+              />
+              <p className="text-[11px] text-slate-500 mt-1">
+                Sender is fixed to your domain identity.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              variant="primary"
+              size="md"
+              onClick={saveNotificationSettings}
+              disabled={notificationLoading || notificationSaving}
+            >
+              {notificationSaving ? "Saving…" : "Save Email"}
+            </Button>
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={sendTestEmail}
+              disabled={
+                notificationTesting || notificationLoading || !notificationEmail.trim()
+              }
+            >
+              <Send className="w-3.5 h-3.5 mr-2" strokeWidth={1.5} />
+              {notificationTesting ? "Sending…" : "Send Test Email"}
+            </Button>
+            {notificationSavedAt && (
+              <span className="text-xs text-slate-500">Saved at {notificationSavedAt}</span>
+            )}
+          </div>
+
+          <div className="mt-5 p-3 rounded-md bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1">
+            <p className="text-slate-700"><strong>Setup checklist (one-time):</strong></p>
+            <p>1. Create a Resend account and verify the <span className="font-mono">techxserve.com</span> domain.</p>
+            <p>2. Add the API key as a Supabase function secret named <span className="font-mono">RESEND_API_KEY</span> (Dashboard → Edge Functions → Secrets).</p>
+            <p>3. Schedule the daily digest in Supabase Dashboard → Database → Cron: <span className="font-mono">POST /functions/v1/send-compliance-alerts</span> with a Bearer service-role token, e.g. at <span className="font-mono">0 8 * * *</span>.</p>
+            <p>Until the domain is verified, sends will fail; "Send Test Email" surfaces the Resend error so you can confirm setup.</p>
+          </div>
         </div>
 
         <div className="bg-white rounded-lg border border-slate-200 p-6">
