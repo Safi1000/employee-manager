@@ -5,6 +5,7 @@ import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import ExportButton from "../../components/ExportButton";
 import ClientFilterSelect from "../../components/ClientFilterSelect";
+import { exportExpenses, exportAdvances } from "../../lib/excel";
 import {
   PieChart,
   Pie,
@@ -1015,7 +1016,39 @@ export default function Expenses() {
         title="Expenses"
         actions={
           <>
-            <ExportButton onExport={() => console.log("Export")} />
+            <ExportButton
+              onExport={() => {
+                if (activeTab === "advances") {
+                  exportAdvances(
+                    filteredAdvances.map((a) => ({
+                      date: a.advance_date,
+                      employee: `${a.employee_code} ${a.employee_name}`.trim(),
+                      client: a.client_name ?? "",
+                      amount: Number(a.amount),
+                      mode: a.payment_mode === "Bank" && a.bank_name
+                        ? `Bank · ${a.bank_name}`
+                        : a.payment_mode,
+                      remarks: a.notes ?? "",
+                    })),
+                    `Advances ${new Date().toISOString().slice(0, 10)}.xlsx`
+                  );
+                } else {
+                  exportExpenses(
+                    filtered.map((e) => ({
+                      date: e.expense_date,
+                      particulars: e.description ?? "",
+                      category: e.category_name ?? "",
+                      client: e.client_name ?? "Office",
+                      amount: Number(e.amount),
+                      mode: e.payment_mode === "Bank" && e.bank_name
+                        ? `Bank · ${e.bank_name}`
+                        : e.payment_mode,
+                    })),
+                    `Expenses ${new Date().toISOString().slice(0, 10)}.xlsx`
+                  );
+                }
+              }}
+            />
             {activeTab === "expenses" && (
               <Button variant="secondary" size="md" onClick={() => setIsVendorModalOpen(true)}>
                 Manage Vendors

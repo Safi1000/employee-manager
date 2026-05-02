@@ -5,6 +5,11 @@ import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import ExportButton from "../../components/ExportButton";
 import {
+  exportReceivableLedger,
+  exportTable,
+  type LedgerEntry,
+} from "../../lib/excel";
+import {
   supabase,
   INVOICE_ATTACHMENTS_BUCKET,
   type BankAccount,
@@ -775,7 +780,109 @@ export default function Accounting() {
         title="Financial Accounting"
         actions={
           <>
-            <ExportButton onExport={() => console.log("Export")} />
+            <ExportButton
+              onExport={async () => {
+                if (activeTab === "receivables") {
+                  const invoiceIds = receivables.flatMap((r) => r.invoices.map((i) => i.id));
+                  let paymentsByInvoice = new Map<string, any[]>();
+                  if (invoiceIds.length > 0) {
+                    const { data: payRows } = await supabase
+                      .from("invoice_payments")
+                      .select("invoice_id, amount, payment_date, payment_mode, bank_account_id")
+                      .in("invoice_id", invoiceIds);
+                    for (const p of payRows ?? []) {
+                      if (!paymentsByInvoice.has(p.invoice_id)) {
+                        paymentsByInvoice.set(p.invoice_id, []);
+                      }
+                      paymentsByInvoice.get(p.invoice_id)!.push(p);
+                    }
+                  }
+                  const ledgerClients = receivables
+                    .filter((c) => c.invoices.length > 0 || Number(c.opening_balance ?? 0) > 0)
+                    .map((c) => {
+                      const entries: LedgerEntry[] = [];
+                      const open = Number(c.opening_balance ?? 0);
+                      if (open > 0) {
+                        entries.push({
+                          kind: "invoice",
+                          date: c.created_at ?? "1970-01-01",
+                          description: "Opening Balance",
+                          invoiceAmount: open,
+                        });
+                      }
+                      for (const inv of c.invoices) {
+                        entries.push({
+                          kind: "invoice",
+                          date: inv.invoice_date,
+                          description: `Invoice ${inv.invoice_number}`,
+                          invoiceAmount: Number(inv.invoice_amount),
+                        });
+                        const payments = paymentsByInvoice.get(inv.id) ?? [];
+                        for (const p of payments) {
+                          const bankName =
+                            p.payment_mode === "Bank" && p.bank_account_id
+                              ? banks.find((b) => b.id === p.bank_account_id)?.bank_name ?? "Bank"
+                              : "Cash";
+                          entries.push({
+                            kind: "payment",
+                            date: p.payment_date,
+                            description: `Payment via ${bankName} · Invoice ${inv.invoice_number}`,
+                            amount: Number(p.amount),
+                          });
+                        }
+                      }
+                      return {
+                        name: `${c.name} (${c.client_code})`,
+                        entries,
+                      };
+                    });
+                  exportReceivableLedger(ledgerClients, "Receivable Ledger.xlsx");
+                } else if (activeTab === "payables") {
+                  const filtered = payables.filter((p) => {
+                    if (payableStatusFilter === "all") return true;
+                    return payableDisplayStatus(p).toLowerCase() === payableStatusFilter;
+                  });
+                  exportTable({
+                    fileName: "Accounts Payable.xlsx",
+                    sheetName: "Payables",
+                    title: "Accounts Payable",
+                    headers: [
+                      "Date",
+                      "Vendor",
+                      "Category",
+                      "Client",
+                      "Description",
+                      "Amount",
+                      "Due Date",
+                      "Status",
+                    ],
+                    rows: filtered.map((p) => [
+                      p.expense_date,
+                      p.vendor?.name ?? "",
+                      p.category?.name ?? "",
+                      p.client?.name ?? "",
+                      p.description ?? "",
+                      Number(p.amount),
+                      p.due_date ?? "",
+                      payableDisplayStatus(p),
+                    ]),
+                  });
+                } else if (activeTab === "banks") {
+                  exportTable({
+                    fileName: "Bank Accounts.xlsx",
+                    sheetName: "Bank Accounts",
+                    title: "Bank Accounts",
+                    headers: ["Bank Name", "Account Number", "Type", "Balance"],
+                    rows: banks.map((b) => [
+                      b.bank_name,
+                      b.account_number,
+                      b.account_type,
+                      Number(b.balance ?? 0),
+                    ]),
+                  });
+                }
+              }}
+            />
             {activeTab === "banks" && (
               <>
                 <Button

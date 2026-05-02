@@ -5,6 +5,7 @@ import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import ExportButton from "../../components/ExportButton";
 import ClientFilterSelect from "../../components/ClientFilterSelect";
+import { exportAttendance, type AttendanceEmployeeRow } from "../../lib/excel";
 import {
   supabase,
   type AttendanceStatus,
@@ -272,13 +273,101 @@ export default function AttendanceManagement() {
     return { p, a, l, unm };
   }, [filteredEmployees, todayRecords]);
 
+  const handleExport = async () => {
+    const [yStr, mStr] = date.split("-");
+    const y = Number(yStr);
+    const m = Number(mStr);
+    const monthStart = `${yStr}-${mStr}-01`;
+    const dim = new Date(y, m, 0).getDate();
+    const monthEnd = `${yStr}-${mStr}-${String(dim).padStart(2, "0")}`;
+    const monthLabel = new Date(y, m - 1, 1).toLocaleDateString("en-US", {
+      month: "long",
+      year: "numeric",
+    });
+
+    const empIds = filteredEmployees.map((e) => e.id);
+    if (empIds.length === 0) return;
+
+    const { data: records, error: rErr } = await supabase
+      .from("attendance_records")
+      .select("employee_id, attendance_date, status")
+      .gte("attendance_date", monthStart)
+      .lte("attendance_date", monthEnd)
+      .in("employee_id", empIds);
+    if (rErr) {
+      setError(rErr.message);
+      return;
+    }
+
+    const byEmp = new Map<string, Map<number, AttendanceStatus>>();
+    for (const r of records ?? []) {
+      const day = Number((r as any).attendance_date.slice(8, 10));
+      if (!byEmp.has(r.employee_id)) byEmp.set(r.employee_id, new Map());
+      byEmp.get(r.employee_id)!.set(day, (r as any).status as AttendanceStatus);
+    }
+
+    const allowedByClient = new Map<string, number>();
+    for (const c of clients) {
+      allowedByClient.set(c.id, Number((c as any).allowed_leaves_per_month ?? 0));
+    }
+
+    const rows: AttendanceEmployeeRow[] = filteredEmployees.map((emp, idx) => {
+      const dayMap = byEmp.get(emp.id) ?? new Map<number, AttendanceStatus>();
+      const statusByDay: string[] = [];
+      let p = 0;
+      let a = 0;
+      let l = 0;
+      for (let d = 1; d <= dim; d += 1) {
+        const s = dayMap.get(d);
+        if (s === "Present") {
+          statusByDay.push("P");
+          p += 1;
+        } else if (s === "Absent") {
+          statusByDay.push("A");
+          a += 1;
+        } else if (s === "Leave") {
+          statusByDay.push("L");
+          l += 1;
+        } else {
+          statusByDay.push("");
+        }
+      }
+      const allowed = emp.client_id ? allowedByClient.get(emp.client_id) ?? 0 : 0;
+      const countableLeaves = Math.min(l, allowed);
+      const payDays = p + countableLeaves;
+      return {
+        serial: idx + 1,
+        name: emp.full_name,
+        designation: "",
+        empCode: emp.employee_code,
+        shift: emp.shift,
+        statusByDay,
+        presents: p,
+        absents: a,
+        leaves: l,
+        payDays,
+      };
+    });
+
+    const clientLabel =
+      clientFilter !== "all"
+        ? clients.find((c) => c.id === clientFilter)?.name ?? undefined
+        : undefined;
+
+    exportAttendance({
+      monthLabel,
+      daysInMonth: dim,
+      clientLabel,
+      rows,
+      fileName: `Attendance ${monthLabel}.xlsx`,
+    });
+  };
+
   return (
     <>
       <Header
         title="Attendance Management"
-        actions={
-          <ExportButton onExport={() => console.log("Export")} />
-        }
+        actions={<ExportButton onExport={handleExport} />}
       />
 
       <div className="flex-1 overflow-y-auto p-8">

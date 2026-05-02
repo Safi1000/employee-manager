@@ -2,6 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { Download, Loader2, FileText } from "lucide-react";
 import Header from "../../components/Header";
 import ExportButton from "../../components/ExportButton";
+import {
+  exportProfitLoss,
+  exportClientStatements,
+  exportTable,
+} from "../../lib/excel";
 import Modal from "../../components/Modal";
 import Button from "../../components/Button";
 import {
@@ -336,7 +341,81 @@ export default function FinancialReports() {
     <>
       <Header
         title="Financial Reports"
-        actions={<ExportButton onExport={() => console.log("Export")} />}
+        actions={
+          <ExportButton
+            onExport={() => {
+              if (activeTab === "pl") {
+                exportProfitLoss(
+                  {
+                    revenue: plFigures.totalRevenue,
+                    payroll: plFigures.payroll,
+                    operating: plFigures.operating,
+                    equipment: plFigures.equipment,
+                    transportation: plFigures.transportation,
+                    utilities: plFigures.utilities,
+                    insurance: plFigures.insurance,
+                    licenses: plFigures.licenses,
+                    eobi: plFigures.eobi,
+                    iessi: plFigures.iessi,
+                    pessi: plFigures.pessi,
+                    totalExpenses: plFigures.totalExpenses,
+                    total: plFigures.netProfit,
+                  },
+                  formatPeriod(plPeriod),
+                  `P&L ${formatPeriod(plPeriod)}.xlsx`
+                );
+              } else if (activeTab === "clients") {
+                exportClientStatements(
+                  clientStatementRows.map((r) => ({
+                    client: `${r.name} (${r.client_code})`,
+                    totalReceivable: r.total_invoiced,
+                    payrollExpenses: r.payroll_expense,
+                    otherExpenses: r.expenses,
+                    netIncome: r.total_income,
+                  })),
+                  formatPeriod(statementPeriod),
+                  `Client Statement ${formatPeriod(statementPeriod)}.xlsx`
+                );
+              } else if (activeTab === "chart") {
+                exportTable({
+                  fileName: `Chart of Accounts ${formatPeriod(chartPeriod)}.xlsx`,
+                  sheetName: "Chart of Accounts",
+                  title: `Chart of Accounts — ${formatPeriod(chartPeriod)}`,
+                  headers: ["Code", "Account Name", "Balance"],
+                  rows: [
+                    ["1000", "Assets", chartFigures.weapons],
+                    ["1100", "Current Assets", chartFigures.uniform + chartFigures.cashAndBank],
+                    ["2000", "Liabilities", "None"],
+                    ["2100", "Current Liabilities", chartFigures.currentLiabilities],
+                    ["3000", "Equity", "To be configured"],
+                    ["4000", "Revenue", chartFigures.revenue],
+                    ["5000", "Expenses", chartFigures.expenses],
+                  ],
+                });
+              } else if (activeTab === "partnership") {
+                exportTable({
+                  fileName: "Partnership Report.xlsx",
+                  sheetName: "Partnership",
+                  title: "Partnership Equity & Distribution Report",
+                  headers: [
+                    "Partner",
+                    "Equity Share",
+                    "Capital Contribution",
+                    "Distributions",
+                    "Net Equity",
+                  ],
+                  rows: partnershipData.map((p) => [
+                    p.partner,
+                    p.equityShare,
+                    p.capital,
+                    p.distributions,
+                    p.netEquity,
+                  ]),
+                });
+              }
+            }}
+          />
+        }
       />
 
       <div className="flex-1 overflow-y-auto p-8">

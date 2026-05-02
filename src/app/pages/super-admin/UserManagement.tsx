@@ -4,6 +4,7 @@ import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import ExportButton from "../../components/ExportButton";
+import { exportTable } from "../../lib/excel";
 
 const users = [
   { id: 1, name: "Ahmed Khan", email: "ahmed.khan@company.com", role: "Super Admin", status: "Active" },
@@ -41,7 +42,17 @@ export default function UserManagement() {
         title="User Management"
         actions={
           <>
-            <ExportButton onExport={() => console.log("Export")} />
+            <ExportButton
+              onExport={() =>
+                exportTable({
+                  fileName: "Users.xlsx",
+                  sheetName: "Users",
+                  title: "User Management",
+                  headers: ["Name", "Email", "Role", "Status"],
+                  rows: filteredUsers.map((u) => [u.name, u.email, u.role, u.status]),
+                })
+              }
+            />
             <Button variant="primary" size="md" onClick={() => setIsModalOpen(true)}>
               <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
               Create User
