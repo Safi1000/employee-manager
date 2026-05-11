@@ -17,8 +17,20 @@ export type Company = {
   contact_email: string | null;
   contact_phone: string | null;
   active: boolean;
+  subscription_expires_at: string | null;
   created_at?: string;
   updated_at?: string;
+};
+
+export type SubscriptionPayment = {
+  id: string;
+  company_id: string;
+  amount: number;
+  days_added: number;
+  payment_date: string;
+  notes: string | null;
+  recorded_by: string | null;
+  created_at?: string;
 };
 
 export type Profile = {

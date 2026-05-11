@@ -79,6 +79,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const { data } = await supabase.auth.getSession();
         if (!mounted) return;
         if (data.session?.user) {
+          // Best-effort: sync expired-subscription deactivations before loading state.
+          try { await supabase.rpc("enforce_subscription_expiry"); } catch { /* ignore */ }
           const ok = await loadProfileAndCompany(data.session.user.id);
           if (!ok) {
             // Stale session: token decodes to a user with no profile (deleted/mismatched).
