@@ -74,13 +74,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
+
+    // Hard timeout: if init isn't done in 4s, give up, wipe storage, fall through
+    // to an unauthenticated state. Avoids the "spinner forever" trap.
+    const failsafe = setTimeout(() => {
+      if (!mounted) return;
+      wipeAuthStorage();
+      setSession(null);
+      setProfile(null);
+      setCompany(null);
+      setLoading(false);
+    }, 4000);
+
     (async () => {
       try {
         const { data } = await supabase.auth.getSession();
         if (!mounted) return;
         if (data.session?.user) {
           // Best-effort: sync expired-subscription deactivations before loading state.
-          try { await supabase.rpc("enforce_subscription_expiry"); } catch { /* ignore */ }
+          // Fire-and-forget so it can't block the spinner.
+          supabase.rpc("enforce_subscription_expiry").catch(() => { /* ignore */ });
           const ok = await loadProfileAndCompany(data.session.user.id);
           if (!ok) {
             // Stale session: token decodes to a user with no profile (deleted/mismatched).
@@ -101,6 +114,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfile(null);
         setCompany(null);
       } finally {
+        clearTimeout(failsafe);
         if (mounted) setLoading(false);
       }
     })();
@@ -114,6 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     return () => {
       mounted = false;
+      clearTimeout(failsafe);
       sub.subscription.unsubscribe();
     };
   }, []);

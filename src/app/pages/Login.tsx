@@ -20,14 +20,9 @@ export default function Login() {
     }
   }, [loading, session, profile, navigate, location.state]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <Loader2 className="w-6 h-6 animate-spin text-slate-500" />
-      </div>
-    );
-  }
-  if (session && profile) return <Navigate to={ROLE_HOMES[profile.role]} replace />;
+  // Already authenticated → bounce. (Otherwise we render the form immediately,
+  // even while auth is still resolving, so the user never sees a blank spinner.)
+  if (!loading && session && profile) return <Navigate to={ROLE_HOMES[profile.role]} replace />;
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
