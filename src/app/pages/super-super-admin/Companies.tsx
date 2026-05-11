@@ -179,7 +179,7 @@ export default function Companies() {
 
   return (
     <div className="flex-1 overflow-y-auto">
-      <div className="p-8 max-w-6xl mx-auto">
+      <div className="p-4 md:p-8 max-w-6xl mx-auto">
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-2xl text-slate-900">Companies</h1>
@@ -228,8 +228,8 @@ export default function Companies() {
             <p className="text-slate-500">No companies yet. Create your first tenant above.</p>
           </div>
         ) : (
-          <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-            <table className="w-full">
+          <div className="bg-white border border-slate-200 rounded-lg overflow-x-auto">
+            <table className="w-full min-w-[720px]">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs uppercase tracking-wider text-slate-500">Company</th>

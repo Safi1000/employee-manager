@@ -54,7 +54,7 @@ export default function SuperAdminLayout() {
         title={isSsaViewing ? `Viewing: ${company?.name ?? "…"}` : "Super Admin"}
         links={links}
       />
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden pt-12 md:pt-0">
         {isSsaViewing && (
           <div className="bg-amber-50 border-b border-amber-200 px-6 py-2 flex items-center justify-between text-sm">
             <div className="flex items-center gap-2 text-amber-900">

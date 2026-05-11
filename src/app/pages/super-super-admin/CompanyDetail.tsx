@@ -74,7 +74,7 @@ export default function CompanyDetail() {
 
   return (
     <div className="flex-1 overflow-y-auto">
-      <div className="p-8 max-w-6xl mx-auto">
+      <div className="p-4 md:p-8 max-w-6xl mx-auto">
         <Link to="/super-super-admin" className="inline-flex items-center text-sm text-slate-500 hover:text-slate-900 mb-4">
           <ArrowLeft className="w-4 h-4 mr-1" /> Back to companies
         </Link>

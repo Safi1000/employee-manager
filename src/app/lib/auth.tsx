@@ -93,7 +93,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (data.session?.user) {
           // Best-effort: sync expired-subscription deactivations before loading state.
           // Fire-and-forget so it can't block the spinner.
-          supabase.rpc("enforce_subscription_expiry").catch(() => { /* ignore */ });
+          (async () => {
+            try { await supabase.rpc("enforce_subscription_expiry"); } catch { /* ignore */ }
+          })();
           const ok = await loadProfileAndCompany(data.session.user.id);
           if (!ok) {
             // Stale session: token decodes to a user with no profile (deleted/mismatched).

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C \"c:/Users/Abuzar/Desktop/employee-manager\" add src/app/lib/auth.tsx)",
+      "Bash(git -C c:/Users/Abuzar/Desktop/employee-manager commit -m 'fix: defer profile load outside onAuthStateChange lock *)",
+      "Bash(git -C \"c:/Users/Abuzar/Desktop/employee-manager\" push origin main)"
+    ]
+  }
+}
