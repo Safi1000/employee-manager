@@ -38,8 +38,8 @@ export default function ClientFilterSelect({
   }, [clients, search, filterFn]);
 
   return (
-    <div className={`flex items-center gap-2 ${className}`}>
-      <div className="relative">
+    <div className={`flex flex-wrap items-center gap-2 ${className}`}>
+      <div className="relative flex-1 min-w-[120px] md:flex-none md:w-36">
         <Search
           className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400"
           strokeWidth={1.5}
@@ -49,13 +49,13 @@ export default function ClientFilterSelect({
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search…"
-          className="pl-8 pr-3 py-2 border border-slate-200 rounded-md text-sm w-36 focus:outline-none focus:ring-2 focus:ring-slate-900"
+          className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
         />
       </div>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={selectClassName}
+        className={`flex-1 min-w-[120px] md:flex-none ${selectClassName}`}
       >
         <option value={allValue}>{allLabel}</option>
         {extraOption && (

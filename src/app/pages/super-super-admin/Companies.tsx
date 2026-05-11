@@ -101,9 +101,10 @@ export default function Companies() {
 
   const toggleActive = async (c: CompanyRow) => {
     const next = !c.active;
-    if (!next && !window.confirm(`Deactivate "${c.name}"? Its users will be blocked from signing in.`)) {
-      return;
-    }
+    const msg = next
+      ? `Activate "${c.name}"? Its users will be able to sign in again.`
+      : `Deactivate "${c.name}"? Its users will be blocked from signing in. Data is preserved and restored on reactivation.`;
+    if (!window.confirm(msg)) return;
     setBusyId(c.id);
     const { error: err } = await supabase
       .from("companies")

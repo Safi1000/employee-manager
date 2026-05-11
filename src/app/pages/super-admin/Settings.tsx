@@ -312,10 +312,10 @@ export default function Settings() {
   };
 
   const renderLocations = () => (
-    <div className="bg-white rounded-lg border border-slate-200 p-6">
-      <div className="flex items-center justify-between mb-6">
+    <div className="bg-white rounded-lg border border-slate-200 p-4 md:p-6">
+      <div className="flex items-center justify-between gap-3 mb-6">
         <h3 className="text-base text-slate-900">Location Management</h3>
-        <Button variant="primary" size="sm" onClick={() => setLocAddOpen(true)}>
+        <Button variant="primary" size="sm" onClick={() => setLocAddOpen(true)} className="whitespace-nowrap flex-shrink-0">
           <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
           Add Location
         </Button>
@@ -394,10 +394,10 @@ export default function Settings() {
   );
 
   const renderClients = () => (
-    <div className="bg-white rounded-lg border border-slate-200 p-6">
-      <div className="flex items-center justify-between mb-6">
+    <div className="bg-white rounded-lg border border-slate-200 p-4 md:p-6">
+      <div className="flex items-center justify-between gap-3 mb-6">
         <h3 className="text-base text-slate-900">Client Management</h3>
-        <Button variant="primary" size="sm" onClick={() => setClientAddOpen(true)}>
+        <Button variant="primary" size="sm" onClick={() => setClientAddOpen(true)} className="whitespace-nowrap flex-shrink-0">
           <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
           Add Client
         </Button>

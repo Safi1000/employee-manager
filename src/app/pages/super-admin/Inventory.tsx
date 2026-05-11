@@ -1442,8 +1442,10 @@ function SummaryCell({
       ? "text-green-700"
       : "text-slate-900";
   return (
-    <div className="text-center">
-      <p className="text-xs text-slate-500 mb-1">{label}</p>
+    <div className="text-center flex flex-col items-center">
+      <p className="text-xs text-slate-500 mb-1 min-h-[2rem] leading-4 flex items-end justify-center">
+        {label}
+      </p>
       <p className={`text-2xl ${colour}`}>{value}</p>
     </div>
   );

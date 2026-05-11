@@ -635,10 +635,10 @@ export default function FinancialReports() {
         }
       />
 
-      <div className="flex-1 overflow-y-auto p-8">
+      <div className="flex-1 overflow-y-auto p-4 md:p-8">
         <div className="bg-white rounded-lg border border-slate-200">
-          <div className="p-6 border-b border-slate-200">
-            <div className="flex gap-2">
+          <div className="p-4 md:p-6 border-b border-slate-200 overflow-x-auto">
+            <div className="flex gap-2 min-w-max">
               {([
                 { key: "pl", label: "Profit & Loss" },
                 { key: "clients", label: "Client Statements" },
@@ -648,7 +648,7 @@ export default function FinancialReports() {
                 <button
                   key={tab.key}
                   onClick={() => setActiveTab(tab.key)}
-                  className={`px-4 py-2 rounded-md text-sm transition-colors ${activeTab === tab.key
+                  className={`px-4 py-2 rounded-md text-sm whitespace-nowrap transition-colors ${activeTab === tab.key
                       ? "bg-blue-600 text-white"
                       : "text-slate-600 hover:bg-slate-100"
                     }`}
