@@ -440,8 +440,8 @@ export default function AttendanceManagement() {
         </div>
 
         <div className="bg-white rounded-lg border border-slate-200 mb-6">
-          <div className="p-6 border-b border-slate-200 flex items-center justify-between">
-            <div>
+          <div className="p-4 md:p-6 border-b border-slate-200 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div className="min-w-0">
               <h3 className="text-base text-slate-900">Mark Attendance — {date}</h3>
               <p className="text-xs text-slate-500 mt-1">
                 {filteredEmployees.length} employee{filteredEmployees.length === 1 ? "" : "s"} •{" "}
@@ -456,6 +456,7 @@ export default function AttendanceManagement() {
               size="sm"
               onClick={markAllPresent}
               disabled={filteredEmployees.length === 0}
+              className="self-stretch md:self-auto whitespace-nowrap"
             >
               Mark All Present
             </Button>
@@ -548,10 +549,10 @@ export default function AttendanceManagement() {
         </div>
 
         <div className="bg-white rounded-lg border border-slate-200">
-          <div className="p-6 border-b border-slate-200 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <div className="p-4 md:p-6 border-b border-slate-200 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <h3 className="text-base text-slate-900">Attendance History</h3>
-            <div className="flex items-center gap-3">
-              <div className="relative">
+            <div className="flex flex-wrap items-center gap-2 md:gap-3">
+              <div className="relative flex-1 md:flex-none min-w-[140px]">
                 <CalendarIcon
                   className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 cursor-pointer"
                   strokeWidth={1.5}
@@ -562,11 +563,11 @@ export default function AttendanceManagement() {
                   type="date"
                   value={historyFrom}
                   onChange={(e) => setHistoryFrom(e.target.value)}
-                  className="pl-9 pr-3 py-1.5 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  className="w-full pl-9 pr-2 py-1.5 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                 />
               </div>
               <span className="text-sm text-slate-400">to</span>
-              <div className="relative">
+              <div className="relative flex-1 md:flex-none min-w-[140px]">
                 <CalendarIcon
                   className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 cursor-pointer"
                   strokeWidth={1.5}
@@ -577,7 +578,7 @@ export default function AttendanceManagement() {
                   type="date"
                   value={historyTo}
                   onChange={(e) => setHistoryTo(e.target.value)}
-                  className="pl-9 pr-3 py-1.5 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  className="w-full pl-9 pr-2 py-1.5 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                 />
               </div>
             </div>
