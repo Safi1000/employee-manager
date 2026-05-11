@@ -118,10 +118,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (mounted) setLoading(false);
       }
     })();
-    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, s) => {
+    // IMPORTANT: don't await supabase calls inside this callback — it deadlocks
+    // the auth client's internal lock. Defer with setTimeout(0).
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s);
-      if (s?.user) await loadProfileAndCompany(s.user.id);
-      else {
+      if (s?.user) {
+        const uid = s.user.id;
+        setTimeout(() => { loadProfileAndCompany(uid); }, 0);
+      } else {
         setProfile(null);
         setCompany(null);
       }
