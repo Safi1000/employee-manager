@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Building2, Download, AlertCircle, X, Loader2, ArrowDownUp, History, Trash2, CheckCircle2, RotateCcw, FileText, Pencil } from "lucide-react";
+import { Plus, Building2, Download, AlertCircle, X, Loader2, ArrowDownUp, History, Trash2, CheckCircle2, RotateCcw, FileText, Pencil, ArrowLeftRight } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -20,6 +20,8 @@ import {
   type ExpenseCategory,
   type Client,
   type Invoice,
+  type Partner,
+  type BankAccountOwnerType,
 } from "../../lib/supabase";
 
 type PayableRow = Expense & {
@@ -45,6 +47,8 @@ const kindLabel: Record<BankTransactionKind, string> = {
   cash_adjustment: "Cash Adjustment",
   expense: "Expense",
   receipt: "Receipt",
+  advance: "Advance",
+  transfer: "Transfer",
 };
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
@@ -100,12 +104,25 @@ export default function Accounting() {
     account_number: "",
     account_type: "Current" as "Current" | "Savings",
     opening_balance: "",
+    owner_type: "company" as BankAccountOwnerType,
+    owner_partner_id: "",
+    owner_client_id: "",
   });
   const [editBankForm, setEditBankForm] = useState({
     bank_name: "",
     account_number: "",
     account_type: "Current" as "Current" | "Savings",
+    owner_type: "company" as BankAccountOwnerType,
+    owner_partner_id: "",
+    owner_client_id: "",
   });
+  const [partners, setPartners] = useState<Partner[]>([]);
+
+  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+  const [transferFromId, setTransferFromId] = useState<string>("");
+  const [transferToId, setTransferToId] = useState<string>("");
+  const [transferAmount, setTransferAmount] = useState<string>("");
+  const [transferNotes, setTransferNotes] = useState<string>("");
   const [reconcileTarget, setReconcileTarget] = useState<"account" | "cash" | "total">("account");
   const [reconcileValue, setReconcileValue] = useState("");
   const [reconcileNotes, setReconcileNotes] = useState("");
@@ -182,7 +199,7 @@ export default function Accounting() {
   const loadAll = async () => {
     setLoading(true);
     setError(null);
-    const [banksRes, treasuryRes, txRes, payablesRes, clientsRes, invoicesRes] = await Promise.all([
+    const [banksRes, treasuryRes, txRes, payablesRes, clientsRes, invoicesRes, partnersRes] = await Promise.all([
       supabase.from("bank_accounts").select("*").order("created_at", { ascending: false }),
       supabase.from("treasury").select("*").limit(1).maybeSingle(),
       supabase.from("bank_transactions").select("*").order("created_at", { ascending: false }),
@@ -193,7 +210,9 @@ export default function Accounting() {
         .order("due_date", { ascending: true, nullsFirst: false }),
       supabase.from("clients").select("*").order("name"),
       supabase.from("invoices").select("*").order("invoice_date", { ascending: false }),
+      supabase.from("partners").select("*").order("name"),
     ]);
+    setPartners((partnersRes.data ?? []) as Partner[]);
     if (banksRes.error) setError(banksRes.error.message);
     if (treasuryRes.error) setError(treasuryRes.error.message);
     if (txRes.error) setError(txRes.error.message);
@@ -280,6 +299,14 @@ export default function Accounting() {
   const handleAddBank = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newBank.bank_name.trim() || !newBank.account_number.trim()) return;
+    if (newBank.owner_type === "partner" && !newBank.owner_partner_id) {
+      setError("Select which partner owns this account.");
+      return;
+    }
+    if (newBank.owner_type === "client" && !newBank.owner_client_id) {
+      setError("Select which client owns this account.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -292,6 +319,9 @@ export default function Accounting() {
           account_type: newBank.account_type,
           opening_balance: opening,
           balance: opening,
+          owner_type: newBank.owner_type,
+          owner_partner_id: newBank.owner_type === "partner" ? newBank.owner_partner_id : null,
+          owner_client_id: newBank.owner_type === "client" ? newBank.owner_client_id : null,
         })
         .select()
         .single();
@@ -306,8 +336,74 @@ export default function Accounting() {
           description: `Opening balance for ${newBank.bank_name.trim()}`,
         });
       }
-      setNewBank({ bank_name: "", account_number: "", account_type: "Current", opening_balance: "" });
+      setNewBank({
+        bank_name: "",
+        account_number: "",
+        account_type: "Current",
+        opening_balance: "",
+        owner_type: "company",
+        owner_partner_id: "",
+        owner_client_id: "",
+      });
       setIsBankModalOpen(false);
+      await loadAll();
+    } catch (err: any) {
+      setError(err.message ?? String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleTransfer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!transferFromId || !transferToId || transferFromId === transferToId) {
+      setError("Pick two different accounts.");
+      return;
+    }
+    const amount = Number(transferAmount);
+    if (!amount || amount <= 0) {
+      setError("Enter a positive amount.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const fromBank = banks.find((b) => b.id === transferFromId);
+      const toBank = banks.find((b) => b.id === transferToId);
+      const pairId = crypto.randomUUID();
+      const noteSuffix = transferNotes.trim() ? ` · ${transferNotes.trim()}` : "";
+      const desc = `Transfer ${fromBank?.bank_name ?? "?"} → ${toBank?.bank_name ?? "?"}${noteSuffix}`;
+      await applyBankDelta(transferFromId, -amount);
+      await applyBankDelta(transferToId, amount);
+      await logTransaction({
+        bank_account_id: transferFromId,
+        kind: "transfer",
+        amount,
+        cash_delta: 0,
+        account_delta: -amount,
+        description: desc,
+        reference_id: pairId,
+      });
+      await logTransaction({
+        bank_account_id: transferToId,
+        kind: "transfer",
+        amount,
+        cash_delta: 0,
+        account_delta: amount,
+        description: desc,
+        reference_id: pairId,
+      });
+      // Mark transfer_pair_id explicitly on both rows
+      await supabase
+        .from("bank_transactions")
+        .update({ transfer_pair_id: pairId })
+        .eq("reference_id", pairId);
+
+      setTransferFromId("");
+      setTransferToId("");
+      setTransferAmount("");
+      setTransferNotes("");
+      setIsTransferModalOpen(false);
       await loadAll();
     } catch (err: any) {
       setError(err.message ?? String(err));
@@ -322,6 +418,9 @@ export default function Accounting() {
       bank_name: bank.bank_name,
       account_number: bank.account_number,
       account_type: bank.account_type,
+      owner_type: bank.owner_type,
+      owner_partner_id: bank.owner_partner_id ?? "",
+      owner_client_id: bank.owner_client_id ?? "",
     });
     setIsEditBankModalOpen(true);
   };
@@ -338,6 +437,9 @@ export default function Accounting() {
           bank_name: editBankForm.bank_name.trim(),
           account_number: editBankForm.account_number.trim(),
           account_type: editBankForm.account_type,
+          owner_type: editBankForm.owner_type,
+          owner_partner_id: editBankForm.owner_type === "partner" ? editBankForm.owner_partner_id : null,
+          owner_client_id: editBankForm.owner_type === "client" ? editBankForm.owner_client_id : null,
           updated_at: new Date().toISOString(),
         })
         .eq("id", selectedBank.id);
@@ -897,6 +999,22 @@ export default function Accounting() {
                   <History className="w-4 h-4 mr-2" strokeWidth={1.5} />
                   Transactions
                 </Button>
+                <Button
+                  variant="secondary"
+                  size="md"
+                  onClick={() => {
+                    setTransferFromId("");
+                    setTransferToId("");
+                    setTransferAmount("");
+                    setTransferNotes("");
+                    setIsTransferModalOpen(true);
+                  }}
+                  disabled={banks.length < 2}
+                  title={banks.length < 2 ? "Need at least 2 accounts" : "Wire money between accounts"}
+                >
+                  <ArrowLeftRight className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                  Wire Transfer
+                </Button>
                 <Button variant="primary" size="md" onClick={() => setIsBankModalOpen(true)}>
                   <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
                   Add Bank Account
@@ -1263,6 +1381,7 @@ export default function Accounting() {
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Bank Name</th>
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Account Number</th>
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Type</th>
+                    <th className="text-left px-6 py-3 text-sm text-slate-500">Owner</th>
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Account Balance</th>
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Actions</th>
                   </tr>
@@ -1270,7 +1389,7 @@ export default function Accounting() {
                 <tbody className="divide-y divide-slate-200">
                   {loading && (
                     <tr>
-                      <td colSpan={5} className="px-6 py-10 text-center text-slate-500">
+                      <td colSpan={6} className="px-6 py-10 text-center text-slate-500">
                         <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
                         Loading…
                       </td>
@@ -1296,6 +1415,19 @@ export default function Accounting() {
                           </td>
                           <td className="px-6 py-4 text-sm text-slate-600 font-mono">{bank.account_number}</td>
                           <td className="px-6 py-4 text-sm text-slate-600">{bank.account_type}</td>
+                          <td className="px-6 py-4 text-sm text-slate-600">
+                            {bank.owner_type === "company" && <span className="text-slate-500">Company</span>}
+                            {bank.owner_type === "partner" && (
+                              <span className="text-purple-700">
+                                Partner: {partners.find((p) => p.id === bank.owner_partner_id)?.name ?? "—"}
+                              </span>
+                            )}
+                            {bank.owner_type === "client" && (
+                              <span className="text-amber-700">
+                                Client: {receivables.find((c) => c.id === bank.owner_client_id)?.name ?? "—"}
+                              </span>
+                            )}
+                          </td>
                           <td className="px-6 py-4 text-sm text-blue-600">PKR {acct.toLocaleString()}</td>
                           <td className="px-6 py-4 flex gap-2 flex-wrap">
                             <Button variant="ghost" size="sm" onClick={() => openWithdraw(bank)}>
@@ -1362,6 +1494,49 @@ export default function Accounting() {
               <option value="Savings">Savings</option>
             </select>
           </div>
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Account For *</label>
+            <select
+              value={newBank.owner_type}
+              onChange={(e) => setNewBank({ ...newBank, owner_type: e.target.value as BankAccountOwnerType, owner_partner_id: "", owner_client_id: "" })}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+            >
+              <option value="company">Company</option>
+              <option value="partner">Partner</option>
+              <option value="client">Client</option>
+            </select>
+          </div>
+          {newBank.owner_type === "partner" && (
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Partner *</label>
+              <select
+                required
+                value={newBank.owner_partner_id}
+                onChange={(e) => setNewBank({ ...newBank, owner_partner_id: e.target.value })}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+              >
+                <option value="">Select partner…</option>
+                {partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+              {partners.length === 0 && (
+                <p className="text-xs text-amber-700 mt-1">No partners yet. Add partners in the Partnership Report first.</p>
+              )}
+            </div>
+          )}
+          {newBank.owner_type === "client" && (
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Client *</label>
+              <select
+                required
+                value={newBank.owner_client_id}
+                onChange={(e) => setNewBank({ ...newBank, owner_client_id: e.target.value })}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+              >
+                <option value="">Select client…</option>
+                {receivables.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+          )}
           <div>
             <label className="block text-sm text-slate-700 mb-1">Opening Balance (PKR)</label>
             <input
@@ -1817,6 +1992,46 @@ export default function Accounting() {
                 <option value="Savings">Savings</option>
               </select>
             </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Account For</label>
+              <select
+                value={editBankForm.owner_type}
+                onChange={(e) => setEditBankForm({ ...editBankForm, owner_type: e.target.value as BankAccountOwnerType, owner_partner_id: "", owner_client_id: "" })}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+              >
+                <option value="company">Company</option>
+                <option value="partner">Partner</option>
+                <option value="client">Client</option>
+              </select>
+            </div>
+            {editBankForm.owner_type === "partner" && (
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Partner *</label>
+                <select
+                  required
+                  value={editBankForm.owner_partner_id}
+                  onChange={(e) => setEditBankForm({ ...editBankForm, owner_partner_id: e.target.value })}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                >
+                  <option value="">Select partner…</option>
+                  {partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+            )}
+            {editBankForm.owner_type === "client" && (
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Client *</label>
+                <select
+                  required
+                  value={editBankForm.owner_client_id}
+                  onChange={(e) => setEditBankForm({ ...editBankForm, owner_client_id: e.target.value })}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                >
+                  <option value="">Select client…</option>
+                  {receivables.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+            )}
             <p className="text-xs text-slate-500">
               Balance cannot be edited here — use Reconcile to adjust.
             </p>
@@ -1830,6 +2045,84 @@ export default function Accounting() {
             </div>
           </form>
         )}
+      </Modal>
+
+      <Modal isOpen={isTransferModalOpen} onClose={() => setIsTransferModalOpen(false)} title="Wire Transfer" size="md">
+        <form className="space-y-4" onSubmit={handleTransfer}>
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">From Account *</label>
+            <select
+              required
+              value={transferFromId}
+              onChange={(e) => setTransferFromId(e.target.value)}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+            >
+              <option value="">Select source…</option>
+              {banks.map((b) => {
+                const ownerLabel = b.owner_type === "company" ? "Company" :
+                  b.owner_type === "partner" ? `Partner: ${partners.find((p) => p.id === b.owner_partner_id)?.name ?? "?"}` :
+                  `Client: ${receivables.find((c) => c.id === b.owner_client_id)?.name ?? "?"}`;
+                return (
+                  <option key={b.id} value={b.id}>
+                    {b.bank_name} · {b.account_number} ({ownerLabel}) · PKR {Number(b.balance).toLocaleString()}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">To Account *</label>
+            <select
+              required
+              value={transferToId}
+              onChange={(e) => setTransferToId(e.target.value)}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+            >
+              <option value="">Select destination…</option>
+              {banks.filter((b) => b.id !== transferFromId).map((b) => {
+                const ownerLabel = b.owner_type === "company" ? "Company" :
+                  b.owner_type === "partner" ? `Partner: ${partners.find((p) => p.id === b.owner_partner_id)?.name ?? "?"}` :
+                  `Client: ${receivables.find((c) => c.id === b.owner_client_id)?.name ?? "?"}`;
+                return (
+                  <option key={b.id} value={b.id}>
+                    {b.bank_name} · {b.account_number} ({ownerLabel})
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Amount (PKR) *</label>
+            <input
+              required
+              type="number"
+              min="0.01"
+              step="0.01"
+              value={transferAmount}
+              onChange={(e) => setTransferAmount(e.target.value)}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+              placeholder="0.00"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Notes</label>
+            <textarea
+              value={transferNotes}
+              onChange={(e) => setTransferNotes(e.target.value)}
+              rows={2}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+              placeholder="Optional"
+            />
+          </div>
+          <div className="flex items-center gap-3 pt-2">
+            <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
+              {submitting ? "Transferring…" : "Wire Transfer"}
+            </Button>
+            <Button type="button" variant="secondary" size="md" onClick={() => setIsTransferModalOpen(false)}>
+              Cancel
+            </Button>
+          </div>
+        </form>
       </Modal>
 
       <Modal isOpen={isMarkPaidModalOpen} onClose={() => setIsMarkPaidModalOpen(false)} title="Mark Payable as Paid" size="md">

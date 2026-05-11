@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Download, Loader2, FileText } from "lucide-react";
+import { Download, Loader2, FileText, Plus, Lock, Trash2, Pencil } from "lucide-react";
 import Header from "../../components/Header";
 import ExportButton from "../../components/ExportButton";
 import {
@@ -21,13 +21,9 @@ import {
   type ExpenseCategory,
   type BankAccount,
   type ClientType,
+  type Partner,
+  type BankTransaction,
 } from "../../lib/supabase";
-
-const partnershipData = [
-  { partner: "Partner A", equityShare: "40%", capital: 1620000, distributions: 320000, netEquity: 1300000 },
-  { partner: "Partner B", equityShare: "35%", capital: 1417500, distributions: 280000, netEquity: 1137500 },
-  { partner: "Partner C", equityShare: "25%", capital: 1012500, distributions: 200000, netEquity: 812500 },
-];
 
 type ClientStatementRow = Client & {
   total_invoiced: number;
@@ -86,6 +82,26 @@ export default function FinancialReports() {
   const [loadingPl, setLoadingPl] = useState(false);
 
   const [statementPeriod, setStatementPeriod] = useState<string>(previousMonthKey());
+
+  // ----- Partnership tab state -----
+  const [partners, setPartners] = useState<Partner[]>([]);
+  const [partnershipPeriod, setPartnershipPeriod] = useState<string>(previousMonthKey());
+  const [partnerBanks, setPartnerBanks] = useState<BankAccount[]>([]);
+  const [allInvoicesForPl, setAllInvoicesForPl] = useState<{ invoice_date: string; invoice_amount: number; client?: { client_type: ClientType } | null }[]>([]);
+  const [allPayslipsForPl, setAllPayslipsForPl] = useState<{ period_month: string; final_salary: number }[]>([]);
+  const [allExpensesForPl, setAllExpensesForPl] = useState<{ expense_date: string; amount: number }[]>([]);
+  const [allPartnerTxns, setAllPartnerTxns] = useState<BankTransaction[]>([]);
+  const [loadingPartnership, setLoadingPartnership] = useState(false);
+  const [partnerError, setPartnerError] = useState<string | null>(null);
+
+  const [newPartnerName, setNewPartnerName] = useState("");
+  const [newPartnerShare, setNewPartnerShare] = useState("");
+  const [newPartnerOpening, setNewPartnerOpening] = useState("");
+  const [partnerSubmitting, setPartnerSubmitting] = useState(false);
+
+  const [editPartnerId, setEditPartnerId] = useState<string | null>(null);
+  const [editPartnerShare, setEditPartnerShare] = useState("");
+  const [editPartnerOpening, setEditPartnerOpening] = useState("");
 
   const chartPeriodOptions = useMemo(() => {
     const opts: string[] = [];
@@ -336,6 +352,205 @@ export default function FinancialReports() {
     if (data?.publicUrl) window.open(data.publicUrl, "_blank");
   };
 
+  // -------- Partnership: data load + monthly computations --------
+  const loadPartnership = async () => {
+    setLoadingPartnership(true);
+    setPartnerError(null);
+    const [pRes, bRes, iRes, sRes, eRes] = await Promise.all([
+      supabase.from("partners").select("*").order("name"),
+      supabase.from("bank_accounts").select("*").eq("owner_type", "partner"),
+      supabase.from("invoices").select("invoice_date, invoice_amount, client:client_id(client_type)"),
+      supabase.from("payslips").select("period_month, final_salary"),
+      supabase.from("expenses").select("expense_date, amount"),
+    ]);
+    const partnerList = (pRes.data ?? []) as Partner[];
+    const partnerAccounts = (bRes.data ?? []) as BankAccount[];
+    const partnerAccountIds = partnerAccounts.map((b) => b.id);
+    const txRes = partnerAccountIds.length
+      ? await supabase.from("bank_transactions").select("*").in("bank_account_id", partnerAccountIds)
+      : { data: [] as BankTransaction[] };
+    setPartners(partnerList);
+    setPartnerBanks(partnerAccounts);
+    setAllInvoicesForPl(((iRes.data ?? []) as unknown) as typeof allInvoicesForPl);
+    setAllPayslipsForPl((sRes.data ?? []) as typeof allPayslipsForPl);
+    setAllExpensesForPl((eRes.data ?? []) as typeof allExpensesForPl);
+    setAllPartnerTxns((txRes.data ?? []) as BankTransaction[]);
+    setLoadingPartnership(false);
+  };
+
+  useEffect(() => {
+    if (activeTab === "partnership") loadPartnership();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  const bankToPartnerId = useMemo(() => {
+    const m = new Map<string, string | null>();
+    for (const b of partnerBanks) m.set(b.id, b.owner_partner_id);
+    return m;
+  }, [partnerBanks]);
+
+  // Monthly net P&L = invoices − payroll − expenses for that month.
+  const monthlyPL = (period: string) => {
+    const start = firstOfMonth(period);
+    const end = lastOfMonth(period);
+    const rev = allInvoicesForPl
+      .filter((i) => i.invoice_date >= start && i.invoice_date <= end)
+      .reduce((s, i) => s + Number(i.invoice_amount), 0);
+    const pay = allPayslipsForPl
+      .filter((s) => s.period_month >= start && s.period_month <= end)
+      .reduce((s, x) => s + Number(x.final_salary), 0);
+    const exp = allExpensesForPl
+      .filter((e) => e.expense_date >= start && e.expense_date <= end)
+      .reduce((s, x) => s + Number(x.amount), 0);
+    return rev - pay - exp;
+  };
+
+  // Cumulative net P&L through the END of the given period.
+  const cumulativePLThrough = (periodEndDate: string) => {
+    const rev = allInvoicesForPl
+      .filter((i) => i.invoice_date <= periodEndDate)
+      .reduce((s, i) => s + Number(i.invoice_amount), 0);
+    const pay = allPayslipsForPl
+      .filter((s) => s.period_month <= periodEndDate)
+      .reduce((s, x) => s + Number(x.final_salary), 0);
+    const exp = allExpensesForPl
+      .filter((e) => e.expense_date <= periodEndDate)
+      .reduce((s, x) => s + Number(x.amount), 0);
+    return rev - pay - exp;
+  };
+
+  // For a partner, the cumulative transaction impact (sum of -account_delta) through a date.
+  const cumulativeTxImpact = (partnerId: string, throughDate: string) => {
+    let total = 0;
+    for (const tx of allPartnerTxns) {
+      if (!tx.bank_account_id) continue;
+      const pid = bankToPartnerId.get(tx.bank_account_id);
+      if (pid !== partnerId) continue;
+      const txDate = (tx.created_at ?? "").slice(0, 10);
+      if (txDate <= throughDate) total += -Number(tx.account_delta);
+    }
+    return total;
+  };
+
+  // Same but bounded within a [start, end] window.
+  const txImpactInRange = (partnerId: string, start: string, end: string) => {
+    let total = 0;
+    for (const tx of allPartnerTxns) {
+      if (!tx.bank_account_id) continue;
+      const pid = bankToPartnerId.get(tx.bank_account_id);
+      if (pid !== partnerId) continue;
+      const txDate = (tx.created_at ?? "").slice(0, 10);
+      if (txDate >= start && txDate <= end) total += -Number(tx.account_delta);
+    }
+    return total;
+  };
+
+  const partnerRows = useMemo(() => {
+    const start = firstOfMonth(partnershipPeriod);
+    const end = lastOfMonth(partnershipPeriod);
+    // Day before start = previous month end
+    const prevDay = (() => {
+      const d = new Date(start);
+      d.setDate(d.getDate() - 1);
+      return d.toISOString().slice(0, 10);
+    })();
+    return partners.map((p) => {
+      const share = Number(p.profit_share_percent) / 100;
+      const openingForMonth =
+        Number(p.opening_balance) +
+        share * cumulativePLThrough(prevDay) +
+        cumulativeTxImpact(p.id, prevDay);
+      const profitForMonth = share * monthlyPL(partnershipPeriod);
+      const adjustmentsForMonth = txImpactInRange(p.id, start, end);
+      const remaining = openingForMonth + profitForMonth + adjustmentsForMonth;
+      return {
+        partner: p,
+        opening: openingForMonth,
+        profit: profitForMonth,
+        adjustments: adjustmentsForMonth,
+        remaining,
+      };
+    });
+  }, [partners, partnershipPeriod, allInvoicesForPl, allPayslipsForPl, allExpensesForPl, allPartnerTxns, bankToPartnerId]);
+
+  const totalShare = useMemo(
+    () => partners.reduce((s, p) => s + Number(p.profit_share_percent), 0),
+    [partners]
+  );
+
+  const handleAddPartner = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPartnerName.trim()) return;
+    const share = Number(newPartnerShare || 0);
+    if (share < 0 || share > 100) {
+      setPartnerError("Profit share must be between 0 and 100.");
+      return;
+    }
+    if (totalShare + share > 100) {
+      setPartnerError(`Total profit share would exceed 100% (currently ${totalShare}%).`);
+      return;
+    }
+    const opening = Number(newPartnerOpening || 0);
+    setPartnerSubmitting(true);
+    setPartnerError(null);
+    const { error: insErr } = await supabase.from("partners").insert({
+      name: newPartnerName.trim(),
+      profit_share_percent: share,
+      opening_balance: opening,
+      opening_balance_locked: opening !== 0,
+    });
+    setPartnerSubmitting(false);
+    if (insErr) {
+      setPartnerError(insErr.message);
+      return;
+    }
+    setNewPartnerName("");
+    setNewPartnerShare("");
+    setNewPartnerOpening("");
+    await loadPartnership();
+  };
+
+  const handleDeletePartner = async (p: Partner) => {
+    if (!window.confirm(`Delete partner "${p.name}"? Any bank accounts owned by them will be left orphaned; reassign or delete those first.`)) return;
+    const { error: delErr } = await supabase.from("partners").delete().eq("id", p.id);
+    if (delErr) {
+      setPartnerError(delErr.message);
+      return;
+    }
+    await loadPartnership();
+  };
+
+  const openEditPartner = (p: Partner) => {
+    setEditPartnerId(p.id);
+    setEditPartnerShare(String(p.profit_share_percent));
+    setEditPartnerOpening(p.opening_balance_locked ? "" : String(p.opening_balance));
+  };
+
+  const handleSavePartnerEdit = async (p: Partner) => {
+    const share = Number(editPartnerShare);
+    if (Number.isNaN(share) || share < 0 || share > 100) {
+      setPartnerError("Profit share must be between 0 and 100.");
+      return;
+    }
+    const otherShare = totalShare - Number(p.profit_share_percent);
+    if (otherShare + share > 100) {
+      setPartnerError(`Total profit share would exceed 100% (other partners already use ${otherShare}%).`);
+      return;
+    }
+    const update: Partial<Partner> = { profit_share_percent: share };
+    if (!p.opening_balance_locked && editPartnerOpening !== "") {
+      update.opening_balance = Number(editPartnerOpening);
+      update.opening_balance_locked = true;
+    }
+    setPartnerError(null);
+    const { error: upErr } = await supabase.from("partners").update(update).eq("id", p.id);
+    if (upErr) {
+      setPartnerError(upErr.message);
+      return;
+    }
+    setEditPartnerId(null);
+    await loadPartnership();
+  };
 
   return (
     <>
@@ -394,22 +609,24 @@ export default function FinancialReports() {
                 });
               } else if (activeTab === "partnership") {
                 exportTable({
-                  fileName: "Partnership Report.xlsx",
+                  fileName: `Partnership Report ${formatPeriod(partnershipPeriod)}.xlsx`,
                   sheetName: "Partnership",
-                  title: "Partnership Equity & Distribution Report",
+                  title: `Partnership Report — ${formatPeriod(partnershipPeriod)}`,
                   headers: [
                     "Partner",
-                    "Equity Share",
-                    "Capital Contribution",
-                    "Distributions",
-                    "Net Equity",
+                    "Profit Share %",
+                    "Opening Balance",
+                    "P&L Share",
+                    "Adjustments",
+                    "Remaining Balance",
                   ],
-                  rows: partnershipData.map((p) => [
-                    p.partner,
-                    p.equityShare,
-                    p.capital,
-                    p.distributions,
-                    p.netEquity,
+                  rows: partnerRows.map((r) => [
+                    r.partner.name,
+                    Number(r.partner.profit_share_percent),
+                    Number(r.opening),
+                    Number(r.profit),
+                    Number(r.adjustments),
+                    Number(r.remaining),
                   ]),
                 });
               }
@@ -785,58 +1002,201 @@ export default function FinancialReports() {
 
           {activeTab === "partnership" && (
             <div className="p-6">
-              <div className="mb-6">
-                <h3 className="text-lg text-slate-900 mb-2">Partnership Equity & Distribution Report</h3>
-                <p className="text-sm text-slate-500">Current period ending {new Date().toLocaleDateString(undefined, { month: "long", year: "numeric" })}</p>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-slate-200">
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Partner</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Equity Share</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Capital Contribution</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Distributions</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Net Equity</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200">
-                    {partnershipData.map((partner, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-6 py-4 text-sm text-slate-900">{partner.partner}</td>
-                        <td className="px-6 py-4 text-sm text-blue-600">{partner.equityShare}</td>
-                        <td className="px-6 py-4 text-sm text-green-600">PKR {partner.capital.toLocaleString()}</td>
-                        <td className="px-6 py-4 text-sm text-red-600">PKR {partner.distributions.toLocaleString()}</td>
-                        <td className="px-6 py-4 text-sm text-slate-900">PKR {partner.netEquity.toLocaleString()}</td>
-                      </tr>
+              <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <h3 className="text-lg text-slate-900 mb-1">Partnership Report</h3>
+                  <p className="text-sm text-slate-500">
+                    For {formatPeriod(partnershipPeriod)} · Total share allocated:{" "}
+                    <span className={totalShare > 100 ? "text-red-600" : "text-slate-900"}>
+                      {totalShare}%
+                    </span>
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-sm text-slate-600">Month:</label>
+                  <select
+                    value={partnershipPeriod}
+                    onChange={(e) => setPartnershipPeriod(e.target.value)}
+                    className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                  >
+                    {chartPeriodOptions.map((p) => (
+                      <option key={p} value={p}>{formatPeriod(p)}</option>
                     ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="mt-6 pt-6 border-t border-slate-200">
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-                    <p className="text-sm text-green-700 mb-1">Total Capital</p>
-                    <p className="text-xl text-green-900">
-                      PKR {partnershipData.reduce((sum, p) => sum + p.capital, 0).toLocaleString()}
-                    </p>
-                  </div>
-                  <div className="bg-red-50 p-4 rounded-lg border border-red-200">
-                    <p className="text-sm text-red-700 mb-1">Total Distributions</p>
-                    <p className="text-xl text-red-900">
-                      PKR {partnershipData.reduce((sum, p) => sum + p.distributions, 0).toLocaleString()}
-                    </p>
-                  </div>
-                  <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-                    <p className="text-sm text-blue-700 mb-1">Total Net Equity</p>
-                    <p className="text-xl text-blue-900">
-                      PKR {partnershipData.reduce((sum, p) => sum + p.netEquity, 0).toLocaleString()}
-                    </p>
-                  </div>
+                  </select>
                 </div>
               </div>
+
+              {partnerError && (
+                <div className="text-sm text-red-600 bg-red-50 border border-red-200 px-4 py-2 rounded mb-4">{partnerError}</div>
+              )}
+
+              <form onSubmit={handleAddPartner} className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-6 grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+                <div className="md:col-span-2">
+                  <label className="block text-xs text-slate-700 mb-1">Partner Name</label>
+                  <input
+                    type="text"
+                    value={newPartnerName}
+                    onChange={(e) => setNewPartnerName(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                    placeholder="Full name"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-700 mb-1">Profit Share %</label>
+                  <input
+                    type="number"
+                    step="0.001"
+                    min="0"
+                    max="100"
+                    value={newPartnerShare}
+                    onChange={(e) => setNewPartnerShare(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                    placeholder="0"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-700 mb-1">Opening Balance (PKR)</label>
+                  <input
+                    type="number"
+                    value={newPartnerOpening}
+                    onChange={(e) => setNewPartnerOpening(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                    placeholder="0"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">Locks once non-zero is saved.</p>
+                </div>
+                <div>
+                  <Button type="submit" variant="primary" size="sm" disabled={partnerSubmitting || !newPartnerName.trim()}>
+                    <Plus className="w-4 h-4 mr-1" /> Add Partner
+                  </Button>
+                </div>
+              </form>
+
+              <div className="overflow-x-auto">
+                {loadingPartnership ? (
+                  <div className="py-12 text-center text-slate-500">
+                    <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
+                  </div>
+                ) : partnerRows.length === 0 ? (
+                  <div className="py-12 text-center text-slate-500 text-sm">
+                    No partners yet. Add the first one above.
+                  </div>
+                ) : (
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-slate-200">
+                        <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Partner</th>
+                        <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Profit Share</th>
+                        <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Opening Balance</th>
+                        <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">P&amp;L Share</th>
+                        <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Adjustments</th>
+                        <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Remaining</th>
+                        <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {partnerRows.map(({ partner: p, opening, profit, adjustments, remaining }) => {
+                        const editing = editPartnerId === p.id;
+                        return (
+                          <tr key={p.id} className="hover:bg-slate-50 transition-colors">
+                            <td className="px-4 py-3 text-sm text-slate-900">
+                              {p.name}
+                              {p.opening_balance_locked && (
+                                <Lock className="w-3 h-3 text-slate-400 inline-block ml-2" />
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-right">
+                              {editing ? (
+                                <input
+                                  type="number"
+                                  step="0.001"
+                                  min="0"
+                                  max="100"
+                                  value={editPartnerShare}
+                                  onChange={(e) => setEditPartnerShare(e.target.value)}
+                                  className="w-20 px-2 py-1 border border-slate-200 rounded text-sm text-right"
+                                />
+                              ) : (
+                                <span className="text-blue-600">{Number(p.profit_share_percent)}%</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-right text-slate-700">
+                              {editing && !p.opening_balance_locked ? (
+                                <input
+                                  type="number"
+                                  value={editPartnerOpening}
+                                  onChange={(e) => setEditPartnerOpening(e.target.value)}
+                                  placeholder="Lock once entered"
+                                  className="w-32 px-2 py-1 border border-slate-200 rounded text-sm text-right"
+                                />
+                              ) : (
+                                <>PKR {Number(opening).toLocaleString(undefined, { maximumFractionDigits: 2 })}</>
+                              )}
+                            </td>
+                            <td className={`px-4 py-3 text-sm text-right ${profit >= 0 ? "text-green-600" : "text-red-600"}`}>
+                              PKR {Number(profit).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                            </td>
+                            <td className={`px-4 py-3 text-sm text-right ${adjustments >= 0 ? "text-green-600" : "text-red-600"}`}>
+                              PKR {Number(adjustments).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                            </td>
+                            <td className={`px-4 py-3 text-sm text-right ${remaining >= 0 ? "text-slate-900" : "text-red-600"}`}>
+                              PKR {Number(remaining).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              {editing ? (
+                                <div className="flex gap-1 justify-end">
+                                  <Button variant="primary" size="sm" onClick={() => handleSavePartnerEdit(p)}>Save</Button>
+                                  <Button variant="ghost" size="sm" onClick={() => setEditPartnerId(null)}>Cancel</Button>
+                                </div>
+                              ) : (
+                                <div className="flex gap-1 justify-end">
+                                  <button
+                                    onClick={() => openEditPartner(p)}
+                                    className="p-1.5 rounded text-slate-600 hover:bg-slate-100"
+                                    title="Edit"
+                                  >
+                                    <Pencil className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeletePartner(p)}
+                                    className="p-1.5 rounded text-red-600 hover:bg-red-50"
+                                    title="Delete"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                <div className="bg-slate-50 border border-slate-200 p-3 rounded">
+                  <p className="text-slate-500 text-xs mb-1">Total profit share allocated</p>
+                  <p className={`text-lg ${totalShare > 100 ? "text-red-600" : "text-slate-900"}`}>{totalShare}%</p>
+                </div>
+                <div className="bg-slate-50 border border-slate-200 p-3 rounded">
+                  <p className="text-slate-500 text-xs mb-1">Month P&amp;L</p>
+                  <p className={`text-lg ${monthlyPL(partnershipPeriod) >= 0 ? "text-green-700" : "text-red-600"}`}>
+                    PKR {Number(monthlyPL(partnershipPeriod)).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+                <div className="bg-slate-50 border border-slate-200 p-3 rounded">
+                  <p className="text-slate-500 text-xs mb-1">Sum of remaining balances</p>
+                  <p className="text-lg text-slate-900">
+                    PKR {partnerRows.reduce((s, r) => s + r.remaining, 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+              </div>
+
+              <p className="mt-4 text-xs text-slate-500">
+                Remaining balance carries forward: this month's remaining becomes next month's opening. Use the month selector to step through history.
+              </p>
             </div>
           )}
         </div>

@@ -129,6 +129,8 @@ export type InventoryItem = {
   updated_at?: string;
 };
 
+export type BankAccountOwnerType = "company" | "partner" | "client";
+
 export type BankAccount = {
   id: string;
   bank_name: string;
@@ -136,6 +138,21 @@ export type BankAccount = {
   account_type: "Current" | "Savings";
   opening_balance: number;
   balance: number;
+  owner_type: BankAccountOwnerType;
+  owner_partner_id: string | null;
+  owner_client_id: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type Partner = {
+  id: string;
+  company_id?: string;
+  name: string;
+  profit_share_percent: number;
+  opening_balance: number;
+  opening_balance_locked: boolean;
+  start_month: string | null;
   created_at?: string;
   updated_at?: string;
 };
@@ -156,7 +173,8 @@ export type BankTransactionKind =
   | "cash_adjustment"
   | "expense"
   | "receipt"
-  | "advance";
+  | "advance"
+  | "transfer";
 
 export type BankTransaction = {
   id: string;
@@ -167,6 +185,7 @@ export type BankTransaction = {
   account_delta: number;
   description: string | null;
   reference_id: string | null;
+  transfer_pair_id: string | null;
   created_at?: string;
 };
 
