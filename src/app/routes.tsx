@@ -1,4 +1,4 @@
-import { createBrowserRouter } from "react-router";
+import { createBrowserRouter, Navigate } from "react-router";
 import RoleSelection from "./pages/RoleSelection";
 import Login from "./pages/Login";
 import RequireAuth from "./components/RequireAuth";
@@ -93,4 +93,5 @@ export const router = createBrowserRouter([
       { path: "cashflow", Component: Cashflow },
     ],
   },
+  { path: "*", element: <Navigate to="/login" replace /> },
 ]);

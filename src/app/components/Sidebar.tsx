@@ -1,4 +1,4 @@
-import { NavLink } from "react-router";
+import { NavLink, useNavigate } from "react-router";
 import { LucideIcon, LogOut } from "lucide-react";
 import { useAuth } from "../lib/auth";
 
@@ -13,11 +13,11 @@ interface SidebarProps {
 
 export default function Sidebar({ title, links }: SidebarProps) {
   const { profile, signOut } = useAuth();
+  const navigate = useNavigate();
 
   const handleSignOut = async () => {
     await signOut();
-    // Hard redirect — avoids any chance of being stuck on an unmounted layout.
-    window.location.assign("/login");
+    navigate("/login", { replace: true });
   };
 
   return (
