@@ -1,14 +1,16 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
-import { supabase, type Profile, type UserRole } from "./supabase";
+import { supabase, type Company, type Profile, type UserRole } from "./supabase";
 
 type AuthCtx = {
   session: Session | null;
   profile: Profile | null;
+  company: Company | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  setViewAsCompany: (companyId: string | null) => Promise<{ error?: string }>;
 };
 
 const Ctx = createContext<AuthCtx | null>(null);
@@ -23,18 +25,50 @@ export const ROLE_HOMES: Record<UserRole, string> = {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [company, setCompany] = useState<Company | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const loadProfile = async (userId: string) => {
+  const wipeAuthStorage = () => {
+    try {
+      const keys: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && (k.startsWith("sb-") || k.includes("supabase"))) keys.push(k);
+      }
+      for (const k of keys) localStorage.removeItem(k);
+    } catch {
+      // ignore
+    }
+  };
+
+  const loadProfileAndCompany = async (userId: string): Promise<boolean> => {
     try {
       const { data } = await supabase
         .from("profiles")
-        .select("id, company_id, role, full_name, email, created_at, updated_at")
+        .select("id, company_id, role, full_name, email, view_as_company, created_at, updated_at")
         .eq("id", userId)
         .maybeSingle();
-      setProfile((data as Profile) ?? null);
+      const p = (data as Profile) ?? null;
+      setProfile(p);
+
+      if (!p) return false;
+
+      const effectiveCompanyId = p.view_as_company ?? p.company_id ?? null;
+      if (effectiveCompanyId) {
+        const { data: c } = await supabase
+          .from("companies")
+          .select("*")
+          .eq("id", effectiveCompanyId)
+          .maybeSingle();
+        setCompany((c as Company) ?? null);
+      } else {
+        setCompany(null);
+      }
+      return true;
     } catch {
       setProfile(null);
+      setCompany(null);
+      return false;
     }
   };
 
@@ -44,20 +78,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const { data } = await supabase.auth.getSession();
         if (!mounted) return;
-        setSession(data.session ?? null);
-        if (data.session?.user) await loadProfile(data.session.user.id);
+        if (data.session?.user) {
+          const ok = await loadProfileAndCompany(data.session.user.id);
+          if (!ok) {
+            // Stale session: token decodes to a user with no profile (deleted/mismatched).
+            // Wipe everything so the next render lands cleanly on /login.
+            wipeAuthStorage();
+            try { await supabase.auth.signOut({ scope: "local" }); } catch { /* ignore */ }
+            setSession(null);
+          } else {
+            setSession(data.session);
+          }
+        } else {
+          setSession(null);
+        }
       } catch {
         if (!mounted) return;
+        wipeAuthStorage();
         setSession(null);
         setProfile(null);
+        setCompany(null);
       } finally {
         if (mounted) setLoading(false);
       }
     })();
     const { data: sub } = supabase.auth.onAuthStateChange(async (_event, s) => {
       setSession(s);
-      if (s?.user) await loadProfile(s.user.id);
-      else setProfile(null);
+      if (s?.user) await loadProfileAndCompany(s.user.id);
+      else {
+        setProfile(null);
+        setCompany(null);
+      }
     });
     return () => {
       mounted = false;
@@ -72,21 +123,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
+    // For SSA, clear view_as_company so they don't come back to a stale "viewing as X" state.
+    if (profile?.role === "super_super_admin" && profile.view_as_company) {
+      try {
+        await supabase.from("profiles").update({ view_as_company: null }).eq("id", profile.id);
+      } catch {
+        // best effort
+      }
+    }
     try {
       await supabase.auth.signOut({ scope: "local" });
     } catch {
-      // ignore — local clear below still runs
+      // ignore
     }
+    wipeAuthStorage();
     setSession(null);
     setProfile(null);
+    setCompany(null);
   };
 
   const refreshProfile = async () => {
-    if (session?.user) await loadProfile(session.user.id);
+    if (session?.user) await loadProfileAndCompany(session.user.id);
+  };
+
+  const setViewAsCompany = async (companyId: string | null) => {
+    if (!profile) return { error: "no_profile" };
+    if (profile.role !== "super_super_admin") return { error: "forbidden" };
+    const { error } = await supabase
+      .from("profiles")
+      .update({ view_as_company: companyId })
+      .eq("id", profile.id);
+    if (error) return { error: error.message };
+    await refreshProfile();
+    return {};
   };
 
   return (
-    <Ctx.Provider value={{ session, profile, loading, signIn, signOut, refreshProfile }}>
+    <Ctx.Provider
+      value={{
+        session,
+        profile,
+        company,
+        loading,
+        signIn,
+        signOut,
+        refreshProfile,
+        setViewAsCompany,
+      }}
+    >
       {children}
     </Ctx.Provider>
   );

@@ -1,15 +1,20 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router";
-import { Building2, Plus, Loader2, ArrowRight } from "lucide-react";
+import { Link, useNavigate } from "react-router";
+import { Building2, Plus, Loader2, ArrowRight, Eye, Power } from "lucide-react";
 import Button from "../../components/Button";
 import { supabase, type Company } from "../../lib/supabase";
+import { useAuth } from "../../lib/auth";
 
 type CompanyRow = Company & { employee_count?: number; user_count?: number };
 
 export default function Companies() {
+  const { setViewAsCompany } = useAuth();
+  const navigate = useNavigate();
+
   const [companies, setCompanies] = useState<CompanyRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const [addOpen, setAddOpen] = useState(false);
   const [name, setName] = useState("");
@@ -30,15 +35,22 @@ export default function Companies() {
       return;
     }
     const ids = (cs ?? []).map((c) => c.id);
+    const placeholderIds = ids.length ? ids : ["00000000-0000-0000-0000-000000000000"];
     const [{ data: employees }, { data: profiles }] = await Promise.all([
-      supabase.from("employees").select("company_id").in("company_id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]),
-      supabase.from("profiles").select("company_id").in("company_id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]),
+      supabase.from("employees").select("company_id").in("company_id", placeholderIds),
+      supabase.from("profiles").select("company_id").in("company_id", placeholderIds),
     ]);
     const empCount = new Map<string, number>();
     for (const e of employees ?? []) empCount.set(e.company_id, (empCount.get(e.company_id) ?? 0) + 1);
     const userCount = new Map<string, number>();
     for (const p of profiles ?? []) if (p.company_id) userCount.set(p.company_id, (userCount.get(p.company_id) ?? 0) + 1);
-    setCompanies((cs ?? []).map((c) => ({ ...c, employee_count: empCount.get(c.id) ?? 0, user_count: userCount.get(c.id) ?? 0 })));
+    setCompanies(
+      (cs ?? []).map((c) => ({
+        ...c,
+        employee_count: empCount.get(c.id) ?? 0,
+        user_count: userCount.get(c.id) ?? 0,
+      }))
+    );
     setLoading(false);
   };
 
@@ -68,13 +80,42 @@ export default function Companies() {
     await loadAll();
   };
 
+  const toggleActive = async (c: CompanyRow) => {
+    const next = !c.active;
+    if (!next && !window.confirm(`Deactivate "${c.name}"? Its users will be blocked from signing in.`)) {
+      return;
+    }
+    setBusyId(c.id);
+    const { error: err } = await supabase
+      .from("companies")
+      .update({ active: next })
+      .eq("id", c.id);
+    setBusyId(null);
+    if (err) {
+      setError(err.message);
+      return;
+    }
+    await loadAll();
+  };
+
+  const viewAs = async (c: CompanyRow) => {
+    setBusyId(c.id);
+    const { error: err } = await setViewAsCompany(c.id);
+    setBusyId(null);
+    if (err) {
+      setError(err);
+      return;
+    }
+    navigate("/super-admin", { replace: true });
+  };
+
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="p-8 max-w-6xl mx-auto">
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-2xl text-slate-900">Companies</h1>
-            <p className="text-sm text-slate-500 mt-1">Manage all tenant companies and their admins.</p>
+            <p className="text-sm text-slate-500 mt-1">Manage all tenant companies, their admins, and access.</p>
           </div>
           <Button variant="primary" onClick={() => setAddOpen((v) => !v)}>
             <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
@@ -128,7 +169,7 @@ export default function Companies() {
                   <th className="px-6 py-3 text-left text-xs uppercase tracking-wider text-slate-500">Users</th>
                   <th className="px-6 py-3 text-left text-xs uppercase tracking-wider text-slate-500">Employees</th>
                   <th className="px-6 py-3 text-left text-xs uppercase tracking-wider text-slate-500">Status</th>
-                  <th className="px-6 py-3"></th>
+                  <th className="px-6 py-3 text-right text-xs uppercase tracking-wider text-slate-500">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
@@ -145,14 +186,38 @@ export default function Companies() {
                     <td className="px-6 py-4 text-sm text-slate-600">{c.user_count}</td>
                     <td className="px-6 py-4 text-sm text-slate-600">{c.employee_count}</td>
                     <td className="px-6 py-4">
-                      <span className={`text-xs px-2 py-1 rounded ${c.active ? "bg-green-50 text-green-700" : "bg-slate-100 text-slate-600"}`}>
-                        {c.active ? "Active" : "Inactive"}
+                      <span className={`text-xs px-2 py-1 rounded ${c.active ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+                        {c.active ? "Active" : "Suspended"}
                       </span>
                     </td>
                     <td className="px-6 py-4">
-                      <Link to={`/super-super-admin/companies/${c.id}`} className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1">
-                        Manage <ArrowRight className="w-3 h-3" />
-                      </Link>
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => viewAs(c)}
+                          disabled={busyId === c.id || !c.active}
+                          title={c.active ? "View this company's data" : "Activate the company first to view"}
+                          className="flex items-center gap-1 text-xs px-2 py-1 rounded border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <Eye className="w-3 h-3" /> View
+                        </button>
+                        <button
+                          onClick={() => toggleActive(c)}
+                          disabled={busyId === c.id}
+                          className={`flex items-center gap-1 text-xs px-2 py-1 rounded border ${
+                            c.active
+                              ? "border-red-200 text-red-700 hover:bg-red-50"
+                              : "border-green-200 text-green-700 hover:bg-green-50"
+                          } disabled:opacity-50`}
+                        >
+                          <Power className="w-3 h-3" /> {c.active ? "Deactivate" : "Activate"}
+                        </button>
+                        <Link
+                          to={`/super-super-admin/companies/${c.id}`}
+                          className="flex items-center gap-1 text-xs px-2 py-1 rounded border border-slate-200 text-blue-700 hover:bg-blue-50"
+                        >
+                          Users <ArrowRight className="w-3 h-3" />
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 ))}

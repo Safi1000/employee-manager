@@ -11,7 +11,7 @@ export default function RequireAuth({
   roles?: UserRole[];
   children: ReactNode;
 }) {
-  const { session, profile, loading } = useAuth();
+  const { session, profile, company, loading } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -24,8 +24,29 @@ export default function RequireAuth({
   if (!session || !profile) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   }
-  if (roles && !roles.includes(profile.role)) {
-    return <Navigate to={ROLE_HOMES[profile.role]} replace />;
+
+  // Block company users whose company is deactivated. SSA is never blocked.
+  if (profile.role !== "super_super_admin" && company && company.active === false) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-8">
+        <div className="max-w-md text-center bg-white border border-slate-200 rounded-lg p-8">
+          <h1 className="text-xl text-slate-900 mb-2">Access suspended</h1>
+          <p className="text-sm text-slate-600 mb-6">
+            Your company has been deactivated. Contact your administrator for help.
+          </p>
+          <a href="/login" className="text-sm text-blue-600 hover:underline">Sign out</a>
+        </div>
+      </div>
+    );
   }
+
+  if (roles && !roles.includes(profile.role)) {
+    // Special case: SSA can enter super-admin routes only when they've picked a company to view.
+    const ssaViewing = profile.role === "super_super_admin" && !!profile.view_as_company;
+    if (!(ssaViewing && roles.includes("super_admin"))) {
+      return <Navigate to={ROLE_HOMES[profile.role]} replace />;
+    }
+  }
+
   return <>{children}</>;
 }

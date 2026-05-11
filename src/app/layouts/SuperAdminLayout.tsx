@@ -1,5 +1,7 @@
-import { Outlet } from "react-router";
+import { Outlet, useNavigate } from "react-router";
 import Sidebar from "../components/Sidebar";
+import { useAuth } from "../lib/auth";
+import { Eye, X } from "lucide-react";
 import {
   LayoutDashboard,
   Users,
@@ -18,6 +20,12 @@ import {
 } from "lucide-react";
 
 export default function SuperAdminLayout() {
+  const { profile, company, setViewAsCompany } = useAuth();
+  const navigate = useNavigate();
+
+  const isSsaViewing =
+    profile?.role === "super_super_admin" && !!profile.view_as_company;
+
   const links = [
     { to: "/super-admin", label: "Dashboard", icon: LayoutDashboard },
     { to: "/super-admin/users", label: "User Management", icon: Users },
@@ -35,10 +43,34 @@ export default function SuperAdminLayout() {
     { to: "/super-admin/settings", label: "Settings", icon: SettingsIcon },
   ];
 
+  const handleExitView = async () => {
+    await setViewAsCompany(null);
+    navigate("/super-super-admin", { replace: true });
+  };
+
   return (
     <div className="flex h-screen bg-slate-50">
-      <Sidebar title="Super Admin" links={links} />
+      <Sidebar
+        title={isSsaViewing ? `Viewing: ${company?.name ?? "…"}` : "Super Admin"}
+        links={links}
+      />
       <div className="flex-1 flex flex-col overflow-hidden">
+        {isSsaViewing && (
+          <div className="bg-amber-50 border-b border-amber-200 px-6 py-2 flex items-center justify-between text-sm">
+            <div className="flex items-center gap-2 text-amber-900">
+              <Eye className="w-4 h-4" strokeWidth={1.5} />
+              <span>
+                You are viewing <strong>{company?.name ?? ""}</strong> as Super Super Admin.
+              </span>
+            </div>
+            <button
+              onClick={handleExitView}
+              className="flex items-center gap-1 px-3 py-1 rounded text-amber-900 hover:bg-amber-100"
+            >
+              <X className="w-4 h-4" strokeWidth={1.5} /> Exit view
+            </button>
+          </div>
+        )}
         <Outlet />
       </div>
     </div>

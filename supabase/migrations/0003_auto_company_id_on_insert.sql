@@ -23,9 +23,12 @@ declare
   ];
 begin
   foreach t in array per_company_tables loop
+    -- "aaa_" prefix so this BEFORE INSERT trigger sorts/runs before
+    -- trg_<table>_code (which depends on company_id being set).
     execute format('drop trigger if exists trg_%I_fill_company on public.%I', t, t);
+    execute format('drop trigger if exists trg_aaa_%I_fill_company on public.%I', t, t);
     execute format(
-      'create trigger trg_%I_fill_company before insert on public.%I
+      'create trigger trg_aaa_%I_fill_company before insert on public.%I
          for each row execute function public.fill_company_id()', t, t
     );
   end loop;

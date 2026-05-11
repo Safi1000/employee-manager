@@ -27,6 +27,7 @@ export type Profile = {
   role: UserRole;
   full_name: string | null;
   email: string | null;
+  view_as_company: string | null;
   created_at?: string;
   updated_at?: string;
 };
