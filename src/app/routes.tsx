@@ -1,9 +1,11 @@
 import { createBrowserRouter } from "react-router";
 import RoleSelection from "./pages/RoleSelection";
 import Login from "./pages/Login";
+import RequireAuth from "./components/RequireAuth";
 import SuperAdminLayout from "./layouts/SuperAdminLayout";
 import HRLayout from "./layouts/HRLayout";
 import AccountsLayout from "./layouts/AccountsLayout";
+import SuperSuperAdminLayout from "./layouts/SuperSuperAdminLayout";
 
 import Dashboard from "./pages/super-admin/Dashboard";
 import UserManagement from "./pages/super-admin/UserManagement";
@@ -20,18 +22,31 @@ import Compliance from "./pages/super-admin/Compliance";
 import Documents from "./pages/super-admin/Documents";
 import Settings from "./pages/super-admin/Settings";
 
+import Companies from "./pages/super-super-admin/Companies";
+import CompanyDetail from "./pages/super-super-admin/CompanyDetail";
+
 export const router = createBrowserRouter([
+  { path: "/", Component: RoleSelection },
+  { path: "/login", Component: Login },
   {
-    path: "/",
-    Component: RoleSelection,
-  },
-  {
-    path: "/login",
-    Component: Login,
+    path: "/super-super-admin",
+    element: (
+      <RequireAuth roles={["super_super_admin"]}>
+        <SuperSuperAdminLayout />
+      </RequireAuth>
+    ),
+    children: [
+      { index: true, Component: Companies },
+      { path: "companies/:id", Component: CompanyDetail },
+    ],
   },
   {
     path: "/super-admin",
-    Component: SuperAdminLayout,
+    element: (
+      <RequireAuth roles={["super_admin"]}>
+        <SuperAdminLayout />
+      </RequireAuth>
+    ),
     children: [
       { index: true, Component: Dashboard },
       { path: "users", Component: UserManagement },
@@ -51,7 +66,11 @@ export const router = createBrowserRouter([
   },
   {
     path: "/hr",
-    Component: HRLayout,
+    element: (
+      <RequireAuth roles={["hr"]}>
+        <HRLayout />
+      </RequireAuth>
+    ),
     children: [
       { index: true, Component: Dashboard },
       { path: "employees", Component: EmployeeManagement },
@@ -61,7 +80,11 @@ export const router = createBrowserRouter([
   },
   {
     path: "/accounts",
-    Component: AccountsLayout,
+    element: (
+      <RequireAuth roles={["accounting"]}>
+        <AccountsLayout />
+      </RequireAuth>
+    ),
     children: [
       { index: true, Component: Dashboard },
       { path: "attendance", Component: AttendanceManagement },

@@ -1,23 +1,41 @@
-import { useState } from "react";
-import { useNavigate, useSearchParams } from "react-router";
-import Button from "../components/Button";
-import { Lock, Mail } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Navigate, useLocation, useNavigate } from "react-router";
+import { Lock, Mail, Loader2 } from "lucide-react";
+import { ROLE_HOMES, useAuth } from "../lib/auth";
 
 export default function Login() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const rolePath = searchParams.get("role") || "/";
+  const location = useLocation();
+  const { session, profile, loading, signIn } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (rolePath === "/") {
-      navigate("/");
-    } else {
-      navigate(rolePath);
+  useEffect(() => {
+    if (!loading && session && profile) {
+      const from = (location.state as { from?: string } | null)?.from;
+      navigate(from && from !== "/login" ? from : ROLE_HOMES[profile.role], { replace: true });
     }
+  }, [loading, session, profile, navigate, location.state]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <Loader2 className="w-6 h-6 animate-spin text-slate-500" />
+      </div>
+    );
+  }
+  if (session && profile) return <Navigate to={ROLE_HOMES[profile.role]} replace />;
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    const { error: err } = await signIn(email.trim(), password);
+    setSubmitting(false);
+    if (err) setError(err);
   };
 
   return (
@@ -25,7 +43,7 @@ export default function Login() {
       <div className="w-full max-w-md bg-white rounded-lg shadow-sm border border-slate-200 p-8">
         <div className="text-center mb-8">
           <h1 className="text-2xl font-medium text-slate-900 mb-2">Welcome Back</h1>
-          <p className="text-slate-500 text-sm">Please sign in to your CRM account</p>
+          <p className="text-slate-500 text-sm">Sign in to continue</p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-6">
@@ -45,10 +63,7 @@ export default function Login() {
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm text-slate-700">Password</label>
-              <a href="#" className="text-sm text-slate-500 hover:text-slate-700">Forgot password?</a>
-            </div>
+            <label className="block text-sm text-slate-700 mb-2">Password</label>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />
               <input
@@ -62,10 +77,16 @@ export default function Login() {
             </div>
           </div>
 
+          {error && (
+            <div className="text-sm text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded">{error}</div>
+          )}
+
           <button
             type="submit"
-            className="w-full py-2 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-md text-sm font-medium transition-colors"
+            disabled={submitting}
+            className="w-full py-2 px-4 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2"
           >
+            {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
             Sign In
           </button>
         </form>

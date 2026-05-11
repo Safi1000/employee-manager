@@ -9,8 +9,31 @@ export const EMPLOYEE_DOCS_BUCKET = "employee-documents";
 export const EXPENSE_RECEIPTS_BUCKET = "expense-receipts";
 export const INVOICE_ATTACHMENTS_BUCKET = "invoice-attachments";
 
+export type UserRole = "super_super_admin" | "super_admin" | "accounting" | "hr";
+
+export type Company = {
+  id: string;
+  name: string;
+  contact_email: string | null;
+  contact_phone: string | null;
+  active: boolean;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type Profile = {
+  id: string;
+  company_id: string | null;
+  role: UserRole;
+  full_name: string | null;
+  email: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
 export type Location = {
   id: string;
+  company_id?: string;
   name: string;
   created_at?: string;
 };

@@ -1,274 +1,213 @@
-import { useState } from "react";
-import { Plus, Search } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Plus, Search, Loader2, UserPlus } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
-import ExportButton from "../../components/ExportButton";
-import { exportTable } from "../../lib/excel";
+import { supabase, type Profile, type UserRole } from "../../lib/supabase";
+import { callCreateUser, useAuth } from "../../lib/auth";
 
-const users = [
-  { id: 1, name: "Ahmed Khan", email: "ahmed.khan@company.com", role: "Super Admin", status: "Active" },
-  { id: 2, name: "Sarah Ahmed", email: "sarah.ahmed@company.com", role: "HR", status: "Active" },
-  { id: 3, name: "Ali Raza", email: "ali.raza@company.com", role: "Accounts", status: "Active" },
-  { id: 4, name: "Fatima Shah", email: "fatima.shah@company.com", role: "HR", status: "Inactive" },
-  { id: 5, name: "Hassan Malik", email: "hassan.malik@company.com", role: "Accounts", status: "Active" },
-];
+const ROLE_LABEL: Record<UserRole, string> = {
+  super_super_admin: "Super Super Admin",
+  super_admin: "Super Admin",
+  hr: "HR",
+  accounting: "Accounting",
+};
+
+type CreatableRole = "super_admin" | "hr" | "accounting";
 
 export default function UserManagement() {
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<any>(null);
-  const [selectedRole, setSelectedRole] = useState("All Roles");
-  const [selectedStatus, setSelectedStatus] = useState("All Status");
-  const [searchQuery, setSearchQuery] = useState("");
+  const { profile } = useAuth();
+  const [users, setUsers] = useState<Profile[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const filteredUsers = users.filter((user) => {
-    const matchesSearch = user.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          user.email.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesRole = selectedRole === "All Roles" || user.role === selectedRole;
-    const matchesStatus = selectedStatus === "All Status" || user.status === selectedStatus;
-    
-    return matchesSearch && matchesRole && matchesStatus;
-  });
+  const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState<"all" | CreatableRole>("all");
 
-  const editUser = (user: any) => {
-    setSelectedUser(user);
-    setIsEditModalOpen(true);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [email, setEmail] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [password, setPassword] = useState("");
+  const [role, setRole] = useState<CreatableRole>("hr");
+  const [submitting, setSubmitting] = useState(false);
+
+  const loadAll = async () => {
+    setLoading(true);
+    setError(null);
+    const { data, error: err } = await supabase
+      .from("profiles")
+      .select("*")
+      .order("created_at", { ascending: true });
+    if (err) setError(err.message);
+    setUsers((data as Profile[]) ?? []);
+    setLoading(false);
   };
+
+  useEffect(() => {
+    loadAll();
+  }, []);
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profile?.company_id) {
+      setError("Cannot determine your company.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    const res = await callCreateUser({
+      email: email.trim(),
+      password,
+      role,
+      company_id: profile.company_id,
+      full_name: fullName.trim() || null,
+    });
+    setSubmitting(false);
+    if ("error" in res) {
+      setError(res.error ?? "Failed to create user");
+      return;
+    }
+    setEmail("");
+    setFullName("");
+    setPassword("");
+    setRole("hr");
+    setCreateOpen(false);
+    await loadAll();
+  };
+
+  const filtered = users.filter((u) => {
+    if (roleFilter !== "all" && u.role !== roleFilter) return false;
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      (u.full_name ?? "").toLowerCase().includes(q) ||
+      (u.email ?? "").toLowerCase().includes(q)
+    );
+  });
 
   return (
     <>
       <Header
         title="User Management"
         actions={
-          <>
-            <ExportButton
-              onExport={() =>
-                exportTable({
-                  fileName: "Users.xlsx",
-                  sheetName: "Users",
-                  title: "User Management",
-                  headers: ["Name", "Email", "Role", "Status"],
-                  rows: filteredUsers.map((u) => [u.name, u.email, u.role, u.status]),
-                })
-              }
-            />
-            <Button variant="primary" size="md" onClick={() => setIsModalOpen(true)}>
-              <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
-              Create User
-            </Button>
-          </>
+          <Button variant="primary" size="md" onClick={() => setCreateOpen(true)}>
+            <UserPlus className="w-4 h-4 mr-2" strokeWidth={1.5} />
+            Create User
+          </Button>
         }
       />
 
       <div className="flex-1 overflow-y-auto p-8">
+        {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 px-4 py-2 rounded mb-4">{error}</div>}
+
         <div className="bg-white rounded-lg border border-slate-200">
-          <div className="p-6 border-b border-slate-200">
-            <div className="flex items-center gap-4">
-              <div className="flex-1 relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />
-                <input
-                  type="text"
-                  placeholder="Search users..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                />
-              </div>
-              <select
-                value={selectedRole}
-                onChange={(e) => setSelectedRole(e.target.value)}
-                className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-              >
-                <option>All Roles</option>
-                <option>Super Admin</option>
-                <option>HR</option>
-                <option>Accounts</option>
-              </select>
-              <select
-                value={selectedStatus}
-                onChange={(e) => setSelectedStatus(e.target.value)}
-                className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-              >
-                <option>All Status</option>
-                <option>Active</option>
-                <option>Inactive</option>
-              </select>
+          <div className="p-6 border-b border-slate-200 flex items-center gap-4">
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />
+              <input
+                type="text"
+                placeholder="Search by name or email…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              />
             </div>
+            <select
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value as "all" | CreatableRole)}
+              className="px-4 py-2 border border-slate-200 rounded-md text-sm"
+            >
+              <option value="all">All Roles</option>
+              <option value="super_admin">Super Admin</option>
+              <option value="hr">HR</option>
+              <option value="accounting">Accounting</option>
+            </select>
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-slate-200">
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Name</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Email</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Role</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Status</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {filteredUsers.map((user) => (
-                  <tr key={user.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-6 py-4 text-sm text-slate-900">{user.name}</td>
-                    <td className="px-6 py-4 text-sm text-slate-600">{user.email}</td>
-                    <td className="px-6 py-4 text-sm text-slate-600">{user.role}</td>
-                    <td className="px-6 py-4">
-                      <span
-                        className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
-                          user.status === "Active"
-                            ? "bg-green-50 text-green-700"
-                            : "bg-slate-100 text-slate-600"
-                        }`}
-                      >
-                        {user.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <Button variant="ghost" size="sm" onClick={() => editUser(user)}>
-                        Edit
-                      </Button>
-                    </td>
+            {loading ? (
+              <div className="p-8 flex items-center gap-2 text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
+            ) : filtered.length === 0 ? (
+              <div className="p-12 text-center">
+                <Plus className="w-8 h-8 text-slate-300 mx-auto mb-2" strokeWidth={1.5} />
+                <p className="text-slate-500 text-sm">No users match your filters.</p>
+              </div>
+            ) : (
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-slate-200">
+                    <th className="text-left px-6 py-3 text-sm text-slate-500">Name</th>
+                    <th className="text-left px-6 py-3 text-sm text-slate-500">Email</th>
+                    <th className="text-left px-6 py-3 text-sm text-slate-500">Role</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="mt-8 bg-white rounded-lg border border-slate-200 p-6">
-          <h3 className="text-base mb-6 text-slate-900">Role Permissions</h3>
-          <div className="space-y-6">
-            <div>
-              <h4 className="text-sm text-slate-900 mb-3">Super Admin</h4>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {["Users", "Employees", "Attendance", "Payroll", "Expenses", "Cashflow", "Settings"].map((perm) => (
-                  <label key={perm} className="flex items-center gap-2 text-sm text-slate-600">
-                    <input type="checkbox" defaultChecked className="rounded border-slate-300" />
-                    <span>{perm}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-            <div className="pt-4 border-t border-slate-200">
-              <h4 className="text-sm text-slate-900 mb-3">HR</h4>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {["Employees", "Attendance", "Documents"].map((perm) => (
-                  <label key={perm} className="flex items-center gap-2 text-sm text-slate-600">
-                    <input type="checkbox" defaultChecked className="rounded border-slate-300" />
-                    <span>{perm}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-            <div className="pt-4 border-t border-slate-200">
-              <h4 className="text-sm text-slate-900 mb-3">Accounts</h4>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {["Attendance (Read)", "Payroll", "Expenses", "Cashflow"].map((perm) => (
-                  <label key={perm} className="flex items-center gap-2 text-sm text-slate-600">
-                    <input type="checkbox" defaultChecked className="rounded border-slate-300" />
-                    <span>{perm}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {filtered.map((u) => (
+                    <tr key={u.id} className="hover:bg-slate-50">
+                      <td className="px-6 py-4 text-sm text-slate-900">{u.full_name ?? "—"}</td>
+                      <td className="px-6 py-4 text-sm text-slate-600">{u.email ?? "—"}</td>
+                      <td className="px-6 py-4 text-sm text-slate-600">{ROLE_LABEL[u.role]}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       </div>
 
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Create User" size="md">
-        <form className="space-y-4">
+      <Modal isOpen={createOpen} onClose={() => setCreateOpen(false)} title="Create User" size="md">
+        <form onSubmit={handleCreate} className="space-y-4">
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Name</label>
+            <label className="block text-sm text-slate-700 mb-1">Full Name</label>
             <input
               type="text"
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-              placeholder="Enter full name"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
             />
           </div>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Email</label>
+            <label className="block text-sm text-slate-700 mb-1">Email *</label>
             <input
               type="email"
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-              placeholder="email@company.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
             />
           </div>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Role</label>
-            <select className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent">
-              <option>Select role</option>
-              <option>Super Admin</option>
-              <option>HR</option>
-              <option>Accounts</option>
+            <label className="block text-sm text-slate-700 mb-1">Role *</label>
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value as CreatableRole)}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+            >
+              <option value="super_admin">Super Admin</option>
+              <option value="hr">HR</option>
+              <option value="accounting">Accounting</option>
             </select>
           </div>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Password</label>
+            <label className="block text-sm text-slate-700 mb-1">Temporary Password *</label>
             <input
-              type="password"
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-              placeholder="Create password"
+              type="text"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              minLength={8}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm font-mono"
             />
+            <p className="text-xs text-slate-500 mt-1">At least 8 characters. Share with the user securely.</p>
           </div>
-          <div className="flex items-center gap-3 pt-4">
-            <Button variant="primary" size="md" className="flex-1">
+          {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded">{error}</div>}
+          <div className="flex items-center gap-3 pt-2">
+            <Button type="submit" variant="primary" size="md" className="flex-1" disabled={submitting}>
+              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Create User
             </Button>
-            <Button variant="secondary" size="md" onClick={() => setIsModalOpen(false)}>
-              Cancel
-            </Button>
-          </div>
-        </form>
-      </Modal>
-
-      <Modal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} title="Edit User" size="md">
-        <form className="space-y-4">
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Name</label>
-            <input
-              type="text"
-              defaultValue={selectedUser?.name}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
-              placeholder="Enter full name"
-            />
-          </div>
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Email</label>
-            <input
-              type="email"
-              defaultValue={selectedUser?.email}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
-              placeholder="email@company.com"
-            />
-          </div>
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Role</label>
-            <select
-              defaultValue={selectedUser?.role}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
-            >
-              <option>Super Admin</option>
-              <option>HR</option>
-              <option>Accounts</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Status</label>
-            <select
-              defaultValue={selectedUser?.status}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
-            >
-              <option>Active</option>
-              <option>Inactive</option>
-            </select>
-          </div>
-          <div className="flex items-center gap-3 pt-4">
-            <Button variant="primary" size="md" className="flex-1">
-              Update User
-            </Button>
-            <Button variant="secondary" size="md" onClick={() => setIsEditModalOpen(false)}>
+            <Button type="button" variant="secondary" size="md" onClick={() => setCreateOpen(false)}>
               Cancel
             </Button>
           </div>
