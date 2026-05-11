@@ -15,11 +15,12 @@ type AuthCtx = {
 
 const Ctx = createContext<AuthCtx | null>(null);
 
+// All non-SSA users share one panel; sidebar items filter by per-user permissions.
 export const ROLE_HOMES: Record<UserRole, string> = {
   super_super_admin: "/super-super-admin",
   super_admin: "/super-admin",
-  hr: "/hr",
-  accounting: "/accounts",
+  hr: "/super-admin",
+  accounting: "/super-admin",
 };
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -45,7 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { data } = await supabase
         .from("profiles")
-        .select("id, company_id, role, full_name, email, view_as_company, created_at, updated_at")
+        .select("id, company_id, role, full_name, email, view_as_company, permissions, created_at, updated_at")
         .eq("id", userId)
         .maybeSingle();
       const p = (data as Profile) ?? null;
@@ -211,6 +212,7 @@ export async function callCreateUser(input: {
   role: "super_admin" | "hr" | "accounting";
   company_id: string;
   full_name?: string | null;
+  permissions?: string[];
 }) {
   const { data, error } = await supabase.functions.invoke("create-user", { body: input });
   if (error) return { error: error.message };
@@ -218,4 +220,17 @@ export async function callCreateUser(input: {
     return { error: String((data as { error: unknown }).error) };
   }
   return { ok: true as const, user_id: (data as { user_id: string }).user_id };
+}
+
+// Permission check. SSA and super_admin get ALL permissions implicitly.
+// Other roles (hr, accounting) check the explicit permissions array.
+export function hasPermission(profile: Profile | null | undefined, perm: string): boolean {
+  if (!profile) return false;
+  if (profile.role === "super_super_admin") return true;
+  if (profile.role === "super_admin") return true;
+  return Array.isArray(profile.permissions) && profile.permissions.includes(perm);
+}
+
+export function hasAnyPermission(profile: Profile | null | undefined, perms: string[]): boolean {
+  return perms.some((p) => hasPermission(profile, p));
 }

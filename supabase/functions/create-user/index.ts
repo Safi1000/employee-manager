@@ -1,7 +1,8 @@
 // Edge function: create-user
 // Auth: SSA can create any role for any company; super_admin can create
 // super_admin/hr/accounting for their own company only.
-// Deploy with the Supabase CLI or via the MCP `deploy_edge_function`.
+// Body: { email, password, role, company_id, full_name?, permissions[]? }
+// Deploy with the Supabase CLI or via MCP `deploy_edge_function`.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
@@ -54,6 +55,9 @@ Deno.serve(async (req) => {
   const role = String(body.role ?? "");
   const company_id = body.company_id == null ? null : String(body.company_id);
   const full_name = body.full_name == null ? null : String(body.full_name).trim();
+  const permissions = Array.isArray(body.permissions)
+    ? body.permissions.map((p) => String(p)).filter((p) => p.length > 0)
+    : [];
 
   if (!email || !password) return json({ error: "email_and_password_required" }, 400);
   if (password.length < 8) return json({ error: "password_too_short" }, 400);
@@ -87,6 +91,7 @@ Deno.serve(async (req) => {
     role,
     email,
     full_name,
+    permissions,
   });
   if (insErr) {
     await admin.auth.admin.deleteUser(created.user.id);

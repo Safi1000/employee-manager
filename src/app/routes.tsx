@@ -2,9 +2,8 @@ import { createBrowserRouter, Navigate } from "react-router";
 import RoleSelection from "./pages/RoleSelection";
 import Login from "./pages/Login";
 import RequireAuth from "./components/RequireAuth";
+import RequirePermission from "./components/RequirePermission";
 import SuperAdminLayout from "./layouts/SuperAdminLayout";
-import HRLayout from "./layouts/HRLayout";
-import AccountsLayout from "./layouts/AccountsLayout";
 import SuperSuperAdminLayout from "./layouts/SuperSuperAdminLayout";
 
 import Dashboard from "./pages/super-admin/Dashboard";
@@ -25,6 +24,10 @@ import Settings from "./pages/super-admin/Settings";
 import Companies from "./pages/super-super-admin/Companies";
 import CompanyDetail from "./pages/super-super-admin/CompanyDetail";
 
+const guard = (perms: string[], el: React.ReactNode) => (
+  <RequirePermission any={perms}>{el}</RequirePermission>
+);
+
 export const router = createBrowserRouter([
   { path: "/", Component: RoleSelection },
   { path: "/login", Component: Login },
@@ -43,55 +46,31 @@ export const router = createBrowserRouter([
   {
     path: "/super-admin",
     element: (
-      <RequireAuth roles={["super_admin"]}>
+      <RequireAuth roles={["super_admin", "hr", "accounting"]}>
         <SuperAdminLayout />
       </RequireAuth>
     ),
     children: [
       { index: true, Component: Dashboard },
-      { path: "users", Component: UserManagement },
-      { path: "employees", Component: EmployeeManagement },
-      { path: "attendance", Component: AttendanceManagement },
-      { path: "payroll", Component: PayrollManagement },
-      { path: "accounting", Component: Accounting },
-      { path: "reports", Component: FinancialReports },
-      { path: "expenses", Component: Expenses },
-      { path: "invoices", Component: Invoices },
-      { path: "cashflow", Component: Cashflow },
-      { path: "inventory", Component: Inventory },
-      { path: "compliance", Component: Compliance },
-      { path: "documents", Component: Documents },
-      { path: "settings", Component: Settings },
+      { path: "users", element: guard(["users.manage"], <UserManagement />) },
+      { path: "employees", element: guard(["employees.view", "employees.edit"], <EmployeeManagement />) },
+      { path: "attendance", element: guard(["attendance.view", "attendance.edit"], <AttendanceManagement />) },
+      { path: "payroll", element: guard(["payroll.view", "payroll.edit"], <PayrollManagement />) },
+      { path: "accounting", element: guard(["accounting.view", "accounting.edit"], <Accounting />) },
+      { path: "reports", element: guard(["reports.view"], <FinancialReports />) },
+      { path: "expenses", element: guard(["expenses.view", "expenses.edit"], <Expenses />) },
+      { path: "invoices", element: guard(["invoices.view", "invoices.edit"], <Invoices />) },
+      { path: "cashflow", element: guard(["cashflow.view"], <Cashflow />) },
+      { path: "inventory", element: guard(["inventory.view", "inventory.edit"], <Inventory />) },
+      { path: "compliance", element: guard(["compliance.view", "compliance.edit"], <Compliance />) },
+      { path: "documents", element: guard(["documents.view", "documents.edit"], <Documents />) },
+      { path: "settings", element: guard(["settings.view", "settings.edit"], <Settings />) },
     ],
   },
-  {
-    path: "/hr",
-    element: (
-      <RequireAuth roles={["hr"]}>
-        <HRLayout />
-      </RequireAuth>
-    ),
-    children: [
-      { index: true, Component: Dashboard },
-      { path: "employees", Component: EmployeeManagement },
-      { path: "attendance", Component: AttendanceManagement },
-      { path: "documents", Component: Documents },
-    ],
-  },
-  {
-    path: "/accounts",
-    element: (
-      <RequireAuth roles={["accounting"]}>
-        <AccountsLayout />
-      </RequireAuth>
-    ),
-    children: [
-      { index: true, Component: Dashboard },
-      { path: "attendance", Component: AttendanceManagement },
-      { path: "payroll", Component: PayrollManagement },
-      { path: "expenses", Component: Expenses },
-      { path: "cashflow", Component: Cashflow },
-    ],
-  },
+  // Legacy panel paths redirect to the unified panel.
+  { path: "/hr", element: <Navigate to="/super-admin" replace /> },
+  { path: "/hr/*", element: <Navigate to="/super-admin" replace /> },
+  { path: "/accounts", element: <Navigate to="/super-admin" replace /> },
+  { path: "/accounts/*", element: <Navigate to="/super-admin" replace /> },
   { path: "*", element: <Navigate to="/login" replace /> },
 ]);

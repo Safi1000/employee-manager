@@ -40,9 +40,94 @@ export type Profile = {
   full_name: string | null;
   email: string | null;
   view_as_company: string | null;
+  permissions: string[];
   created_at?: string;
   updated_at?: string;
 };
+
+// Feature permission catalog. Grouped for UI grouping.
+export const PERMISSION_GROUPS: { label: string; items: { key: string; label: string }[] }[] = [
+  {
+    label: "Employees",
+    items: [
+      { key: "employees.view", label: "View employees" },
+      { key: "employees.edit", label: "Add / edit / delete employees" },
+    ],
+  },
+  {
+    label: "Attendance",
+    items: [
+      { key: "attendance.view", label: "View attendance" },
+      { key: "attendance.edit", label: "Mark / edit attendance" },
+    ],
+  },
+  {
+    label: "Payroll",
+    items: [
+      { key: "payroll.view", label: "View payroll" },
+      { key: "payroll.edit", label: "Edit / disburse payroll" },
+    ],
+  },
+  {
+    label: "Banks & Accounting",
+    items: [
+      { key: "accounting.view", label: "View banks / receivables / payables" },
+      { key: "accounting.edit", label: "Edit banks, transfers, reconciliation" },
+    ],
+  },
+  {
+    label: "Expenses",
+    items: [
+      { key: "expenses.view", label: "View expenses & advances" },
+      { key: "expenses.edit", label: "Add / edit expenses & advances" },
+    ],
+  },
+  {
+    label: "Invoices",
+    items: [
+      { key: "invoices.view", label: "View invoices" },
+      { key: "invoices.edit", label: "Create / edit invoices & payments" },
+    ],
+  },
+  {
+    label: "Inventory",
+    items: [
+      { key: "inventory.view", label: "View inventory & issuances" },
+      { key: "inventory.edit", label: "Add / edit inventory" },
+    ],
+  },
+  {
+    label: "Documents",
+    items: [
+      { key: "documents.view", label: "View documents" },
+      { key: "documents.edit", label: "Upload / delete documents" },
+    ],
+  },
+  {
+    label: "Compliance",
+    items: [
+      { key: "compliance.view", label: "View important dates & alerts" },
+      { key: "compliance.edit", label: "Add / edit dates & alerts" },
+    ],
+  },
+  {
+    label: "Reports",
+    items: [
+      { key: "reports.view", label: "View financial reports & partnership" },
+      { key: "cashflow.view", label: "View cashflow" },
+    ],
+  },
+  {
+    label: "Settings & Users",
+    items: [
+      { key: "settings.view", label: "View settings (clients, locations, notifications)" },
+      { key: "settings.edit", label: "Edit settings" },
+      { key: "users.manage", label: "Create / edit other users" },
+    ],
+  },
+];
+
+export const ALL_PERMISSIONS = PERMISSION_GROUPS.flatMap((g) => g.items.map((i) => i.key));
 
 export type Location = {
   id: string;
