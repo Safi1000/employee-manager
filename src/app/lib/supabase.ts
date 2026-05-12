@@ -259,6 +259,8 @@ export type Partner = {
 export type Treasury = {
   id: string;
   cash_balance: number;
+  cash_opening_balance: number;
+  cash_opening_locked: boolean;
   updated_at?: string;
 };
 

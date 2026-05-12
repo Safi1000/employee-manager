@@ -131,10 +131,17 @@ export default function Expenses() {
   const [advClientFilter, setAdvClientFilter] = useState<string>("all");
   const [advModeFilter, setAdvModeFilter] = useState<"all" | "Cash" | "Bank">("all");
 
+  const currentMonthKey = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  };
+
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [clientFilter, setClientFilter] = useState<"all" | "office" | string>("all");
   const [modeFilter, setModeFilter] = useState<"all" | ExpensePaymentMode>("all");
+  const [monthFilter, setMonthFilter] = useState<string>(currentMonthKey());
+  const [advMonthFilter, setAdvMonthFilter] = useState<string>(currentMonthKey());
 
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -219,6 +226,7 @@ export default function Expenses() {
         const hay = `${a.employee_name} ${a.employee_code} ${a.client_name ?? ""} ${a.notes ?? ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
+      if (advMonthFilter !== "all" && (a.advance_date ?? "").slice(0, 7) !== advMonthFilter) return false;
       if (advClientFilter !== "all") {
         if (advClientFilter === "none" && a.client_id) return false;
         if (advClientFilter !== "none" && a.client_id !== advClientFilter) return false;
@@ -226,7 +234,7 @@ export default function Expenses() {
       if (advModeFilter !== "all" && a.payment_mode !== advModeFilter) return false;
       return true;
     });
-  }, [advances, advSearch, advClientFilter, advModeFilter]);
+  }, [advances, advSearch, advMonthFilter, advClientFilter, advModeFilter]);
 
   const advTotals = useMemo(() => {
     const t = { count: filteredAdvances.length, total: 0 };
@@ -271,13 +279,27 @@ export default function Expenses() {
         const hay = `${e.description ?? ""} ${e.category_name ?? ""} ${e.vendor_name ?? ""} ${e.client_name ?? ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
+      if (monthFilter !== "all" && (e.expense_date ?? "").slice(0, 7) !== monthFilter) return false;
       if (categoryFilter !== "all" && e.category_id !== categoryFilter) return false;
       if (clientFilter === "office" && e.client_id !== null) return false;
       if (clientFilter !== "all" && clientFilter !== "office" && e.client_id !== clientFilter) return false;
       if (modeFilter !== "all" && e.payment_mode !== modeFilter) return false;
       return true;
     });
-  }, [expenses, search, categoryFilter, clientFilter, modeFilter]);
+  }, [expenses, search, monthFilter, categoryFilter, clientFilter, modeFilter]);
+
+  // Last 18 months of options + "All" for the month select.
+  const monthOptions = useMemo(() => {
+    const opts: { key: string; label: string }[] = [];
+    const d = new Date();
+    for (let i = 0; i < 18; i++) {
+      const dt = new Date(d.getFullYear(), d.getMonth() - i, 1);
+      const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
+      const label = dt.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+      opts.push({ key, label });
+    }
+    return opts;
+  }, []);
 
   const expenseMetrics = useMemo(() => {
     let total = 0;
@@ -1199,6 +1221,17 @@ export default function Expenses() {
                 />
               </div>
               <select
+                value={monthFilter}
+                onChange={(e) => setMonthFilter(e.target.value)}
+                className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                title="Filter by month"
+              >
+                <option value="all">All Months</option>
+                {monthOptions.map((m) => (
+                  <option key={m.key} value={m.key}>{m.label}</option>
+                ))}
+              </select>
+              <select
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value)}
                 className="px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -1383,6 +1416,17 @@ export default function Expenses() {
                     className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                   />
                 </div>
+                <select
+                  value={advMonthFilter}
+                  onChange={(e) => setAdvMonthFilter(e.target.value)}
+                  className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  title="Filter by month"
+                >
+                  <option value="all">All Months</option>
+                  {monthOptions.map((m) => (
+                    <option key={m.key} value={m.key}>{m.label}</option>
+                  ))}
+                </select>
                 <select
                   value={advClientFilter}
                   onChange={(e) => setAdvClientFilter(e.target.value)}

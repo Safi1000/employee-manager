@@ -66,6 +66,11 @@ export default function Accounting() {
 
   const [banks, setBanks] = useState<BankAccount[]>([]);
   const [cashBalance, setCashBalance] = useState<number>(0);
+  const [cashOpeningBalance, setCashOpeningBalance] = useState<number>(0);
+  const [cashOpeningLocked, setCashOpeningLocked] = useState<boolean>(false);
+  const [treasuryId, setTreasuryId] = useState<string | null>(null);
+  const [isCashOpeningOpen, setIsCashOpeningOpen] = useState(false);
+  const [cashOpeningInput, setCashOpeningInput] = useState<string>("");
   const [transactions, setTransactions] = useState<BankTransaction[]>([]);
   const [payables, setPayables] = useState<PayableRow[]>([]);
   const [receivables, setReceivables] = useState<ReceivableRow[]>([]);
@@ -221,6 +226,9 @@ export default function Accounting() {
     if (invoicesRes.error) setError(invoicesRes.error.message);
     setBanks((banksRes.data ?? []) as BankAccount[]);
     setCashBalance(Number(treasuryRes.data?.cash_balance ?? 0));
+    setCashOpeningBalance(Number(treasuryRes.data?.cash_opening_balance ?? 0));
+    setCashOpeningLocked(Boolean(treasuryRes.data?.cash_opening_locked ?? false));
+    setTreasuryId(treasuryRes.data?.id ?? null);
     setTransactions((txRes.data ?? []) as BankTransaction[]);
     setPayables((payablesRes.data ?? []) as PayableRow[]);
 
@@ -346,6 +354,60 @@ export default function Accounting() {
         owner_client_id: "",
       });
       setIsBankModalOpen(false);
+      await loadAll();
+    } catch (err: any) {
+      setError(err.message ?? String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSetCashOpening = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (cashOpeningLocked) return;
+    const amt = Number(cashOpeningInput);
+    if (!Number.isFinite(amt) || amt < 0) {
+      setError("Opening cash balance must be a non-negative number.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      let id = treasuryId;
+      if (!id) {
+        const { data: ins, error: insErr } = await supabase
+          .from("treasury")
+          .insert({
+            cash_balance: amt,
+            cash_opening_balance: amt,
+            cash_opening_locked: true,
+          })
+          .select("id")
+          .single();
+        if (insErr) throw insErr;
+        id = (ins as { id: string }).id;
+      } else {
+        const { error: upErr } = await supabase
+          .from("treasury")
+          .update({
+            cash_balance: cashBalance + amt,
+            cash_opening_balance: amt,
+            cash_opening_locked: true,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", id);
+        if (upErr) throw upErr;
+      }
+      await logTransaction({
+        bank_account_id: null,
+        kind: "opening",
+        amount: amt,
+        cash_delta: amt,
+        account_delta: 0,
+        description: "Opening cash balance",
+      });
+      setIsCashOpeningOpen(false);
+      setCashOpeningInput("");
       await loadAll();
     } catch (err: any) {
       setError(err.message ?? String(err));
@@ -1067,8 +1129,31 @@ export default function Accounting() {
         {activeTab === "banks" && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
             <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-              <p className="text-xs text-green-700 mb-1">Cash Balance (Treasury)</p>
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-green-700 mb-1">Cash Balance (Treasury)</p>
+                {!cashOpeningLocked ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCashOpeningInput("");
+                      setIsCashOpeningOpen(true);
+                    }}
+                    className="text-[11px] px-2 py-0.5 rounded border border-green-300 text-green-800 hover:bg-green-100"
+                  >
+                    Set Opening
+                  </button>
+                ) : (
+                  <span className="text-[10px] text-green-700/70" title={`Opening balance set to PKR ${cashOpeningBalance.toLocaleString()}`}>
+                    Opening locked
+                  </span>
+                )}
+              </div>
               <p className="text-2xl text-green-900">PKR {cashBalance.toLocaleString()}</p>
+              {cashOpeningLocked && (
+                <p className="text-[11px] text-green-700/80 mt-1">
+                  Opening: PKR {cashOpeningBalance.toLocaleString()}
+                </p>
+              )}
             </div>
             <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
               <p className="text-xs text-blue-700 mb-1">Total Account Balance</p>
@@ -2045,6 +2130,43 @@ export default function Accounting() {
             </div>
           </form>
         )}
+      </Modal>
+
+      <Modal
+        isOpen={isCashOpeningOpen}
+        onClose={() => setIsCashOpeningOpen(false)}
+        title="Set Opening Cash Balance"
+        size="sm"
+      >
+        <form className="space-y-4" onSubmit={handleSetCashOpening}>
+          <div>
+            <p className="text-sm text-slate-600 mb-3">
+              Enter the cash on hand at the start of operations. This locks once saved —
+              you won&apos;t be able to change it later. Use <b>Reconcile</b> if you need
+              to correct the live balance afterwards.
+            </p>
+            <label className="block text-sm text-slate-700 mb-1">Opening Cash (PKR) *</label>
+            <input
+              required
+              autoFocus
+              type="number"
+              step="0.01"
+              min="0"
+              value={cashOpeningInput}
+              onChange={(e) => setCashOpeningInput(e.target.value)}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+              placeholder="0.00"
+            />
+          </div>
+          <div className="flex items-center gap-3 pt-2">
+            <Button type="submit" variant="primary" size="md" className="flex-1" disabled={submitting}>
+              {submitting ? "Saving…" : "Set & Lock"}
+            </Button>
+            <Button type="button" variant="secondary" size="md" onClick={() => setIsCashOpeningOpen(false)}>
+              Cancel
+            </Button>
+          </div>
+        </form>
       </Modal>
 
       <Modal isOpen={isTransferModalOpen} onClose={() => setIsTransferModalOpen(false)} title="Wire Transfer" size="md">

@@ -14,7 +14,7 @@ import {
   Legend,
 } from "recharts";
 import { supabase } from "../../lib/supabase";
-import type { Expense, Invoice, Payslip } from "../../lib/supabase";
+import type { Expense, InvoicePayment, Payslip } from "../../lib/supabase";
 import { TrendingUp, TrendingDown, Wallet } from "lucide-react";
 
 type Row = {
@@ -69,7 +69,7 @@ const currency = (n: number) =>
   `PKR ${Math.round(n).toLocaleString("en-PK")}`;
 
 export default function Cashflow() {
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [invoicePayments, setInvoicePayments] = useState<InvoicePayment[]>([]);
   const [payslips, setPayslips] = useState<Payslip[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,11 +86,11 @@ export default function Cashflow() {
       try {
         const sinceMonthIso = `${windowStart}-01`;
 
-        const [invRes, psRes, exRes] = await Promise.all([
+        const [payRes, psRes, exRes] = await Promise.all([
           supabase
-            .from("invoices")
-            .select("invoice_amount, invoice_date")
-            .gte("invoice_date", sinceMonthIso),
+            .from("invoice_payments")
+            .select("amount, payment_date")
+            .gte("payment_date", sinceMonthIso),
           supabase
             .from("payslips")
             .select("*")
@@ -102,12 +102,12 @@ export default function Cashflow() {
             .gte("expense_date", sinceMonthIso),
         ]);
 
-        if (invRes.error) throw invRes.error;
+        if (payRes.error) throw payRes.error;
         if (psRes.error) throw psRes.error;
         if (exRes.error) throw exRes.error;
 
         if (cancelled) return;
-        setInvoices((invRes.data ?? []) as Invoice[]);
+        setInvoicePayments((payRes.data ?? []) as InvoicePayment[]);
         setPayslips((psRes.data ?? []) as Payslip[]);
         setExpenses((exRes.data ?? []) as Expense[]);
       } catch (e: any) {
@@ -122,13 +122,14 @@ export default function Cashflow() {
   }, [windowStart]);
 
   const rows: Row[] = useMemo(() => {
+    // Revenue is cash-basis: only invoice_payments actually received count.
     const revenueByMonth = new Map<string, number>();
-    for (const inv of invoices) {
-      const key = monthKeyFromIso(inv.invoice_date);
+    for (const p of invoicePayments) {
+      const key = monthKeyFromIso(p.payment_date);
       if (!key) continue;
       revenueByMonth.set(
         key,
-        (revenueByMonth.get(key) ?? 0) + Number(inv.invoice_amount ?? 0),
+        (revenueByMonth.get(key) ?? 0) + Number(p.amount ?? 0),
       );
     }
 
@@ -174,7 +175,7 @@ export default function Cashflow() {
         net: revenue - payroll - exp,
       };
     });
-  }, [invoices, payslips, expenses, months]);
+  }, [invoicePayments, payslips, expenses, months]);
 
   const totals = useMemo(() => {
     const revenue = rows.reduce((s, r) => s + r.revenue, 0);
@@ -203,7 +204,7 @@ export default function Cashflow() {
             value={currency(totals.revenue)}
             icon={<Wallet className="w-5 h-5 text-emerald-600" />}
             accent="emerald"
-            subtitle={windowLabel}
+            subtitle={`Payments received · ${windowLabel}`}
           />
           <SummaryTile
             label="Total Payroll"
@@ -233,9 +234,9 @@ export default function Cashflow() {
             <div>
               <h2 className="text-base text-slate-900">Monthly Cashflow</h2>
               <p className="text-xs text-slate-500 mt-1">
-                Revenue = sum of invoice amounts by invoice date. Payroll =
-                disbursed net salaries. Expenses include Cash/Bank expenses and
-                paid payables.
+                Revenue = invoice payments actually received, bucketed by payment date.
+                Payroll = disbursed net salaries (when paid out). Expenses include
+                Cash/Bank expenses and paid payables — all cash-basis.
               </p>
             </div>
             <Button
