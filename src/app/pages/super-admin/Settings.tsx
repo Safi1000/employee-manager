@@ -402,7 +402,7 @@ export default function Settings() {
           Add Client
         </Button>
       </div>
-      <div className="space-y-3">
+      <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-1">
         {loading && (
           <div className="text-sm text-slate-500 flex items-center gap-2">
             <Loader2 className="w-4 h-4 animate-spin" /> Loading…
