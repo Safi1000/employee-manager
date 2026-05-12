@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Search, Loader2, UserPlus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Search, Loader2, UserPlus, Pencil, Trash2, KeyRound } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -9,7 +9,7 @@ import {
   type UserRole,
   PERMISSION_GROUPS,
 } from "../../lib/supabase";
-import { callCreateUser, useAuth } from "../../lib/auth";
+import { callCreateUser, callChangePassword, useAuth } from "../../lib/auth";
 
 const ROLE_LABEL: Record<UserRole, string> = {
   super_super_admin: "Super Super Admin",
@@ -82,6 +82,12 @@ export default function UserManagement() {
   const [editTitle, setEditTitle] = useState("");
   const [editPerms, setEditPerms] = useState<Set<string>>(new Set());
   const [editSubmitting, setEditSubmitting] = useState(false);
+
+  // Reset password
+  const [resetPwUserId, setResetPwUserId] = useState<string | null>(null);
+  const [resetPwValue, setResetPwValue] = useState("");
+  const [resetPwSubmitting, setResetPwSubmitting] = useState(false);
+  const [resetPwSuccess, setResetPwSuccess] = useState(false);
 
   const loadAll = async () => {
     setLoading(true);
@@ -163,6 +169,31 @@ export default function UserManagement() {
     }
     setEditUser(null);
     await loadAll();
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetPwUserId) return;
+    setResetPwSubmitting(true);
+    setError(null);
+    const res = await callChangePassword({
+      new_password: resetPwValue,
+      target_user_id: resetPwUserId,
+    });
+    setResetPwSubmitting(false);
+    if ("error" in res && res.error) {
+      const msg = res.error === "only_super_super_admin_can_change_super_admin_password"
+        ? "Only Super Super Admin can reset a Super Admin's password."
+        : res.error;
+      setError(msg);
+      return;
+    }
+    setResetPwSuccess(true);
+    setTimeout(() => {
+      setResetPwUserId(null);
+      setResetPwValue("");
+      setResetPwSuccess(false);
+    }, 2000);
   };
 
   const handleDelete = async (u: Profile) => {
@@ -270,6 +301,13 @@ export default function UserManagement() {
                             title="Edit"
                           >
                             <Pencil className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => { setResetPwUserId(u.id); setResetPwValue(""); setResetPwSuccess(false); }}
+                            className="p-1.5 rounded text-amber-600 hover:bg-amber-50"
+                            title="Reset Password"
+                          >
+                            <KeyRound className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleDelete(u)}
@@ -441,6 +479,53 @@ export default function UserManagement() {
                 Save Changes
               </Button>
               <Button type="button" variant="secondary" size="md" onClick={() => setEditUser(null)}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      <Modal
+        isOpen={!!resetPwUserId}
+        onClose={() => { setResetPwUserId(null); setResetPwValue(""); setResetPwSuccess(false); }}
+        title="Reset Password"
+        size="sm"
+      >
+        {resetPwSuccess ? (
+          <div className="text-center py-4">
+            <div className="w-12 h-12 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-3">
+              <KeyRound className="w-6 h-6 text-green-600" strokeWidth={1.5} />
+            </div>
+            <p className="text-sm text-green-700 font-medium">Password reset successfully!</p>
+            <p className="text-xs text-slate-500 mt-1">The user will be prompted to set a new password on next login.</p>
+          </div>
+        ) : (
+          <form onSubmit={handleResetPassword} className="space-y-4">
+            <p className="text-sm text-slate-600">
+              Set a new temporary password for this user. They will be required to change it on their next login.
+            </p>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">New Temporary Password</label>
+              <input
+                type="text"
+                value={resetPwValue}
+                onChange={(e) => setResetPwValue(e.target.value)}
+                required
+                minLength={8}
+                placeholder="At least 8 characters"
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+              />
+            </div>
+            {error && (
+              <div className="text-sm text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded">{error}</div>
+            )}
+            <div className="flex items-center gap-3 pt-1">
+              <Button type="submit" variant="primary" size="md" className="flex-1" disabled={resetPwSubmitting}>
+                {resetPwSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Reset Password
+              </Button>
+              <Button type="button" variant="secondary" size="md" onClick={() => { setResetPwUserId(null); setResetPwValue(""); }}>
                 Cancel
               </Button>
             </div>

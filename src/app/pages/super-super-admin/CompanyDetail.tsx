@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
-import { ArrowLeft, Plus, Loader2, UserPlus } from "lucide-react";
+import { ArrowLeft, Plus, Loader2, UserPlus, KeyRound } from "lucide-react";
 import Button from "../../components/Button";
+import Modal from "../../components/Modal";
 import { supabase, type Company, type Profile, type UserRole } from "../../lib/supabase";
-import { callCreateUser } from "../../lib/auth";
+import { callCreateUser, callChangePassword } from "../../lib/auth";
 
 const ROLE_LABEL: Record<UserRole, string> = {
   super_super_admin: "Super Super Admin",
@@ -27,6 +28,12 @@ export default function CompanyDetail() {
   const [inviteName, setInviteName] = useState("");
   const [inviteTitle, setInviteTitle] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  // Reset password
+  const [resetPwUserId, setResetPwUserId] = useState<string | null>(null);
+  const [resetPwValue, setResetPwValue] = useState("");
+  const [resetPwSubmitting, setResetPwSubmitting] = useState(false);
+  const [resetPwSuccess, setResetPwSuccess] = useState(false);
 
   const loadAll = async () => {
     if (!id) return;
@@ -77,6 +84,28 @@ export default function CompanyDetail() {
   };
 
   if (!id) return null;
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetPwUserId) return;
+    setResetPwSubmitting(true);
+    setError(null);
+    const res = await callChangePassword({
+      new_password: resetPwValue,
+      target_user_id: resetPwUserId,
+    });
+    setResetPwSubmitting(false);
+    if ("error" in res && res.error) {
+      setError(res.error);
+      return;
+    }
+    setResetPwSuccess(true);
+    setTimeout(() => {
+      setResetPwUserId(null);
+      setResetPwValue("");
+      setResetPwSuccess(false);
+    }, 2000);
+  };
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -162,6 +191,7 @@ export default function CompanyDetail() {
                       <th className="px-6 py-3 text-left text-xs uppercase tracking-wider text-slate-500">Name</th>
                       <th className="px-6 py-3 text-left text-xs uppercase tracking-wider text-slate-500">Email</th>
                       <th className="px-6 py-3 text-left text-xs uppercase tracking-wider text-slate-500">Title</th>
+                      <th className="px-6 py-3 text-right text-xs uppercase tracking-wider text-slate-500">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
@@ -175,6 +205,15 @@ export default function CompanyDetail() {
                             <span className="ml-2 text-xs text-blue-600">(admin)</span>
                           )}
                         </td>
+                        <td className="px-6 py-4 text-right">
+                          <button
+                            onClick={() => { setResetPwUserId(u.id); setResetPwValue(""); setResetPwSuccess(false); }}
+                            className="p-1.5 rounded text-amber-600 hover:bg-amber-50"
+                            title="Reset Password"
+                          >
+                            <KeyRound className="w-4 h-4" />
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -184,6 +223,53 @@ export default function CompanyDetail() {
           </>
         )}
       </div>
+
+      <Modal
+        isOpen={!!resetPwUserId}
+        onClose={() => { setResetPwUserId(null); setResetPwValue(""); setResetPwSuccess(false); }}
+        title="Reset Password"
+        size="sm"
+      >
+        {resetPwSuccess ? (
+          <div className="text-center py-4">
+            <div className="w-12 h-12 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-3">
+              <KeyRound className="w-6 h-6 text-green-600" strokeWidth={1.5} />
+            </div>
+            <p className="text-sm text-green-700 font-medium">Password reset successfully!</p>
+            <p className="text-xs text-slate-500 mt-1">The user will be prompted to set a new password on next login.</p>
+          </div>
+        ) : (
+          <form onSubmit={handleResetPassword} className="space-y-4">
+            <p className="text-sm text-slate-600">
+              Set a new temporary password. The user will be required to change it on their next login.
+            </p>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">New Temporary Password</label>
+              <input
+                type="text"
+                value={resetPwValue}
+                onChange={(e) => setResetPwValue(e.target.value)}
+                required
+                minLength={8}
+                placeholder="At least 8 characters"
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+              />
+            </div>
+            {error && (
+              <div className="text-sm text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded">{error}</div>
+            )}
+            <div className="flex items-center gap-3 pt-1">
+              <Button type="submit" variant="primary" size="md" className="flex-1" disabled={resetPwSubmitting}>
+                {resetPwSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Reset Password
+              </Button>
+              <Button type="button" variant="secondary" size="md" onClick={() => { setResetPwUserId(null); setResetPwValue(""); }}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
     </div>
   );
 }

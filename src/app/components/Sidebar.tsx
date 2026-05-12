@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
 import { NavLink, useLocation } from "react-router";
-import { LucideIcon, LogOut, Menu, X } from "lucide-react";
+import { LucideIcon, LogOut, Menu, X, KeyRound } from "lucide-react";
 import { useAuth } from "../lib/auth";
+import ForcePasswordChange from "./ForcePasswordChange";
+import ChangePasswordModal from "./ChangePasswordModal";
 
 interface SidebarProps {
   title: string;
@@ -16,6 +18,7 @@ export default function Sidebar({ title, links }: SidebarProps) {
   const { profile, signOut } = useAuth();
   const location = useLocation();
   const [open, setOpen] = useState(false);
+  const [pwModalOpen, setPwModalOpen] = useState(false);
 
   // Close drawer on route change
   useEffect(() => {
@@ -66,6 +69,13 @@ export default function Sidebar({ title, links }: SidebarProps) {
           {profile.full_name ?? profile.email}
         </div>
       )}
+      <button
+        onClick={() => setPwModalOpen(true)}
+        className="w-full flex items-center gap-3 px-4 py-2.5 rounded-md text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
+      >
+        <KeyRound className="w-4 h-4" strokeWidth={1.5} />
+        <span>Change Password</span>
+      </button>
       <button
         onClick={handleSignOut}
         className="w-full flex items-center gap-3 px-4 py-2.5 rounded-md text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
@@ -125,6 +135,9 @@ export default function Sidebar({ title, links }: SidebarProps) {
         {navItems}
         {footer}
       </aside>
+
+      <ForcePasswordChange />
+      <ChangePasswordModal isOpen={pwModalOpen} onClose={() => setPwModalOpen(false)} />
     </>
   );
 }

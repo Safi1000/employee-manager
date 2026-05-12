@@ -94,6 +94,7 @@ Deno.serve(async (req) => {
     email,
     full_name,
     permissions,
+    must_change_password: true,
   });
   if (insErr) {
     await admin.auth.admin.deleteUser(created.user.id);

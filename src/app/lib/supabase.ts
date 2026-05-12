@@ -42,6 +42,7 @@ export type Profile = {
   email: string | null;
   view_as_company: string | null;
   permissions: string[];
+  must_change_password: boolean;
   created_at?: string;
   updated_at?: string;
 };

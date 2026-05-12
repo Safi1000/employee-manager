@@ -46,7 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { data } = await supabase
         .from("profiles")
-        .select("id, company_id, role, title, full_name, email, view_as_company, permissions, created_at, updated_at")
+        .select("id, company_id, role, title, full_name, email, view_as_company, permissions, must_change_password, created_at, updated_at")
         .eq("id", userId)
         .maybeSingle();
       const p = (data as Profile) ?? null;
@@ -234,4 +234,17 @@ export function hasPermission(profile: Profile | null | undefined, perm: string)
 
 export function hasAnyPermission(profile: Profile | null | undefined, perms: string[]): boolean {
   return perms.some((p) => hasPermission(profile, p));
+}
+
+export async function callChangePassword(input: {
+  new_password: string;
+  current_password?: string;
+  target_user_id?: string;
+}) {
+  const { data, error } = await supabase.functions.invoke("change-password", { body: input });
+  if (error) return { error: error.message };
+  if (data && typeof data === "object" && "error" in data) {
+    return { error: String((data as { error: unknown }).error) };
+  }
+  return { ok: true as const };
 }
