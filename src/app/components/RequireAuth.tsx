@@ -11,7 +11,7 @@ export default function RequireAuth({
   roles?: UserRole[];
   children: ReactNode;
 }) {
-  const { session, profile, company, loading } = useAuth();
+  const { session, profile, company, loading, signOut } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -42,7 +42,12 @@ export default function RequireAuth({
                 ? "Your company's subscription has expired. Contact your administrator to renew."
                 : "Your company has been deactivated. Contact your administrator for help."}
             </p>
-            <a href="/login" className="text-sm text-blue-600 hover:underline">Sign out</a>
+            <button
+              onClick={signOut}
+              className="text-sm text-blue-600 hover:underline"
+            >
+              Sign out
+            </button>
           </div>
         </div>
       );

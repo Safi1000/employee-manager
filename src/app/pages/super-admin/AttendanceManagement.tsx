@@ -66,6 +66,7 @@ export default function AttendanceManagement() {
   const [clientFilter, setClientFilter] = useState("all");
   const [locationFilter, setLocationFilter] = useState("all");
   const [shiftFilter, setShiftFilter] = useState<"all" | "day" | "night">("all");
+  const [empSearch, setEmpSearch] = useState("");
   const [historyFrom, setHistoryFrom] = useState<string>(daysAgo(13));
   const [historyTo, setHistoryTo] = useState<string>(today());
 
@@ -415,13 +416,15 @@ export default function AttendanceManagement() {
   }, [historyFrom, historyTo, employees, clientFilter, locationFilter, shiftFilter]);
 
   const filteredEmployees = useMemo(() => {
+    const q = empSearch.trim().toLowerCase();
     return employees.filter((e) => {
       if (clientFilter !== "all" && e.client_id !== clientFilter) return false;
       if (locationFilter !== "all" && e.location_id !== locationFilter) return false;
       if (shiftFilter !== "all" && e.shift !== shiftFilter) return false;
+      if (q && !e.full_name.toLowerCase().includes(q) && !e.employee_code.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [employees, clientFilter, locationFilter, shiftFilter]);
+  }, [employees, clientFilter, locationFilter, shiftFilter, empSearch]);
 
   const markStatus = async (employeeId: string, status: AttendanceStatus) => {
     setSaving((s) => ({ ...s, [employeeId]: true }));
@@ -734,7 +737,7 @@ export default function AttendanceManagement() {
         )}
 
         <div className="bg-white rounded-lg border border-slate-200 mb-6 p-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div>
               <label className="block text-sm text-slate-700 mb-2">Date</label>
               <div className="relative">
@@ -748,6 +751,19 @@ export default function AttendanceManagement() {
                   type="date"
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-2">Search Employee</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />
+                <input
+                  type="text"
+                  placeholder="Name or ID…"
+                  value={empSearch}
+                  onChange={(e) => setEmpSearch(e.target.value)}
                   className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                 />
               </div>
