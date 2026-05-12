@@ -221,6 +221,71 @@ export default function AttendanceManagement() {
     setBulkSelected(new Set());
   };
 
+  // ---- Inline employee calendar (read-only swap of metrics area) ----
+  const [viewEmployee, setViewEmployee] = useState<EmployeeLite | null>(null);
+  const [viewMonth, setViewMonth] = useState<string>(today().slice(0, 7));
+  const [viewRecords, setViewRecords] = useState<Map<string, AttendanceStatus>>(new Map());
+  const [viewLoading, setViewLoading] = useState(false);
+
+  useEffect(() => {
+    if (!viewEmployee) return;
+    let cancelled = false;
+    (async () => {
+      setViewLoading(true);
+      const start = `${viewMonth}-01`;
+      const [y, m] = viewMonth.split("-").map(Number);
+      const lastDay = new Date(y, m, 0).getDate();
+      const end = `${viewMonth}-${String(lastDay).padStart(2, "0")}`;
+      const { data } = await supabase
+        .from("attendance_records")
+        .select("attendance_date, status")
+        .eq("employee_id", viewEmployee.id)
+        .gte("attendance_date", start)
+        .lte("attendance_date", end);
+      if (cancelled) return;
+      const map = new Map<string, AttendanceStatus>();
+      for (const r of (data ?? []) as { attendance_date: string; status: AttendanceStatus }[]) {
+        map.set(r.attendance_date, r.status);
+      }
+      setViewRecords(map);
+      setViewLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [viewEmployee, viewMonth]);
+
+  const viewCalendarCells = useMemo(() => {
+    const [y, m] = viewMonth.split("-").map(Number);
+    const first = new Date(y, m - 1, 1);
+    const lastDay = new Date(y, m, 0).getDate();
+    const leading = first.getDay();
+    const cells: { date: string | null; day: number | null }[] = [];
+    for (let i = 0; i < leading; i++) cells.push({ date: null, day: null });
+    for (let d = 1; d <= lastDay; d++) {
+      const date = `${viewMonth}-${String(d).padStart(2, "0")}`;
+      cells.push({ date, day: d });
+    }
+    while (cells.length % 7 !== 0) cells.push({ date: null, day: null });
+    return cells;
+  }, [viewMonth]);
+
+  const viewStats = useMemo(() => {
+    let p = 0, a = 0, l = 0;
+    for (const s of viewRecords.values()) {
+      if (s === "Present") p++;
+      else if (s === "Absent") a++;
+      else if (s === "Leave") l++;
+    }
+    return { p, a, l };
+  }, [viewRecords]);
+
+  const shiftViewMonth = (delta: number) => {
+    const [y, m] = viewMonth.split("-").map(Number);
+    const d = new Date(y, m - 1 + delta, 1);
+    setViewMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  };
+
   const dateInputRef = useRef<HTMLInputElement>(null);
   const fromInputRef = useRef<HTMLInputElement>(null);
   const toInputRef = useRef<HTMLInputElement>(null);
@@ -542,6 +607,130 @@ export default function AttendanceManagement() {
           </div>
         )}
 
+        {/* Metrics row OR per-employee calendar */}
+        {!viewEmployee ? (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div className="bg-white rounded-lg border border-slate-200 p-4">
+              <p className="text-xs text-slate-500 mb-1">Present</p>
+              <p className="text-2xl text-green-700">{stats.p}</p>
+              <p className="text-[11px] text-slate-400 mt-1">on {date}</p>
+            </div>
+            <div className="bg-white rounded-lg border border-slate-200 p-4">
+              <p className="text-xs text-slate-500 mb-1">Absent</p>
+              <p className="text-2xl text-red-700">{stats.a}</p>
+              <p className="text-[11px] text-slate-400 mt-1">on {date}</p>
+            </div>
+            <div className="bg-white rounded-lg border border-slate-200 p-4">
+              <p className="text-xs text-slate-500 mb-1">Leave</p>
+              <p className="text-2xl text-amber-700">{stats.l}</p>
+              <p className="text-[11px] text-slate-400 mt-1">on {date}</p>
+            </div>
+            <div className="bg-white rounded-lg border border-slate-200 p-4">
+              <p className="text-xs text-slate-500 mb-1">Unmarked</p>
+              <p className="text-2xl text-slate-700">{stats.unm}</p>
+              <p className="text-[11px] text-slate-400 mt-1">{filteredEmployees.length} in filter</p>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-white rounded-lg border border-slate-200 mb-6 p-4 md:p-6">
+            <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+              <div className="min-w-0">
+                <h3 className="text-base text-slate-900 truncate">
+                  {viewEmployee.full_name}
+                </h3>
+                <p className="text-xs text-slate-500 font-mono">
+                  {viewEmployee.employee_code}
+                  {viewEmployee.client_name && ` · ${viewEmployee.client_name}`}
+                  {viewEmployee.location_name && ` · ${viewEmployee.location_name}`}
+                </p>
+                <p className="text-xs text-slate-600 mt-2">
+                  <span className="text-green-700">{viewStats.p} present</span> ·{" "}
+                  <span className="text-red-700">{viewStats.a} absent</span> ·{" "}
+                  <span className="text-amber-700">{viewStats.l} leave</span> ·{" "}
+                  <span className="text-slate-500">view-only</span>
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => shiftViewMonth(-1)}
+                  className="p-1.5 rounded hover:bg-slate-100 text-slate-700"
+                  title="Previous month"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <span className="text-sm text-slate-900 min-w-[110px] text-center">
+                  {new Date(`${viewMonth}-01T00:00:00`).toLocaleDateString(undefined, {
+                    month: "long",
+                    year: "numeric",
+                  })}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => shiftViewMonth(1)}
+                  className="p-1.5 rounded hover:bg-slate-100 text-slate-700"
+                  title="Next month"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewEmployee(null)}
+                  className="ml-2 text-xs text-slate-500 hover:text-slate-900 underline"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-7 gap-1 text-[10px] uppercase tracking-wider text-slate-500 mb-1">
+              {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+                <div key={d} className="text-center py-1">{d}</div>
+              ))}
+            </div>
+
+            {viewLoading ? (
+              <div className="flex items-center gap-2 text-slate-500 py-6">
+                <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+              </div>
+            ) : (
+              <div className="grid grid-cols-7 gap-1">
+                {viewCalendarCells.map((c, i) => {
+                  if (!c.date) {
+                    return <div key={i} className="h-12 rounded bg-slate-50/50" />;
+                  }
+                  const status = viewRecords.get(c.date);
+                  const tone =
+                    status === "Present"
+                      ? "bg-green-100 text-green-900 border-green-300"
+                      : status === "Absent"
+                        ? "bg-red-100 text-red-900 border-red-300"
+                        : status === "Leave"
+                          ? "bg-amber-100 text-amber-900 border-amber-300"
+                          : "bg-white text-slate-500 border-slate-200";
+                  return (
+                    <div
+                      key={c.date}
+                      className={`h-12 rounded border text-left p-1.5 ${tone}`}
+                      title={status ? `${c.date}: ${status}` : `${c.date}: Unmarked`}
+                    >
+                      <div className="text-xs">{c.day}</div>
+                      {status && (
+                        <div className="text-[9px] uppercase tracking-wider opacity-80">
+                          {status[0]}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <p className="text-[11px] text-slate-500 mt-2">
+              View-only. P = Present, A = Absent, L = Leave. White = unmarked.
+            </p>
+          </div>
+        )}
+
         <div className="bg-white rounded-lg border border-slate-200 mb-6 p-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
@@ -657,10 +846,26 @@ export default function AttendanceManagement() {
                     const isSaving = !!saving[employee.id];
                     return (
                       <tr key={employee.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-6 py-4 text-sm text-slate-600 font-mono">
-                          {employee.employee_code}
+                        <td className="px-6 py-4 text-sm font-mono">
+                          <button
+                            type="button"
+                            onClick={() => setViewEmployee(employee)}
+                            className="text-blue-700 hover:text-blue-900 hover:underline"
+                            title="View attendance calendar"
+                          >
+                            {employee.employee_code}
+                          </button>
                         </td>
-                        <td className="px-6 py-4 text-sm text-slate-900">{employee.full_name}</td>
+                        <td className="px-6 py-4 text-sm">
+                          <button
+                            type="button"
+                            onClick={() => setViewEmployee(employee)}
+                            className="text-slate-900 hover:text-blue-700 hover:underline text-left"
+                            title="View attendance calendar"
+                          >
+                            {employee.full_name}
+                          </button>
+                        </td>
                         <td className="px-6 py-4 text-sm text-slate-600">
                           {employee.client_name ?? "—"}
                         </td>

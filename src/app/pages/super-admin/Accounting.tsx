@@ -124,6 +124,8 @@ export default function Accounting() {
   const [openingBalanceValue, setOpeningBalanceValue] = useState<string>("");
   const [paymentInvoiceId, setPaymentInvoiceId] = useState<string>("");
   const [paymentAmount, setPaymentAmount] = useState<string>("");
+  const [paymentStandalone, setPaymentStandalone] = useState<boolean>(false);
+  const [standalonePayments, setStandalonePayments] = useState<Map<string, number>>(new Map());
   const [paymentVia, setPaymentVia] = useState<"Cash" | "Bank">("Bank");
   const [paymentBankId, setPaymentBankId] = useState<string>("");
   const [paymentNotes, setPaymentNotes] = useState<string>("");
@@ -181,7 +183,12 @@ export default function Accounting() {
       if (invs.length === 0 && Number(c.opening_balance ?? 0) === 0) continue;
       const total_invoiced = invs.reduce((s, i) => s + Number(i.invoice_amount), 0);
       const total_withholding = invs.reduce((s, i) => s + Number(i.withholding_tax ?? 0), 0);
-      const total_received = invs.reduce((s, i) => s + Number(i.amount_received), 0);
+      const invoice_received = invs.reduce((s, i) => s + Number(i.amount_received), 0);
+      // Note: for the month-filtered view, standalone payments are still summed
+      // for the whole client (not month-bucketed), since they aren't tied to an
+      // invoice month. Acceptable for now.
+      const standalone_received = standalonePayments.get(c.id) ?? 0;
+      const total_received = invoice_received + standalone_received;
       const outstanding =
         Number(c.opening_balance ?? 0) + total_invoiced - total_withholding - total_received;
       rows.push({
@@ -194,7 +201,7 @@ export default function Accounting() {
       });
     }
     return rows;
-  }, [receivables, receivablesMonth, allClientsForRec, allInvoicesForRec]);
+  }, [receivables, receivablesMonth, allClientsForRec, allInvoicesForRec, standalonePayments]);
 
   const receivableTotals = useMemo(() => {
     let opening = 0;
@@ -261,7 +268,16 @@ export default function Accounting() {
   const loadAll = async () => {
     setLoading(true);
     setError(null);
-    const [banksRes, treasuryRes, txRes, payablesRes, clientsRes, invoicesRes, partnersRes] = await Promise.all([
+    const [
+      banksRes,
+      treasuryRes,
+      txRes,
+      payablesRes,
+      clientsRes,
+      invoicesRes,
+      partnersRes,
+      standalonePayRes,
+    ] = await Promise.all([
       supabase.from("bank_accounts").select("*").order("created_at", { ascending: false }),
       supabase.from("treasury").select("*").limit(1).maybeSingle(),
       supabase.from("bank_transactions").select("*").order("created_at", { ascending: false }),
@@ -273,8 +289,18 @@ export default function Accounting() {
       supabase.from("clients").select("*").order("name"),
       supabase.from("invoices").select("*").order("invoice_date", { ascending: false }),
       supabase.from("partners").select("*").order("name"),
+      supabase
+        .from("invoice_payments")
+        .select("client_id, amount")
+        .is("invoice_id", null),
     ]);
     setPartners((partnersRes.data ?? []) as Partner[]);
+    const standaloneMap = new Map<string, number>();
+    for (const row of (standalonePayRes.data ?? []) as { client_id: string | null; amount: number }[]) {
+      if (!row.client_id) continue;
+      standaloneMap.set(row.client_id, (standaloneMap.get(row.client_id) ?? 0) + Number(row.amount));
+    }
+    setStandalonePayments(standaloneMap);
     if (banksRes.error) setError(banksRes.error.message);
     if (treasuryRes.error) setError(treasuryRes.error.message);
     if (txRes.error) setError(txRes.error.message);
@@ -303,7 +329,9 @@ export default function Accounting() {
       const invs = byClient.get(c.id) ?? [];
       const total_invoiced = invs.reduce((s, i) => s + Number(i.invoice_amount), 0);
       const total_withholding = invs.reduce((s, i) => s + Number(i.withholding_tax ?? 0), 0);
-      const total_received = invs.reduce((s, i) => s + Number(i.amount_received), 0);
+      const invoice_received = invs.reduce((s, i) => s + Number(i.amount_received), 0);
+      const standalone_received = standaloneMap.get(c.id) ?? 0;
+      const total_received = invoice_received + standalone_received;
       const outstanding =
         Number(c.opening_balance ?? 0) + total_invoiced - total_withholding - total_received;
       return {
@@ -888,8 +916,15 @@ export default function Accounting() {
   const recordPayment = (client: ReceivableRow) => {
     setSelectedClient(client);
     const openInvoice = client.invoices.find(
-      (i) => Number(i.invoice_amount) - Number(i.amount_received) > 0
+      (i) =>
+        Number(i.invoice_amount) -
+          Number(i.withholding_tax ?? 0) -
+          Number(i.amount_received) >
+        0,
     );
+    // If admin and there are no open invoices, default to standalone mode.
+    const noOpen = !openInvoice;
+    setPaymentStandalone(isAdmin && noOpen);
     setPaymentInvoiceId(openInvoice?.id ?? "");
     setPaymentAmount("");
     setPaymentVia("Bank");
@@ -932,13 +967,73 @@ export default function Accounting() {
   const handleRecordPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedClient) return;
-    if (!paymentInvoiceId) {
-      setError("Select an invoice to apply this payment to.");
-      return;
-    }
     const amount = Number(paymentAmount);
     if (!amount || amount <= 0) {
       setError("Enter a positive payment amount.");
+      return;
+    }
+    if (paymentVia === "Bank" && !paymentBankId) {
+      setError("Select the bank account that received the payment.");
+      return;
+    }
+
+    // Standalone payment (no invoice). Only allowed for SSA / Super Admin.
+    if (paymentStandalone) {
+      if (!isAdmin) {
+        setError("Only Super Admin can record payments without an invoice.");
+        return;
+      }
+      setSubmitting(true);
+      setError(null);
+      try {
+        const today = new Date().toISOString().slice(0, 10);
+        const desc = `Payment received (${paymentVia.toLowerCase()}) · ${selectedClient.name} · No invoice`;
+        if (paymentVia === "Cash") {
+          await applyCashDelta(amount);
+          await logTransaction({
+            bank_account_id: null,
+            kind: "receipt",
+            amount,
+            cash_delta: amount,
+            account_delta: 0,
+            description: desc,
+            reference_id: selectedClient.id,
+          });
+        } else {
+          await applyBankDelta(paymentBankId, amount);
+          await logTransaction({
+            bank_account_id: paymentBankId,
+            kind: "receipt",
+            amount,
+            cash_delta: 0,
+            account_delta: amount,
+            description: desc,
+            reference_id: selectedClient.id,
+          });
+        }
+        const { error: payErr } = await supabase.from("invoice_payments").insert({
+          invoice_id: null,
+          client_id: selectedClient.id,
+          amount,
+          payment_date: today,
+          payment_mode: paymentVia,
+          bank_account_id: paymentVia === "Bank" ? paymentBankId : null,
+          notes: paymentNotes.trim() || null,
+        });
+        if (payErr) throw payErr;
+        setIsPaymentModalOpen(false);
+        await loadAll();
+      } catch (e: any) {
+        setError(e.message ?? String(e));
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
+    // Invoice-linked payment.
+    if (!paymentInvoiceId) {
+      setError("Select an invoice to apply this payment to.");
       return;
     }
     const invoice = selectedClient.invoices.find((i) => i.id === paymentInvoiceId);
@@ -946,18 +1041,18 @@ export default function Accounting() {
       setError("Selected invoice not found.");
       return;
     }
-    const openAmount = Number(invoice.invoice_amount) - Number(invoice.amount_received);
+    const openAmount =
+      Number(invoice.invoice_amount) -
+      Number(invoice.withholding_tax ?? 0) -
+      Number(invoice.amount_received);
     if (amount > openAmount) {
       setError(`Payment exceeds the outstanding amount on this invoice (PKR ${openAmount.toLocaleString()}).`);
-      return;
-    }
-    if (paymentVia === "Bank" && !paymentBankId) {
-      setError("Select the bank account that received the payment.");
       return;
     }
     setSubmitting(true);
     setError(null);
     try {
+      const today = new Date().toISOString().slice(0, 10);
       if (paymentVia === "Cash") {
         await applyCashDelta(amount);
         await logTransaction({
@@ -986,12 +1081,22 @@ export default function Accounting() {
         .update({
           amount_received: Number(invoice.amount_received) + amount,
           notes: paymentNotes.trim()
-            ? `${invoice.notes ? invoice.notes + "\n" : ""}[${new Date().toISOString().slice(0, 10)}] Payment PKR ${amount.toLocaleString()} via ${paymentVia}: ${paymentNotes.trim()}`
+            ? `${invoice.notes ? invoice.notes + "\n" : ""}[${today}] Payment PKR ${amount.toLocaleString()} via ${paymentVia}: ${paymentNotes.trim()}`
             : invoice.notes,
           updated_at: new Date().toISOString(),
         })
         .eq("id", invoice.id);
       if (upErr) throw upErr;
+      // Also log to invoice_payments so Cashflow's payment-based Revenue picks it up.
+      await supabase.from("invoice_payments").insert({
+        invoice_id: invoice.id,
+        client_id: selectedClient.id,
+        amount,
+        payment_date: today,
+        payment_mode: paymentVia,
+        bank_account_id: paymentVia === "Bank" ? paymentBankId : null,
+        notes: paymentNotes.trim() || null,
+      });
       setIsPaymentModalOpen(false);
       await loadAll();
     } catch (e: any) {
@@ -1978,27 +2083,52 @@ export default function Accounting() {
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
               />
             </div>
-            <div>
-              <label className="block text-sm text-slate-700 mb-1">Apply to Invoice *</label>
-              <select
-                required
-                value={paymentInvoiceId}
-                onChange={(e) => setPaymentInvoiceId(e.target.value)}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-              >
-                <option value="">Select an open invoice…</option>
-                {selectedClient.invoices
-                  .filter((i) => Number(i.invoice_amount) - Number(i.amount_received) > 0)
-                  .map((i) => {
-                    const out = Number(i.invoice_amount) - Number(i.amount_received);
-                    return (
-                      <option key={i.id} value={i.id}>
-                        {i.invoice_number} · {i.invoice_date} · Outstanding PKR {out.toLocaleString()}
-                      </option>
-                    );
-                  })}
-              </select>
-            </div>
+            {isAdmin && (
+              <label className="flex items-start gap-2 text-sm text-slate-700 bg-amber-50 border border-amber-200 rounded p-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={paymentStandalone}
+                  onChange={(e) => setPaymentStandalone(e.target.checked)}
+                  className="mt-0.5"
+                />
+                <span>
+                  <span className="text-slate-900">No specific invoice</span> — apply to client balance
+                  (advance / unallocated receipt). Admin-only.
+                </span>
+              </label>
+            )}
+            {!paymentStandalone && (
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Apply to Invoice *</label>
+                <select
+                  required
+                  value={paymentInvoiceId}
+                  onChange={(e) => setPaymentInvoiceId(e.target.value)}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                >
+                  <option value="">Select an open invoice…</option>
+                  {selectedClient.invoices
+                    .filter(
+                      (i) =>
+                        Number(i.invoice_amount) -
+                          Number(i.withholding_tax ?? 0) -
+                          Number(i.amount_received) >
+                        0,
+                    )
+                    .map((i) => {
+                      const out =
+                        Number(i.invoice_amount) -
+                        Number(i.withholding_tax ?? 0) -
+                        Number(i.amount_received);
+                      return (
+                        <option key={i.id} value={i.id}>
+                          {i.invoice_number} · {i.invoice_date} · Outstanding PKR {out.toLocaleString()}
+                        </option>
+                      );
+                    })}
+                </select>
+              </div>
+            )}
             <div>
               <label className="block text-sm text-slate-700 mb-1">Payment Amount (PKR) *</label>
               <input

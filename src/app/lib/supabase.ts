@@ -378,7 +378,8 @@ export type Advance = {
 
 export type InvoicePayment = {
   id: string;
-  invoice_id: string;
+  invoice_id: string | null;
+  client_id: string | null;
   amount: number;
   payment_date: string;
   payment_mode: "Cash" | "Bank";

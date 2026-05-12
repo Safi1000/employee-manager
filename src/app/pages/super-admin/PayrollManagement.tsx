@@ -71,6 +71,9 @@ const daysInMonth = (periodMonth: string) => {
 export default function PayrollManagement() {
   const today = new Date();
   const currentPeriod = firstOfMonth(today);
+  // Default the filter to the previous month — payroll is typically processed
+  // after a month has ended.
+  const previousPeriod = firstOfMonth(new Date(today.getFullYear(), today.getMonth() - 1, 1));
 
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
@@ -103,8 +106,8 @@ export default function PayrollManagement() {
   const [statusFilter, setStatusFilter] = useState<"all" | "Cleared" | "Pending">("all");
   const [disbursedFilter, setDisbursedFilter] = useState<"all" | "yes" | "no">("all");
 
-  const [periodOptions, setPeriodOptions] = useState<string[]>([currentPeriod]);
-  const [selectedPeriod, setSelectedPeriod] = useState(currentPeriod);
+  const [periodOptions, setPeriodOptions] = useState<string[]>([currentPeriod, previousPeriod]);
+  const [selectedPeriod, setSelectedPeriod] = useState(previousPeriod);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [rowEdits, setRowEdits] = useState<Map<string, Partial<RowState>>>(new Map());
@@ -446,6 +449,32 @@ export default function PayrollManagement() {
     }
   };
 
+  const markAllCleared = async () => {
+    // Cleared = status is "Cleared"; this just flips Pending rows in the
+    // current filter. No money moves — purely a status change.
+    const pending = filtered.filter((r) => r.status === "Pending");
+    if (pending.length === 0) {
+      setError("No pending rows in the current filter to clear.");
+      return;
+    }
+    if (
+      !window.confirm(
+        `Mark ${pending.length} payslip${pending.length === 1 ? "" : "s"} as Cleared?`,
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    try {
+      for (const row of pending) {
+        await savePayslip({ ...row, status: "Cleared" });
+      }
+      await loadPeriodData(selectedPeriod);
+    } catch (err: any) {
+      setError(err.message ?? String(err));
+    }
+  };
+
   const toggleDisbursed = async (row: RowState, dateOverride?: string) => {
     setSavingId(row.employee.id);
     setError(null);
@@ -772,6 +801,13 @@ export default function PayrollManagement() {
               <span>Cash: PKR {cashBalance.toLocaleString()}</span>
               <span>Days in {formatPeriod(selectedPeriod)}: {daysInMonth(selectedPeriod)}</span>
             </div>
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={markAllCleared}
+            >
+              Mark All as Cleared
+            </Button>
             <Button
               variant="primary"
               size="md"
