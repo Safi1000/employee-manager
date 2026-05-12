@@ -126,6 +126,11 @@ export default function Accounting() {
   const [paymentAmount, setPaymentAmount] = useState<string>("");
   const [paymentStandalone, setPaymentStandalone] = useState<boolean>(false);
   const [standalonePayments, setStandalonePayments] = useState<Map<string, number>>(new Map());
+  // All invoice_payment rows with dates — used to compute month-aware
+  // carry-forward in the Receivables view.
+  const [allPaymentEvents, setAllPaymentEvents] = useState<
+    { client_id: string | null; invoice_id: string | null; amount: number; payment_date: string }[]
+  >([]);
   const [paymentVia, setPaymentVia] = useState<"Cash" | "Bank">("Bank");
   const [paymentBankId, setPaymentBankId] = useState<string>("");
   const [paymentNotes, setPaymentNotes] = useState<string>("");
@@ -167,41 +172,130 @@ export default function Accounting() {
   );
   const grandTotal = cashBalance + totalAccountBalance;
 
-  // Apply month filter to receivables (recompute per-client totals from filtered invoices).
+  // Apply month filter to receivables. For a specific month, the displayed
+  // "Opening Balance" carries forward from the prior period: it equals the
+  // client's *cumulative outstanding* through the day before the selected month
+  // started. The "Outstanding" column then = Opening + this-month invoiced
+  // − withholding − payments in this month, which is the running balance at
+  // month-end.
   const displayedReceivables = useMemo(() => {
     if (receivablesMonth === "all") return receivables;
-    const byClient = new Map<string, Invoice[]>();
-    for (const inv of allInvoicesForRec) {
-      if ((inv.invoice_date ?? "").slice(0, 7) !== receivablesMonth) continue;
-      const arr = byClient.get(inv.client_id) ?? [];
-      arr.push(inv);
-      byClient.set(inv.client_id, arr);
+
+    const monthStart = `${receivablesMonth}-01`;
+    const [yStr, mStr] = receivablesMonth.split("-");
+    const y = Number(yStr);
+    const m = Number(mStr);
+    const lastDay = new Date(y, m, 0).getDate();
+    const monthEnd = `${receivablesMonth}-${String(lastDay).padStart(2, "0")}`;
+
+    // Build dated payment events for every client. For invoice_payments rows
+    // missing a date (legacy data) and for the residual gap between an
+    // invoice's amount_received and the sum of its invoice_payment rows, we
+    // fall back to the invoice's own date.
+    const paymentsByInvoice = new Map<string, number>();
+    const datedPayments: { clientId: string; amount: number; date: string }[] = [];
+    for (const p of allPaymentEvents) {
+      let clientId = p.client_id ?? null;
+      if (!clientId && p.invoice_id) {
+        const inv = allInvoicesForRec.find((i) => i.id === p.invoice_id);
+        if (inv) clientId = inv.client_id;
+      }
+      if (!clientId) continue;
+      if (p.invoice_id) {
+        paymentsByInvoice.set(
+          p.invoice_id,
+          (paymentsByInvoice.get(p.invoice_id) ?? 0) + Number(p.amount ?? 0),
+        );
+      }
+      datedPayments.push({
+        clientId,
+        amount: Number(p.amount ?? 0),
+        date: (p.payment_date ?? monthStart).slice(0, 10),
+      });
     }
+    // Add residuals: invoice.amount_received minus what we already counted via
+    // invoice_payments rows — dated at the invoice's invoice_date.
+    for (const inv of allInvoicesForRec) {
+      const tracked = paymentsByInvoice.get(inv.id) ?? 0;
+      const residual = Number(inv.amount_received ?? 0) - tracked;
+      if (residual > 0.001) {
+        datedPayments.push({
+          clientId: inv.client_id,
+          amount: residual,
+          date: inv.invoice_date.slice(0, 10),
+        });
+      }
+    }
+
+    const sumInRange = (
+      clientId: string,
+      arr: { date: string; amount: number; clientId: string }[],
+      from: string | null,
+      to: string,
+    ) =>
+      arr
+        .filter(
+          (r) =>
+            r.clientId === clientId &&
+            (from === null || r.date >= from) &&
+            r.date <= to,
+        )
+        .reduce((s, r) => s + r.amount, 0);
+
+    const dayBeforeMonthStart = (() => {
+      const d = new Date(monthStart);
+      d.setDate(d.getDate() - 1);
+      return d.toISOString().slice(0, 10);
+    })();
+
     const rows: ReceivableRow[] = [];
     for (const c of allClientsForRec) {
-      const invs = byClient.get(c.id) ?? [];
-      if (invs.length === 0 && Number(c.opening_balance ?? 0) === 0) continue;
-      const total_invoiced = invs.reduce((s, i) => s + Number(i.invoice_amount), 0);
-      const total_withholding = invs.reduce((s, i) => s + Number(i.withholding_tax ?? 0), 0);
-      const invoice_received = invs.reduce((s, i) => s + Number(i.amount_received), 0);
-      // Note: for the month-filtered view, standalone payments are still summed
-      // for the whole client (not month-bucketed), since they aren't tied to an
-      // invoice month. Acceptable for now.
-      const standalone_received = standalonePayments.get(c.id) ?? 0;
-      const total_received = invoice_received + standalone_received;
+      const allInvs = allInvoicesForRec.filter((i) => i.client_id === c.id);
+      const monthInvs = allInvs.filter(
+        (i) => (i.invoice_date ?? "").slice(0, 7) === receivablesMonth,
+      );
+      const priorInvs = allInvs.filter((i) => i.invoice_date < monthStart);
+
+      const priorInvoiced = priorInvs.reduce((s, i) => s + Number(i.invoice_amount), 0);
+      const priorWithholding = priorInvs.reduce(
+        (s, i) => s + Number(i.withholding_tax ?? 0),
+        0,
+      );
+      const priorReceived = sumInRange(c.id, datedPayments, null, dayBeforeMonthStart);
+
+      // Opening for this month = cumulative outstanding through end of prior month.
+      const openingForMonth =
+        Number(c.opening_balance ?? 0) + priorInvoiced - priorWithholding - priorReceived;
+
+      const total_invoiced = monthInvs.reduce((s, i) => s + Number(i.invoice_amount), 0);
+      const total_withholding = monthInvs.reduce(
+        (s, i) => s + Number(i.withholding_tax ?? 0),
+        0,
+      );
+      const total_received = sumInRange(c.id, datedPayments, monthStart, monthEnd);
+
       const outstanding =
-        Number(c.opening_balance ?? 0) + total_invoiced - total_withholding - total_received;
+        openingForMonth + total_invoiced - total_withholding - total_received;
+
+      // Show clients with any activity in this month OR a non-zero opening.
+      const hasActivity =
+        monthInvs.length > 0 ||
+        total_received !== 0 ||
+        Math.abs(openingForMonth) > 0.001;
+      if (!hasActivity) continue;
+
       rows.push({
         ...c,
+        opening_balance: openingForMonth,
         total_invoiced,
         total_withholding,
         total_received,
         outstanding,
-        invoices: invs,
+        invoices: monthInvs,
       });
     }
     return rows;
-  }, [receivables, receivablesMonth, allClientsForRec, allInvoicesForRec, standalonePayments]);
+  }, [receivables, receivablesMonth, allClientsForRec, allInvoicesForRec, allPaymentEvents]);
 
   const receivableTotals = useMemo(() => {
     let opening = 0;
@@ -291,12 +385,19 @@ export default function Accounting() {
       supabase.from("partners").select("*").order("name"),
       supabase
         .from("invoice_payments")
-        .select("client_id, amount")
-        .is("invoice_id", null),
+        .select("client_id, invoice_id, amount, payment_date"),
     ]);
     setPartners((partnersRes.data ?? []) as Partner[]);
+    const allPayRows = (standalonePayRes.data ?? []) as {
+      client_id: string | null;
+      invoice_id: string | null;
+      amount: number;
+      payment_date: string;
+    }[];
+    setAllPaymentEvents(allPayRows);
     const standaloneMap = new Map<string, number>();
-    for (const row of (standalonePayRes.data ?? []) as { client_id: string | null; amount: number }[]) {
+    for (const row of allPayRows) {
+      if (row.invoice_id) continue; // only standalone (no invoice) here
       if (!row.client_id) continue;
       standaloneMap.set(row.client_id, (standaloneMap.get(row.client_id) ?? 0) + Number(row.amount));
     }
@@ -1485,7 +1586,8 @@ export default function Accounting() {
                   )}
                   {!loading &&
                     displayedReceivables.map((item) => {
-                      const canEditOpening = item.outstanding === 0;
+                      const isMonthView = receivablesMonth !== "all";
+                      const canEditOpening = item.outstanding === 0 && !isMonthView;
                       return (
                         <tr key={item.id} className="hover:bg-slate-50 transition-colors">
                           <td className="px-6 py-4 text-sm text-slate-900">
@@ -1497,7 +1599,9 @@ export default function Accounting() {
                           </td>
                           <td className="px-6 py-4 text-sm text-slate-700 text-right">
                             <div className="inline-flex items-center gap-2 justify-end">
-                              <span>PKR {Number(item.opening_balance ?? 0).toLocaleString()}</span>
+                              <span title={isMonthView ? "Carried forward from prior period" : undefined}>
+                                PKR {Number(item.opening_balance ?? 0).toLocaleString()}
+                              </span>
                               <button
                                 type="button"
                                 disabled={!canEditOpening}
@@ -1508,9 +1612,11 @@ export default function Accounting() {
                                     : "text-slate-300 cursor-not-allowed"
                                 }`}
                                 title={
-                                  canEditOpening
-                                    ? "Edit opening balance"
-                                    : "Clear outstanding balance before editing opening balance"
+                                  isMonthView
+                                    ? "Switch to 'All Months' to edit the opening balance"
+                                    : canEditOpening
+                                      ? "Edit opening balance"
+                                      : "Clear outstanding balance before editing opening balance"
                                 }
                               >
                                 <Pencil className="w-3 h-3" strokeWidth={1.5} />
