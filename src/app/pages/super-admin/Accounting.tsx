@@ -23,6 +23,7 @@ import {
   type Partner,
   type BankAccountOwnerType,
 } from "../../lib/supabase";
+import { useAuth } from "../../lib/auth";
 
 type PayableRow = Expense & {
   vendor?: Vendor | null;
@@ -32,6 +33,7 @@ type PayableRow = Expense & {
 
 type ReceivableRow = Client & {
   total_invoiced: number;
+  total_withholding: number;
   total_received: number;
   outstanding: number;
   invoices: Invoice[];
@@ -62,6 +64,8 @@ const payableDisplayStatus = (row: PayableRow): PayableDisplayStatus => {
 };
 
 export default function Accounting() {
+  const { profile } = useAuth();
+  const isAdmin = profile?.role === "super_super_admin" || profile?.role === "super_admin";
   const [activeTab, setActiveTab] = useState<"receivables" | "payables" | "banks">("receivables");
 
   const [banks, setBanks] = useState<BankAccount[]>([]);
@@ -74,7 +78,27 @@ export default function Accounting() {
   const [transactions, setTransactions] = useState<BankTransaction[]>([]);
   const [payables, setPayables] = useState<PayableRow[]>([]);
   const [receivables, setReceivables] = useState<ReceivableRow[]>([]);
+  const [allClientsForRec, setAllClientsForRec] = useState<Client[]>([]);
+  const [allInvoicesForRec, setAllInvoicesForRec] = useState<Invoice[]>([]);
   const [payableStatusFilter, setPayableStatusFilter] = useState<"all" | "pending" | "paid" | "overdue">("all");
+  const currentMonthKey = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  };
+  const [receivablesMonth, setReceivablesMonth] = useState<string>(currentMonthKey());
+  const [payablesMonth, setPayablesMonth] = useState<string>(currentMonthKey());
+  const [txLogMonth, setTxLogMonth] = useState<string>("all");
+  const monthOptions = useMemo(() => {
+    const opts: { key: string; label: string }[] = [];
+    const d = new Date();
+    for (let i = 0; i < 18; i++) {
+      const dt = new Date(d.getFullYear(), d.getMonth() - i, 1);
+      const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
+      const label = dt.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+      opts.push({ key, label });
+    }
+    return opts;
+  }, []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -141,19 +165,52 @@ export default function Accounting() {
   );
   const grandTotal = cashBalance + totalAccountBalance;
 
+  // Apply month filter to receivables (recompute per-client totals from filtered invoices).
+  const displayedReceivables = useMemo(() => {
+    if (receivablesMonth === "all") return receivables;
+    const byClient = new Map<string, Invoice[]>();
+    for (const inv of allInvoicesForRec) {
+      if ((inv.invoice_date ?? "").slice(0, 7) !== receivablesMonth) continue;
+      const arr = byClient.get(inv.client_id) ?? [];
+      arr.push(inv);
+      byClient.set(inv.client_id, arr);
+    }
+    const rows: ReceivableRow[] = [];
+    for (const c of allClientsForRec) {
+      const invs = byClient.get(c.id) ?? [];
+      if (invs.length === 0 && Number(c.opening_balance ?? 0) === 0) continue;
+      const total_invoiced = invs.reduce((s, i) => s + Number(i.invoice_amount), 0);
+      const total_withholding = invs.reduce((s, i) => s + Number(i.withholding_tax ?? 0), 0);
+      const total_received = invs.reduce((s, i) => s + Number(i.amount_received), 0);
+      const outstanding =
+        Number(c.opening_balance ?? 0) + total_invoiced - total_withholding - total_received;
+      rows.push({
+        ...c,
+        total_invoiced,
+        total_withholding,
+        total_received,
+        outstanding,
+        invoices: invs,
+      });
+    }
+    return rows;
+  }, [receivables, receivablesMonth, allClientsForRec, allInvoicesForRec]);
+
   const receivableTotals = useMemo(() => {
     let opening = 0;
     let invoiced = 0;
+    let withholding = 0;
     let received = 0;
     let outstanding = 0;
-    for (const r of receivables) {
+    for (const r of displayedReceivables) {
       opening += Number(r.opening_balance ?? 0);
       invoiced += r.total_invoiced;
+      withholding += r.total_withholding;
       received += r.total_received;
       outstanding += r.outstanding;
     }
-    return { opening, invoiced, received, outstanding };
-  }, [receivables]);
+    return { opening, invoiced, withholding, received, outstanding };
+  }, [displayedReceivables]);
 
   const balanceLedger = useMemo(() => {
     const ledger = new Map<string, { cash?: { before: number; after: number }; bank?: { before: number; after: number } }>();
@@ -234,6 +291,8 @@ export default function Accounting() {
 
     const allClients = (clientsRes.data ?? []) as Client[];
     const allInvoices = (invoicesRes.data ?? []) as Invoice[];
+    setAllClientsForRec(allClients);
+    setAllInvoicesForRec(allInvoices);
     const byClient = new Map<string, Invoice[]>();
     for (const inv of allInvoices) {
       const arr = byClient.get(inv.client_id) ?? [];
@@ -243,11 +302,14 @@ export default function Accounting() {
     const rec: ReceivableRow[] = allClients.map((c) => {
       const invs = byClient.get(c.id) ?? [];
       const total_invoiced = invs.reduce((s, i) => s + Number(i.invoice_amount), 0);
+      const total_withholding = invs.reduce((s, i) => s + Number(i.withholding_tax ?? 0), 0);
       const total_received = invs.reduce((s, i) => s + Number(i.amount_received), 0);
-      const outstanding = Number(c.opening_balance ?? 0) + total_invoiced - total_received;
+      const outstanding =
+        Number(c.opening_balance ?? 0) + total_invoiced - total_withholding - total_received;
       return {
         ...c,
         total_invoiced,
+        total_withholding,
         total_received,
         outstanding,
         invoices: invs,
@@ -788,15 +850,21 @@ export default function Accounting() {
   };
 
   const filteredPayables = useMemo(() => {
-    if (payableStatusFilter === "all") return payables;
     return payables.filter((p) => {
+      if (
+        payablesMonth !== "all" &&
+        (p.expense_date ?? "").slice(0, 7) !== payablesMonth
+      ) {
+        return false;
+      }
+      if (payableStatusFilter === "all") return true;
       const status = payableDisplayStatus(p);
       if (payableStatusFilter === "pending") return status === "Pending";
       if (payableStatusFilter === "paid") return status === "Paid";
       if (payableStatusFilter === "overdue") return status === "Overdue";
       return true;
     });
-  }, [payables, payableStatusFilter]);
+  }, [payables, payableStatusFilter, payablesMonth]);
 
   const payablesSummary = useMemo(() => {
     let pendingTotal = 0;
@@ -1167,7 +1235,7 @@ export default function Accounting() {
         )}
 
         {activeTab === "receivables" && (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
             <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
               <p className="text-xs text-slate-600 mb-1">Opening Balance</p>
               <p className="text-xl text-slate-900">
@@ -1178,6 +1246,12 @@ export default function Accounting() {
               <p className="text-xs text-blue-700 mb-1">Total Invoiced</p>
               <p className="text-xl text-blue-900">
                 PKR {receivableTotals.invoiced.toLocaleString()}
+              </p>
+            </div>
+            <div className="bg-rose-50 p-4 rounded-lg border border-rose-200">
+              <p className="text-xs text-rose-700 mb-1">Withholding Tax</p>
+              <p className="text-xl text-rose-900">
+                PKR {receivableTotals.withholding.toLocaleString()}
               </p>
             </div>
             <div className="bg-green-50 p-4 rounded-lg border border-green-200">
@@ -1225,8 +1299,8 @@ export default function Accounting() {
         )}
 
         <div className="bg-white rounded-lg border border-slate-200 mb-6">
-          <div className="p-6 border-b border-slate-200">
-            <div className="flex gap-2">
+          <div className="p-6 border-b border-slate-200 flex flex-wrap items-center gap-3">
+            <div className="flex gap-2 flex-wrap">
               {(["receivables", "payables", "banks"] as const).map((tab) => (
                 <button
                   key={tab}
@@ -1243,6 +1317,36 @@ export default function Accounting() {
                 </button>
               ))}
             </div>
+            {activeTab === "receivables" && (
+              <div className="ml-auto flex items-center gap-2">
+                <label className="text-xs text-slate-500">Month:</label>
+                <select
+                  value={receivablesMonth}
+                  onChange={(e) => setReceivablesMonth(e.target.value)}
+                  className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
+                >
+                  <option value="all">All Months</option>
+                  {monthOptions.map((m) => (
+                    <option key={m.key} value={m.key}>{m.label}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {activeTab === "payables" && (
+              <div className="ml-auto flex items-center gap-2">
+                <label className="text-xs text-slate-500">Month:</label>
+                <select
+                  value={payablesMonth}
+                  onChange={(e) => setPayablesMonth(e.target.value)}
+                  className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
+                >
+                  <option value="all">All Months</option>
+                  {monthOptions.map((m) => (
+                    <option key={m.key} value={m.key}>{m.label}</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
 
           {activeTab === "receivables" && (
@@ -1253,6 +1357,7 @@ export default function Accounting() {
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Client</th>
                     <th className="text-right px-6 py-3 text-sm text-slate-500">Opening Balance</th>
                     <th className="text-right px-6 py-3 text-sm text-slate-500">Invoiced</th>
+                    <th className="text-right px-6 py-3 text-sm text-slate-500">Withholding</th>
                     <th className="text-right px-6 py-3 text-sm text-slate-500">Received</th>
                     <th className="text-right px-6 py-3 text-sm text-slate-500">Outstanding</th>
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Actions</th>
@@ -1261,20 +1366,20 @@ export default function Accounting() {
                 <tbody className="divide-y divide-slate-200">
                   {loading && (
                     <tr>
-                      <td colSpan={6} className="px-6 py-10 text-center text-slate-500">
+                      <td colSpan={7} className="px-6 py-10 text-center text-slate-500">
                         <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                       </td>
                     </tr>
                   )}
-                  {!loading && receivables.length === 0 && (
+                  {!loading && displayedReceivables.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="px-6 py-10 text-center text-slate-500 text-sm">
-                        No clients yet. Add them from Settings.
+                      <td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">
+                        No client activity in this month.
                       </td>
                     </tr>
                   )}
                   {!loading &&
-                    receivables.map((item) => {
+                    displayedReceivables.map((item) => {
                       const canEditOpening = item.outstanding === 0;
                       return (
                         <tr key={item.id} className="hover:bg-slate-50 transition-colors">
@@ -1310,6 +1415,9 @@ export default function Accounting() {
                           <td className="px-6 py-4 text-sm text-blue-600 text-right">
                             PKR {item.total_invoiced.toLocaleString()}
                           </td>
+                          <td className="px-6 py-4 text-sm text-rose-600 text-right">
+                            PKR {item.total_withholding.toLocaleString()}
+                          </td>
                           <td className="px-6 py-4 text-sm text-green-600 text-right">
                             PKR {item.total_received.toLocaleString()}
                           </td>
@@ -1326,9 +1434,16 @@ export default function Accounting() {
                               variant="ghost"
                               size="sm"
                               onClick={() => recordPayment(item)}
-                              disabled={item.invoices.every(
-                                (i) => Number(i.invoice_amount) - Number(i.amount_received) <= 0
-                              )}
+                              disabled={
+                                !isAdmin &&
+                                item.invoices.every(
+                                  (i) =>
+                                    Number(i.invoice_amount) -
+                                      Number(i.withholding_tax ?? 0) -
+                                      Number(i.amount_received) <=
+                                    0,
+                                )
+                              }
                             >
                               Record Payment
                             </Button>
@@ -1474,7 +1589,7 @@ export default function Accounting() {
                 <tbody className="divide-y divide-slate-200">
                   {loading && (
                     <tr>
-                      <td colSpan={6} className="px-6 py-10 text-center text-slate-500">
+                      <td colSpan={7} className="px-6 py-10 text-center text-slate-500">
                         <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
                         Loading…
                       </td>
@@ -2343,6 +2458,9 @@ export default function Accounting() {
           setBankFilter={setLogBankFilter}
           scope={logScope}
           setScope={setLogScope}
+          monthFilter={txLogMonth}
+          setMonthFilter={setTxLogMonth}
+          monthOptions={monthOptions}
           onClose={() => setIsLogModalOpen(false)}
           emptyText="No transactions yet."
         />
@@ -2362,6 +2480,9 @@ export default function Accounting() {
           setBankFilter={setLogBankFilter}
           scope={logScope}
           setScope={setLogScope}
+          monthFilter={txLogMonth}
+          setMonthFilter={setTxLogMonth}
+          monthOptions={monthOptions}
           onClose={() => setIsReceivablesLogOpen(false)}
           emptyText="No receipts recorded yet."
         />
@@ -2381,6 +2502,9 @@ export default function Accounting() {
           setBankFilter={setLogBankFilter}
           scope={logScope}
           setScope={setLogScope}
+          monthFilter={txLogMonth}
+          setMonthFilter={setTxLogMonth}
+          monthOptions={monthOptions}
           onClose={() => setIsPayablesLogOpen(false)}
           emptyText="No payable settlements yet."
         />
@@ -2402,6 +2526,9 @@ function HistoryBody({
   setBankFilter,
   scope,
   setScope,
+  monthFilter,
+  setMonthFilter,
+  monthOptions,
   onClose,
   emptyText,
 }: {
@@ -2412,6 +2539,9 @@ function HistoryBody({
   setBankFilter: (v: string) => void;
   scope: "all" | "cash" | "account";
   setScope: (s: "all" | "cash" | "account") => void;
+  monthFilter: string;
+  setMonthFilter: (v: string) => void;
+  monthOptions: { key: string; label: string }[];
   onClose: () => void;
   emptyText: string;
 }) {
@@ -2425,6 +2555,10 @@ function HistoryBody({
     }
     if (scope === "cash" && Number(t.cash_delta) === 0) return false;
     if (scope === "account" && Number(t.account_delta) === 0) return false;
+    if (monthFilter !== "all") {
+      const m = (t.created_at ?? "").slice(0, 7);
+      if (m !== monthFilter) return false;
+    }
     return true;
   });
 
@@ -2444,6 +2578,19 @@ function HistoryBody({
               <option key={b.id} value={b.id}>
                 {b.bank_name} · {b.account_number}
               </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-slate-500">Month</label>
+          <select
+            value={monthFilter}
+            onChange={(e) => setMonthFilter(e.target.value)}
+            className="px-3 py-1.5 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+          >
+            <option value="all">All</option>
+            {monthOptions.map((m) => (
+              <option key={m.key} value={m.key}>{m.label}</option>
             ))}
           </select>
         </div>

@@ -85,6 +85,10 @@ export default function PayrollManagement() {
   const [cashBalance, setCashBalance] = useState(0);
 
   const [isBulkDisburseOpen, setIsBulkDisburseOpen] = useState(false);
+  const todayISO = () => new Date().toISOString().slice(0, 10);
+  const [bulkDisburseDate, setBulkDisburseDate] = useState<string>(todayISO());
+  const [rowDisburseTarget, setRowDisburseTarget] = useState<RowState | null>(null);
+  const [rowDisburseDate, setRowDisburseDate] = useState<string>(todayISO());
   const [bulkMode, setBulkMode] = useState<PaymentMode>("Cash");
   const [bulkBankId, setBulkBankId] = useState<string>("");
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
@@ -442,11 +446,14 @@ export default function PayrollManagement() {
     }
   };
 
-  const toggleDisbursed = async (row: RowState) => {
+  const toggleDisbursed = async (row: RowState, dateOverride?: string) => {
     setSavingId(row.employee.id);
     setError(null);
     try {
       if (!row.disbursed) {
+        const disburseIso = dateOverride
+          ? new Date(`${dateOverride}T12:00:00`).toISOString()
+          : new Date().toISOString();
         if (row.net_salary <= 0) {
           setError("Net salary must be greater than 0 to disburse.");
           return;
@@ -512,7 +519,7 @@ export default function PayrollManagement() {
         await savePayslip({
           ...row,
           disbursed: true,
-          disbursed_at: new Date().toISOString(),
+          disbursed_at: disburseIso,
           status: "Cleared",
         });
       } else {
@@ -659,7 +666,7 @@ export default function PayrollManagement() {
           payment_mode: bulkMode,
           bank_account_id: bulkMode === "Bank" ? bulkBankId : null,
           disbursed: true,
-          disbursed_at: new Date().toISOString(),
+          disbursed_at: new Date(`${bulkDisburseDate}T12:00:00`).toISOString(),
           status: "Cleared",
         });
       }
@@ -989,7 +996,13 @@ export default function PayrollManagement() {
                                 disabled={savingId === e.id}
                                 onClick={(ev) => {
                                   ev.stopPropagation();
-                                  toggleDisbursed(row);
+                                  if (!row.disbursed) {
+                                    // Open date picker before disbursing
+                                    setRowDisburseDate(todayISO());
+                                    setRowDisburseTarget(row);
+                                  } else {
+                                    toggleDisbursed(row);
+                                  }
                                 }}
                                 className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
                                   row.disbursed
@@ -1229,7 +1242,14 @@ export default function PayrollManagement() {
                     <Button
                       variant={selectedRow.disbursed ? "secondary" : "primary"}
                       size="sm"
-                      onClick={() => toggleDisbursed(selectedRow)}
+                      onClick={() => {
+                        if (!selectedRow.disbursed) {
+                          setRowDisburseDate(todayISO());
+                          setRowDisburseTarget(selectedRow);
+                        } else {
+                          toggleDisbursed(selectedRow);
+                        }
+                      }}
                     >
                       {selectedRow.disbursed ? "Un-disburse" : "Disburse"}
                     </Button>
@@ -1491,6 +1511,19 @@ export default function PayrollManagement() {
                 </p>
               )}
 
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Disbursement Date</label>
+                <input
+                  type="date"
+                  value={bulkDisburseDate}
+                  onChange={(e) => setBulkDisburseDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  Cashflow will bucket this disbursement under the selected date's month.
+                </p>
+              </div>
+
               <div className="flex items-center gap-3 pt-2">
                 <Button
                   variant="primary"
@@ -1513,6 +1546,59 @@ export default function PayrollManagement() {
             </div>
           );
         })()}
+      </Modal>
+
+      <Modal
+        isOpen={rowDisburseTarget !== null}
+        onClose={() => setRowDisburseTarget(null)}
+        title="Disbursement Date"
+        size="sm"
+      >
+        {rowDisburseTarget && (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600">
+              Disbursing payroll for{" "}
+              <span className="text-slate-900">{rowDisburseTarget.employee.full_name}</span>{" "}
+              ({rowDisburseTarget.employee.employee_code}) · PKR {rowDisburseTarget.net_salary.toLocaleString()}
+            </p>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Disbursement Date *</label>
+              <input
+                type="date"
+                value={rowDisburseDate}
+                onChange={(e) => setRowDisburseDate(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                required
+              />
+              <p className="text-xs text-slate-500 mt-1">
+                Cashflow will bucket this under the selected date's month.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 pt-2">
+              <Button
+                variant="primary"
+                size="md"
+                className="flex-1"
+                disabled={!rowDisburseDate}
+                onClick={async () => {
+                  const target = rowDisburseTarget;
+                  const date = rowDisburseDate;
+                  setRowDisburseTarget(null);
+                  await toggleDisbursed(target, date);
+                }}
+              >
+                Confirm & Disburse
+              </Button>
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={() => setRowDisburseTarget(null)}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
     </>
   );

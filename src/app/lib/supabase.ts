@@ -60,6 +60,7 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
     items: [
       { key: "attendance.view", label: "View attendance" },
       { key: "attendance.edit", label: "Mark / edit attendance" },
+      { key: "attendance.bulk_mark", label: "Bulk-mark attendance per employee (calendar)" },
     ],
   },
   {
@@ -353,6 +354,7 @@ export type Invoice = {
   invoice_number: string;
   invoice_date: string;
   invoice_amount: number;
+  withholding_tax: number;
   amount_received: number;
   attachment_path: string | null;
   notes: string | null;

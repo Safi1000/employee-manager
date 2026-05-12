@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Calendar as CalendarIcon, AlertCircle, Loader2, X } from "lucide-react";
+import { Calendar as CalendarIcon, AlertCircle, Loader2, X, CalendarRange, ChevronLeft, ChevronRight, Search } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -13,6 +13,7 @@ import {
   type Client,
   type Location,
 } from "../../lib/supabase";
+import { hasPermission, useAuth } from "../../lib/auth";
 
 type EmployeeLite = {
   id: string;
@@ -69,6 +70,156 @@ export default function AttendanceManagement() {
   const [historyTo, setHistoryTo] = useState<string>(today());
 
   const [detailRecord, setDetailRecord] = useState<HistoryRow | null>(null);
+
+  const { profile } = useAuth();
+  const canBulk = hasPermission(profile, "attendance.bulk_mark");
+
+  // ---- Bulk-mark calendar modal ----
+  const [isBulkOpen, setIsBulkOpen] = useState(false);
+  const [bulkEmpSearch, setBulkEmpSearch] = useState("");
+  const [bulkEmployeeId, setBulkEmployeeId] = useState<string>("");
+  const [bulkMonth, setBulkMonth] = useState<string>(today().slice(0, 7));
+  const [bulkExisting, setBulkExisting] = useState<Map<string, AttendanceStatus>>(new Map());
+  const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
+  const [bulkError, setBulkError] = useState<string | null>(null);
+  const [bulkDragMode, setBulkDragMode] = useState<"add" | "remove" | null>(null);
+
+  const bulkEmployee = useMemo(
+    () => employees.find((e) => e.id === bulkEmployeeId),
+    [employees, bulkEmployeeId],
+  );
+
+  const bulkEmployeeOptions = useMemo(() => {
+    const q = bulkEmpSearch.trim().toLowerCase();
+    if (!q) return employees.slice(0, 50);
+    return employees
+      .filter(
+        (e) =>
+          e.full_name.toLowerCase().includes(q) ||
+          e.employee_code.toLowerCase().includes(q),
+      )
+      .slice(0, 50);
+  }, [employees, bulkEmpSearch]);
+
+  const loadBulkMonth = async (employeeId: string, monthKey: string) => {
+    setBulkLoading(true);
+    setBulkError(null);
+    const start = `${monthKey}-01`;
+    const [y, m] = monthKey.split("-").map(Number);
+    const lastDay = new Date(y, m, 0).getDate();
+    const end = `${monthKey}-${String(lastDay).padStart(2, "0")}`;
+    const { data, error: err } = await supabase
+      .from("attendance_records")
+      .select("attendance_date, status")
+      .eq("employee_id", employeeId)
+      .gte("attendance_date", start)
+      .lte("attendance_date", end);
+    if (err) setBulkError(err.message);
+    const map = new Map<string, AttendanceStatus>();
+    for (const r of (data ?? []) as { attendance_date: string; status: AttendanceStatus }[]) {
+      map.set(r.attendance_date, r.status);
+    }
+    setBulkExisting(map);
+    setBulkLoading(false);
+  };
+
+  useEffect(() => {
+    if (!isBulkOpen || !bulkEmployeeId) return;
+    setBulkSelected(new Set());
+    loadBulkMonth(bulkEmployeeId, bulkMonth);
+  }, [isBulkOpen, bulkEmployeeId, bulkMonth]);
+
+  const openBulkMark = () => {
+    setBulkEmployeeId("");
+    setBulkEmpSearch("");
+    setBulkMonth(today().slice(0, 7));
+    setBulkSelected(new Set());
+    setBulkExisting(new Map());
+    setBulkError(null);
+    setIsBulkOpen(true);
+  };
+
+  const bulkCalendarCells = useMemo(() => {
+    const [y, m] = bulkMonth.split("-").map(Number);
+    const first = new Date(y, m - 1, 1);
+    const lastDay = new Date(y, m, 0).getDate();
+    const leading = first.getDay(); // 0=Sun
+    const cells: { date: string | null; day: number | null }[] = [];
+    for (let i = 0; i < leading; i++) cells.push({ date: null, day: null });
+    for (let d = 1; d <= lastDay; d++) {
+      const date = `${bulkMonth}-${String(d).padStart(2, "0")}`;
+      cells.push({ date, day: d });
+    }
+    while (cells.length % 7 !== 0) cells.push({ date: null, day: null });
+    return cells;
+  }, [bulkMonth]);
+
+  const shiftBulkMonth = (delta: number) => {
+    const [y, m] = bulkMonth.split("-").map(Number);
+    const d = new Date(y, m - 1 + delta, 1);
+    setBulkMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  };
+
+  const toggleBulkCell = (date: string) => {
+    setBulkSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(date)) next.delete(date);
+      else next.add(date);
+      return next;
+    });
+  };
+
+  const applyBulkDrag = (date: string) => {
+    if (!bulkDragMode) return;
+    setBulkSelected((prev) => {
+      const next = new Set(prev);
+      if (bulkDragMode === "add") next.add(date);
+      else next.delete(date);
+      return next;
+    });
+  };
+
+  const applyBulkStatus = async (status: AttendanceStatus) => {
+    if (!bulkEmployeeId || bulkSelected.size === 0) return;
+    setBulkSubmitting(true);
+    setBulkError(null);
+    const rows = Array.from(bulkSelected).map((d) => ({
+      employee_id: bulkEmployeeId,
+      attendance_date: d,
+      status,
+    }));
+    const { error: err } = await supabase
+      .from("attendance_records")
+      .upsert(rows, { onConflict: "employee_id,attendance_date" });
+    setBulkSubmitting(false);
+    if (err) {
+      setBulkError(err.message);
+      return;
+    }
+    await loadBulkMonth(bulkEmployeeId, bulkMonth);
+    setBulkSelected(new Set());
+  };
+
+  const clearBulkSelected = async () => {
+    if (!bulkEmployeeId || bulkSelected.size === 0) return;
+    if (!window.confirm(`Clear marks for ${bulkSelected.size} day(s)?`)) return;
+    setBulkSubmitting(true);
+    setBulkError(null);
+    const { error: err } = await supabase
+      .from("attendance_records")
+      .delete()
+      .eq("employee_id", bulkEmployeeId)
+      .in("attendance_date", Array.from(bulkSelected));
+    setBulkSubmitting(false);
+    if (err) {
+      setBulkError(err.message);
+      return;
+    }
+    await loadBulkMonth(bulkEmployeeId, bulkMonth);
+    setBulkSelected(new Set());
+  };
 
   const dateInputRef = useRef<HTMLInputElement>(null);
   const fromInputRef = useRef<HTMLInputElement>(null);
@@ -367,7 +518,17 @@ export default function AttendanceManagement() {
     <>
       <Header
         title="Attendance Management"
-        actions={<ExportButton onExport={handleExport} />}
+        actions={
+          <>
+            {canBulk && (
+              <Button variant="secondary" size="md" onClick={openBulkMark}>
+                <CalendarRange className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                Bulk Mark by Employee
+              </Button>
+            )}
+            <ExportButton onExport={handleExport} />
+          </>
+        }
       />
 
       <div className="flex-1 overflow-y-auto p-8">
@@ -707,6 +868,256 @@ export default function AttendanceManagement() {
             </div>
           </div>
         )}
+      </Modal>
+
+      <Modal
+        isOpen={isBulkOpen}
+        onClose={() => setIsBulkOpen(false)}
+        title="Bulk Mark Attendance"
+        size="lg"
+      >
+        <div className="space-y-4">
+          {/* Employee picker */}
+          <div>
+            <label className="block text-xs uppercase tracking-wider text-slate-500 mb-2">
+              Employee
+            </label>
+            {bulkEmployee ? (
+              <div className="flex items-center justify-between gap-3 p-3 border border-slate-200 rounded-md bg-slate-50">
+                <div className="min-w-0">
+                  <div className="text-sm text-slate-900 truncate">{bulkEmployee.full_name}</div>
+                  <div className="text-xs text-slate-500 font-mono">
+                    {bulkEmployee.employee_code}
+                    {bulkEmployee.client_name && ` · ${bulkEmployee.client_name}`}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBulkEmployeeId("");
+                    setBulkSelected(new Set());
+                  }}
+                  className="text-xs text-slate-500 hover:text-slate-900 underline"
+                >
+                  Change
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />
+                  <input
+                    autoFocus
+                    type="text"
+                    value={bulkEmpSearch}
+                    onChange={(e) => setBulkEmpSearch(e.target.value)}
+                    placeholder="Search name or code…"
+                    className="w-full pl-10 pr-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                  />
+                </div>
+                <div className="max-h-44 overflow-y-auto border border-slate-200 rounded-md">
+                  {bulkEmployeeOptions.length === 0 ? (
+                    <div className="px-3 py-2 text-xs text-slate-500">No matches.</div>
+                  ) : (
+                    bulkEmployeeOptions.map((e) => (
+                      <button
+                        type="button"
+                        key={e.id}
+                        onClick={() => setBulkEmployeeId(e.id)}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 border-b border-slate-100 last:border-b-0"
+                      >
+                        <div className="text-slate-900">{e.full_name}</div>
+                        <div className="text-xs text-slate-500 font-mono">
+                          {e.employee_code}
+                          {e.client_name && ` · ${e.client_name}`}
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {bulkEmployee && (
+            <>
+              {/* Month nav */}
+              <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => shiftBulkMonth(-1)}
+                  className="p-2 rounded hover:bg-slate-100 text-slate-700"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <div className="text-sm text-slate-900">
+                  {new Date(`${bulkMonth}-01T00:00:00`).toLocaleDateString(undefined, {
+                    month: "long",
+                    year: "numeric",
+                  })}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => shiftBulkMonth(1)}
+                  className="p-2 rounded hover:bg-slate-100 text-slate-700"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Selection helpers */}
+              <div className="flex flex-wrap gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const all = new Set<string>();
+                    for (const c of bulkCalendarCells) {
+                      if (c.date) all.add(c.date);
+                    }
+                    setBulkSelected(all);
+                  }}
+                  className="px-2 py-1 rounded border border-slate-200 text-slate-700 hover:bg-slate-50"
+                >
+                  Select month
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const wk = new Set<string>();
+                    for (const c of bulkCalendarCells) {
+                      if (!c.date) continue;
+                      const d = new Date(`${c.date}T00:00:00`).getDay();
+                      if (d !== 0 && d !== 6) wk.add(c.date);
+                    }
+                    setBulkSelected(wk);
+                  }}
+                  className="px-2 py-1 rounded border border-slate-200 text-slate-700 hover:bg-slate-50"
+                >
+                  Weekdays only
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBulkSelected(new Set())}
+                  className="px-2 py-1 rounded border border-slate-200 text-slate-700 hover:bg-slate-50"
+                >
+                  Clear selection
+                </button>
+                <span className="ml-auto text-slate-500 self-center">
+                  {bulkSelected.size} day{bulkSelected.size === 1 ? "" : "s"} selected
+                </span>
+              </div>
+
+              {/* Calendar grid */}
+              <div
+                className="select-none"
+                onMouseUp={() => setBulkDragMode(null)}
+                onMouseLeave={() => setBulkDragMode(null)}
+              >
+                <div className="grid grid-cols-7 gap-1 text-[10px] uppercase tracking-wider text-slate-500 mb-1">
+                  {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+                    <div key={d} className="text-center py-1">{d}</div>
+                  ))}
+                </div>
+                {bulkLoading ? (
+                  <div className="flex items-center gap-2 text-slate-500 py-6">
+                    <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-7 gap-1">
+                    {bulkCalendarCells.map((c, i) => {
+                      if (!c.date) {
+                        return <div key={i} className="h-12 rounded bg-slate-50/50" />;
+                      }
+                      const status = bulkExisting.get(c.date);
+                      const selected = bulkSelected.has(c.date);
+                      const statusClass =
+                        status === "Present"
+                          ? "bg-green-50 text-green-800 border-green-200"
+                          : status === "Absent"
+                            ? "bg-red-50 text-red-800 border-red-200"
+                            : status === "Leave"
+                              ? "bg-amber-50 text-amber-800 border-amber-200"
+                              : "bg-white text-slate-700 border-slate-200";
+                      const ring = selected ? "ring-2 ring-slate-900 ring-offset-1" : "";
+                      return (
+                        <button
+                          key={c.date}
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            const isSel = bulkSelected.has(c.date!);
+                            setBulkDragMode(isSel ? "remove" : "add");
+                            toggleBulkCell(c.date!);
+                          }}
+                          onMouseEnter={() => applyBulkDrag(c.date!)}
+                          className={`h-12 rounded border text-left p-1.5 transition-colors ${statusClass} ${ring}`}
+                          title={status ? `Currently: ${status}` : "Unmarked"}
+                        >
+                          <div className="text-xs">{c.day}</div>
+                          {status && (
+                            <div className="text-[9px] uppercase tracking-wider opacity-70">
+                              {status[0]}
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                <p className="text-[11px] text-slate-500 mt-2">
+                  Tap a date to toggle, or click-and-drag to multi-select. P = Present, A = Absent, L = Leave.
+                </p>
+              </div>
+
+              {bulkError && (
+                <div className="text-sm text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded">
+                  {bulkError}
+                </div>
+              )}
+
+              {/* Action buttons */}
+              <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => applyBulkStatus("Present")}
+                  disabled={bulkSubmitting || bulkSelected.size === 0}
+                  className="flex-1 min-w-[120px] px-3 py-2 rounded-md text-sm bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Mark Present
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyBulkStatus("Absent")}
+                  disabled={bulkSubmitting || bulkSelected.size === 0}
+                  className="flex-1 min-w-[120px] px-3 py-2 rounded-md text-sm bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Mark Absent
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyBulkStatus("Leave")}
+                  disabled={bulkSubmitting || bulkSelected.size === 0}
+                  className="flex-1 min-w-[120px] px-3 py-2 rounded-md text-sm bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Mark Leave
+                </button>
+                <button
+                  type="button"
+                  onClick={clearBulkSelected}
+                  disabled={bulkSubmitting || bulkSelected.size === 0}
+                  className="px-3 py-2 rounded-md text-sm border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Clear marks
+                </button>
+                {bulkSubmitting && (
+                  <span className="self-center text-xs text-slate-500 flex items-center gap-1">
+                    <Loader2 className="w-3 h-3 animate-spin" /> Saving…
+                  </span>
+                )}
+              </div>
+            </>
+          )}
+        </div>
       </Modal>
     </>
   );

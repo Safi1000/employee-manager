@@ -38,6 +38,7 @@ type InvoiceForm = {
   invoice_number: string;
   invoice_date: string;
   invoice_amount: string;
+  withholding_tax: string;
   notes: string;
   attachment_file: File | null;
   existing_attachment_path: string | null;
@@ -75,6 +76,7 @@ const emptyForm = (): InvoiceForm => ({
   invoice_number: "",
   invoice_date: currentMonthStr(),
   invoice_amount: "",
+  withholding_tax: "",
   notes: "",
   attachment_file: null,
   existing_attachment_path: null,
@@ -265,6 +267,7 @@ export default function Invoices() {
     setError(null);
     try {
       const invAmt = Number(form.invoice_amount);
+      const wht = Number(form.withholding_tax || 0);
       const { data, error: insErr } = await supabase
         .from("invoices")
         .insert({
@@ -272,6 +275,7 @@ export default function Invoices() {
           invoice_number: form.invoice_number.trim(),
           invoice_date: `${form.invoice_date.slice(0, 7)}-01`,
           invoice_amount: invAmt,
+          withholding_tax: wht,
           amount_received: 0,
           notes: form.notes.trim() || null,
           attachment_path: null,
@@ -306,6 +310,7 @@ export default function Invoices() {
       invoice_number: row.invoice_number,
       invoice_date: row.invoice_date.slice(0, 7),
       invoice_amount: String(row.invoice_amount),
+      withholding_tax: String(row.withholding_tax ?? 0),
       notes: row.notes ?? "",
       attachment_file: null,
       existing_attachment_path: row.attachment_path,
@@ -332,6 +337,7 @@ export default function Invoices() {
         path = await uploadAttachment(editingId, editForm.attachment_file);
       }
       const invAmt = Number(editForm.invoice_amount);
+      const wht = Number(editForm.withholding_tax || 0);
       const { error: upErr } = await supabase
         .from("invoices")
         .update({
@@ -339,6 +345,7 @@ export default function Invoices() {
           invoice_number: editForm.invoice_number.trim(),
           invoice_date: `${editForm.invoice_date.slice(0, 7)}-01`,
           invoice_amount: invAmt,
+          withholding_tax: wht,
           notes: editForm.notes.trim() || null,
           attachment_path: path,
           updated_at: new Date().toISOString(),
@@ -418,7 +425,9 @@ export default function Invoices() {
       return;
     }
     const outstanding =
-      Number(paymentInvoice.invoice_amount) - Number(paymentInvoice.amount_received);
+      Number(paymentInvoice.invoice_amount) -
+      Number(paymentInvoice.withholding_tax ?? 0) -
+      Number(paymentInvoice.amount_received);
     if (amt > outstanding + 0.0001) {
       setError(`Payment cannot exceed outstanding of PKR ${outstanding.toLocaleString()}.`);
       return;
@@ -664,10 +673,13 @@ export default function Invoices() {
 
   const editInvoiceAmount = Number(editForm.invoice_amount) || 0;
   const editReceived = editInvoice ? Number(editInvoice.amount_received) : 0;
-  const editOutstanding = Math.max(0, editInvoiceAmount - editReceived);
+  const editWht = editInvoice ? Number(editInvoice.withholding_tax ?? 0) : 0;
+  const editOutstanding = Math.max(0, editInvoiceAmount - editWht - editReceived);
 
   const paymentOutstanding = paymentInvoice
-    ? Number(paymentInvoice.invoice_amount) - Number(paymentInvoice.amount_received)
+    ? Number(paymentInvoice.invoice_amount) -
+      Number(paymentInvoice.withholding_tax ?? 0) -
+      Number(paymentInvoice.amount_received)
     : 0;
 
   const editPaymentMaxAllowed = editingPayment && editInvoice
@@ -742,6 +754,7 @@ export default function Invoices() {
                   <th className="text-left px-6 py-3 text-sm text-slate-500">Client</th>
                   <th className="text-left px-6 py-3 text-sm text-slate-500">Invoice Month</th>
                   <th className="text-right px-6 py-3 text-sm text-slate-500">Invoice Amount</th>
+                  <th className="text-right px-6 py-3 text-sm text-slate-500">Withholding</th>
                   <th className="text-right px-6 py-3 text-sm text-slate-500">Received</th>
                   <th className="text-right px-6 py-3 text-sm text-slate-500">Outstanding</th>
                   <th className="text-left px-6 py-3 text-sm text-slate-500">Status</th>
@@ -752,7 +765,7 @@ export default function Invoices() {
               <tbody className="divide-y divide-slate-200">
                 {loading && (
                   <tr>
-                    <td colSpan={9} className="px-6 py-10 text-center text-slate-500">
+                    <td colSpan={10} className="px-6 py-10 text-center text-slate-500">
                       <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                     </td>
                   </tr>
@@ -766,7 +779,8 @@ export default function Invoices() {
                 )}
                 {!loading &&
                   filteredInvoices.map((inv) => {
-                    const outstanding = Number(inv.invoice_amount) - Number(inv.amount_received);
+                    const wht = Number(inv.withholding_tax ?? 0);
+                    const outstanding = Number(inv.invoice_amount) - wht - Number(inv.amount_received);
                     const isSettled = outstanding <= 0;
                     return (
                       <tr key={inv.id} className="hover:bg-slate-50 transition-colors">
@@ -785,6 +799,9 @@ export default function Invoices() {
                         <td className="px-6 py-4 text-sm text-slate-600">{monthLabel(inv.invoice_date)}</td>
                         <td className="px-6 py-4 text-sm text-blue-600 text-right">
                           PKR {Number(inv.invoice_amount).toLocaleString()}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-rose-600 text-right">
+                          {wht > 0 ? `PKR ${wht.toLocaleString()}` : "—"}
                         </td>
                         <td className="px-6 py-4 text-sm text-green-600 text-right">
                           PKR {Number(inv.amount_received).toLocaleString()}
@@ -1399,6 +1416,19 @@ function InvoiceFields({
           onChange={(e) => setForm({ ...form, invoice_amount: e.target.value })}
           className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
         />
+      </div>
+      <div>
+        <label className="block text-sm text-slate-700 mb-1">Withholding Tax (PKR)</label>
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          value={form.withholding_tax}
+          onChange={(e) => setForm({ ...form, withholding_tax: e.target.value })}
+          placeholder="0 (optional)"
+          className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+        />
+        <p className="text-xs text-slate-500 mt-1">Deducted from the receivable balance for this invoice.</p>
       </div>
       <div>
         <label className="block text-sm text-slate-700 mb-1">Attachment</label>

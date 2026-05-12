@@ -14,7 +14,7 @@ import {
   Legend,
 } from "recharts";
 import { supabase } from "../../lib/supabase";
-import type { Expense, InvoicePayment, Payslip } from "../../lib/supabase";
+import type { Advance, Expense, InvoicePayment, Payslip } from "../../lib/supabase";
 import { TrendingUp, TrendingDown, Wallet } from "lucide-react";
 
 type Row = {
@@ -23,6 +23,7 @@ type Row = {
   revenue: number;
   expenses: number;
   payroll: number;
+  advances: number;
   net: number;
 };
 
@@ -72,6 +73,7 @@ export default function Cashflow() {
   const [invoicePayments, setInvoicePayments] = useState<InvoicePayment[]>([]);
   const [payslips, setPayslips] = useState<Payslip[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [advances, setAdvances] = useState<Advance[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -86,7 +88,7 @@ export default function Cashflow() {
       try {
         const sinceMonthIso = `${windowStart}-01`;
 
-        const [payRes, psRes, exRes] = await Promise.all([
+        const [payRes, psRes, exRes, advRes] = await Promise.all([
           supabase
             .from("invoice_payments")
             .select("amount, payment_date")
@@ -100,16 +102,22 @@ export default function Cashflow() {
             .from("expenses")
             .select("*")
             .gte("expense_date", sinceMonthIso),
+          supabase
+            .from("advances")
+            .select("amount, advance_date")
+            .gte("advance_date", sinceMonthIso),
         ]);
 
         if (payRes.error) throw payRes.error;
         if (psRes.error) throw psRes.error;
         if (exRes.error) throw exRes.error;
+        if (advRes.error) throw advRes.error;
 
         if (cancelled) return;
         setInvoicePayments((payRes.data ?? []) as InvoicePayment[]);
         setPayslips((psRes.data ?? []) as Payslip[]);
         setExpenses((exRes.data ?? []) as Expense[]);
+        setAdvances((advRes.data ?? []) as Advance[]);
       } catch (e: any) {
         if (!cancelled) setError(e.message ?? "Failed to load cashflow data.");
       } finally {
@@ -162,26 +170,42 @@ export default function Cashflow() {
       }
     }
 
+    const advancesByMonth = new Map<string, number>();
+    for (const a of advances) {
+      const key = monthKeyFromIso(a.advance_date);
+      if (!key) continue;
+      advancesByMonth.set(key, (advancesByMonth.get(key) ?? 0) + Number(a.amount ?? 0));
+    }
+
     return months.map(({ key, label }) => {
       const revenue = revenueByMonth.get(key) ?? 0;
       const payroll = payrollByMonth.get(key) ?? 0;
       const exp = expensesByMonth.get(key) ?? 0;
+      const adv = advancesByMonth.get(key) ?? 0;
       return {
         key,
         label,
         revenue,
         expenses: exp,
         payroll,
-        net: revenue - payroll - exp,
+        advances: adv,
+        net: revenue - payroll - exp - adv,
       };
     });
-  }, [invoicePayments, payslips, expenses, months]);
+  }, [invoicePayments, payslips, expenses, advances, months]);
 
   const totals = useMemo(() => {
     const revenue = rows.reduce((s, r) => s + r.revenue, 0);
     const payroll = rows.reduce((s, r) => s + r.payroll, 0);
     const exp = rows.reduce((s, r) => s + r.expenses, 0);
-    return { revenue, payroll, expenses: exp, net: revenue - payroll - exp };
+    const adv = rows.reduce((s, r) => s + r.advances, 0);
+    return {
+      revenue,
+      payroll,
+      expenses: exp,
+      advances: adv,
+      net: revenue - payroll - exp - adv,
+    };
   }, [rows]);
 
   const windowLabel =
@@ -198,7 +222,7 @@ export default function Cashflow() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
           <SummaryTile
             label="Revenue"
             value={currency(totals.revenue)}
@@ -221,11 +245,18 @@ export default function Cashflow() {
             subtitle="Cash/Bank + paid payables"
           />
           <SummaryTile
+            label="Total Advances"
+            value={currency(totals.advances)}
+            icon={<TrendingDown className="w-5 h-5 text-amber-600" />}
+            accent="rose"
+            subtitle="By advance date"
+          />
+          <SummaryTile
             label="Net"
             value={currency(totals.net)}
             icon={<TrendingUp className="w-5 h-5 text-slate-700" />}
             accent={totals.net >= 0 ? "emerald" : "rose"}
-            subtitle="Revenue − Payroll − Expenses"
+            subtitle="Revenue − Payroll − Expenses − Advances"
           />
         </div>
 
@@ -236,7 +267,8 @@ export default function Cashflow() {
               <p className="text-xs text-slate-500 mt-1">
                 Revenue = invoice payments actually received, bucketed by payment date.
                 Payroll = disbursed net salaries (when paid out). Expenses include
-                Cash/Bank expenses and paid payables — all cash-basis.
+                Cash/Bank expenses and paid payables. Advances are recognized
+                immediately by advance date. All cash-basis.
               </p>
             </div>
             <Button
@@ -374,6 +406,7 @@ export default function Cashflow() {
                   <th className="px-6 py-3 text-right">Revenue</th>
                   <th className="px-6 py-3 text-right">Payroll</th>
                   <th className="px-6 py-3 text-right">Expenses</th>
+                  <th className="px-6 py-3 text-right">Advances</th>
                   <th className="px-6 py-3 text-right">Net</th>
                 </tr>
               </thead>
@@ -397,6 +430,9 @@ export default function Cashflow() {
                     <td className="px-6 py-3 text-right text-rose-600">
                       {currency(r.expenses)}
                     </td>
+                    <td className="px-6 py-3 text-right text-amber-600">
+                      {currency(r.advances)}
+                    </td>
                     <td
                       className={`px-6 py-3 text-right ${
                         r.net >= 0 ? "text-emerald-600" : "text-rose-600"
@@ -409,7 +445,7 @@ export default function Cashflow() {
                 {rows.length === 0 && !loading && (
                   <tr>
                     <td
-                      colSpan={5}
+                      colSpan={6}
                       className="px-6 py-6 text-center text-slate-500"
                     >
                       No data available.
@@ -429,6 +465,9 @@ export default function Cashflow() {
                     </td>
                     <td className="px-6 py-3 text-right">
                       {currency(totals.expenses)}
+                    </td>
+                    <td className="px-6 py-3 text-right">
+                      {currency(totals.advances)}
                     </td>
                     <td className="px-6 py-3 text-right">
                       {currency(totals.net)}
