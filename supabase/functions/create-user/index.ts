@@ -1,8 +1,9 @@
 // Edge function: create-user
-// Auth: SSA can create any role for any company; super_admin can create
-// super_admin/hr/accounting for their own company only.
-// Body: { email, password, role, company_id, full_name?, permissions[]? }
-// Deploy with the Supabase CLI or via MCP `deploy_edge_function`.
+// Auth: SSA can create any user for any company; super_admin can create users
+// for their own company only.
+// Body: { email, password, company_id, title?, full_name?, role?, permissions[]? }
+// 'role' defaults to 'hr' and is now an internal enum-stamp; access is governed
+// entirely by the explicit permissions array. 'title' is the freeform user label.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
@@ -52,7 +53,8 @@ Deno.serve(async (req) => {
 
   const email = String(body.email ?? "").trim().toLowerCase();
   const password = String(body.password ?? "");
-  const role = String(body.role ?? "");
+  const role = String(body.role ?? "hr");
+  const title = body.title == null ? null : String(body.title).trim() || null;
   const company_id = body.company_id == null ? null : String(body.company_id);
   const full_name = body.full_name == null ? null : String(body.full_name).trim();
   const permissions = Array.isArray(body.permissions)
@@ -68,7 +70,6 @@ Deno.serve(async (req) => {
     // ok
   } else if (callerProfile.role === "super_admin") {
     if (callerProfile.company_id !== company_id) return json({ error: "wrong_company" }, 403);
-    if (!["super_admin", "hr", "accounting"].includes(role)) return json({ error: "role_not_allowed" }, 403);
   } else {
     return json({ error: "forbidden" }, 403);
   }
@@ -89,6 +90,7 @@ Deno.serve(async (req) => {
     id: created.user.id,
     company_id,
     role,
+    title,
     email,
     full_name,
     permissions,

@@ -46,7 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { data } = await supabase
         .from("profiles")
-        .select("id, company_id, role, full_name, email, view_as_company, permissions, created_at, updated_at")
+        .select("id, company_id, role, title, full_name, email, view_as_company, permissions, created_at, updated_at")
         .eq("id", userId)
         .maybeSingle();
       const p = (data as Profile) ?? null;
@@ -209,7 +209,8 @@ export function useAuth() {
 export async function callCreateUser(input: {
   email: string;
   password: string;
-  role: "super_admin" | "hr" | "accounting";
+  role?: "super_admin" | "hr" | "accounting";
+  title?: string | null;
   company_id: string;
   full_name?: string | null;
   permissions?: string[];

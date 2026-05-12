@@ -13,7 +13,7 @@ import {
   type Client,
 } from "../../lib/supabase";
 
-type EmployeeRow = Employee & { location_name: string | null; client_name: string | null };
+type EmployeeRow = Employee & { location_name: string | null; client_name: string | null; doc_count: number };
 type DocumentWithUrl = EmployeeDocument & { publicUrl: string | null };
 
 type FormState = {
@@ -26,6 +26,7 @@ type FormState = {
   base_salary: string;
   per_day_salary: string;
   join_date: string;
+  bank_name: string;
   bank_account: string;
   cnic?: File;
   police_verification?: File;
@@ -42,6 +43,7 @@ const emptyForm: FormState = {
   base_salary: "",
   per_day_salary: "",
   join_date: "",
+  bank_name: "",
   bank_account: "",
 };
 
@@ -87,24 +89,31 @@ export default function EmployeeManagement() {
   const loadData = async () => {
     setLoading(true);
     setError(null);
-    const [locRes, cliRes, empRes] = await Promise.all([
+    const [locRes, cliRes, empRes, docRes] = await Promise.all([
       supabase.from("locations").select("*").order("name"),
       supabase.from("clients").select("*").order("name"),
       supabase
         .from("employees")
         .select("*, location:location_id(name), client:client_id(name)")
         .order("created_at", { ascending: false }),
+      supabase.from("employee_documents").select("employee_id"),
     ]);
     if (locRes.error) setError(locRes.error.message);
     if (cliRes.error) setError(cliRes.error.message);
     if (empRes.error) setError(empRes.error.message);
+    if (docRes.error) setError(docRes.error.message);
     setLocations(locRes.data ?? []);
     setClients(cliRes.data ?? []);
+    const docCount = new Map<string, number>();
+    for (const d of (docRes.data ?? []) as { employee_id: string }[]) {
+      docCount.set(d.employee_id, (docCount.get(d.employee_id) ?? 0) + 1);
+    }
     setEmployees(
       (empRes.data ?? []).map((e: any) => ({
         ...e,
         location_name: e.location?.name ?? null,
         client_name: e.client?.name ?? null,
+        doc_count: docCount.get(e.id) ?? 0,
       }))
     );
     setLoading(false);
@@ -230,6 +239,7 @@ export default function EmployeeManagement() {
           base_salary: form.base_salary ? Number(form.base_salary) : null,
           per_day_salary: form.per_day_salary ? Number(form.per_day_salary) : null,
           join_date: form.join_date || null,
+          bank_name: form.bank_name.trim() || null,
           bank_account: form.bank_account.trim() || null,
         })
         .select()
@@ -278,6 +288,7 @@ export default function EmployeeManagement() {
       base_salary: baseStr,
       per_day_salary: computePerDay(baseStr),
       join_date: emp.join_date ?? "",
+      bank_name: emp.bank_name ?? "",
       bank_account: emp.bank_account ?? "",
     });
     setIsEditModalOpen(true);
@@ -302,6 +313,7 @@ export default function EmployeeManagement() {
           base_salary: editForm.base_salary ? Number(editForm.base_salary) : null,
           per_day_salary: editForm.per_day_salary ? Number(editForm.per_day_salary) : null,
           join_date: editForm.join_date || null,
+          bank_name: editForm.bank_name.trim() || null,
           bank_account: editForm.bank_account.trim() || null,
         })
         .eq("id", selectedEmployee.id);
@@ -423,10 +435,28 @@ export default function EmployeeManagement() {
                   </tr>
                 )}
                 {!loading &&
-                  filtered.map((employee) => (
-                    <tr key={employee.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-6 py-4 text-sm text-slate-600 font-mono">{employee.employee_code}</td>
-                      <td className="px-6 py-4 text-sm text-slate-900">{employee.full_name}</td>
+                  filtered.map((employee) => {
+                    const noDocs = (employee.doc_count ?? 0) === 0;
+                    return (
+                    <tr
+                      key={employee.id}
+                      className={`transition-colors ${noDocs ? "bg-red-50 hover:bg-red-100" : "hover:bg-slate-50"}`}
+                      title={noDocs ? "No documents uploaded for this employee" : undefined}
+                    >
+                      <td className="px-6 py-4 text-sm font-mono">
+                        <span className={noDocs ? "text-red-700" : "text-slate-600"}>{employee.employee_code}</span>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-slate-900">
+                        <div className="flex items-center gap-2">
+                          {employee.full_name}
+                          {noDocs && (
+                            <span className="inline-flex items-center text-[10px] uppercase tracking-wider text-red-700 bg-red-100 px-1.5 py-0.5 rounded">
+                              <AlertCircle className="w-3 h-3 mr-0.5" strokeWidth={2} />
+                              No docs
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-6 py-4 text-sm text-slate-600">{employee.phone ?? "—"}</td>
                       <td className="px-6 py-4 text-sm text-slate-600">{employee.location_name ?? "—"}</td>
                       <td className="px-6 py-4 text-sm text-slate-600">{employee.client_name ?? "—"}</td>
@@ -463,7 +493,8 @@ export default function EmployeeManagement() {
                         </Button>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
               </tbody>
             </table>
           </div>
@@ -613,7 +644,17 @@ export default function EmployeeManagement() {
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                 />
               </div>
-              <div className="col-span-2">
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Bank Name</label>
+                <input
+                  type="text"
+                  value={form.bank_name}
+                  onChange={(e) => setForm({ ...form, bank_name: e.target.value })}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  placeholder="e.g., Allied Bank"
+                />
+              </div>
+              <div>
                 <label className="block text-sm text-slate-700 mb-1">Bank Account Number</label>
                 <input
                   type="text"
@@ -736,7 +777,11 @@ export default function EmployeeManagement() {
                   <p className="text-slate-500 mb-1">Join Date</p>
                   <p className="text-slate-900">{selectedEmployee.join_date ?? "—"}</p>
                 </div>
-                <div className="col-span-2">
+                <div>
+                  <p className="text-slate-500 mb-1">Bank Name</p>
+                  <p className="text-slate-900">{selectedEmployee.bank_name ?? "—"}</p>
+                </div>
+                <div>
                   <p className="text-slate-500 mb-1">Bank Account</p>
                   <p className="text-slate-900 font-mono">{selectedEmployee.bank_account ?? "—"}</p>
                 </div>
@@ -908,7 +953,17 @@ export default function EmployeeManagement() {
                     className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                   />
                 </div>
-                <div className="col-span-2">
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">Bank Name</label>
+                  <input
+                    type="text"
+                    value={editForm.bank_name}
+                    onChange={(e) => setEditForm({ ...editForm, bank_name: e.target.value })}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    placeholder="e.g., Allied Bank"
+                  />
+                </div>
+                <div>
                   <label className="block text-sm text-slate-700 mb-1">Bank Account Number</label>
                   <input
                     type="text"

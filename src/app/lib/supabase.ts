@@ -37,6 +37,7 @@ export type Profile = {
   id: string;
   company_id: string | null;
   role: UserRole;
+  title: string | null;
   full_name: string | null;
   email: string | null;
   view_as_company: string | null;
@@ -181,6 +182,7 @@ export type Employee = {
   base_salary: number | null;
   per_day_salary: number | null;
   join_date: string | null;
+  bank_name: string | null;
   bank_account: string | null;
   created_at?: string;
   updated_at?: string;
