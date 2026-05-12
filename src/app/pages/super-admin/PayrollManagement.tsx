@@ -140,7 +140,8 @@ export default function PayrollManagement() {
         .from("attendance_records")
         .select("employee_id, status, attendance_date")
         .gte("attendance_date", start)
-        .lte("attendance_date", end),
+        .lte("attendance_date", end)
+        .limit(10000),
       supabase.from("payslips").select("*").eq("period_month", period),
       supabase
         .from("advances")
@@ -152,7 +153,8 @@ export default function PayrollManagement() {
         .select("employee_id, attendance_date")
         .eq("status", "Leave")
         .gte("attendance_date", carryWindowStartIso)
-        .lt("attendance_date", start),
+        .lt("attendance_date", start)
+        .limit(10000),
     ]);
     const agg = new Map<string, { present: number; absent: number; leave: number }>();
     (attRes.data ?? []).forEach((a: any) => {

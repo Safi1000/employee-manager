@@ -342,7 +342,8 @@ export default function AttendanceManagement() {
       .select("employee_id, attendance_date, status")
       .gte("attendance_date", historyFrom)
       .lte("attendance_date", historyTo)
-      .order("attendance_date", { ascending: false });
+      .order("attendance_date", { ascending: false })
+      .limit(10000);
     if (err) {
       setError(err.message);
       return;
@@ -509,7 +510,8 @@ export default function AttendanceManagement() {
       .select("employee_id, attendance_date, status")
       .gte("attendance_date", monthStart)
       .lte("attendance_date", monthEnd)
-      .in("employee_id", empIds);
+      .in("employee_id", empIds)
+      .limit(10000);
     if (rErr) {
       setError(rErr.message);
       return;
