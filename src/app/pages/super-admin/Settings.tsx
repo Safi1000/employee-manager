@@ -15,6 +15,8 @@ type ClientRow = {
   allowed_leaves_per_month: number;
   client_type: ClientType;
   leave_carry_forward: boolean;
+  eobi_enabled: boolean;
+  eobi_amount: number;
   employees: number;
 };
 
@@ -47,6 +49,11 @@ export default function Settings() {
   const [editClientType, setEditClientType] = useState<ClientType>("security_services");
   const [editClientCarry, setEditClientCarry] = useState<boolean>(false);
   const [newClientCarry, setNewClientCarry] = useState<boolean>(false);
+
+  const [newClientEobiOn, setNewClientEobiOn] = useState<boolean>(false);
+  const [newClientEobiAmt, setNewClientEobiAmt] = useState<number>(0);
+  const [editClientEobiOn, setEditClientEobiOn] = useState<boolean>(false);
+  const [editClientEobiAmt, setEditClientEobiAmt] = useState<number>(0);
 
   const [submitting, setSubmitting] = useState(false);
 
@@ -150,7 +157,7 @@ export default function Settings() {
       supabase.from("locations").select("id, name").order("name"),
       supabase
         .from("clients")
-        .select("id, client_code, name, email, phone, allowed_leaves_per_month, client_type, leave_carry_forward")
+        .select("id, client_code, name, email, phone, allowed_leaves_per_month, client_type, leave_carry_forward, eobi_enabled, eobi_amount")
         .order("client_code"),
     ]);
 
@@ -181,6 +188,8 @@ export default function Settings() {
         allowed_leaves_per_month: Number(r.allowed_leaves_per_month ?? 0),
         client_type: (r.client_type ?? "security_services") as ClientType,
         leave_carry_forward: !!r.leave_carry_forward,
+        eobi_enabled: !!r.eobi_enabled,
+        eobi_amount: Number(r.eobi_amount ?? 0),
         employees: cliCounts[r.id] ?? 0,
       }))
     );
@@ -250,6 +259,8 @@ export default function Settings() {
       allowed_leaves_per_month: Math.max(0, Math.floor(Number(newClientAllowedLeaves) || 0)),
       client_type: newClientType,
       leave_carry_forward: newClientCarry,
+      eobi_enabled: newClientEobiOn,
+      eobi_amount: newClientEobiOn ? Math.max(0, Number(newClientEobiAmt) || 0) : 0,
     });
     setSubmitting(false);
     if (insErr) {
@@ -262,6 +273,8 @@ export default function Settings() {
     setNewClientAllowedLeaves(0);
     setNewClientType("security_services");
     setNewClientCarry(false);
+    setNewClientEobiOn(false);
+    setNewClientEobiAmt(0);
     setClientAddOpen(false);
     await loadAll();
   };
@@ -274,6 +287,8 @@ export default function Settings() {
     setEditClientAllowedLeaves(row.allowed_leaves_per_month ?? 0);
     setEditClientType(row.client_type ?? "security_services");
     setEditClientCarry(!!row.leave_carry_forward);
+    setEditClientEobiOn(!!row.eobi_enabled);
+    setEditClientEobiAmt(Number(row.eobi_amount ?? 0));
   };
 
   const handleSaveClientEdit = async (id: string) => {
@@ -287,6 +302,8 @@ export default function Settings() {
         allowed_leaves_per_month: Math.max(0, Math.floor(Number(editClientAllowedLeaves) || 0)),
         client_type: editClientType,
         leave_carry_forward: editClientCarry,
+        eobi_enabled: editClientEobiOn,
+        eobi_amount: editClientEobiOn ? Math.max(0, Number(editClientEobiAmt) || 0) : 0,
       })
       .eq("id", id);
     if (upErr) {
@@ -482,6 +499,36 @@ export default function Settings() {
                       </span>
                     </span>
                   </label>
+                  <div className="space-y-2 border-t border-slate-200 pt-3">
+                    <label className="flex items-start gap-2 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={editClientEobiOn}
+                        onChange={(e) => setEditClientEobiOn(e.target.checked)}
+                        className="mt-0.5 rounded border-slate-300"
+                      />
+                      <span>
+                        Apply EOBI deduction
+                        <span className="block text-[11px] text-slate-500">
+                          Subtracts a flat per-employee amount from final salary for every employee under this client.
+                        </span>
+                      </span>
+                    </label>
+                    {editClientEobiOn && (
+                      <div>
+                        <label className="block text-xs text-slate-600 mb-1">EOBI Amount (PKR per employee)</label>
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={editClientEobiAmt}
+                          onChange={(e) => setEditClientEobiAmt(Number(e.target.value))}
+                          className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                          placeholder="0"
+                        />
+                      </div>
+                    )}
+                  </div>
                   <div className="flex gap-2">
                     <Button variant="primary" size="sm" onClick={() => handleSaveClientEdit(row.id)}>
                       Save
@@ -505,6 +552,11 @@ export default function Settings() {
                       {row.leave_carry_forward && (
                         <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 mr-2">
                           Carry-forward
+                        </span>
+                      )}
+                      {row.eobi_enabled && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 mr-2">
+                          EOBI PKR {row.eobi_amount.toLocaleString()}
                         </span>
                       )}
                       {row.employees} employees · {row.allowed_leaves_per_month} leaves/mo
@@ -831,6 +883,36 @@ export default function Settings() {
               </span>
             </span>
           </label>
+          <div className="space-y-2 border-t border-slate-200 pt-3">
+            <label className="flex items-start gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={newClientEobiOn}
+                onChange={(e) => setNewClientEobiOn(e.target.checked)}
+                className="mt-0.5 rounded border-slate-300"
+              />
+              <span>
+                Apply EOBI deduction
+                <span className="block text-[11px] text-slate-500">
+                  Subtracts a flat per-employee amount from final salary for every employee under this client.
+                </span>
+              </span>
+            </label>
+            {newClientEobiOn && (
+              <div>
+                <label className="block text-xs text-slate-600 mb-1">EOBI Amount (PKR per employee)</label>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={newClientEobiAmt}
+                  onChange={(e) => setNewClientEobiAmt(Number(e.target.value))}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  placeholder="0"
+                />
+              </div>
+            )}
+          </div>
           <p className="text-xs text-slate-500">A unique Client ID (CLI-…) is generated automatically.</p>
           <div className="flex items-center gap-3 pt-4">
             <Button variant="primary" size="md" className="flex-1" disabled={submitting}>

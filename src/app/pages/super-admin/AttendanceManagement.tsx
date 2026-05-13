@@ -67,6 +67,7 @@ export default function AttendanceManagement() {
   const [clientFilter, setClientFilter] = useState("all");
   const [locationFilter, setLocationFilter] = useState("all");
   const [shiftFilter, setShiftFilter] = useState<"all" | "day" | "night">("all");
+  const [unmarkedOnly, setUnmarkedOnly] = useState<boolean>(false);
   const [empSearch, setEmpSearch] = useState("");
   const [historyFrom, setHistoryFrom] = useState<string>(daysAgo(13));
   const [historyTo, setHistoryTo] = useState<string>(today());
@@ -425,10 +426,11 @@ export default function AttendanceManagement() {
       if (clientFilter !== "all" && e.client_id !== clientFilter) return false;
       if (locationFilter !== "all" && e.location_id !== locationFilter) return false;
       if (shiftFilter !== "all" && e.shift !== shiftFilter) return false;
+      if (unmarkedOnly && todayRecords[e.id]) return false;
       if (q && !e.full_name.toLowerCase().includes(q) && !e.employee_code.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [employees, clientFilter, locationFilter, shiftFilter, empSearch]);
+  }, [employees, clientFilter, locationFilter, shiftFilter, unmarkedOnly, todayRecords, empSearch]);
 
   const markStatus = async (employeeId: string, status: AttendanceStatus) => {
     setSaving((s) => ({ ...s, [employeeId]: true }));
@@ -815,6 +817,18 @@ export default function AttendanceManagement() {
               </select>
             </div>
           </div>
+          <label className="mt-4 inline-flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={unmarkedOnly}
+              onChange={(e) => setUnmarkedOnly(e.target.checked)}
+              className="rounded border-slate-300"
+            />
+            <span>
+              Show only employees with no attendance for{" "}
+              <span className="font-mono text-slate-900">{date}</span>
+            </span>
+          </label>
         </div>
 
         <div className="bg-white rounded-lg border border-slate-200 mb-6">

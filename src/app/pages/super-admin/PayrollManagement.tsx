@@ -30,6 +30,8 @@ type RowState = {
   bonus: number;
   deductions: number;
   advance: number;
+  income_tax: number;
+  eobi: number;
   final_salary: number;
   net_salary: number;
   payment_mode: PaymentMode;
@@ -243,6 +245,16 @@ export default function PayrollManagement() {
     return m;
   }, [clients]);
 
+  // Per-client EOBI: amount (PKR) the client wants withheld per employee.
+  // 0 (or disabled) means no EOBI for that client.
+  const clientEobiAmount = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const c of clients as Array<{ id: string; eobi_enabled?: boolean; eobi_amount?: number }>) {
+      m.set(c.id, c.eobi_enabled ? Number(c.eobi_amount ?? 0) : 0);
+    }
+    return m;
+  }, [clients]);
+
   const carriedAllowance = useMemo(() => {
     const out = new Map<string, number>();
     if (!selectedPeriod) return out;
@@ -294,6 +306,8 @@ export default function PayrollManagement() {
         bonus: Number(existing?.bonus ?? 0),
         deductions: Number(existing?.deductions ?? 0),
         advance: computedAdvance,
+        income_tax: 0,
+        eobi: 0,
         final_salary: 0,
         net_salary: 0,
         payment_mode: (existing?.payment_mode ?? "Cash") as PaymentMode,
@@ -336,10 +350,20 @@ export default function PayrollManagement() {
       merged.per_day_salary = perDay > 0 ? perDay : null;
       const earned = perDay * merged.effective_present_days;
       merged.final_salary = Math.max(0, earned + merged.bonus - merged.deductions);
-      merged.net_salary = Math.max(0, merged.final_salary - merged.advance);
+      // Income tax: 1% of (final_salary - 50000) when > 50000.
+      merged.income_tax = merged.final_salary > 50000
+        ? (merged.final_salary - 50000) * 0.01
+        : 0;
+      // EOBI: per-client flat amount, applied when employee has a client and
+      // that client has eobi_enabled.
+      merged.eobi = emp.client_id ? clientEobiAmount.get(emp.client_id) ?? 0 : 0;
+      merged.net_salary = Math.max(
+        0,
+        merged.final_salary - merged.income_tax - merged.eobi - merged.advance,
+      );
       return merged;
     });
-  }, [employees, payslipsMap, attendanceAgg, advancesByEmployee, clientAllowedLeaves, carriedAllowance, selectedPeriod, rowEdits]);
+  }, [employees, payslipsMap, attendanceAgg, advancesByEmployee, clientAllowedLeaves, clientEobiAmount, carriedAllowance, selectedPeriod, rowEdits]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -400,6 +424,8 @@ export default function PayrollManagement() {
       bonus: row.bonus,
       deductions: row.deductions,
       advance: row.advance,
+      income_tax: row.income_tax,
+      eobi: row.eobi,
       final_salary: row.final_salary,
       net_salary: row.net_salary,
       payment_mode: row.payment_mode,
@@ -772,7 +798,9 @@ export default function PayrollManagement() {
     doc.setFontSize(12);
     line("Final Salary (Earned + Bonus − Deductions)", `PKR ${row.final_salary.toLocaleString()}`);
     doc.setFontSize(11);
-    line("Advance", `PKR ${row.advance.toLocaleString()}`);
+    if (row.income_tax > 0) line("Income Tax (1% over PKR 50,000)", `− PKR ${Math.round(row.income_tax).toLocaleString()}`);
+    if (row.eobi > 0) line("EOBI", `− PKR ${Math.round(row.eobi).toLocaleString()}`);
+    line("Advance", `− PKR ${row.advance.toLocaleString()}`);
     y += 6;
     doc.setFontSize(14);
     line("Net Salary", `PKR ${row.net_salary.toLocaleString()}`);
@@ -1226,7 +1254,23 @@ export default function PayrollManagement() {
                       <span className="text-slate-500">Final Salary</span>
                       <span className="text-slate-900">PKR {selectedRow.final_salary.toLocaleString()}</span>
                     </div>
+                    {selectedRow.income_tax > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Income Tax (1% over 50K)</span>
+                        <span className="text-rose-700">− PKR {Math.round(selectedRow.income_tax).toLocaleString()}</span>
+                      </div>
+                    )}
+                    {selectedRow.eobi > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">EOBI</span>
+                        <span className="text-rose-700">− PKR {Math.round(selectedRow.eobi).toLocaleString()}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between">
+                      <span className="text-slate-500">Advance</span>
+                      <span className="text-rose-700">− PKR {Math.round(selectedRow.advance).toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between pt-1 border-t border-slate-100">
                       <span className="text-base text-slate-900">Net Salary</span>
                       <span className="text-lg text-slate-900">PKR {selectedRow.net_salary.toLocaleString()}</span>
                     </div>
@@ -1435,6 +1479,18 @@ export default function PayrollManagement() {
                   <span className="text-slate-700">Final Salary</span>
                   <span className="text-slate-900">PKR {payslipData.final_salary.toLocaleString()}</span>
                 </div>
+                {payslipData.income_tax > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Income Tax (1% over PKR 50,000)</span>
+                    <span className="text-red-600">− PKR {Math.round(payslipData.income_tax).toLocaleString()}</span>
+                  </div>
+                )}
+                {payslipData.eobi > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">EOBI</span>
+                    <span className="text-red-600">− PKR {Math.round(payslipData.eobi).toLocaleString()}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-slate-600">Advance</span>
                   <span className="text-red-600">− PKR {payslipData.advance.toLocaleString()}</span>

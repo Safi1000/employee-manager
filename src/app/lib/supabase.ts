@@ -174,6 +174,8 @@ export type Client = {
   opening_balance: number;
   client_type: ClientType;
   leave_carry_forward: boolean;
+  eobi_enabled: boolean;
+  eobi_amount: number;
   created_at?: string;
 };
 
@@ -331,6 +333,8 @@ export type Payslip = {
   bonus: number;
   deductions: number;
   advance: number;
+  income_tax: number;
+  eobi: number;
   final_salary: number;
   net_salary: number;
   payment_mode: PaymentMode;
