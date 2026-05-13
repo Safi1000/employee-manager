@@ -347,19 +347,19 @@ export default function PayrollManagement() {
       const perDay = daysThisPeriod > 0 && merged.base_salary > 0
         ? merged.base_salary / daysThisPeriod
         : 0;
-      merged.per_day_salary = perDay > 0 ? perDay : null;
-      const earned = perDay * merged.effective_present_days;
-      merged.final_salary = Math.max(0, earned + merged.bonus - merged.deductions);
+      merged.per_day_salary = perDay > 0 ? Math.round(perDay) : null;
+      const earned = Math.round(perDay * merged.effective_present_days);
+      merged.final_salary = Math.max(0, Math.round(earned + merged.bonus - merged.deductions));
       // Income tax: 1% of (final_salary - 50000) when > 50000.
       merged.income_tax = merged.final_salary > 50000
-        ? (merged.final_salary - 50000) * 0.01
+        ? Math.round((merged.final_salary - 50000) * 0.01)
         : 0;
       // EOBI: per-client flat amount, applied when employee has a client and
       // that client has eobi_enabled.
       merged.eobi = emp.client_id ? clientEobiAmount.get(emp.client_id) ?? 0 : 0;
       merged.net_salary = Math.max(
         0,
-        merged.final_salary - merged.income_tax - merged.eobi - merged.advance,
+        Math.round(merged.final_salary - merged.income_tax - merged.eobi - merged.advance),
       );
       return merged;
     });
