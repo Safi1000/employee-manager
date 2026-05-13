@@ -8,6 +8,7 @@ import ClientFilterSelect from "../../components/ClientFilterSelect";
 import { exportAttendance, type AttendanceEmployeeRow } from "../../lib/excel";
 import {
   supabase,
+  fetchAllRows,
   type AttendanceStatus,
   type AttendanceRecord,
   type Client,
@@ -338,18 +339,21 @@ export default function AttendanceManagement() {
   };
 
   const loadHistory = async () => {
-    const { data, error: err } = await supabase
-      .from("attendance_records")
-      .select("employee_id, attendance_date, status")
-      .gte("attendance_date", historyFrom)
-      .lte("attendance_date", historyTo)
-      .order("attendance_date", { ascending: false })
-      .limit(10000);
-    if (err) {
-      setError(err.message);
-      return;
+    try {
+      const rows = await fetchAllRows<AttendanceRecord>(() =>
+        supabase
+          .from("attendance_records")
+          .select("employee_id, attendance_date, status")
+          .gte("attendance_date", historyFrom)
+          .lte("attendance_date", historyTo)
+          .order("attendance_date", { ascending: false }) as unknown as {
+          range: (from: number, to: number) => Promise<{ data: unknown; error: { message: string } | null }>;
+        },
+      );
+      setHistory(buildHistoryRows(rows));
+    } catch (err: any) {
+      setError(err.message ?? String(err));
     }
-    setHistory(buildHistoryRows((data ?? []) as AttendanceRecord[]));
   };
 
   const buildHistoryRows = (rows: AttendanceRecord[]): HistoryRow[] => {
@@ -508,15 +512,21 @@ export default function AttendanceManagement() {
     const empIds = filteredEmployees.map((e) => e.id);
     if (empIds.length === 0) return;
 
-    const { data: records, error: rErr } = await supabase
-      .from("attendance_records")
-      .select("employee_id, attendance_date, status")
-      .gte("attendance_date", monthStart)
-      .lte("attendance_date", monthEnd)
-      .in("employee_id", empIds)
-      .limit(10000);
-    if (rErr) {
-      setError(rErr.message);
+    let records: AttendanceRecord[] = [];
+    try {
+      records = await fetchAllRows<AttendanceRecord>(() =>
+        supabase
+          .from("attendance_records")
+          .select("employee_id, attendance_date, status")
+          .gte("attendance_date", monthStart)
+          .lte("attendance_date", monthEnd)
+          .in("employee_id", empIds)
+          .order("attendance_date", { ascending: true }) as unknown as {
+          range: (from: number, to: number) => Promise<{ data: unknown; error: { message: string } | null }>;
+        },
+      );
+    } catch (err: any) {
+      setError(err.message ?? String(err));
       return;
     }
 

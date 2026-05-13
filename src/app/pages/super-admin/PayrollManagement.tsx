@@ -135,33 +135,29 @@ export default function PayrollManagement() {
     const carryWindowStartIso = `${carryWindowStart.getFullYear()}-${String(
       carryWindowStart.getMonth() + 1
     ).padStart(2, "0")}-01`;
+    // Server-side aggregation RPCs — raw SELECT was hitting PostgREST's
+    // ~1000-row response cap once a company crossed ~30 employees with full
+    // month coverage, silently dropping attendance for most people.
     const [attRes, payRes, advRes, attHistRes] = await Promise.all([
-      supabase
-        .from("attendance_records")
-        .select("employee_id, status, attendance_date")
-        .gte("attendance_date", start)
-        .lte("attendance_date", end)
-        .limit(10000),
+      supabase.rpc("attendance_period_counts", { p_start: start, p_end: end }),
       supabase.from("payslips").select("*").eq("period_month", period),
       supabase
         .from("advances")
         .select("employee_id, amount")
         .gte("advance_date", start)
         .lte("advance_date", end),
-      supabase
-        .from("attendance_records")
-        .select("employee_id, attendance_date")
-        .eq("status", "Leave")
-        .gte("attendance_date", carryWindowStartIso)
-        .lt("attendance_date", start)
-        .limit(10000),
+      supabase.rpc("attendance_leave_history", {
+        p_window_start: carryWindowStartIso,
+        p_until: start,
+      }),
     ]);
     const agg = new Map<string, { present: number; absent: number; leave: number }>();
     (attRes.data ?? []).forEach((a: any) => {
       const cur = agg.get(a.employee_id) ?? { present: 0, absent: 0, leave: 0 };
-      if (a.status === "Present") cur.present += 1;
-      if (a.status === "Absent") cur.absent += 1;
-      if (a.status === "Leave") cur.leave += 1;
+      const cnt = Number(a.cnt) || 0;
+      if (a.status === "Present") cur.present += cnt;
+      else if (a.status === "Absent") cur.absent += cnt;
+      else if (a.status === "Leave") cur.leave += cnt;
       agg.set(a.employee_id, cur);
     });
     setAttendanceAgg(agg);
@@ -173,13 +169,14 @@ export default function PayrollManagement() {
       advMap.set(a.employee_id, (advMap.get(a.employee_id) ?? 0) + Number(a.amount));
     });
     setAdvancesByEmployee(advMap);
+    // attendance_leave_history returns one row per (employee, month) with cnt.
     const histMap = new Map<string, Map<string, number>>();
     (attHistRes.data ?? []).forEach((r: any) => {
-      const date: string = r.attendance_date;
-      const key = date.slice(0, 7);
+      const monthKey: string = String(r.month_key ?? "").slice(0, 7);
+      if (!monthKey) return;
       if (!histMap.has(r.employee_id)) histMap.set(r.employee_id, new Map());
       const empMap = histMap.get(r.employee_id)!;
-      empMap.set(key, (empMap.get(key) ?? 0) + 1);
+      empMap.set(monthKey, (empMap.get(monthKey) ?? 0) + Number(r.cnt));
     });
     setPriorLeavesByMonth(histMap);
     setRowEdits(new Map());

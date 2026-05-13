@@ -18,6 +18,7 @@ import Modal from "../../components/Modal";
 import ClientFilterSelect from "../../components/ClientFilterSelect";
 import {
   supabase,
+  fetchAllRows,
   INVOICE_ATTACHMENTS_BUCKET,
   type Client,
   type Invoice,
@@ -123,20 +124,27 @@ export default function Invoices() {
   const loadAll = async () => {
     setLoading(true);
     setError(null);
-    const [cliRes, invRes, bankRes] = await Promise.all([
+    const [cliRes, bankRes] = await Promise.all([
       supabase.from("clients").select("*").order("name"),
-      supabase
-        .from("invoices")
-        .select("*, client:client_id(name, client_code)")
-        .order("invoice_date", { ascending: false }),
       supabase.from("bank_accounts").select("*").order("bank_name"),
     ]);
     if (cliRes.error) setError(cliRes.error.message);
-    if (invRes.error) setError(invRes.error.message);
     if (bankRes.error) setError(bankRes.error.message);
     setClients((cliRes.data ?? []) as Client[]);
-    setInvoices((invRes.data ?? []) as InvoiceRow[]);
     setBanks((bankRes.data ?? []) as BankAccount[]);
+    try {
+      const invRows = await fetchAllRows<InvoiceRow>(() =>
+        supabase
+          .from("invoices")
+          .select("*, client:client_id(name, client_code)")
+          .order("invoice_date", { ascending: false }) as unknown as {
+          range: (from: number, to: number) => Promise<{ data: unknown; error: { message: string } | null }>;
+        },
+      );
+      setInvoices(invRows);
+    } catch (err: any) {
+      setError(err.message ?? String(err));
+    }
     setLoading(false);
   };
 

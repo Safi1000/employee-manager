@@ -5,6 +5,29 @@ const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
 export const supabase = createClient(url, anonKey);
 
+// Paginate through a Supabase query in chunks of 1000 (PostgREST's default
+// response cap) until the entire result set is fetched. Pass a builder that
+// creates a fresh filter chain each iteration so we can attach a new .range()
+// for each page. Important: the builder MUST set an explicit .order(...) so
+// pagination is stable.
+export async function fetchAllRows<T>(
+  build: () => { range: (from: number, to: number) => Promise<{ data: unknown; error: { message: string } | null }> },
+  pageSize = 1000,
+): Promise<T[]> {
+  const out: T[] = [];
+  let from = 0;
+  // Hard ceiling guard in case something pathological happens.
+  for (let safety = 0; safety < 200; safety++) {
+    const { data, error } = await build().range(from, from + pageSize - 1);
+    if (error) throw new Error(error.message);
+    const rows = (data ?? []) as T[];
+    out.push(...rows);
+    if (rows.length < pageSize) return out;
+    from += pageSize;
+  }
+  return out;
+}
+
 export const EMPLOYEE_DOCS_BUCKET = "employee-documents";
 export const EXPENSE_RECEIPTS_BUCKET = "expense-receipts";
 export const INVOICE_ATTACHMENTS_BUCKET = "invoice-attachments";

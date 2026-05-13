@@ -11,6 +11,7 @@ import Modal from "../../components/Modal";
 import Button from "../../components/Button";
 import {
   supabase,
+  fetchAllRows,
   INVOICE_ATTACHMENTS_BUCKET,
   isHardcodedCategory,
   type Client,
@@ -356,25 +357,66 @@ export default function FinancialReports() {
   const loadPartnership = async () => {
     setLoadingPartnership(true);
     setPartnerError(null);
-    const [pRes, bRes, iRes, sRes, eRes] = await Promise.all([
+    const [pRes, bRes] = await Promise.all([
       supabase.from("partners").select("*").order("name"),
       supabase.from("bank_accounts").select("*").eq("owner_type", "partner"),
-      supabase.from("invoices").select("invoice_date, invoice_amount, client:client_id(client_type)"),
-      supabase.from("payslips").select("period_month, final_salary"),
-      supabase.from("expenses").select("expense_date, amount"),
     ]);
     const partnerList = (pRes.data ?? []) as Partner[];
     const partnerAccounts = (bRes.data ?? []) as BankAccount[];
     const partnerAccountIds = partnerAccounts.map((b) => b.id);
-    const txRes = partnerAccountIds.length
-      ? await supabase.from("bank_transactions").select("*").in("bank_account_id", partnerAccountIds)
-      : { data: [] as BankTransaction[] };
+    // Paginate the all-time data loads. PostgREST caps unpaginated SELECT at
+    // ~1000 rows, which silently breaks partnership math at scale.
+    let iRows: typeof allInvoicesForPl = [];
+    let sRows: typeof allPayslipsForPl = [];
+    let eRows: typeof allExpensesForPl = [];
+    let txRows: BankTransaction[] = [];
+    try {
+      [iRows, sRows, eRows] = await Promise.all([
+        fetchAllRows<typeof allInvoicesForPl[number]>(() =>
+          supabase
+            .from("invoices")
+            .select("invoice_date, invoice_amount, client:client_id(client_type)")
+            .order("invoice_date", { ascending: false }) as unknown as {
+            range: (from: number, to: number) => Promise<{ data: unknown; error: { message: string } | null }>;
+          },
+        ),
+        fetchAllRows<typeof allPayslipsForPl[number]>(() =>
+          supabase
+            .from("payslips")
+            .select("period_month, final_salary")
+            .order("period_month", { ascending: false }) as unknown as {
+            range: (from: number, to: number) => Promise<{ data: unknown; error: { message: string } | null }>;
+          },
+        ),
+        fetchAllRows<typeof allExpensesForPl[number]>(() =>
+          supabase
+            .from("expenses")
+            .select("expense_date, amount")
+            .order("expense_date", { ascending: false }) as unknown as {
+            range: (from: number, to: number) => Promise<{ data: unknown; error: { message: string } | null }>;
+          },
+        ),
+      ]);
+      if (partnerAccountIds.length) {
+        txRows = await fetchAllRows<BankTransaction>(() =>
+          supabase
+            .from("bank_transactions")
+            .select("*")
+            .in("bank_account_id", partnerAccountIds)
+            .order("created_at", { ascending: false }) as unknown as {
+            range: (from: number, to: number) => Promise<{ data: unknown; error: { message: string } | null }>;
+          },
+        );
+      }
+    } catch (err: any) {
+      setPartnerError(err.message ?? String(err));
+    }
     setPartners(partnerList);
     setPartnerBanks(partnerAccounts);
-    setAllInvoicesForPl(((iRes.data ?? []) as unknown) as typeof allInvoicesForPl);
-    setAllPayslipsForPl((sRes.data ?? []) as typeof allPayslipsForPl);
-    setAllExpensesForPl((eRes.data ?? []) as typeof allExpensesForPl);
-    setAllPartnerTxns((txRes.data ?? []) as BankTransaction[]);
+    setAllInvoicesForPl(iRows);
+    setAllPayslipsForPl(sRows);
+    setAllExpensesForPl(eRows);
+    setAllPartnerTxns(txRows);
     setLoadingPartnership(false);
   };
 

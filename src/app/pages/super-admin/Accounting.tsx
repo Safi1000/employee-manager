@@ -11,6 +11,7 @@ import {
 } from "../../lib/excel";
 import {
   supabase,
+  fetchAllRows,
   INVOICE_ATTACHMENTS_BUCKET,
   type BankAccount,
   type BankTransaction,
@@ -365,35 +366,65 @@ export default function Accounting() {
     const [
       banksRes,
       treasuryRes,
-      txRes,
       payablesRes,
       clientsRes,
-      invoicesRes,
       partnersRes,
-      standalonePayRes,
     ] = await Promise.all([
       supabase.from("bank_accounts").select("*").order("created_at", { ascending: false }),
       supabase.from("treasury").select("*").limit(1).maybeSingle(),
-      supabase.from("bank_transactions").select("*").order("created_at", { ascending: false }),
       supabase
         .from("expenses")
         .select("*, vendor:vendor_id(id,name), category:category_id(id,name), client:client_id(id,name,client_code)")
         .eq("payment_mode", "Payable")
         .order("due_date", { ascending: true, nullsFirst: false }),
       supabase.from("clients").select("*").order("name"),
-      supabase.from("invoices").select("*").order("invoice_date", { ascending: false }),
       supabase.from("partners").select("*").order("name"),
-      supabase
-        .from("invoice_payments")
-        .select("client_id, invoice_id, amount, payment_date"),
     ]);
-    setPartners((partnersRes.data ?? []) as Partner[]);
-    const allPayRows = (standalonePayRes.data ?? []) as {
+    // Paginate the three potentially-large tables.
+    let txRows: BankTransaction[] = [];
+    let invRows: Invoice[] = [];
+    let allPayRows: {
       client_id: string | null;
       invoice_id: string | null;
       amount: number;
       payment_date: string;
-    }[];
+    }[] = [];
+    try {
+      [txRows, invRows, allPayRows] = await Promise.all([
+        fetchAllRows<BankTransaction>(() =>
+          supabase
+            .from("bank_transactions")
+            .select("*")
+            .order("created_at", { ascending: false }) as unknown as {
+            range: (from: number, to: number) => Promise<{ data: unknown; error: { message: string } | null }>;
+          },
+        ),
+        fetchAllRows<Invoice>(() =>
+          supabase
+            .from("invoices")
+            .select("*")
+            .order("invoice_date", { ascending: false }) as unknown as {
+            range: (from: number, to: number) => Promise<{ data: unknown; error: { message: string } | null }>;
+          },
+        ),
+        fetchAllRows<{
+          client_id: string | null;
+          invoice_id: string | null;
+          amount: number;
+          payment_date: string;
+        }>(() =>
+          supabase
+            .from("invoice_payments")
+            .select("client_id, invoice_id, amount, payment_date")
+            .order("payment_date", { ascending: false }) as unknown as {
+            range: (from: number, to: number) => Promise<{ data: unknown; error: { message: string } | null }>;
+          },
+        ),
+      ]);
+    } catch (err: any) {
+      setError(err.message ?? String(err));
+    }
+    setPartners((partnersRes.data ?? []) as Partner[]);
     setAllPaymentEvents(allPayRows);
     const standaloneMap = new Map<string, number>();
     for (const row of allPayRows) {
@@ -404,20 +435,18 @@ export default function Accounting() {
     setStandalonePayments(standaloneMap);
     if (banksRes.error) setError(banksRes.error.message);
     if (treasuryRes.error) setError(treasuryRes.error.message);
-    if (txRes.error) setError(txRes.error.message);
     if (payablesRes.error) setError(payablesRes.error.message);
     if (clientsRes.error) setError(clientsRes.error.message);
-    if (invoicesRes.error) setError(invoicesRes.error.message);
     setBanks((banksRes.data ?? []) as BankAccount[]);
     setCashBalance(Number(treasuryRes.data?.cash_balance ?? 0));
     setCashOpeningBalance(Number(treasuryRes.data?.cash_opening_balance ?? 0));
     setCashOpeningLocked(Boolean(treasuryRes.data?.cash_opening_locked ?? false));
     setTreasuryId(treasuryRes.data?.id ?? null);
-    setTransactions((txRes.data ?? []) as BankTransaction[]);
+    setTransactions(txRows);
     setPayables((payablesRes.data ?? []) as PayableRow[]);
 
     const allClients = (clientsRes.data ?? []) as Client[];
-    const allInvoices = (invoicesRes.data ?? []) as Invoice[];
+    const allInvoices = invRows;
     setAllClientsForRec(allClients);
     setAllInvoicesForRec(allInvoices);
     const byClient = new Map<string, Invoice[]>();

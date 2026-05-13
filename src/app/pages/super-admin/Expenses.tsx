@@ -16,6 +16,7 @@ import {
 } from "recharts";
 import {
   supabase,
+  fetchAllRows,
   EXPENSE_RECEIPTS_BUCKET,
   isHardcodedCategory,
   type Expense,
@@ -167,29 +168,44 @@ export default function Expenses() {
   const loadAll = async () => {
     setLoading(true);
     setError(null);
-    const [expRes, catRes, cliRes, venRes, bankRes, treaRes, empRes, advRes] = await Promise.all([
-      supabase
-        .from("expenses")
-        .select("*, category:category_id(name), client:client_id(name), vendor:vendor_id(name), bank:bank_account_id(bank_name)")
-        .order("expense_date", { ascending: false })
-        .order("created_at", { ascending: false }),
+    const [catRes, cliRes, venRes, bankRes, treaRes, empRes] = await Promise.all([
       supabase.from("expense_categories").select("*").order("name"),
       supabase.from("clients").select("*").order("name"),
       supabase.from("vendors").select("*").order("name"),
       supabase.from("bank_accounts").select("*").order("bank_name"),
       supabase.from("treasury").select("*").limit(1).maybeSingle(),
       supabase.from("employees").select("*").order("employee_code"),
-      supabase
-        .from("advances")
-        .select("*, employee:employee_id(full_name, employee_code), client:client_id(name), bank:bank_account_id(bank_name)")
-        .order("advance_date", { ascending: false })
-        .order("created_at", { ascending: false }),
     ]);
-    if (expRes.error) setError(expRes.error.message);
     if (catRes.error) setError(catRes.error.message);
-    if (advRes.error) setError(advRes.error.message);
+    // Paginate the two potentially-large tables so we never silently miss rows.
+    let expData: any[] = [];
+    let advData: any[] = [];
+    try {
+      [expData, advData] = await Promise.all([
+        fetchAllRows<any>(() =>
+          supabase
+            .from("expenses")
+            .select("*, category:category_id(name), client:client_id(name), vendor:vendor_id(name), bank:bank_account_id(bank_name)")
+            .order("expense_date", { ascending: false })
+            .order("created_at", { ascending: false }) as unknown as {
+            range: (from: number, to: number) => Promise<{ data: unknown; error: { message: string } | null }>;
+          },
+        ),
+        fetchAllRows<any>(() =>
+          supabase
+            .from("advances")
+            .select("*, employee:employee_id(full_name, employee_code), client:client_id(name), bank:bank_account_id(bank_name)")
+            .order("advance_date", { ascending: false })
+            .order("created_at", { ascending: false }) as unknown as {
+            range: (from: number, to: number) => Promise<{ data: unknown; error: { message: string } | null }>;
+          },
+        ),
+      ]);
+    } catch (err: any) {
+      setError(err.message ?? String(err));
+    }
     setExpenses(
-      (expRes.data ?? []).map((e: any) => ({
+      (expData ?? []).map((e: any) => ({
         ...e,
         category_name: e.category?.name ?? null,
         client_name: e.client?.name ?? null,
@@ -204,7 +220,7 @@ export default function Expenses() {
     setCashBalance(Number(treaRes.data?.cash_balance ?? 0));
     setEmployees((empRes.data ?? []) as Employee[]);
     setAdvances(
-      (advRes.data ?? []).map((a: any) => ({
+      (advData ?? []).map((a: any) => ({
         ...a,
         employee_name: a.employee?.full_name ?? "—",
         employee_code: a.employee?.employee_code ?? "",
