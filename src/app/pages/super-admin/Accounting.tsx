@@ -55,6 +55,7 @@ const kindLabel: Record<BankTransactionKind, string> = {
   receipt: "Receipt",
   advance: "Advance",
   transfer: "Transfer",
+  cheque: "Cheque",
 };
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
@@ -94,6 +95,7 @@ export default function Accounting() {
     recipient: "",
     notes: "",
   });
+  const [chequeFormError, setChequeFormError] = useState<string | null>(null);
   const [chequeView, setChequeView] = useState<Cheque | null>(null);
   const [chequeViewItems, setChequeViewItems] = useState<{
     kind: "Payslip" | "Expense" | "Advance" | "Invoice Payment";
@@ -105,6 +107,7 @@ export default function Accounting() {
   const [chequeSubmitting, setChequeSubmitting] = useState(false);
   const [chequeFilter, setChequeFilter] = useState<"all" | "pending" | "cleared">("all");
   const [chequeBankFilter, setChequeBankFilter] = useState<string>("all");
+  const [chequeMonthFilter, setChequeMonthFilter] = useState<string>("all");
   const [cashBalance, setCashBalance] = useState<number>(0);
   const [cashOpeningBalance, setCashOpeningBalance] = useState<number>(0);
   const [cashOpeningLocked, setCashOpeningLocked] = useState<boolean>(false);
@@ -2034,6 +2037,16 @@ export default function Accounting() {
                     <option value="pending">Pending</option>
                     <option value="cleared">Cleared</option>
                   </select>
+                  <select
+                    value={chequeMonthFilter}
+                    onChange={(e) => setChequeMonthFilter(e.target.value)}
+                    className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
+                  >
+                    <option value="all">All Months</option>
+                    {monthOptions.map((m) => (
+                      <option key={m.key} value={m.key}>{m.label}</option>
+                    ))}
+                  </select>
                   <Button variant="primary" size="sm" onClick={() => setIsChequeAddOpen(true)} disabled={banks.length === 0}>
                     <Plus className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
                     New Cheque
@@ -2060,6 +2073,7 @@ export default function Accounting() {
                     {cheques
                       .filter((c) => chequeBankFilter === "all" || c.bank_account_id === chequeBankFilter)
                       .filter((c) => chequeFilter === "all" || c.status === chequeFilter)
+                      .filter((c) => chequeMonthFilter === "all" || (c.cheque_date ?? "").slice(0, 7) === chequeMonthFilter)
                       .map((c) => {
                         const bank = banks.find((b) => b.id === c.bank_account_id);
                         const linkedSum = chequeLinkedSums.get(c.id) ?? 0;
@@ -2222,7 +2236,8 @@ export default function Accounting() {
                         );
                       })}
                     {cheques.filter((c) => chequeBankFilter === "all" || c.bank_account_id === chequeBankFilter)
-                            .filter((c) => chequeFilter === "all" || c.status === chequeFilter).length === 0 && (
+                            .filter((c) => chequeFilter === "all" || c.status === chequeFilter)
+                            .filter((c) => chequeMonthFilter === "all" || (c.cheque_date ?? "").slice(0, 7) === chequeMonthFilter).length === 0 && (
                       <tr>
                         <td colSpan={9} className="px-4 py-6 text-center text-sm text-slate-500">
                           No cheques to show.
@@ -2238,13 +2253,21 @@ export default function Accounting() {
         </div>
       </div>
 
-      <Modal isOpen={isChequeAddOpen} onClose={() => setIsChequeAddOpen(false)} title="New Cheque" size="md">
+      <Modal isOpen={isChequeAddOpen} onClose={() => { setIsChequeAddOpen(false); setChequeFormError(null); }} title="New Cheque" size="md">
         <form
           className="space-y-4"
           onSubmit={async (e) => {
             e.preventDefault();
+            setChequeFormError(null);
             const amount = Number(chequeForm.amount);
             if (!chequeForm.bank_account_id || !chequeForm.cheque_number || !amount || amount <= 0 || !chequeForm.cheque_date) return;
+            // Block over-issue at the moment of cheque creation: amount must not exceed
+            // the issuing bank account's available balance.
+            const issuingBank = banks.find((b) => b.id === chequeForm.bank_account_id);
+            if (issuingBank && amount > Number(issuingBank.balance)) {
+              setChequeFormError(`Cheque amount (PKR ${amount.toLocaleString()}) exceeds the bank's available balance (PKR ${Number(issuingBank.balance).toLocaleString()}).`);
+              return;
+            }
             setChequeSubmitting(true);
             setError(null);
             try {
@@ -2287,12 +2310,21 @@ export default function Accounting() {
               });
               await loadAll();
             } catch (err: any) {
-              setError(err.message ?? String(err));
+              setChequeFormError(err.message ?? String(err));
             } finally {
               setChequeSubmitting(false);
             }
           }}
         >
+          {chequeFormError && (
+            <div className="flex items-start gap-2 p-3 bg-red-50 text-red-700 border border-red-200 rounded-md text-sm">
+              <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" strokeWidth={2} />
+              <div className="flex-1">{chequeFormError}</div>
+              <button type="button" onClick={() => setChequeFormError(null)}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
           <div>
             <label className="block text-sm text-slate-700 mb-1">Cheque Type *</label>
             <div className="grid grid-cols-2 gap-2">

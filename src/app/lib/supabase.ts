@@ -344,7 +344,8 @@ export type BankTransactionKind =
   | "expense"
   | "receipt"
   | "advance"
-  | "transfer";
+  | "transfer"
+  | "cheque";
 
 export type BankTransaction = {
   id: string;

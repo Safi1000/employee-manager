@@ -124,6 +124,7 @@ export default function Expenses() {
   const [banks, setBanks] = useState<BankAccount[]>([]);
   const [cheques, setCheques] = useState<Cheque[]>([]);
   const [chequeLinkedSums, setChequeLinkedSums] = useState<Map<string, number>>(new Map());
+  const [formError, setFormError] = useState<string | null>(null);
 
   // Remaining capacity for a cheque, optionally excluding a row currently being edited.
   const chequeRemaining = (chequeId: string, excludeOwnAmount: number = 0): number => {
@@ -477,39 +478,40 @@ export default function Expenses() {
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
     const amount = Number(form.amount);
     if (!form.category_id || !amount || amount <= 0 || !form.expense_date) return;
     if (form.payment_mode === "Bank" && !form.bank_account_id) {
-      setError("Select a bank account for Bank payment.");
+      setFormError("Select a bank account for Bank payment.");
       return;
     }
     if (form.payment_mode === "Cheque" && !form.cheque_id) {
-      setError("Select a pending cheque for Cheque payment.");
+      setFormError("Select a pending cheque for Cheque payment.");
       return;
     }
     if (form.payment_mode === "Cheque") {
       const remaining = chequeRemaining(form.cheque_id);
       if (amount > remaining + 0.005) {
-        setError(`This expense (PKR ${amount.toLocaleString()}) exceeds the cheque's remaining capacity (PKR ${remaining.toLocaleString()}).`);
+        setFormError(`This expense (PKR ${amount.toLocaleString()}) exceeds the cheque's remaining capacity (PKR ${remaining.toLocaleString()}).`);
         return;
       }
     }
     if (form.payment_mode === "Payable" && !form.due_date) {
-      setError("Select a due date for Payable expense.");
+      setFormError("Select a due date for Payable expense.");
       return;
     }
     if (form.payment_mode === "Payable" && !form.vendor_id) {
-      setError("Select a vendor for Payable expense. Add one via Manage Vendors.");
+      setFormError("Select a vendor for Payable expense. Add one via Manage Vendors.");
       return;
     }
     if (form.payment_mode === "Cash" && amount > cashBalance) {
-      setError("Cash balance is insufficient.");
+      setFormError("Cash balance is insufficient.");
       return;
     }
     if (form.payment_mode === "Bank") {
       const bank = banks.find((b) => b.id === form.bank_account_id);
       if (bank && amount > Number(bank.balance)) {
-        setError("Selected bank balance is insufficient.");
+        setFormError("Selected bank balance is insufficient.");
         return;
       }
     }
@@ -588,7 +590,7 @@ export default function Expenses() {
       setIsAddOpen(false);
       await loadAll();
     } catch (err: any) {
-      setError(err.message ?? String(err));
+      setFormError(err.message ?? String(err));
     } finally {
       setSubmitting(false);
     }
@@ -662,35 +664,35 @@ export default function Expenses() {
 
   const handleEdit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
     if (!selected) return;
     const amount = Number(editForm.amount);
     if (!editForm.category_id || !amount || amount <= 0 || !editForm.expense_date) return;
     if (editForm.payment_mode === "Bank" && !editForm.bank_account_id) {
-      setError("Select a bank account for Bank payment.");
+      setFormError("Select a bank account for Bank payment.");
       return;
     }
     if (editForm.payment_mode === "Cheque" && !editForm.cheque_id) {
-      setError("Select a pending cheque for Cheque payment.");
+      setFormError("Select a pending cheque for Cheque payment.");
       return;
     }
     if (editForm.payment_mode === "Cheque") {
-      // Exclude this expense's own current contribution to the linked sum.
       const ownPrev =
         selected?.cheque_id === editForm.cheque_id && selected?.payment_mode === "Cheque"
           ? Number(selected.amount)
           : 0;
       const remaining = chequeRemaining(editForm.cheque_id, ownPrev);
       if (amount > remaining + 0.005) {
-        setError(`This expense (PKR ${amount.toLocaleString()}) exceeds the cheque's remaining capacity (PKR ${remaining.toLocaleString()}).`);
+        setFormError(`This expense (PKR ${amount.toLocaleString()}) exceeds the cheque's remaining capacity (PKR ${remaining.toLocaleString()}).`);
         return;
       }
     }
     if (editForm.payment_mode === "Payable" && !editForm.due_date) {
-      setError("Select a due date for Payable expense.");
+      setFormError("Select a due date for Payable expense.");
       return;
     }
     if (editForm.payment_mode === "Payable" && !editForm.vendor_id) {
-      setError("Select a vendor for Payable expense. Add one via Manage Vendors.");
+      setFormError("Select a vendor for Payable expense. Add one via Manage Vendors.");
       return;
     }
     setSubmitting(true);
@@ -699,7 +701,7 @@ export default function Expenses() {
       await reverseExistingPayment(selected);
 
       if (editForm.payment_mode === "Cash" && amount > cashBalance + (selected.payment_mode === "Cash" ? Number(selected.amount) : 0)) {
-        setError("Cash balance is insufficient after reversal.");
+        setFormError("Cash balance is insufficient after reversal.");
         setSubmitting(false);
         return;
       }
@@ -709,7 +711,7 @@ export default function Expenses() {
           ? Number(selected.amount)
           : 0;
         if (bank && amount > Number(bank.balance) + reversedBack) {
-          setError("Selected bank balance is insufficient after reversal.");
+          setFormError("Selected bank balance is insufficient after reversal.");
           setSubmitting(false);
           return;
         }
@@ -797,7 +799,7 @@ export default function Expenses() {
       setIsEditOpen(false);
       await loadAll();
     } catch (err: any) {
-      setError(err.message ?? String(err));
+      setFormError(err.message ?? String(err));
     } finally {
       setSubmitting(false);
     }
@@ -879,13 +881,15 @@ export default function Expenses() {
     setAdvForm(emptyAdvanceForm);
     setAdvEmpSearch("");
     setIsAdvAddOpen(false);
+    setFormError(null);
   };
 
   const handleAddAdvance = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
     const err = validateAdvance(advForm);
     if (err) {
-      setError(err);
+      setFormError(err);
       return;
     }
     setAdvSubmitting(true);
@@ -945,7 +949,7 @@ export default function Expenses() {
       resetAdvAddModal();
       await loadAll();
     } catch (err: any) {
-      setError(err.message ?? String(err));
+      setFormError(err.message ?? String(err));
     } finally {
       setAdvSubmitting(false);
     }
@@ -995,6 +999,7 @@ export default function Expenses() {
 
   const handleEditAdvance = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
     if (!advEditing) return;
     const sameAccountAsBefore =
       advEditForm.payment_mode === advEditing.payment_mode &&
@@ -1003,7 +1008,7 @@ export default function Expenses() {
     const existingAmount = sameAccountAsBefore ? Number(advEditing.amount) : 0;
     const err = validateAdvance(advEditForm, existingAmount);
     if (err) {
-      setError(err);
+      setFormError(err);
       return;
     }
     setAdvSubmitting(true);
@@ -1062,7 +1067,7 @@ export default function Expenses() {
       setAdvEditing(null);
       await loadAll();
     } catch (err: any) {
-      setError(err.message ?? String(err));
+      setFormError(err.message ?? String(err));
     } finally {
       setAdvSubmitting(false);
     }
@@ -2068,6 +2073,15 @@ export default function Expenses() {
     const selectedEmp = state.employee_id ? employees.find((e) => e.id === state.employee_id) ?? null : null;
     return (
       <>
+        {formError && (
+          <div className="flex items-start gap-2 p-3 bg-red-50 text-red-700 border border-red-200 rounded-md text-sm">
+            <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" strokeWidth={2} />
+            <div className="flex-1">{formError}</div>
+            <button type="button" onClick={() => setFormError(null)}>
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
         <div>
           <label className="block text-sm text-slate-700 mb-1">Client (optional)</label>
           <select
@@ -2280,6 +2294,15 @@ export default function Expenses() {
   ) {
     return (
       <form className="space-y-4" onSubmit={onSubmit}>
+        {formError && (
+          <div className="flex items-start gap-2 p-3 bg-red-50 text-red-700 border border-red-200 rounded-md text-sm">
+            <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" strokeWidth={2} />
+            <div className="flex-1">{formError}</div>
+            <button type="button" onClick={() => setFormError(null)}>
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm text-slate-700 mb-1">Category *</label>

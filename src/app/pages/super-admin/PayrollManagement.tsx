@@ -86,6 +86,7 @@ export default function PayrollManagement() {
   const [banks, setBanks] = useState<BankAccount[]>([]);
   const [cheques, setCheques] = useState<Cheque[]>([]);
   const [chequeLinkedSums, setChequeLinkedSums] = useState<Map<string, number>>(new Map());
+  const [rowError, setRowError] = useState<string | null>(null);
   const chequeRemaining = (chequeId: string, excludeOwnAmount: number = 0): number => {
     const c = cheques.find((x) => x.id === chequeId);
     if (!c) return 0;
@@ -549,27 +550,28 @@ export default function PayrollManagement() {
   const toggleDisbursed = async (row: RowState, dateOverride?: string) => {
     setSavingId(row.employee.id);
     setError(null);
+    setRowError(null);
     try {
       if (!row.disbursed) {
         const disburseIso = dateOverride
           ? new Date(`${dateOverride}T12:00:00`).toISOString()
           : new Date().toISOString();
         if (row.net_salary <= 0) {
-          setError("Net salary must be greater than 0 to disburse.");
+          setRowError("Net salary must be greater than 0 to disburse.");
           return;
         }
         if (row.payment_mode === "Bank") {
           if (!row.bank_account_id) {
-            setError("Select a bank account before disbursing.");
+            setRowError("Select a bank account before disbursing.");
             return;
           }
           const bank = banks.find((b) => b.id === row.bank_account_id);
           if (!bank) {
-            setError("Bank account not found.");
+            setRowError("Bank account not found.");
             return;
           }
           if (row.net_salary > Number(bank.balance)) {
-            setError("Selected bank account balance is insufficient.");
+            setRowError("Selected bank account balance is insufficient.");
             return;
           }
           const { error: bErr } = await supabase
@@ -590,21 +592,18 @@ export default function PayrollManagement() {
           });
         } else if (row.payment_mode === "Cheque") {
           if (!row.cheque_id) {
-            setError("Select a cheque before disbursing.");
+            setRowError("Select a cheque before disbursing.");
             return;
           }
-          // Treat the existing payslip as "already linked" so an in-place save doesn't
-          // double-count against the cheque capacity.
           const ownPrev = row.payslip_id ? row.net_salary : 0;
           const remaining = chequeRemaining(row.cheque_id, ownPrev);
           if (row.net_salary > remaining + 0.005) {
-            setError(`Net salary (PKR ${row.net_salary.toLocaleString()}) exceeds the cheque's remaining capacity (PKR ${remaining.toLocaleString()}).`);
+            setRowError(`Net salary (PKR ${row.net_salary.toLocaleString()}) exceeds the cheque's remaining capacity (PKR ${remaining.toLocaleString()}).`);
             return;
           }
-          // No bank-balance mutation: the cheque trigger already deducted on cheque creation.
         } else {
           if (row.net_salary > cashBalance) {
-            setError("Cash balance is insufficient.");
+            setRowError("Cash balance is insufficient.");
             return;
           }
           const { data: trea } = await supabase
@@ -686,7 +685,7 @@ export default function PayrollManagement() {
       }
       await loadAll();
     } catch (err: any) {
-      setError(err.message ?? String(err));
+      setRowError(err.message ?? String(err));
     } finally {
       setSavingId(null);
     }
@@ -1083,7 +1082,7 @@ export default function PayrollManagement() {
                             className={`hover:bg-slate-50 transition-colors cursor-pointer ${
                               selectedId === e.id ? "bg-slate-50" : ""
                             }`}
-                            onClick={() => setSelectedId(e.id)}
+                            onClick={() => { setSelectedId(e.id); setRowError(null); }}
                           >
                             <td className="px-4 py-3">
                               <div className="text-sm text-slate-900">{e.full_name}</div>
@@ -1417,6 +1416,15 @@ export default function PayrollManagement() {
                     )}
                   </div>
 
+                  {rowError && (
+                    <div className="flex items-start gap-2 p-2 bg-red-50 text-red-700 border border-red-200 rounded text-xs">
+                      <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" strokeWidth={2} />
+                      <div className="flex-1">{rowError}</div>
+                      <button type="button" onClick={() => setRowError(null)}>
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
                   <div className="grid grid-cols-2 gap-2 pt-3 border-t border-slate-200">
                     <Button
                       variant={selectedRow.status === "Cleared" ? "secondary" : "primary"}
