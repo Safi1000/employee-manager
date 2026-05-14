@@ -254,6 +254,15 @@ export default function Expenses() {
     for (const c of clients) m.set(c.id, c.branch_id);
     return m;
   }, [clients]);
+  const headOfficeBranchId = useMemo(
+    () => branches.find((b) => b.is_head_office)?.id ?? null,
+    [branches]
+  );
+  const employeeBranchMap = useMemo(() => {
+    const m = new Map<string, string | null>();
+    for (const e of employees) m.set(e.id, e.branch_id ?? null);
+    return m;
+  }, [employees]);
 
   const filteredAdvances = useMemo(() => {
     const q = advSearch.trim().toLowerCase();
@@ -269,12 +278,16 @@ export default function Expenses() {
       }
       if (advModeFilter !== "all" && a.payment_mode !== advModeFilter) return false;
       if (advBranchFilter !== "all") {
-        const b = a.client_id ? clientBranchMap.get(a.client_id) : null;
-        if (b !== advBranchFilter) return false;
+        // Advances belong to a branch via the employee (always present). Fall back
+        // to the client's branch, then Head Office for legacy rows.
+        const empBranch = employeeBranchMap.get(a.employee_id) ?? null;
+        const cliBranch = a.client_id ? clientBranchMap.get(a.client_id) ?? null : null;
+        const effective = empBranch ?? cliBranch ?? headOfficeBranchId;
+        if (effective !== advBranchFilter) return false;
       }
       return true;
     });
-  }, [advances, advSearch, advMonthFilter, advClientFilter, advModeFilter, advBranchFilter, clientBranchMap]);
+  }, [advances, advSearch, advMonthFilter, advClientFilter, advModeFilter, advBranchFilter, clientBranchMap, employeeBranchMap, headOfficeBranchId]);
 
   const advTotals = useMemo(() => {
     const t = { count: filteredAdvances.length, total: 0 };
@@ -325,13 +338,16 @@ export default function Expenses() {
       if (clientFilter !== "all" && clientFilter !== "office" && e.client_id !== clientFilter) return false;
       if (modeFilter !== "all" && e.payment_mode !== modeFilter) return false;
       if (branchFilter !== "all") {
-        // Office expenses (no client) only show when "All Branches" is selected.
-        const b = e.client_id ? clientBranchMap.get(e.client_id) : null;
-        if (b !== branchFilter) return false;
+        // Office expenses (no client) live under Head Office.
+        if (!e.client_id) {
+          if (branchFilter !== headOfficeBranchId) return false;
+        } else if (clientBranchMap.get(e.client_id) !== branchFilter) {
+          return false;
+        }
       }
       return true;
     });
-  }, [expenses, search, monthFilter, categoryFilter, clientFilter, modeFilter, branchFilter, clientBranchMap]);
+  }, [expenses, search, monthFilter, categoryFilter, clientFilter, modeFilter, branchFilter, clientBranchMap, headOfficeBranchId]);
 
   // Last 18 months of options + "All" for the month select.
   const monthOptions = useMemo(() => {

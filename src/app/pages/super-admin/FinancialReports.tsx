@@ -225,6 +225,8 @@ export default function FinancialReports() {
   }, [plPeriod]);
 
   const plFigures = useMemo(() => {
+    const headOfficeId = branches.find((b) => b.is_head_office)?.id ?? null;
+    const isHeadOfficeSelected = plBranchFilter === headOfficeId;
     const branchOk = (bid: string | null | undefined): boolean =>
       plBranchFilter === "all" ? true : bid === plBranchFilter;
 
@@ -249,9 +251,14 @@ export default function FinancialReports() {
     let taxes = 0;
     let operating = 0;
     for (const e of plExpenses) {
-      // Office expenses (no client) appear only on "All Branches".
+      // Office expenses (no client) belong to Head Office. So they count under
+      // "All Branches" AND under "Head Office", but not under any other branch.
       if (plBranchFilter !== "all") {
-        if (!e.client_id || e.client?.branch_id !== plBranchFilter) continue;
+        if (!e.client_id) {
+          if (!isHeadOfficeSelected) continue;
+        } else if (e.client?.branch_id !== plBranchFilter) {
+          continue;
+        }
       }
       const name = e.category?.name ?? "";
       const amt = Number(e.amount);
@@ -290,7 +297,7 @@ export default function FinancialReports() {
       taxes,
       netProfit,
     };
-  }, [plInvoices, plPayslips, plExpenses, plBranchFilter]);
+  }, [plInvoices, plPayslips, plExpenses, plBranchFilter, branches]);
 
   useEffect(() => {
     const loadClientData = async () => {
