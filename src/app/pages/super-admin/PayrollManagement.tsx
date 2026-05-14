@@ -14,6 +14,8 @@ import {
   type Payslip,
   type PaymentMode,
   type PayslipStatus,
+  type Cheque,
+  type Branch,
 } from "../../lib/supabase";
 
 type EmployeeRow = Employee & { location_name: string | null; client_name: string | null };
@@ -36,6 +38,7 @@ type RowState = {
   net_salary: number;
   payment_mode: PaymentMode;
   bank_account_id: string | null;
+  cheque_id: string | null;
   status: PayslipStatus;
   disbursed: boolean;
   disbursed_at: string | null;
@@ -81,6 +84,7 @@ export default function PayrollManagement() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [banks, setBanks] = useState<BankAccount[]>([]);
+  const [cheques, setCheques] = useState<Cheque[]>([]);
   const [payslipsMap, setPayslipsMap] = useState<Map<string, Payslip>>(new Map());
   const [attendanceAgg, setAttendanceAgg] = useState<Map<string, { present: number; absent: number; leave: number }>>(
     new Map()
@@ -105,8 +109,10 @@ export default function PayrollManagement() {
   const [shiftFilter, setShiftFilter] = useState<"all" | "day" | "night">("all");
   const [locationFilter, setLocationFilter] = useState("all");
   const [clientFilter, setClientFilter] = useState("all");
+  const [branchFilter, setBranchFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "Cleared" | "Pending">("all");
   const [disbursedFilter, setDisbursedFilter] = useState<"all" | "yes" | "no">("all");
+  const [branches, setBranches] = useState<Branch[]>([]);
 
   const [periodOptions, setPeriodOptions] = useState<string[]>([currentPeriod, previousPeriod]);
   const [selectedPeriod, setSelectedPeriod] = useState(previousPeriod);
@@ -193,7 +199,7 @@ export default function PayrollManagement() {
     const cutoff = firstOfMonth(sixAgo);
     await supabase.from("payslips").delete().lt("period_month", cutoff);
 
-    const [empRes, locRes, cliRes, bankRes, treaRes] = await Promise.all([
+    const [empRes, locRes, cliRes, bankRes, treaRes, chqRes, brRes] = await Promise.all([
       supabase
         .from("employees")
         .select("*, location:location_id(name), client:client_id(name)")
@@ -202,6 +208,8 @@ export default function PayrollManagement() {
       supabase.from("clients").select("*").order("name"),
       supabase.from("bank_accounts").select("*").order("bank_name"),
       supabase.from("treasury").select("*").limit(1).maybeSingle(),
+      supabase.from("cheques").select("*").order("cheque_date", { ascending: false }),
+      supabase.from("branches").select("*").order("is_head_office", { ascending: false }).order("name"),
     ]);
 
     if (empRes.error) setError(empRes.error.message);
@@ -215,6 +223,8 @@ export default function PayrollManagement() {
     setLocations(locRes.data ?? []);
     setClients(cliRes.data ?? []);
     setBanks((bankRes.data ?? []) as BankAccount[]);
+    setCheques((chqRes.data ?? []) as Cheque[]);
+    setBranches((brRes.data ?? []) as Branch[]);
     setCashBalance(Number(treaRes.data?.cash_balance ?? 0));
 
     await loadPeriodData(selectedPeriod);
@@ -312,6 +322,7 @@ export default function PayrollManagement() {
         net_salary: 0,
         payment_mode: (existing?.payment_mode ?? "Cash") as PaymentMode,
         bank_account_id: existing?.bank_account_id ?? null,
+        cheque_id: existing?.cheque_id ?? null,
         status: (existing?.status ?? "Pending") as PayslipStatus,
         disbursed: existing?.disbursed ?? false,
         disbursed_at: existing?.disbursed_at ?? null,
@@ -379,11 +390,12 @@ export default function PayrollManagement() {
       if (shiftFilter !== "all" && e.shift !== shiftFilter) return false;
       if (locationFilter !== "all" && e.location_id !== locationFilter) return false;
       if (clientFilter !== "all" && e.client_id !== clientFilter) return false;
+      if (branchFilter !== "all" && e.branch_id !== branchFilter) return false;
       if (statusFilter !== "all" && r.status !== statusFilter) return false;
       if (disbursedFilter !== "all" && (disbursedFilter === "yes" ? !r.disbursed : r.disbursed)) return false;
       return true;
     });
-  }, [rows, search, shiftFilter, locationFilter, clientFilter, statusFilter, disbursedFilter]);
+  }, [rows, search, shiftFilter, locationFilter, clientFilter, branchFilter, statusFilter, disbursedFilter]);
 
   const selectedRow = useMemo(
     () => rows.find((r) => r.employee.id === selectedId) ?? null,
@@ -429,7 +441,13 @@ export default function PayrollManagement() {
       final_salary: row.final_salary,
       net_salary: row.net_salary,
       payment_mode: row.payment_mode,
-      bank_account_id: row.payment_mode === "Bank" ? row.bank_account_id : null,
+      bank_account_id:
+        row.payment_mode === "Bank"
+          ? row.bank_account_id
+          : row.payment_mode === "Cheque"
+            ? row.bank_account_id
+            : null,
+      cheque_id: row.payment_mode === "Cheque" ? row.cheque_id : null,
       status: row.status,
       disbursed: row.disbursed,
       disbursed_at: row.disbursed_at,
@@ -542,6 +560,13 @@ export default function PayrollManagement() {
             account_delta: -row.net_salary,
             description: `Payroll ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
           });
+        } else if (row.payment_mode === "Cheque") {
+          if (!row.cheque_id) {
+            setError("Select a cheque before disbursing.");
+            return;
+          }
+          // No bank-balance mutation: the cheque trigger already deducted on cheque creation.
+          // No bank_transactions entry: cashflow gates on cheque.status='cleared'.
         } else {
           if (row.net_salary > cashBalance) {
             setError("Cash balance is insufficient.");
@@ -596,6 +621,8 @@ export default function PayrollManagement() {
             account_delta: row.net_salary,
             description: `Reverse payroll ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
           });
+        } else if (row.payment_mode === "Cheque") {
+          // Cheque-paid: do not touch bank balance. Un-disburse only flips the flag.
         } else {
           const { data: trea } = await supabase
             .from("treasury")
@@ -953,6 +980,16 @@ export default function PayrollManagement() {
                     allValue="all"
                   />
                   <select
+                    value={branchFilter}
+                    onChange={(e) => setBranchFilter(e.target.value)}
+                    className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  >
+                    <option value="all">All Branches</option>
+                    {branches.map((b) => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                  <select
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value as "all" | "Cleared" | "Pending")}
                     className="px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -1283,12 +1320,14 @@ export default function PayrollManagement() {
                       onChange={(e) =>
                         updateEdit(selectedRow.employee.id, {
                           payment_mode: e.target.value as PaymentMode,
+                          cheque_id: null,
                         })
                       }
                       className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
                     >
                       <option value="Cash">Cash</option>
                       <option value="Bank">Bank</option>
+                      <option value="Cheque">Cheque</option>
                     </select>
                     {selectedRow.payment_mode === "Bank" && (
                       <select
@@ -1307,6 +1346,37 @@ export default function PayrollManagement() {
                           </option>
                         ))}
                       </select>
+                    )}
+                    {selectedRow.payment_mode === "Cheque" && (
+                      <>
+                        <select
+                          value={selectedRow.cheque_id ?? ""}
+                          onChange={(e) => {
+                            const id = e.target.value || null;
+                            const chq = id ? cheques.find((c) => c.id === id) : null;
+                            updateEdit(selectedRow.employee.id, {
+                              cheque_id: id,
+                              bank_account_id: chq?.bank_account_id ?? null,
+                            });
+                          }}
+                          className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                        >
+                          <option value="">Select a pending cheque</option>
+                          {cheques
+                            .filter((c) => c.status === "pending" || c.id === selectedRow.cheque_id)
+                            .map((c) => {
+                              const bank = banks.find((b) => b.id === c.bank_account_id);
+                              return (
+                                <option key={c.id} value={c.id}>
+                                  #{c.cheque_number} · {bank?.bank_name ?? "Bank"} · PKR {Number(c.amount).toLocaleString()} · {c.status}
+                                </option>
+                              );
+                            })}
+                        </select>
+                        <p className="text-[11px] text-slate-500">
+                          Cashflow recognises this salary only after the cheque is marked Cleared in Bank Accounts → Cheques.
+                        </p>
+                      </>
                     )}
                   </div>
 

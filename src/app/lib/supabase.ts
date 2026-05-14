@@ -59,6 +59,7 @@ export type SubscriptionPayment = {
 export type Profile = {
   id: string;
   company_id: string | null;
+  branch_id: string | null;
   role: UserRole;
   title: string | null;
   full_name: string | null;
@@ -176,7 +177,40 @@ export type Client = {
   leave_carry_forward: boolean;
   eobi_enabled: boolean;
   eobi_amount: number;
+  branch_id: string | null;
+  auto_invoice_enabled: boolean;
+  auto_invoice_amount: number;
+  contract_start: string | null;
+  contract_end: string | null;
+  advance_payment: boolean;
   created_at?: string;
+};
+
+export type Branch = {
+  id: string;
+  company_id?: string;
+  name: string;
+  is_head_office: boolean;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type EmployeeCategory = "client" | "office_staff" | "reliever";
+
+export type Cheque = {
+  id: string;
+  company_id?: string;
+  bank_account_id: string;
+  cheque_number: string;
+  amount: number;
+  cheque_date: string;
+  status: "pending" | "cleared";
+  attachment_path: string | null;
+  notes: string | null;
+  recipient: string | null;
+  cleared_at: string | null;
+  created_at?: string;
+  updated_at?: string;
 };
 
 export const HARDCODED_EXPENSE_CATEGORIES = [
@@ -203,6 +237,8 @@ export type Employee = {
   phone: string | null;
   location_id: string | null;
   client_id: string | null;
+  category: EmployeeCategory;
+  branch_id: string | null;
   department: string | null;
   shift: "day" | "night";
   status: "Active" | "On Leave" | "Inactive";
@@ -317,7 +353,7 @@ export type BankTransaction = {
   created_at?: string;
 };
 
-export type PaymentMode = "Cash" | "Bank";
+export type PaymentMode = "Cash" | "Bank" | "Cheque";
 export type PayslipStatus = "Pending" | "Cleared";
 
 export type Payslip = {
@@ -339,6 +375,7 @@ export type Payslip = {
   net_salary: number;
   payment_mode: PaymentMode;
   bank_account_id: string | null;
+  cheque_id: string | null;
   status: PayslipStatus;
   disbursed: boolean;
   disbursed_at: string | null;
@@ -397,8 +434,9 @@ export type Advance = {
   client_id: string | null;
   amount: number;
   advance_date: string;
-  payment_mode: "Cash" | "Bank";
+  payment_mode: "Cash" | "Bank" | "Cheque";
   bank_account_id: string | null;
+  cheque_id: string | null;
   notes: string | null;
   created_at?: string;
   updated_at?: string;
@@ -458,7 +496,7 @@ export type RecurringAlert = {
   updated_at?: string;
 };
 
-export type ExpensePaymentMode = "Cash" | "Bank" | "Payable";
+export type ExpensePaymentMode = "Cash" | "Bank" | "Payable" | "Cheque";
 export type PayableStatus = "Pending" | "Paid";
 
 export type Expense = {
@@ -476,6 +514,7 @@ export type Expense = {
   paid_via: "Cash" | "Bank" | null;
   paid_bank_account_id: string | null;
   paid_at: string | null;
+  cheque_id: string | null;
   receipt_path: string | null;
   notes: string | null;
   created_at?: string;

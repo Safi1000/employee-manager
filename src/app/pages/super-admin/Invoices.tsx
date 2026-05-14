@@ -26,6 +26,7 @@ import {
   type BankAccount,
   type BankTransactionKind,
   type InvoicePayment,
+  type Branch,
 } from "../../lib/supabase";
 
 type InvoiceRow = Invoice & { client?: { name: string; client_code: string } | null };
@@ -95,10 +96,12 @@ export default function Invoices() {
   const [clients, setClients] = useState<Client[]>([]);
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [banks, setBanks] = useState<BankAccount[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [clientFilter, setClientFilter] = useState<string>("");
+  const [branchFilter, setBranchFilter] = useState<string>("all");
 
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [form, setForm] = useState<InvoiceForm>(emptyForm());
@@ -124,14 +127,17 @@ export default function Invoices() {
   const loadAll = async () => {
     setLoading(true);
     setError(null);
-    const [cliRes, bankRes] = await Promise.all([
+    const [cliRes, bankRes, brRes] = await Promise.all([
       supabase.from("clients").select("*").order("name"),
       supabase.from("bank_accounts").select("*").order("bank_name"),
+      supabase.from("branches").select("*").order("is_head_office", { ascending: false }).order("name"),
     ]);
     if (cliRes.error) setError(cliRes.error.message);
     if (bankRes.error) setError(bankRes.error.message);
+    if (brRes.error) setError(brRes.error.message);
     setClients((cliRes.data ?? []) as Client[]);
     setBanks((bankRes.data ?? []) as BankAccount[]);
+    setBranches((brRes.data ?? []) as Branch[]);
     try {
       const invRows = await fetchAllRows<InvoiceRow>(() =>
         supabase
@@ -166,9 +172,14 @@ export default function Invoices() {
   };
 
   const filteredInvoices = useMemo(() => {
-    if (!clientFilter) return invoices;
-    return invoices.filter((i) => i.client_id === clientFilter);
-  }, [invoices, clientFilter]);
+    const clientBranch = new Map<string, string | null>();
+    for (const c of clients) clientBranch.set(c.id, c.branch_id);
+    return invoices.filter((i) => {
+      if (clientFilter && i.client_id !== clientFilter) return false;
+      if (branchFilter !== "all" && clientBranch.get(i.client_id) !== branchFilter) return false;
+      return true;
+    });
+  }, [invoices, clientFilter, branchFilter, clients]);
 
   const summary = useMemo(() => {
     let invoiced = 0;
@@ -699,17 +710,37 @@ export default function Invoices() {
       <Header
         title="Invoices"
         actions={
-          <Button
-            variant="primary"
-            size="md"
-            onClick={() => {
-              setForm(emptyForm());
-              setIsAddOpen(true);
-            }}
-          >
-            <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
-            New Invoice
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={async () => {
+                if (!window.confirm("Run auto-invoice issue now for all eligible clients?")) return;
+                setError(null);
+                try {
+                  const { data, error: rpcErr } = await supabase.rpc("run_auto_invoices");
+                  if (rpcErr) throw rpcErr;
+                  await loadAll();
+                  window.alert(`Auto-invoice issued: ${data ?? 0} invoice(s).`);
+                } catch (e: any) {
+                  setError(e.message ?? String(e));
+                }
+              }}
+            >
+              Run Auto-Invoices
+            </Button>
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => {
+                setForm(emptyForm());
+                setIsAddOpen(true);
+              }}
+            >
+              <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
+              New Invoice
+            </Button>
+          </div>
         }
       />
 
@@ -748,6 +779,19 @@ export default function Invoices() {
                 value={clientFilter}
                 onChange={setClientFilter}
               />
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-slate-600">Branch:</label>
+              <select
+                value={branchFilter}
+                onChange={(e) => setBranchFilter(e.target.value)}
+                className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
+              >
+                <option value="all">All Branches</option>
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
             </div>
             <div className="ml-auto text-sm text-slate-500">
               {filteredInvoices.length} invoice{filteredInvoices.length === 1 ? "" : "s"}

@@ -13,6 +13,7 @@ import {
   type AttendanceRecord,
   type Client,
   type Location,
+  type Branch,
 } from "../../lib/supabase";
 import { hasPermission, useAuth } from "../../lib/auth";
 
@@ -24,6 +25,7 @@ type EmployeeLite = {
   location_name: string | null;
   client_id: string | null;
   client_name: string | null;
+  branch_id: string | null;
   shift: "day" | "night";
 };
 
@@ -55,6 +57,7 @@ const STATUSES: AttendanceStatus[] = ["Present", "Absent", "Leave"];
 export default function AttendanceManagement() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
   const [employees, setEmployees] = useState<EmployeeLite[]>([]);
   const [todayRecords, setTodayRecords] = useState<Record<string, AttendanceStatus>>({});
   const [history, setHistory] = useState<HistoryRow[]>([]);
@@ -66,6 +69,7 @@ export default function AttendanceManagement() {
   const [date, setDate] = useState<string>(today());
   const [clientFilter, setClientFilter] = useState("all");
   const [locationFilter, setLocationFilter] = useState("all");
+  const [branchFilter, setBranchFilter] = useState("all");
   const [shiftFilter, setShiftFilter] = useState<"all" | "day" | "night">("all");
   const [unmarkedOnly, setUnmarkedOnly] = useState<boolean>(false);
   const [empSearch, setEmpSearch] = useState("");
@@ -294,21 +298,24 @@ export default function AttendanceManagement() {
   const toInputRef = useRef<HTMLInputElement>(null);
 
   const loadStaticData = async () => {
-    const [locRes, cliRes, empRes] = await Promise.all([
+    const [locRes, cliRes, brRes, empRes] = await Promise.all([
       supabase.from("locations").select("*").order("name"),
       supabase.from("clients").select("*").order("name"),
+      supabase.from("branches").select("*").order("is_head_office", { ascending: false }).order("name"),
       supabase
         .from("employees")
         .select(
-          "id, employee_code, full_name, location_id, client_id, shift, location:location_id(name), client:client_id(name)"
+          "id, employee_code, full_name, location_id, client_id, branch_id, shift, location:location_id(name), client:client_id(name)"
         )
         .order("full_name"),
     ]);
     if (locRes.error) setError(locRes.error.message);
     if (cliRes.error) setError(cliRes.error.message);
+    if (brRes.error) setError(brRes.error.message);
     if (empRes.error) setError(empRes.error.message);
     setLocations(locRes.data ?? []);
     setClients(cliRes.data ?? []);
+    setBranches((brRes.data ?? []) as Branch[]);
     setEmployees(
       (empRes.data ?? []).map((e: any) => ({
         id: e.id,
@@ -318,6 +325,7 @@ export default function AttendanceManagement() {
         location_name: e.location?.name ?? null,
         client_id: e.client_id,
         client_name: e.client?.name ?? null,
+        branch_id: e.branch_id ?? null,
         shift: e.shift,
       }))
     );
@@ -418,19 +426,20 @@ export default function AttendanceManagement() {
   useEffect(() => {
     if (employees.length === 0) return;
     loadHistory();
-  }, [historyFrom, historyTo, employees, clientFilter, locationFilter, shiftFilter]);
+  }, [historyFrom, historyTo, employees, clientFilter, locationFilter, branchFilter, shiftFilter]);
 
   const filteredEmployees = useMemo(() => {
     const q = empSearch.trim().toLowerCase();
     return employees.filter((e) => {
       if (clientFilter !== "all" && e.client_id !== clientFilter) return false;
       if (locationFilter !== "all" && e.location_id !== locationFilter) return false;
+      if (branchFilter !== "all" && e.branch_id !== branchFilter) return false;
       if (shiftFilter !== "all" && e.shift !== shiftFilter) return false;
       if (unmarkedOnly && todayRecords[e.id]) return false;
       if (q && !e.full_name.toLowerCase().includes(q) && !e.employee_code.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [employees, clientFilter, locationFilter, shiftFilter, unmarkedOnly, todayRecords, empSearch]);
+  }, [employees, clientFilter, locationFilter, branchFilter, shiftFilter, unmarkedOnly, todayRecords, empSearch]);
 
   const markStatus = async (employeeId: string, status: AttendanceStatus) => {
     setSaving((s) => ({ ...s, [employeeId]: true }));
@@ -749,7 +758,7 @@ export default function AttendanceManagement() {
         )}
 
         <div className="bg-white rounded-lg border border-slate-200 mb-6 p-6">
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
             <div>
               <label className="block text-sm text-slate-700 mb-2">Date</label>
               <div className="relative">
@@ -801,6 +810,19 @@ export default function AttendanceManagement() {
                   <option key={l.id} value={l.id}>
                     {l.name}
                   </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-2">Branch</label>
+              <select
+                value={branchFilter}
+                onChange={(e) => setBranchFilter(e.target.value)}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              >
+                <option value="all">All Branches</option>
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
               </select>
             </div>

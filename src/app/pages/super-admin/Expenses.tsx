@@ -27,6 +27,8 @@ import {
   type BankAccount,
   type Employee,
   type Advance,
+  type Cheque,
+  type Branch,
 } from "../../lib/supabase";
 
 const PIE_COLORS = [
@@ -63,8 +65,9 @@ type AdvanceForm = {
   employee_id: string;
   amount: string;
   advance_date: string;
-  payment_mode: "Cash" | "Bank";
+  payment_mode: "Cash" | "Bank" | "Cheque";
   bank_account_id: string;
+  cheque_id: string;
   notes: string;
 };
 
@@ -75,6 +78,7 @@ const emptyAdvanceForm: AdvanceForm = {
   advance_date: new Date().toISOString().slice(0, 10),
   payment_mode: "Cash",
   bank_account_id: "",
+  cheque_id: "",
   notes: "",
 };
 
@@ -87,6 +91,7 @@ type ExpenseForm = {
   expense_date: string;
   payment_mode: ExpensePaymentMode;
   bank_account_id: string;
+  cheque_id: string;
   due_date: string;
   notes: string;
   receipt?: File;
@@ -101,6 +106,7 @@ const emptyForm: ExpenseForm = {
   expense_date: new Date().toISOString().slice(0, 10),
   payment_mode: "Cash",
   bank_account_id: "",
+  cheque_id: "",
   due_date: "",
   notes: "",
 };
@@ -114,6 +120,10 @@ export default function Expenses() {
   const [clients, setClients] = useState<Client[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [banks, setBanks] = useState<BankAccount[]>([]);
+  const [cheques, setCheques] = useState<Cheque[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [branchFilter, setBranchFilter] = useState("all");
+  const [advBranchFilter, setAdvBranchFilter] = useState("all");
   const [cashBalance, setCashBalance] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -130,7 +140,7 @@ export default function Expenses() {
 
   const [advSearch, setAdvSearch] = useState("");
   const [advClientFilter, setAdvClientFilter] = useState<string>("all");
-  const [advModeFilter, setAdvModeFilter] = useState<"all" | "Cash" | "Bank">("all");
+  const [advModeFilter, setAdvModeFilter] = useState<"all" | "Cash" | "Bank" | "Cheque">("all");
 
   const currentMonthKey = () => {
     const d = new Date();
@@ -168,13 +178,15 @@ export default function Expenses() {
   const loadAll = async () => {
     setLoading(true);
     setError(null);
-    const [catRes, cliRes, venRes, bankRes, treaRes, empRes] = await Promise.all([
+    const [catRes, cliRes, venRes, bankRes, treaRes, empRes, chqRes, brRes] = await Promise.all([
       supabase.from("expense_categories").select("*").order("name"),
       supabase.from("clients").select("*").order("name"),
       supabase.from("vendors").select("*").order("name"),
       supabase.from("bank_accounts").select("*").order("bank_name"),
       supabase.from("treasury").select("*").limit(1).maybeSingle(),
       supabase.from("employees").select("*").order("employee_code"),
+      supabase.from("cheques").select("*").order("cheque_date", { ascending: false }),
+      supabase.from("branches").select("*").order("is_head_office", { ascending: false }).order("name"),
     ]);
     if (catRes.error) setError(catRes.error.message);
     // Paginate the two potentially-large tables so we never silently miss rows.
@@ -217,6 +229,8 @@ export default function Expenses() {
     setClients((cliRes.data ?? []) as Client[]);
     setVendors((venRes.data ?? []) as Vendor[]);
     setBanks((bankRes.data ?? []) as BankAccount[]);
+    setCheques((chqRes.data ?? []) as Cheque[]);
+    setBranches((brRes.data ?? []) as Branch[]);
     setCashBalance(Number(treaRes.data?.cash_balance ?? 0));
     setEmployees((empRes.data ?? []) as Employee[]);
     setAdvances(
@@ -235,6 +249,12 @@ export default function Expenses() {
     loadAll();
   }, []);
 
+  const clientBranchMap = useMemo(() => {
+    const m = new Map<string, string | null>();
+    for (const c of clients) m.set(c.id, c.branch_id);
+    return m;
+  }, [clients]);
+
   const filteredAdvances = useMemo(() => {
     const q = advSearch.trim().toLowerCase();
     return advances.filter((a) => {
@@ -248,9 +268,13 @@ export default function Expenses() {
         if (advClientFilter !== "none" && a.client_id !== advClientFilter) return false;
       }
       if (advModeFilter !== "all" && a.payment_mode !== advModeFilter) return false;
+      if (advBranchFilter !== "all") {
+        const b = a.client_id ? clientBranchMap.get(a.client_id) : null;
+        if (b !== advBranchFilter) return false;
+      }
       return true;
     });
-  }, [advances, advSearch, advMonthFilter, advClientFilter, advModeFilter]);
+  }, [advances, advSearch, advMonthFilter, advClientFilter, advModeFilter, advBranchFilter, clientBranchMap]);
 
   const advTotals = useMemo(() => {
     const t = { count: filteredAdvances.length, total: 0 };
@@ -300,9 +324,14 @@ export default function Expenses() {
       if (clientFilter === "office" && e.client_id !== null) return false;
       if (clientFilter !== "all" && clientFilter !== "office" && e.client_id !== clientFilter) return false;
       if (modeFilter !== "all" && e.payment_mode !== modeFilter) return false;
+      if (branchFilter !== "all") {
+        // Office expenses (no client) only show when "All Branches" is selected.
+        const b = e.client_id ? clientBranchMap.get(e.client_id) : null;
+        if (b !== branchFilter) return false;
+      }
       return true;
     });
-  }, [expenses, search, monthFilter, categoryFilter, clientFilter, modeFilter]);
+  }, [expenses, search, monthFilter, categoryFilter, clientFilter, modeFilter, branchFilter, clientBranchMap]);
 
   // Last 18 months of options + "All" for the month select.
   const monthOptions = useMemo(() => {
@@ -405,6 +434,10 @@ export default function Expenses() {
       setError("Select a bank account for Bank payment.");
       return;
     }
+    if (form.payment_mode === "Cheque" && !form.cheque_id) {
+      setError("Select a pending cheque for Cheque payment.");
+      return;
+    }
     if (form.payment_mode === "Payable" && !form.due_date) {
       setError("Select a due date for Payable expense.");
       return;
@@ -430,6 +463,10 @@ export default function Expenses() {
       const vendorId = form.payment_mode === "Payable" ? form.vendor_id || null : null;
       const clientName = form.client_id ? clients.find((c) => c.id === form.client_id)?.name ?? null : null;
 
+      const chequeBank =
+        form.payment_mode === "Cheque"
+          ? cheques.find((c) => c.id === form.cheque_id)?.bank_account_id ?? null
+          : null;
       const { data: inserted, error: insErr } = await supabase
         .from("expenses")
         .insert({
@@ -440,7 +477,13 @@ export default function Expenses() {
           amount,
           expense_date: form.expense_date,
           payment_mode: form.payment_mode,
-          bank_account_id: form.payment_mode === "Bank" ? form.bank_account_id : null,
+          bank_account_id:
+            form.payment_mode === "Bank"
+              ? form.bank_account_id
+              : form.payment_mode === "Cheque"
+                ? chequeBank
+                : null,
+          cheque_id: form.payment_mode === "Cheque" ? form.cheque_id : null,
           due_date: form.payment_mode === "Payable" ? form.due_date : null,
           payable_status: form.payment_mode === "Payable" ? "Pending" : null,
           notes: form.notes.trim() || null,
@@ -499,6 +542,7 @@ export default function Expenses() {
       expense_date: expense.expense_date,
       payment_mode: expense.payment_mode,
       bank_account_id: expense.bank_account_id ?? "",
+      cheque_id: expense.cheque_id ?? "",
       due_date: expense.due_date ?? "",
       notes: expense.notes ?? "",
     });
@@ -561,6 +605,10 @@ export default function Expenses() {
       setError("Select a bank account for Bank payment.");
       return;
     }
+    if (editForm.payment_mode === "Cheque" && !editForm.cheque_id) {
+      setError("Select a pending cheque for Cheque payment.");
+      return;
+    }
     if (editForm.payment_mode === "Payable" && !editForm.due_date) {
       setError("Select a due date for Payable expense.");
       return;
@@ -608,6 +656,10 @@ export default function Expenses() {
           ? (selected.payment_mode === "Payable" ? selected.payable_status ?? "Pending" : "Pending")
           : null;
 
+      const chequeBank =
+        editForm.payment_mode === "Cheque"
+          ? cheques.find((c) => c.id === editForm.cheque_id)?.bank_account_id ?? null
+          : null;
       const { error: upErr } = await supabase
         .from("expenses")
         .update({
@@ -618,7 +670,13 @@ export default function Expenses() {
           amount,
           expense_date: editForm.expense_date,
           payment_mode: editForm.payment_mode,
-          bank_account_id: editForm.payment_mode === "Bank" ? editForm.bank_account_id : null,
+          bank_account_id:
+            editForm.payment_mode === "Bank"
+              ? editForm.bank_account_id
+              : editForm.payment_mode === "Cheque"
+                ? chequeBank
+                : null,
+          cheque_id: editForm.payment_mode === "Cheque" ? editForm.cheque_id : null,
           due_date: editForm.payment_mode === "Payable" ? editForm.due_date : null,
           payable_status: payableStatus,
           paid_via: editForm.payment_mode === "Payable" ? selected.paid_via : null,
@@ -713,6 +771,7 @@ export default function Expenses() {
     if (!amt || amt <= 0) return "Enter a positive amount.";
     if (!f.advance_date) return "Select a date.";
     if (f.payment_mode === "Bank" && !f.bank_account_id) return "Select a bank account.";
+    if (f.payment_mode === "Cheque" && !f.cheque_id) return "Select a pending cheque.";
     if (f.payment_mode === "Cash") {
       const budget = cashBalance + (existingAmount ?? 0);
       if (amt > budget) return "Cash balance is insufficient.";
@@ -746,6 +805,10 @@ export default function Expenses() {
       const amount = Number(advForm.amount);
       const emp = employees.find((x) => x.id === advForm.employee_id);
       const client = advForm.client_id ? clients.find((c) => c.id === advForm.client_id) ?? null : null;
+      const chequeBank =
+        advForm.payment_mode === "Cheque"
+          ? cheques.find((c) => c.id === advForm.cheque_id)?.bank_account_id ?? null
+          : null;
       const { data: inserted, error: insErr } = await supabase
         .from("advances")
         .insert({
@@ -754,7 +817,13 @@ export default function Expenses() {
           amount,
           advance_date: advForm.advance_date,
           payment_mode: advForm.payment_mode,
-          bank_account_id: advForm.payment_mode === "Bank" ? advForm.bank_account_id : null,
+          bank_account_id:
+            advForm.payment_mode === "Bank"
+              ? advForm.bank_account_id
+              : advForm.payment_mode === "Cheque"
+                ? chequeBank
+                : null,
+          cheque_id: advForm.payment_mode === "Cheque" ? advForm.cheque_id : null,
           notes: advForm.notes.trim() || null,
         })
         .select()
@@ -772,7 +841,7 @@ export default function Expenses() {
           description: desc,
           reference_id: advId,
         });
-      } else {
+      } else if (advForm.payment_mode === "Bank") {
         await applyBankDelta(advForm.bank_account_id, -amount);
         await logAdvanceTransaction({
           bank_account_id: advForm.bank_account_id,
@@ -783,6 +852,7 @@ export default function Expenses() {
           reference_id: advId,
         });
       }
+      // Cheque mode: balance already deducted by cheque trigger; no cashflow until cleared.
       resetAdvAddModal();
       await loadAll();
     } catch (err: any) {
@@ -801,6 +871,7 @@ export default function Expenses() {
       advance_date: adv.advance_date,
       payment_mode: adv.payment_mode,
       bank_account_id: adv.bank_account_id ?? "",
+      cheque_id: adv.cheque_id ?? "",
       notes: adv.notes ?? "",
     });
     setAdvEditEmpSearch(`${adv.employee_name} (${adv.employee_code})`);
@@ -863,7 +934,13 @@ export default function Expenses() {
           amount,
           advance_date: advEditForm.advance_date,
           payment_mode: advEditForm.payment_mode,
-          bank_account_id: advEditForm.payment_mode === "Bank" ? advEditForm.bank_account_id : null,
+          bank_account_id:
+            advEditForm.payment_mode === "Bank"
+              ? advEditForm.bank_account_id
+              : advEditForm.payment_mode === "Cheque"
+                ? cheques.find((c) => c.id === advEditForm.cheque_id)?.bank_account_id ?? null
+                : null,
+          cheque_id: advEditForm.payment_mode === "Cheque" ? advEditForm.cheque_id : null,
           notes: advEditForm.notes.trim() || null,
           updated_at: new Date().toISOString(),
         })
@@ -880,7 +957,7 @@ export default function Expenses() {
           description: desc,
           reference_id: advEditing.id,
         });
-      } else {
+      } else if (advEditForm.payment_mode === "Bank") {
         await applyBankDelta(advEditForm.bank_account_id, -amount);
         await logAdvanceTransaction({
           bank_account_id: advEditForm.bank_account_id,
@@ -891,6 +968,7 @@ export default function Expenses() {
           reference_id: advEditing.id,
         });
       }
+      // Cheque: balance reserved by cheque trigger, no immediate cashflow.
       setIsAdvEditOpen(false);
       setAdvEditing(null);
       await loadAll();
@@ -1267,6 +1345,16 @@ export default function Expenses() {
                 extraOption={{ value: "office", label: "Office (no client)" }}
               />
               <select
+                value={branchFilter}
+                onChange={(e) => setBranchFilter(e.target.value)}
+                className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+              >
+                <option value="all">All Branches</option>
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+              <select
                 value={modeFilter}
                 onChange={(e) => setModeFilter(e.target.value as "all" | ExpensePaymentMode)}
                 className="px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -1274,6 +1362,7 @@ export default function Expenses() {
                 <option value="all">All Modes</option>
                 <option value="Cash">Cash</option>
                 <option value="Bank">Bank</option>
+                <option value="Cheque">Cheque</option>
                 <option value="Payable">Payable</option>
               </select>
             </div>
@@ -1457,13 +1546,24 @@ export default function Expenses() {
                   ))}
                 </select>
                 <select
+                  value={advBranchFilter}
+                  onChange={(e) => setAdvBranchFilter(e.target.value)}
+                  className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                >
+                  <option value="all">All Branches</option>
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
+                <select
                   value={advModeFilter}
-                  onChange={(e) => setAdvModeFilter(e.target.value as "all" | "Cash" | "Bank")}
+                  onChange={(e) => setAdvModeFilter(e.target.value as "all" | "Cash" | "Bank" | "Cheque")}
                   className="px-3 py-2 border border-slate-200 rounded-md text-sm"
                 >
                   <option value="all">All Modes</option>
                   <option value="Cash">Cash</option>
                   <option value="Bank">Bank</option>
+                  <option value="Cheque">Cheque</option>
                 </select>
                 <div className="ml-auto text-xs text-slate-500">
                   {advTotals.count} advance{advTotals.count === 1 ? "" : "s"} · PKR {advTotals.total.toLocaleString()}
@@ -1990,8 +2090,8 @@ export default function Expenses() {
         </div>
         <div>
           <label className="block text-sm text-slate-700 mb-1">Payment Mode *</label>
-          <div className="grid grid-cols-2 gap-2">
-            {(["Cash", "Bank"] as const).map((m) => (
+          <div className="grid grid-cols-3 gap-2">
+            {(["Cash", "Bank", "Cheque"] as const).map((m) => (
               <label
                 key={m}
                 className={`flex items-center justify-center gap-2 px-3 py-2 border rounded-md cursor-pointer text-sm ${
@@ -2009,6 +2109,7 @@ export default function Expenses() {
                       ...state,
                       payment_mode: m,
                       bank_account_id: m === "Cash" ? "" : state.bank_account_id,
+                      cheque_id: m === "Cheque" ? state.cheque_id : "",
                     })
                   }
                 />
@@ -2033,6 +2134,32 @@ export default function Expenses() {
                 </option>
               ))}
             </select>
+          </div>
+        )}
+        {state.payment_mode === "Cheque" && (
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Cheque *</label>
+            <select
+              required
+              value={state.cheque_id}
+              onChange={(e) => setState({ ...state, cheque_id: e.target.value })}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+            >
+              <option value="">Select a pending cheque</option>
+              {cheques
+                .filter((c) => c.status === "pending" || c.id === state.cheque_id)
+                .map((c) => {
+                  const bank = banks.find((b) => b.id === c.bank_account_id);
+                  return (
+                    <option key={c.id} value={c.id}>
+                      #{c.cheque_number} · {bank?.bank_name ?? "Bank"} · PKR {Number(c.amount).toLocaleString()} · {c.status}
+                    </option>
+                  );
+                })}
+            </select>
+            <p className="text-xs text-slate-500 mt-1">
+              Cashflow recognises this advance only when the cheque is marked Cleared.
+            </p>
           </div>
         )}
         <div>
@@ -2122,8 +2249,8 @@ export default function Expenses() {
           </div>
           <div className="col-span-2">
             <label className="block text-sm text-slate-700 mb-1">Payment Mode *</label>
-            <div className="grid grid-cols-3 gap-2">
-              {(["Cash", "Bank", "Payable"] as const).map((m) => (
+            <div className="grid grid-cols-4 gap-2">
+              {(["Cash", "Bank", "Cheque", "Payable"] as const).map((m) => (
                 <label
                   key={m}
                   className={`flex items-center justify-center gap-2 px-3 py-2 border rounded-md cursor-pointer text-sm ${
@@ -2136,7 +2263,7 @@ export default function Expenses() {
                     type="radio"
                     name={`payment_mode_${submitLabel}`}
                     checked={state.payment_mode === m}
-                    onChange={() => setState({ ...state, payment_mode: m })}
+                    onChange={() => setState({ ...state, payment_mode: m, cheque_id: m === "Cheque" ? state.cheque_id : "" })}
                   />
                   <span>{m}</span>
                 </label>
@@ -2159,6 +2286,32 @@ export default function Expenses() {
                   </option>
                 ))}
               </select>
+            </div>
+          )}
+          {state.payment_mode === "Cheque" && (
+            <div className="col-span-2">
+              <label className="block text-sm text-slate-700 mb-1">Cheque *</label>
+              <select
+                required
+                value={state.cheque_id}
+                onChange={(e) => setState({ ...state, cheque_id: e.target.value })}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+              >
+                <option value="">Select a pending cheque</option>
+                {cheques
+                  .filter((c) => c.status === "pending" || c.id === state.cheque_id)
+                  .map((c) => {
+                    const bank = banks.find((b) => b.id === c.bank_account_id);
+                    return (
+                      <option key={c.id} value={c.id}>
+                        #{c.cheque_number} · {bank?.bank_name ?? "Bank"} · PKR {Number(c.amount).toLocaleString()} · {c.status}
+                      </option>
+                    );
+                  })}
+              </select>
+              <p className="text-xs text-slate-500 mt-1">
+                Cashflow recognises this expense only when the cheque is marked Cleared in Bank Accounts → Cheques.
+              </p>
             </div>
           )}
           {state.payment_mode === "Payable" && (

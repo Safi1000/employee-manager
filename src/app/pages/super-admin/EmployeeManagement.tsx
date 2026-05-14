@@ -11,9 +11,16 @@ import {
   type EmployeeDocument,
   type Location,
   type Client,
+  type Branch,
+  type EmployeeCategory,
 } from "../../lib/supabase";
 
-type EmployeeRow = Employee & { location_name: string | null; client_name: string | null; doc_count: number };
+type EmployeeRow = Employee & {
+  location_name: string | null;
+  client_name: string | null;
+  branch_name: string | null;
+  doc_count: number;
+};
 type DocumentWithUrl = EmployeeDocument & { publicUrl: string | null };
 
 type FormState = {
@@ -21,6 +28,8 @@ type FormState = {
   phone: string;
   location_id: string;
   client_id: string;
+  branch_id: string;
+  category: EmployeeCategory;
   department: string;
   shift: "day" | "night";
   base_salary: string;
@@ -38,6 +47,8 @@ const emptyForm: FormState = {
   phone: "",
   location_id: "",
   client_id: "",
+  branch_id: "",
+  category: "client",
   department: "",
   shift: "day",
   base_salary: "",
@@ -64,12 +75,15 @@ export default function EmployeeManagement() {
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
   const [locationFilter, setLocationFilter] = useState("all");
   const [clientFilter, setClientFilter] = useState("all");
+  const [branchFilter, setBranchFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState<"all" | EmployeeCategory>("all");
   const [shiftFilter, setShiftFilter] = useState<"all" | "day" | "night">("all");
   const [statusFilter, setStatusFilter] = useState("all");
 
@@ -89,21 +103,24 @@ export default function EmployeeManagement() {
   const loadData = async () => {
     setLoading(true);
     setError(null);
-    const [locRes, cliRes, empRes, docRes] = await Promise.all([
+    const [locRes, cliRes, brRes, empRes, docRes] = await Promise.all([
       supabase.from("locations").select("*").order("name"),
       supabase.from("clients").select("*").order("name"),
+      supabase.from("branches").select("*").order("is_head_office", { ascending: false }).order("name"),
       supabase
         .from("employees")
-        .select("*, location:location_id(name), client:client_id(name)")
+        .select("*, location:location_id(name), client:client_id(name), branch:branch_id(name)")
         .order("created_at", { ascending: false }),
       supabase.from("employee_documents").select("employee_id"),
     ]);
     if (locRes.error) setError(locRes.error.message);
     if (cliRes.error) setError(cliRes.error.message);
+    if (brRes.error) setError(brRes.error.message);
     if (empRes.error) setError(empRes.error.message);
     if (docRes.error) setError(docRes.error.message);
     setLocations(locRes.data ?? []);
     setClients(cliRes.data ?? []);
+    setBranches(brRes.data ?? []);
     const docCount = new Map<string, number>();
     for (const d of (docRes.data ?? []) as { employee_id: string }[]) {
       docCount.set(d.employee_id, (docCount.get(d.employee_id) ?? 0) + 1);
@@ -113,6 +130,7 @@ export default function EmployeeManagement() {
         ...e,
         location_name: e.location?.name ?? null,
         client_name: e.client?.name ?? null,
+        branch_name: e.branch?.name ?? null,
         doc_count: docCount.get(e.id) ?? 0,
       }))
     );
@@ -122,6 +140,28 @@ export default function EmployeeManagement() {
   useEffect(() => {
     loadData();
   }, []);
+
+  // Branches first by Head Office then alpha — used in selects with placeholder.
+  const branchOptions = useMemo(() => branches.slice(), [branches]);
+
+  // Clients filtered by chosen branch (empty branch = show all in company).
+  const clientsForBranch = (branchId: string): Client[] =>
+    branchId ? clients.filter((c) => c.branch_id === branchId) : clients;
+
+  // When the form's client changes, auto-fill branch from the client's branch_id
+  // (unless the user has already chosen a different branch explicitly).
+  const onPickClient = (
+    f: FormState,
+    setF: (next: FormState) => void,
+    clientId: string,
+  ) => {
+    const c = clients.find((x) => x.id === clientId);
+    setF({
+      ...f,
+      client_id: clientId,
+      branch_id: c?.branch_id ?? f.branch_id,
+    });
+  };
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -135,11 +175,13 @@ export default function EmployeeManagement() {
         return false;
       if (locationFilter !== "all" && e.location_id !== locationFilter) return false;
       if (clientFilter !== "all" && e.client_id !== clientFilter) return false;
+      if (branchFilter !== "all" && e.branch_id !== branchFilter) return false;
+      if (categoryFilter !== "all" && (e.category ?? "client") !== categoryFilter) return false;
       if (shiftFilter !== "all" && e.shift !== shiftFilter) return false;
       if (statusFilter !== "all" && e.status !== statusFilter) return false;
       return true;
     });
-  }, [employees, search, locationFilter, clientFilter, shiftFilter, statusFilter]);
+  }, [employees, search, locationFilter, clientFilter, branchFilter, categoryFilter, shiftFilter, statusFilter]);
 
   const uploadDoc = async (employeeId: string, docType: string, file: File) => {
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -220,8 +262,8 @@ export default function EmployeeManagement() {
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.full_name.trim()) return;
-    if (!form.client_id) {
-      setError("Select a client.");
+    if (form.category === "client" && !form.client_id) {
+      setError("Select a client (or change category to Office Staff / Reliever).");
       return;
     }
     setSubmitting(true);
@@ -233,7 +275,9 @@ export default function EmployeeManagement() {
           full_name: form.full_name.trim(),
           phone: form.phone.trim() || null,
           location_id: form.location_id || null,
-          client_id: form.client_id,
+          client_id: form.category === "client" ? form.client_id : null,
+          branch_id: form.branch_id || null,
+          category: form.category,
           department: form.department.trim() || null,
           shift: form.shift,
           base_salary: form.base_salary ? Number(form.base_salary) : null,
@@ -283,6 +327,8 @@ export default function EmployeeManagement() {
       phone: emp.phone ?? "",
       location_id: emp.location_id ?? "",
       client_id: emp.client_id ?? "",
+      branch_id: emp.branch_id ?? "",
+      category: (emp.category ?? "client") as EmployeeCategory,
       department: emp.department ?? "",
       shift: emp.shift,
       base_salary: baseStr,
@@ -306,7 +352,9 @@ export default function EmployeeManagement() {
           full_name: editForm.full_name.trim(),
           phone: editForm.phone.trim() || null,
           location_id: editForm.location_id || null,
-          client_id: editForm.client_id || null,
+          client_id: editForm.category === "client" ? (editForm.client_id || null) : null,
+          branch_id: editForm.branch_id || null,
+          category: editForm.category,
           department: editForm.department.trim() || null,
           shift: editForm.shift,
           status: editStatus,
@@ -383,6 +431,28 @@ export default function EmployeeManagement() {
                 allValue="all"
               />
               <select
+                value={branchFilter}
+                onChange={(e) => setBranchFilter(e.target.value)}
+                className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              >
+                <option value="all">All Branches</option>
+                {branchOptions.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value as "all" | EmployeeCategory)}
+                className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              >
+                <option value="all">All Categories</option>
+                <option value="client">Client</option>
+                <option value="office_staff">Office Staff</option>
+                <option value="reliever">Reliever</option>
+              </select>
+              <select
                 value={shiftFilter}
                 onChange={(e) => setShiftFilter(e.target.value as "all" | "day" | "night")}
                 className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -412,7 +482,8 @@ export default function EmployeeManagement() {
                   <th className="text-left px-6 py-3 text-sm text-slate-500">Name</th>
                   <th className="text-left px-6 py-3 text-sm text-slate-500">Phone</th>
                   <th className="text-left px-6 py-3 text-sm text-slate-500">Location</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Client</th>
+                  <th className="text-left px-6 py-3 text-sm text-slate-500">Branch</th>
+                  <th className="text-left px-6 py-3 text-sm text-slate-500">Client / Category</th>
                   <th className="text-left px-6 py-3 text-sm text-slate-500">Shift</th>
                   <th className="text-left px-6 py-3 text-sm text-slate-500">Status</th>
                   <th className="text-left px-6 py-3 text-sm text-slate-500">Actions</th>
@@ -421,7 +492,7 @@ export default function EmployeeManagement() {
               <tbody className="divide-y divide-slate-200">
                 {loading && (
                   <tr>
-                    <td colSpan={8} className="px-6 py-10 text-center text-slate-500">
+                    <td colSpan={9} className="px-6 py-10 text-center text-slate-500">
                       <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
                       Loading…
                     </td>
@@ -429,7 +500,7 @@ export default function EmployeeManagement() {
                 )}
                 {!loading && filtered.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="px-6 py-10 text-center text-slate-500 text-sm">
+                    <td colSpan={9} className="px-6 py-10 text-center text-slate-500 text-sm">
                       No employees yet. Click "Add Employee" to create one.
                     </td>
                   </tr>
@@ -459,7 +530,16 @@ export default function EmployeeManagement() {
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-600">{employee.phone ?? "—"}</td>
                       <td className="px-6 py-4 text-sm text-slate-600">{employee.location_name ?? "—"}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{employee.client_name ?? "—"}</td>
+                      <td className="px-6 py-4 text-sm text-slate-600">{employee.branch_name ?? "—"}</td>
+                      <td className="px-6 py-4 text-sm text-slate-600">
+                        {(employee.category ?? "client") === "client" ? (
+                          employee.client_name ?? "—"
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-700 capitalize">
+                            {(employee.category ?? "client").replace("_", " ")}
+                          </span>
+                        )}
+                      </td>
                       <td className="px-6 py-4">
                         <span
                           className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs capitalize ${
@@ -548,26 +628,66 @@ export default function EmployeeManagement() {
                 )}
               </div>
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Client *</label>
+                <label className="block text-sm text-slate-700 mb-1">Branch</label>
                 <select
-                  required
-                  value={form.client_id}
-                  onChange={(e) => setForm({ ...form, client_id: e.target.value })}
+                  value={form.branch_id}
+                  onChange={(e) => {
+                    const newBranch = e.target.value;
+                    // Clear client if it no longer matches the picked branch
+                    const cur = clients.find((c) => c.id === form.client_id);
+                    const keepClient = !newBranch || !cur || cur.branch_id === newBranch;
+                    setForm({ ...form, branch_id: newBranch, client_id: keepClient ? form.client_id : "" });
+                  }}
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                 >
-                  <option value="">Select client</option>
-                  {clients.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
+                  <option value="">Head Office (default)</option>
+                  {branchOptions.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
                     </option>
                   ))}
                 </select>
-                {clients.length === 0 && (
-                  <p className="text-xs text-slate-500 mt-1">
-                    No clients yet. Add them from Settings → Client Management.
-                  </p>
-                )}
               </div>
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Category *</label>
+                <select
+                  value={form.category}
+                  onChange={(e) => {
+                    const cat = e.target.value as EmployeeCategory;
+                    setForm({ ...form, category: cat, client_id: cat === "client" ? form.client_id : "" });
+                  }}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                >
+                  <option value="client">Client</option>
+                  <option value="office_staff">Office Staff</option>
+                  <option value="reliever">Reliever</option>
+                </select>
+              </div>
+              {form.category === "client" && (
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">Client *</label>
+                  <select
+                    required
+                    value={form.client_id}
+                    onChange={(e) => onPickClient(form, setForm, e.target.value)}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  >
+                    <option value="">Select client</option>
+                    {clientsForBranch(form.branch_id).map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                  {clientsForBranch(form.branch_id).length === 0 && (
+                    <p className="text-xs text-slate-500 mt-1">
+                      {form.branch_id
+                        ? "No clients in this branch yet."
+                        : "No clients yet. Add them from Settings → Client Management."}
+                    </p>
+                  )}
+                </div>
+              )}
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Department</label>
                 <input
@@ -746,8 +866,22 @@ export default function EmployeeManagement() {
                   <p className="text-slate-900">{selectedEmployee.location_name ?? "—"}</p>
                 </div>
                 <div>
+                  <p className="text-slate-500 mb-1">Branch</p>
+                  <p className="text-slate-900">{selectedEmployee.branch_name ?? "—"}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500 mb-1">Category</p>
+                  <p className="text-slate-900 capitalize">
+                    {(selectedEmployee.category ?? "client").replace("_", " ")}
+                  </p>
+                </div>
+                <div>
                   <p className="text-slate-500 mb-1">Client</p>
-                  <p className="text-slate-900">{selectedEmployee.client_name ?? "—"}</p>
+                  <p className="text-slate-900">
+                    {(selectedEmployee.category ?? "client") === "client"
+                      ? selectedEmployee.client_name ?? "—"
+                      : "—"}
+                  </p>
                 </div>
                 <div>
                   <p className="text-slate-500 mb-1">Department</p>
@@ -883,20 +1017,57 @@ export default function EmployeeManagement() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-700 mb-1">Client</label>
+                  <label className="block text-sm text-slate-700 mb-1">Branch</label>
                   <select
-                    value={editForm.client_id}
-                    onChange={(e) => setEditForm({ ...editForm, client_id: e.target.value })}
+                    value={editForm.branch_id}
+                    onChange={(e) => {
+                      const newBranch = e.target.value;
+                      const cur = clients.find((c) => c.id === editForm.client_id);
+                      const keepClient = !newBranch || !cur || cur.branch_id === newBranch;
+                      setEditForm({ ...editForm, branch_id: newBranch, client_id: keepClient ? editForm.client_id : "" });
+                    }}
                     className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                   >
-                    <option value="">Select client</option>
-                    {clients.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
+                    <option value="">Head Office (default)</option>
+                    {branchOptions.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
                       </option>
                     ))}
                   </select>
                 </div>
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">Category</label>
+                  <select
+                    value={editForm.category}
+                    onChange={(e) => {
+                      const cat = e.target.value as EmployeeCategory;
+                      setEditForm({ ...editForm, category: cat, client_id: cat === "client" ? editForm.client_id : "" });
+                    }}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  >
+                    <option value="client">Client</option>
+                    <option value="office_staff">Office Staff</option>
+                    <option value="reliever">Reliever</option>
+                  </select>
+                </div>
+                {editForm.category === "client" && (
+                  <div>
+                    <label className="block text-sm text-slate-700 mb-1">Client</label>
+                    <select
+                      value={editForm.client_id}
+                      onChange={(e) => onPickClient(editForm, setEditForm, e.target.value)}
+                      className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    >
+                      <option value="">Select client</option>
+                      {clientsForBranch(editForm.branch_id).map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div>
                   <label className="block text-sm text-slate-700 mb-1">Department</label>
                   <input

@@ -14,7 +14,7 @@ import {
   Legend,
 } from "recharts";
 import { supabase } from "../../lib/supabase";
-import type { Advance, Expense, InvoicePayment, Payslip } from "../../lib/supabase";
+import type { Advance, Expense, InvoicePayment, Payslip, Cheque } from "../../lib/supabase";
 import { TrendingUp, TrendingDown, Wallet } from "lucide-react";
 
 type Row = {
@@ -74,6 +74,7 @@ export default function Cashflow() {
   const [payslips, setPayslips] = useState<Payslip[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [advances, setAdvances] = useState<Advance[]>([]);
+  const [cheques, setCheques] = useState<Cheque[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -88,7 +89,7 @@ export default function Cashflow() {
       try {
         const sinceMonthIso = `${windowStart}-01`;
 
-        const [payRes, psRes, exRes, advRes] = await Promise.all([
+        const [payRes, psRes, exRes, advRes, chqRes] = await Promise.all([
           supabase
             .from("invoice_payments")
             .select("amount, payment_date")
@@ -104,20 +105,23 @@ export default function Cashflow() {
             .gte("expense_date", sinceMonthIso),
           supabase
             .from("advances")
-            .select("amount, advance_date")
+            .select("amount, advance_date, payment_mode, cheque_id")
             .gte("advance_date", sinceMonthIso),
+          supabase.from("cheques").select("id, status, cleared_at"),
         ]);
 
         if (payRes.error) throw payRes.error;
         if (psRes.error) throw psRes.error;
         if (exRes.error) throw exRes.error;
         if (advRes.error) throw advRes.error;
+        if (chqRes.error) throw chqRes.error;
 
         if (cancelled) return;
         setInvoicePayments((payRes.data ?? []) as InvoicePayment[]);
         setPayslips((psRes.data ?? []) as Payslip[]);
         setExpenses((exRes.data ?? []) as Expense[]);
         setAdvances((advRes.data ?? []) as Advance[]);
+        setCheques((chqRes.data ?? []) as Cheque[]);
       } catch (e: any) {
         if (!cancelled) setError(e.message ?? "Failed to load cashflow data.");
       } finally {
@@ -130,7 +134,18 @@ export default function Cashflow() {
   }, [windowStart]);
 
   const rows: Row[] = useMemo(() => {
+    // Cheque-paid items only count once their cheque is cleared (using cleared_at).
+    const chequeById = new Map<string, Cheque>();
+    for (const c of cheques) chequeById.set(c.id, c);
+    const chequeBucket = (chequeId: string | null): string | null => {
+      if (!chequeId) return null;
+      const c = chequeById.get(chequeId);
+      if (!c || c.status !== "cleared") return null;
+      return monthKeyFromIso(c.cleared_at);
+    };
+
     // Revenue is cash-basis: only invoice_payments actually received count.
+    // Cheque is outgoing-only, so no gating needed here.
     const revenueByMonth = new Map<string, number>();
     for (const p of invoicePayments) {
       const key = monthKeyFromIso(p.payment_date);
@@ -143,7 +158,10 @@ export default function Cashflow() {
 
     const payrollByMonth = new Map<string, number>();
     for (const p of payslips) {
-      const key = monthKeyFromIso(p.disbursed_at ?? p.period_month);
+      const key =
+        p.payment_mode === "Cheque"
+          ? chequeBucket(p.cheque_id)
+          : monthKeyFromIso(p.disbursed_at ?? p.period_month);
       if (!key) continue;
       payrollByMonth.set(
         key,
@@ -153,26 +171,27 @@ export default function Cashflow() {
 
     const expensesByMonth = new Map<string, number>();
     for (const e of expenses) {
+      let key: string | null = null;
       if (e.payment_mode === "Cash" || e.payment_mode === "Bank") {
-        const key = monthKeyFromIso(e.expense_date);
-        if (!key) continue;
-        expensesByMonth.set(
-          key,
-          (expensesByMonth.get(key) ?? 0) + Number(e.amount ?? 0),
-        );
+        key = monthKeyFromIso(e.expense_date);
+      } else if (e.payment_mode === "Cheque") {
+        key = chequeBucket(e.cheque_id);
       } else if (e.payment_mode === "Payable" && e.payable_status === "Paid") {
-        const key = monthKeyFromIso(e.paid_at);
-        if (!key) continue;
-        expensesByMonth.set(
-          key,
-          (expensesByMonth.get(key) ?? 0) + Number(e.amount ?? 0),
-        );
+        key = monthKeyFromIso(e.paid_at);
       }
+      if (!key) continue;
+      expensesByMonth.set(
+        key,
+        (expensesByMonth.get(key) ?? 0) + Number(e.amount ?? 0),
+      );
     }
 
     const advancesByMonth = new Map<string, number>();
     for (const a of advances) {
-      const key = monthKeyFromIso(a.advance_date);
+      const key =
+        a.payment_mode === "Cheque"
+          ? chequeBucket(a.cheque_id)
+          : monthKeyFromIso(a.advance_date);
       if (!key) continue;
       advancesByMonth.set(key, (advancesByMonth.get(key) ?? 0) + Number(a.amount ?? 0));
     }
@@ -192,7 +211,7 @@ export default function Cashflow() {
         net: revenue - payroll - exp - adv,
       };
     });
-  }, [invoicePayments, payslips, expenses, advances, months]);
+  }, [invoicePayments, payslips, expenses, advances, cheques, months]);
 
   const totals = useMemo(() => {
     const revenue = rows.reduce((s, r) => s + r.revenue, 0);

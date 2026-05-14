@@ -23,6 +23,7 @@ import {
   type Invoice,
   type Partner,
   type BankAccountOwnerType,
+  type Cheque,
 } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
 
@@ -70,6 +71,19 @@ export default function Accounting() {
   const [activeTab, setActiveTab] = useState<"receivables" | "payables" | "banks">("receivables");
 
   const [banks, setBanks] = useState<BankAccount[]>([]);
+  const [cheques, setCheques] = useState<Cheque[]>([]);
+  const [isChequeAddOpen, setIsChequeAddOpen] = useState(false);
+  const [chequeForm, setChequeForm] = useState({
+    bank_account_id: "",
+    cheque_number: "",
+    amount: "",
+    cheque_date: new Date().toISOString().slice(0, 10),
+    recipient: "",
+    notes: "",
+  });
+  const [chequeSubmitting, setChequeSubmitting] = useState(false);
+  const [chequeFilter, setChequeFilter] = useState<"all" | "pending" | "cleared">("all");
+  const [chequeBankFilter, setChequeBankFilter] = useState<string>("all");
   const [cashBalance, setCashBalance] = useState<number>(0);
   const [cashOpeningBalance, setCashOpeningBalance] = useState<number>(0);
   const [cashOpeningLocked, setCashOpeningLocked] = useState<boolean>(false);
@@ -171,7 +185,20 @@ export default function Accounting() {
     () => banks.reduce((acc, b) => acc + Number(b.balance ?? 0), 0),
     [banks]
   );
-  const grandTotal = cashBalance + totalAccountBalance;
+  // Per-bank pending cheque amounts (locked but not yet cleared).
+  const pendingChequesByBank = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const c of cheques) {
+      if (c.status !== "pending") continue;
+      m.set(c.bank_account_id, (m.get(c.bank_account_id) ?? 0) + Number(c.amount));
+    }
+    return m;
+  }, [cheques]);
+  const totalPendingCheques = useMemo(
+    () => Array.from(pendingChequesByBank.values()).reduce((s, n) => s + n, 0),
+    [pendingChequesByBank]
+  );
+  const grandTotal = cashBalance + totalAccountBalance + totalPendingCheques;
 
   // Apply month filter to receivables. For a specific month, the displayed
   // "Opening Balance" carries forward from the prior period: it equals the
@@ -369,6 +396,7 @@ export default function Accounting() {
       payablesRes,
       clientsRes,
       partnersRes,
+      chequesRes,
     ] = await Promise.all([
       supabase.from("bank_accounts").select("*").order("created_at", { ascending: false }),
       supabase.from("treasury").select("*").limit(1).maybeSingle(),
@@ -379,6 +407,7 @@ export default function Accounting() {
         .order("due_date", { ascending: true, nullsFirst: false }),
       supabase.from("clients").select("*").order("name"),
       supabase.from("partners").select("*").order("name"),
+      supabase.from("cheques").select("*").order("cheque_date", { ascending: false }),
     ]);
     // Paginate the three potentially-large tables.
     let txRows: BankTransaction[] = [];
@@ -438,6 +467,8 @@ export default function Accounting() {
     if (payablesRes.error) setError(payablesRes.error.message);
     if (clientsRes.error) setError(clientsRes.error.message);
     setBanks((banksRes.data ?? []) as BankAccount[]);
+    if (chequesRes.error) setError(chequesRes.error.message);
+    setCheques((chequesRes.data ?? []) as Cheque[]);
     setCashBalance(Number(treasuryRes.data?.cash_balance ?? 0));
     setCashOpeningBalance(Number(treasuryRes.data?.cash_opening_balance ?? 0));
     setCashOpeningLocked(Boolean(treasuryRes.data?.cash_opening_locked ?? false));
@@ -1430,7 +1461,7 @@ export default function Accounting() {
         )}
 
         {activeTab === "banks" && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <div className="bg-green-50 p-4 rounded-lg border border-green-200">
               <div className="flex items-center justify-between">
                 <p className="text-xs text-green-700 mb-1">Cash Balance (Treasury)</p>
@@ -1461,6 +1492,10 @@ export default function Accounting() {
             <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
               <p className="text-xs text-blue-700 mb-1">Total Account Balance</p>
               <p className="text-2xl text-blue-900">PKR {totalAccountBalance.toLocaleString()}</p>
+            </div>
+            <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
+              <p className="text-xs text-amber-700 mb-1">Pending Cheques</p>
+              <p className="text-2xl text-amber-900">PKR {totalPendingCheques.toLocaleString()}</p>
             </div>
             <div className="bg-slate-900 p-4 rounded-lg">
               <p className="text-xs text-slate-300 mb-1">Total Balance</p>
@@ -1814,6 +1849,7 @@ export default function Accounting() {
           )}
 
           {activeTab === "banks" && (
+            <>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
@@ -1823,13 +1859,15 @@ export default function Accounting() {
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Type</th>
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Owner</th>
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Account Balance</th>
+                    <th className="text-left px-6 py-3 text-sm text-slate-500">Cheque Balance</th>
+                    <th className="text-left px-6 py-3 text-sm text-slate-500">Total Balance</th>
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {loading && (
                     <tr>
-                      <td colSpan={7} className="px-6 py-10 text-center text-slate-500">
+                      <td colSpan={8} className="px-6 py-10 text-center text-slate-500">
                         <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
                         Loading…
                       </td>
@@ -1837,7 +1875,7 @@ export default function Accounting() {
                   )}
                   {!loading && banks.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="px-6 py-10 text-center text-slate-500 text-sm">
+                      <td colSpan={8} className="px-6 py-10 text-center text-slate-500 text-sm">
                         No bank accounts yet. Click "Add Bank Account" to create one.
                       </td>
                     </tr>
@@ -1845,6 +1883,8 @@ export default function Accounting() {
                   {!loading &&
                     banks.map((bank) => {
                       const acct = Number(bank.balance ?? 0);
+                      const pendChq = pendingChequesByBank.get(bank.id) ?? 0;
+                      const totalBal = acct + pendChq;
                       return (
                         <tr key={bank.id} className="hover:bg-slate-50 transition-colors">
                           <td className="px-6 py-4">
@@ -1869,6 +1909,10 @@ export default function Accounting() {
                             )}
                           </td>
                           <td className="px-6 py-4 text-sm text-blue-600">PKR {acct.toLocaleString()}</td>
+                          <td className="px-6 py-4 text-sm text-amber-600">
+                            {pendChq > 0 ? `PKR ${pendChq.toLocaleString()}` : "—"}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-slate-900">PKR {totalBal.toLocaleString()}</td>
                           <td className="px-6 py-4 flex gap-2 flex-wrap">
                             <Button variant="ghost" size="sm" onClick={() => openWithdraw(bank)}>
                               <ArrowDownUp className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
@@ -1895,9 +1939,256 @@ export default function Accounting() {
                 </tbody>
               </table>
             </div>
+
+            <div className="border-t border-slate-200 p-6">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <div>
+                  <h3 className="text-base text-slate-900">Cheques</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Outgoing cheques deduct the bank's Account Balance immediately. Pending cheques add to the Total Balance until cleared.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    value={chequeBankFilter}
+                    onChange={(e) => setChequeBankFilter(e.target.value)}
+                    className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
+                  >
+                    <option value="all">All Banks</option>
+                    {banks.map((b) => (
+                      <option key={b.id} value={b.id}>{b.bank_name}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={chequeFilter}
+                    onChange={(e) => setChequeFilter(e.target.value as "all" | "pending" | "cleared")}
+                    className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
+                  >
+                    <option value="all">All Status</option>
+                    <option value="pending">Pending</option>
+                    <option value="cleared">Cleared</option>
+                  </select>
+                  <Button variant="primary" size="sm" onClick={() => setIsChequeAddOpen(true)} disabled={banks.length === 0}>
+                    <Plus className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
+                    New Cheque
+                  </Button>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50">
+                      <th className="text-left px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">Cheque #</th>
+                      <th className="text-left px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">Bank</th>
+                      <th className="text-left px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">Date</th>
+                      <th className="text-left px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">Recipient</th>
+                      <th className="text-right px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">Amount</th>
+                      <th className="text-left px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">Status</th>
+                      <th className="text-left px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {cheques
+                      .filter((c) => chequeBankFilter === "all" || c.bank_account_id === chequeBankFilter)
+                      .filter((c) => chequeFilter === "all" || c.status === chequeFilter)
+                      .map((c) => {
+                        const bank = banks.find((b) => b.id === c.bank_account_id);
+                        return (
+                          <tr key={c.id} className="hover:bg-slate-50">
+                            <td className="px-4 py-2 text-sm text-slate-900 font-mono">{c.cheque_number}</td>
+                            <td className="px-4 py-2 text-sm text-slate-600">{bank?.bank_name ?? "—"}</td>
+                            <td className="px-4 py-2 text-sm text-slate-600">{c.cheque_date}</td>
+                            <td className="px-4 py-2 text-sm text-slate-600">{c.recipient ?? "—"}</td>
+                            <td className="px-4 py-2 text-sm text-slate-900 text-right">
+                              PKR {Number(c.amount).toLocaleString()}
+                            </td>
+                            <td className="px-4 py-2">
+                              {c.status === "pending" ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-amber-50 text-amber-700">
+                                  Pending
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-emerald-50 text-emerald-700">
+                                  Cleared{c.cleared_at ? ` · ${c.cleared_at.slice(0, 10)}` : ""}
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-2 flex gap-2">
+                              {c.status === "pending" && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={async () => {
+                                    if (!window.confirm("Mark this cheque as cleared? The bank balance stays deducted.")) return;
+                                    const { error: e } = await supabase
+                                      .from("cheques")
+                                      .update({ status: "cleared" })
+                                      .eq("id", c.id);
+                                    if (e) { setError(e.message); return; }
+                                    await loadAll();
+                                  }}
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
+                                  Mark Cleared
+                                </Button>
+                              )}
+                              {c.status === "pending" && (
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-red-700 hover:bg-red-50"
+                                  title="Delete cheque (restores bank balance)"
+                                  onClick={async () => {
+                                    if (!window.confirm("Delete this pending cheque? The reserved amount will be restored to the bank.")) return;
+                                    const { error: e } = await supabase.from("cheques").delete().eq("id", c.id);
+                                    if (e) { setError(e.message); return; }
+                                    await loadAll();
+                                  }}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    {cheques.filter((c) => chequeBankFilter === "all" || c.bank_account_id === chequeBankFilter)
+                            .filter((c) => chequeFilter === "all" || c.status === chequeFilter).length === 0 && (
+                      <tr>
+                        <td colSpan={7} className="px-4 py-6 text-center text-sm text-slate-500">
+                          No cheques to show.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            </>
           )}
         </div>
       </div>
+
+      <Modal isOpen={isChequeAddOpen} onClose={() => setIsChequeAddOpen(false)} title="New Cheque" size="md">
+        <form
+          className="space-y-4"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const amount = Number(chequeForm.amount);
+            if (!chequeForm.bank_account_id || !chequeForm.cheque_number || !amount || amount <= 0 || !chequeForm.cheque_date) return;
+            setChequeSubmitting(true);
+            setError(null);
+            try {
+              const { error: insErr } = await supabase.from("cheques").insert({
+                bank_account_id: chequeForm.bank_account_id,
+                cheque_number: chequeForm.cheque_number.trim(),
+                amount,
+                cheque_date: chequeForm.cheque_date,
+                recipient: chequeForm.recipient.trim() || null,
+                notes: chequeForm.notes.trim() || null,
+                status: "pending",
+              });
+              if (insErr) throw insErr;
+              setIsChequeAddOpen(false);
+              setChequeForm({
+                bank_account_id: "",
+                cheque_number: "",
+                amount: "",
+                cheque_date: new Date().toISOString().slice(0, 10),
+                recipient: "",
+                notes: "",
+              });
+              await loadAll();
+            } catch (err: any) {
+              setError(err.message ?? String(err));
+            } finally {
+              setChequeSubmitting(false);
+            }
+          }}
+        >
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Bank Account *</label>
+            <select
+              required
+              value={chequeForm.bank_account_id}
+              onChange={(e) => setChequeForm({ ...chequeForm, bank_account_id: e.target.value })}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+            >
+              <option value="">Select bank</option>
+              {banks.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.bank_name} · {b.account_number} (PKR {Number(b.balance).toLocaleString()})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Cheque Number *</label>
+              <input
+                required
+                type="text"
+                value={chequeForm.cheque_number}
+                onChange={(e) => setChequeForm({ ...chequeForm, cheque_number: e.target.value })}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm font-mono"
+                placeholder="e.g., 000123"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Date *</label>
+              <input
+                required
+                type="date"
+                value={chequeForm.cheque_date}
+                onChange={(e) => setChequeForm({ ...chequeForm, cheque_date: e.target.value })}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-sm text-slate-700 mb-1">Amount (PKR) *</label>
+              <input
+                required
+                type="number"
+                step="0.01"
+                value={chequeForm.amount}
+                onChange={(e) => setChequeForm({ ...chequeForm, amount: e.target.value })}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                placeholder="0.00"
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-sm text-slate-700 mb-1">Recipient</label>
+              <input
+                type="text"
+                value={chequeForm.recipient}
+                onChange={(e) => setChequeForm({ ...chequeForm, recipient: e.target.value })}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                placeholder="Payee name"
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-sm text-slate-700 mb-1">Notes</label>
+              <textarea
+                value={chequeForm.notes}
+                onChange={(e) => setChequeForm({ ...chequeForm, notes: e.target.value })}
+                rows={2}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+              />
+            </div>
+          </div>
+          <div className="bg-amber-50 border border-amber-200 rounded-md p-3 text-xs text-amber-800">
+            Issuing this cheque will <strong>reserve</strong> PKR {Number(chequeForm.amount || 0).toLocaleString()} from the selected bank's Account Balance. Marking it Cleared keeps the deduction; deleting it while Pending restores the balance.
+          </div>
+          <div className="flex gap-2 pt-2">
+            <Button variant="primary" size="md" className="flex-1" disabled={chequeSubmitting}>
+              {chequeSubmitting ? "Saving…" : "Issue Cheque"}
+            </Button>
+            <Button variant="secondary" size="md" onClick={() => setIsChequeAddOpen(false)}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </Modal>
 
       <Modal isOpen={isBankModalOpen} onClose={() => setIsBankModalOpen(false)} title="Add Bank Account" size="md">
         <form className="space-y-4" onSubmit={handleAddBank}>
