@@ -13,6 +13,7 @@ import {
   supabase,
   fetchAllRows,
   INVOICE_ATTACHMENTS_BUCKET,
+  CHEQUE_ATTACHMENTS_BUCKET,
   type BankAccount,
   type BankTransaction,
   type BankTransactionKind,
@@ -75,15 +76,32 @@ export default function Accounting() {
   const [cheques, setCheques] = useState<Cheque[]>([]);
   const [chequeLinkedSums, setChequeLinkedSums] = useState<Map<string, number>>(new Map());
   const [isChequeAddOpen, setIsChequeAddOpen] = useState(false);
-  const [chequeForm, setChequeForm] = useState({
+  const [chequeForm, setChequeForm] = useState<{
+    bank_account_id: string;
+    cheque_number: string;
+    amount: string;
+    cheque_date: string;
+    cheque_type: ChequeType;
+    recipient: string;
+    notes: string;
+    attachment?: File;
+  }>({
     bank_account_id: "",
     cheque_number: "",
     amount: "",
     cheque_date: new Date().toISOString().slice(0, 10),
-    cheque_type: "payment" as ChequeType,
+    cheque_type: "payment",
     recipient: "",
     notes: "",
   });
+  const [chequeView, setChequeView] = useState<Cheque | null>(null);
+  const [chequeViewItems, setChequeViewItems] = useState<{
+    kind: "Payslip" | "Expense" | "Advance" | "Invoice Payment";
+    description: string;
+    amount: number;
+    date: string;
+  }[]>([]);
+  const [chequeViewAttachmentUrl, setChequeViewAttachmentUrl] = useState<string | null>(null);
   const [chequeSubmitting, setChequeSubmitting] = useState(false);
   const [chequeFilter, setChequeFilter] = useState<"all" | "pending" | "cleared">("all");
   const [chequeBankFilter, setChequeBankFilter] = useState<string>("all");
@@ -2084,6 +2102,77 @@ export default function Accounting() {
                               )}
                             </td>
                             <td className="px-4 py-2 flex gap-2">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={async () => {
+                                  setChequeView(c);
+                                  setChequeViewItems([]);
+                                  setChequeViewAttachmentUrl(null);
+                                  const [psR, exR, advR, ipR] = await Promise.all([
+                                    supabase
+                                      .from("payslips")
+                                      .select("id, net_salary, period_month, employee:employee_id(full_name, employee_code)")
+                                      .eq("cheque_id", c.id),
+                                    supabase
+                                      .from("expenses")
+                                      .select("id, amount, expense_date, description, category:category_id(name), client:client_id(name)")
+                                      .eq("cheque_id", c.id),
+                                    supabase
+                                      .from("advances")
+                                      .select("id, amount, advance_date, employee:employee_id(full_name, employee_code), client:client_id(name)")
+                                      .eq("cheque_id", c.id),
+                                    supabase
+                                      .from("invoice_payments")
+                                      .select("id, amount, payment_date, invoice:invoice_id(invoice_number), client:client_id(name)")
+                                      .eq("cheque_id", c.id),
+                                  ]);
+                                  const items: typeof chequeViewItems = [];
+                                  for (const p of (psR.data ?? []) as any[]) {
+                                    items.push({
+                                      kind: "Payslip",
+                                      description: `${p.employee?.employee_code ?? ""} ${p.employee?.full_name ?? ""} · ${String(p.period_month ?? "").slice(0, 7)}`,
+                                      amount: Number(p.net_salary ?? 0),
+                                      date: String(p.period_month ?? "").slice(0, 10),
+                                    });
+                                  }
+                                  for (const e of (exR.data ?? []) as any[]) {
+                                    items.push({
+                                      kind: "Expense",
+                                      description: `${e.category?.name ?? "Expense"}${e.client?.name ? ` · ${e.client.name}` : ""}${e.description ? ` · ${e.description}` : ""}`,
+                                      amount: Number(e.amount ?? 0),
+                                      date: e.expense_date,
+                                    });
+                                  }
+                                  for (const a of (advR.data ?? []) as any[]) {
+                                    items.push({
+                                      kind: "Advance",
+                                      description: `${a.employee?.employee_code ?? ""} ${a.employee?.full_name ?? ""}${a.client?.name ? ` · ${a.client.name}` : ""}`,
+                                      amount: Number(a.amount ?? 0),
+                                      date: a.advance_date,
+                                    });
+                                  }
+                                  for (const p of (ipR.data ?? []) as any[]) {
+                                    items.push({
+                                      kind: "Invoice Payment",
+                                      description: `${p.invoice?.invoice_number ?? ""}${p.client?.name ? ` · ${p.client.name}` : ""}`,
+                                      amount: Number(p.amount ?? 0),
+                                      date: p.payment_date,
+                                    });
+                                  }
+                                  items.sort((a, b) => (a.date < b.date ? 1 : -1));
+                                  setChequeViewItems(items);
+                                  if (c.attachment_path) {
+                                    const { data: signed } = await supabase.storage
+                                      .from(CHEQUE_ATTACHMENTS_BUCKET)
+                                      .createSignedUrl(c.attachment_path, 3600);
+                                    setChequeViewAttachmentUrl(signed?.signedUrl ?? null);
+                                  }
+                                }}
+                              >
+                                <FileText className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
+                                View
+                              </Button>
                               {c.status === "pending" && (
                                 <Button
                                   variant="ghost"
@@ -2159,17 +2248,32 @@ export default function Accounting() {
             setChequeSubmitting(true);
             setError(null);
             try {
-              const { error: insErr } = await supabase.from("cheques").insert({
-                bank_account_id: chequeForm.bank_account_id,
-                cheque_number: chequeForm.cheque_number.trim(),
-                amount,
-                cheque_date: chequeForm.cheque_date,
-                cheque_type: chequeForm.cheque_type,
-                recipient: chequeForm.recipient.trim() || null,
-                notes: chequeForm.notes.trim() || null,
-                status: "pending",
-              });
+              const { data: inserted, error: insErr } = await supabase
+                .from("cheques")
+                .insert({
+                  bank_account_id: chequeForm.bank_account_id,
+                  cheque_number: chequeForm.cheque_number.trim(),
+                  amount,
+                  cheque_date: chequeForm.cheque_date,
+                  cheque_type: chequeForm.cheque_type,
+                  recipient: chequeForm.recipient.trim() || null,
+                  notes: chequeForm.notes.trim() || null,
+                  status: "pending",
+                })
+                .select()
+                .single();
               if (insErr) throw insErr;
+              const chequeId = (inserted as Cheque).id;
+              if (chequeForm.attachment) {
+                const file = chequeForm.attachment;
+                const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+                const path = `${chequeId}/${Date.now()}_${safe}`;
+                const { error: upErr } = await supabase.storage
+                  .from(CHEQUE_ATTACHMENTS_BUCKET)
+                  .upload(path, file, { upsert: false });
+                if (upErr) throw upErr;
+                await supabase.from("cheques").update({ attachment_path: path }).eq("id", chequeId);
+              }
               setIsChequeAddOpen(false);
               setChequeForm({
                 bank_account_id: "",
@@ -2179,6 +2283,7 @@ export default function Accounting() {
                 cheque_type: "payment",
                 recipient: "",
                 notes: "",
+                attachment: undefined,
               });
               await loadAll();
             } catch (err: any) {
@@ -2296,6 +2401,17 @@ export default function Accounting() {
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
               />
             </div>
+            <div className="col-span-2">
+              <label className="block text-sm text-slate-700 mb-1">Attachment (optional)</label>
+              <input
+                type="file"
+                onChange={(e) => setChequeForm({ ...chequeForm, attachment: e.target.files?.[0] })}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+              />
+              {chequeForm.attachment && (
+                <p className="text-xs text-slate-500 mt-1">Selected: {chequeForm.attachment.name}</p>
+              )}
+            </div>
           </div>
           <div className="bg-amber-50 border border-amber-200 rounded-md p-3 text-xs text-amber-800">
             Issuing this cheque will <strong>reserve</strong> PKR {Number(chequeForm.amount || 0).toLocaleString()} from the selected bank's Account Balance.{" "}
@@ -2315,6 +2431,121 @@ export default function Accounting() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal isOpen={!!chequeView} onClose={() => setChequeView(null)} title={chequeView ? `Cheque #${chequeView.cheque_number}` : ""} size="lg">
+        {chequeView && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <p className="text-xs text-slate-500">Type</p>
+                <p>
+                  {chequeView.cheque_type === "payment" ? (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-indigo-50 text-indigo-700">Payment</span>
+                  ) : (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-teal-50 text-teal-700">Cash</span>
+                  )}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500">Status</p>
+                <p>
+                  {chequeView.status === "pending" ? (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-amber-50 text-amber-700">Pending</span>
+                  ) : (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-emerald-50 text-emerald-700">
+                      Cleared{chequeView.cleared_at ? ` · ${chequeView.cleared_at.slice(0, 10)}` : ""}
+                    </span>
+                  )}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500">Bank</p>
+                <p className="text-slate-900">{banks.find((b) => b.id === chequeView.bank_account_id)?.bank_name ?? "—"}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500">Date</p>
+                <p className="text-slate-900">{chequeView.cheque_date}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500">Recipient</p>
+                <p className="text-slate-900">{chequeView.recipient ?? "—"}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500">Amount</p>
+                <p className="text-slate-900">PKR {Number(chequeView.amount).toLocaleString()}</p>
+              </div>
+              {chequeView.notes && (
+                <div className="col-span-2">
+                  <p className="text-xs text-slate-500">Notes</p>
+                  <p className="text-slate-900 whitespace-pre-wrap">{chequeView.notes}</p>
+                </div>
+              )}
+              {chequeView.attachment_path && (
+                <div className="col-span-2">
+                  <p className="text-xs text-slate-500 mb-1">Attachment</p>
+                  {chequeViewAttachmentUrl ? (
+                    <a
+                      href={chequeViewAttachmentUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-sm text-blue-700 hover:underline"
+                    >
+                      <FileText className="w-4 h-4" strokeWidth={1.5} />
+                      Open attachment
+                    </a>
+                  ) : (
+                    <span className="text-xs text-slate-400">Loading…</span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-slate-200 pt-3">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-sm text-slate-900">Linked Items</h4>
+                {chequeView.cheque_type === "payment" && (() => {
+                  const linked = chequeViewItems.reduce((s, x) => s + x.amount, 0);
+                  const cap = Number(chequeView.amount);
+                  const remaining = cap - linked;
+                  return (
+                    <span className={`text-xs ${remaining === 0 ? "text-emerald-700" : remaining > 0 ? "text-amber-700" : "text-red-700"}`}>
+                      Linked PKR {linked.toLocaleString()} · Remaining PKR {remaining.toLocaleString()}
+                    </span>
+                  );
+                })()}
+              </div>
+              {chequeViewItems.length === 0 ? (
+                <p className="text-sm text-slate-500">Nothing linked to this cheque yet.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-50 text-xs text-slate-500 uppercase tracking-wide">
+                        <th className="text-left px-3 py-2">Kind</th>
+                        <th className="text-left px-3 py-2">Description</th>
+                        <th className="text-left px-3 py-2">Date</th>
+                        <th className="text-right px-3 py-2">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {chequeViewItems.map((it, idx) => (
+                        <tr key={idx}>
+                          <td className="px-3 py-2 text-xs">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded bg-slate-100 text-slate-700">{it.kind}</span>
+                          </td>
+                          <td className="px-3 py-2 text-slate-700">{it.description}</td>
+                          <td className="px-3 py-2 text-slate-500">{it.date}</td>
+                          <td className="px-3 py-2 text-right text-slate-900">PKR {it.amount.toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </Modal>
 
       <Modal isOpen={isBankModalOpen} onClose={() => setIsBankModalOpen(false)} title="Add Bank Account" size="md">

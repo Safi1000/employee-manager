@@ -85,6 +85,7 @@ const emptyAdvanceForm: AdvanceForm = {
 type ExpenseForm = {
   category_id: string;
   client_id: string;
+  branch_id: string;
   vendor_id: string;
   description: string;
   amount: string;
@@ -100,6 +101,7 @@ type ExpenseForm = {
 const emptyForm: ExpenseForm = {
   category_id: "",
   client_id: "",
+  branch_id: "",
   vendor_id: "",
   description: "",
   amount: "",
@@ -121,6 +123,15 @@ export default function Expenses() {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [banks, setBanks] = useState<BankAccount[]>([]);
   const [cheques, setCheques] = useState<Cheque[]>([]);
+  const [chequeLinkedSums, setChequeLinkedSums] = useState<Map<string, number>>(new Map());
+
+  // Remaining capacity for a cheque, optionally excluding a row currently being edited.
+  const chequeRemaining = (chequeId: string, excludeOwnAmount: number = 0): number => {
+    const c = cheques.find((x) => x.id === chequeId);
+    if (!c) return 0;
+    const used = chequeLinkedSums.get(chequeId) ?? 0;
+    return Number(c.amount) - used + excludeOwnAmount;
+  };
   const [branches, setBranches] = useState<Branch[]>([]);
   const [branchFilter, setBranchFilter] = useState("all");
   const [advBranchFilter, setAdvBranchFilter] = useState("all");
@@ -231,6 +242,28 @@ export default function Expenses() {
     setBanks((bankRes.data ?? []) as BankAccount[]);
     setCheques((chqRes.data ?? []) as Cheque[]);
     setBranches((brRes.data ?? []) as Branch[]);
+
+    // Aggregate linked sums per cheque (across payslips/expenses/advances/invoice_payments).
+    const [linkedPs, linkedEx, linkedAdv, linkedIp] = await Promise.all([
+      supabase.from("payslips").select("cheque_id, net_salary").not("cheque_id", "is", null),
+      supabase.from("expenses").select("id, cheque_id, amount").not("cheque_id", "is", null),
+      supabase.from("advances").select("id, cheque_id, amount").not("cheque_id", "is", null),
+      supabase.from("invoice_payments").select("cheque_id, amount").not("cheque_id", "is", null),
+    ]);
+    const linked = new Map<string, number>();
+    for (const r of (linkedPs.data ?? []) as { cheque_id: string; net_salary: number }[]) {
+      if (r.cheque_id) linked.set(r.cheque_id, (linked.get(r.cheque_id) ?? 0) + Number(r.net_salary));
+    }
+    for (const r of (linkedEx.data ?? []) as { cheque_id: string; amount: number }[]) {
+      if (r.cheque_id) linked.set(r.cheque_id, (linked.get(r.cheque_id) ?? 0) + Number(r.amount));
+    }
+    for (const r of (linkedAdv.data ?? []) as { cheque_id: string; amount: number }[]) {
+      if (r.cheque_id) linked.set(r.cheque_id, (linked.get(r.cheque_id) ?? 0) + Number(r.amount));
+    }
+    for (const r of (linkedIp.data ?? []) as { cheque_id: string; amount: number }[]) {
+      if (r.cheque_id) linked.set(r.cheque_id, (linked.get(r.cheque_id) ?? 0) + Number(r.amount));
+    }
+    setChequeLinkedSums(linked);
     setCashBalance(Number(treaRes.data?.cash_balance ?? 0));
     setEmployees((empRes.data ?? []) as Employee[]);
     setAdvances(
@@ -454,6 +487,13 @@ export default function Expenses() {
       setError("Select a pending cheque for Cheque payment.");
       return;
     }
+    if (form.payment_mode === "Cheque") {
+      const remaining = chequeRemaining(form.cheque_id);
+      if (amount > remaining + 0.005) {
+        setError(`This expense (PKR ${amount.toLocaleString()}) exceeds the cheque's remaining capacity (PKR ${remaining.toLocaleString()}).`);
+        return;
+      }
+    }
     if (form.payment_mode === "Payable" && !form.due_date) {
       setError("Select a due date for Payable expense.");
       return;
@@ -483,11 +523,18 @@ export default function Expenses() {
         form.payment_mode === "Cheque"
           ? cheques.find((c) => c.id === form.cheque_id)?.bank_account_id ?? null
           : null;
+      // Resolve branch: explicit form value → client's branch → Head Office.
+      const resolvedBranch =
+        form.branch_id ||
+        (form.client_id ? clients.find((c) => c.id === form.client_id)?.branch_id ?? null : null) ||
+        headOfficeBranchId ||
+        null;
       const { data: inserted, error: insErr } = await supabase
         .from("expenses")
         .insert({
           category_id: form.category_id,
           client_id: form.client_id || null,
+          branch_id: resolvedBranch,
           vendor_id: vendorId,
           description: form.description.trim() || null,
           amount,
@@ -552,6 +599,7 @@ export default function Expenses() {
     setEditForm({
       category_id: expense.category_id ?? "",
       client_id: expense.client_id ?? "",
+      branch_id: expense.branch_id ?? "",
       vendor_id: expense.vendor_id ?? "",
       description: expense.description ?? "",
       amount: String(expense.amount),
@@ -625,6 +673,18 @@ export default function Expenses() {
       setError("Select a pending cheque for Cheque payment.");
       return;
     }
+    if (editForm.payment_mode === "Cheque") {
+      // Exclude this expense's own current contribution to the linked sum.
+      const ownPrev =
+        selected?.cheque_id === editForm.cheque_id && selected?.payment_mode === "Cheque"
+          ? Number(selected.amount)
+          : 0;
+      const remaining = chequeRemaining(editForm.cheque_id, ownPrev);
+      if (amount > remaining + 0.005) {
+        setError(`This expense (PKR ${amount.toLocaleString()}) exceeds the cheque's remaining capacity (PKR ${remaining.toLocaleString()}).`);
+        return;
+      }
+    }
     if (editForm.payment_mode === "Payable" && !editForm.due_date) {
       setError("Select a due date for Payable expense.");
       return;
@@ -676,11 +736,17 @@ export default function Expenses() {
         editForm.payment_mode === "Cheque"
           ? cheques.find((c) => c.id === editForm.cheque_id)?.bank_account_id ?? null
           : null;
+      const resolvedEditBranch =
+        editForm.branch_id ||
+        (editForm.client_id ? clients.find((c) => c.id === editForm.client_id)?.branch_id ?? null : null) ||
+        headOfficeBranchId ||
+        null;
       const { error: upErr } = await supabase
         .from("expenses")
         .update({
           category_id: editForm.category_id,
           client_id: editForm.client_id || null,
+          branch_id: resolvedEditBranch,
           vendor_id: vendorId,
           description: editForm.description.trim() || null,
           amount,
@@ -788,6 +854,13 @@ export default function Expenses() {
     if (!f.advance_date) return "Select a date.";
     if (f.payment_mode === "Bank" && !f.bank_account_id) return "Select a bank account.";
     if (f.payment_mode === "Cheque" && !f.cheque_id) return "Select a pending cheque.";
+    if (f.payment_mode === "Cheque") {
+      const ownPrev = existingAmount ?? 0;
+      const remaining = chequeRemaining(f.cheque_id, ownPrev);
+      if (amt > remaining + 0.005) {
+        return `Advance exceeds the cheque's remaining capacity (PKR ${remaining.toLocaleString()}).`;
+      }
+    }
     if (f.payment_mode === "Cash") {
       const budget = cashBalance + (existingAmount ?? 0);
       if (amt > budget) return "Cash balance is insufficient.";
@@ -2166,9 +2239,10 @@ export default function Expenses() {
                 .filter((c) => c.status === "pending" || c.id === state.cheque_id)
                 .map((c) => {
                   const bank = banks.find((b) => b.id === c.bank_account_id);
+                  const remaining = chequeRemaining(c.id);
                   return (
                     <option key={c.id} value={c.id}>
-                      #{c.cheque_number} · {bank?.bank_name ?? "Bank"} · PKR {Number(c.amount).toLocaleString()} · {c.status}
+                      #{c.cheque_number} · {bank?.bank_name ?? "Bank"} · PKR {Number(c.amount).toLocaleString()} (remaining PKR {remaining.toLocaleString()}) · {c.status}
                     </option>
                   );
                 })}
@@ -2224,21 +2298,54 @@ export default function Expenses() {
             </select>
           </div>
           <div>
+            <label className="block text-sm text-slate-700 mb-1">Branch (optional)</label>
+            <select
+              value={state.branch_id}
+              onChange={(e) => {
+                const newBranch = e.target.value;
+                // If current client doesn't match the new branch, clear it.
+                const cur = clients.find((c) => c.id === state.client_id);
+                const keepClient = !newBranch || !cur || cur.branch_id === newBranch;
+                setState({ ...state, branch_id: newBranch, client_id: keepClient ? state.client_id : "" });
+              }}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+            >
+              <option value="">Head Office (default)</option>
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
             <label className="block text-sm text-slate-700 mb-1">Client (optional)</label>
             <select
               value={state.client_id}
-              onChange={(e) => setState({ ...state, client_id: e.target.value })}
+              onChange={(e) => {
+                const id = e.target.value;
+                const c = id ? clients.find((x) => x.id === id) : null;
+                // Auto-fill branch from the picked client (don't clobber explicit branch if same).
+                setState({
+                  ...state,
+                  client_id: id,
+                  branch_id: c?.branch_id ?? state.branch_id,
+                });
+              }}
               className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
             >
               <option value="">Office (no client)</option>
-              {clients.map((c) => (
+              {(state.branch_id
+                ? clients.filter((c) => c.branch_id === state.branch_id)
+                : clients
+              ).map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
                 </option>
               ))}
             </select>
             <p className="text-xs text-slate-500 mt-1">
-              Leave empty to log as an Office expense.
+              {state.branch_id
+                ? "Showing clients in the selected branch only."
+                : "Leave empty to log as an Office expense (Head Office)."}
             </p>
           </div>
           <div>

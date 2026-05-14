@@ -85,6 +85,13 @@ export default function PayrollManagement() {
   const [clients, setClients] = useState<Client[]>([]);
   const [banks, setBanks] = useState<BankAccount[]>([]);
   const [cheques, setCheques] = useState<Cheque[]>([]);
+  const [chequeLinkedSums, setChequeLinkedSums] = useState<Map<string, number>>(new Map());
+  const chequeRemaining = (chequeId: string, excludeOwnAmount: number = 0): number => {
+    const c = cheques.find((x) => x.id === chequeId);
+    if (!c) return 0;
+    const used = chequeLinkedSums.get(chequeId) ?? 0;
+    return Number(c.amount) - used + excludeOwnAmount;
+  };
   const [payslipsMap, setPayslipsMap] = useState<Map<string, Payslip>>(new Map());
   const [attendanceAgg, setAttendanceAgg] = useState<Map<string, { present: number; absent: number; leave: number }>>(
     new Map()
@@ -225,6 +232,27 @@ export default function PayrollManagement() {
     setBanks((bankRes.data ?? []) as BankAccount[]);
     setCheques((chqRes.data ?? []) as Cheque[]);
     setBranches((brRes.data ?? []) as Branch[]);
+
+    const [linkedPs, linkedEx, linkedAdv, linkedIp] = await Promise.all([
+      supabase.from("payslips").select("cheque_id, net_salary").not("cheque_id", "is", null),
+      supabase.from("expenses").select("cheque_id, amount").not("cheque_id", "is", null),
+      supabase.from("advances").select("cheque_id, amount").not("cheque_id", "is", null),
+      supabase.from("invoice_payments").select("cheque_id, amount").not("cheque_id", "is", null),
+    ]);
+    const linked = new Map<string, number>();
+    for (const r of (linkedPs.data ?? []) as { cheque_id: string; net_salary: number }[]) {
+      if (r.cheque_id) linked.set(r.cheque_id, (linked.get(r.cheque_id) ?? 0) + Number(r.net_salary));
+    }
+    for (const r of (linkedEx.data ?? []) as { cheque_id: string; amount: number }[]) {
+      if (r.cheque_id) linked.set(r.cheque_id, (linked.get(r.cheque_id) ?? 0) + Number(r.amount));
+    }
+    for (const r of (linkedAdv.data ?? []) as { cheque_id: string; amount: number }[]) {
+      if (r.cheque_id) linked.set(r.cheque_id, (linked.get(r.cheque_id) ?? 0) + Number(r.amount));
+    }
+    for (const r of (linkedIp.data ?? []) as { cheque_id: string; amount: number }[]) {
+      if (r.cheque_id) linked.set(r.cheque_id, (linked.get(r.cheque_id) ?? 0) + Number(r.amount));
+    }
+    setChequeLinkedSums(linked);
     setCashBalance(Number(treaRes.data?.cash_balance ?? 0));
 
     await loadPeriodData(selectedPeriod);
@@ -565,8 +593,15 @@ export default function PayrollManagement() {
             setError("Select a cheque before disbursing.");
             return;
           }
+          // Treat the existing payslip as "already linked" so an in-place save doesn't
+          // double-count against the cheque capacity.
+          const ownPrev = row.payslip_id ? row.net_salary : 0;
+          const remaining = chequeRemaining(row.cheque_id, ownPrev);
+          if (row.net_salary > remaining + 0.005) {
+            setError(`Net salary (PKR ${row.net_salary.toLocaleString()}) exceeds the cheque's remaining capacity (PKR ${remaining.toLocaleString()}).`);
+            return;
+          }
           // No bank-balance mutation: the cheque trigger already deducted on cheque creation.
-          // No bank_transactions entry: cashflow gates on cheque.status='cleared'.
         } else {
           if (row.net_salary > cashBalance) {
             setError("Cash balance is insufficient.");
@@ -1366,9 +1401,11 @@ export default function PayrollManagement() {
                             .filter((c) => c.status === "pending" || c.id === selectedRow.cheque_id)
                             .map((c) => {
                               const bank = banks.find((b) => b.id === c.bank_account_id);
+                              const ownPrev = selectedRow.cheque_id === c.id ? selectedRow.net_salary : 0;
+                              const remaining = chequeRemaining(c.id, ownPrev);
                               return (
                                 <option key={c.id} value={c.id}>
-                                  #{c.cheque_number} · {bank?.bank_name ?? "Bank"} · PKR {Number(c.amount).toLocaleString()} · {c.status}
+                                  #{c.cheque_number} · {bank?.bank_name ?? "Bank"} · PKR {Number(c.amount).toLocaleString()} (remaining PKR {remaining.toLocaleString()}) · {c.status}
                                 </option>
                               );
                             })}

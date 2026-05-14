@@ -31,6 +31,7 @@ export async function fetchAllRows<T>(
 export const EMPLOYEE_DOCS_BUCKET = "employee-documents";
 export const EXPENSE_RECEIPTS_BUCKET = "expense-receipts";
 export const INVOICE_ATTACHMENTS_BUCKET = "invoice-attachments";
+export const CHEQUE_ATTACHMENTS_BUCKET = "cheque-attachments";
 
 export type UserRole = "super_super_admin" | "super_admin" | "accounting" | "hr";
 
@@ -438,6 +439,7 @@ export type Advance = {
   id: string;
   employee_id: string;
   client_id: string | null;
+  branch_id: string | null;
   amount: number;
   advance_date: string;
   payment_mode: "Cash" | "Bank" | "Cheque";
@@ -509,6 +511,7 @@ export type Expense = {
   id: string;
   category_id: string | null;
   client_id: string | null;
+  branch_id: string | null;
   vendor_id: string | null;
   description: string | null;
   amount: number;
