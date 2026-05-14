@@ -24,6 +24,7 @@ import {
   type ClientType,
   type Partner,
   type BankTransaction,
+  type Branch,
 } from "../../lib/supabase";
 
 type ClientStatementRow = Client & {
@@ -56,6 +57,9 @@ const formatPeriod = (periodMonth: string) => {
 
 export default function FinancialReports() {
   const [activeTab, setActiveTab] = useState<"pl" | "chart" | "clients" | "partnership">("pl");
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [plBranchFilter, setPlBranchFilter] = useState<string>("all");
+  const [statementBranchFilter, setStatementBranchFilter] = useState<string>("all");
   const [isClientStatementModalOpen, setIsClientStatementModalOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<ClientStatementRow | null>(null);
 
@@ -74,11 +78,12 @@ export default function FinancialReports() {
   const [chartCashBalance, setChartCashBalance] = useState<number>(0);
   const [loadingChart, setLoadingChart] = useState(false);
 
-  type PlInvoiceRow = { invoice_amount: number; client?: { client_type: ClientType } | null };
-  type PlExpenseRow = { amount: number; category?: { name: string } | null };
+  type PlInvoiceRow = { invoice_amount: number; client?: { client_type: ClientType; branch_id: string | null } | null };
+  type PlExpenseRow = { amount: number; client_id?: string | null; client?: { branch_id: string | null } | null; category?: { name: string } | null };
+  type PlPayslipRow = { final_salary: number; employee?: { branch_id: string | null } | null };
   const [plPeriod, setPlPeriod] = useState<string>(previousMonthKey());
   const [plInvoices, setPlInvoices] = useState<PlInvoiceRow[]>([]);
-  const [plPayslips, setPlPayslips] = useState<{ final_salary: number }[]>([]);
+  const [plPayslips, setPlPayslips] = useState<PlPayslipRow[]>([]);
   const [plExpenses, setPlExpenses] = useState<PlExpenseRow[]>([]);
   const [loadingPl, setLoadingPl] = useState(false);
 
@@ -113,6 +118,17 @@ export default function FinancialReports() {
       d.setMonth(d.getMonth() - 1);
     }
     return opts;
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from("branches")
+        .select("*")
+        .order("is_head_office", { ascending: false })
+        .order("name");
+      setBranches((data ?? []) as Branch[]);
+    })();
   }, []);
 
   useEffect(() => {
@@ -187,21 +203,21 @@ export default function FinancialReports() {
       const [invRes, psRes, expRes] = await Promise.all([
         supabase
           .from("invoices")
-          .select("invoice_amount, invoice_date, client:client_id(client_type)")
+          .select("invoice_amount, invoice_date, client:client_id(client_type, branch_id)")
           .gte("invoice_date", start)
           .lte("invoice_date", end),
         supabase
           .from("payslips")
-          .select("final_salary")
+          .select("final_salary, employee:employee_id(branch_id)")
           .eq("period_month", `${plPeriod}-01`),
         supabase
           .from("expenses")
-          .select("amount, expense_date, category_id, category:category_id(name)")
+          .select("amount, expense_date, category_id, client_id, category:category_id(name), client:client_id(branch_id)")
           .gte("expense_date", start)
           .lte("expense_date", end),
       ]);
       setPlInvoices((invRes.data ?? []) as unknown as PlInvoiceRow[]);
-      setPlPayslips((psRes.data ?? []) as { final_salary: number }[]);
+      setPlPayslips((psRes.data ?? []) as unknown as PlPayslipRow[]);
       setPlExpenses((expRes.data ?? []) as unknown as PlExpenseRow[]);
       setLoadingPl(false);
     };
@@ -209,15 +225,19 @@ export default function FinancialReports() {
   }, [plPeriod]);
 
   const plFigures = useMemo(() => {
+    const branchOk = (bid: string | null | undefined): boolean =>
+      plBranchFilter === "all" ? true : bid === plBranchFilter;
+
     let securityRevenue = 0;
     let guardRevenue = 0;
     for (const i of plInvoices) {
+      if (!branchOk(i.client?.branch_id)) continue;
       const t = (i.client?.client_type ?? "security_services") as ClientType;
       const amt = Number(i.invoice_amount);
       if (t === "guard_deployment") guardRevenue += amt;
       else securityRevenue += amt;
     }
-    const payroll = plPayslips.reduce((s, p) => s + Number(p.final_salary), 0);
+    const payroll = plPayslips.reduce((s, p) => branchOk(p.employee?.branch_id) ? s + Number(p.final_salary) : s, 0);
     let equipment = 0;
     let transportation = 0;
     let utilities = 0;
@@ -229,6 +249,10 @@ export default function FinancialReports() {
     let taxes = 0;
     let operating = 0;
     for (const e of plExpenses) {
+      // Office expenses (no client) appear only on "All Branches".
+      if (plBranchFilter !== "all") {
+        if (!e.client_id || e.client?.branch_id !== plBranchFilter) continue;
+      }
       const name = e.category?.name ?? "";
       const amt = Number(e.amount);
       if (name === "Equipment & Supplies") equipment += amt;
@@ -266,7 +290,7 @@ export default function FinancialReports() {
       taxes,
       netProfit,
     };
-  }, [plInvoices, plPayslips, plExpenses]);
+  }, [plInvoices, plPayslips, plExpenses, plBranchFilter]);
 
   useEffect(() => {
     const loadClientData = async () => {
@@ -303,7 +327,11 @@ export default function FinancialReports() {
       empByClient.set(e.client_id, set);
     }
 
-    return clients.map((c) => {
+    const filteredClients = statementBranchFilter === "all"
+      ? clients
+      : clients.filter((c) => c.branch_id === statementBranchFilter);
+
+    return filteredClients.map((c) => {
       const clientInvoices = invoices.filter((i) => i.client_id === c.id);
       const total_invoiced = clientInvoices.reduce((s, i) => s + Number(i.invoice_amount), 0);
 
@@ -327,7 +355,7 @@ export default function FinancialReports() {
         invoices: clientInvoices.sort((a, b) => (a.invoice_date < b.invoice_date ? 1 : -1)),
       };
     });
-  }, [clients, invoices, payslips, employees, expenses]);
+  }, [clients, invoices, payslips, employees, expenses, statementBranchFilter]);
 
   const statementTotals = useMemo(() => {
     let invoiced = 0;
@@ -710,7 +738,18 @@ export default function FinancialReports() {
                     For {formatPeriod(plPeriod)} ({firstOfMonth(plPeriod)} – {lastOfMonth(plPeriod)})
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <label className="text-sm text-slate-600">Branch:</label>
+                  <select
+                    value={plBranchFilter}
+                    onChange={(e) => setPlBranchFilter(e.target.value)}
+                    className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                  >
+                    <option value="all">All Branches</option>
+                    {branches.map((b) => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
                   <label className="text-sm text-slate-600">Month:</label>
                   <select
                     value={plPeriod}
@@ -917,7 +956,18 @@ export default function FinancialReports() {
           {activeTab === "clients" && (
             <div>
               <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <label className="text-sm text-slate-600">Branch:</label>
+                  <select
+                    value={statementBranchFilter}
+                    onChange={(e) => setStatementBranchFilter(e.target.value)}
+                    className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                  >
+                    <option value="all">All Branches</option>
+                    {branches.map((b) => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
                   <label className="text-sm text-slate-600">Month:</label>
                   <select
                     value={statementPeriod}

@@ -24,6 +24,7 @@ import {
   type Partner,
   type BankAccountOwnerType,
   type Cheque,
+  type ChequeType,
 } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
 
@@ -72,12 +73,14 @@ export default function Accounting() {
 
   const [banks, setBanks] = useState<BankAccount[]>([]);
   const [cheques, setCheques] = useState<Cheque[]>([]);
+  const [chequeLinkedSums, setChequeLinkedSums] = useState<Map<string, number>>(new Map());
   const [isChequeAddOpen, setIsChequeAddOpen] = useState(false);
   const [chequeForm, setChequeForm] = useState({
     bank_account_id: "",
     cheque_number: "",
     amount: "",
     cheque_date: new Date().toISOString().slice(0, 10),
+    cheque_type: "payment" as ChequeType,
     recipient: "",
     notes: "",
   });
@@ -101,6 +104,8 @@ export default function Accounting() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   };
   const [receivablesMonth, setReceivablesMonth] = useState<string>(currentMonthKey());
+  const [receivablesBranchFilter, setReceivablesBranchFilter] = useState<string>("all");
+  const [branchesList, setBranchesList] = useState<{ id: string; name: string }[]>([]);
   const [payablesMonth, setPayablesMonth] = useState<string>(currentMonthKey());
   const [txLogMonth, setTxLogMonth] = useState<string>("all");
   const monthOptions = useMemo(() => {
@@ -325,13 +330,18 @@ export default function Accounting() {
     return rows;
   }, [receivables, receivablesMonth, allClientsForRec, allInvoicesForRec, allPaymentEvents]);
 
+  const branchScopedReceivables = useMemo(() => {
+    if (receivablesBranchFilter === "all") return displayedReceivables;
+    return displayedReceivables.filter((r) => r.branch_id === receivablesBranchFilter);
+  }, [displayedReceivables, receivablesBranchFilter]);
+
   const receivableTotals = useMemo(() => {
     let opening = 0;
     let invoiced = 0;
     let withholding = 0;
     let received = 0;
     let outstanding = 0;
-    for (const r of displayedReceivables) {
+    for (const r of branchScopedReceivables) {
       opening += Number(r.opening_balance ?? 0);
       invoiced += r.total_invoiced;
       withholding += r.total_withholding;
@@ -339,7 +349,7 @@ export default function Accounting() {
       outstanding += r.outstanding;
     }
     return { opening, invoiced, withholding, received, outstanding };
-  }, [displayedReceivables]);
+  }, [branchScopedReceivables]);
 
   const balanceLedger = useMemo(() => {
     const ledger = new Map<string, { cash?: { before: number; after: number }; bank?: { before: number; after: number } }>();
@@ -409,6 +419,37 @@ export default function Accounting() {
       supabase.from("partners").select("*").order("name"),
       supabase.from("cheques").select("*").order("cheque_date", { ascending: false }),
     ]);
+
+    // Load branches for the receivables branch filter.
+    {
+      const { data: brData } = await supabase
+        .from("branches")
+        .select("id, name, is_head_office")
+        .order("is_head_office", { ascending: false })
+        .order("name");
+      setBranchesList((brData ?? []) as { id: string; name: string }[]);
+    }
+
+    // Aggregate linked amounts per cheque (payment cheques use this for clearance).
+    const [linkedPs, linkedEx, linkedAdv] = await Promise.all([
+      supabase.from("payslips").select("cheque_id, net_salary").not("cheque_id", "is", null),
+      supabase.from("expenses").select("cheque_id, amount").not("cheque_id", "is", null),
+      supabase.from("advances").select("cheque_id, amount").not("cheque_id", "is", null),
+    ]);
+    const linkedMap = new Map<string, number>();
+    for (const r of (linkedPs.data ?? []) as { cheque_id: string; net_salary: number }[]) {
+      if (!r.cheque_id) continue;
+      linkedMap.set(r.cheque_id, (linkedMap.get(r.cheque_id) ?? 0) + Number(r.net_salary));
+    }
+    for (const r of (linkedEx.data ?? []) as { cheque_id: string; amount: number }[]) {
+      if (!r.cheque_id) continue;
+      linkedMap.set(r.cheque_id, (linkedMap.get(r.cheque_id) ?? 0) + Number(r.amount));
+    }
+    for (const r of (linkedAdv.data ?? []) as { cheque_id: string; amount: number }[]) {
+      if (!r.cheque_id) continue;
+      linkedMap.set(r.cheque_id, (linkedMap.get(r.cheque_id) ?? 0) + Number(r.amount));
+    }
+    setChequeLinkedSums(linkedMap);
     // Paginate the three potentially-large tables.
     let txRows: BankTransaction[] = [];
     let invRows: Invoice[] = [];
@@ -1588,7 +1629,18 @@ export default function Accounting() {
               ))}
             </div>
             {activeTab === "receivables" && (
-              <div className="ml-auto flex items-center gap-2">
+              <div className="ml-auto flex items-center gap-2 flex-wrap">
+                <label className="text-xs text-slate-500">Branch:</label>
+                <select
+                  value={receivablesBranchFilter}
+                  onChange={(e) => setReceivablesBranchFilter(e.target.value)}
+                  className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
+                >
+                  <option value="all">All Branches</option>
+                  {branchesList.map((b) => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
                 <label className="text-xs text-slate-500">Month:</label>
                 <select
                   value={receivablesMonth}
@@ -1641,7 +1693,7 @@ export default function Accounting() {
                       </td>
                     </tr>
                   )}
-                  {!loading && displayedReceivables.length === 0 && (
+                  {!loading && branchScopedReceivables.length === 0 && (
                     <tr>
                       <td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">
                         No client activity in this month.
@@ -1649,7 +1701,7 @@ export default function Accounting() {
                     </tr>
                   )}
                   {!loading &&
-                    displayedReceivables.map((item) => {
+                    branchScopedReceivables.map((item) => {
                       const isMonthView = receivablesMonth !== "all";
                       const canEditOpening = item.outstanding === 0 && !isMonthView;
                       return (
@@ -1914,10 +1966,6 @@ export default function Accounting() {
                           </td>
                           <td className="px-6 py-4 text-sm text-slate-900">PKR {totalBal.toLocaleString()}</td>
                           <td className="px-6 py-4 flex gap-2 flex-wrap">
-                            <Button variant="ghost" size="sm" onClick={() => openWithdraw(bank)}>
-                              <ArrowDownUp className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
-                              Withdraw
-                            </Button>
                             <Button variant="ghost" size="sm" onClick={() => openReconcile(bank)}>
                               Reconcile
                             </Button>
@@ -1980,10 +2028,12 @@ export default function Accounting() {
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50">
                       <th className="text-left px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">Cheque #</th>
+                      <th className="text-left px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">Type</th>
                       <th className="text-left px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">Bank</th>
                       <th className="text-left px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">Date</th>
                       <th className="text-left px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">Recipient</th>
                       <th className="text-right px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">Amount</th>
+                      <th className="text-right px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">Used / Linked</th>
                       <th className="text-left px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">Status</th>
                       <th className="text-left px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">Actions</th>
                     </tr>
@@ -1994,14 +2044,33 @@ export default function Accounting() {
                       .filter((c) => chequeFilter === "all" || c.status === chequeFilter)
                       .map((c) => {
                         const bank = banks.find((b) => b.id === c.bank_account_id);
+                        const linkedSum = chequeLinkedSums.get(c.id) ?? 0;
+                        const isPayment = c.cheque_type === "payment";
+                        const canClear = isPayment ? Math.abs(linkedSum - Number(c.amount)) < 0.005 : true;
                         return (
                           <tr key={c.id} className="hover:bg-slate-50">
                             <td className="px-4 py-2 text-sm text-slate-900 font-mono">{c.cheque_number}</td>
+                            <td className="px-4 py-2 text-sm">
+                              {isPayment ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-indigo-50 text-indigo-700">Payment</span>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-teal-50 text-teal-700">Cash</span>
+                              )}
+                            </td>
                             <td className="px-4 py-2 text-sm text-slate-600">{bank?.bank_name ?? "—"}</td>
                             <td className="px-4 py-2 text-sm text-slate-600">{c.cheque_date}</td>
                             <td className="px-4 py-2 text-sm text-slate-600">{c.recipient ?? "—"}</td>
                             <td className="px-4 py-2 text-sm text-slate-900 text-right">
                               PKR {Number(c.amount).toLocaleString()}
+                            </td>
+                            <td className="px-4 py-2 text-sm text-right">
+                              {isPayment ? (
+                                <span className={canClear ? "text-emerald-700" : "text-amber-700"}>
+                                  PKR {linkedSum.toLocaleString()} / {Number(c.amount).toLocaleString()}
+                                </span>
+                              ) : (
+                                <span className="text-slate-400">—</span>
+                              )}
                             </td>
                             <td className="px-4 py-2">
                               {c.status === "pending" ? (
@@ -2019,8 +2088,19 @@ export default function Accounting() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
+                                  disabled={!canClear}
+                                  title={
+                                    canClear
+                                      ? (isPayment
+                                          ? "Mark cleared (bank balance stays deducted)"
+                                          : "Mark cleared (cash balance increases by cheque amount)")
+                                      : `Linked items total PKR ${linkedSum.toLocaleString()} must equal cheque amount PKR ${Number(c.amount).toLocaleString()} before clearing.`
+                                  }
                                   onClick={async () => {
-                                    if (!window.confirm("Mark this cheque as cleared? The bank balance stays deducted.")) return;
+                                    const msg = isPayment
+                                      ? "Mark this payment cheque as cleared? Bank stays deducted; cashflow recognises linked expenses/salaries/advances now."
+                                      : "Mark this cash cheque as cleared? Bank stays deducted; PKR " + Number(c.amount).toLocaleString() + " will be added to the Cash (Treasury) balance.";
+                                    if (!window.confirm(msg)) return;
                                     const { error: e } = await supabase
                                       .from("cheques")
                                       .update({ status: "cleared" })
@@ -2055,7 +2135,7 @@ export default function Accounting() {
                     {cheques.filter((c) => chequeBankFilter === "all" || c.bank_account_id === chequeBankFilter)
                             .filter((c) => chequeFilter === "all" || c.status === chequeFilter).length === 0 && (
                       <tr>
-                        <td colSpan={7} className="px-4 py-6 text-center text-sm text-slate-500">
+                        <td colSpan={9} className="px-4 py-6 text-center text-sm text-slate-500">
                           No cheques to show.
                         </td>
                       </tr>
@@ -2084,6 +2164,7 @@ export default function Accounting() {
                 cheque_number: chequeForm.cheque_number.trim(),
                 amount,
                 cheque_date: chequeForm.cheque_date,
+                cheque_type: chequeForm.cheque_type,
                 recipient: chequeForm.recipient.trim() || null,
                 notes: chequeForm.notes.trim() || null,
                 status: "pending",
@@ -2095,6 +2176,7 @@ export default function Accounting() {
                 cheque_number: "",
                 amount: "",
                 cheque_date: new Date().toISOString().slice(0, 10),
+                cheque_type: "payment",
                 recipient: "",
                 notes: "",
               });
@@ -2106,6 +2188,45 @@ export default function Accounting() {
             }
           }}
         >
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Cheque Type *</label>
+            <div className="grid grid-cols-2 gap-2">
+              <label
+                className={`flex items-start gap-2 px-3 py-2 border rounded-md cursor-pointer text-sm ${
+                  chequeForm.cheque_type === "payment" ? "border-slate-900 bg-slate-50" : "border-slate-200 hover:border-slate-300"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="cheque_type"
+                  checked={chequeForm.cheque_type === "payment"}
+                  onChange={() => setChequeForm({ ...chequeForm, cheque_type: "payment" })}
+                  className="mt-1"
+                />
+                <span>
+                  <strong>Payment Cheque</strong>
+                  <span className="block text-[11px] text-slate-500">Used to pay expenses/salaries/advances. Clears only when the linked items' total matches exactly.</span>
+                </span>
+              </label>
+              <label
+                className={`flex items-start gap-2 px-3 py-2 border rounded-md cursor-pointer text-sm ${
+                  chequeForm.cheque_type === "cash" ? "border-slate-900 bg-slate-50" : "border-slate-200 hover:border-slate-300"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="cheque_type"
+                  checked={chequeForm.cheque_type === "cash"}
+                  onChange={() => setChequeForm({ ...chequeForm, cheque_type: "cash" })}
+                  className="mt-1"
+                />
+                <span>
+                  <strong>Cash Cheque</strong>
+                  <span className="block text-[11px] text-slate-500">Withdraw from this bank. On clearance, the amount lands in the Cash (Treasury) balance.</span>
+                </span>
+              </label>
+            </div>
+          </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Bank Account *</label>
             <select
@@ -2177,7 +2298,13 @@ export default function Accounting() {
             </div>
           </div>
           <div className="bg-amber-50 border border-amber-200 rounded-md p-3 text-xs text-amber-800">
-            Issuing this cheque will <strong>reserve</strong> PKR {Number(chequeForm.amount || 0).toLocaleString()} from the selected bank's Account Balance. Marking it Cleared keeps the deduction; deleting it while Pending restores the balance.
+            Issuing this cheque will <strong>reserve</strong> PKR {Number(chequeForm.amount || 0).toLocaleString()} from the selected bank's Account Balance.{" "}
+            {chequeForm.cheque_type === "cash" ? (
+              <>On clearance, this amount will be added to the <strong>Cash (Treasury)</strong> balance.</>
+            ) : (
+              <>This payment cheque can only be cleared once linked expenses/salaries/advances total exactly its amount.</>
+            )}
+            {" "}Deleting it while Pending restores the bank balance.
           </div>
           <div className="flex gap-2 pt-2">
             <Button variant="primary" size="md" className="flex-1" disabled={chequeSubmitting}>

@@ -180,6 +180,7 @@ export type Client = {
   branch_id: string | null;
   auto_invoice_enabled: boolean;
   auto_invoice_amount: number;
+  auto_invoice_withholding: number;
   contract_start: string | null;
   contract_end: string | null;
   advance_payment: boolean;
@@ -197,6 +198,8 @@ export type Branch = {
 
 export type EmployeeCategory = "client" | "office_staff" | "reliever";
 
+export type ChequeType = "payment" | "cash";
+
 export type Cheque = {
   id: string;
   company_id?: string;
@@ -204,6 +207,7 @@ export type Cheque = {
   cheque_number: string;
   amount: number;
   cheque_date: string;
+  cheque_type: ChequeType;
   status: "pending" | "cleared";
   attachment_path: string | null;
   notes: string | null;
@@ -284,6 +288,7 @@ export type InventoryItem = {
   size: string | null;
   quantity: number;
   location_id: string | null;
+  branch_id: string | null;
   license_expiry: string | null;
   status: InventoryStatus;
   notes: string | null;
@@ -391,6 +396,7 @@ export type Issuance = {
   employee_id: string | null;
   client_id: string | null;
   location_id: string | null;
+  branch_id: string | null;
   issue_date: string;
   return_date: string | null;
   condition: ReturnCondition | null;

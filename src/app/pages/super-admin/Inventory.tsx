@@ -13,6 +13,7 @@ import {
   type Employee,
   type Client,
   type ReturnCondition,
+  type Branch,
 } from "../../lib/supabase";
 
 type ItemRow = InventoryItem & {
@@ -41,6 +42,7 @@ type AddItemForm = {
   size: string;
   quantity: string;
   location_id: string;
+  branch_id: string;
   license_expiry: string;
   notes: string;
 };
@@ -52,6 +54,7 @@ const emptyAddItem: AddItemForm = {
   size: "",
   quantity: "1",
   location_id: "",
+  branch_id: "",
   license_expiry: "",
   notes: "",
 };
@@ -62,6 +65,7 @@ type IssueForm = {
   target: "employee" | "client";
   employee_id: string;
   client_id: string;
+  branch_id: string;
   issue_date: string;
   notes: string;
 };
@@ -74,6 +78,7 @@ const emptyIssueForm = (): IssueForm => ({
   target: "employee",
   employee_id: "",
   client_id: "",
+  branch_id: "",
   issue_date: today(),
   notes: "",
 });
@@ -97,6 +102,7 @@ const uniformStockStatus = (qty: number) =>
 
 type FilterState = {
   location_id: string;
+  branch_id: string;
   date_from: string;
   date_to: string;
   client_id: string;
@@ -105,6 +111,7 @@ type FilterState = {
 
 const emptyFilters: FilterState = {
   location_id: "",
+  branch_id: "",
   date_from: "",
   date_to: "",
   client_id: "",
@@ -115,7 +122,8 @@ export default function Inventory() {
   const [activeTab, setActiveTab] = useState<"weapons" | "uniforms" | "issuance">("weapons");
 
   const [locations, setLocations] = useState<Location[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [employees, setEmployees] = useState<(Employee & { branch_id: string | null })[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [items, setItems] = useState<ItemRow[]>([]);
   const [issuances, setIssuances] = useState<IssuanceRow[]>([]);
@@ -144,10 +152,11 @@ export default function Inventory() {
   const loadAll = async () => {
     setLoading(true);
     setError(null);
-    const [locRes, empRes, cliRes, itemsRes, issRes] = await Promise.all([
+    const [locRes, empRes, cliRes, brRes, itemsRes, issRes] = await Promise.all([
       supabase.from("locations").select("*").order("name"),
-      supabase.from("employees").select("id, full_name, employee_code, shift").order("full_name"),
+      supabase.from("employees").select("id, full_name, employee_code, shift, branch_id, client_id").order("full_name"),
       supabase.from("clients").select("*").order("name"),
+      supabase.from("branches").select("*").order("is_head_office", { ascending: false }).order("name"),
       supabase
         .from("inventory_items")
         .select("*, location:location_id(name)")
@@ -185,8 +194,9 @@ export default function Inventory() {
     }
 
     setLocations(locRes.data ?? []);
-    setEmployees((empRes.data ?? []) as Employee[]);
+    setEmployees((empRes.data ?? []) as (Employee & { branch_id: string | null })[]);
     setClients((cliRes.data ?? []) as Client[]);
+    setBranches((brRes.data ?? []) as Branch[]);
     setItems(
       ((itemsRes.data ?? []) as any[]).map((r) => {
         const active = activeByItem.get(r.id);
@@ -225,6 +235,7 @@ export default function Inventory() {
 
   const matchesFilters = (iss: IssuanceRow): boolean => {
     if (filters.location_id && iss.location_id !== filters.location_id) return false;
+    if (filters.branch_id && iss.branch_id !== filters.branch_id) return false;
     if (filters.date_from && iss.issue_date < filters.date_from) return false;
     if (filters.date_to && iss.issue_date > filters.date_to) return false;
     if (filters.client_id && iss.client_id !== filters.client_id) return false;
@@ -248,15 +259,16 @@ export default function Inventory() {
   const filteredItems = useMemo(() => {
     return items.filter((i) => {
       if (filters.location_id && i.location_id !== filters.location_id) return false;
+      if (filters.branch_id && i.branch_id !== filters.branch_id) return false;
       return true;
     });
-  }, [items, filters.location_id]);
+  }, [items, filters.location_id, filters.branch_id]);
 
   const weapons = useMemo(() => filteredItems.filter((i) => i.kind === "weapon"), [filteredItems]);
   const uniforms = useMemo(() => filteredItems.filter((i) => i.kind === "uniform"), [filteredItems]);
 
   const filtersActive =
-    !!(filters.location_id || filters.date_from || filters.date_to || filters.client_id || filters.shift);
+    !!(filters.location_id || filters.branch_id || filters.date_from || filters.date_to || filters.client_id || filters.shift);
 
   const weaponsSummary = useMemo(() => {
     let issuedEmp = 0;
@@ -311,6 +323,7 @@ export default function Inventory() {
         size: addForm.kind === "uniform" ? addForm.size.trim() || null : null,
         quantity: addForm.kind === "uniform" ? Math.max(0, Number(addForm.quantity) || 0) : 1,
         location_id: addForm.location_id || null,
+        branch_id: addForm.branch_id || null,
         license_expiry: addForm.kind === "weapon" && addForm.license_expiry ? addForm.license_expiry : null,
         notes: addForm.notes.trim() || null,
         status: "Available" as const,
@@ -385,11 +398,24 @@ export default function Inventory() {
         }
       }
 
+      // Branch resolution: user-picked override > employee branch > client branch > item branch.
+      let branchId: string | null = issueForm.branch_id || null;
+      if (!branchId) {
+        if (issueForm.target === "employee") {
+          const emp = employees.find((e) => e.id === issueForm.employee_id);
+          branchId = emp?.branch_id ?? null;
+        } else {
+          const cli = clients.find((c) => c.id === issueForm.client_id);
+          branchId = cli?.branch_id ?? null;
+        }
+        if (!branchId) branchId = item.branch_id ?? null;
+      }
       const { error: insErr } = await supabase.from("issuances").insert({
         item_id: item.id,
         employee_id: issueForm.target === "employee" ? issueForm.employee_id : null,
         client_id: issueForm.target === "client" ? issueForm.client_id : null,
         location_id: item.location_id,
+        branch_id: branchId,
         issue_date: issueForm.issue_date,
         notes: issueForm.notes.trim() || null,
       });
@@ -551,7 +577,7 @@ export default function Inventory() {
         </div>
 
         <div className="bg-white rounded-lg border border-slate-200 p-4 mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
+          <div className="grid grid-cols-1 md:grid-cols-7 gap-3 items-end">
             <div>
               <label className="block text-xs text-slate-500 mb-1">Location</label>
               <select
@@ -564,6 +590,19 @@ export default function Inventory() {
                   <option key={l.id} value={l.id}>
                     {l.name}
                   </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">Branch</label>
+              <select
+                value={filters.branch_id}
+                onChange={(e) => setFilters({ ...filters, branch_id: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              >
+                <option value="">All</option>
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
               </select>
             </div>
@@ -1015,25 +1054,40 @@ export default function Inventory() {
             </>
           )}
 
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Location</label>
-            <select
-              value={addForm.location_id}
-              onChange={(e) => setAddForm({ ...addForm, location_id: e.target.value })}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-            >
-              <option value="">Select location</option>
-              {locations.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name}
-                </option>
-              ))}
-            </select>
-            {locations.length === 0 && (
-              <p className="text-xs text-slate-500 mt-1">
-                No locations yet. Add them from Settings → Location Management.
-              </p>
-            )}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Location</label>
+              <select
+                value={addForm.location_id}
+                onChange={(e) => setAddForm({ ...addForm, location_id: e.target.value })}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              >
+                <option value="">Select location</option>
+                {locations.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </select>
+              {locations.length === 0 && (
+                <p className="text-xs text-slate-500 mt-1">
+                  No locations yet. Add them from Settings → Location Management.
+                </p>
+              )}
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Branch</label>
+              <select
+                value={addForm.branch_id}
+                onChange={(e) => setAddForm({ ...addForm, branch_id: e.target.value })}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              >
+                <option value="">Head Office (default)</option>
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div>
@@ -1168,7 +1222,15 @@ export default function Inventory() {
               <select
                 required
                 value={issueForm.employee_id}
-                onChange={(e) => setIssueForm({ ...issueForm, employee_id: e.target.value })}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  const emp = employees.find((x) => x.id === id);
+                  setIssueForm({
+                    ...issueForm,
+                    employee_id: id,
+                    branch_id: emp?.branch_id ?? issueForm.branch_id,
+                  });
+                }}
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
               >
                 <option value="">Select employee</option>
@@ -1190,7 +1252,15 @@ export default function Inventory() {
               <select
                 required
                 value={issueForm.client_id}
-                onChange={(e) => setIssueForm({ ...issueForm, client_id: e.target.value })}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  const cli = clients.find((c) => c.id === id);
+                  setIssueForm({
+                    ...issueForm,
+                    client_id: id,
+                    branch_id: cli?.branch_id ?? issueForm.branch_id,
+                  });
+                }}
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
               >
                 <option value="">Select client</option>
@@ -1209,6 +1279,23 @@ export default function Inventory() {
               )}
             </div>
           )}
+
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Branch</label>
+            <select
+              value={issueForm.branch_id}
+              onChange={(e) => setIssueForm({ ...issueForm, branch_id: e.target.value })}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+            >
+              <option value="">Auto (from {issueForm.target})</option>
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </select>
+            <p className="text-xs text-slate-500 mt-1">
+              Defaults to the {issueForm.target}'s branch. Override here if needed.
+            </p>
+          </div>
 
           <div>
             <label className="block text-sm text-slate-700 mb-1">Issue Date *</label>

@@ -21,6 +21,7 @@ type ClientRow = {
   branch_id: string | null;
   auto_invoice_enabled: boolean;
   auto_invoice_amount: number;
+  auto_invoice_withholding: number;
   contract_start: string | null;
   contract_end: string | null;
   advance_payment: boolean;
@@ -71,12 +72,14 @@ export default function Settings() {
 
   const [newClientAutoInv, setNewClientAutoInv] = useState<boolean>(false);
   const [newClientAutoAmt, setNewClientAutoAmt] = useState<number>(0);
+  const [newClientAutoWht, setNewClientAutoWht] = useState<number>(0);
   const [newClientContractStart, setNewClientContractStart] = useState<string>("");
   const [newClientContractEnd, setNewClientContractEnd] = useState<string>("");
   const [newClientAdvancePayment, setNewClientAdvancePayment] = useState<boolean>(false);
 
   const [editClientAutoInv, setEditClientAutoInv] = useState<boolean>(false);
   const [editClientAutoAmt, setEditClientAutoAmt] = useState<number>(0);
+  const [editClientAutoWht, setEditClientAutoWht] = useState<number>(0);
   const [editClientContractStart, setEditClientContractStart] = useState<string>("");
   const [editClientContractEnd, setEditClientContractEnd] = useState<string>("");
   const [editClientAdvancePayment, setEditClientAdvancePayment] = useState<boolean>(false);
@@ -183,7 +186,7 @@ export default function Settings() {
       supabase.from("locations").select("id, name").order("name"),
       supabase
         .from("clients")
-        .select("id, client_code, name, email, phone, allowed_leaves_per_month, client_type, leave_carry_forward, eobi_enabled, eobi_amount, branch_id, auto_invoice_enabled, auto_invoice_amount, contract_start, contract_end, advance_payment")
+        .select("id, client_code, name, email, phone, allowed_leaves_per_month, client_type, leave_carry_forward, eobi_enabled, eobi_amount, branch_id, auto_invoice_enabled, auto_invoice_amount, auto_invoice_withholding, contract_start, contract_end, advance_payment")
         .order("client_code"),
       supabase
         .from("branches")
@@ -234,6 +237,7 @@ export default function Settings() {
         branch_id: r.branch_id ?? null,
         auto_invoice_enabled: !!r.auto_invoice_enabled,
         auto_invoice_amount: Number(r.auto_invoice_amount ?? 0),
+        auto_invoice_withholding: Number(r.auto_invoice_withholding ?? 0),
         contract_start: r.contract_start ?? null,
         contract_end: r.contract_end ?? null,
         advance_payment: !!r.advance_payment,
@@ -311,6 +315,7 @@ export default function Settings() {
       branch_id: newClientBranchId || null,
       auto_invoice_enabled: newClientAutoInv,
       auto_invoice_amount: newClientAutoInv ? Math.max(0, Number(newClientAutoAmt) || 0) : 0,
+      auto_invoice_withholding: newClientAutoInv ? Math.max(0, Number(newClientAutoWht) || 0) : 0,
       contract_start: newClientContractStart || null,
       contract_end: newClientContractEnd || null,
       advance_payment: newClientAdvancePayment,
@@ -331,6 +336,7 @@ export default function Settings() {
     setNewClientBranchId("");
     setNewClientAutoInv(false);
     setNewClientAutoAmt(0);
+    setNewClientAutoWht(0);
     setNewClientContractStart("");
     setNewClientContractEnd("");
     setNewClientAdvancePayment(false);
@@ -351,6 +357,7 @@ export default function Settings() {
     setEditClientBranchId(row.branch_id ?? "");
     setEditClientAutoInv(!!row.auto_invoice_enabled);
     setEditClientAutoAmt(Number(row.auto_invoice_amount ?? 0));
+    setEditClientAutoWht(Number(row.auto_invoice_withholding ?? 0));
     setEditClientContractStart(row.contract_start ?? "");
     setEditClientContractEnd(row.contract_end ?? "");
     setEditClientAdvancePayment(!!row.advance_payment);
@@ -372,6 +379,7 @@ export default function Settings() {
         branch_id: editClientBranchId || null,
         auto_invoice_enabled: editClientAutoInv,
         auto_invoice_amount: editClientAutoInv ? Math.max(0, Number(editClientAutoAmt) || 0) : 0,
+        auto_invoice_withholding: editClientAutoInv ? Math.max(0, Number(editClientAutoWht) || 0) : 0,
         contract_start: editClientContractStart || null,
         contract_end: editClientContractEnd || null,
         advance_payment: editClientAdvancePayment,
@@ -726,7 +734,7 @@ export default function Settings() {
                     </label>
                     {editClientAutoInv && (
                       <div className="grid grid-cols-2 gap-2">
-                        <div className="col-span-2">
+                        <div>
                           <label className="block text-[11px] text-slate-600 mb-1">Invoice Amount (PKR/month)</label>
                           <input
                             type="number"
@@ -734,6 +742,17 @@ export default function Settings() {
                             step="0.01"
                             value={editClientAutoAmt}
                             onChange={(e) => setEditClientAutoAmt(Number(e.target.value))}
+                            className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] text-slate-600 mb-1">Withholding Tax (PKR)</label>
+                          <input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            value={editClientAutoWht}
+                            onChange={(e) => setEditClientAutoWht(Number(e.target.value))}
                             className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
                           />
                         </div>
@@ -1073,7 +1092,7 @@ export default function Settings() {
             </label>
             {newClientAutoInv && (
               <div className="grid grid-cols-2 gap-3">
-                <div className="col-span-2">
+                <div>
                   <label className="block text-xs text-slate-600 mb-1">Invoice Amount (PKR / month)</label>
                   <input
                     type="number"
@@ -1081,6 +1100,17 @@ export default function Settings() {
                     step="0.01"
                     value={newClientAutoAmt}
                     onChange={(e) => setNewClientAutoAmt(Number(e.target.value))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-600 mb-1">Withholding Tax (PKR)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={newClientAutoWht}
+                    onChange={(e) => setNewClientAutoWht(Number(e.target.value))}
                     className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
                   />
                 </div>
