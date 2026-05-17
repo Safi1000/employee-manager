@@ -26,6 +26,7 @@ type EmployeeLite = {
   client_id: string | null;
   client_name: string | null;
   branch_id: string | null;
+  additional_branch_ids: string[];
   shift: "day" | "night";
 };
 
@@ -298,7 +299,7 @@ export default function AttendanceManagement() {
   const toInputRef = useRef<HTMLInputElement>(null);
 
   const loadStaticData = async () => {
-    const [locRes, cliRes, brRes, empRes] = await Promise.all([
+    const [locRes, cliRes, brRes, empRes, ebRes] = await Promise.all([
       supabase.from("locations").select("*").order("name"),
       supabase.from("clients").select("*").order("name"),
       supabase.from("branches").select("*").order("is_head_office", { ascending: false }).order("name"),
@@ -308,14 +309,22 @@ export default function AttendanceManagement() {
           "id, employee_code, full_name, location_id, client_id, branch_id, shift, location:location_id(name), client:client_id(name)"
         )
         .order("full_name"),
+      supabase.from("employee_branches").select("employee_id, branch_id"),
     ]);
     if (locRes.error) setError(locRes.error.message);
     if (cliRes.error) setError(cliRes.error.message);
     if (brRes.error) setError(brRes.error.message);
     if (empRes.error) setError(empRes.error.message);
+    if (ebRes.error) setError(ebRes.error.message);
     setLocations(locRes.data ?? []);
     setClients(cliRes.data ?? []);
     setBranches((brRes.data ?? []) as Branch[]);
+    const addlMap = new Map<string, string[]>();
+    for (const r of (ebRes.data ?? []) as { employee_id: string; branch_id: string }[]) {
+      const arr = addlMap.get(r.employee_id) ?? [];
+      arr.push(r.branch_id);
+      addlMap.set(r.employee_id, arr);
+    }
     setEmployees(
       (empRes.data ?? []).map((e: any) => ({
         id: e.id,
@@ -326,6 +335,7 @@ export default function AttendanceManagement() {
         client_id: e.client_id,
         client_name: e.client?.name ?? null,
         branch_id: e.branch_id ?? null,
+        additional_branch_ids: addlMap.get(e.id) ?? [],
         shift: e.shift,
       }))
     );
@@ -433,7 +443,11 @@ export default function AttendanceManagement() {
     return employees.filter((e) => {
       if (clientFilter !== "all" && e.client_id !== clientFilter) return false;
       if (locationFilter !== "all" && e.location_id !== locationFilter) return false;
-      if (branchFilter !== "all" && e.branch_id !== branchFilter) return false;
+      if (branchFilter !== "all") {
+        const inPrimary = e.branch_id === branchFilter;
+        const inAdditional = (e.additional_branch_ids ?? []).includes(branchFilter);
+        if (!inPrimary && !inAdditional) return false;
+      }
       if (shiftFilter !== "all" && e.shift !== shiftFilter) return false;
       if (unmarkedOnly && todayRecords[e.id]) return false;
       if (q && !e.full_name.toLowerCase().includes(q) && !e.employee_code.toLowerCase().includes(q)) return false;

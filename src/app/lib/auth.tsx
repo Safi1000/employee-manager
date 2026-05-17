@@ -212,6 +212,7 @@ export async function callCreateUser(input: {
   role?: "super_admin" | "hr" | "accounting";
   title?: string | null;
   company_id: string;
+  branch_id?: string | null;
   full_name?: string | null;
   permissions?: string[];
 }) {

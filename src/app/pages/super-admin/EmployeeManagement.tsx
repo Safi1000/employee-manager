@@ -19,6 +19,7 @@ type EmployeeRow = Employee & {
   location_name: string | null;
   client_name: string | null;
   branch_name: string | null;
+  additional_branch_ids: string[];
   doc_count: number;
 };
 type DocumentWithUrl = EmployeeDocument & { publicUrl: string | null };
@@ -29,6 +30,7 @@ type FormState = {
   location_id: string;
   client_id: string;
   branch_id: string;
+  additional_branch_ids: string[];
   category: EmployeeCategory;
   department: string;
   shift: "day" | "night";
@@ -48,6 +50,7 @@ const emptyForm: FormState = {
   location_id: "",
   client_id: "",
   branch_id: "",
+  additional_branch_ids: [],
   category: "client",
   department: "",
   shift: "day",
@@ -103,7 +106,7 @@ export default function EmployeeManagement() {
   const loadData = async () => {
     setLoading(true);
     setError(null);
-    const [locRes, cliRes, brRes, empRes, docRes] = await Promise.all([
+    const [locRes, cliRes, brRes, empRes, docRes, ebRes] = await Promise.all([
       supabase.from("locations").select("*").order("name"),
       supabase.from("clients").select("*").order("name"),
       supabase.from("branches").select("*").order("is_head_office", { ascending: false }).order("name"),
@@ -112,6 +115,7 @@ export default function EmployeeManagement() {
         .select("*, location:location_id(name), client:client_id(name), branch:branch_id(name)")
         .order("created_at", { ascending: false }),
       supabase.from("employee_documents").select("employee_id"),
+      supabase.from("employee_branches").select("employee_id, branch_id"),
     ]);
     if (locRes.error) setError(locRes.error.message);
     if (cliRes.error) setError(cliRes.error.message);
@@ -125,12 +129,19 @@ export default function EmployeeManagement() {
     for (const d of (docRes.data ?? []) as { employee_id: string }[]) {
       docCount.set(d.employee_id, (docCount.get(d.employee_id) ?? 0) + 1);
     }
+    const addlBranches = new Map<string, string[]>();
+    for (const r of (ebRes.data ?? []) as { employee_id: string; branch_id: string }[]) {
+      const arr = addlBranches.get(r.employee_id) ?? [];
+      arr.push(r.branch_id);
+      addlBranches.set(r.employee_id, arr);
+    }
     setEmployees(
       (empRes.data ?? []).map((e: any) => ({
         ...e,
         location_name: e.location?.name ?? null,
         client_name: e.client?.name ?? null,
         branch_name: e.branch?.name ?? null,
+        additional_branch_ids: addlBranches.get(e.id) ?? [],
         doc_count: docCount.get(e.id) ?? 0,
       }))
     );
@@ -148,18 +159,31 @@ export default function EmployeeManagement() {
   const clientsForBranch = (branchId: string): Client[] =>
     branchId ? clients.filter((c) => c.branch_id === branchId) : clients;
 
-  // When the form's client changes, auto-fill branch from the client's branch_id
-  // (unless the user has already chosen a different branch explicitly).
+  // When the form's client changes:
+  //  - if the form has no primary branch yet, the client's branch becomes primary.
+  //  - otherwise, the client's branch is added to additional visibility (if not
+  //    already the primary or already listed). Doesn't displace anything.
   const onPickClient = (
     f: FormState,
     setF: (next: FormState) => void,
     clientId: string,
   ) => {
     const c = clients.find((x) => x.id === clientId);
+    const cb = c?.branch_id ?? null;
+    let primary = f.branch_id;
+    let additional = f.additional_branch_ids;
+    if (cb) {
+      if (!primary) {
+        primary = cb;
+      } else if (cb !== primary && !additional.includes(cb)) {
+        additional = [...additional, cb];
+      }
+    }
     setF({
       ...f,
       client_id: clientId,
-      branch_id: c?.branch_id ?? f.branch_id,
+      branch_id: primary,
+      additional_branch_ids: additional,
     });
   };
 
@@ -175,7 +199,11 @@ export default function EmployeeManagement() {
         return false;
       if (locationFilter !== "all" && e.location_id !== locationFilter) return false;
       if (clientFilter !== "all" && e.client_id !== clientFilter) return false;
-      if (branchFilter !== "all" && e.branch_id !== branchFilter) return false;
+      if (branchFilter !== "all") {
+        const inPrimary = e.branch_id === branchFilter;
+        const inAdditional = (e.additional_branch_ids ?? []).includes(branchFilter);
+        if (!inPrimary && !inAdditional) return false;
+      }
       if (categoryFilter !== "all" && (e.category ?? "client") !== categoryFilter) return false;
       if (shiftFilter !== "all" && e.shift !== shiftFilter) return false;
       if (statusFilter !== "all" && e.status !== statusFilter) return false;
@@ -289,7 +317,9 @@ export default function EmployeeManagement() {
         .select()
         .single();
       if (insErr) throw insErr;
-      await uploadDocs((data as Employee).id, form);
+      const newId = (data as Employee).id;
+      await uploadDocs(newId, form);
+      await syncAdditionalBranches(newId, form.additional_branch_ids, form.branch_id);
       setForm(emptyForm);
       setIsModalOpen(false);
       await loadData();
@@ -297,6 +327,37 @@ export default function EmployeeManagement() {
       setError(err.message ?? String(err));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // Sync the employee_branches junction: delete rows not in the new set, insert
+  // missing ones. Excludes the primary (it's implicit; never duplicated).
+  const syncAdditionalBranches = async (
+    employeeId: string,
+    desiredIds: string[],
+    primaryId: string
+  ) => {
+    const desired = new Set(desiredIds.filter((id) => id && id !== primaryId));
+    const { data: existing, error: e1 } = await supabase
+      .from("employee_branches")
+      .select("branch_id")
+      .eq("employee_id", employeeId);
+    if (e1) throw e1;
+    const have = new Set((existing ?? []).map((r: any) => r.branch_id as string));
+    const toAdd = [...desired].filter((id) => !have.has(id));
+    const toRemove = [...have].filter((id) => !desired.has(id));
+    if (toRemove.length > 0) {
+      const { error } = await supabase
+        .from("employee_branches")
+        .delete()
+        .eq("employee_id", employeeId)
+        .in("branch_id", toRemove);
+      if (error) throw error;
+    }
+    if (toAdd.length > 0) {
+      const rows = toAdd.map((branch_id) => ({ employee_id: employeeId, branch_id }));
+      const { error } = await supabase.from("employee_branches").insert(rows);
+      if (error) throw error;
     }
   };
 
@@ -328,6 +389,7 @@ export default function EmployeeManagement() {
       location_id: emp.location_id ?? "",
       client_id: emp.client_id ?? "",
       branch_id: emp.branch_id ?? "",
+      additional_branch_ids: [...(emp.additional_branch_ids ?? [])],
       category: (emp.category ?? "client") as EmployeeCategory,
       department: emp.department ?? "",
       shift: emp.shift,
@@ -367,6 +429,7 @@ export default function EmployeeManagement() {
         .eq("id", selectedEmployee.id);
       if (upErr) throw upErr;
       await uploadDocs(selectedEmployee.id, editForm);
+      await syncAdditionalBranches(selectedEmployee.id, editForm.additional_branch_ids, editForm.branch_id);
       setIsEditModalOpen(false);
       await loadData();
     } catch (err: any) {
@@ -628,15 +691,21 @@ export default function EmployeeManagement() {
                 )}
               </div>
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Branch</label>
+                <label className="block text-sm text-slate-700 mb-1">Primary Branch</label>
                 <select
                   value={form.branch_id}
                   onChange={(e) => {
                     const newBranch = e.target.value;
-                    // Clear client if it no longer matches the picked branch
                     const cur = clients.find((c) => c.id === form.client_id);
                     const keepClient = !newBranch || !cur || cur.branch_id === newBranch;
-                    setForm({ ...form, branch_id: newBranch, client_id: keepClient ? form.client_id : "" });
+                    // If the new primary was in additional, drop it from additional.
+                    const additional = form.additional_branch_ids.filter((id) => id !== newBranch);
+                    setForm({
+                      ...form,
+                      branch_id: newBranch,
+                      additional_branch_ids: additional,
+                      client_id: keepClient ? form.client_id : "",
+                    });
                   }}
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                 >
@@ -647,6 +716,50 @@ export default function EmployeeManagement() {
                     </option>
                   ))}
                 </select>
+                <p className="text-xs text-slate-500 mt-1">
+                  Used for payroll routing, P&L attribution and cost ownership.
+                </p>
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm text-slate-700 mb-1">Additional Branches (visibility)</label>
+                <div className="flex flex-wrap gap-2 p-2 border border-slate-200 rounded-md">
+                  {branchOptions
+                    .filter((b) => b.id !== form.branch_id)
+                    .map((b) => {
+                      const checked = form.additional_branch_ids.includes(b.id);
+                      return (
+                        <label
+                          key={b.id}
+                          className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs cursor-pointer border ${
+                            checked
+                              ? "border-slate-900 bg-slate-50 text-slate-900"
+                              : "border-slate-200 text-slate-600 hover:border-slate-300"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() =>
+                              setForm({
+                                ...form,
+                                additional_branch_ids: checked
+                                  ? form.additional_branch_ids.filter((id) => id !== b.id)
+                                  : [...form.additional_branch_ids, b.id],
+                              })
+                            }
+                            className="rounded border-slate-300"
+                          />
+                          {b.name}
+                        </label>
+                      );
+                    })}
+                  {branchOptions.filter((b) => b.id !== form.branch_id).length === 0 && (
+                    <span className="text-xs text-slate-400">No other branches available.</span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  Branched users in these branches can see this employee (read/edit) without owning the cost.
+                </p>
               </div>
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Category *</label>
@@ -1017,14 +1130,20 @@ export default function EmployeeManagement() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-700 mb-1">Branch</label>
+                  <label className="block text-sm text-slate-700 mb-1">Primary Branch</label>
                   <select
                     value={editForm.branch_id}
                     onChange={(e) => {
                       const newBranch = e.target.value;
                       const cur = clients.find((c) => c.id === editForm.client_id);
                       const keepClient = !newBranch || !cur || cur.branch_id === newBranch;
-                      setEditForm({ ...editForm, branch_id: newBranch, client_id: keepClient ? editForm.client_id : "" });
+                      const additional = editForm.additional_branch_ids.filter((id) => id !== newBranch);
+                      setEditForm({
+                        ...editForm,
+                        branch_id: newBranch,
+                        additional_branch_ids: additional,
+                        client_id: keepClient ? editForm.client_id : "",
+                      });
                     }}
                     className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                   >
@@ -1035,6 +1154,47 @@ export default function EmployeeManagement() {
                       </option>
                     ))}
                   </select>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Used for payroll routing and P&L attribution.
+                  </p>
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-sm text-slate-700 mb-1">Additional Branches (visibility)</label>
+                  <div className="flex flex-wrap gap-2 p-2 border border-slate-200 rounded-md">
+                    {branchOptions
+                      .filter((b) => b.id !== editForm.branch_id)
+                      .map((b) => {
+                        const checked = editForm.additional_branch_ids.includes(b.id);
+                        return (
+                          <label
+                            key={b.id}
+                            className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs cursor-pointer border ${
+                              checked
+                                ? "border-slate-900 bg-slate-50 text-slate-900"
+                                : "border-slate-200 text-slate-600 hover:border-slate-300"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() =>
+                                setEditForm({
+                                  ...editForm,
+                                  additional_branch_ids: checked
+                                    ? editForm.additional_branch_ids.filter((id) => id !== b.id)
+                                    : [...editForm.additional_branch_ids, b.id],
+                                })
+                              }
+                              className="rounded border-slate-300"
+                            />
+                            {b.name}
+                          </label>
+                        );
+                      })}
+                    {branchOptions.filter((b) => b.id !== editForm.branch_id).length === 0 && (
+                      <span className="text-xs text-slate-400">No other branches available.</span>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm text-slate-700 mb-1">Category</label>

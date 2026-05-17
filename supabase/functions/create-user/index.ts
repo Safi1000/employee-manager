@@ -1,9 +1,11 @@
 // Edge function: create-user
 // Auth: SSA can create any user for any company; super_admin can create users
 // for their own company only.
-// Body: { email, password, company_id, title?, full_name?, role?, permissions[]? }
+// Body: { email, password, company_id, title?, full_name?, role?, permissions[]?, branch_id? }
 // 'role' defaults to 'hr' and is now an internal enum-stamp; access is governed
 // entirely by the explicit permissions array. 'title' is the freeform user label.
+// 'branch_id' (optional): if set, the user is scoped to that branch via RLS.
+// NULL means Head Office / unrestricted (sees all branches within the company).
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
@@ -60,6 +62,9 @@ Deno.serve(async (req) => {
   const permissions = Array.isArray(body.permissions)
     ? body.permissions.map((p) => String(p)).filter((p) => p.length > 0)
     : [];
+  const branch_id = body.branch_id == null || body.branch_id === ""
+    ? null
+    : String(body.branch_id);
 
   if (!email || !password) return json({ error: "email_and_password_required" }, 400);
   if (password.length < 8) return json({ error: "password_too_short" }, 400);
@@ -78,6 +83,14 @@ Deno.serve(async (req) => {
     .from("companies").select("id, active").eq("id", company_id).maybeSingle();
   if (companyErr || !companyRow) return json({ error: "company_not_found" }, 404);
 
+  // If a branch is given, it must belong to the chosen company.
+  if (branch_id) {
+    const { data: branchRow, error: branchErr } = await admin
+      .from("branches").select("id, company_id").eq("id", branch_id).maybeSingle();
+    if (branchErr || !branchRow) return json({ error: "branch_not_found" }, 404);
+    if (branchRow.company_id !== company_id) return json({ error: "branch_company_mismatch" }, 400);
+  }
+
   const { data: created, error: createErr } = await admin.auth.admin.createUser({
     email,
     password,
@@ -89,6 +102,7 @@ Deno.serve(async (req) => {
   const { error: insErr } = await admin.from("profiles").insert({
     id: created.user.id,
     company_id,
+    branch_id,
     role,
     title,
     email,

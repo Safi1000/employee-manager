@@ -118,6 +118,7 @@ export default function PayrollManagement() {
   const [locationFilter, setLocationFilter] = useState("all");
   const [clientFilter, setClientFilter] = useState("all");
   const [branchFilter, setBranchFilter] = useState("all");
+  const [employeeAddlBranches, setEmployeeAddlBranches] = useState<Map<string, string[]>>(new Map());
   const [statusFilter, setStatusFilter] = useState<"all" | "Cleared" | "Pending">("all");
   const [disbursedFilter, setDisbursedFilter] = useState<"all" | "yes" | "no">("all");
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -233,6 +234,15 @@ export default function PayrollManagement() {
     setBanks((bankRes.data ?? []) as BankAccount[]);
     setCheques((chqRes.data ?? []) as Cheque[]);
     setBranches((brRes.data ?? []) as Branch[]);
+
+    const { data: ebRows } = await supabase.from("employee_branches").select("employee_id, branch_id");
+    const addl = new Map<string, string[]>();
+    for (const r of (ebRows ?? []) as { employee_id: string; branch_id: string }[]) {
+      const arr = addl.get(r.employee_id) ?? [];
+      arr.push(r.branch_id);
+      addl.set(r.employee_id, arr);
+    }
+    setEmployeeAddlBranches(addl);
 
     const [linkedPs, linkedEx, linkedAdv, linkedIp] = await Promise.all([
       supabase.from("payslips").select("cheque_id, net_salary").not("cheque_id", "is", null),
@@ -419,12 +429,16 @@ export default function PayrollManagement() {
       if (shiftFilter !== "all" && e.shift !== shiftFilter) return false;
       if (locationFilter !== "all" && e.location_id !== locationFilter) return false;
       if (clientFilter !== "all" && e.client_id !== clientFilter) return false;
-      if (branchFilter !== "all" && e.branch_id !== branchFilter) return false;
+      if (branchFilter !== "all") {
+        const inPrimary = e.branch_id === branchFilter;
+        const inAdditional = (employeeAddlBranches.get(e.id) ?? []).includes(branchFilter);
+        if (!inPrimary && !inAdditional) return false;
+      }
       if (statusFilter !== "all" && r.status !== statusFilter) return false;
       if (disbursedFilter !== "all" && (disbursedFilter === "yes" ? !r.disbursed : r.disbursed)) return false;
       return true;
     });
-  }, [rows, search, shiftFilter, locationFilter, clientFilter, branchFilter, statusFilter, disbursedFilter]);
+  }, [rows, search, shiftFilter, locationFilter, clientFilter, branchFilter, statusFilter, disbursedFilter, employeeAddlBranches]);
 
   const selectedRow = useMemo(
     () => rows.find((r) => r.employee.id === selectedId) ?? null,

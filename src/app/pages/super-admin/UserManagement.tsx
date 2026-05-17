@@ -7,6 +7,7 @@ import {
   supabase,
   type Profile,
   type UserRole,
+  type Branch,
   PERMISSION_GROUPS,
 } from "../../lib/supabase";
 import { callCreateUser, callChangePassword, useAuth } from "../../lib/auth";
@@ -73,6 +74,7 @@ export default function UserManagement() {
   const [fullName, setFullName] = useState("");
   const [password, setPassword] = useState("");
   const [title, setTitle] = useState("");
+  const [createBranchId, setCreateBranchId] = useState<string>("");
   const [createPerms, setCreatePerms] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
 
@@ -80,8 +82,11 @@ export default function UserManagement() {
   const [editUser, setEditUser] = useState<Profile | null>(null);
   const [editName, setEditName] = useState("");
   const [editTitle, setEditTitle] = useState("");
+  const [editBranchId, setEditBranchId] = useState<string>("");
   const [editPerms, setEditPerms] = useState<Set<string>>(new Set());
   const [editSubmitting, setEditSubmitting] = useState(false);
+
+  const [branches, setBranches] = useState<Branch[]>([]);
 
   // Reset password
   const [resetPwUserId, setResetPwUserId] = useState<string | null>(null);
@@ -92,12 +97,18 @@ export default function UserManagement() {
   const loadAll = async () => {
     setLoading(true);
     setError(null);
-    const { data, error: err } = await supabase
-      .from("profiles")
-      .select("*")
-      .order("created_at", { ascending: true });
-    if (err) setError(err.message);
-    setUsers((data as Profile[]) ?? []);
+    const [usersRes, branchesRes] = await Promise.all([
+      supabase.from("profiles").select("*").order("created_at", { ascending: true }),
+      supabase
+        .from("branches")
+        .select("*")
+        .order("is_head_office", { ascending: false })
+        .order("name"),
+    ]);
+    if (usersRes.error) setError(usersRes.error.message);
+    if (branchesRes.error) setError(branchesRes.error.message);
+    setUsers((usersRes.data as Profile[]) ?? []);
+    setBranches((branchesRes.data ?? []) as Branch[]);
     setLoading(false);
   };
 
@@ -125,6 +136,7 @@ export default function UserManagement() {
       password,
       title: title.trim() || null,
       company_id: profile.company_id,
+      branch_id: createBranchId || null,
       full_name: fullName.trim() || null,
       permissions: Array.from(createPerms),
     });
@@ -137,6 +149,7 @@ export default function UserManagement() {
     setFullName("");
     setPassword("");
     setTitle("");
+    setCreateBranchId("");
     setCreatePerms(new Set());
     setCreateOpen(false);
     await loadAll();
@@ -146,6 +159,7 @@ export default function UserManagement() {
     setEditUser(u);
     setEditName(u.full_name ?? "");
     setEditTitle(u.title ?? "");
+    setEditBranchId(u.branch_id ?? "");
     setEditPerms(new Set(u.permissions ?? []));
   };
 
@@ -159,6 +173,7 @@ export default function UserManagement() {
       .update({
         full_name: editName.trim() || null,
         title: editTitle.trim() || null,
+        branch_id: editBranchId || null,
         permissions: Array.from(editPerms),
       })
       .eq("id", editUser.id);
@@ -269,6 +284,7 @@ export default function UserManagement() {
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Name</th>
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Email</th>
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Title</th>
+                    <th className="text-left px-6 py-3 text-sm text-slate-500">Branch</th>
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Permissions</th>
                     <th className="text-right px-6 py-3 text-sm text-slate-500">Actions</th>
                   </tr>
@@ -283,6 +299,11 @@ export default function UserManagement() {
                         {showImplicitAll(u.role) && (
                           <span className="ml-2 text-xs text-blue-600">(admin)</span>
                         )}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-slate-600">
+                        {u.branch_id
+                          ? branches.find((b) => b.id === u.branch_id)?.name ?? "—"
+                          : <span className="text-xs text-slate-400">All branches</span>}
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-600">
                         {showImplicitAll(u.role) ? (
@@ -374,6 +395,22 @@ export default function UserManagement() {
               />
               <p className="text-xs text-slate-500 mt-1">At least 8 chars. Share securely.</p>
             </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm text-slate-700 mb-1">Branch</label>
+              <select
+                value={createBranchId}
+                onChange={(e) => setCreateBranchId(e.target.value)}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+              >
+                <option value="">No branch — unrestricted (Head Office admin)</option>
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+              <p className="text-xs text-slate-500 mt-1">
+                If set, this user can only see and act on data inside the chosen branch. Leave empty for company-wide access.
+              </p>
+            </div>
           </div>
 
           <div className="pt-4 border-t border-slate-200">
@@ -441,6 +478,22 @@ export default function UserManagement() {
                 {editUser.role === "super_admin" && (
                   <p className="text-xs text-blue-600 mt-1">This user is a Super Admin — implicit full access.</p>
                 )}
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm text-slate-700 mb-1">Branch</label>
+                <select
+                  value={editBranchId}
+                  onChange={(e) => setEditBranchId(e.target.value)}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                >
+                  <option value="">No branch — unrestricted (Head Office admin)</option>
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-slate-500 mt-1">
+                  Empty = company-wide access. Set a branch to scope this user's view to that branch only.
+                </p>
               </div>
             </div>
 
