@@ -159,7 +159,11 @@ export default function UserManagement() {
     setEditUser(u);
     setEditName(u.full_name ?? "");
     setEditTitle(u.title ?? "");
-    setEditBranchId(u.branch_id ?? "");
+    // Head Office branch is no longer offered as a per-user scope; legacy users
+    // pinned to it surface as "No branch — unrestricted (Head Office admin)".
+    const headOfficeId = branches.find((b) => b.is_head_office)?.id ?? null;
+    const branchId = u.branch_id && u.branch_id === headOfficeId ? "" : (u.branch_id ?? "");
+    setEditBranchId(branchId);
     setEditPerms(new Set(u.permissions ?? []));
   };
 
@@ -403,7 +407,7 @@ export default function UserManagement() {
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
               >
                 <option value="">No branch — unrestricted (Head Office admin)</option>
-                {branches.map((b) => (
+                {branches.filter((b) => !b.is_head_office).map((b) => (
                   <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
               </select>

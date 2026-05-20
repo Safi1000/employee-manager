@@ -1,17 +1,29 @@
 import { useState, useEffect } from "react";
 import { NavLink, useLocation } from "react-router";
-import { LucideIcon, LogOut, Menu, X, KeyRound } from "lucide-react";
+import { LucideIcon, LogOut, Menu, X, KeyRound, ChevronRight } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import ForcePasswordChange from "./ForcePasswordChange";
 import ChangePasswordModal from "./ChangePasswordModal";
 
+type SidebarLink = {
+  to: string;
+  label: string;
+  icon: LucideIcon;
+};
+
+type SidebarGroup = {
+  type: "group";
+  label: string;
+  icon: LucideIcon;
+  basePath: string;
+  children: SidebarLink[];
+};
+
+export type SidebarItem = SidebarLink | SidebarGroup;
+
 interface SidebarProps {
   title: string;
-  links: {
-    to: string;
-    label: string;
-    icon: LucideIcon;
-  }[];
+  links: SidebarItem[];
 }
 
 export default function Sidebar({ title, links }: SidebarProps) {
@@ -42,23 +54,35 @@ export default function Sidebar({ title, links }: SidebarProps) {
 
   const navItems = (
     <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-      {links.map((link) => (
-        <NavLink
-          key={link.to}
-          to={link.to}
-          end={link.to.split("/").length === 2}
-          className={({ isActive }) =>
-            `flex items-center gap-3 px-4 py-2.5 rounded-md text-sm transition-colors ${
-              isActive
-                ? "bg-blue-50 text-blue-700 border-l-2 border-blue-600"
-                : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-            }`
-          }
-        >
-          <link.icon className="w-4 h-4" strokeWidth={1.5} />
-          <span>{link.label}</span>
-        </NavLink>
-      ))}
+      {links.map((item) => {
+        if ("type" in item && item.type === "group") {
+          return (
+            <SidebarGroupNode
+              key={item.basePath}
+              group={item}
+              activePath={location.pathname}
+            />
+          );
+        }
+        const link = item as SidebarLink;
+        return (
+          <NavLink
+            key={link.to}
+            to={link.to}
+            end={link.to.split("/").length === 2}
+            className={({ isActive }) =>
+              `flex items-center gap-3 px-4 py-2.5 rounded-md text-sm transition-colors ${
+                isActive
+                  ? "bg-blue-50 text-blue-700 border-l-2 border-blue-600"
+                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              }`
+            }
+          >
+            <link.icon className="w-4 h-4" strokeWidth={1.5} />
+            <span>{link.label}</span>
+          </NavLink>
+        );
+      })}
     </nav>
   );
 
@@ -139,5 +163,52 @@ export default function Sidebar({ title, links }: SidebarProps) {
       <ForcePasswordChange />
       <ChangePasswordModal isOpen={pwModalOpen} onClose={() => setPwModalOpen(false)} />
     </>
+  );
+}
+
+function SidebarGroupNode({ group, activePath }: { group: SidebarGroup; activePath: string }) {
+  const isAnyChildActive = group.children.some((c) => activePath.startsWith(c.to));
+  const [expanded, setExpanded] = useState(isAnyChildActive);
+  useEffect(() => {
+    if (isAnyChildActive) setExpanded(true);
+  }, [isAnyChildActive]);
+  const Icon = group.icon;
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-md text-sm transition-colors ${
+          isAnyChildActive ? "text-slate-900" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+        }`}
+      >
+        <Icon className="w-4 h-4" strokeWidth={1.5} />
+        <span className="flex-1 text-left">{group.label}</span>
+        <ChevronRight
+          className={`w-3.5 h-3.5 transition-transform ${expanded ? "rotate-90" : ""}`}
+          strokeWidth={1.5}
+        />
+      </button>
+      {expanded && (
+        <div className="ml-5 pl-2 border-l border-slate-200 mt-0.5 space-y-1">
+          {group.children.map((child) => (
+            <NavLink
+              key={child.to}
+              to={child.to}
+              className={({ isActive }) =>
+                `flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
+                  isActive
+                    ? "bg-blue-50 text-blue-700"
+                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                }`
+              }
+            >
+              <child.icon className="w-3.5 h-3.5" strokeWidth={1.5} />
+              <span>{child.label}</span>
+            </NavLink>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

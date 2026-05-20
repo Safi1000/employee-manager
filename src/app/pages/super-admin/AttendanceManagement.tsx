@@ -28,6 +28,7 @@ type EmployeeLite = {
   branch_id: string | null;
   additional_branch_ids: string[];
   shift: "day" | "night";
+  category: "client" | "office_staff" | "reliever";
 };
 
 type HistoryRow = {
@@ -55,7 +56,9 @@ const daysAgo = (n: number) => {
 
 const STATUSES: AttendanceStatus[] = ["Present", "Absent", "Leave"];
 
-export default function AttendanceManagement() {
+type AttendanceManagementProps = { relieversOnly?: boolean };
+
+export default function AttendanceManagement({ relieversOnly = false }: AttendanceManagementProps = {}) {
   const [locations, setLocations] = useState<Location[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -306,7 +309,7 @@ export default function AttendanceManagement() {
       supabase
         .from("employees")
         .select(
-          "id, employee_code, full_name, location_id, client_id, branch_id, shift, location:location_id(name), client:client_id(name)"
+          "id, employee_code, full_name, location_id, client_id, branch_id, shift, category, location:location_id(name), client:client_id(name)"
         )
         .order("full_name"),
       supabase.from("employee_branches").select("employee_id, branch_id"),
@@ -337,6 +340,7 @@ export default function AttendanceManagement() {
         branch_id: e.branch_id ?? null,
         additional_branch_ids: addlMap.get(e.id) ?? [],
         shift: e.shift,
+        category: e.category,
       }))
     );
   };
@@ -441,6 +445,9 @@ export default function AttendanceManagement() {
   const filteredEmployees = useMemo(() => {
     const q = empSearch.trim().toLowerCase();
     return employees.filter((e) => {
+      // Reliever panel only shows relievers; main panel hides them.
+      if (relieversOnly && e.category !== "reliever") return false;
+      if (!relieversOnly && e.category === "reliever") return false;
       if (clientFilter !== "all" && e.client_id !== clientFilter) return false;
       if (locationFilter !== "all" && e.location_id !== locationFilter) return false;
       if (branchFilter !== "all") {
@@ -453,7 +460,7 @@ export default function AttendanceManagement() {
       if (q && !e.full_name.toLowerCase().includes(q) && !e.employee_code.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [employees, clientFilter, locationFilter, branchFilter, shiftFilter, unmarkedOnly, todayRecords, empSearch]);
+  }, [employees, clientFilter, locationFilter, branchFilter, shiftFilter, unmarkedOnly, todayRecords, empSearch, relieversOnly]);
 
   const markStatus = async (employeeId: string, status: AttendanceStatus) => {
     setSaving((s) => ({ ...s, [employeeId]: true }));
@@ -622,7 +629,7 @@ export default function AttendanceManagement() {
   return (
     <>
       <Header
-        title="Attendance Management"
+        title={relieversOnly ? "Reliever Attendance" : "Attendance Management"}
         actions={
           <>
             {canBulk && (

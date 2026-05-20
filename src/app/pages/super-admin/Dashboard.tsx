@@ -55,7 +55,12 @@ const PRIORITY_COLOR: Record<string, string> = {
 };
 
 export default function SuperAdminDashboard() {
-  const { profile } = useAuth();
+  const { profile, company } = useAuth();
+  const hiddenWidgets = useMemo(
+    () => new Set<string>((company?.dashboard_hidden_widgets ?? []) as string[]),
+    [company?.dashboard_hidden_widgets],
+  );
+  const show = (key: string) => !hiddenWidgets.has(key);
 
   const can = {
     compliance: hasPermission(profile, "compliance.view"),
@@ -105,6 +110,11 @@ export default function SuperAdminDashboard() {
           d.setDate(d.getDate() + 30);
           return d.toISOString().slice(0, 10);
         })();
+        const in60 = (() => {
+          const d = new Date();
+          d.setDate(d.getDate() + 60);
+          return d.toISOString().slice(0, 10);
+        })();
 
         // Fan out — all under RLS, so a branched user gets only their slice.
         const [
@@ -119,6 +129,7 @@ export default function SuperAdminDashboard() {
           banksRes,
           payMtdRes,
           datesRes,
+          contractEndsRes,
         ] = await Promise.all([
           supabase.from("employees").select("id", { count: "exact", head: true }).eq("status", "Active"),
           supabase.from("attendance_records").select("status").eq("attendance_date", today),
@@ -148,6 +159,13 @@ export default function SuperAdminDashboard() {
             .gte("due_date", today)
             .lte("due_date", in30)
             .order("due_date"),
+          supabase
+            .from("clients")
+            .select("id, name, contract_end")
+            .not("contract_end", "is", null)
+            .gte("contract_end", today)
+            .lte("contract_end", in60)
+            .order("contract_end"),
         ]);
 
         if (cancelled) return;
@@ -261,9 +279,35 @@ export default function SuperAdminDashboard() {
           setTopClients([]);
         }
 
-        // Compliance alerts.
+        // Compliance alerts + synthesized contract-end alerts (60/30/7 day windows).
         if (datesRes.error) throw datesRes.error;
-        setAlerts((datesRes.data ?? []) as AlertRow[]);
+        if (contractEndsRes.error) throw contractEndsRes.error;
+        const todayDate = new Date(today);
+        const contractAlerts: AlertRow[] = ((contractEndsRes.data ?? []) as {
+          id: string;
+          name: string;
+          contract_end: string;
+        }[]).flatMap((c) => {
+          const endDate = new Date(c.contract_end);
+          const daysLeft = Math.round(
+            (endDate.getTime() - todayDate.getTime()) / (1000 * 60 * 60 * 24),
+          );
+          // Only fire at the 60/30/7-day windows (and anything shorter than 7).
+          if (daysLeft > 60) return [];
+          const priority = daysLeft <= 7 ? "critical" : daysLeft <= 30 ? "high" : "medium";
+          return [{
+            id: `contract-${c.id}`,
+            title: `Contract ending: ${c.name} (${daysLeft}d)`,
+            due_date: c.contract_end,
+            category: "Client",
+            priority,
+          }];
+        });
+        const merged = [
+          ...((datesRes.data ?? []) as AlertRow[]),
+          ...contractAlerts,
+        ].sort((a, b) => a.due_date.localeCompare(b.due_date));
+        setAlerts(merged);
       } catch (e: any) {
         if (!cancelled) setError(e.message ?? String(e));
       } finally {
@@ -313,10 +357,10 @@ export default function SuperAdminDashboard() {
         ) : (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8">
-              {can.employees && (
+              {can.employees && show("stat_employees") && (
                 <StatCard title="Total Employees" value={employeeCount} icon={Users} />
               )}
-              {can.attendance && (
+              {can.attendance && show("stat_attendance_today") && (
                 <StatCard
                   title="Attendance Today"
                   value={`${attendanceTodayPct}%`}
@@ -333,7 +377,7 @@ export default function SuperAdminDashboard() {
                   }
                 />
               )}
-              {can.expenses && (
+              {can.expenses && show("stat_expenses_mtd") && (
                 <StatCard
                   title={`Expenses · ${monthLabel(0)}`}
                   value={compact(expensesMtd)}
@@ -341,7 +385,7 @@ export default function SuperAdminDashboard() {
                   trend={deltaLabel(expensesMtd, expensesPrev)}
                 />
               )}
-              {can.payroll && (
+              {can.payroll && show("stat_payroll_mtd") && (
                 <StatCard
                   title={`Payroll · ${monthLabel(0)}`}
                   value={compact(payrollMtd)}
@@ -351,8 +395,8 @@ export default function SuperAdminDashboard() {
               )}
             </div>
 
-            <div className={`grid grid-cols-1 ${can.accounting && can.reports ? "lg:grid-cols-2" : ""} gap-6 mb-6 md:mb-8`}>
-              {can.accounting && (
+            <div className={`grid grid-cols-1 ${can.accounting && show("bank_overview") && can.reports && show("top_clients") ? "lg:grid-cols-2" : ""} gap-6 mb-6 md:mb-8`}>
+              {can.accounting && show("bank_overview") && (
                 <div className="bg-white rounded-lg border border-slate-200 p-6">
                   <div className="flex items-center justify-between mb-6">
                     <h3 className="text-base text-slate-900">Bank Account Overview</h3>
@@ -389,7 +433,7 @@ export default function SuperAdminDashboard() {
                 </div>
               )}
 
-              {can.reports && (
+              {can.reports && show("top_clients") && (
                 <div className="bg-white rounded-lg border border-slate-200 p-6">
                   <div className="flex items-center justify-between mb-6">
                     <div>
@@ -428,8 +472,8 @@ export default function SuperAdminDashboard() {
               )}
             </div>
 
-            <div className={`grid grid-cols-1 ${can.attendance ? "lg:grid-cols-2" : ""} gap-6 mb-6 md:mb-8`}>
-              {can.attendance && (
+            <div className={`grid grid-cols-1 ${can.attendance && show("attendance_trend") && show("compliance_alerts") ? "lg:grid-cols-2" : ""} gap-6 mb-6 md:mb-8`}>
+              {can.attendance && show("attendance_trend") && (
                 <div className="bg-white rounded-lg border border-slate-200 p-6">
                   <h3 className="text-base mb-6 text-slate-900">Attendance Trend · Last 7 Days</h3>
                   {attendanceTrend.every((p) => p.present + p.absent + p.leave === 0) ? (
@@ -451,12 +495,13 @@ export default function SuperAdminDashboard() {
                 </div>
               )}
 
+              {show("compliance_alerts") && (
               <div className="bg-white rounded-lg border border-slate-200">
                 <div className="p-6 border-b border-slate-200">
                   <h3 className="text-base text-slate-900">Upcoming Compliance · Next 30 Days</h3>
                 </div>
                 {alerts.length === 0 ? (
-                  <div className="p-6 text-sm text-slate-500">Nothing due in the next 30 days.</div>
+                  <div className="p-6 text-sm text-slate-500">Nothing due in the next 60 days.</div>
                 ) : (
                   <div className="divide-y divide-slate-200">
                     {alerts.map((a) => {
@@ -486,6 +531,7 @@ export default function SuperAdminDashboard() {
                   </div>
                 )}
               </div>
+              )}
             </div>
           </>
         )}

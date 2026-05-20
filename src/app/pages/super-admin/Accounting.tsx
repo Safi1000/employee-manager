@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Building2, Download, AlertCircle, X, Loader2, ArrowDownUp, History, Trash2, CheckCircle2, RotateCcw, FileText, Pencil, ArrowLeftRight } from "lucide-react";
+import { Plus, Building2, Download, AlertCircle, X, Loader2, ArrowDownUp, History, Trash2, CheckCircle2, RotateCcw, FileText, Pencil, ArrowLeftRight, Search } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -126,6 +126,8 @@ export default function Accounting() {
   };
   const [receivablesMonth, setReceivablesMonth] = useState<string>(currentMonthKey());
   const [receivablesBranchFilter, setReceivablesBranchFilter] = useState<string>("all");
+  const [receivablesClientFilter, setReceivablesClientFilter] = useState<string>("all");
+  const [receivablesSearch, setReceivablesSearch] = useState<string>("");
   const [branchesList, setBranchesList] = useState<{ id: string; name: string }[]>([]);
   const [payablesMonth, setPayablesMonth] = useState<string>(currentMonthKey());
   const [txLogMonth, setTxLogMonth] = useState<string>("all");
@@ -356,13 +358,25 @@ export default function Accounting() {
     return displayedReceivables.filter((r) => r.branch_id === receivablesBranchFilter);
   }, [displayedReceivables, receivablesBranchFilter]);
 
+  const filteredReceivables = useMemo(() => {
+    const q = receivablesSearch.trim().toLowerCase();
+    return branchScopedReceivables.filter((r) => {
+      if (receivablesClientFilter !== "all" && r.id !== receivablesClientFilter) return false;
+      if (!q) return true;
+      return (
+        (r.name ?? "").toLowerCase().includes(q) ||
+        (r.client_code ?? "").toLowerCase().includes(q)
+      );
+    });
+  }, [branchScopedReceivables, receivablesClientFilter, receivablesSearch]);
+
   const receivableTotals = useMemo(() => {
     let opening = 0;
     let invoiced = 0;
     let withholding = 0;
     let received = 0;
     let outstanding = 0;
-    for (const r of branchScopedReceivables) {
+    for (const r of filteredReceivables) {
       opening += Number(r.opening_balance ?? 0);
       invoiced += r.total_invoiced;
       withholding += r.total_withholding;
@@ -370,7 +384,7 @@ export default function Accounting() {
       outstanding += r.outstanding;
     }
     return { opening, invoiced, withholding, received, outstanding };
-  }, [branchScopedReceivables]);
+  }, [filteredReceivables]);
 
   const balanceLedger = useMemo(() => {
     const ledger = new Map<string, { cash?: { before: number; after: number }; bank?: { before: number; after: number } }>();
@@ -1651,6 +1665,29 @@ export default function Accounting() {
             </div>
             {activeTab === "receivables" && (
               <div className="ml-auto flex items-center gap-2 flex-wrap">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" strokeWidth={1.5} />
+                  <input
+                    type="text"
+                    value={receivablesSearch}
+                    onChange={(e) => setReceivablesSearch(e.target.value)}
+                    placeholder="Search client / code…"
+                    className="pl-8 pr-3 py-1.5 border border-slate-200 rounded-md text-sm w-56"
+                  />
+                </div>
+                <label className="text-xs text-slate-500">Client:</label>
+                <select
+                  value={receivablesClientFilter}
+                  onChange={(e) => setReceivablesClientFilter(e.target.value)}
+                  className="px-3 py-1.5 border border-slate-200 rounded-md text-sm max-w-[14rem]"
+                >
+                  <option value="all">All Clients</option>
+                  {[...allClientsForRec]
+                    .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""))
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                </select>
                 <label className="text-xs text-slate-500">Branch:</label>
                 <select
                   value={receivablesBranchFilter}
@@ -1714,15 +1751,15 @@ export default function Accounting() {
                       </td>
                     </tr>
                   )}
-                  {!loading && branchScopedReceivables.length === 0 && (
+                  {!loading && filteredReceivables.length === 0 && (
                     <tr>
                       <td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">
-                        No client activity in this month.
+                        No client activity matching the current filters.
                       </td>
                     </tr>
                   )}
                   {!loading &&
-                    branchScopedReceivables.map((item) => {
+                    filteredReceivables.map((item) => {
                       const isMonthView = receivablesMonth !== "all";
                       const canEditOpening = item.outstanding === 0 && !isMonthView;
                       return (

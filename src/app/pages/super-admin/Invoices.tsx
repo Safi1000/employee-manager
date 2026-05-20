@@ -27,7 +27,10 @@ import {
   type BankTransactionKind,
   type InvoicePayment,
   type Branch,
+  type InvoiceTemplateItem,
 } from "../../lib/supabase";
+import { useAuth } from "../../lib/auth";
+import { generateInvoicePdf } from "../../lib/invoicePdf";
 
 type InvoiceRow = Invoice & { client?: { name: string; client_code: string } | null };
 
@@ -93,6 +96,7 @@ const emptyPaymentForm = (): PaymentForm => ({
 });
 
 export default function Invoices() {
+  const { company } = useAuth();
   const [clients, setClients] = useState<Client[]>([]);
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [banks, setBanks] = useState<BankAccount[]>([]);
@@ -904,6 +908,19 @@ export default function Invoices() {
                           )}
                         </td>
                         <td className="px-6 py-4 flex gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              const cli = clients.find((c) => c.id === inv.client_id) ?? null;
+                              const tpl = ((company?.invoice_template ?? []) as InvoiceTemplateItem[]) || [];
+                              generateInvoicePdf(inv, cli, company ?? null, tpl);
+                            }}
+                            title="Download PDF using your company invoice template"
+                          >
+                            <Download className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
+                            PDF
+                          </Button>
                           <Button
                             variant="ghost"
                             size="sm"

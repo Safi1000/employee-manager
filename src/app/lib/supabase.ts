@@ -42,8 +42,94 @@ export type Company = {
   contact_phone: string | null;
   active: boolean;
   subscription_expires_at: string | null;
+  dashboard_hidden_widgets?: string[] | null;
+  invoice_template?: { field: string; title: string }[] | null;
   created_at?: string;
   updated_at?: string;
+};
+
+export const DASHBOARD_WIDGET_KEYS = [
+  "stat_employees",
+  "stat_attendance_today",
+  "stat_expenses_mtd",
+  "stat_payroll_mtd",
+  "bank_overview",
+  "top_clients",
+  "attendance_trend",
+  "compliance_alerts",
+] as const;
+export type DashboardWidgetKey = (typeof DASHBOARD_WIDGET_KEYS)[number];
+
+export const DASHBOARD_WIDGET_LABELS: Record<DashboardWidgetKey, string> = {
+  stat_employees: "Total Employees (stat card)",
+  stat_attendance_today: "Attendance Today (stat card)",
+  stat_expenses_mtd: "Expenses MTD (stat card)",
+  stat_payroll_mtd: "Payroll MTD (stat card)",
+  bank_overview: "Bank Account Overview",
+  top_clients: "Top 10 Clients",
+  attendance_trend: "Attendance Trend (7 days)",
+  compliance_alerts: "Compliance Alerts",
+};
+
+export const INVOICE_TEMPLATE_FIELDS = [
+  "invoice_number",
+  "invoice_date",
+  "client_name",
+  "client_code",
+  "client_email",
+  "client_phone",
+  "contract_period",
+  "description",
+  "subtotal",
+  "withholding_tax",
+  "total",
+  "amount_received",
+  "balance_due",
+  "status",
+  "notes",
+] as const;
+export type InvoiceTemplateField = (typeof INVOICE_TEMPLATE_FIELDS)[number];
+
+export const INVOICE_TEMPLATE_FIELD_LABELS: Record<InvoiceTemplateField, string> = {
+  invoice_number: "Invoice Number",
+  invoice_date: "Invoice Date",
+  client_name: "Client Name",
+  client_code: "Client Code",
+  client_email: "Client Email",
+  client_phone: "Client Phone",
+  contract_period: "Contract Period (start → end)",
+  description: "Description (line item)",
+  subtotal: "Subtotal (invoice amount)",
+  withholding_tax: "Withholding Tax",
+  total: "Total (after WHT)",
+  amount_received: "Amount Received",
+  balance_due: "Balance Due",
+  status: "Status",
+  notes: "Notes",
+};
+
+export type InvoiceTemplateItem = { field: InvoiceTemplateField; title: string };
+
+export type TaskStatus = "todo" | "in_progress" | "done";
+
+export type Task = {
+  id: string;
+  company_id: string;
+  title: string;
+  description: string | null;
+  status: TaskStatus;
+  assignee_id: string | null;
+  created_by: string | null;
+  due_date: string | null;
+  position: number;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
+  todo: "To Do",
+  in_progress: "In Progress",
+  done: "Done",
 };
 
 export type SubscriptionPayment = {

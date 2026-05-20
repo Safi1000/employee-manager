@@ -97,9 +97,19 @@ const triggerDayHelp = (f: RecurringFrequency) => {
   return "MM-DD (e.g. 03-15)";
 };
 
+type ContractEndAlert = {
+  id: string;
+  client_id: string;
+  client_name: string;
+  due_date: string;
+  daysRemaining: number;
+  priority: CompliancePriority;
+};
+
 export default function Compliance() {
   const [dates, setDates] = useState<ImportantDate[]>([]);
   const [recurring, setRecurring] = useState<RecurringAlert[]>([]);
+  const [contractAlerts, setContractAlerts] = useState<ContractEndAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -131,14 +141,46 @@ export default function Compliance() {
   const loadAll = async () => {
     setLoading(true);
     setError(null);
-    const [dRes, rRes] = await Promise.all([
+    const today = todayStr();
+    const in60Iso = (() => {
+      const d = new Date();
+      d.setDate(d.getDate() + 60);
+      return d.toISOString().slice(0, 10);
+    })();
+    const [dRes, rRes, cRes] = await Promise.all([
       supabase.from("important_dates").select("*").order("due_date"),
       supabase.from("recurring_alerts").select("*").order("created_at", { ascending: false }),
+      supabase
+        .from("clients")
+        .select("id, name, contract_end")
+        .not("contract_end", "is", null)
+        .gte("contract_end", today)
+        .lte("contract_end", in60Iso)
+        .order("contract_end"),
     ]);
     if (dRes.error) setError(dRes.error.message);
     if (rRes.error) setError(rRes.error.message);
+    if (cRes.error) setError(cRes.error.message);
     setDates((dRes.data ?? []) as ImportantDate[]);
     setRecurring((rRes.data ?? []) as RecurringAlert[]);
+    const synth: ContractEndAlert[] = ((cRes.data ?? []) as {
+      id: string;
+      name: string;
+      contract_end: string;
+    }[]).map((c) => {
+      const daysRemaining = dayDiff(c.contract_end);
+      const priority: CompliancePriority =
+        daysRemaining <= 7 ? "critical" : daysRemaining <= 30 ? "high" : "medium";
+      return {
+        id: `contract-${c.id}`,
+        client_id: c.id,
+        client_name: c.name,
+        due_date: c.contract_end,
+        daysRemaining,
+        priority,
+      };
+    });
+    setContractAlerts(synth);
     setLoading(false);
   };
 
@@ -154,29 +196,86 @@ export default function Compliance() {
     [dates]
   );
 
-  const activeAlerts = useMemo(
-    () =>
-      datesWithDays
-        .filter((d) => d.daysRemaining >= 0 && d.daysRemaining <= d.advance_notice_days)
-        .sort(
-          (a, b) =>
-            priorityRank(b.priority) - priorityRank(a.priority) ||
-            a.daysRemaining - b.daysRemaining
-        ),
-    [datesWithDays]
-  );
+  type ActiveAlertItem =
+    | {
+        kind: "important_date";
+        id: string;
+        title: string;
+        category: string;
+        priority: CompliancePriority;
+        due_date: string;
+        daysRemaining: number;
+        notes: string | null;
+        source: ImportantDate;
+      }
+    | {
+        kind: "contract_end";
+        id: string;
+        title: string;
+        category: string;
+        priority: CompliancePriority;
+        due_date: string;
+        daysRemaining: number;
+        notes: string | null;
+        client_id: string;
+      };
+
+  const activeAlerts = useMemo<ActiveAlertItem[]>(() => {
+    const fromDates: ActiveAlertItem[] = datesWithDays
+      .filter((d) => d.daysRemaining >= 0 && d.daysRemaining <= d.advance_notice_days)
+      .map((d) => ({
+        kind: "important_date",
+        id: d.id,
+        title: d.title,
+        category: d.category,
+        priority: d.priority,
+        due_date: d.due_date,
+        daysRemaining: d.daysRemaining,
+        notes: d.notes ?? null,
+        source: d,
+      }));
+    // Contract-end alerts fire at the 60/30/7-day windows.
+    const fromContracts: ActiveAlertItem[] = contractAlerts
+      .filter(
+        (c) =>
+          c.daysRemaining >= 0 &&
+          (c.daysRemaining <= 7 || c.daysRemaining <= 30 || c.daysRemaining <= 60),
+      )
+      .map((c) => ({
+        kind: "contract_end",
+        id: c.id,
+        title: `Contract ending: ${c.client_name}`,
+        category: "Client",
+        priority: c.priority,
+        due_date: c.due_date,
+        daysRemaining: c.daysRemaining,
+        notes:
+          c.daysRemaining <= 7
+            ? "Critical: contract ends within a week — renew or replace."
+            : c.daysRemaining <= 30
+              ? "Renew or replace within the next 30 days."
+              : "Heads up: contract ends within 60 days.",
+        client_id: c.client_id,
+      }));
+    return [...fromDates, ...fromContracts].sort(
+      (a, b) =>
+        priorityRank(b.priority) - priorityRank(a.priority) ||
+        a.daysRemaining - b.daysRemaining,
+    );
+  }, [datesWithDays, contractAlerts]);
 
   const metrics = useMemo(() => {
-    const upcoming = datesWithDays.filter((d) => d.daysRemaining >= 0);
+    const upcomingDates = datesWithDays.filter((d) => d.daysRemaining >= 0).length;
+    const upcomingContracts = contractAlerts.filter((c) => c.daysRemaining >= 0).length;
     const critical = activeAlerts.filter((d) => d.priority === "critical").length;
     const high = activeAlerts.filter((d) => d.priority === "high").length;
     return {
       critical,
       high,
-      upcoming: upcoming.length,
+      upcoming: upcomingDates + upcomingContracts,
       activeAlerts: activeAlerts.length,
     };
-  }, [datesWithDays, activeAlerts]);
+  }, [datesWithDays, contractAlerts, activeAlerts]);
 
   const validateDate = (f: DateForm): string | null => {
     if (!f.title.trim()) return "Enter a title.";
@@ -669,6 +768,11 @@ export default function Compliance() {
                           <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] bg-slate-100 text-slate-700">
                             {d.category}
                           </span>
+                          {d.kind === "contract_end" && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] bg-blue-50 text-blue-700">
+                              Auto · Contract
+                            </span>
+                          )}
                         </div>
                         <p className="text-sm text-slate-900">
                           {d.title}{" "}
@@ -683,9 +787,11 @@ export default function Compliance() {
                           <p className="text-xs text-slate-500 mt-1">{d.notes}</p>
                         )}
                       </div>
-                      <Button variant="ghost" size="sm" onClick={() => openEditDate(d)}>
-                        Edit
-                      </Button>
+                      {d.kind === "important_date" && (
+                        <Button variant="ghost" size="sm" onClick={() => openEditDate(d.source)}>
+                          Edit
+                        </Button>
+                      )}
                     </div>
                   );
                 })

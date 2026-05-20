@@ -4,6 +4,7 @@ import jsPDF from "jspdf";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
+import BusyOverlay from "../../components/BusyOverlay";
 import ClientFilterSelect from "../../components/ClientFilterSelect";
 import {
   supabase,
@@ -73,7 +74,9 @@ const daysInMonth = (periodMonth: string) => {
   return new Date(y, m, 0).getDate();
 };
 
-export default function PayrollManagement() {
+type PayrollManagementProps = { relieversOnly?: boolean };
+
+export default function PayrollManagement({ relieversOnly = false }: PayrollManagementProps = {}) {
   const today = new Date();
   const currentPeriod = firstOfMonth(today);
   // Default the filter to the previous month — payroll is typically processed
@@ -109,6 +112,7 @@ export default function PayrollManagement() {
   const [bulkMode, setBulkMode] = useState<PaymentMode>("Cash");
   const [bulkBankId, setBulkBankId] = useState<string>("");
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
+  const [bulkClearing, setBulkClearing] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -419,6 +423,10 @@ export default function PayrollManagement() {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
       const e = r.employee;
+      // Reliever panel only shows reliever-category staff; the main payroll
+      // panel hides them so they aren't double-managed.
+      if (relieversOnly && e.category !== "reliever") return false;
+      if (!relieversOnly && e.category === "reliever") return false;
       if (
         q &&
         !e.full_name.toLowerCase().includes(q) &&
@@ -438,7 +446,7 @@ export default function PayrollManagement() {
       if (disbursedFilter !== "all" && (disbursedFilter === "yes" ? !r.disbursed : r.disbursed)) return false;
       return true;
     });
-  }, [rows, search, shiftFilter, locationFilter, clientFilter, branchFilter, statusFilter, disbursedFilter, employeeAddlBranches]);
+  }, [rows, search, shiftFilter, locationFilter, clientFilter, branchFilter, statusFilter, disbursedFilter, employeeAddlBranches, relieversOnly]);
 
   const selectedRow = useMemo(
     () => rows.find((r) => r.employee.id === selectedId) ?? null,
@@ -551,6 +559,7 @@ export default function PayrollManagement() {
       return;
     }
     setError(null);
+    setBulkClearing(true);
     try {
       for (const row of pending) {
         await savePayslip({ ...row, status: "Cleared" });
@@ -558,6 +567,8 @@ export default function PayrollManagement() {
       await loadPeriodData(selectedPeriod);
     } catch (err: any) {
       setError(err.message ?? String(err));
+    } finally {
+      setBulkClearing(false);
     }
   };
 
@@ -895,8 +906,13 @@ export default function PayrollManagement() {
 
   return (
     <>
+      <BusyOverlay
+        show={bulkSubmitting || bulkClearing}
+        message={bulkSubmitting ? "Disbursing payslips…" : "Clearing payslips…"}
+        detail="This may take a moment for large batches. Please don't close this tab."
+      />
       <Header
-        title="Payroll Management"
+        title={relieversOnly ? "Reliever Payroll" : "Payroll Management"}
         actions={
           <div className="flex items-center gap-3">
             <div className="text-xs text-slate-500 flex flex-col items-end mr-2">
@@ -907,8 +923,10 @@ export default function PayrollManagement() {
               variant="secondary"
               size="md"
               onClick={markAllCleared}
+              disabled={bulkClearing}
             >
-              Mark All as Cleared
+              {bulkClearing && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {bulkClearing ? "Clearing…" : "Mark All as Cleared"}
             </Button>
             <Button
               variant="primary"
@@ -1063,6 +1081,7 @@ export default function PayrollManagement() {
                   <thead>
                     <tr className="border-b border-slate-200">
                       <th className="text-left px-4 py-3 text-xs text-slate-500">Employee</th>
+                      <th className="text-left px-4 py-3 text-xs text-slate-500">Client</th>
                       <th className="text-left px-4 py-3 text-xs text-slate-500">Attendance</th>
                       <th className="text-left px-4 py-3 text-xs text-slate-500">Base</th>
                       <th className="text-left px-4 py-3 text-xs text-slate-500">Net Salary</th>
@@ -1074,7 +1093,7 @@ export default function PayrollManagement() {
                   <tbody className="divide-y divide-slate-200">
                     {loading && (
                       <tr>
-                        <td colSpan={7} className="px-6 py-10 text-center text-slate-500">
+                        <td colSpan={8} className="px-6 py-10 text-center text-slate-500">
                           <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
                           Loading…
                         </td>
@@ -1082,7 +1101,7 @@ export default function PayrollManagement() {
                     )}
                     {!loading && filtered.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">
+                        <td colSpan={8} className="px-6 py-10 text-center text-slate-500 text-sm">
                           No employees match the current filters.
                         </td>
                       </tr>
@@ -1104,6 +1123,9 @@ export default function PayrollManagement() {
                                 {e.employee_code}
                                 {e.phone ? ` · ${e.phone}` : ""}
                               </div>
+                            </td>
+                            <td className="px-4 py-3 text-sm text-slate-700">
+                              {e.client_name ?? <span className="text-slate-400">—</span>}
                             </td>
                             <td className="px-4 py-3 text-xs text-slate-600">
                               <div>
@@ -1752,7 +1774,8 @@ export default function PayrollManagement() {
                   onClick={handleBulkDisburse}
                   disabled={bulkSubmitting || candidates.length === 0}
                 >
-                  {bulkSubmitting ? "Disbursing…" : `Disburse ${candidates.length} Payslip${candidates.length === 1 ? "" : "s"}`}
+                  {bulkSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  {bulkSubmitting ? `Disbursing ${candidates.length} payslip${candidates.length === 1 ? "" : "s"}…` : `Disburse ${candidates.length} Payslip${candidates.length === 1 ? "" : "s"}`}
                 </Button>
                 <Button
                   variant="secondary"

@@ -20,6 +20,7 @@ import Inventory from "./pages/super-admin/Inventory";
 import Compliance from "./pages/super-admin/Compliance";
 import Documents from "./pages/super-admin/Documents";
 import Settings from "./pages/super-admin/Settings";
+import Tasks from "./pages/super-admin/Tasks";
 
 import Companies from "./pages/super-super-admin/Companies";
 import CompanyDetail from "./pages/super-super-admin/CompanyDetail";
@@ -56,6 +57,8 @@ export const router = createBrowserRouter([
       { path: "employees", element: guard(["employees.view", "employees.edit"], <EmployeeManagement />) },
       { path: "attendance", element: guard(["attendance.view", "attendance.edit"], <AttendanceManagement />) },
       { path: "payroll", element: guard(["payroll.view", "payroll.edit"], <PayrollManagement />) },
+      { path: "relievers/attendance", element: guard(["attendance.view", "attendance.edit"], <AttendanceManagement relieversOnly />) },
+      { path: "relievers/payroll", element: guard(["payroll.view", "payroll.edit"], <PayrollManagement relieversOnly />) },
       { path: "accounting", element: guard(["accounting.view", "accounting.edit"], <Accounting />) },
       { path: "reports", element: guard(["reports.view"], <FinancialReports />) },
       { path: "expenses", element: guard(["expenses.view", "expenses.edit"], <Expenses />) },
@@ -65,6 +68,7 @@ export const router = createBrowserRouter([
       { path: "compliance", element: guard(["compliance.view", "compliance.edit"], <Compliance />) },
       { path: "documents", element: guard(["documents.view", "documents.edit"], <Documents />) },
       { path: "settings", element: guard(["settings.view", "settings.edit"], <Settings />) },
+      { path: "tasks", element: <Tasks /> },
     ],
   },
   // Legacy panel paths redirect to the unified panel.

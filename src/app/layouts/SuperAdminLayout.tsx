@@ -1,5 +1,5 @@
 import { Outlet, useNavigate } from "react-router";
-import Sidebar from "../components/Sidebar";
+import Sidebar, { type SidebarItem } from "../components/Sidebar";
 import { hasAnyPermission, useAuth } from "../lib/auth";
 import { Eye, X } from "lucide-react";
 import {
@@ -17,6 +17,8 @@ import {
   Package,
   Bell,
   Folder,
+  Shuffle,
+  Trello,
 } from "lucide-react";
 
 type LinkDef = {
@@ -47,12 +49,35 @@ export default function SuperAdminLayout() {
     { to: "/super-admin/inventory", label: "Inventory", icon: Package, perms: ["inventory.view", "inventory.edit"] },
     { to: "/super-admin/documents", label: "Documents", icon: Folder, perms: ["documents.view", "documents.edit"] },
     { to: "/super-admin/compliance", label: "Compliance & Alerts", icon: Bell, perms: ["compliance.view", "compliance.edit"] },
+    { to: "/super-admin/tasks", label: "Tasks", icon: Trello },
     { to: "/super-admin/settings", label: "Settings", icon: SettingsIcon, perms: ["settings.view", "settings.edit"] },
   ];
 
-  const links = allLinks
+  const flatLinks = allLinks
     .filter((l) => !l.perms || hasAnyPermission(profile, l.perms))
     .map(({ to, label, icon }) => ({ to, label, icon }));
+
+  // Inject the nested "Relievers" group right after Payroll, if the user has
+  // either attendance or payroll permission for at least one of the children.
+  const relieverChildren: { to: string; label: string; icon: typeof Calendar }[] = [];
+  if (hasAnyPermission(profile, ["attendance.view", "attendance.edit"])) {
+    relieverChildren.push({ to: "/super-admin/relievers/attendance", label: "Attendance", icon: Calendar });
+  }
+  if (hasAnyPermission(profile, ["payroll.view", "payroll.edit"])) {
+    relieverChildren.push({ to: "/super-admin/relievers/payroll", label: "Payroll", icon: DollarSign });
+  }
+  const links: SidebarItem[] = [...flatLinks];
+  if (relieverChildren.length > 0) {
+    const payrollIdx = links.findIndex((l) => "to" in l && l.to === "/super-admin/payroll");
+    const insertAt = payrollIdx >= 0 ? payrollIdx + 1 : links.length;
+    links.splice(insertAt, 0, {
+      type: "group",
+      label: "Relievers",
+      icon: Shuffle,
+      basePath: "/super-admin/relievers",
+      children: relieverChildren,
+    });
+  }
 
   const handleExitView = async () => {
     await setViewAsCompany(null);

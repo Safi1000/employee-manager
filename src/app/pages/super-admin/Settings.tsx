@@ -1,9 +1,20 @@
-import { useEffect, useState } from "react";
-import { Plus, Loader2, AlertCircle, X, Trash2, Mail, Send } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Plus, Loader2, AlertCircle, X, Trash2, Mail, Send, LayoutDashboard, FileText, ArrowUp, ArrowDown } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
-import { supabase, type ClientType } from "../../lib/supabase";
+import {
+  supabase,
+  DASHBOARD_WIDGET_KEYS,
+  DASHBOARD_WIDGET_LABELS,
+  INVOICE_TEMPLATE_FIELDS,
+  INVOICE_TEMPLATE_FIELD_LABELS,
+  type ClientType,
+  type DashboardWidgetKey,
+  type InvoiceTemplateField,
+  type InvoiceTemplateItem,
+} from "../../lib/supabase";
+import { useAuth } from "../../lib/auth";
 
 type LocationRow = { id: string; name: string; employees: number };
 type BranchRow = { id: string; name: string; is_head_office: boolean; employees: number };
@@ -32,6 +43,104 @@ const clientTypeLabel = (t: ClientType) =>
   t === "security_services" ? "Security Services" : "Guard Deployment";
 
 export default function Settings() {
+  const { company, refreshProfile } = useAuth();
+  const initialHidden = useMemo(
+    () => new Set<string>((company?.dashboard_hidden_widgets ?? []) as string[]),
+    [company?.dashboard_hidden_widgets],
+  );
+  const [hiddenWidgets, setHiddenWidgets] = useState<Set<string>>(initialHidden);
+  const [dashboardSaving, setDashboardSaving] = useState(false);
+  const [dashboardSavedAt, setDashboardSavedAt] = useState<string | null>(null);
+  useEffect(() => {
+    setHiddenWidgets(new Set(initialHidden));
+  }, [initialHidden]);
+
+  const toggleWidget = (key: DashboardWidgetKey) => {
+    setHiddenWidgets((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+    setDashboardSavedAt(null);
+  };
+
+  // Invoice template — ordered list of { field, title }.
+  const initialInvoiceTemplate = useMemo<InvoiceTemplateItem[]>(
+    () => (company?.invoice_template as InvoiceTemplateItem[] | null) ?? [],
+    [company?.invoice_template],
+  );
+  const [invoiceTemplate, setInvoiceTemplate] = useState<InvoiceTemplateItem[]>(initialInvoiceTemplate);
+  const [invoiceTplSaving, setInvoiceTplSaving] = useState(false);
+  const [invoiceTplSavedAt, setInvoiceTplSavedAt] = useState<string | null>(null);
+  useEffect(() => {
+    setInvoiceTemplate(initialInvoiceTemplate);
+  }, [initialInvoiceTemplate]);
+
+  const moveTplRow = (idx: number, dir: -1 | 1) => {
+    setInvoiceTemplate((prev) => {
+      const target = idx + dir;
+      if (target < 0 || target >= prev.length) return prev;
+      const copy = [...prev];
+      [copy[idx], copy[target]] = [copy[target], copy[idx]];
+      return copy;
+    });
+    setInvoiceTplSavedAt(null);
+  };
+  const removeTplRow = (idx: number) => {
+    setInvoiceTemplate((prev) => prev.filter((_, i) => i !== idx));
+    setInvoiceTplSavedAt(null);
+  };
+  const setTplTitle = (idx: number, title: string) => {
+    setInvoiceTemplate((prev) => prev.map((item, i) => (i === idx ? { ...item, title } : item)));
+    setInvoiceTplSavedAt(null);
+  };
+  const addTplRow = (field: InvoiceTemplateField) => {
+    if (invoiceTemplate.some((t) => t.field === field)) return;
+    setInvoiceTemplate((prev) => [
+      ...prev,
+      { field, title: INVOICE_TEMPLATE_FIELD_LABELS[field] },
+    ]);
+    setInvoiceTplSavedAt(null);
+  };
+  const saveInvoiceTemplate = async () => {
+    if (!company?.id) return;
+    setInvoiceTplSaving(true);
+    setError(null);
+    try {
+      const { error: upErr } = await supabase
+        .from("companies")
+        .update({ invoice_template: invoiceTemplate })
+        .eq("id", company.id);
+      if (upErr) throw upErr;
+      setInvoiceTplSavedAt(new Date().toLocaleTimeString());
+      await refreshProfile();
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+    } finally {
+      setInvoiceTplSaving(false);
+    }
+  };
+
+  const saveDashboardWidgets = async () => {
+    if (!company?.id) return;
+    setDashboardSaving(true);
+    setError(null);
+    try {
+      const { error: upErr } = await supabase
+        .from("companies")
+        .update({ dashboard_hidden_widgets: Array.from(hiddenWidgets) })
+        .eq("id", company.id);
+      if (upErr) throw upErr;
+      setDashboardSavedAt(new Date().toLocaleTimeString());
+      await refreshProfile();
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+    } finally {
+      setDashboardSaving(false);
+    }
+  };
+
   const [locations, setLocations] = useState<LocationRow[]>([]);
   const [branches, setBranches] = useState<BranchRow[]>([]);
   const [branchAddOpen, setBranchAddOpen] = useState(false);
@@ -83,6 +192,16 @@ export default function Settings() {
   const [editClientContractStart, setEditClientContractStart] = useState<string>("");
   const [editClientContractEnd, setEditClientContractEnd] = useState<string>("");
   const [editClientAdvancePayment, setEditClientAdvancePayment] = useState<boolean>(false);
+
+  // Contract renewal modal.
+  const [renewClient, setRenewClient] = useState<ClientRow | null>(null);
+  const [renewStart, setRenewStart] = useState<string>("");
+  const [renewEnd, setRenewEnd] = useState<string>("");
+  const [renewNotes, setRenewNotes] = useState<string>("");
+  const [renewSubmitting, setRenewSubmitting] = useState(false);
+  const [renewHistory, setRenewHistory] = useState<
+    { id: string; contract_start: string | null; contract_end: string | null; notes: string | null; renewed_at: string }[]
+  >([]);
 
   const [submitting, setSubmitting] = useState(false);
 
@@ -391,6 +510,59 @@ export default function Settings() {
     }
     setClientEditingId(null);
     await loadAll();
+  };
+
+  const openRenewModal = async (row: ClientRow) => {
+    setRenewClient(row);
+    setRenewStart("");
+    setRenewEnd("");
+    setRenewNotes("");
+    setRenewHistory([]);
+    // Fetch history for this client (most recent first).
+    const { data: hist } = await supabase
+      .from("client_contract_history")
+      .select("id, contract_start, contract_end, notes, renewed_at")
+      .eq("client_id", row.id)
+      .order("renewed_at", { ascending: false })
+      .limit(10);
+    setRenewHistory((hist ?? []) as typeof renewHistory);
+  };
+
+  const handleSubmitRenew = async () => {
+    if (!renewClient) return;
+    if (!renewStart || !renewEnd) {
+      setError("Pick both a new start and end date for the renewal.");
+      return;
+    }
+    if (renewEnd < renewStart) {
+      setError("Contract end must be on or after the contract start.");
+      return;
+    }
+    setRenewSubmitting(true);
+    try {
+      // Snapshot the current contract period to history (if there is one).
+      if (renewClient.contract_start || renewClient.contract_end) {
+        const { error: histErr } = await supabase.from("client_contract_history").insert({
+          client_id: renewClient.id,
+          contract_start: renewClient.contract_start,
+          contract_end: renewClient.contract_end,
+          notes: renewNotes.trim() || null,
+        });
+        if (histErr) throw histErr;
+      }
+      // Update client with new dates.
+      const { error: upErr } = await supabase
+        .from("clients")
+        .update({ contract_start: renewStart, contract_end: renewEnd })
+        .eq("id", renewClient.id);
+      if (upErr) throw upErr;
+      setRenewClient(null);
+      await loadAll();
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+    } finally {
+      setRenewSubmitting(false);
+    }
   };
 
   const handleDeleteClient = async (row: ClientRow) => {
@@ -718,6 +890,31 @@ export default function Settings() {
                     </select>
                   </div>
                   <div className="space-y-2 border-t border-slate-200 pt-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[11px] text-slate-600 mb-1">Contract Start</label>
+                        <input
+                          type="date"
+                          value={editClientContractStart}
+                          onChange={(e) => setEditClientContractStart(e.target.value)}
+                          className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-slate-600 mb-1">Contract End</label>
+                        <input
+                          type="date"
+                          value={editClientContractEnd}
+                          onChange={(e) => setEditClientContractEnd(e.target.value)}
+                          className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      Contract dates apply whether or not auto-invoicing is enabled. Used by contract-ending alerts.
+                    </p>
+                  </div>
+                  <div className="space-y-2 border-t border-slate-200 pt-3">
                     <label className="flex items-start gap-2 text-sm text-slate-700">
                       <input
                         type="checkbox"
@@ -753,24 +950,6 @@ export default function Settings() {
                             step="0.01"
                             value={editClientAutoWht}
                             onChange={(e) => setEditClientAutoWht(Number(e.target.value))}
-                            className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[11px] text-slate-600 mb-1">Contract Start</label>
-                          <input
-                            type="date"
-                            value={editClientContractStart}
-                            onChange={(e) => setEditClientContractStart(e.target.value)}
-                            className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[11px] text-slate-600 mb-1">Contract End</label>
-                          <input
-                            type="date"
-                            value={editClientContractEnd}
-                            onChange={(e) => setEditClientContractEnd(e.target.value)}
                             className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
                           />
                         </div>
@@ -827,6 +1006,9 @@ export default function Settings() {
                     </p>
                   </div>
                   <div className="flex gap-1 flex-shrink-0">
+                    <Button variant="ghost" size="sm" onClick={() => openRenewModal(row)}>
+                      Renew Contract
+                    </Button>
                     <Button variant="ghost" size="sm" onClick={() => openClientEdit(row)}>
                       Edit
                     </Button>
@@ -868,6 +1050,155 @@ export default function Settings() {
         </div>
 
         {renderClients()}
+
+        <div className="bg-white rounded-lg border border-slate-200 mt-6">
+          <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <LayoutDashboard className="w-4 h-4 text-slate-600" strokeWidth={1.5} />
+              <h2 className="text-base text-slate-900">Dashboard Widgets</h2>
+            </div>
+            <div className="flex items-center gap-3">
+              {dashboardSavedAt && (
+                <span className="text-xs text-green-600">Saved at {dashboardSavedAt}</span>
+              )}
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={saveDashboardWidgets}
+                disabled={dashboardSaving}
+              >
+                {dashboardSaving && <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />}
+                Save
+              </Button>
+            </div>
+          </div>
+          <div className="p-6">
+            <p className="text-xs text-slate-500 mb-4">
+              Hide widgets you don't want on the dashboard. This applies to every user in your company.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {DASHBOARD_WIDGET_KEYS.map((key) => {
+                const visible = !hiddenWidgets.has(key);
+                return (
+                  <label
+                    key={key}
+                    className="flex items-center gap-3 px-3 py-2 border border-slate-200 rounded-md hover:bg-slate-50 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={visible}
+                      onChange={() => toggleWidget(key)}
+                      className="rounded border-slate-300"
+                    />
+                    <span className="text-sm text-slate-800">{DASHBOARD_WIDGET_LABELS[key]}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg border border-slate-200 mt-6">
+          <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <FileText className="w-4 h-4 text-slate-600" strokeWidth={1.5} />
+              <h2 className="text-base text-slate-900">Invoice Template</h2>
+            </div>
+            <div className="flex items-center gap-3">
+              {invoiceTplSavedAt && (
+                <span className="text-xs text-green-600">Saved at {invoiceTplSavedAt}</span>
+              )}
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={saveInvoiceTemplate}
+                disabled={invoiceTplSaving}
+              >
+                {invoiceTplSaving && <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />}
+                Save
+              </Button>
+            </div>
+          </div>
+          <div className="p-6">
+            <p className="text-xs text-slate-500 mb-4">
+              Pick the fields to show on exported invoices, customize each title, and reorder them. The PDF layout is auto-arranged: header fields up top, body fields in the middle, totals (subtotal/WHT/total/received/balance) at the bottom.
+            </p>
+
+            <div className="space-y-2 mb-4">
+              {invoiceTemplate.length === 0 && (
+                <div className="text-sm text-slate-500 text-center py-6 border border-dashed border-slate-200 rounded">
+                  No fields yet. Add some below.
+                </div>
+              )}
+              {invoiceTemplate.map((row, idx) => (
+                <div key={row.field} className="flex items-center gap-2 border border-slate-200 rounded-md p-2">
+                  <div className="flex flex-col gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => moveTplRow(idx, -1)}
+                      disabled={idx === 0}
+                      className="p-0.5 text-slate-500 hover:text-slate-900 disabled:opacity-30"
+                      title="Move up"
+                    >
+                      <ArrowUp className="w-3.5 h-3.5" strokeWidth={1.5} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveTplRow(idx, 1)}
+                      disabled={idx === invoiceTemplate.length - 1}
+                      className="p-0.5 text-slate-500 hover:text-slate-900 disabled:opacity-30"
+                      title="Move down"
+                    >
+                      <ArrowDown className="w-3.5 h-3.5" strokeWidth={1.5} />
+                    </button>
+                  </div>
+                  <div className="w-44 text-xs text-slate-500 font-mono">
+                    {INVOICE_TEMPLATE_FIELD_LABELS[row.field as InvoiceTemplateField] ?? row.field}
+                  </div>
+                  <input
+                    type="text"
+                    value={row.title}
+                    onChange={(e) => setTplTitle(idx, e.target.value)}
+                    className="flex-1 px-2 py-1.5 border border-slate-200 rounded text-sm"
+                    placeholder="Display title"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeTplRow(idx)}
+                    className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+                    title="Remove field"
+                  >
+                    <Trash2 className="w-4 h-4" strokeWidth={1.5} />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="border-t border-slate-200 pt-4">
+              <div className="text-xs text-slate-500 mb-2">Add a field</div>
+              <div className="flex flex-wrap gap-2">
+                {INVOICE_TEMPLATE_FIELDS.filter(
+                  (f) => !invoiceTemplate.some((t) => t.field === f),
+                ).map((field) => (
+                  <button
+                    key={field}
+                    type="button"
+                    onClick={() => addTplRow(field)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border border-slate-200 text-xs text-slate-700 hover:bg-slate-50"
+                  >
+                    <Plus className="w-3 h-3" strokeWidth={1.5} />
+                    {INVOICE_TEMPLATE_FIELD_LABELS[field]}
+                  </button>
+                ))}
+                {INVOICE_TEMPLATE_FIELDS.every((f) =>
+                  invoiceTemplate.some((t) => t.field === f),
+                ) && (
+                  <span className="text-xs text-slate-400">All available fields are already in the template.</span>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <Modal
@@ -1076,6 +1407,31 @@ export default function Settings() {
             <p className="text-[11px] text-slate-500 mt-1">All employees of this client inherit this branch.</p>
           </div>
           <div className="space-y-2 border-t border-slate-200 pt-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-slate-600 mb-1">Contract Start</label>
+                <input
+                  type="date"
+                  value={newClientContractStart}
+                  onChange={(e) => setNewClientContractStart(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-600 mb-1">Contract End</label>
+                <input
+                  type="date"
+                  value={newClientContractEnd}
+                  onChange={(e) => setNewClientContractEnd(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                />
+              </div>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              Contract dates apply whether or not auto-invoicing is enabled. Used by contract-ending alerts.
+            </p>
+          </div>
+          <div className="space-y-2 border-t border-slate-200 pt-3">
             <label className="flex items-start gap-2 text-sm text-slate-700">
               <input
                 type="checkbox"
@@ -1111,24 +1467,6 @@ export default function Settings() {
                     step="0.01"
                     value={newClientAutoWht}
                     onChange={(e) => setNewClientAutoWht(Number(e.target.value))}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-600 mb-1">Contract Start</label>
-                  <input
-                    type="date"
-                    value={newClientContractStart}
-                    onChange={(e) => setNewClientContractStart(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-600 mb-1">Contract End</label>
-                  <input
-                    type="date"
-                    value={newClientContractEnd}
-                    onChange={(e) => setNewClientContractEnd(e.target.value)}
                     className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
                   />
                 </div>
@@ -1169,6 +1507,94 @@ export default function Settings() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        isOpen={!!renewClient}
+        onClose={() => setRenewClient(null)}
+        title={`Renew Contract — ${renewClient?.name ?? ""}`}
+        size="md"
+      >
+        {renewClient && (
+          <div className="space-y-4">
+            <div className="bg-slate-50 border border-slate-200 rounded-md p-3 text-sm">
+              <div className="text-xs text-slate-500 mb-1">Current contract</div>
+              <div className="text-slate-900">
+                {renewClient.contract_start ?? "—"} → {renewClient.contract_end ?? "—"}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-slate-600 mb-1">New Contract Start</label>
+                <input
+                  type="date"
+                  value={renewStart}
+                  onChange={(e) => setRenewStart(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-600 mb-1">New Contract End</label>
+                <input
+                  type="date"
+                  value={renewEnd}
+                  onChange={(e) => setRenewEnd(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs text-slate-600 mb-1">Notes (optional)</label>
+              <textarea
+                value={renewNotes}
+                onChange={(e) => setRenewNotes(e.target.value)}
+                rows={2}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                placeholder="e.g. Renewed at higher rate after Q1 review"
+              />
+            </div>
+
+            {renewHistory.length > 0 && (
+              <div className="border-t border-slate-200 pt-3">
+                <div className="text-xs text-slate-500 mb-2">Renewal history</div>
+                <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                  {renewHistory.map((h) => (
+                    <div key={h.id} className="text-xs text-slate-700 bg-slate-50 rounded px-2 py-1.5 border border-slate-200">
+                      <div>
+                        {h.contract_start ?? "—"} → {h.contract_end ?? "—"}
+                        <span className="text-slate-400 ml-2">archived {new Date(h.renewed_at).toLocaleDateString()}</span>
+                      </div>
+                      {h.notes && <div className="text-slate-500 mt-0.5">{h.notes}</div>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center gap-3 pt-2">
+              <Button
+                variant="primary"
+                size="md"
+                className="flex-1"
+                onClick={handleSubmitRenew}
+                disabled={renewSubmitting || !renewStart || !renewEnd}
+              >
+                {renewSubmitting ? "Renewing…" : "Confirm Renewal"}
+              </Button>
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={() => setRenewClient(null)}
+                disabled={renewSubmitting}
+              >
+                Cancel
+              </Button>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              The current contract period (if any) is archived to history before the new dates are applied.
+            </p>
+          </div>
+        )}
       </Modal>
     </>
   );
