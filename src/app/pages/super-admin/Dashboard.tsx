@@ -1,43 +1,58 @@
-import { Users, Calendar, Receipt, DollarSign, Building2, TrendingUp, AlertCircle } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Users, Calendar, Receipt, DollarSign, Building2, TrendingUp, AlertCircle, Loader2, Trophy } from "lucide-react";
 import Header from "../../components/Header";
 import StatCard from "../../components/StatCard";
-import Alert from "../../components/Alert";
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { hasPermission, useAuth } from "../../lib/auth";
+import { supabase, fetchAllRows } from "../../lib/supabase";
 
-const bankAccounts = [
-  { name: "Allied Bank - Operations", balance: 2500000, color: "#3b82f6" },
-  { name: "HBL - Payroll", balance: 1800000, color: "#10b981" },
-  { name: "MCB - Client Receivables", balance: 950000, color: "#8b5cf6" },
-];
+type BankRow = { id: string; bank_name: string; balance: number };
+type TopClientRow = { id: string; name: string; revenue: number };
+type AttendancePoint = { date: string; label: string; present: number; absent: number; leave: number };
+type AlertRow = { id: string; title: string; due_date: string; category: string; priority: string };
 
-const revenueByClient = [
-  { id: "a", client: "Client A", revenue: 450000 },
-  { id: "b", client: "Client B", revenue: 380000 },
-  { id: "c", client: "Client C", revenue: 520000 },
-  { id: "d", client: "Client D", revenue: 290000 },
-  { id: "e", client: "Client E", revenue: 410000 },
-  { id: "f", client: "Client F", revenue: 360000 },
-  { id: "g", client: "Client G", revenue: 480000 },
-  { id: "h", client: "Client H", revenue: 320000 },
-];
+const currency = (n: number) => `PKR ${Math.round(n).toLocaleString("en-PK")}`;
+const compact = (n: number) => {
+  if (Math.abs(n) >= 1_000_000) return `PKR ${(n / 1_000_000).toFixed(1)}M`;
+  if (Math.abs(n) >= 1_000) return `PKR ${(n / 1_000).toFixed(0)}K`;
+  return `PKR ${Math.round(n).toLocaleString("en-PK")}`;
+};
 
-const attendanceData = [
-  { id: 1, date: "Apr 11", present: 220, absent: 18, leave: 10 },
-  { id: 2, date: "Apr 12", present: 228, absent: 12, leave: 8 },
-  { id: 3, date: "Apr 13", present: 218, absent: 20, leave: 10 },
-  { id: 4, date: "Apr 14", present: 225, absent: 15, leave: 8 },
-  { id: 5, date: "Apr 15", present: 222, absent: 16, leave: 10 },
-  { id: 6, date: "Apr 16", present: 230, absent: 10, leave: 8 },
-  { id: 7, date: "Apr 17", present: 226, absent: 14, leave: 8 },
-];
+const monthRange = (offset: number) => {
+  const d = new Date();
+  const start = new Date(d.getFullYear(), d.getMonth() + offset, 1);
+  const end = new Date(d.getFullYear(), d.getMonth() + offset + 1, 0);
+  const iso = (x: Date) => x.toISOString().slice(0, 10);
+  return { start: iso(start), end: iso(end) };
+};
 
-const recentActivity = [
-  { action: "License renewal due in 30 days", type: "warning", time: "Today" },
-  { action: "New employee added", user: "John Smith", time: "2 hours ago" },
-  { action: "Payroll processed for March", user: "System", time: "5 hours ago" },
-  { action: "Attendance not marked for F-7 location", type: "alert", time: "Yesterday" },
-];
+const monthLabel = (offset: number) => {
+  const d = new Date();
+  const x = new Date(d.getFullYear(), d.getMonth() + offset, 1);
+  return x.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+};
+
+const todayIso = () => new Date().toISOString().slice(0, 10);
+const daysAgoIso = (n: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0, 10);
+};
+
+const deltaLabel = (curr: number, prev: number): { value: string; positive: boolean } => {
+  if (prev === 0 && curr === 0) return { value: "no change", positive: true };
+  if (prev === 0) return { value: "new this month", positive: true };
+  const pct = ((curr - prev) / Math.abs(prev)) * 100;
+  const sign = pct >= 0 ? "+" : "";
+  return { value: `${sign}${pct.toFixed(0)}% vs ${monthLabel(-1)}`, positive: pct >= 0 };
+};
+
+const PRIORITY_COLOR: Record<string, string> = {
+  critical: "text-red-700 bg-red-50",
+  high: "text-amber-700 bg-amber-50",
+  medium: "text-blue-700 bg-blue-50",
+  low: "text-slate-600 bg-slate-100",
+};
 
 export default function SuperAdminDashboard() {
   const { profile } = useAuth();
@@ -52,27 +67,236 @@ export default function SuperAdminDashboard() {
     reports: hasPermission(profile, "reports.view"),
   };
 
-  const visibleStatCards =
-    [can.employees, can.attendance, can.expenses, can.payroll].filter(Boolean).length;
-  const visibleMidCharts =
-    [can.accounting, can.reports].filter(Boolean).length;
-  const visibleBottomCharts =
-    [can.attendance, true /* recent activity always visible */].filter(Boolean).length;
-
   const nothingToShow =
-    !can.compliance &&
-    !can.employees &&
-    !can.attendance &&
-    !can.expenses &&
-    !can.payroll &&
-    !can.accounting &&
-    !can.reports;
+    !can.compliance && !can.employees && !can.attendance && !can.expenses &&
+    !can.payroll && !can.accounting && !can.reports;
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const [employeeCount, setEmployeeCount] = useState(0);
+  const [attendanceTodayPct, setAttendanceTodayPct] = useState(0);
+  const [attendanceYesterdayPct, setAttendanceYesterdayPct] = useState(0);
+
+  const [expensesMtd, setExpensesMtd] = useState(0);
+  const [expensesPrev, setExpensesPrev] = useState(0);
+
+  const [payrollMtd, setPayrollMtd] = useState(0);
+  const [payrollPrev, setPayrollPrev] = useState(0);
+
+  const [banks, setBanks] = useState<BankRow[]>([]);
+  const [topClients, setTopClients] = useState<TopClientRow[]>([]);
+  const [attendanceTrend, setAttendanceTrend] = useState<AttendancePoint[]>([]);
+  const [alerts, setAlerts] = useState<AlertRow[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const { start: mStart, end: mEnd } = monthRange(0);
+        const { start: pStart, end: pEnd } = monthRange(-1);
+        const today = todayIso();
+        const yesterday = daysAgoIso(1);
+        const sevenDaysAgo = daysAgoIso(6);
+        const in30 = (() => {
+          const d = new Date();
+          d.setDate(d.getDate() + 30);
+          return d.toISOString().slice(0, 10);
+        })();
+
+        // Fan out — all under RLS, so a branched user gets only their slice.
+        const [
+          empRes,
+          attTodayRes,
+          attYestRes,
+          attTrendRes,
+          expMtdRes,
+          expPrevRes,
+          psMtdRes,
+          psPrevRes,
+          banksRes,
+          payMtdRes,
+          datesRes,
+        ] = await Promise.all([
+          supabase.from("employees").select("id", { count: "exact", head: true }).eq("status", "Active"),
+          supabase.from("attendance_records").select("status").eq("attendance_date", today),
+          supabase.from("attendance_records").select("status").eq("attendance_date", yesterday),
+          supabase
+            .from("attendance_records")
+            .select("attendance_date, status")
+            .gte("attendance_date", sevenDaysAgo)
+            .lte("attendance_date", today),
+          supabase.from("expenses").select("amount, expense_date").gte("expense_date", mStart).lte("expense_date", mEnd),
+          supabase.from("expenses").select("amount, expense_date").gte("expense_date", pStart).lte("expense_date", pEnd),
+          supabase.from("payslips").select("net_salary, disbursed").eq("period_month", `${mStart.slice(0, 7)}-01`).eq("disbursed", true),
+          supabase.from("payslips").select("net_salary, disbursed").eq("period_month", `${pStart.slice(0, 7)}-01`).eq("disbursed", true),
+          supabase.from("bank_accounts").select("id, bank_name, balance").order("bank_name"),
+          fetchAllRows<{ client_id: string | null; invoice_id: string | null; amount: number; payment_date: string }>(() =>
+            supabase
+              .from("invoice_payments")
+              .select("client_id, invoice_id, amount, payment_date")
+              .gte("payment_date", mStart)
+              .lte("payment_date", mEnd) as unknown as {
+                range: (from: number, to: number) => Promise<{ data: unknown; error: { message: string } | null }>;
+              },
+          ),
+          supabase
+            .from("important_dates")
+            .select("id, title, due_date, category, priority")
+            .gte("due_date", today)
+            .lte("due_date", in30)
+            .order("due_date"),
+        ]);
+
+        if (cancelled) return;
+
+        // Employee count.
+        if (empRes.error) throw empRes.error;
+        setEmployeeCount(empRes.count ?? 0);
+
+        // Attendance % today and yesterday.
+        const attPct = (rows: { status: string }[] | null): number => {
+          if (!rows || rows.length === 0) return 0;
+          const present = rows.filter((r) => r.status === "Present").length;
+          return Math.round((present / rows.length) * 100);
+        };
+        if (attTodayRes.error) throw attTodayRes.error;
+        if (attYestRes.error) throw attYestRes.error;
+        setAttendanceTodayPct(attPct(attTodayRes.data as { status: string }[]));
+        setAttendanceYesterdayPct(attPct(attYestRes.data as { status: string }[]));
+
+        // 7-day trend.
+        if (attTrendRes.error) throw attTrendRes.error;
+        const byDay = new Map<string, { present: number; absent: number; leave: number }>();
+        const dayList: string[] = [];
+        for (let i = 6; i >= 0; i -= 1) {
+          const d = daysAgoIso(i);
+          dayList.push(d);
+          byDay.set(d, { present: 0, absent: 0, leave: 0 });
+        }
+        for (const r of (attTrendRes.data ?? []) as { attendance_date: string; status: string }[]) {
+          const slot = byDay.get(r.attendance_date);
+          if (!slot) continue;
+          if (r.status === "Present") slot.present += 1;
+          else if (r.status === "Absent") slot.absent += 1;
+          else if (r.status === "Leave") slot.leave += 1;
+        }
+        setAttendanceTrend(
+          dayList.map((d) => {
+            const slot = byDay.get(d)!;
+            const label = new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+            return { date: d, label, ...slot };
+          }),
+        );
+
+        // Expenses MTD + previous month.
+        if (expMtdRes.error) throw expMtdRes.error;
+        if (expPrevRes.error) throw expPrevRes.error;
+        const sum = (rows: { amount: number }[] | null) =>
+          (rows ?? []).reduce((s, r) => s + Number(r.amount ?? 0), 0);
+        setExpensesMtd(sum(expMtdRes.data as { amount: number }[]));
+        setExpensesPrev(sum(expPrevRes.data as { amount: number }[]));
+
+        // Payroll MTD + previous month.
+        if (psMtdRes.error) throw psMtdRes.error;
+        if (psPrevRes.error) throw psPrevRes.error;
+        const sumPay = (rows: { net_salary: number }[] | null) =>
+          (rows ?? []).reduce((s, r) => s + Number(r.net_salary ?? 0), 0);
+        setPayrollMtd(sumPay(psMtdRes.data as { net_salary: number }[]));
+        setPayrollPrev(sumPay(psPrevRes.data as { net_salary: number }[]));
+
+        // Bank accounts.
+        if (banksRes.error) throw banksRes.error;
+        setBanks(
+          ((banksRes.data ?? []) as BankRow[]).map((b) => ({
+            id: b.id,
+            bank_name: b.bank_name,
+            balance: Number(b.balance ?? 0),
+          })),
+        );
+
+        // Top 10 clients by current-month invoice payments.
+        const payByClient = new Map<string, number>();
+        // Need client_ids for invoice payments that only carry invoice_id.
+        const invoiceOnly: string[] = [];
+        for (const r of payMtdRes) {
+          if (r.client_id) {
+            payByClient.set(r.client_id, (payByClient.get(r.client_id) ?? 0) + Number(r.amount));
+          } else if (r.invoice_id) {
+            invoiceOnly.push(r.invoice_id);
+          }
+        }
+        if (invoiceOnly.length > 0) {
+          const { data: invs } = await supabase
+            .from("invoices")
+            .select("id, client_id")
+            .in("id", invoiceOnly);
+          const map = new Map<string, string>();
+          for (const i of (invs ?? []) as { id: string; client_id: string }[]) map.set(i.id, i.client_id);
+          for (const r of payMtdRes) {
+            if (!r.client_id && r.invoice_id) {
+              const cid = map.get(r.invoice_id);
+              if (cid) payByClient.set(cid, (payByClient.get(cid) ?? 0) + Number(r.amount));
+            }
+          }
+        }
+        const clientIds = Array.from(payByClient.keys());
+        if (clientIds.length > 0) {
+          const { data: clientRows } = await supabase
+            .from("clients")
+            .select("id, name")
+            .in("id", clientIds);
+          const nameMap = new Map<string, string>();
+          for (const c of (clientRows ?? []) as { id: string; name: string }[]) nameMap.set(c.id, c.name);
+          const list: TopClientRow[] = clientIds.map((id) => ({
+            id,
+            name: nameMap.get(id) ?? "Unknown client",
+            revenue: payByClient.get(id) ?? 0,
+          }));
+          list.sort((a, b) => b.revenue - a.revenue);
+          setTopClients(list.slice(0, 10));
+        } else {
+          setTopClients([]);
+        }
+
+        // Compliance alerts.
+        if (datesRes.error) throw datesRes.error;
+        setAlerts((datesRes.data ?? []) as AlertRow[]);
+      } catch (e: any) {
+        if (!cancelled) setError(e.message ?? String(e));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const totalBankBalance = useMemo(() => banks.reduce((s, b) => s + b.balance, 0), [banks]);
+  const maxBank = useMemo(() => Math.max(1, ...banks.map((b) => b.balance)), [banks]);
+  const maxClient = useMemo(() => Math.max(1, ...topClients.map((c) => c.revenue)), [topClients]);
+
+  const branchScopeNote = profile?.branch_id ? "Scoped to your branch." : null;
 
   return (
     <>
       <Header title="Dashboard" />
 
       <div className="flex-1 overflow-y-auto p-4 md:p-8">
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 text-red-700 border border-red-200 rounded text-sm">{error}</div>
+        )}
+
+        {branchScopeNote && (
+          <div className="mb-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-50 text-blue-700 text-xs">
+            <Building2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+            {branchScopeNote}
+          </div>
+        )}
+
         {nothingToShow && (
           <div className="bg-white border border-slate-200 rounded-lg p-12 text-center">
             <h3 className="text-base text-slate-900 mb-2">Nothing to show yet</h3>
@@ -82,152 +306,188 @@ export default function SuperAdminDashboard() {
           </div>
         )}
 
-        {can.compliance && (
-          <div className="mb-6">
-            <Alert type="warning" message="Weapon license renewal required by May 18, 2026 - 30 days remaining" />
+        {loading ? (
+          <div className="bg-white border border-slate-200 rounded-lg p-10 text-center text-slate-500">
+            <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading dashboard…
           </div>
-        )}
+        ) : (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8">
+              {can.employees && (
+                <StatCard title="Total Employees" value={employeeCount} icon={Users} />
+              )}
+              {can.attendance && (
+                <StatCard
+                  title="Attendance Today"
+                  value={`${attendanceTodayPct}%`}
+                  icon={Calendar}
+                  trend={
+                    attendanceTodayPct === 0 && attendanceYesterdayPct === 0
+                      ? undefined
+                      : {
+                          value: `${attendanceTodayPct - attendanceYesterdayPct >= 0 ? "+" : ""}${
+                            attendanceTodayPct - attendanceYesterdayPct
+                          }% from yesterday`,
+                          positive: attendanceTodayPct - attendanceYesterdayPct >= 0,
+                        }
+                  }
+                />
+              )}
+              {can.expenses && (
+                <StatCard
+                  title={`Expenses · ${monthLabel(0)}`}
+                  value={compact(expensesMtd)}
+                  icon={Receipt}
+                  trend={deltaLabel(expensesMtd, expensesPrev)}
+                />
+              )}
+              {can.payroll && (
+                <StatCard
+                  title={`Payroll · ${monthLabel(0)}`}
+                  value={compact(payrollMtd)}
+                  icon={DollarSign}
+                  trend={deltaLabel(payrollMtd, payrollPrev)}
+                />
+              )}
+            </div>
 
-        {visibleStatCards > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8">
-            {can.employees && (
-              <StatCard
-                title="Total Employees"
-                value={248}
-                icon={Users}
-                trend={{ value: "+12 this month", positive: true }}
-              />
-            )}
-            {can.attendance && (
-              <StatCard
-                title="Attendance Today"
-                value="92%"
-                icon={Calendar}
-                trend={{ value: "+3% from yesterday", positive: true }}
-              />
-            )}
-            {can.expenses && (
-              <StatCard
-                title="Total Expenses"
-                value="PKR 61,000"
-                icon={Receipt}
-                trend={{ value: "+15% from last month", positive: false }}
-              />
-            )}
-            {can.payroll && (
-              <StatCard
-                title="Payroll"
-                value="PKR 2.4M"
-                icon={DollarSign}
-                trend={{ value: "Processed", positive: true }}
-              />
-            )}
-          </div>
-        )}
-
-        {visibleMidCharts > 0 && (
-          <div className={`grid grid-cols-1 ${visibleMidCharts === 2 ? "lg:grid-cols-2" : ""} gap-6 mb-6 md:mb-8`}>
-            {can.accounting && (
-              <div className="bg-white rounded-lg border border-slate-200 p-6">
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-base text-slate-900">Bank Account Overview</h3>
-                  <Building2 className="w-5 h-5 text-blue-600" strokeWidth={1.5} />
-                </div>
-                <div className="space-y-4">
-                  {bankAccounts.map((account, index) => (
-                    <div key={index} className="border-l-4 pl-4 py-2" style={{ borderColor: account.color }}>
-                      <div className="flex justify-between items-center mb-1">
-                        <p className="text-sm text-slate-700">{account.name}</p>
-                        <p className="text-base" style={{ color: account.color }}>
-                          PKR {account.balance.toLocaleString()}
-                        </p>
-                      </div>
-                      <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                        <div
-                          className="h-full rounded-full"
-                          style={{
-                            width: `${(account.balance / 2500000) * 100}%`,
-                            backgroundColor: account.color,
-                          }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                  <div className="pt-4 border-t border-slate-200">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-slate-600">Total Cash Balance</span>
-                      <span className="text-lg text-slate-900">
-                        PKR {bankAccounts.reduce((sum, acc) => sum + acc.balance, 0).toLocaleString()}
-                      </span>
-                    </div>
+            <div className={`grid grid-cols-1 ${can.accounting && can.reports ? "lg:grid-cols-2" : ""} gap-6 mb-6 md:mb-8`}>
+              {can.accounting && (
+                <div className="bg-white rounded-lg border border-slate-200 p-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-base text-slate-900">Bank Account Overview</h3>
+                    <Building2 className="w-5 h-5 text-blue-600" strokeWidth={1.5} />
                   </div>
-                </div>
-              </div>
-            )}
-
-            {can.reports && (
-              <div className="bg-white rounded-lg border border-slate-200 p-6">
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-base text-slate-900">Revenue by Client (Monthly)</h3>
-                  <TrendingUp className="w-5 h-5 text-green-600" strokeWidth={1.5} />
-                </div>
-                <ResponsiveContainer width="100%" height={250}>
-                  <BarChart data={revenueByClient}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis dataKey="client" tick={{ fill: '#64748b', fontSize: 12 }} />
-                    <YAxis tick={{ fill: '#64748b', fontSize: 12 }} />
-                    <Tooltip />
-                    <Bar dataKey="revenue" fill="#10b981" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </div>
-        )}
-
-        {visibleBottomCharts > 0 && (
-          <div className={`grid grid-cols-1 ${visibleBottomCharts === 2 ? "lg:grid-cols-2" : ""} gap-6 mb-6 md:mb-8`}>
-            {can.attendance && (
-              <div className="bg-white rounded-lg border border-slate-200 p-6">
-                <h3 className="text-base mb-6 text-slate-900">Attendance Trend (7 Days)</h3>
-                <ResponsiveContainer width="100%" height={250}>
-                  <LineChart data={attendanceData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis dataKey="date" tick={{ fill: '#64748b', fontSize: 12 }} />
-                    <YAxis tick={{ fill: '#64748b', fontSize: 12 }} />
-                    <Tooltip />
-                    <Legend />
-                    <Line type="monotone" dataKey="present" stroke="#10b981" strokeWidth={2} dot={{ fill: '#10b981' }} name="Present" />
-                    <Line type="monotone" dataKey="absent" stroke="#ef4444" strokeWidth={2} dot={{ fill: '#ef4444' }} name="Absent" />
-                    <Line type="monotone" dataKey="leave" stroke="#f59e0b" strokeWidth={2} dot={{ fill: '#f59e0b' }} name="Leave" />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-
-            <div className="bg-white rounded-lg border border-slate-200">
-              <div className="p-6 border-b border-slate-200">
-                <h3 className="text-base text-slate-900">Recent Activity & Alerts</h3>
-              </div>
-              <div className="divide-y divide-slate-200">
-                {recentActivity.map((item, index) => (
-                  <div key={index} className="p-4 flex items-start gap-3 hover:bg-slate-50 transition-colors">
-                    {item.type === "warning" && (
-                      <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" strokeWidth={1.5} />
-                    )}
-                    {item.type === "alert" && (
-                      <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" strokeWidth={1.5} />
-                    )}
-                    <div className="flex-1">
-                      <p className="text-sm text-slate-900 mb-1">{item.action}</p>
-                      {item.user && <p className="text-xs text-slate-500">{item.user}</p>}
+                  {banks.length === 0 ? (
+                    <p className="text-sm text-slate-500">No bank accounts yet.</p>
+                  ) : (
+                    <div className="space-y-4">
+                      {banks.map((b) => {
+                        const colors = ["#3b82f6", "#10b981", "#8b5cf6", "#f59e0b", "#ec4899", "#14b8a6"];
+                        const color = colors[banks.indexOf(b) % colors.length];
+                        return (
+                          <div key={b.id} className="border-l-4 pl-4 py-2" style={{ borderColor: color }}>
+                            <div className="flex justify-between items-center mb-1">
+                              <p className="text-sm text-slate-700">{b.bank_name}</p>
+                              <p className="text-base" style={{ color }}>{currency(b.balance)}</p>
+                            </div>
+                            <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                              <div
+                                className="h-full rounded-full"
+                                style={{ width: `${(b.balance / maxBank) * 100}%`, backgroundColor: color }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                      <div className="pt-4 border-t border-slate-200 flex justify-between items-center">
+                        <span className="text-sm text-slate-600">Total Bank Balance</span>
+                        <span className="text-lg text-slate-900">{currency(totalBankBalance)}</span>
+                      </div>
                     </div>
-                    <span className="text-xs text-slate-400">{item.time}</span>
+                  )}
+                </div>
+              )}
+
+              {can.reports && (
+                <div className="bg-white rounded-lg border border-slate-200 p-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <div>
+                      <h3 className="text-base text-slate-900 flex items-center gap-2">
+                        <Trophy className="w-4 h-4 text-amber-500" strokeWidth={1.5} />
+                        Top 10 Clients · {monthLabel(0)}
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-0.5">By payments received this month.</p>
+                    </div>
+                    <TrendingUp className="w-5 h-5 text-green-600" strokeWidth={1.5} />
                   </div>
-                ))}
+                  {topClients.length === 0 ? (
+                    <p className="text-sm text-slate-500">No client payments received this month yet.</p>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {topClients.map((c, idx) => (
+                        <div key={c.id} className="flex items-center gap-3">
+                          <span className="w-6 text-xs text-slate-400 text-right tabular-nums">{idx + 1}.</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-baseline justify-between gap-2 mb-1">
+                              <span className="text-sm text-slate-800 truncate">{c.name}</span>
+                              <span className="text-xs text-slate-600 tabular-nums">{currency(c.revenue)}</span>
+                            </div>
+                            <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                              <div
+                                className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-emerald-600"
+                                style={{ width: `${Math.max(2, (c.revenue / maxClient) * 100)}%` }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className={`grid grid-cols-1 ${can.attendance ? "lg:grid-cols-2" : ""} gap-6 mb-6 md:mb-8`}>
+              {can.attendance && (
+                <div className="bg-white rounded-lg border border-slate-200 p-6">
+                  <h3 className="text-base mb-6 text-slate-900">Attendance Trend · Last 7 Days</h3>
+                  {attendanceTrend.every((p) => p.present + p.absent + p.leave === 0) ? (
+                    <p className="text-sm text-slate-500">No attendance recorded in the last 7 days.</p>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={250}>
+                      <LineChart data={attendanceTrend}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="label" tick={{ fill: "#64748b", fontSize: 12 }} />
+                        <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
+                        <Tooltip />
+                        <Legend />
+                        <Line type="monotone" dataKey="present" stroke="#10b981" strokeWidth={2} dot={{ fill: "#10b981" }} name="Present" />
+                        <Line type="monotone" dataKey="absent" stroke="#ef4444" strokeWidth={2} dot={{ fill: "#ef4444" }} name="Absent" />
+                        <Line type="monotone" dataKey="leave" stroke="#f59e0b" strokeWidth={2} dot={{ fill: "#f59e0b" }} name="Leave" />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              )}
+
+              <div className="bg-white rounded-lg border border-slate-200">
+                <div className="p-6 border-b border-slate-200">
+                  <h3 className="text-base text-slate-900">Upcoming Compliance · Next 30 Days</h3>
+                </div>
+                {alerts.length === 0 ? (
+                  <div className="p-6 text-sm text-slate-500">Nothing due in the next 30 days.</div>
+                ) : (
+                  <div className="divide-y divide-slate-200">
+                    {alerts.map((a) => {
+                      const daysLeft = Math.max(
+                        0,
+                        Math.ceil((new Date(a.due_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)),
+                      );
+                      const priorityClass = PRIORITY_COLOR[a.priority] ?? PRIORITY_COLOR.low;
+                      return (
+                        <div key={a.id} className="p-4 flex items-start gap-3 hover:bg-slate-50 transition-colors">
+                          <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" strokeWidth={1.5} />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <p className="text-sm text-slate-900 truncate">{a.title}</p>
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wide ${priorityClass}`}>
+                                {a.priority}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-500">{a.category} · due {a.due_date}</p>
+                          </div>
+                          <span className="text-xs text-slate-400 tabular-nums">
+                            {daysLeft === 0 ? "today" : `${daysLeft}d`}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
-          </div>
+          </>
         )}
       </div>
     </>
