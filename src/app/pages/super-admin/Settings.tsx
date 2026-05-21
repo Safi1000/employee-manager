@@ -246,6 +246,7 @@ export default function Settings() {
           {
             company_id: companyId,
             recipient_email: trimmed || null,
+            sender_email: notificationSenderEmail.trim() || null,
             updated_at: new Date().toISOString(),
           },
           { onConflict: "company_id" },
@@ -277,9 +278,12 @@ export default function Settings() {
           "Content-Type": "application/json",
           apikey: (import.meta as any).env.VITE_SUPABASE_ANON_KEY,
         },
-        // Sending the recipient in the body lets the test work even if the user
-        // hasn't clicked Save yet — they just type and hit "Send test email".
-        body: JSON.stringify({ recipient }),
+        // Sending the recipient and from in the body lets the test work even if
+        // the user hasn't clicked Save yet — they just type and hit "Send test email".
+        body: JSON.stringify({
+          recipient,
+          from: notificationSenderEmail.trim() || undefined,
+        }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -1246,8 +1250,10 @@ export default function Settings() {
                 <input
                   type="email"
                   value={notificationSenderEmail}
-                  disabled
-                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm bg-slate-50 text-slate-500"
+                  onChange={(e) => setNotificationSenderEmail(e.target.value)}
+                  disabled={notificationLoading}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent disabled:bg-slate-50"
+                  placeholder="info@yourdomain.com"
                 />
               </div>
             </div>
