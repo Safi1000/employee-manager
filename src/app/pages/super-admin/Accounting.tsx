@@ -1538,9 +1538,9 @@ export default function Accounting() {
 
         {activeTab === "banks" && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            <div className="bg-success-50 p-4 rounded-lg border border-success-200">
+            <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-success-500">
               <div className="flex items-center justify-between">
-                <p className="text-xs text-success-700 mb-1">Cash Balance (Treasury)</p>
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Cash Balance (Treasury)</p>
                 {!cashOpeningLocked ? (
                   <button
                     type="button"
@@ -1565,12 +1565,12 @@ export default function Accounting() {
                 </p>
               )}
             </div>
-            <div className="bg-brand-50 p-4 rounded-lg border border-brand-200">
-              <p className="text-xs text-brand-700 mb-1">Total Account Balance</p>
+            <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-brand-500">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Account Balance</p>
               <p className="text-2xl text-brand-900">PKR {totalAccountBalance.toLocaleString()}</p>
             </div>
-            <div className="bg-warning-50 p-4 rounded-lg border border-warning-200">
-              <p className="text-xs text-warning-700 mb-1">Pending Cheques</p>
+            <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-warning-500">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Pending Cheques</p>
               <p className="text-2xl text-warning-900">PKR {totalPendingCheques.toLocaleString()}</p>
             </div>
             <div className="bg-slate-900 p-4 rounded-lg">
@@ -1588,26 +1588,26 @@ export default function Accounting() {
                 PKR {receivableTotals.opening.toLocaleString()}
               </p>
             </div>
-            <div className="bg-brand-50 p-4 rounded-lg border border-brand-200">
-              <p className="text-xs text-brand-700 mb-1">Total Invoiced</p>
+            <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-brand-500">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Invoiced</p>
               <p className="text-xl text-brand-900">
                 PKR {receivableTotals.invoiced.toLocaleString()}
               </p>
             </div>
-            <div className="bg-danger-50 p-4 rounded-lg border border-danger-200">
-              <p className="text-xs text-danger-700 mb-1">Withholding Tax</p>
+            <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-danger-500">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Withholding Tax</p>
               <p className="text-xl text-danger-900">
                 PKR {receivableTotals.withholding.toLocaleString()}
               </p>
             </div>
-            <div className="bg-success-50 p-4 rounded-lg border border-success-200">
-              <p className="text-xs text-success-700 mb-1">Total Received</p>
+            <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-success-500">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Received</p>
               <p className="text-xl text-success-900">
                 PKR {receivableTotals.received.toLocaleString()}
               </p>
             </div>
-            <div className="bg-warning-50 p-4 rounded-lg border border-warning-200">
-              <p className="text-xs text-warning-700 mb-1">Outstanding</p>
+            <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-warning-500">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Outstanding</p>
               <p className="text-xl text-warning-900">
                 PKR {receivableTotals.outstanding.toLocaleString()}
               </p>
@@ -1623,20 +1623,20 @@ export default function Accounting() {
                 PKR {payableTotals.total.toLocaleString()}
               </p>
             </div>
-            <div className="bg-warning-50 p-4 rounded-lg border border-warning-200">
-              <p className="text-xs text-warning-700 mb-1">Pending</p>
+            <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-warning-500">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Pending</p>
               <p className="text-xl text-warning-900">
                 PKR {payableTotals.pending.toLocaleString()}
               </p>
             </div>
-            <div className="bg-danger-50 p-4 rounded-lg border border-danger-200">
-              <p className="text-xs text-danger-700 mb-1">Overdue</p>
+            <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-danger-500">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Overdue</p>
               <p className="text-xl text-danger-900">
                 PKR {payableTotals.overdue.toLocaleString()}
               </p>
             </div>
-            <div className="bg-success-50 p-4 rounded-lg border border-success-200">
-              <p className="text-xs text-success-700 mb-1">Paid</p>
+            <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-success-500">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Paid</p>
               <p className="text-xl text-success-900">
                 PKR {payableTotals.paid.toLocaleString()}
               </p>
@@ -2801,15 +2801,15 @@ export default function Accounting() {
                 <p className="text-lg text-slate-900">PKR {Number(selectedClient.opening_balance ?? 0).toLocaleString()}</p>
               </div>
               <div className="bg-brand-50 p-3 rounded-lg border border-brand-200">
-                <p className="text-xs text-brand-700 mb-1">Total Invoiced</p>
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Invoiced</p>
                 <p className="text-lg text-brand-900">PKR {selectedClient.total_invoiced.toLocaleString()}</p>
               </div>
               <div className="bg-success-50 p-3 rounded-lg border border-success-200">
-                <p className="text-xs text-success-700 mb-1">Received</p>
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Received</p>
                 <p className="text-lg text-success-900">PKR {selectedClient.total_received.toLocaleString()}</p>
               </div>
               <div className="bg-warning-50 p-3 rounded-lg border border-warning-200">
-                <p className="text-xs text-warning-700 mb-1">Outstanding</p>
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Outstanding</p>
                 <p className="text-lg text-warning-900">PKR {selectedClient.outstanding.toLocaleString()}</p>
               </div>
             </div>

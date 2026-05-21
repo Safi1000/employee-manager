@@ -564,7 +564,7 @@ export default function Compliance() {
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-6">
-          <div className="bg-danger-50 p-4 rounded-lg border border-danger-200">
+          <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-danger-500">
             <div className="flex items-center justify-between mb-2">
               <p className="text-sm text-danger-700">Critical Alerts</p>
               <AlertCircle className="w-5 h-5 text-danger-600" strokeWidth={1.5} />
@@ -572,7 +572,7 @@ export default function Compliance() {
             <p className="text-2xl text-danger-900">{metrics.critical}</p>
             <p className="text-[11px] text-danger-700/70 mt-1">In advance-notice window</p>
           </div>
-          <div className="bg-warning-50 p-4 rounded-lg border border-warning-200">
+          <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-warning-500">
             <div className="flex items-center justify-between mb-2">
               <p className="text-sm text-warning-700">High Priority</p>
               <Bell className="w-5 h-5 text-warning-600" strokeWidth={1.5} />
@@ -580,7 +580,7 @@ export default function Compliance() {
             <p className="text-2xl text-warning-900">{metrics.high}</p>
             <p className="text-[11px] text-warning-700/70 mt-1">In advance-notice window</p>
           </div>
-          <div className="bg-brand-50 p-4 rounded-lg border border-brand-200">
+          <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-brand-500">
             <div className="flex items-center justify-between mb-2">
               <p className="text-sm text-brand-700">Upcoming Deadlines</p>
               <CalendarIcon className="w-5 h-5 text-brand-600" strokeWidth={1.5} />
@@ -588,7 +588,7 @@ export default function Compliance() {
             <p className="text-2xl text-brand-900">{metrics.upcoming}</p>
             <p className="text-[11px] text-brand-700/70 mt-1">Today or later</p>
           </div>
-          <div className="bg-success-50 p-4 rounded-lg border border-success-200">
+          <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-success-500">
             <div className="flex items-center justify-between mb-2">
               <p className="text-sm text-success-700">Active Alerts</p>
               <Bell className="w-5 h-5 text-success-600" strokeWidth={1.5} />

@@ -995,19 +995,19 @@ export default function FinancialReports() {
 
               <div className="p-4 grid grid-cols-1 md:grid-cols-4 gap-3 border-b border-slate-200">
                 <div className="bg-brand-50 p-3 rounded-lg border border-brand-200">
-                  <p className="text-xs text-brand-700 mb-1">Total Invoiced</p>
+                  <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Invoiced</p>
                   <p className="text-lg text-brand-900">
                     PKR {statementTotals.invoiced.toLocaleString()}
                   </p>
                 </div>
                 <div className="bg-danger-50 p-3 rounded-lg border border-danger-200">
-                  <p className="text-xs text-danger-700 mb-1">Payroll Expense</p>
+                  <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Payroll Expense</p>
                   <p className="text-lg text-danger-900">
                     PKR {statementTotals.payroll.toLocaleString()}
                   </p>
                 </div>
                 <div className="bg-danger-50 p-3 rounded-lg border border-danger-200">
-                  <p className="text-xs text-danger-700 mb-1">Other Expenses</p>
+                  <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Other Expenses</p>
                   <p className="text-lg text-danger-900">
                     PKR {statementTotals.expenses.toLocaleString()}
                   </p>
@@ -1312,15 +1312,15 @@ export default function FinancialReports() {
 
             <div className="grid grid-cols-4 gap-3">
               <div className="bg-brand-50 p-3 rounded-lg border border-brand-200">
-                <p className="text-xs text-brand-700 mb-1">Total Invoiced</p>
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Invoiced</p>
                 <p className="text-lg text-brand-900">PKR {selectedClient.total_invoiced.toLocaleString()}</p>
               </div>
               <div className="bg-danger-50 p-3 rounded-lg border border-danger-200">
-                <p className="text-xs text-danger-700 mb-1">Payroll Expense</p>
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Payroll Expense</p>
                 <p className="text-lg text-danger-900">PKR {selectedClient.payroll_expense.toLocaleString()}</p>
               </div>
               <div className="bg-danger-50 p-3 rounded-lg border border-danger-200">
-                <p className="text-xs text-danger-700 mb-1">Expenses</p>
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Expenses</p>
                 <p className="text-lg text-danger-900">PKR {selectedClient.expenses.toLocaleString()}</p>
               </div>
               <div className={`p-3 rounded-lg border ${selectedClient.total_income >= 0 ? "bg-success-50 border-success-200" : "bg-danger-50 border-danger-200"}`}>

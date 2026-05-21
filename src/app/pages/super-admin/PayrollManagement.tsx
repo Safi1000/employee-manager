@@ -981,8 +981,8 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="bg-success-50 p-4 rounded-lg border border-success-200">
-            <p className="text-xs text-success-700 mb-1">Total Disbursed</p>
+          <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-success-500">
+            <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Disbursed</p>
             <p className="text-2xl text-success-900">
               PKR {payrollTotals.disbursed.toLocaleString()}
             </p>
@@ -991,8 +991,8 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
               {filtered.filter((r) => r.disbursed).length === 1 ? "" : "s"}
             </p>
           </div>
-          <div className="bg-warning-50 p-4 rounded-lg border border-warning-200">
-            <p className="text-xs text-warning-700 mb-1">Total Not Disbursed</p>
+          <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-warning-500">
+            <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Not Disbursed</p>
             <p className="text-2xl text-warning-900">
               PKR {payrollTotals.notDisbursed.toLocaleString()}
             </p>
@@ -1001,8 +1001,8 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
               {filtered.filter((r) => !r.disbursed).length === 1 ? "" : "s"}
             </p>
           </div>
-          <div className="bg-danger-50 p-4 rounded-lg border border-danger-200">
-            <p className="text-xs text-danger-700 mb-1">Total Advance</p>
+          <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-danger-500">
+            <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Advance</p>
             <p className="text-2xl text-danger-900">
               PKR {payrollTotals.advance.toLocaleString()}
             </p>

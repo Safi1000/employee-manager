@@ -1190,15 +1190,15 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
             </div>
 
             <div className="grid grid-cols-3 gap-4">
-              <div className="bg-success-50 p-4 rounded-lg border border-success-200">
+              <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-success-500">
                 <p className="text-sm text-success-700 mb-1">Present</p>
                 <p className="text-2xl text-success-900">{detailRecord.present}</p>
               </div>
-              <div className="bg-danger-50 p-4 rounded-lg border border-danger-200">
+              <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-danger-500">
                 <p className="text-sm text-danger-700 mb-1">Absent</p>
                 <p className="text-2xl text-danger-900">{detailRecord.absent}</p>
               </div>
-              <div className="bg-warning-50 p-4 rounded-lg border border-warning-200">
+              <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-warning-500">
                 <p className="text-sm text-warning-700 mb-1">Leave</p>
                 <p className="text-2xl text-warning-900">{detailRecord.leave}</p>
               </div>
