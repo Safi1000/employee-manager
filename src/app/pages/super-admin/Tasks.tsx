@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Plus, Loader2, AlertCircle, X, Trash2, Pencil, Calendar as CalendarIcon, User as UserIcon } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -249,7 +249,7 @@ export default function Tasks() {
 
         {loading ? (
           <div className="bg-white border border-slate-200 rounded-lg p-10 text-center text-slate-500">
-            <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loadingâ€¦
+            <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -325,7 +325,7 @@ export default function Tasks() {
                             >
                               <CalendarIcon className="w-3 h-3" strokeWidth={1.5} />
                               {t.due_date}
-                              {overdue ? " Â· overdue" : soon ? ` Â· ${daysLeft}d left` : ""}
+                              {overdue ? " · overdue" : soon ? ` · ${daysLeft}d left` : ""}
                             </span>
                           )}
                         </div>
@@ -337,7 +337,7 @@ export default function Tasks() {
                               onClick={() => moveTask(t, s)}
                               className="text-[10px] px-2 py-0.5 rounded border border-slate-200 text-slate-600 hover:bg-slate-50"
                             >
-                              â†’ {TASK_STATUS_LABEL[s]}
+                              → {TASK_STATUS_LABEL[s]}
                             </button>
                           ))}
                         </div>
@@ -400,7 +400,7 @@ export default function Tasks() {
           setEditTask(null);
           resetForm();
         }}
-        title={`Edit Task â€” ${editTask?.title ?? ""}`}
+        title={`Edit Task — ${editTask?.title ?? ""}`}
         size="md"
       >
         {editTask && (
@@ -489,7 +489,7 @@ function TaskFields({
           onChange={(e) => setDescription(e.target.value)}
           rows={4}
           className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-          placeholder="Details, links, ongoing notesâ€¦"
+          placeholder="Details, links, ongoing notes…"
         />
       </div>
       <div className="grid grid-cols-2 gap-3">

@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import {
@@ -228,7 +228,7 @@ export default function Cashflow() {
   }, [rows]);
 
   const windowLabel =
-    rows.length > 0 ? `${rows[0].label} â€“ ${rows[rows.length - 1].label}` : "";
+    rows.length > 0 ? `${rows[0].label} – ${rows[rows.length - 1].label}` : "";
 
   return (
     <>
@@ -247,7 +247,7 @@ export default function Cashflow() {
             value={currency(totals.revenue)}
             icon={<Wallet className="w-5 h-5 text-success-600" />}
             accent="emerald"
-            subtitle={`Payments received Â· ${windowLabel}`}
+            subtitle={`Payments received · ${windowLabel}`}
           />
           <SummaryTile
             label="Total Payroll"
@@ -275,7 +275,7 @@ export default function Cashflow() {
             value={currency(totals.net)}
             icon={<TrendingUp className="w-5 h-5 text-slate-700" />}
             accent={totals.net >= 0 ? "emerald" : "rose"}
-            subtitle="Revenue âˆ’ Payroll âˆ’ Expenses âˆ’ Advances"
+            subtitle="Revenue − Payroll − Expenses − Advances"
           />
         </div>
 
@@ -302,7 +302,7 @@ export default function Cashflow() {
           <div className="p-6">
             {loading ? (
               <div className="h-[350px] flex items-center justify-center text-slate-500 text-sm">
-                Loading cashflowâ€¦
+                Loading cashflow…
               </div>
             ) : (
               <ResponsiveContainer width="100%" height={350}>
@@ -351,7 +351,7 @@ export default function Cashflow() {
             </h3>
             {loading ? (
               <div className="h-[300px] flex items-center justify-center text-slate-500 text-sm">
-                Loadingâ€¦
+                Loading…
               </div>
             ) : (
               <ResponsiveContainer width="100%" height={300}>
@@ -387,7 +387,7 @@ export default function Cashflow() {
             <h3 className="text-base mb-6 text-slate-900">Payroll Impact</h3>
             {loading ? (
               <div className="h-[300px] flex items-center justify-center text-slate-500 text-sm">
-                Loadingâ€¦
+                Loading…
               </div>
             ) : (
               <ResponsiveContainer width="100%" height={300}>

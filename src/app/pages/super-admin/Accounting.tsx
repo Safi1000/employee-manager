@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Plus, Building2, Download, AlertCircle, X, Loader2, ArrowDownUp, History, Trash2, CheckCircle2, RotateCcw, FileText, Pencil, ArrowLeftRight, Search } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -169,7 +169,7 @@ export default function Accounting() {
   const [paymentAmount, setPaymentAmount] = useState<string>("");
   const [paymentStandalone, setPaymentStandalone] = useState<boolean>(false);
   const [standalonePayments, setStandalonePayments] = useState<Map<string, number>>(new Map());
-  // All invoice_payment rows with dates â€” used to compute month-aware
+  // All invoice_payment rows with dates — used to compute month-aware
   // carry-forward in the Receivables view.
   const [allPaymentEvents, setAllPaymentEvents] = useState<
     { client_id: string | null; invoice_id: string | null; amount: number; payment_date: string }[]
@@ -232,7 +232,7 @@ export default function Accounting() {
   // "Opening Balance" carries forward from the prior period: it equals the
   // client's *cumulative outstanding* through the day before the selected month
   // started. The "Outstanding" column then = Opening + this-month invoiced
-  // âˆ’ withholding âˆ’ payments in this month, which is the running balance at
+  // − withholding − payments in this month, which is the running balance at
   // month-end.
   const displayedReceivables = useMemo(() => {
     if (receivablesMonth === "all") return receivables;
@@ -270,7 +270,7 @@ export default function Accounting() {
       });
     }
     // Add residuals: invoice.amount_received minus what we already counted via
-    // invoice_payments rows â€” dated at the invoice's invoice_date.
+    // invoice_payments rows — dated at the invoice's invoice_date.
     for (const inv of allInvoicesForRec) {
       const tracked = paymentsByInvoice.get(inv.id) ?? 0;
       const residual = Number(inv.amount_received ?? 0) - tracked;
@@ -760,8 +760,8 @@ export default function Accounting() {
       const fromBank = banks.find((b) => b.id === transferFromId);
       const toBank = banks.find((b) => b.id === transferToId);
       const pairId = crypto.randomUUID();
-      const noteSuffix = transferNotes.trim() ? ` Â· ${transferNotes.trim()}` : "";
-      const desc = `Transfer ${fromBank?.bank_name ?? "?"} â†’ ${toBank?.bank_name ?? "?"}${noteSuffix}`;
+      const noteSuffix = transferNotes.trim() ? ` · ${transferNotes.trim()}` : "";
+      const desc = `Transfer ${fromBank?.bank_name ?? "?"} → ${toBank?.bank_name ?? "?"}${noteSuffix}`;
       await applyBankDelta(transferFromId, -amount);
       await applyBankDelta(transferToId, amount);
       await logTransaction({
@@ -939,7 +939,7 @@ export default function Accounting() {
             account_delta: delta,
             description:
               reconcileNotes.trim() ||
-              `Reconcile ${selectedBank.bank_name} account balance â†’ PKR ${actual.toLocaleString()}`,
+              `Reconcile ${selectedBank.bank_name} account balance → PKR ${actual.toLocaleString()}`,
           });
         }
       } else if (reconcileTarget === "cash") {
@@ -954,7 +954,7 @@ export default function Accounting() {
             account_delta: 0,
             description:
               reconcileNotes.trim() ||
-              `Reconcile cash balance â†’ PKR ${actual.toLocaleString()}`,
+              `Reconcile cash balance → PKR ${actual.toLocaleString()}`,
           });
         }
       } else {
@@ -970,7 +970,7 @@ export default function Accounting() {
             account_delta: 0,
             description:
               reconcileNotes.trim() ||
-              `Reconcile total balance â†’ PKR ${actual.toLocaleString()} (adjusted via cash)`,
+              `Reconcile total balance → PKR ${actual.toLocaleString()} (adjusted via cash)`,
           });
         }
       }
@@ -1030,7 +1030,7 @@ export default function Accounting() {
           amount,
           cash_delta: -amount,
           account_delta: 0,
-          description: `Payable settled (cash) Â· ${vendorName}`,
+          description: `Payable settled (cash) · ${vendorName}`,
           reference_id: selectedPayable.id,
         });
       } else {
@@ -1041,7 +1041,7 @@ export default function Accounting() {
           amount,
           cash_delta: 0,
           account_delta: -amount,
-          description: `Payable settled (bank) Â· ${vendorName}`,
+          description: `Payable settled (bank) · ${vendorName}`,
           reference_id: selectedPayable.id,
         });
       }
@@ -1082,7 +1082,7 @@ export default function Accounting() {
           amount,
           cash_delta: amount,
           account_delta: 0,
-          description: `Payable reverted to pending (cash refund) Â· ${vendorName}`,
+          description: `Payable reverted to pending (cash refund) · ${vendorName}`,
           reference_id: row.id,
         });
       } else if (row.paid_via === "Bank" && row.paid_bank_account_id) {
@@ -1093,7 +1093,7 @@ export default function Accounting() {
           amount,
           cash_delta: 0,
           account_delta: amount,
-          description: `Payable reverted to pending (bank refund) Â· ${vendorName}`,
+          description: `Payable reverted to pending (bank refund) · ${vendorName}`,
           reference_id: row.id,
         });
       }
@@ -1224,7 +1224,7 @@ export default function Accounting() {
       setError(null);
       try {
         const today = new Date().toISOString().slice(0, 10);
-        const desc = `Payment received (${paymentVia.toLowerCase()}) Â· ${selectedClient.name} Â· No invoice`;
+        const desc = `Payment received (${paymentVia.toLowerCase()}) · ${selectedClient.name} · No invoice`;
         if (paymentVia === "Cash") {
           await applyCashDelta(amount);
           await logTransaction({
@@ -1298,7 +1298,7 @@ export default function Accounting() {
           amount,
           cash_delta: amount,
           account_delta: 0,
-          description: `Payment received (cash) Â· ${selectedClient.name} Â· Invoice ${invoice.invoice_number}`,
+          description: `Payment received (cash) · ${selectedClient.name} · Invoice ${invoice.invoice_number}`,
           reference_id: invoice.id,
         });
       } else {
@@ -1309,7 +1309,7 @@ export default function Accounting() {
           amount,
           cash_delta: 0,
           account_delta: amount,
-          description: `Payment received (bank) Â· ${selectedClient.name} Â· Invoice ${invoice.invoice_number}`,
+          description: `Payment received (bank) · ${selectedClient.name} · Invoice ${invoice.invoice_number}`,
           reference_id: invoice.id,
         });
       }
@@ -1400,7 +1400,7 @@ export default function Accounting() {
                           entries.push({
                             kind: "payment",
                             date: p.payment_date,
-                            description: `Payment via ${bankName} Â· Invoice ${inv.invoice_number}`,
+                            description: `Payment via ${bankName} · Invoice ${inv.invoice_number}`,
                             amount: Number(p.amount),
                           });
                         }
@@ -1671,7 +1671,7 @@ export default function Accounting() {
                     type="text"
                     value={receivablesSearch}
                     onChange={(e) => setReceivablesSearch(e.target.value)}
-                    placeholder="Search client / codeâ€¦"
+                    placeholder="Search client / code…"
                     className="pl-8 pr-3 py-1.5 border border-slate-200 rounded-md text-sm w-56"
                   />
                 </div>
@@ -1747,7 +1747,7 @@ export default function Accounting() {
                   {loading && (
                     <tr>
                       <td colSpan={7} className="px-6 py-10 text-center text-slate-500">
-                        <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loadingâ€¦
+                        <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                       </td>
                     </tr>
                   )}
@@ -1891,7 +1891,7 @@ export default function Accounting() {
                       <tr>
                         <td colSpan={8} className="px-6 py-10 text-center text-slate-500">
                           <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
-                          Loadingâ€¦
+                          Loading…
                         </td>
                       </tr>
                     )}
@@ -1915,8 +1915,8 @@ export default function Accounting() {
                             : "bg-warning-50 text-warning-700";
                         return (
                           <tr key={item.id} className="hover:bg-slate-50 transition-colors">
-                            <td className="px-6 py-4 text-sm text-slate-900">{item.vendor?.name ?? "â€”"}</td>
-                            <td className="px-6 py-4 text-sm text-slate-600">{item.category?.name ?? "â€”"}</td>
+                            <td className="px-6 py-4 text-sm text-slate-900">{item.vendor?.name ?? "—"}</td>
+                            <td className="px-6 py-4 text-sm text-slate-600">{item.category?.name ?? "—"}</td>
                             <td className="px-6 py-4 text-sm text-slate-600">
                               {item.client?.name ?? <span className="text-slate-400">Office</span>}
                             </td>
@@ -1924,7 +1924,7 @@ export default function Accounting() {
                               PKR {Number(item.amount).toLocaleString()}
                             </td>
                             <td className="px-6 py-4 text-sm text-slate-600">{item.expense_date}</td>
-                            <td className="px-6 py-4 text-sm text-slate-600">{item.due_date ?? "â€”"}</td>
+                            <td className="px-6 py-4 text-sm text-slate-600">{item.due_date ?? "—"}</td>
                             <td className="px-6 py-4">
                               <span className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${statusClass}`}>
                                 {status}
@@ -1932,7 +1932,7 @@ export default function Accounting() {
                               {status === "Paid" && item.paid_via && (
                                 <div className="text-[10px] text-slate-500 mt-1">
                                   via {item.paid_via}
-                                  {item.paid_at ? ` Â· ${new Date(item.paid_at).toLocaleDateString()}` : ""}
+                                  {item.paid_at ? ` · ${new Date(item.paid_at).toLocaleDateString()}` : ""}
                                 </div>
                               )}
                             </td>
@@ -1979,7 +1979,7 @@ export default function Accounting() {
                     <tr>
                       <td colSpan={8} className="px-6 py-10 text-center text-slate-500">
                         <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
-                        Loadingâ€¦
+                        Loading…
                       </td>
                     </tr>
                   )}
@@ -2009,18 +2009,18 @@ export default function Accounting() {
                             {bank.owner_type === "company" && <span className="text-slate-500">Company</span>}
                             {bank.owner_type === "partner" && (
                               <span className="text-purple-700">
-                                Partner: {partners.find((p) => p.id === bank.owner_partner_id)?.name ?? "â€”"}
+                                Partner: {partners.find((p) => p.id === bank.owner_partner_id)?.name ?? "—"}
                               </span>
                             )}
                             {bank.owner_type === "client" && (
                               <span className="text-warning-700">
-                                Client: {receivables.find((c) => c.id === bank.owner_client_id)?.name ?? "â€”"}
+                                Client: {receivables.find((c) => c.id === bank.owner_client_id)?.name ?? "—"}
                               </span>
                             )}
                           </td>
                           <td className="px-6 py-4 text-sm text-brand-600">PKR {acct.toLocaleString()}</td>
                           <td className="px-6 py-4 text-sm text-warning-600">
-                            {pendChq > 0 ? `PKR ${pendChq.toLocaleString()}` : "â€”"}
+                            {pendChq > 0 ? `PKR ${pendChq.toLocaleString()}` : "—"}
                           </td>
                           <td className="px-6 py-4 text-sm text-slate-900">PKR {totalBal.toLocaleString()}</td>
                           <td className="px-6 py-4 flex gap-2 flex-wrap">
@@ -2126,9 +2126,9 @@ export default function Accounting() {
                                 <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-teal-50 text-teal-700">Cash</span>
                               )}
                             </td>
-                            <td className="px-4 py-2 text-sm text-slate-600">{bank?.bank_name ?? "â€”"}</td>
+                            <td className="px-4 py-2 text-sm text-slate-600">{bank?.bank_name ?? "—"}</td>
                             <td className="px-4 py-2 text-sm text-slate-600">{c.cheque_date}</td>
-                            <td className="px-4 py-2 text-sm text-slate-600">{c.recipient ?? "â€”"}</td>
+                            <td className="px-4 py-2 text-sm text-slate-600">{c.recipient ?? "—"}</td>
                             <td className="px-4 py-2 text-sm text-slate-900 text-right">
                               PKR {Number(c.amount).toLocaleString()}
                             </td>
@@ -2138,7 +2138,7 @@ export default function Accounting() {
                                   PKR {linkedSum.toLocaleString()} / {Number(c.amount).toLocaleString()}
                                 </span>
                               ) : (
-                                <span className="text-slate-400">â€”</span>
+                                <span className="text-slate-400">—</span>
                               )}
                             </td>
                             <td className="px-4 py-2">
@@ -2148,7 +2148,7 @@ export default function Accounting() {
                                 </span>
                               ) : (
                                 <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-success-50 text-success-700">
-                                  Cleared{c.cleared_at ? ` Â· ${c.cleared_at.slice(0, 10)}` : ""}
+                                  Cleared{c.cleared_at ? ` · ${c.cleared_at.slice(0, 10)}` : ""}
                                 </span>
                               )}
                             </td>
@@ -2182,7 +2182,7 @@ export default function Accounting() {
                                   for (const p of (psR.data ?? []) as any[]) {
                                     items.push({
                                       kind: "Payslip",
-                                      description: `${p.employee?.employee_code ?? ""} ${p.employee?.full_name ?? ""} Â· ${String(p.period_month ?? "").slice(0, 7)}`,
+                                      description: `${p.employee?.employee_code ?? ""} ${p.employee?.full_name ?? ""} · ${String(p.period_month ?? "").slice(0, 7)}`,
                                       amount: Number(p.net_salary ?? 0),
                                       date: String(p.period_month ?? "").slice(0, 10),
                                     });
@@ -2190,7 +2190,7 @@ export default function Accounting() {
                                   for (const e of (exR.data ?? []) as any[]) {
                                     items.push({
                                       kind: "Expense",
-                                      description: `${e.category?.name ?? "Expense"}${e.client?.name ? ` Â· ${e.client.name}` : ""}${e.description ? ` Â· ${e.description}` : ""}`,
+                                      description: `${e.category?.name ?? "Expense"}${e.client?.name ? ` · ${e.client.name}` : ""}${e.description ? ` · ${e.description}` : ""}`,
                                       amount: Number(e.amount ?? 0),
                                       date: e.expense_date,
                                     });
@@ -2198,7 +2198,7 @@ export default function Accounting() {
                                   for (const a of (advR.data ?? []) as any[]) {
                                     items.push({
                                       kind: "Advance",
-                                      description: `${a.employee?.employee_code ?? ""} ${a.employee?.full_name ?? ""}${a.client?.name ? ` Â· ${a.client.name}` : ""}`,
+                                      description: `${a.employee?.employee_code ?? ""} ${a.employee?.full_name ?? ""}${a.client?.name ? ` · ${a.client.name}` : ""}`,
                                       amount: Number(a.amount ?? 0),
                                       date: a.advance_date,
                                     });
@@ -2206,7 +2206,7 @@ export default function Accounting() {
                                   for (const p of (ipR.data ?? []) as any[]) {
                                     items.push({
                                       kind: "Invoice Payment",
-                                      description: `${p.invoice?.invoice_number ?? ""}${p.client?.name ? ` Â· ${p.client.name}` : ""}`,
+                                      description: `${p.invoice?.invoice_number ?? ""}${p.client?.name ? ` · ${p.client.name}` : ""}`,
                                       amount: Number(p.amount ?? 0),
                                       date: p.payment_date,
                                     });
@@ -2412,7 +2412,7 @@ export default function Accounting() {
               <option value="">Select bank</option>
               {banks.map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.bank_name} Â· {b.account_number} (PKR {Number(b.balance).toLocaleString()})
+                  {b.bank_name} · {b.account_number} (PKR {Number(b.balance).toLocaleString()})
                 </option>
               ))}
             </select>
@@ -2493,7 +2493,7 @@ export default function Accounting() {
           </div>
           <div className="flex gap-2 pt-2">
             <Button variant="primary" size="md" className="flex-1" disabled={chequeSubmitting}>
-              {chequeSubmitting ? "Savingâ€¦" : "Issue Cheque"}
+              {chequeSubmitting ? "Saving…" : "Issue Cheque"}
             </Button>
             <Button variant="secondary" size="md" onClick={() => setIsChequeAddOpen(false)}>
               Cancel
@@ -2523,14 +2523,14 @@ export default function Accounting() {
                     <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-warning-50 text-warning-700">Pending</span>
                   ) : (
                     <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-success-50 text-success-700">
-                      Cleared{chequeView.cleared_at ? ` Â· ${chequeView.cleared_at.slice(0, 10)}` : ""}
+                      Cleared{chequeView.cleared_at ? ` · ${chequeView.cleared_at.slice(0, 10)}` : ""}
                     </span>
                   )}
                 </p>
               </div>
               <div>
                 <p className="text-xs text-slate-500">Bank</p>
-                <p className="text-slate-900">{banks.find((b) => b.id === chequeView.bank_account_id)?.bank_name ?? "â€”"}</p>
+                <p className="text-slate-900">{banks.find((b) => b.id === chequeView.bank_account_id)?.bank_name ?? "—"}</p>
               </div>
               <div>
                 <p className="text-xs text-slate-500">Date</p>
@@ -2538,7 +2538,7 @@ export default function Accounting() {
               </div>
               <div>
                 <p className="text-xs text-slate-500">Recipient</p>
-                <p className="text-slate-900">{chequeView.recipient ?? "â€”"}</p>
+                <p className="text-slate-900">{chequeView.recipient ?? "—"}</p>
               </div>
               <div>
                 <p className="text-xs text-slate-500">Amount</p>
@@ -2564,7 +2564,7 @@ export default function Accounting() {
                       Open attachment
                     </a>
                   ) : (
-                    <span className="text-xs text-slate-400">Loadingâ€¦</span>
+                    <span className="text-xs text-slate-400">Loading…</span>
                   )}
                 </div>
               )}
@@ -2579,7 +2579,7 @@ export default function Accounting() {
                   const remaining = cap - linked;
                   return (
                     <span className={`text-xs ${remaining === 0 ? "text-success-700" : remaining > 0 ? "text-warning-700" : "text-danger-700"}`}>
-                      Linked PKR {linked.toLocaleString()} Â· Remaining PKR {remaining.toLocaleString()}
+                      Linked PKR {linked.toLocaleString()} · Remaining PKR {remaining.toLocaleString()}
                     </span>
                   );
                 })()}
@@ -2673,7 +2673,7 @@ export default function Accounting() {
                 onChange={(e) => setNewBank({ ...newBank, owner_partner_id: e.target.value })}
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               >
-                <option value="">Select partnerâ€¦</option>
+                <option value="">Select partner…</option>
                 {partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
               {partners.length === 0 && (
@@ -2690,7 +2690,7 @@ export default function Accounting() {
                 onChange={(e) => setNewBank({ ...newBank, owner_client_id: e.target.value })}
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               >
-                <option value="">Select clientâ€¦</option>
+                <option value="">Select client…</option>
                 {receivables.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
@@ -2710,7 +2710,7 @@ export default function Accounting() {
           </div>
           <div className="flex items-center gap-3 pt-4">
             <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
-              {submitting ? "Savingâ€¦" : "Add Bank Account"}
+              {submitting ? "Saving…" : "Add Bank Account"}
             </Button>
             <Button variant="secondary" size="md" onClick={() => setIsBankModalOpen(false)}>
               Cancel
@@ -2726,7 +2726,7 @@ export default function Accounting() {
               <label className="block text-sm text-slate-700 mb-1">Bank Account</label>
               <input
                 type="text"
-                value={`${selectedBank.bank_name} Â· ${selectedBank.account_number}`}
+                value={`${selectedBank.bank_name} · ${selectedBank.account_number}`}
                 disabled
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
               />
@@ -2777,7 +2777,7 @@ export default function Accounting() {
             </div>
             <div className="flex items-center gap-3 pt-2">
               <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
-                {submitting ? "Processingâ€¦" : "Withdraw"}
+                {submitting ? "Processing…" : "Withdraw"}
               </Button>
               <Button variant="secondary" size="md" onClick={() => setIsWithdrawModalOpen(false)}>
                 Cancel
@@ -2860,7 +2860,7 @@ export default function Accounting() {
                                   View
                                 </button>
                               ) : (
-                                <span className="text-slate-400">â€”</span>
+                                <span className="text-slate-400">—</span>
                               )}
                             </td>
                           </tr>
@@ -2914,7 +2914,7 @@ export default function Accounting() {
             </div>
             <div className="flex items-center gap-3 pt-2">
               <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
-                {submitting ? "Savingâ€¦" : "Save"}
+                {submitting ? "Saving…" : "Save"}
               </Button>
               <Button variant="secondary" size="md" onClick={() => setIsOpeningBalanceOpen(false)}>
                 Cancel
@@ -2945,7 +2945,7 @@ export default function Accounting() {
                   className="mt-0.5"
                 />
                 <span>
-                  <span className="text-slate-900">No specific invoice</span> â€” apply to client balance
+                  <span className="text-slate-900">No specific invoice</span> — apply to client balance
                   (advance / unallocated receipt). Admin-only.
                 </span>
               </label>
@@ -2959,7 +2959,7 @@ export default function Accounting() {
                   onChange={(e) => setPaymentInvoiceId(e.target.value)}
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                 >
-                  <option value="">Select an open invoiceâ€¦</option>
+                  <option value="">Select an open invoice…</option>
                   {selectedClient.invoices
                     .filter(
                       (i) =>
@@ -2975,7 +2975,7 @@ export default function Accounting() {
                         Number(i.amount_received);
                       return (
                         <option key={i.id} value={i.id}>
-                          {i.invoice_number} Â· {i.invoice_date} Â· Outstanding PKR {out.toLocaleString()}
+                          {i.invoice_number} · {i.invoice_date} · Outstanding PKR {out.toLocaleString()}
                         </option>
                       );
                     })}
@@ -3026,10 +3026,10 @@ export default function Accounting() {
                   onChange={(e) => setPaymentBankId(e.target.value)}
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                 >
-                  <option value="">Select bank accountâ€¦</option>
+                  <option value="">Select bank account…</option>
                   {banks.map((b) => (
                     <option key={b.id} value={b.id}>
-                      {b.bank_name} Â· {b.account_number}
+                      {b.bank_name} · {b.account_number}
                     </option>
                   ))}
                 </select>
@@ -3046,7 +3046,7 @@ export default function Accounting() {
             </div>
             <div className="flex items-center gap-3 pt-2">
               <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
-                {submitting ? "Recordingâ€¦" : "Record Payment"}
+                {submitting ? "Recording…" : "Record Payment"}
               </Button>
               <Button variant="secondary" size="md" onClick={() => setIsPaymentModalOpen(false)}>
                 Cancel
@@ -3063,7 +3063,7 @@ export default function Accounting() {
               <label className="block text-sm text-slate-700 mb-1">Bank Account</label>
               <input
                 type="text"
-                value={`${selectedBank.bank_name} Â· ${selectedBank.account_number}`}
+                value={`${selectedBank.bank_name} · ${selectedBank.account_number}`}
                 disabled
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
               />
@@ -3131,7 +3131,7 @@ export default function Accounting() {
             </div>
             <div className="flex items-center gap-3 pt-2">
               <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
-                {submitting ? "Savingâ€¦" : "Complete Reconciliation"}
+                {submitting ? "Saving…" : "Complete Reconciliation"}
               </Button>
               <Button variant="secondary" size="md" onClick={() => setIsReconcileModalOpen(false)}>
                 Cancel
@@ -3196,7 +3196,7 @@ export default function Accounting() {
                   onChange={(e) => setEditBankForm({ ...editBankForm, owner_partner_id: e.target.value })}
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
                 >
-                  <option value="">Select partnerâ€¦</option>
+                  <option value="">Select partner…</option>
                   {partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </div>
@@ -3210,17 +3210,17 @@ export default function Accounting() {
                   onChange={(e) => setEditBankForm({ ...editBankForm, owner_client_id: e.target.value })}
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
                 >
-                  <option value="">Select clientâ€¦</option>
+                  <option value="">Select client…</option>
                   {receivables.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
             )}
             <p className="text-xs text-slate-500">
-              Balance cannot be edited here â€” use Reconcile to adjust.
+              Balance cannot be edited here — use Reconcile to adjust.
             </p>
             <div className="flex items-center gap-3 pt-4">
               <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
-                {submitting ? "Savingâ€¦" : "Update Account"}
+                {submitting ? "Saving…" : "Update Account"}
               </Button>
               <Button variant="secondary" size="md" onClick={() => setIsEditBankModalOpen(false)}>
                 Cancel
@@ -3239,7 +3239,7 @@ export default function Accounting() {
         <form className="space-y-4" onSubmit={handleSetCashOpening}>
           <div>
             <p className="text-sm text-slate-600 mb-3">
-              Enter the cash on hand at the start of operations. This locks once saved â€”
+              Enter the cash on hand at the start of operations. This locks once saved —
               you won&apos;t be able to change it later. Use <b>Reconcile</b> if you need
               to correct the live balance afterwards.
             </p>
@@ -3258,7 +3258,7 @@ export default function Accounting() {
           </div>
           <div className="flex items-center gap-3 pt-2">
             <Button type="submit" variant="primary" size="md" className="flex-1" disabled={submitting}>
-              {submitting ? "Savingâ€¦" : "Set & Lock"}
+              {submitting ? "Saving…" : "Set & Lock"}
             </Button>
             <Button type="button" variant="secondary" size="md" onClick={() => setIsCashOpeningOpen(false)}>
               Cancel
@@ -3277,14 +3277,14 @@ export default function Accounting() {
               onChange={(e) => setTransferFromId(e.target.value)}
               className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
             >
-              <option value="">Select sourceâ€¦</option>
+              <option value="">Select source…</option>
               {banks.map((b) => {
                 const ownerLabel = b.owner_type === "company" ? "Company" :
                   b.owner_type === "partner" ? `Partner: ${partners.find((p) => p.id === b.owner_partner_id)?.name ?? "?"}` :
                   `Client: ${receivables.find((c) => c.id === b.owner_client_id)?.name ?? "?"}`;
                 return (
                   <option key={b.id} value={b.id}>
-                    {b.bank_name} Â· {b.account_number} ({ownerLabel}) Â· PKR {Number(b.balance).toLocaleString()}
+                    {b.bank_name} · {b.account_number} ({ownerLabel}) · PKR {Number(b.balance).toLocaleString()}
                   </option>
                 );
               })}
@@ -3298,14 +3298,14 @@ export default function Accounting() {
               onChange={(e) => setTransferToId(e.target.value)}
               className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
             >
-              <option value="">Select destinationâ€¦</option>
+              <option value="">Select destination…</option>
               {banks.filter((b) => b.id !== transferFromId).map((b) => {
                 const ownerLabel = b.owner_type === "company" ? "Company" :
                   b.owner_type === "partner" ? `Partner: ${partners.find((p) => p.id === b.owner_partner_id)?.name ?? "?"}` :
                   `Client: ${receivables.find((c) => c.id === b.owner_client_id)?.name ?? "?"}`;
                 return (
                   <option key={b.id} value={b.id}>
-                    {b.bank_name} Â· {b.account_number} ({ownerLabel})
+                    {b.bank_name} · {b.account_number} ({ownerLabel})
                   </option>
                 );
               })}
@@ -3336,7 +3336,7 @@ export default function Accounting() {
           </div>
           <div className="flex items-center gap-3 pt-2">
             <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
-              {submitting ? "Transferringâ€¦" : "Wire Transfer"}
+              {submitting ? "Transferring…" : "Wire Transfer"}
             </Button>
             <Button type="button" variant="secondary" size="md" onClick={() => setIsTransferModalOpen(false)}>
               Cancel
@@ -3353,7 +3353,7 @@ export default function Accounting() {
                 <label className="block text-sm text-slate-700 mb-1">Vendor</label>
                 <input
                   type="text"
-                  value={selectedPayable.vendor?.name ?? "â€”"}
+                  value={selectedPayable.vendor?.name ?? "—"}
                   disabled
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
                 />
@@ -3411,10 +3411,10 @@ export default function Accounting() {
                   onChange={(e) => setMarkPaidBankId(e.target.value)}
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
                 >
-                  <option value="">Select bank accountâ€¦</option>
+                  <option value="">Select bank account…</option>
                   {banks.map((b) => (
                     <option key={b.id} value={b.id}>
-                      {b.bank_name} Â· {b.account_number} (PKR {Number(b.balance).toLocaleString()})
+                      {b.bank_name} · {b.account_number} (PKR {Number(b.balance).toLocaleString()})
                     </option>
                   ))}
                 </select>
@@ -3422,7 +3422,7 @@ export default function Accounting() {
             )}
             <div className="flex items-center gap-3 pt-2">
               <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
-                {submitting ? "Processingâ€¦" : "Confirm Payment"}
+                {submitting ? "Processing…" : "Confirm Payment"}
               </Button>
               <Button variant="secondary" size="md" onClick={() => setIsMarkPaidModalOpen(false)}>
                 Cancel
@@ -3559,7 +3559,7 @@ function HistoryBody({
             <option value="__cash__">Cash (Treasury)</option>
             {banks.map((b) => (
               <option key={b.id} value={b.id}>
-                {b.bank_name} Â· {b.account_number}
+                {b.bank_name} · {b.account_number}
               </option>
             ))}
           </select>
@@ -3608,8 +3608,8 @@ function HistoryBody({
                 <th className="text-left px-3 py-2 text-xs text-slate-500">Date</th>
                 <th className="text-left px-3 py-2 text-xs text-slate-500">Kind</th>
                 <th className="text-left px-3 py-2 text-xs text-slate-500">Account</th>
-                <th className="text-right px-3 py-2 text-xs text-slate-500">Î”</th>
-                <th className="text-right px-3 py-2 text-xs text-slate-500">Before â†’ After</th>
+                <th className="text-right px-3 py-2 text-xs text-slate-500">Δ</th>
+                <th className="text-right px-3 py-2 text-xs text-slate-500">Before → After</th>
                 <th className="text-left px-3 py-2 text-xs text-slate-500">Description</th>
               </tr>
             </thead>
@@ -3622,11 +3622,11 @@ function HistoryBody({
                 return (
                   <tr key={t.id}>
                     <td className="px-3 py-2 text-xs text-slate-600">
-                      {t.created_at ? new Date(t.created_at).toLocaleString() : "â€”"}
+                      {t.created_at ? new Date(t.created_at).toLocaleString() : "—"}
                     </td>
                     <td className="px-3 py-2 text-xs text-slate-700">{kindLabel[t.kind]}</td>
                     <td className="px-3 py-2 text-xs text-slate-700">
-                      {ad !== 0 && bank ? bank.bank_name : cd !== 0 ? "Cash" : "â€”"}
+                      {ad !== 0 && bank ? bank.bank_name : cd !== 0 ? "Cash" : "—"}
                     </td>
                     <td className="px-3 py-2 text-xs text-right font-mono">
                       {ad !== 0 && (
@@ -3654,20 +3654,20 @@ function HistoryBody({
                       {ledger.bank && (
                         <div>
                           <span className="text-slate-400">Bank </span>
-                          {ledger.bank.before.toLocaleString()} â†’{" "}
+                          {ledger.bank.before.toLocaleString()} →{" "}
                           {ledger.bank.after.toLocaleString()}
                         </div>
                       )}
                       {ledger.cash && (
                         <div>
                           <span className="text-slate-400">Cash </span>
-                          {ledger.cash.before.toLocaleString()} â†’{" "}
+                          {ledger.cash.before.toLocaleString()} →{" "}
                           {ledger.cash.after.toLocaleString()}
                         </div>
                       )}
-                      {!ledger.bank && !ledger.cash && <span className="text-slate-400">â€”</span>}
+                      {!ledger.bank && !ledger.cash && <span className="text-slate-400">—</span>}
                     </td>
-                    <td className="px-3 py-2 text-xs text-slate-600">{t.description ?? "â€”"}</td>
+                    <td className="px-3 py-2 text-xs text-slate-600">{t.description ?? "—"}</td>
                   </tr>
                 );
               })}

@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
 import { ArrowLeft, Plus, Loader2, UserPlus, KeyRound } from "lucide-react";
 import Button from "../../components/Button";
@@ -59,7 +59,7 @@ export default function CompanyDetail() {
     if (!id) return;
     setSubmitting(true);
     setError(null);
-    // SSA always creates super_admins from this page â€” the company's first admin.
+    // SSA always creates super_admins from this page — the company's first admin.
     // The super_admin then creates HR/Accounting/etc users with permissions via
     // the in-company User Management page.
     const res = await callCreateUser({
@@ -115,7 +115,7 @@ export default function CompanyDetail() {
         </Link>
 
         {loading ? (
-          <div className="flex items-center gap-2 text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Loadingâ€¦</div>
+          <div className="flex items-center gap-2 text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
         ) : !company ? (
           <p className="text-slate-500">Company not found.</p>
         ) : (
@@ -197,8 +197,8 @@ export default function CompanyDetail() {
                   <tbody className="divide-y divide-slate-200">
                     {users.map((u) => (
                       <tr key={u.id}>
-                        <td className="px-6 py-4 text-sm text-slate-900">{u.full_name ?? "â€”"}</td>
-                        <td className="px-6 py-4 text-sm text-slate-600">{u.email ?? "â€”"}</td>
+                        <td className="px-6 py-4 text-sm text-slate-900">{u.full_name ?? "—"}</td>
+                        <td className="px-6 py-4 text-sm text-slate-600">{u.email ?? "—"}</td>
                         <td className="px-6 py-4 text-sm text-slate-600">
                           {displayLabel(u)}
                           {(u.role === "super_admin" || u.role === "super_super_admin") && (

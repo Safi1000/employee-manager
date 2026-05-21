@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Plus, Loader2, AlertCircle, X, Trash2, Mail, Send, LayoutDashboard, FileText, ArrowUp, ArrowDown } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -65,7 +65,7 @@ export default function Settings() {
     setDashboardSavedAt(null);
   };
 
-  // Invoice template â€” ordered list of { field, title }.
+  // Invoice template — ordered list of { field, title }.
   const initialInvoiceTemplate = useMemo<InvoiceTemplateItem[]>(
     () => (company?.invoice_template as InvoiceTemplateItem[] | null) ?? [],
     [company?.invoice_template],
@@ -591,7 +591,7 @@ export default function Settings() {
       <div className="space-y-3">
         {loading && (
           <div className="text-sm text-slate-500 flex items-center gap-2">
-            <Loader2 className="w-4 h-4 animate-spin" /> Loadingâ€¦
+            <Loader2 className="w-4 h-4 animate-spin" /> Loading…
           </div>
         )}
         {!loading && locations.length === 0 && (
@@ -719,7 +719,7 @@ export default function Settings() {
       <div className="space-y-3 max-h-[40vh] overflow-y-auto pr-1">
         {loading && (
           <div className="text-sm text-slate-500 flex items-center gap-2">
-            <Loader2 className="w-4 h-4 animate-spin" /> Loadingâ€¦
+            <Loader2 className="w-4 h-4 animate-spin" /> Loading…
           </div>
         )}
         {!loading && branches.map((b) => (
@@ -766,7 +766,7 @@ export default function Settings() {
       <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-1">
         {loading && (
           <div className="text-sm text-slate-500 flex items-center gap-2">
-            <Loader2 className="w-4 h-4 animate-spin" /> Loadingâ€¦
+            <Loader2 className="w-4 h-4 animate-spin" /> Loading…
           </div>
         )}
         {!loading && clients.length === 0 && (
@@ -1000,9 +1000,9 @@ export default function Settings() {
                           EOBI PKR {row.eobi_amount.toLocaleString()}
                         </span>
                       )}
-                      {row.employees} employees Â· {row.allowed_leaves_per_month} leaves/mo
-                      {row.email ? ` Â· ${row.email}` : ""}
-                      {row.phone ? ` Â· ${row.phone}` : ""}
+                      {row.employees} employees · {row.allowed_leaves_per_month} leaves/mo
+                      {row.email ? ` · ${row.email}` : ""}
+                      {row.phone ? ` · ${row.phone}` : ""}
                     </p>
                   </div>
                   <div className="flex gap-1 flex-shrink-0">
@@ -1225,7 +1225,7 @@ export default function Settings() {
           </div>
           <div className="flex items-center gap-3 pt-4">
             <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
-              {submitting ? "Savingâ€¦" : "Add Location"}
+              {submitting ? "Saving…" : "Add Location"}
             </Button>
             <Button
               variant="secondary"
@@ -1269,7 +1269,7 @@ export default function Settings() {
           </div>
           <div className="flex items-center gap-3 pt-2">
             <Button type="submit" variant="primary" size="md" className="flex-1" disabled={branchSubmitting}>
-              {branchSubmitting ? "Savingâ€¦" : "Add Branch"}
+              {branchSubmitting ? "Saving…" : "Add Branch"}
             </Button>
             <Button type="button" variant="secondary" size="md" onClick={() => setBranchAddOpen(false)}>
               Cancel
@@ -1487,10 +1487,10 @@ export default function Settings() {
               </div>
             )}
           </div>
-          <p className="text-xs text-slate-500">A unique Client ID (CLI-â€¦) is generated automatically.</p>
+          <p className="text-xs text-slate-500">A unique Client ID (CLI-…) is generated automatically.</p>
           <div className="flex items-center gap-3 pt-4">
             <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
-              {submitting ? "Savingâ€¦" : "Add Client"}
+              {submitting ? "Saving…" : "Add Client"}
             </Button>
             <Button
               variant="secondary"
@@ -1512,7 +1512,7 @@ export default function Settings() {
       <Modal
         isOpen={!!renewClient}
         onClose={() => setRenewClient(null)}
-        title={`Renew Contract â€” ${renewClient?.name ?? ""}`}
+        title={`Renew Contract — ${renewClient?.name ?? ""}`}
         size="md"
       >
         {renewClient && (
@@ -1520,7 +1520,7 @@ export default function Settings() {
             <div className="bg-slate-50 border border-slate-200 rounded-md p-3 text-sm">
               <div className="text-xs text-slate-500 mb-1">Current contract</div>
               <div className="text-slate-900">
-                {renewClient.contract_start ?? "â€”"} â†’ {renewClient.contract_end ?? "â€”"}
+                {renewClient.contract_start ?? "—"} → {renewClient.contract_end ?? "—"}
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -1561,7 +1561,7 @@ export default function Settings() {
                   {renewHistory.map((h) => (
                     <div key={h.id} className="text-xs text-slate-700 bg-slate-50 rounded px-2 py-1.5 border border-slate-200">
                       <div>
-                        {h.contract_start ?? "â€”"} â†’ {h.contract_end ?? "â€”"}
+                        {h.contract_start ?? "—"} → {h.contract_end ?? "—"}
                         <span className="text-slate-400 ml-2">archived {new Date(h.renewed_at).toLocaleDateString()}</span>
                       </div>
                       {h.notes && <div className="text-slate-500 mt-0.5">{h.notes}</div>}
@@ -1579,7 +1579,7 @@ export default function Settings() {
                 onClick={handleSubmitRenew}
                 disabled={renewSubmitting || !renewStart || !renewEnd}
               >
-                {renewSubmitting ? "Renewingâ€¦" : "Confirm Renewal"}
+                {renewSubmitting ? "Renewing…" : "Confirm Renewal"}
               </Button>
               <Button
                 variant="secondary"

@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Plus, Search, Loader2, UserPlus, Pencil, Trash2, KeyRound } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -160,7 +160,7 @@ export default function UserManagement() {
     setEditName(u.full_name ?? "");
     setEditTitle(u.title ?? "");
     // Head Office branch is no longer offered as a per-user scope; legacy users
-    // pinned to it surface as "No branch â€” unrestricted (Head Office admin)".
+    // pinned to it surface as "No branch — unrestricted (Head Office admin)".
     const headOfficeId = branches.find((b) => b.is_head_office)?.id ?? null;
     const branchId = u.branch_id && u.branch_id === headOfficeId ? "" : (u.branch_id ?? "");
     setEditBranchId(branchId);
@@ -265,7 +265,7 @@ export default function UserManagement() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />
               <input
                 type="text"
-                placeholder="Search by name, email, or titleâ€¦"
+                placeholder="Search by name, email, or title…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -275,7 +275,7 @@ export default function UserManagement() {
 
           <div className="overflow-x-auto">
             {loading ? (
-              <div className="p-8 flex items-center gap-2 text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Loadingâ€¦</div>
+              <div className="p-8 flex items-center gap-2 text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
             ) : filtered.length === 0 ? (
               <div className="p-12 text-center">
                 <Plus className="w-8 h-8 text-slate-300 mx-auto mb-2" strokeWidth={1.5} />
@@ -296,8 +296,8 @@ export default function UserManagement() {
                 <tbody className="divide-y divide-slate-200">
                   {filtered.map((u) => (
                     <tr key={u.id} className="hover:bg-slate-50">
-                      <td className="px-6 py-4 text-sm text-slate-900">{u.full_name ?? "â€”"}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{u.email ?? "â€”"}</td>
+                      <td className="px-6 py-4 text-sm text-slate-900">{u.full_name ?? "—"}</td>
+                      <td className="px-6 py-4 text-sm text-slate-600">{u.email ?? "—"}</td>
                       <td className="px-6 py-4 text-sm text-slate-600">
                         {displayLabel(u)}
                         {showImplicitAll(u.role) && (
@@ -306,7 +306,7 @@ export default function UserManagement() {
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-600">
                         {u.branch_id
-                          ? branches.find((b) => b.id === u.branch_id)?.name ?? "â€”"
+                          ? branches.find((b) => b.id === u.branch_id)?.name ?? "—"
                           : <span className="text-xs text-slate-400">All branches</span>}
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-600">
@@ -406,7 +406,7 @@ export default function UserManagement() {
                 onChange={(e) => setCreateBranchId(e.target.value)}
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
               >
-                <option value="">No branch â€” unrestricted (Head Office admin)</option>
+                <option value="">No branch — unrestricted (Head Office admin)</option>
                 {branches.filter((b) => !b.is_head_office).map((b) => (
                   <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
@@ -480,7 +480,7 @@ export default function UserManagement() {
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm disabled:bg-slate-50 disabled:text-slate-500"
                 />
                 {editUser.role === "super_admin" && (
-                  <p className="text-xs text-brand-600 mt-1">This user is a Super Admin â€” implicit full access.</p>
+                  <p className="text-xs text-brand-600 mt-1">This user is a Super Admin — implicit full access.</p>
                 )}
               </div>
               <div className="md:col-span-2">
@@ -490,7 +490,7 @@ export default function UserManagement() {
                   onChange={(e) => setEditBranchId(e.target.value)}
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
                 >
-                  <option value="">No branch â€” unrestricted (Head Office admin)</option>
+                  <option value="">No branch — unrestricted (Head Office admin)</option>
                   {branches.map((b) => (
                     <option key={b.id} value={b.id}>{b.name}</option>
                   ))}

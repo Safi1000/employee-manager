@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Calendar as CalendarIcon, AlertCircle, Loader2, X, CalendarRange, ChevronLeft, ChevronRight, Search } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -559,7 +559,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     }
     if (skipped.length > 0) {
       setError(
-        `Skipped ${skipped.length} reliever${skipped.length === 1 ? "" : "s"} without a picked client: ${skipped.slice(0, 3).join(", ")}${skipped.length > 3 ? "â€¦" : ""}.`,
+        `Skipped ${skipped.length} reliever${skipped.length === 1 ? "" : "s"} without a picked client: ${skipped.slice(0, 3).join(", ")}${skipped.length > 3 ? "…" : ""}.`,
       );
     }
     loadHistory();
@@ -738,13 +738,13 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                 </h3>
                 <p className="text-xs text-slate-500 font-mono">
                   {viewEmployee.employee_code}
-                  {viewEmployee.client_name && ` Â· ${viewEmployee.client_name}`}
-                  {viewEmployee.location_name && ` Â· ${viewEmployee.location_name}`}
+                  {viewEmployee.client_name && ` · ${viewEmployee.client_name}`}
+                  {viewEmployee.location_name && ` · ${viewEmployee.location_name}`}
                 </p>
                 <p className="text-xs text-slate-600 mt-2">
-                  <span className="text-success-700">{viewStats.p} present</span> Â·{" "}
-                  <span className="text-danger-700">{viewStats.a} absent</span> Â·{" "}
-                  <span className="text-warning-700">{viewStats.l} leave</span> Â·{" "}
+                  <span className="text-success-700">{viewStats.p} present</span> ·{" "}
+                  <span className="text-danger-700">{viewStats.a} absent</span> ·{" "}
+                  <span className="text-warning-700">{viewStats.l} leave</span> ·{" "}
                   <span className="text-slate-500">view-only</span>
                 </p>
               </div>
@@ -789,7 +789,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
 
             {viewLoading ? (
               <div className="flex items-center gap-2 text-slate-500 py-6">
-                <Loader2 className="w-4 h-4 animate-spin" /> Loadingâ€¦
+                <Loader2 className="w-4 h-4 animate-spin" /> Loading…
               </div>
             ) : (
               <div className="grid grid-cols-7 gap-1">
@@ -854,7 +854,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />
                 <input
                   type="text"
-                  placeholder="Name or IDâ€¦"
+                  placeholder="Name or ID…"
                   value={empSearch}
                   onChange={(e) => setEmpSearch(e.target.value)}
                   className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -928,12 +928,12 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         <div className="bg-white rounded-lg border border-slate-200 mb-6">
           <div className="p-4 md:p-6 border-b border-slate-200 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div className="min-w-0">
-              <h3 className="text-base text-slate-900">Mark Attendance â€” {date}</h3>
+              <h3 className="text-base text-slate-900">Mark Attendance — {date}</h3>
               <p className="text-xs text-slate-500 mt-1">
-                {filteredEmployees.length} employee{filteredEmployees.length === 1 ? "" : "s"} â€¢{" "}
-                <span className="text-success-600">{stats.p} present</span> Â·{" "}
-                <span className="text-danger-600">{stats.a} absent</span> Â·{" "}
-                <span className="text-warning-600">{stats.l} leave</span> Â·{" "}
+                {filteredEmployees.length} employee{filteredEmployees.length === 1 ? "" : "s"} •{" "}
+                <span className="text-success-600">{stats.p} present</span> ·{" "}
+                <span className="text-danger-600">{stats.a} absent</span> ·{" "}
+                <span className="text-warning-600">{stats.l} leave</span> ·{" "}
                 <span className="text-slate-500">{stats.unm} unmarked</span>
               </p>
             </div>
@@ -967,7 +967,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                   <tr>
                     <td colSpan={6} className="px-6 py-10 text-center text-slate-500">
                       <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
-                      Loadingâ€¦
+                      Loading…
                     </td>
                   </tr>
                 )}
@@ -1018,17 +1018,17 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                               }}
                               className="px-2 py-1 border border-slate-200 rounded text-sm max-w-[12rem]"
                             >
-                              <option value="">Pick clientâ€¦</option>
+                              <option value="">Pick client…</option>
                               {clients.map((c) => (
                                 <option key={c.id} value={c.id}>{c.name}</option>
                               ))}
                             </select>
                           ) : (
-                            employee.client_name ?? "â€”"
+                            employee.client_name ?? "—"
                           )}
                         </td>
                         <td className="px-6 py-4 text-sm text-slate-600">
-                          {employee.location_name ?? "â€”"}
+                          {employee.location_name ?? "—"}
                         </td>
                         <td className="px-6 py-4">
                           <span
@@ -1148,8 +1148,8 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                     className="hover:bg-slate-50 transition-colors"
                   >
                     <td className="px-6 py-4 text-sm text-slate-900">{record.date}</td>
-                    <td className="px-6 py-4 text-sm text-slate-600">{record.location_name ?? "â€”"}</td>
-                    <td className="px-6 py-4 text-sm text-slate-600">{record.client_name ?? "â€”"}</td>
+                    <td className="px-6 py-4 text-sm text-slate-600">{record.location_name ?? "—"}</td>
+                    <td className="px-6 py-4 text-sm text-slate-600">{record.client_name ?? "—"}</td>
                     <td className="px-6 py-4 text-sm text-success-600">{record.present}</td>
                     <td className="px-6 py-4 text-sm text-danger-600">{record.absent}</td>
                     <td className="px-6 py-4 text-sm text-warning-600">{record.leave}</td>
@@ -1181,11 +1181,11 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
               </div>
               <div>
                 <p className="text-slate-500 mb-1">Location</p>
-                <p className="text-slate-900">{detailRecord.location_name ?? "â€”"}</p>
+                <p className="text-slate-900">{detailRecord.location_name ?? "—"}</p>
               </div>
               <div>
                 <p className="text-slate-500 mb-1">Client</p>
-                <p className="text-slate-900">{detailRecord.client_name ?? "â€”"}</p>
+                <p className="text-slate-900">{detailRecord.client_name ?? "—"}</p>
               </div>
             </div>
 
@@ -1264,7 +1264,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                   <div className="text-sm text-slate-900 truncate">{bulkEmployee.full_name}</div>
                   <div className="text-xs text-slate-500 font-mono">
                     {bulkEmployee.employee_code}
-                    {bulkEmployee.client_name && ` Â· ${bulkEmployee.client_name}`}
+                    {bulkEmployee.client_name && ` · ${bulkEmployee.client_name}`}
                   </div>
                 </div>
                 <button
@@ -1287,7 +1287,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                     type="text"
                     value={bulkEmpSearch}
                     onChange={(e) => setBulkEmpSearch(e.target.value)}
-                    placeholder="Search name or codeâ€¦"
+                    placeholder="Search name or code…"
                     className="w-full pl-10 pr-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
                   />
                 </div>
@@ -1305,7 +1305,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                         <div className="text-slate-900">{e.full_name}</div>
                         <div className="text-xs text-slate-500 font-mono">
                           {e.employee_code}
-                          {e.client_name && ` Â· ${e.client_name}`}
+                          {e.client_name && ` · ${e.client_name}`}
                         </div>
                       </button>
                     ))
@@ -1396,7 +1396,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                 </div>
                 {bulkLoading ? (
                   <div className="flex items-center gap-2 text-slate-500 py-6">
-                    <Loader2 className="w-4 h-4 animate-spin" /> Loadingâ€¦
+                    <Loader2 className="w-4 h-4 animate-spin" /> Loading…
                   </div>
                 ) : (
                   <div className="grid grid-cols-7 gap-1">
@@ -1487,7 +1487,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                 </button>
                 {bulkSubmitting && (
                   <span className="self-center text-xs text-slate-500 flex items-center gap-1">
-                    <Loader2 className="w-3 h-3 animate-spin" /> Savingâ€¦
+                    <Loader2 className="w-3 h-3 animate-spin" /> Saving…
                   </span>
                 )}
               </div>

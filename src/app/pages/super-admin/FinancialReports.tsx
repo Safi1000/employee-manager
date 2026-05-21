@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Download, Loader2, FileText, Plus, Lock, Trash2, Pencil } from "lucide-react";
 import Header from "../../components/Header";
 import ExportButton from "../../components/ExportButton";
@@ -466,7 +466,7 @@ export default function FinancialReports() {
     return m;
   }, [partnerBanks]);
 
-  // Monthly net P&L = invoices âˆ’ payroll âˆ’ expenses for that month.
+  // Monthly net P&L = invoices − payroll − expenses for that month.
   const monthlyPL = (period: string) => {
     const start = firstOfMonth(period);
     const end = lastOfMonth(period);
@@ -672,7 +672,7 @@ export default function FinancialReports() {
                 exportTable({
                   fileName: `Chart of Accounts ${formatPeriod(chartPeriod)}.xlsx`,
                   sheetName: "Chart of Accounts",
-                  title: `Chart of Accounts â€” ${formatPeriod(chartPeriod)}`,
+                  title: `Chart of Accounts — ${formatPeriod(chartPeriod)}`,
                   headers: ["Code", "Account Name", "Balance"],
                   rows: [
                     ["1000", "Assets", chartFigures.weapons],
@@ -688,7 +688,7 @@ export default function FinancialReports() {
                 exportTable({
                   fileName: `Partnership Report ${formatPeriod(partnershipPeriod)}.xlsx`,
                   sheetName: "Partnership",
-                  title: `Partnership Report â€” ${formatPeriod(partnershipPeriod)}`,
+                  title: `Partnership Report — ${formatPeriod(partnershipPeriod)}`,
                   headers: [
                     "Partner",
                     "Profit Share %",
@@ -742,7 +742,7 @@ export default function FinancialReports() {
                 <div>
                   <h3 className="text-lg text-slate-900 mb-1">Profit & Loss Statement</h3>
                   <p className="text-sm text-slate-500">
-                    For {formatPeriod(plPeriod)} ({firstOfMonth(plPeriod)} â€“ {lastOfMonth(plPeriod)})
+                    For {formatPeriod(plPeriod)} ({firstOfMonth(plPeriod)} – {lastOfMonth(plPeriod)})
                   </p>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
@@ -774,7 +774,7 @@ export default function FinancialReports() {
 
               {loadingPl ? (
                 <div className="py-12 text-center text-slate-500">
-                  <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loadingâ€¦
+                  <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                 </div>
               ) : (
                 <div className="space-y-6">
@@ -874,7 +874,7 @@ export default function FinancialReports() {
                 <div>
                   <h3 className="text-lg text-slate-900 mb-1">Chart of Accounts</h3>
                   <p className="text-sm text-slate-500">
-                    For {formatPeriod(chartPeriod)} ({firstOfMonth(chartPeriod)} â€“ {lastOfMonth(chartPeriod)})
+                    For {formatPeriod(chartPeriod)} ({firstOfMonth(chartPeriod)} – {lastOfMonth(chartPeriod)})
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -895,7 +895,7 @@ export default function FinancialReports() {
 
               {loadingChart ? (
                 <div className="py-12 text-center text-slate-500">
-                  <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loadingâ€¦
+                  <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -989,7 +989,7 @@ export default function FinancialReports() {
                   </select>
                 </div>
                 <span className="text-xs text-slate-500">
-                  Total Income = Total Invoiced âˆ’ (Payroll + Expenses)
+                  Total Income = Total Invoiced − (Payroll + Expenses)
                 </span>
               </div>
 
@@ -1051,7 +1051,7 @@ export default function FinancialReports() {
                     {loadingClients && (
                       <tr>
                         <td colSpan={6} className="px-6 py-10 text-center text-slate-500">
-                          <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loadingâ€¦
+                          <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                         </td>
                       </tr>
                     )}
@@ -1105,7 +1105,7 @@ export default function FinancialReports() {
                 <div>
                   <h3 className="text-lg text-slate-900 mb-1">Partnership Report</h3>
                   <p className="text-sm text-slate-500">
-                    For {formatPeriod(partnershipPeriod)} Â· Total share allocated:{" "}
+                    For {formatPeriod(partnershipPeriod)} · Total share allocated:{" "}
                     <span className={totalShare > 100 ? "text-danger-600" : "text-slate-900"}>
                       {totalShare}%
                     </span>
@@ -1174,7 +1174,7 @@ export default function FinancialReports() {
               <div className="overflow-x-auto">
                 {loadingPartnership ? (
                   <div className="py-12 text-center text-slate-500">
-                    <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loadingâ€¦
+                    <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                   </div>
                 ) : partnerRows.length === 0 ? (
                   <div className="py-12 text-center text-slate-500 text-sm">
@@ -1377,7 +1377,7 @@ export default function FinancialReports() {
                                   View
                                 </button>
                               ) : (
-                                <span className="text-slate-400">â€”</span>
+                                <span className="text-slate-400">—</span>
                               )}
                             </td>
                           </tr>

@@ -19,8 +19,8 @@ export default function StatCard({ title, value, icon: Icon, trend, tone: tonePr
     <div className={`${t.statCard} p-6 hover:shadow-sm transition-shadow`}>
       <div className="flex items-start justify-between">
         <div className="flex-1">
-          <p className="text-sm text-slate-500 mb-1">{title}</p>
-          <p className="text-3xl text-slate-900 mb-2">{value}</p>
+          <p className="text-xs uppercase tracking-wide text-slate-500 mb-1">{title}</p>
+          <p className={`text-3xl mb-2 ${t.text}`}>{value}</p>
           {trend && (
             <p
               className={

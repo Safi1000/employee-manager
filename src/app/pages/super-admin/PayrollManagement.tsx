@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Search, Download, AlertCircle, X, Loader2 } from "lucide-react";
 import jsPDF from "jspdf";
 import Header from "../../components/Header";
@@ -79,7 +79,7 @@ type PayrollManagementProps = { relieversOnly?: boolean };
 export default function PayrollManagement({ relieversOnly = false }: PayrollManagementProps = {}) {
   const today = new Date();
   const currentPeriod = firstOfMonth(today);
-  // Default the filter to the previous month â€” payroll is typically processed
+  // Default the filter to the previous month — payroll is typically processed
   // after a month has ended.
   const previousPeriod = firstOfMonth(new Date(today.getFullYear(), today.getMonth() - 1, 1));
 
@@ -159,7 +159,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     const carryWindowStartIso = `${carryWindowStart.getFullYear()}-${String(
       carryWindowStart.getMonth() + 1
     ).padStart(2, "0")}-01`;
-    // Server-side aggregation RPCs â€” raw SELECT was hitting PostgREST's
+    // Server-side aggregation RPCs — raw SELECT was hitting PostgREST's
     // ~1000-row response cap once a company crossed ~30 employees with full
     // month coverage, silently dropping attendance for most people.
     const [attRes, payRes, advRes, attHistRes] = await Promise.all([
@@ -188,7 +188,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
 
     // In relievers mode, additionally pull per-day client attribution so the
     // table can show "Worked for: Client A 5d, Client B 3d" and so the same
-    // numbers can be fed into the P&L (per-client × per_day_salary).
+    // numbers can be fed into the P&L (per-client � per_day_salary).
     if (relieversOnly) {
       const { data: relRows } = await supabase
         .from("attendance_records")
@@ -571,7 +571,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
 
   const markAllCleared = async () => {
     // Cleared = status is "Cleared"; this just flips Pending rows in the
-    // current filter. No money moves â€” purely a status change.
+    // current filter. No money moves — purely a status change.
     const pending = filtered.filter((r) => r.status === "Pending");
     if (pending.length === 0) {
       setError("No pending rows in the current filter to clear.");
@@ -639,7 +639,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
             amount: row.net_salary,
             cash_delta: 0,
             account_delta: -row.net_salary,
-            description: `Payroll ${formatPeriod(row.period_month)} Â· ${row.employee.employee_code} ${row.employee.full_name}`,
+            description: `Payroll ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
           });
         } else if (row.payment_mode === "Cheque") {
           if (!row.cheque_id) {
@@ -677,7 +677,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
             amount: row.net_salary,
             cash_delta: -row.net_salary,
             account_delta: 0,
-            description: `Payroll (cash) ${formatPeriod(row.period_month)} Â· ${row.employee.employee_code} ${row.employee.full_name}`,
+            description: `Payroll (cash) ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
           });
         }
         await savePayslip({
@@ -704,7 +704,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
             amount: row.net_salary,
             cash_delta: 0,
             account_delta: row.net_salary,
-            description: `Reverse payroll ${formatPeriod(row.period_month)} Â· ${row.employee.employee_code} ${row.employee.full_name}`,
+            description: `Reverse payroll ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
           });
         } else if (row.payment_mode === "Cheque") {
           // Cheque-paid: do not touch bank balance. Un-disburse only flips the flag.
@@ -729,7 +729,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
             amount: row.net_salary,
             cash_delta: row.net_salary,
             account_delta: 0,
-            description: `Reverse payroll (cash) ${formatPeriod(row.period_month)} Â· ${row.employee.employee_code} ${row.employee.full_name}`,
+            description: `Reverse payroll (cash) ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
           });
         }
         await savePayslip({ ...row, disbursed: false, disbursed_at: null });
@@ -799,7 +799,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
             amount: net,
             cash_delta: 0,
             account_delta: -net,
-            description: `Payroll ${formatPeriod(row.period_month)} Â· ${row.employee.employee_code} ${row.employee.full_name}`,
+            description: `Payroll ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
           });
         } else {
           const { data: trea } = await supabase
@@ -824,7 +824,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
             amount: net,
             cash_delta: -net,
             account_delta: 0,
-            description: `Payroll (cash) ${formatPeriod(row.period_month)} Â· ${row.employee.employee_code} ${row.employee.full_name}`,
+            description: `Payroll (cash) ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
           });
         }
         await savePayslip({
@@ -903,16 +903,16 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     line("Base Salary", `PKR ${row.base_salary.toLocaleString()}`);
     if (row.per_day_salary != null)
       line("Per Day Salary", `PKR ${Number(row.per_day_salary).toLocaleString()}`);
-    line("Earned (Per Day Ã— Paid Days)", `PKR ${Math.round((row.per_day_salary ?? 0) * row.effective_present_days).toLocaleString()}`);
+    line("Earned (Per Day × Paid Days)", `PKR ${Math.round((row.per_day_salary ?? 0) * row.effective_present_days).toLocaleString()}`);
     line("Bonus", `PKR ${row.bonus.toLocaleString()}`);
     line("Deductions", `PKR ${row.deductions.toLocaleString()}`);
     y += 4;
     doc.setFontSize(12);
-    line("Final Salary (Earned + Bonus âˆ’ Deductions)", `PKR ${row.final_salary.toLocaleString()}`);
+    line("Final Salary (Earned + Bonus − Deductions)", `PKR ${row.final_salary.toLocaleString()}`);
     doc.setFontSize(11);
-    if (row.income_tax > 0) line("Income Tax (1% over PKR 50,000)", `âˆ’ PKR ${Math.round(row.income_tax).toLocaleString()}`);
-    if (row.eobi > 0) line("EOBI", `âˆ’ PKR ${Math.round(row.eobi).toLocaleString()}`);
-    line("Advance", `âˆ’ PKR ${row.advance.toLocaleString()}`);
+    if (row.income_tax > 0) line("Income Tax (1% over PKR 50,000)", `− PKR ${Math.round(row.income_tax).toLocaleString()}`);
+    if (row.eobi > 0) line("EOBI", `− PKR ${Math.round(row.eobi).toLocaleString()}`);
+    line("Advance", `− PKR ${row.advance.toLocaleString()}`);
     y += 6;
     doc.setFontSize(14);
     line("Net Salary", `PKR ${row.net_salary.toLocaleString()}`);
@@ -921,7 +921,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     line("Payment Mode", row.payment_mode);
     if (row.payment_mode === "Bank" && row.bank_account_id) {
       const bank = banks.find((b) => b.id === row.bank_account_id);
-      if (bank) line("Bank Account", `${bank.bank_name} Â· ${bank.account_number}`);
+      if (bank) line("Bank Account", `${bank.bank_name} · ${bank.account_number}`);
     }
     line("Status", row.status);
     line("Disbursed", row.disbursed ? "Yes" : "No");
@@ -934,7 +934,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     <>
       <BusyOverlay
         show={bulkSubmitting || bulkClearing}
-        message={bulkSubmitting ? "Disbursing payslipsâ€¦" : "Clearing payslipsâ€¦"}
+        message={bulkSubmitting ? "Disbursing payslips…" : "Clearing payslips…"}
         detail="This may take a moment for large batches. Please don't close this tab."
       />
       <Header
@@ -952,7 +952,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
               disabled={bulkClearing}
             >
               {bulkClearing && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              {bulkClearing ? "Clearingâ€¦" : "Mark All as Cleared"}
+              {bulkClearing ? "Clearing…" : "Mark All as Cleared"}
             </Button>
             <Button
               variant="primary"
@@ -1026,7 +1026,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                       type="text"
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
-                      placeholder="Search by employee ID, name, or phoneâ€¦"
+                      placeholder="Search by employee ID, name, or phone…"
                       className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                     />
                   </div>
@@ -1123,7 +1123,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                       <tr>
                         <td colSpan={8} className="px-6 py-10 text-center text-slate-500">
                           <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
-                          Loadingâ€¦
+                          Loading…
                         </td>
                       </tr>
                     )}
@@ -1149,14 +1149,14 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                               <div className="text-sm text-slate-900">{e.full_name}</div>
                               <div className="text-xs text-slate-500 font-mono">
                                 {e.employee_code}
-                                {e.phone ? ` Â· ${e.phone}` : ""}
+                                {e.phone ? ` · ${e.phone}` : ""}
                               </div>
                             </td>
                             <td className="px-4 py-3 text-sm text-slate-700">
                               {relieversOnly ? (() => {
                                 const breakdown = relieverPerClient.get(e.id);
                                 if (!breakdown || breakdown.size === 0) {
-                                  return <span className="text-slate-400">â€”</span>;
+                                  return <span className="text-slate-400">—</span>;
                                 }
                                 const items = Array.from(breakdown.entries()).sort((a, b) => b[1] - a[1]);
                                 return (
@@ -1176,7 +1176,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                                   </div>
                                 );
                               })() : (
-                                e.client_name ?? <span className="text-slate-400">â€”</span>
+                                e.client_name ?? <span className="text-slate-400">—</span>
                               )}
                             </td>
                             <td className="px-4 py-3 text-xs text-slate-600">
@@ -1339,7 +1339,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                     </div>
                     <div className="col-span-2">
                       <label className="block text-xs text-slate-500 mb-1">
-                        Advance <span className="text-slate-400">(from Expenses Â· Advances)</span>
+                        Advance <span className="text-slate-400">(from Expenses · Advances)</span>
                       </label>
                       <input
                         type="number"
@@ -1348,7 +1348,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                         className="w-full px-2 py-1 border border-slate-200 rounded text-sm bg-slate-50 text-slate-500"
                       />
                       <p className="text-xs text-slate-400 mt-1">
-                        Sum of advances recorded for {formatPeriod(selectedPeriod)}. Edit in Expenses â†’ Advances.
+                        Sum of advances recorded for {formatPeriod(selectedPeriod)}. Edit in Expenses → Advances.
                       </p>
                     </div>
                   </div>
@@ -1375,9 +1375,9 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                       </span>
                     </div>
                     <div className="flex justify-between text-xs">
-                      <span className="text-slate-500">Per Day Ã— Paid Days</span>
+                      <span className="text-slate-500">Per Day × Paid Days</span>
                       <span className="text-slate-700">
-                        PKR {Number(selectedRow.per_day_salary ?? 0).toLocaleString()} Ã—{" "}
+                        PKR {Number(selectedRow.per_day_salary ?? 0).toLocaleString()} ×{" "}
                         {selectedRow.effective_present_days} = PKR{" "}
                         {Math.round(
                           (selectedRow.per_day_salary ?? 0) *
@@ -1402,7 +1402,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                     </label>
                     {selectedRow.override_leaves && (
                       <p className="text-xs text-success-700 bg-success-50 border border-success-200 rounded px-2 py-1">
-                        Override on â€” all {selectedRow.leave_days} leaves counted as paid days.
+                        Override on — all {selectedRow.leave_days} leaves counted as paid days.
                         Remember to click Save.
                       </p>
                     )}
@@ -1416,18 +1416,18 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                     {selectedRow.income_tax > 0 && (
                       <div className="flex justify-between">
                         <span className="text-slate-500">Income Tax (1% over 50K)</span>
-                        <span className="text-danger-700">âˆ’ PKR {Math.round(selectedRow.income_tax).toLocaleString()}</span>
+                        <span className="text-danger-700">− PKR {Math.round(selectedRow.income_tax).toLocaleString()}</span>
                       </div>
                     )}
                     {selectedRow.eobi > 0 && (
                       <div className="flex justify-between">
                         <span className="text-slate-500">EOBI</span>
-                        <span className="text-danger-700">âˆ’ PKR {Math.round(selectedRow.eobi).toLocaleString()}</span>
+                        <span className="text-danger-700">− PKR {Math.round(selectedRow.eobi).toLocaleString()}</span>
                       </div>
                     )}
                     <div className="flex justify-between">
                       <span className="text-slate-500">Advance</span>
-                      <span className="text-danger-700">âˆ’ PKR {Math.round(selectedRow.advance).toLocaleString()}</span>
+                      <span className="text-danger-700">− PKR {Math.round(selectedRow.advance).toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between pt-1 border-t border-slate-100">
                       <span className="text-base text-slate-900">Net Salary</span>
@@ -1464,7 +1464,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                         <option value="">Select bank account</option>
                         {banks.map((b) => (
                           <option key={b.id} value={b.id}>
-                            {b.bank_name} Â· {b.account_number} (PKR {Number(b.balance).toLocaleString()})
+                            {b.bank_name} · {b.account_number} (PKR {Number(b.balance).toLocaleString()})
                           </option>
                         ))}
                       </select>
@@ -1492,13 +1492,13 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                               const remaining = chequeRemaining(c.id, ownPrev);
                               return (
                                 <option key={c.id} value={c.id}>
-                                  #{c.cheque_number} Â· {bank?.bank_name ?? "Bank"} Â· PKR {Number(c.amount).toLocaleString()} (remaining PKR {remaining.toLocaleString()}) Â· {c.status}
+                                  #{c.cheque_number} · {bank?.bank_name ?? "Bank"} · PKR {Number(c.amount).toLocaleString()} (remaining PKR {remaining.toLocaleString()}) · {c.status}
                                 </option>
                               );
                             })}
                         </select>
                         <p className="text-[11px] text-slate-500">
-                          Cashflow recognises this salary only after the cheque is marked Cleared in Bank Accounts â†’ Cheques.
+                          Cashflow recognises this salary only after the cheque is marked Cleared in Bank Accounts → Cheques.
                         </p>
                       </>
                     )}
@@ -1545,7 +1545,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                       onClick={() => handleSaveRow(selectedRow)}
                       disabled={savingId === selectedRow.employee.id}
                     >
-                      {savingId === selectedRow.employee.id ? "Savingâ€¦" : "Save"}
+                      {savingId === selectedRow.employee.id ? "Saving…" : "Save"}
                     </Button>
                     <Button
                       variant="primary"
@@ -1661,7 +1661,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                   </div>
                 )}
                 <div className="flex justify-between">
-                  <span className="text-slate-600">Earned (Per Day Ã— Paid Days)</span>
+                  <span className="text-slate-600">Earned (Per Day × Paid Days)</span>
                   <span className="text-slate-900">
                     PKR{" "}
                     {Math.round(
@@ -1676,7 +1676,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-600">Deductions</span>
-                  <span className="text-danger-600">âˆ’ PKR {payslipData.deductions.toLocaleString()}</span>
+                  <span className="text-danger-600">− PKR {payslipData.deductions.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between pt-2 border-t border-slate-200">
                   <span className="text-slate-700">Final Salary</span>
@@ -1685,18 +1685,18 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                 {payslipData.income_tax > 0 && (
                   <div className="flex justify-between">
                     <span className="text-slate-600">Income Tax (1% over PKR 50,000)</span>
-                    <span className="text-danger-600">âˆ’ PKR {Math.round(payslipData.income_tax).toLocaleString()}</span>
+                    <span className="text-danger-600">− PKR {Math.round(payslipData.income_tax).toLocaleString()}</span>
                   </div>
                 )}
                 {payslipData.eobi > 0 && (
                   <div className="flex justify-between">
                     <span className="text-slate-600">EOBI</span>
-                    <span className="text-danger-600">âˆ’ PKR {Math.round(payslipData.eobi).toLocaleString()}</span>
+                    <span className="text-danger-600">− PKR {Math.round(payslipData.eobi).toLocaleString()}</span>
                   </div>
                 )}
                 <div className="flex justify-between">
                   <span className="text-slate-600">Advance</span>
-                  <span className="text-danger-600">âˆ’ PKR {payslipData.advance.toLocaleString()}</span>
+                  <span className="text-danger-600">− PKR {payslipData.advance.toLocaleString()}</span>
                 </div>
               </div>
             </div>
@@ -1792,7 +1792,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                     <option value="">Select bank account</option>
                     {banks.map((b) => (
                       <option key={b.id} value={b.id}>
-                        {b.bank_name} Â· {b.account_number} (PKR {Number(b.balance).toLocaleString()})
+                        {b.bank_name} · {b.account_number} (PKR {Number(b.balance).toLocaleString()})
                       </option>
                     ))}
                   </select>
@@ -1827,7 +1827,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                   disabled={bulkSubmitting || candidates.length === 0}
                 >
                   {bulkSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                  {bulkSubmitting ? `Disbursing ${candidates.length} payslip${candidates.length === 1 ? "" : "s"}â€¦` : `Disburse ${candidates.length} Payslip${candidates.length === 1 ? "" : "s"}`}
+                  {bulkSubmitting ? `Disbursing ${candidates.length} payslip${candidates.length === 1 ? "" : "s"}…` : `Disburse ${candidates.length} Payslip${candidates.length === 1 ? "" : "s"}`}
                 </Button>
                 <Button
                   variant="secondary"
@@ -1854,7 +1854,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
             <p className="text-sm text-slate-600">
               Disbursing payroll for{" "}
               <span className="text-slate-900">{rowDisburseTarget.employee.full_name}</span>{" "}
-              ({rowDisburseTarget.employee.employee_code}) Â· PKR {rowDisburseTarget.net_salary.toLocaleString()}
+              ({rowDisburseTarget.employee.employee_code}) · PKR {rowDisburseTarget.net_salary.toLocaleString()}
             </p>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Disbursement Date *</label>

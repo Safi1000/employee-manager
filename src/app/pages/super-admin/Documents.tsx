@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Search, FileText, Download, AlertCircle, Loader2, X, Upload } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -29,9 +29,9 @@ type EditForm = {
 };
 
 const formatDate = (iso: string | null) => {
-  if (!iso) return "â€”";
+  if (!iso) return "—";
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "â€”";
+  if (Number.isNaN(d.getTime())) return "—";
   return d.toISOString().slice(0, 10);
 };
 
@@ -247,7 +247,7 @@ export default function Documents() {
     setError(null);
     try {
       if (doc.drive_file_id) {
-        // Drive download endpoint — alt=media streams the file directly.
+        // Drive download endpoint � alt=media streams the file directly.
         // Since we set "anyone with link" permission on upload, this works
         // without an access token.
         const url = `https://drive.google.com/uc?export=download&id=${doc.drive_file_id}`;
@@ -367,7 +367,7 @@ export default function Documents() {
                 {loading && (
                   <tr>
                     <td colSpan={9} className="px-6 py-10 text-center text-slate-500">
-                      <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loadingâ€¦
+                      <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                     </td>
                   </tr>
                 )}
@@ -385,12 +385,12 @@ export default function Documents() {
                         {emp.employee_code}
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-900">{emp.full_name}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{emp.phone ?? "â€”"}</td>
+                      <td className="px-6 py-4 text-sm text-slate-600">{emp.phone ?? "—"}</td>
                       <td className="px-6 py-4 text-sm text-slate-600">
-                        {emp.location_name ?? "â€”"}
+                        {emp.location_name ?? "—"}
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-600">
-                        {emp.client_name ?? "â€”"}
+                        {emp.client_name ?? "—"}
                       </td>
                       <td className="px-6 py-4">
                         <span
@@ -452,7 +452,7 @@ export default function Documents() {
               </div>
               <div>
                 <p className="text-slate-500 mb-1">Phone</p>
-                <p className="text-slate-900">{viewing.phone ?? "â€”"}</p>
+                <p className="text-slate-900">{viewing.phone ?? "—"}</p>
               </div>
               <div>
                 <p className="text-slate-500 mb-1">Shift</p>
@@ -460,11 +460,11 @@ export default function Documents() {
               </div>
               <div>
                 <p className="text-slate-500 mb-1">Location</p>
-                <p className="text-slate-900">{viewing.location_name ?? "â€”"}</p>
+                <p className="text-slate-900">{viewing.location_name ?? "—"}</p>
               </div>
               <div>
                 <p className="text-slate-500 mb-1">Client</p>
-                <p className="text-slate-900">{viewing.client_name ?? "â€”"}</p>
+                <p className="text-slate-900">{viewing.client_name ?? "—"}</p>
               </div>
               <div>
                 <p className="text-slate-500 mb-1">Last Updated</p>
@@ -494,7 +494,7 @@ export default function Documents() {
               </div>
               {viewLoading ? (
                 <div className="text-sm text-slate-500 flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin" /> Loadingâ€¦
+                  <Loader2 className="w-4 h-4 animate-spin" /> Loading…
                 </div>
               ) : viewDocs.length === 0 ? (
                 <p className="text-sm text-slate-500">No documents uploaded yet.</p>
@@ -510,7 +510,7 @@ export default function Documents() {
                         <div className="min-w-0">
                           <p className="text-sm text-slate-900 truncate">{d.file_name}</p>
                           <p className="text-xs text-slate-500 mt-0.5">
-                            {d.doc_type} Â· Uploaded {formatDate(d.uploaded_at ?? null)}
+                            {d.doc_type} · Uploaded {formatDate(d.uploaded_at ?? null)}
                           </p>
                         </div>
                       </div>
@@ -614,7 +614,7 @@ export default function Documents() {
 
             <div className="flex items-center gap-3 pt-4">
               <Button variant="primary" size="md" className="flex-1" disabled={editSubmitting}>
-                {editSubmitting ? "Uploadingâ€¦" : "Save Documents"}
+                {editSubmitting ? "Uploading…" : "Save Documents"}
               </Button>
               <Button
                 variant="secondary"

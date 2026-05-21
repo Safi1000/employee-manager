@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Plus,
   Bell,
@@ -93,7 +93,7 @@ const priorityRank = (p: CompliancePriority) =>
 const triggerDayHelp = (f: RecurringFrequency) => {
   if (f === "Daily") return "Time tag (e.g. 'Every day' or '09:00')";
   if (f === "Weekly") return "Weekday (Mon, Tue, Wed, Thu, Fri, Sat, Sun)";
-  if (f === "Monthly") return "Day of month (1â€“31, or 'Last')";
+  if (f === "Monthly") return "Day of month (1–31, or 'Last')";
   return "MM-DD (e.g. 03-15)";
 };
 
@@ -251,7 +251,7 @@ export default function Compliance() {
         daysRemaining: c.daysRemaining,
         notes:
           c.daysRemaining <= 7
-            ? "Critical: contract ends within a week â€” renew or replace."
+            ? "Critical: contract ends within a week — renew or replace."
             : c.daysRemaining <= 30
               ? "Renew or replace within the next 30 days."
               : "Heads up: contract ends within 60 days.",
@@ -623,7 +623,7 @@ export default function Compliance() {
 
           {loading && (
             <div className="px-6 py-10 text-center text-slate-500">
-              <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loadingâ€¦
+              <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
             </div>
           )}
 
@@ -770,14 +770,14 @@ export default function Compliance() {
                           </span>
                           {d.kind === "contract_end" && (
                             <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] bg-brand-50 text-brand-700">
-                              Auto Â· Contract
+                              Auto · Contract
                             </span>
                           )}
                         </div>
                         <p className="text-sm text-slate-900">
                           {d.title}{" "}
                           <span className="text-slate-500">
-                            â€” due {formatDate(d.due_date)}
+                            — due {formatDate(d.due_date)}
                             {d.daysRemaining === 0
                               ? " (today)"
                               : ` (${d.daysRemaining} day${d.daysRemaining === 1 ? "" : "s"} away)`}
@@ -891,7 +891,7 @@ export default function Compliance() {
                   })
                 }
               >
-                â†
+                ←
               </Button>
               <span className="text-sm text-slate-700 min-w-[140px] text-center">
                 {calendarLabel}
@@ -906,7 +906,7 @@ export default function Compliance() {
                   })
                 }
               >
-                â†’
+                →
               </Button>
             </div>
           </div>
@@ -964,7 +964,7 @@ export default function Compliance() {
           {renderDateFields(dateForm, setDateForm)}
           <div className="flex items-center gap-3 pt-4">
             <Button variant="primary" size="md" className="flex-1" disabled={submittingDate}>
-              {submittingDate ? "Savingâ€¦" : "Add Date"}
+              {submittingDate ? "Saving…" : "Add Date"}
             </Button>
             <Button
               variant="secondary"
@@ -993,7 +993,7 @@ export default function Compliance() {
           {renderDateFields(editDateForm, setEditDateForm)}
           <div className="flex items-center gap-3 pt-4">
             <Button variant="primary" size="md" className="flex-1" disabled={editDateSubmitting}>
-              {editDateSubmitting ? "Savingâ€¦" : "Update"}
+              {editDateSubmitting ? "Saving…" : "Update"}
             </Button>
             <Button
               variant="secondary"
@@ -1022,7 +1022,7 @@ export default function Compliance() {
           {renderRecFields(recForm, setRecForm)}
           <div className="flex items-center gap-3 pt-4">
             <Button variant="primary" size="md" className="flex-1" disabled={submittingRec}>
-              {submittingRec ? "Savingâ€¦" : "Add Alert"}
+              {submittingRec ? "Saving…" : "Add Alert"}
             </Button>
             <Button
               variant="secondary"
@@ -1051,7 +1051,7 @@ export default function Compliance() {
           {renderRecFields(editRecForm, setEditRecForm)}
           <div className="flex items-center gap-3 pt-4">
             <Button variant="primary" size="md" className="flex-1" disabled={editRecSubmitting}>
-              {editRecSubmitting ? "Savingâ€¦" : "Update"}
+              {editRecSubmitting ? "Saving…" : "Update"}
             </Button>
             <Button
               variant="secondary"

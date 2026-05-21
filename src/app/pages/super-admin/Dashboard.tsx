@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Users, Calendar, Receipt, DollarSign, Building2, TrendingUp, AlertCircle, Loader2, Trophy } from "lucide-react";
 import Header from "../../components/Header";
 import StatCard from "../../components/StatCard";
@@ -116,7 +116,7 @@ export default function SuperAdminDashboard() {
           return d.toISOString().slice(0, 10);
         })();
 
-        // Fan out â€” all under RLS, so a branched user gets only their slice.
+        // Fan out — all under RLS, so a branched user gets only their slice.
         const [
           empRes,
           attTodayRes,
@@ -352,7 +352,7 @@ export default function SuperAdminDashboard() {
 
         {loading ? (
           <div className="bg-white border border-slate-200 rounded-lg p-10 text-center text-slate-500">
-            <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading dashboardâ€¦
+            <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading dashboard…
           </div>
         ) : (
           <>
@@ -365,7 +365,7 @@ export default function SuperAdminDashboard() {
                   title="Attendance Today"
                   value={`${attendanceTodayPct}%`}
                   icon={Calendar}
-                  tone="success"
+                  tone="info"
                   trend={
                     attendanceTodayPct === 0 && attendanceYesterdayPct === 0
                       ? undefined
@@ -380,19 +380,19 @@ export default function SuperAdminDashboard() {
               )}
               {can.expenses && show("stat_expenses_mtd") && (
                 <StatCard
-                  title={`Expenses Â· ${monthLabel(0)}`}
+                  title={`Expenses · ${monthLabel(0)}`}
                   value={compact(expensesMtd)}
                   icon={Receipt}
-                  tone="warning"
+                  tone="danger"
                   trend={deltaLabel(expensesMtd, expensesPrev)}
                 />
               )}
               {can.payroll && show("stat_payroll_mtd") && (
                 <StatCard
-                  title={`Payroll Â· ${monthLabel(0)}`}
+                  title={`Payroll · ${monthLabel(0)}`}
                   value={compact(payrollMtd)}
                   icon={DollarSign}
-                  tone="info"
+                  tone="warning"
                   trend={deltaLabel(payrollMtd, payrollPrev)}
                 />
               )}
@@ -442,7 +442,7 @@ export default function SuperAdminDashboard() {
                     <div>
                       <h3 className="text-base text-slate-900 flex items-center gap-2">
                         <Trophy className="w-4 h-4 text-warning-500" strokeWidth={1.5} />
-                        Top 10 Clients Â· {monthLabel(0)}
+                        Top 10 Clients · {monthLabel(0)}
                       </h3>
                       <p className="text-xs text-slate-500 mt-0.5">By payments received this month.</p>
                     </div>
@@ -478,7 +478,7 @@ export default function SuperAdminDashboard() {
             <div className={`grid grid-cols-1 ${can.attendance && show("attendance_trend") && show("compliance_alerts") ? "lg:grid-cols-2" : ""} gap-6 mb-6 md:mb-8`}>
               {can.attendance && show("attendance_trend") && (
                 <div className="bg-white rounded-lg border border-slate-200 p-6">
-                  <h3 className="text-base mb-6 text-slate-900">Attendance Trend Â· Last 7 Days</h3>
+                  <h3 className="text-base mb-6 text-slate-900">Attendance Trend · Last 7 Days</h3>
                   {attendanceTrend.every((p) => p.present + p.absent + p.leave === 0) ? (
                     <p className="text-sm text-slate-500">No attendance recorded in the last 7 days.</p>
                   ) : (
@@ -501,7 +501,7 @@ export default function SuperAdminDashboard() {
               {show("compliance_alerts") && (
               <div className="bg-white rounded-lg border border-slate-200">
                 <div className="p-6 border-b border-slate-200">
-                  <h3 className="text-base text-slate-900">Upcoming Compliance Â· Next 30 Days</h3>
+                  <h3 className="text-base text-slate-900">Upcoming Compliance · Next 30 Days</h3>
                 </div>
                 {alerts.length === 0 ? (
                   <div className="p-6 text-sm text-slate-500">Nothing due in the next 60 days.</div>
@@ -523,7 +523,7 @@ export default function SuperAdminDashboard() {
                                 {a.priority}
                               </span>
                             </div>
-                            <p className="text-xs text-slate-500">{a.category} Â· due {a.due_date}</p>
+                            <p className="text-xs text-slate-500">{a.category} · due {a.due_date}</p>
                           </div>
                           <span className="text-xs text-slate-400 tabular-nums">
                             {daysLeft === 0 ? "today" : `${daysLeft}d`}

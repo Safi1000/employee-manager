@@ -42,12 +42,17 @@
   --color-info-600: #0284c7;
   --color-info-700: #0369a1;
 
-  --color-brand-50:  #eff6ff;
-  --color-brand-100: #dbeafe;
-  --color-brand-200: #bfdbfe;
-  --color-brand-500: #3b82f6;
-  --color-brand-600: #2563eb;
-  --color-brand-700: #1d4ed8;
+  /* Brand = emerald green, matching the reference NPO Finance / FAASINOVA
+   * design where the sidebar active state, primary buttons, and section
+   * accents are green. Visually overlaps with `success` by design — they're
+   * semantically distinct (brand = identity, success = positive status) but
+   * use the same palette so the UI reads as a single coherent green system. */
+  --color-brand-50:  #ecfdf5;
+  --color-brand-100: #d1fae5;
+  --color-brand-200: #a7f3d0;
+  --color-brand-500: #10b981;
+  --color-brand-600: #059669;
+  --color-brand-700: #047857;
 }
 
 :root {

@@ -1,4 +1,4 @@
-﻿import { Outlet, useNavigate } from "react-router";
+import { Outlet, useNavigate } from "react-router";
 import Sidebar, { type SidebarItem } from "../components/Sidebar";
 import { hasAnyPermission, useAuth } from "../lib/auth";
 import { Eye, X } from "lucide-react";
@@ -87,7 +87,7 @@ export default function SuperAdminLayout() {
   return (
     <div className="flex h-screen bg-slate-50">
       <Sidebar
-        title={isSsaViewing ? `Viewing: ${company?.name ?? "â€¦"}` : (company?.name ?? "Company Panel")}
+        title={isSsaViewing ? `Viewing: ${company?.name ?? "…"}` : (company?.name ?? "Company Panel")}
         links={links}
       />
       <div className="flex-1 flex flex-col overflow-hidden pt-12 md:pt-0">

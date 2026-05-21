@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Plus,
   AlertCircle,
@@ -65,7 +65,7 @@ const currentMonthStr = () => {
 };
 
 const monthLabel = (iso: string | null | undefined) => {
-  if (!iso) return "â€”";
+  if (!iso) return "—";
   const [yStr, mStr] = iso.slice(0, 7).split("-");
   const y = Number(yStr);
   const m = Number(mStr);
@@ -490,7 +490,7 @@ export default function Invoices() {
       if (invUpErr) throw invUpErr;
 
       const clientName = paymentInvoice.client?.name ?? "Client";
-      const desc = `Payment received (${paymentForm.payment_mode.toLowerCase()}) Â· ${clientName} Â· Invoice ${paymentInvoice.invoice_number}`;
+      const desc = `Payment received (${paymentForm.payment_mode.toLowerCase()}) · ${clientName} · Invoice ${paymentInvoice.invoice_number}`;
       if (paymentForm.payment_mode === "Cash") {
         await applyCashDelta(amt);
         await logTransaction({
@@ -540,7 +540,7 @@ export default function Invoices() {
 
   const reverseOldPaymentEffects = async (p: PaymentRow, invoiceNumber: string, clientName: string) => {
     const oldAmt = Number(p.amount);
-    const desc = `Payment edit reversal (${p.payment_mode.toLowerCase()}) Â· ${clientName} Â· Invoice ${invoiceNumber}`;
+    const desc = `Payment edit reversal (${p.payment_mode.toLowerCase()}) · ${clientName} · Invoice ${invoiceNumber}`;
     if (p.payment_mode === "Cash") {
       await applyCashDelta(-oldAmt);
       await logTransaction({
@@ -600,7 +600,7 @@ export default function Invoices() {
 
       const newBankId =
         editPaymentForm.payment_mode === "Bank" ? editPaymentForm.bank_account_id : null;
-      const desc = `Payment updated (${editPaymentForm.payment_mode.toLowerCase()}) Â· ${clientName} Â· Invoice ${invoiceNumber}`;
+      const desc = `Payment updated (${editPaymentForm.payment_mode.toLowerCase()}) · ${clientName} · Invoice ${invoiceNumber}`;
       if (editPaymentForm.payment_mode === "Cash") {
         await applyCashDelta(newAmt);
         await logTransaction({
@@ -822,7 +822,7 @@ export default function Invoices() {
                 {loading && (
                   <tr>
                     <td colSpan={10} className="px-6 py-10 text-center text-slate-500">
-                      <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loadingâ€¦
+                      <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                     </td>
                   </tr>
                 )}
@@ -846,7 +846,7 @@ export default function Invoices() {
                         <td className="px-6 py-4 text-sm text-slate-900">
                           <div className="flex items-center gap-2">
                             <Building2 className="w-3.5 h-3.5 text-slate-400" strokeWidth={1.5} />
-                            <span>{inv.client?.name ?? "â€”"}</span>
+                            <span>{inv.client?.name ?? "—"}</span>
                           </div>
                           <div className="text-xs text-slate-500 font-mono ml-5">
                             {inv.client?.client_code ?? ""}
@@ -857,7 +857,7 @@ export default function Invoices() {
                           PKR {Number(inv.invoice_amount).toLocaleString()}
                         </td>
                         <td className="px-6 py-4 text-sm text-danger-600 text-right">
-                          {wht > 0 ? `PKR ${wht.toLocaleString()}` : "â€”"}
+                          {wht > 0 ? `PKR ${wht.toLocaleString()}` : "—"}
                         </td>
                         <td className="px-6 py-4 text-sm text-success-600 text-right">
                           PKR {Number(inv.amount_received).toLocaleString()}
@@ -904,7 +904,7 @@ export default function Invoices() {
                               </button>
                             </div>
                           ) : (
-                            <span className="text-slate-400">â€”</span>
+                            <span className="text-slate-400">—</span>
                           )}
                         </td>
                         <td className="px-6 py-4 flex gap-1">
@@ -972,7 +972,7 @@ export default function Invoices() {
           />
           <div className="flex items-center gap-3 pt-4">
             <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
-              {submitting ? "Savingâ€¦" : "Create Invoice"}
+              {submitting ? "Saving…" : "Create Invoice"}
             </Button>
             <Button
               variant="secondary"
@@ -1063,11 +1063,11 @@ export default function Invoices() {
                         <td className="px-3 py-2 text-xs text-slate-700">
                           {p.payment_mode}
                           {p.payment_mode === "Bank" && p.bank?.bank_name
-                            ? ` Â· ${p.bank.bank_name}`
+                            ? ` · ${p.bank.bank_name}`
                             : ""}
                         </td>
                         <td className="px-3 py-2 text-xs text-slate-500 truncate max-w-[140px]">
-                          {p.notes ?? "â€”"}
+                          {p.notes ?? "—"}
                         </td>
                         <td className="px-3 py-2 text-right">
                           <div className="inline-flex items-center gap-1">
@@ -1099,7 +1099,7 @@ export default function Invoices() {
 
           <div className="flex items-center gap-3 pt-4">
             <Button variant="primary" size="md" className="flex-1" disabled={editSubmitting}>
-              {editSubmitting ? "Savingâ€¦" : "Update Invoice"}
+              {editSubmitting ? "Saving…" : "Update Invoice"}
             </Button>
             <Button
               variant="secondary"
@@ -1224,7 +1224,7 @@ export default function Invoices() {
                 <option value="">Select bank account</option>
                 {banks.map((b) => (
                   <option key={b.id} value={b.id}>
-                    {b.bank_name} â€” {b.account_number}
+                    {b.bank_name} — {b.account_number}
                   </option>
                 ))}
               </select>
@@ -1249,7 +1249,7 @@ export default function Invoices() {
               className="flex-1"
               disabled={paymentSubmitting}
             >
-              {paymentSubmitting ? "Recordingâ€¦" : "Record Payment"}
+              {paymentSubmitting ? "Recording…" : "Record Payment"}
             </Button>
             <Button
               variant="secondary"
@@ -1373,7 +1373,7 @@ export default function Invoices() {
                 <option value="">Select bank account</option>
                 {banks.map((b) => (
                   <option key={b.id} value={b.id}>
-                    {b.bank_name} â€” {b.account_number}
+                    {b.bank_name} — {b.account_number}
                   </option>
                 ))}
               </select>
@@ -1400,7 +1400,7 @@ export default function Invoices() {
               className="flex-1"
               disabled={editPaymentSubmitting}
             >
-              {editPaymentSubmitting ? "Savingâ€¦" : "Save Changes"}
+              {editPaymentSubmitting ? "Saving…" : "Save Changes"}
             </Button>
             <Button
               variant="secondary"
@@ -1524,7 +1524,7 @@ function InvoiceFields({
             {form.attachment_file
               ? form.attachment_file.name
               : form.existing_attachment_path
-              ? "Replace attachmentâ€¦"
+              ? "Replace attachment…"
               : "Upload invoice (PDF / image)"}
           </span>
           <input

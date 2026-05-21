@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { Building2, Plus, Loader2, ArrowRight, Eye, Power, CreditCard, X } from "lucide-react";
 import Button from "../../components/Button";
@@ -222,7 +222,7 @@ export default function Companies() {
         {error && <div className="text-sm text-danger-600 bg-danger-50 border border-danger-200 px-4 py-2 rounded mb-4">{error}</div>}
 
         {loading ? (
-          <div className="flex items-center gap-2 text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Loadingâ€¦</div>
+          <div className="flex items-center gap-2 text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
         ) : companies.length === 0 ? (
           <div className="bg-white border border-slate-200 rounded-lg p-12 text-center">
             <Building2 className="w-10 h-10 text-slate-300 mx-auto mb-3" strokeWidth={1.5} />
@@ -250,7 +250,7 @@ export default function Companies() {
                       <div className="text-xs text-slate-500 font-mono">{c.id.slice(0, 8)}</div>
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-600">
-                      {c.contact_email ?? "â€”"}
+                      {c.contact_email ?? "—"}
                       {c.contact_phone && <div className="text-xs text-slate-500">{c.contact_phone}</div>}
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-600">{c.user_count}</td>
@@ -325,7 +325,7 @@ export default function Companies() {
           <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
               <div>
-                <h2 className="text-lg text-slate-900">{subCompany.name} â€” Subscription</h2>
+                <h2 className="text-lg text-slate-900">{subCompany.name} — Subscription</h2>
                 <p className="text-xs text-slate-500 mt-1">
                   {subCompany.subscription_expires_at == null
                     ? "No subscription set yet."
@@ -333,7 +333,7 @@ export default function Companies() {
                         const r = daysBetween(todayStr(), subCompany.subscription_expires_at);
                         return r < 0
                           ? `Expired ${-r} day${r === -1 ? "" : "s"} ago (${subCompany.subscription_expires_at})`
-                          : `${r} day${r === 1 ? "" : "s"} remaining Â· expires ${subCompany.subscription_expires_at}`;
+                          : `${r} day${r === 1 ? "" : "s"} remaining · expires ${subCompany.subscription_expires_at}`;
                       })()}
                 </p>
               </div>
@@ -406,7 +406,7 @@ export default function Companies() {
                 <h3 className="text-sm text-slate-900 mb-3">Payment History</h3>
                 {subLoading ? (
                   <div className="text-sm text-slate-500 flex items-center gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin" /> Loadingâ€¦
+                    <Loader2 className="w-4 h-4 animate-spin" /> Loading…
                   </div>
                 ) : subPayments.length === 0 ? (
                   <p className="text-sm text-slate-500">No payments yet.</p>
@@ -429,7 +429,7 @@ export default function Companies() {
                               PKR {Number(p.amount).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                             </td>
                             <td className="px-3 py-2 text-right text-slate-700">{p.days_added}</td>
-                            <td className="px-3 py-2 text-slate-600">{p.notes ?? "â€”"}</td>
+                            <td className="px-3 py-2 text-slate-600">{p.notes ?? "—"}</td>
                           </tr>
                         ))}
                       </tbody>
