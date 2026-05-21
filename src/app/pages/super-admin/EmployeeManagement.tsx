@@ -220,7 +220,20 @@ export default function EmployeeManagement() {
       "gdrive-upload-employee-doc",
       { body: form },
     );
-    if (fnErr) throw fnErr;
+    if (fnErr) {
+      // supabase-js wraps non-2xx as FunctionsHttpError but stashes the actual
+      // Response under .context. Read the JSON body so the real Drive error
+      // bubbles up instead of "non-2xx status code".
+      let detail = fnErr.message;
+      try {
+        const ctx = (fnErr as { context?: Response }).context;
+        if (ctx) {
+          const body = await ctx.clone().json();
+          if (body?.error) detail = String(body.error);
+        }
+      } catch {}
+      throw new Error(`Drive upload failed: ${detail}`);
+    }
     if (!data?.drive_file_id) throw new Error(data?.error ?? "Upload failed");
     const { error: insErr } = await supabase.from("employee_documents").insert({
       employee_id: employeeId,

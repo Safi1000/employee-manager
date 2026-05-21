@@ -130,7 +130,17 @@ export default function Documents() {
       "gdrive-upload-employee-doc",
       { body: form },
     );
-    if (fnErr) throw fnErr;
+    if (fnErr) {
+      let detail = fnErr.message;
+      try {
+        const ctx = (fnErr as { context?: Response }).context;
+        if (ctx) {
+          const body = await ctx.clone().json();
+          if (body?.error) detail = String(body.error);
+        }
+      } catch {}
+      throw new Error(`Drive upload failed: ${detail}`);
+    }
     if (!data?.drive_file_id) throw new Error(data?.error ?? "Upload failed");
     const { error: insErr } = await supabase.from("employee_documents").insert({
       employee_id: employeeId,
