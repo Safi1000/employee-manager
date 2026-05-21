@@ -56,16 +56,24 @@ type AlertItem = {
   source: "important_date" | "contract_end";
 };
 
-async function getCompanyFromJwt(jwt: string): Promise<string | null> {
+async function getCallerProfile(jwt: string): Promise<{
+  user_id: string;
+  company_id: string | null;
+  role: string | null;
+} | null> {
   const client = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
   const { data, error } = await client.auth.getUser(jwt);
   if (error || !data.user) return null;
   const { data: profile } = await client
     .from("profiles")
-    .select("company_id")
+    .select("company_id, role")
     .eq("id", data.user.id)
     .maybeSingle();
-  return profile?.company_id ?? null;
+  return {
+    user_id: data.user.id,
+    company_id: (profile?.company_id as string | null) ?? null,
+    role: (profile?.role as string | null) ?? null,
+  };
 }
 
 function diffDaysUTC(target: string, today: string): number {
@@ -276,16 +284,47 @@ Deno.serve(async (req) => {
   const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
   const today = new Date().toISOString().slice(0, 10);
 
-  // Test mode: targets the calling user's company only.
+  // Test mode: send directly to the recipient passed in the body. Does NOT
+  // read notification_settings — that way the test works the moment the user
+  // types an email and clicks "Send test email", even before saving.
+  // Restricted to super_admin / super_super_admin to prevent regular users
+  // from using this as an open relay.
   if (isTest) {
-    const auth = req.headers.get("Authorization");
-    const jwt = auth?.startsWith("Bearer ") ? auth.slice(7) : null;
+    const authHeader = req.headers.get("Authorization");
+    const jwt = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
     if (!jwt) return json({ error: "unauthorized" }, 401);
-    const companyId = await getCompanyFromJwt(jwt);
-    if (!companyId) return json({ error: "company_not_found" }, 404);
+
+    const caller = await getCallerProfile(jwt);
+    if (!caller) return json({ error: "invalid_token" }, 401);
+    if (caller.role !== "super_admin" && caller.role !== "super_super_admin") {
+      return json({ error: "forbidden_role" }, 403);
+    }
+
+    let body: { recipient?: string; from?: string } = {};
+    try { body = await req.json(); } catch { /* empty body is fine */ }
+
+    const recipient = body.recipient?.trim();
+    if (!recipient) {
+      return json({ error: "recipient_required" }, 400);
+    }
+    const sender = body.from?.trim() || DEFAULT_SENDER;
+
     try {
-      const result = await sendForCompany(db, companyId, today, true);
-      return json(result);
+      // Synthesize a small preview using the caller's company alerts (if any)
+      // so the test email reflects what a real daily digest would look like.
+      const alerts = caller.company_id
+        ? await collectAlerts(db, caller.company_id, today)
+        : [];
+      const subject = alerts.length === 0
+        ? "[Test] Employee Manager compliance alerts"
+        : `[Test] Compliance digest — ${alerts.length} item${alerts.length === 1 ? "" : "s"}`;
+      await sendViaResend({
+        to: recipient,
+        from: sender,
+        subject,
+        html: buildEmailHtml(alerts, today, true),
+      });
+      return json({ sent: true, recipient });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error("send-compliance-alerts (test):", msg);

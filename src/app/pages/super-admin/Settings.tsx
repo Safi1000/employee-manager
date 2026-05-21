@@ -43,7 +43,9 @@ const clientTypeLabel = (t: ClientType) =>
   t === "security_services" ? "Security Services" : "Guard Deployment";
 
 export default function Settings() {
-  const { company, refreshProfile } = useAuth();
+  const { company, profile, refreshProfile } = useAuth();
+  const canManageNotifications =
+    profile?.role === "super_admin" || profile?.role === "super_super_admin";
   const initialHidden = useMemo(
     () => new Set<string>((company?.dashboard_hidden_widgets ?? []) as string[]),
     [company?.dashboard_hidden_widgets],
@@ -233,27 +235,22 @@ export default function Settings() {
     setNotificationError(null);
     setNotificationMessage(null);
     try {
-      const { data: existing } = await supabase
-        .from("notification_settings")
-        .select("id")
-        .limit(1)
-        .maybeSingle();
+      const companyId = profile?.company_id;
+      if (!companyId) throw new Error("No company on profile — cannot save notification settings.");
       const trimmed = notificationEmail.trim();
-      if (existing?.id) {
-        const { error: upErr } = await supabase
-          .from("notification_settings")
-          .update({
+      // Upsert keyed by company_id so we don't depend on selecting the row first
+      // (which silently no-ops under some RLS edge cases).
+      const { error: upErr } = await supabase
+        .from("notification_settings")
+        .upsert(
+          {
+            company_id: companyId,
             recipient_email: trimmed || null,
             updated_at: new Date().toISOString(),
-          })
-          .eq("id", existing.id);
-        if (upErr) throw upErr;
-      } else {
-        const { error: insErr } = await supabase
-          .from("notification_settings")
-          .insert({ recipient_email: trimmed || null });
-        if (insErr) throw insErr;
-      }
+          },
+          { onConflict: "company_id" },
+        );
+      if (upErr) throw upErr;
       setNotificationSavedAt(new Date().toLocaleTimeString());
     } catch (e: any) {
       setNotificationError(e?.message ?? String(e));
@@ -267,29 +264,31 @@ export default function Settings() {
     setNotificationError(null);
     setNotificationMessage(null);
     try {
+      const recipient = notificationEmail.trim();
+      if (!recipient) throw new Error("Enter a recipient email first.");
       const { data: session } = await supabase.auth.getSession();
       const token = session?.session?.access_token;
+      if (!token) throw new Error("Not signed in — refresh the page and try again.");
       const url = `${(import.meta as any).env.VITE_SUPABASE_URL}/functions/v1/send-compliance-alerts?test=1`;
       const res = await fetch(url, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${token ?? (import.meta as any).env.VITE_SUPABASE_ANON_KEY}`,
+          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
           apikey: (import.meta as any).env.VITE_SUPABASE_ANON_KEY,
         },
+        // Sending the recipient in the body lets the test work even if the user
+        // hasn't clicked Save yet — they just type and hit "Send test email".
+        body: JSON.stringify({ recipient }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         const msg = body?.error?.message ?? body?.error ?? `HTTP ${res.status}`;
         throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
       }
-      if (body?.sent === false) {
-        setNotificationMessage(body?.reason ?? "No items to send today.");
-      } else {
-        setNotificationMessage(
-          `Test email sent to ${body?.recipient ?? notificationEmail}. Check inbox / spam.`
-        );
-      }
+      setNotificationMessage(
+        `Test email sent to ${body?.recipient ?? recipient}. Check inbox / spam.`
+      );
     } catch (e: any) {
       setNotificationError(e?.message ?? String(e));
     } finally {
@@ -1203,6 +1202,7 @@ export default function Settings() {
           </div>
         </div>
 
+        {canManageNotifications && (
         <div className="bg-white rounded-lg border border-slate-200 mt-6">
           <div className="p-6 border-b border-slate-200 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -1274,6 +1274,7 @@ export default function Settings() {
             </div>
           </div>
         </div>
+        )}
       </div>
 
       <Modal
