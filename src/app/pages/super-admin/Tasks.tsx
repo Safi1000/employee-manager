@@ -14,10 +14,19 @@ import { useAuth } from "../../lib/auth";
 
 const STATUSES: TaskStatus[] = ["todo", "in_progress", "done"];
 
+// Column zones: white surface with a thick top accent strip so each lane reads
+// as a distinct status without the heavy full-tint look. Tones don't repeat:
+// To Do = info (blue), In Progress = warning (amber), Done = success (green).
 const COLUMN_TONE: Record<TaskStatus, string> = {
-  todo: "bg-slate-50 border-slate-200",
-  in_progress: "bg-brand-50 border-brand-200",
-  done: "bg-success-50 border-success-200",
+  todo: "bg-white border border-slate-200 border-t-4 border-t-info-500",
+  in_progress: "bg-white border border-slate-200 border-t-4 border-t-warning-500",
+  done: "bg-white border border-slate-200 border-t-4 border-t-success-500",
+};
+
+const COLUMN_LABEL_TONE: Record<TaskStatus, string> = {
+  todo: "text-info-700",
+  in_progress: "text-warning-700",
+  done: "text-success-700",
 };
 
 const dayDiff = (iso: string) => {
@@ -207,6 +216,11 @@ export default function Tasks() {
     <>
       <Header
         title={isAdmin ? "Task Board" : "My Tasks"}
+        subtitle={
+          isAdmin
+            ? "Assign work and track team progress"
+            : "Your assignments by status"
+        }
         actions={
           isAdmin ? (
             <Button variant="primary" size="md" onClick={openCreate}>
@@ -256,12 +270,12 @@ export default function Tasks() {
             {STATUSES.map((status) => (
               <div
                 key={status}
-                className={`rounded-lg border ${COLUMN_TONE[status]} p-3 min-h-[200px]`}
+                className={`rounded-lg ${COLUMN_TONE[status]} p-3 min-h-[200px]`}
               >
                 <div className="flex items-center justify-between mb-3 px-1">
-                  <h3 className="text-sm text-slate-800">
+                  <h3 className={`text-sm uppercase tracking-wide ${COLUMN_LABEL_TONE[status]}`}>
                     {TASK_STATUS_LABEL[status]}{" "}
-                    <span className="text-xs text-slate-500">({columns[status].length})</span>
+                    <span className="text-xs text-slate-500 normal-case">({columns[status].length})</span>
                   </h3>
                 </div>
                 <div className="space-y-2">

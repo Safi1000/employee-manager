@@ -1031,7 +1031,10 @@ export default function Settings() {
 
   return (
     <>
-      <Header title="Settings" />
+      <Header
+        title="Settings"
+        subtitle="Locations, branches, clients, dashboard widgets and invoice template"
+      />
 
       <div className="flex-1 overflow-y-auto p-8">
         {error && (

@@ -939,6 +939,11 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       />
       <Header
         title={relieversOnly ? "Reliever Payroll" : "Payroll Management"}
+        subtitle={
+          relieversOnly
+            ? "Per-client day attribution and disbursement"
+            : "Period payslips, disbursement and cheque tracking"
+        }
         actions={
           <div className="flex items-center gap-3">
             <div className="text-xs text-slate-500 flex flex-col items-end mr-2">

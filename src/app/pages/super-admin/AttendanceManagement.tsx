@@ -681,6 +681,11 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     <>
       <Header
         title={relieversOnly ? "Reliever Attendance" : "Attendance Management"}
+        subtitle={
+          relieversOnly
+            ? "Pick the client a reliever covered, then mark present"
+            : "Daily attendance, bulk marking and historical timesheet"
+        }
         actions={
           <>
             {canBulk && (

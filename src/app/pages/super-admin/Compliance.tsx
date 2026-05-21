@@ -550,7 +550,11 @@ export default function Compliance() {
 
   return (
     <>
-      <Header title="Compliance & Alerts" actions={headerActions} />
+      <Header
+        title="Compliance & Alerts"
+        subtitle="Important dates, contract endings and recurring reminders"
+        actions={headerActions}
+      />
 
       <div className="flex-1 overflow-y-auto p-8">
         {error && (

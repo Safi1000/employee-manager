@@ -289,7 +289,7 @@ export default function Documents() {
 
   return (
     <>
-      <Header title="Documents" />
+      <Header title="Documents" subtitle="Employee document repository (Google Drive)" />
 
       <div className="flex-1 overflow-y-auto p-8">
         {error && (

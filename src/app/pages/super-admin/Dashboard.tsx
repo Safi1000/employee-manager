@@ -327,7 +327,15 @@ export default function SuperAdminDashboard() {
 
   return (
     <>
-      <Header title="Dashboard" />
+      <Header
+        title="Dashboard"
+        subtitle={`Financial overview — ${new Date().toLocaleDateString(undefined, {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        })}`}
+      />
 
       <div className="flex-1 overflow-y-auto p-4 md:p-8">
         {error && (

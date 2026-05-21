@@ -232,7 +232,7 @@ export default function Cashflow() {
 
   return (
     <>
-      <Header title="Cashflow & Reports" />
+      <Header title="Cashflow & Reports" subtitle="Cash inflow vs outflow over the trailing 12 months" />
 
       <div className="flex-1 overflow-y-auto p-8">
         {error && (

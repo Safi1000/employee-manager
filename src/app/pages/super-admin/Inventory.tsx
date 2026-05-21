@@ -524,6 +524,7 @@ export default function Inventory() {
     <>
       <Header
         title="Inventory & Asset Logistics"
+        subtitle="Weapons, uniforms and issuance tracking"
         actions={
           <>
             <Button variant="secondary" size="md" onClick={() => setIsAddItemOpen(true)}>
@@ -550,7 +551,7 @@ export default function Inventory() {
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-          <div className="bg-white rounded-lg border border-slate-200 p-5">
+          <div className="bg-white rounded-lg border border-slate-200 border-l-4 border-l-danger-500 p-5">
             <div className="flex items-center gap-2 mb-4">
               <Shield className="w-4 h-4 text-danger-600" strokeWidth={1.5} />
               <h3 className="text-sm text-slate-900">Weapons</h3>
@@ -562,7 +563,7 @@ export default function Inventory() {
               <SummaryCell label="In Office" value={weaponsSummary.inOffice} accent="green" />
             </div>
           </div>
-          <div className="bg-white rounded-lg border border-slate-200 p-5">
+          <div className="bg-white rounded-lg border border-slate-200 border-l-4 border-l-brand-500 p-5">
             <div className="flex items-center gap-2 mb-4">
               <Package className="w-4 h-4 text-brand-600" strokeWidth={1.5} />
               <h3 className="text-sm text-slate-900">Uniforms &amp; Gear</h3>
@@ -1530,7 +1531,7 @@ function SummaryCell({
       : "text-slate-900";
   return (
     <div className="text-center flex flex-col items-center">
-      <p className="text-xs text-slate-500 mb-1 min-h-[2rem] leading-4 flex items-end justify-center">
+      <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1 min-h-[2rem] leading-4 flex items-end justify-center">
         {label}
       </p>
       <p className={`text-2xl ${colour}`}>{value}</p>

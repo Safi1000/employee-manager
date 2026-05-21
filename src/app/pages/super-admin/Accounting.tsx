@@ -1352,6 +1352,7 @@ export default function Accounting() {
     <>
       <Header
         title="Financial Accounting"
+        subtitle="Receivables, payables and bank reconciliation"
         actions={
           <>
             <ExportButton

@@ -477,6 +477,7 @@ export default function EmployeeManagement() {
     <>
       <Header
         title="Employee Management"
+        subtitle="Workforce roster, branches and document uploads"
         actions={
           <Button variant="primary" size="md" onClick={() => setIsModalOpen(true)}>
             <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />

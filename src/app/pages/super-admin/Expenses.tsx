@@ -1224,6 +1224,7 @@ export default function Expenses() {
     <>
       <Header
         title="Expenses"
+        subtitle="Operating expenses and employee advances ledger"
         actions={
           <>
             <ExportButton

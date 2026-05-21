@@ -713,6 +713,7 @@ export default function Invoices() {
     <>
       <Header
         title="Invoices"
+        subtitle="Invoice ledger, payment tracking and PDF export"
         actions={
           <div className="flex gap-2">
             <Button
