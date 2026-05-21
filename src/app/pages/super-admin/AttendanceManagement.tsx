@@ -64,6 +64,8 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   const [branches, setBranches] = useState<Branch[]>([]);
   const [employees, setEmployees] = useState<EmployeeLite[]>([]);
   const [todayRecords, setTodayRecords] = useState<Record<string, AttendanceStatus>>({});
+  // For relievers: per-day client attribution. Mirrors todayRecords.
+  const [todayWorkedFor, setTodayWorkedFor] = useState<Record<string, string | null>>({});
   const [history, setHistory] = useState<HistoryRow[]>([]);
 
   const [loading, setLoading] = useState(true);
@@ -348,17 +350,20 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   const loadRecordsForDate = async (d: string) => {
     const { data, error: err } = await supabase
       .from("attendance_records")
-      .select("employee_id, status")
+      .select("employee_id, status, worked_for_client_id")
       .eq("attendance_date", d);
     if (err) {
       setError(err.message);
       return;
     }
-    const map: Record<string, AttendanceStatus> = {};
+    const statusMap: Record<string, AttendanceStatus> = {};
+    const clientMap: Record<string, string | null> = {};
     (data ?? []).forEach((r: any) => {
-      map[r.employee_id] = r.status;
+      statusMap[r.employee_id] = r.status;
+      clientMap[r.employee_id] = r.worked_for_client_id ?? null;
     });
-    setTodayRecords(map);
+    setTodayRecords(statusMap);
+    setTodayWorkedFor(clientMap);
   };
 
   const loadHistory = async () => {
@@ -462,15 +467,36 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     });
   }, [employees, clientFilter, locationFilter, branchFilter, shiftFilter, unmarkedOnly, todayRecords, empSearch, relieversOnly]);
 
-  const markStatus = async (employeeId: string, status: AttendanceStatus) => {
+  const markStatus = async (
+    employeeId: string,
+    status: AttendanceStatus,
+    workedForClientId?: string | null,
+  ) => {
+    const employee = employees.find((e) => e.id === employeeId);
+    const isReliever = employee?.category === "reliever";
+    // Relievers marked Present must have a client picked.
+    if (isReliever && status === "Present" && !workedForClientId) {
+      setError("Pick which client this reliever worked for before marking Present.");
+      return;
+    }
     setSaving((s) => ({ ...s, [employeeId]: true }));
     setError(null);
-    const prev = todayRecords[employeeId];
+    const prevStatus = todayRecords[employeeId];
+    const prevClient = todayWorkedFor[employeeId] ?? null;
     setTodayRecords((m) => ({ ...m, [employeeId]: status }));
+    setTodayWorkedFor((m) => ({
+      ...m,
+      [employeeId]: status === "Present" ? workedForClientId ?? null : null,
+    }));
     const { error: upErr } = await supabase
       .from("attendance_records")
       .upsert(
-        { employee_id: employeeId, attendance_date: date, status },
+        {
+          employee_id: employeeId,
+          attendance_date: date,
+          status,
+          worked_for_client_id: status === "Present" ? workedForClientId ?? null : null,
+        },
         { onConflict: "employee_id,attendance_date" }
       );
     setSaving((s) => {
@@ -482,10 +508,11 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       setError(upErr.message);
       setTodayRecords((m) => {
         const n = { ...m };
-        if (prev) n[employeeId] = prev;
+        if (prevStatus) n[employeeId] = prevStatus;
         else delete n[employeeId];
         return n;
       });
+      setTodayWorkedFor((m) => ({ ...m, [employeeId]: prevClient }));
       return;
     }
     loadHistory();
@@ -493,14 +520,33 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
 
   const markAllPresent = async () => {
     if (filteredEmployees.length === 0) return;
-    const payload = filteredEmployees.map((e) => ({
-      employee_id: e.id,
-      attendance_date: date,
-      status: "Present" as AttendanceStatus,
-    }));
+    // Mark-all skips relievers without a picked client (each must be set
+    // individually so attribution stays correct).
+    const skipped: string[] = [];
+    const payload = filteredEmployees
+      .filter((e) => {
+        if (e.category === "reliever" && !todayWorkedFor[e.id]) {
+          skipped.push(e.full_name);
+          return false;
+        }
+        return true;
+      })
+      .map((e) => ({
+        employee_id: e.id,
+        attendance_date: date,
+        status: "Present" as AttendanceStatus,
+        worked_for_client_id:
+          e.category === "reliever" ? todayWorkedFor[e.id] ?? null : null,
+      }));
+    if (payload.length === 0) {
+      setError(
+        "All visible rows are relievers without a picked client. Set their client first.",
+      );
+      return;
+    }
     const optimistic: Record<string, AttendanceStatus> = { ...todayRecords };
-    filteredEmployees.forEach((e) => {
-      optimistic[e.id] = "Present";
+    payload.forEach((r) => {
+      optimistic[r.employee_id] = "Present";
     });
     setTodayRecords(optimistic);
     const { error: upErr } = await supabase
@@ -510,6 +556,11 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       setError(upErr.message);
       await loadRecordsForDate(date);
       return;
+    }
+    if (skipped.length > 0) {
+      setError(
+        `Skipped ${skipped.length} reliever${skipped.length === 1 ? "" : "s"} without a picked client: ${skipped.slice(0, 3).join(", ")}${skipped.length > 3 ? "â€¦" : ""}.`,
+      );
     }
     loadHistory();
   };
@@ -903,7 +954,9 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                 <tr className="border-b border-slate-200">
                   <th className="text-left px-6 py-3 text-sm text-slate-500">Employee ID</th>
                   <th className="text-left px-6 py-3 text-sm text-slate-500">Name</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Client</th>
+                  <th className="text-left px-6 py-3 text-sm text-slate-500">
+                    {relieversOnly ? "Worked for" : "Client"}
+                  </th>
                   <th className="text-left px-6 py-3 text-sm text-slate-500">Location</th>
                   <th className="text-left px-6 py-3 text-sm text-slate-500">Shift</th>
                   <th className="text-left px-6 py-3 text-sm text-slate-500">Status</th>
@@ -952,7 +1005,27 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                           </button>
                         </td>
                         <td className="px-6 py-4 text-sm text-slate-600">
-                          {employee.client_name ?? "â€”"}
+                          {employee.category === "reliever" ? (
+                            <select
+                              value={todayWorkedFor[employee.id] ?? ""}
+                              onChange={(e) => {
+                                const newClient = e.target.value || null;
+                                setTodayWorkedFor((m) => ({ ...m, [employee.id]: newClient }));
+                                // If they're already marked Present, persist the change.
+                                if (current === "Present" && newClient) {
+                                  markStatus(employee.id, "Present", newClient);
+                                }
+                              }}
+                              className="px-2 py-1 border border-slate-200 rounded text-sm max-w-[12rem]"
+                            >
+                              <option value="">Pick clientâ€¦</option>
+                              {clients.map((c) => (
+                                <option key={c.id} value={c.id}>{c.name}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            employee.client_name ?? "â€”"
+                          )}
                         </td>
                         <td className="px-6 py-4 text-sm text-slate-600">
                           {employee.location_name ?? "â€”"}
@@ -973,8 +1046,21 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                             {STATUSES.map((status) => (
                               <button
                                 key={status}
-                                onClick={() => markStatus(employee.id, status)}
-                                disabled={isSaving}
+                                onClick={() =>
+                                  markStatus(
+                                    employee.id,
+                                    status,
+                                    employee.category === "reliever"
+                                      ? todayWorkedFor[employee.id] ?? null
+                                      : null,
+                                  )
+                                }
+                                disabled={
+                                  isSaving ||
+                                  (employee.category === "reliever" &&
+                                    status === "Present" &&
+                                    !todayWorkedFor[employee.id])
+                                }
                                 className={`px-3 py-1.5 rounded text-xs transition-colors ${
                                   current === status
                                     ? status === "Present"

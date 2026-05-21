@@ -349,6 +349,9 @@ export type AttendanceRecord = {
   employee_id: string;
   attendance_date: string;
   status: AttendanceStatus;
+  /** Per-day client attribution used for relievers (NULL for everyone else;
+   * regular staff inherit their primary client from employees.client_id). */
+  worked_for_client_id?: string | null;
   marked_at?: string;
 };
 
@@ -357,7 +360,13 @@ export type EmployeeDocument = {
   employee_id: string;
   doc_type: string;
   file_name: string;
-  storage_path: string;
+  /** Legacy: Supabase Storage path. NULL on new (Drive) uploads. Kept so old
+   * rows still resolve via storage.getPublicUrl. */
+  storage_path: string | null;
+  /** Google Drive file ID for new uploads. NULL on legacy storage_path rows. */
+  drive_file_id: string | null;
+  /** Drive's webViewLink — the canonical share URL. */
+  drive_view_url: string | null;
   mime_type: string | null;
   size_bytes: number | null;
   uploaded_at?: string;

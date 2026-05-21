@@ -97,6 +97,9 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     return Number(c.amount) - used + excludeOwnAmount;
   };
   const [payslipsMap, setPayslipsMap] = useState<Map<string, Payslip>>(new Map());
+  // Per-reliever per-client present-day counts for the active period.
+  // Only loaded in relieversOnly mode (cheap, small dataset).
+  const [relieverPerClient, setRelieverPerClient] = useState<Map<string, Map<string | "unattributed", number>>>(new Map());
   const [attendanceAgg, setAttendanceAgg] = useState<Map<string, { present: number; absent: number; leave: number }>>(
     new Map()
   );
@@ -182,6 +185,29 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       agg.set(a.employee_id, cur);
     });
     setAttendanceAgg(agg);
+
+    // In relievers mode, additionally pull per-day client attribution so the
+    // table can show "Worked for: Client A 5d, Client B 3d" and so the same
+    // numbers can be fed into the P&L (per-client × per_day_salary).
+    if (relieversOnly) {
+      const { data: relRows } = await supabase
+        .from("attendance_records")
+        .select("employee_id, worked_for_client_id")
+        .gte("attendance_date", start)
+        .lte("attendance_date", end)
+        .eq("status", "Present");
+      const per = new Map<string, Map<string | "unattributed", number>>();
+      for (const r of ((relRows ?? []) as { employee_id: string; worked_for_client_id: string | null }[])) {
+        const key: string | "unattributed" = r.worked_for_client_id ?? "unattributed";
+        const inner = per.get(r.employee_id) ?? new Map<string | "unattributed", number>();
+        inner.set(key, (inner.get(key) ?? 0) + 1);
+        per.set(r.employee_id, inner);
+      }
+      setRelieverPerClient(per);
+    } else {
+      setRelieverPerClient(new Map());
+    }
+
     const pMap = new Map<string, Payslip>();
     (payRes.data ?? []).forEach((p: any) => pMap.set(p.employee_id, p));
     setPayslipsMap(pMap);
@@ -1081,7 +1107,9 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                   <thead>
                     <tr className="border-b border-slate-200">
                       <th className="text-left px-4 py-3 text-xs text-slate-500">Employee</th>
-                      <th className="text-left px-4 py-3 text-xs text-slate-500">Client</th>
+                      <th className="text-left px-4 py-3 text-xs text-slate-500">
+                        {relieversOnly ? "Worked for" : "Client"}
+                      </th>
                       <th className="text-left px-4 py-3 text-xs text-slate-500">Attendance</th>
                       <th className="text-left px-4 py-3 text-xs text-slate-500">Base</th>
                       <th className="text-left px-4 py-3 text-xs text-slate-500">Net Salary</th>
@@ -1125,7 +1153,31 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                               </div>
                             </td>
                             <td className="px-4 py-3 text-sm text-slate-700">
-                              {e.client_name ?? <span className="text-slate-400">â€”</span>}
+                              {relieversOnly ? (() => {
+                                const breakdown = relieverPerClient.get(e.id);
+                                if (!breakdown || breakdown.size === 0) {
+                                  return <span className="text-slate-400">â€”</span>;
+                                }
+                                const items = Array.from(breakdown.entries()).sort((a, b) => b[1] - a[1]);
+                                return (
+                                  <div className="space-y-0.5 text-xs">
+                                    {items.map(([cid, days]) => {
+                                      const name =
+                                        cid === "unattributed"
+                                          ? "(Unattributed)"
+                                          : clients.find((c) => c.id === cid)?.name ?? "(Unknown)";
+                                      return (
+                                        <div key={cid} className="flex justify-between gap-3">
+                                          <span className="text-slate-700 truncate max-w-[10rem]" title={name}>{name}</span>
+                                          <span className="text-slate-500 tabular-nums">{days}d</span>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                );
+                              })() : (
+                                e.client_name ?? <span className="text-slate-400">â€”</span>
+                              )}
                             </td>
                             <td className="px-4 py-3 text-xs text-slate-600">
                               <div>

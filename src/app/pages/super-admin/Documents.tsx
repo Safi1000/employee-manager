@@ -122,32 +122,57 @@ export default function Documents() {
   }, [employees, search, locationFilter, clientFilter, shiftFilter]);
 
   const uploadDoc = async (employeeId: string, docType: string, file: File) => {
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-    const path = `${employeeId}/${Date.now()}_${docType}_${safeName}`;
-    const { error: upErr } = await supabase.storage
-      .from(EMPLOYEE_DOCS_BUCKET)
-      .upload(path, file, { upsert: false });
-    if (upErr) throw upErr;
+    const form = new FormData();
+    form.append("file", file);
+    form.append("employee_id", employeeId);
+    form.append("doc_type", docType);
+    const { data, error: fnErr } = await supabase.functions.invoke(
+      "gdrive-upload-employee-doc",
+      { body: form },
+    );
+    if (fnErr) throw fnErr;
+    if (!data?.drive_file_id) throw new Error(data?.error ?? "Upload failed");
     const { error: insErr } = await supabase.from("employee_documents").insert({
       employee_id: employeeId,
       doc_type: docType,
-      file_name: file.name,
-      storage_path: path,
-      mime_type: file.type,
-      size_bytes: file.size,
+      file_name: data.file_name ?? file.name,
+      storage_path: null,
+      drive_file_id: data.drive_file_id,
+      drive_view_url: data.drive_view_url,
+      mime_type: data.mime_type ?? file.type,
+      size_bytes: data.size_bytes ?? file.size,
     });
     if (insErr) throw insErr;
+  };
+
+  const deleteDocFiles = async (
+    rows: { drive_file_id?: string | null; storage_path?: string | null }[],
+  ) => {
+    const drivePromises = rows
+      .filter((r) => r.drive_file_id)
+      .map((r) =>
+        supabase.functions.invoke("gdrive-delete-employee-doc", {
+          body: { drive_file_id: r.drive_file_id },
+        }),
+      );
+    const legacyPaths = rows
+      .map((r) => r.storage_path)
+      .filter((p): p is string => !!p);
+    const storagePromise =
+      legacyPaths.length > 0
+        ? supabase.storage.from(EMPLOYEE_DOCS_BUCKET).remove(legacyPaths)
+        : Promise.resolve();
+    await Promise.all([...drivePromises, storagePromise]);
   };
 
   const replaceDoc = async (employeeId: string, docType: string, file: File) => {
     const { data: existing } = await supabase
       .from("employee_documents")
-      .select("id, storage_path")
+      .select("id, storage_path, drive_file_id")
       .eq("employee_id", employeeId)
       .eq("doc_type", docType);
     if (existing && existing.length > 0) {
-      const paths = existing.map((d: any) => d.storage_path);
-      await supabase.storage.from(EMPLOYEE_DOCS_BUCKET).remove(paths);
+      await deleteDocFiles(existing as any[]);
       await supabase
         .from("employee_documents")
         .delete()
@@ -167,10 +192,14 @@ export default function Documents() {
       .eq("employee_id", emp.id)
       .order("uploaded_at", { ascending: false });
     const docs: DocumentWithUrl[] = ((data ?? []) as EmployeeDocument[]).map((d) => {
-      const { data: urlData } = supabase.storage
-        .from(EMPLOYEE_DOCS_BUCKET)
-        .getPublicUrl(d.storage_path);
-      return { ...d, publicUrl: urlData.publicUrl };
+      if (d.drive_view_url) return { ...d, publicUrl: d.drive_view_url };
+      if (d.storage_path) {
+        const { data: urlData } = supabase.storage
+          .from(EMPLOYEE_DOCS_BUCKET)
+          .getPublicUrl(d.storage_path);
+        return { ...d, publicUrl: urlData.publicUrl };
+      }
+      return { ...d, publicUrl: null };
     });
     setViewDocs(docs);
     setViewLoading(false);
@@ -217,6 +246,15 @@ export default function Documents() {
   const downloadDoc = async (doc: DocumentWithUrl) => {
     setError(null);
     try {
+      if (doc.drive_file_id) {
+        // Drive download endpoint — alt=media streams the file directly.
+        // Since we set "anyone with link" permission on upload, this works
+        // without an access token.
+        const url = `https://drive.google.com/uc?export=download&id=${doc.drive_file_id}`;
+        window.open(url, "_blank");
+        return;
+      }
+      if (!doc.storage_path) throw new Error("No storage path or Drive ID on this document.");
       const { data, error: dlErr } = await supabase.storage
         .from(EMPLOYEE_DOCS_BUCKET)
         .download(doc.storage_path);
@@ -239,7 +277,7 @@ export default function Documents() {
     if (!window.confirm(`Delete "${doc.file_name}"?`)) return;
     setError(null);
     try {
-      await supabase.storage.from(EMPLOYEE_DOCS_BUCKET).remove([doc.storage_path]);
+      await deleteDocFiles([doc]);
       const { error: delErr } = await supabase.from("employee_documents").delete().eq("id", doc.id);
       if (delErr) throw delErr;
       await loadDocs(viewing);
