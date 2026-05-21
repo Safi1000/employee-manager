@@ -218,10 +218,14 @@ export default function Settings() {
 
   const loadNotificationSettings = async () => {
     setNotificationLoading(true);
+    if (!company?.id) {
+      setNotificationLoading(false);
+      return;
+    }
     const { data, error: nErr } = await supabase
       .from("notification_settings")
       .select("recipient_email, sender_email")
-      .limit(1)
+      .eq("company_id", company.id)
       .maybeSingle();
     if (!nErr && data) {
       setNotificationEmail(data.recipient_email ?? "");
@@ -235,8 +239,8 @@ export default function Settings() {
     setNotificationError(null);
     setNotificationMessage(null);
     try {
-      const companyId = profile?.company_id;
-      if (!companyId) throw new Error("No company on profile — cannot save notification settings.");
+      const companyId = company?.id;
+      if (!companyId) throw new Error("No company selected — cannot save notification settings.");
       const trimmed = notificationEmail.trim();
       // Upsert keyed by company_id so we don't depend on selecting the row first
       // (which silently no-ops under some RLS edge cases).
@@ -1199,87 +1203,87 @@ export default function Settings() {
                 {INVOICE_TEMPLATE_FIELDS.every((f) =>
                   invoiceTemplate.some((t) => t.field === f),
                 ) && (
-                  <span className="text-xs text-slate-400">All available fields are already in the template.</span>
-                )}
+                    <span className="text-xs text-slate-400">All available fields are already in the template.</span>
+                  )}
               </div>
             </div>
           </div>
         </div>
 
         {canManageNotifications && (
-        <div className="bg-white rounded-lg border border-slate-200 mt-6">
-          <div className="p-6 border-b border-slate-200 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Mail className="w-4 h-4 text-slate-600" strokeWidth={1.5} />
-              <h2 className="text-base text-slate-900">Notifications</h2>
-            </div>
-            <div className="flex items-center gap-3">
-              {notificationSavedAt && (
-                <span className="text-xs text-success-600">Saved at {notificationSavedAt}</span>
-              )}
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={saveNotificationSettings}
-                disabled={notificationSaving || notificationLoading}
-              >
-                {notificationSaving && <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />}
-                Save
-              </Button>
-            </div>
-          </div>
-          <div className="p-6 space-y-4">
-            <p className="text-xs text-slate-500">
-              Compliance & contract-end alerts are emailed daily via Resend to the recipient below.
-              The sender domain must be verified in your Resend account.
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs text-slate-500 mb-1">Recipient email</label>
-                <input
-                  type="email"
-                  value={notificationEmail}
-                  onChange={(e) => setNotificationEmail(e.target.value)}
-                  disabled={notificationLoading}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent disabled:bg-slate-50"
-                  placeholder="alerts@example.com"
-                />
+          <div className="bg-white rounded-lg border border-slate-200 mt-6">
+            <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Mail className="w-4 h-4 text-slate-600" strokeWidth={1.5} />
+                <h2 className="text-base text-slate-900">Notifications</h2>
               </div>
-              <div>
-                <label className="block text-xs text-slate-500 mb-1">Sender email (verified in Resend)</label>
-                <input
-                  type="email"
-                  value={notificationSenderEmail}
-                  onChange={(e) => setNotificationSenderEmail(e.target.value)}
-                  disabled={notificationLoading}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent disabled:bg-slate-50"
-                  placeholder="info@yourdomain.com"
-                />
-              </div>
-            </div>
-            <div className="flex items-center gap-3 pt-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={sendTestEmail}
-                disabled={notificationTesting || !notificationEmail.trim()}
-              >
-                {notificationTesting ? (
-                  <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
-                ) : (
-                  <Send className="w-3.5 h-3.5 mr-2" strokeWidth={1.5} />
+              <div className="flex items-center gap-3">
+                {notificationSavedAt && (
+                  <span className="text-xs text-success-600">Saved at {notificationSavedAt}</span>
                 )}
-                Send test email
-              </Button>
-              {notificationMessage && (
-                <span className="text-xs text-success-700">{notificationMessage}</span>
-              )}
-              {notificationError && (
-                <span className="text-xs text-danger-700">{notificationError}</span>
-              )}
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={saveNotificationSettings}
+                  disabled={notificationSaving || notificationLoading}
+                >
+                  {notificationSaving && <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />}
+                  Save
+                </Button>
+              </div>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-xs text-slate-500">
+                Compliance & contract-end alerts are emailed daily via Resend to the recipient below.
+                The sender domain must be verified in your Resend account.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">Recipient email</label>
+                  <input
+                    type="email"
+                    value={notificationEmail}
+                    onChange={(e) => setNotificationEmail(e.target.value)}
+                    disabled={notificationLoading}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent disabled:bg-slate-50"
+                    placeholder="alerts@example.com"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">Sender email</label>
+                  <input
+                    type="email"
+                    value={notificationSenderEmail}
+                    onChange={(e) => setNotificationSenderEmail(e.target.value)}
+                    disabled={notificationLoading}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent disabled:bg-slate-50"
+                    placeholder="info@yourdomain.com"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-3 pt-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={sendTestEmail}
+                  disabled={notificationTesting || !notificationEmail.trim()}
+                >
+                  {notificationTesting ? (
+                    <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
+                  ) : (
+                    <Send className="w-3.5 h-3.5 mr-2" strokeWidth={1.5} />
+                  )}
+                  Send test email
+                </Button>
+                {notificationMessage && (
+                  <span className="text-xs text-success-700">{notificationMessage}</span>
+                )}
+                {notificationError && (
+                  <span className="text-xs text-danger-700">{notificationError}</span>
+                )}
+              </div>
             </div>
           </div>
-        </div>
         )}
       </div>
 
