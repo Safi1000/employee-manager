@@ -121,10 +121,14 @@ export default function Documents() {
     });
   }, [employees, search, locationFilter, clientFilter, shiftFilter]);
 
-  const uploadDoc = async (employeeId: string, docType: string, file: File) => {
+  type EmpRef = { id: string; employee_code: string; full_name: string };
+
+  const uploadDoc = async (employee: EmpRef, docType: string, file: File) => {
     const form = new FormData();
     form.append("file", file);
-    form.append("employee_id", employeeId);
+    form.append("employee_id", employee.id);
+    form.append("employee_code", employee.employee_code);
+    form.append("employee_name", employee.full_name);
     form.append("doc_type", docType);
     const { data, error: fnErr } = await supabase.functions.invoke(
       "gdrive-upload-employee-doc",
@@ -143,7 +147,7 @@ export default function Documents() {
     }
     if (!data?.drive_file_id) throw new Error(data?.error ?? "Upload failed");
     const { error: insErr } = await supabase.from("employee_documents").insert({
-      employee_id: employeeId,
+      employee_id: employee.id,
       doc_type: docType,
       file_name: data.file_name ?? file.name,
       storage_path: null,
@@ -175,11 +179,11 @@ export default function Documents() {
     await Promise.all([...drivePromises, storagePromise]);
   };
 
-  const replaceDoc = async (employeeId: string, docType: string, file: File) => {
+  const replaceDoc = async (employee: EmpRef, docType: string, file: File) => {
     const { data: existing } = await supabase
       .from("employee_documents")
       .select("id, storage_path, drive_file_id")
-      .eq("employee_id", employeeId)
+      .eq("employee_id", employee.id)
       .eq("doc_type", docType);
     if (existing && existing.length > 0) {
       await deleteDocFiles(existing as any[]);
@@ -191,7 +195,7 @@ export default function Documents() {
           existing.map((d: any) => d.id)
         );
     }
-    await uploadDoc(employeeId, docType, file);
+    await uploadDoc(employee, docType, file);
   };
 
   const loadDocs = async (emp: EmployeeRow) => {
@@ -236,11 +240,16 @@ export default function Documents() {
     setEditSubmitting(true);
     setError(null);
     try {
-      if (editForm.cnic) await replaceDoc(editing.id, "CNIC", editForm.cnic);
-      if (editForm.police_verification) await replaceDoc(editing.id, "Police Verification", editForm.police_verification);
+      const empRef: EmpRef = {
+        id: editing.id,
+        employee_code: editing.employee_code,
+        full_name: editing.full_name,
+      };
+      if (editForm.cnic) await replaceDoc(empRef, "CNIC", editForm.cnic);
+      if (editForm.police_verification) await replaceDoc(empRef, "Police Verification", editForm.police_verification);
       if (editForm.other) {
         for (let i = 0; i < editForm.other.length; i++) {
-          await uploadDoc(editing.id, "Other", editForm.other[i]);
+          await uploadDoc(empRef, "Other", editForm.other[i]);
         }
       }
       setEditing(null);

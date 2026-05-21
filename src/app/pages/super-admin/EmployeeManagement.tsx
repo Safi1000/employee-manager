@@ -211,10 +211,14 @@ export default function EmployeeManagement() {
     });
   }, [employees, search, locationFilter, clientFilter, branchFilter, categoryFilter, shiftFilter, statusFilter]);
 
-  const uploadDoc = async (employeeId: string, docType: string, file: File) => {
+  type EmpRef = { id: string; employee_code: string; full_name: string };
+
+  const uploadDoc = async (employee: EmpRef, docType: string, file: File) => {
     const form = new FormData();
     form.append("file", file);
-    form.append("employee_id", employeeId);
+    form.append("employee_id", employee.id);
+    form.append("employee_code", employee.employee_code);
+    form.append("employee_name", employee.full_name);
     form.append("doc_type", docType);
     const { data, error: fnErr } = await supabase.functions.invoke(
       "gdrive-upload-employee-doc",
@@ -236,7 +240,7 @@ export default function EmployeeManagement() {
     }
     if (!data?.drive_file_id) throw new Error(data?.error ?? "Upload failed");
     const { error: insErr } = await supabase.from("employee_documents").insert({
-      employee_id: employeeId,
+      employee_id: employee.id,
       doc_type: docType,
       file_name: data.file_name ?? file.name,
       storage_path: null,
@@ -270,11 +274,11 @@ export default function EmployeeManagement() {
     await Promise.all([...drivePromises, storagePromise]);
   };
 
-  const replaceDoc = async (employeeId: string, docType: string, file: File) => {
+  const replaceDoc = async (employee: EmpRef, docType: string, file: File) => {
     const { data: existing } = await supabase
       .from("employee_documents")
       .select("id, storage_path, drive_file_id")
-      .eq("employee_id", employeeId)
+      .eq("employee_id", employee.id)
       .eq("doc_type", docType);
     if (existing && existing.length > 0) {
       await deleteDocFiles(existing as any[]);
@@ -286,15 +290,15 @@ export default function EmployeeManagement() {
           existing.map((d: any) => d.id)
         );
     }
-    await uploadDoc(employeeId, docType, file);
+    await uploadDoc(employee, docType, file);
   };
 
-  const uploadDocs = async (employeeId: string, f: FormState) => {
-    if (f.cnic) await replaceDoc(employeeId, "CNIC", f.cnic);
-    if (f.police_verification) await replaceDoc(employeeId, "Police Verification", f.police_verification);
+  const uploadDocs = async (employee: EmpRef, f: FormState) => {
+    if (f.cnic) await replaceDoc(employee, "CNIC", f.cnic);
+    if (f.police_verification) await replaceDoc(employee, "Police Verification", f.police_verification);
     if (f.other) {
       for (let i = 0; i < f.other.length; i++) {
-        await uploadDoc(employeeId, "Other", f.other[i]);
+        await uploadDoc(employee, "Other", f.other[i]);
       }
     }
   };
@@ -356,9 +360,12 @@ export default function EmployeeManagement() {
         .select()
         .single();
       if (insErr) throw insErr;
-      const newId = (data as Employee).id;
-      await uploadDocs(newId, form);
-      await syncAdditionalBranches(newId, form.additional_branch_ids, form.branch_id);
+      const newEmp = data as Employee;
+      await uploadDocs(
+        { id: newEmp.id, employee_code: newEmp.employee_code, full_name: newEmp.full_name },
+        form,
+      );
+      await syncAdditionalBranches(newEmp.id, form.additional_branch_ids, form.branch_id);
       setForm(emptyForm);
       setIsModalOpen(false);
       await loadData();
@@ -475,7 +482,16 @@ export default function EmployeeManagement() {
         })
         .eq("id", selectedEmployee.id);
       if (upErr) throw upErr;
-      await uploadDocs(selectedEmployee.id, editForm);
+      await uploadDocs(
+        {
+          id: selectedEmployee.id,
+          employee_code: selectedEmployee.employee_code,
+          // Use the freshly typed name so a renamed employee's first new upload
+          // creates the folder with the updated label.
+          full_name: editForm.full_name.trim() || selectedEmployee.full_name,
+        },
+        editForm,
+      );
       await syncAdditionalBranches(selectedEmployee.id, editForm.additional_branch_ids, editForm.branch_id);
       setIsEditModalOpen(false);
       await loadData();

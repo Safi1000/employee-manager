@@ -1,15 +1,12 @@
 // Edge function: gdrive-delete-employee-doc
-// Deletes a single Drive file by ID. Idempotent — a 404 from Drive is treated
-// as success since the row may already be gone.
-//
-// Request: POST JSON { drive_file_id: string }
-// Response: { ok: true }
+// Deletes a single Drive file by ID using OAuth refresh-token auth.
+// Idempotent — 404 is treated as success.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { create as jwtCreate, getNumericDate } from "https://deno.land/x/djwt@v3.0.2/mod.ts";
 
-const SA_EMAIL = Deno.env.get("GOOGLE_SERVICE_ACCOUNT_EMAIL")!;
-const SA_PRIVATE_KEY_RAW = Deno.env.get("GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY")!;
+const CLIENT_ID = Deno.env.get("GOOGLE_OAUTH_CLIENT_ID");
+const CLIENT_SECRET = Deno.env.get("GOOGLE_OAUTH_CLIENT_SECRET");
+const REFRESH_TOKEN = Deno.env.get("GOOGLE_OAUTH_REFRESH_TOKEN");
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -26,49 +23,24 @@ function json(body: unknown, status = 200) {
 
 let cachedToken: { token: string; expiresAt: number } | null = null;
 
-async function importPrivateKey(pem: string) {
-  const normalized = pem.replace(/\\n/g, "\n");
-  const pkcs8 = normalized
-    .replace("-----BEGIN PRIVATE KEY-----", "")
-    .replace("-----END PRIVATE KEY-----", "")
-    .replace(/\s+/g, "");
-  const der = Uint8Array.from(atob(pkcs8), (c) => c.charCodeAt(0));
-  return await crypto.subtle.importKey(
-    "pkcs8",
-    der.buffer,
-    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-}
-
 async function getAccessToken(): Promise<string> {
   if (cachedToken && cachedToken.expiresAt > Date.now() + 60_000) {
     return cachedToken.token;
   }
-  const key = await importPrivateKey(SA_PRIVATE_KEY_RAW);
-  const now = getNumericDate(0);
-  const exp = getNumericDate(60 * 60);
-  const jwt = await jwtCreate(
-    { alg: "RS256", typ: "JWT" },
-    {
-      iss: SA_EMAIL,
-      scope: "https://www.googleapis.com/auth/drive",
-      aud: "https://oauth2.googleapis.com/token",
-      iat: now,
-      exp,
-    },
-    key,
-  );
   const resp = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      assertion: jwt,
+      grant_type: "refresh_token",
+      client_id: CLIENT_ID!,
+      client_secret: CLIENT_SECRET!,
+      refresh_token: REFRESH_TOKEN!,
     }),
   });
-  if (!resp.ok) throw new Error(`token exchange failed: ${await resp.text()}`);
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`Google token exchange failed (status ${resp.status}): ${text}`);
+  }
   const j = await resp.json();
   cachedToken = {
     token: j.access_token,
@@ -84,6 +56,14 @@ Deno.serve(async (req) => {
   const auth = req.headers.get("Authorization");
   if (!auth?.startsWith("Bearer ")) return json({ error: "unauthorized" }, 401);
 
+  const missing: string[] = [];
+  if (!CLIENT_ID) missing.push("GOOGLE_OAUTH_CLIENT_ID");
+  if (!CLIENT_SECRET) missing.push("GOOGLE_OAUTH_CLIENT_SECRET");
+  if (!REFRESH_TOKEN) missing.push("GOOGLE_OAUTH_REFRESH_TOKEN");
+  if (missing.length > 0) {
+    return json({ error: `Missing secret(s): ${missing.join(", ")}` }, 500);
+  }
+
   let body: { drive_file_id?: string };
   try {
     body = await req.json();
@@ -96,7 +76,7 @@ Deno.serve(async (req) => {
   try {
     const token = await getAccessToken();
     const resp = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${id}?supportsAllDrives=true`,
+      `https://www.googleapis.com/drive/v3/files/${id}`,
       {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
@@ -109,6 +89,7 @@ Deno.serve(async (req) => {
     return json({ ok: true });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+    console.error("gdrive-delete-employee-doc:", msg);
     return json({ error: msg }, 500);
   }
 });

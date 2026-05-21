@@ -1,82 +1,105 @@
-# Google Drive employee-docs setup
+# Google Drive employee-docs setup (OAuth refresh-token model)
 
 These two edge functions (`gdrive-upload-employee-doc` and
-`gdrive-delete-employee-doc`) move employee document uploads from Supabase
-Storage to a shared Google Drive folder, using a single service account so
-no per-user OAuth is required.
+`gdrive-delete-employee-doc`) upload employee documents to a regular Google
+account's Drive using OAuth. A single account "owns" all employee docs and
+its 15 GB free quota backs the storage.
+
+> Why OAuth and not a service account? Service accounts have zero storage
+> quota on personal Drives — uploading anything fails with
+> `storageQuotaExceeded`. Service accounts only work with paid Workspace
+> Shared Drives. OAuth on a regular Gmail sidesteps that entirely.
 
 ## One-time Google Cloud setup
 
-1. **Create a Google Cloud project** at <https://console.cloud.google.com>
-   (or reuse an existing one).
-2. **Enable the Drive API** for that project:
-   <https://console.cloud.google.com/apis/library/drive.googleapis.com>.
-3. **Create a service account**:
-   - IAM & Admin → Service Accounts → Create service account
-   - Give it a name like `employee-docs-uploader`
-   - Skip the optional role assignment (no project role needed)
-   - Done.
-4. **Generate a JSON key** for the service account:
-   - Click the service account → Keys tab → Add Key → JSON
-   - Save the downloaded file somewhere safe — you won't be able to download it again.
-5. **Note the service account email** (e.g. `employee-docs-uploader@my-project.iam.gserviceaccount.com`).
-6. **Create the parent Drive folder**:
-   - Open <https://drive.google.com>
-   - New → Folder → call it whatever (e.g. `Employee Documents`)
-   - Open the folder. The URL looks like
-     `https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrStUvWxYz` —
-     the long string after `/folders/` is the **folder ID**.
-   - Share this folder with the service account email as **Editor**.
-   - (Optional but recommended for organisations with Google Workspace:
-     use a **Shared Drive** instead of "My Drive" so the files belong to
-     the company, not the service account.)
+### 1. Create an OAuth client
+
+1. Go to <https://console.cloud.google.com/apis/credentials>.
+2. **Create Credentials → OAuth client ID**.
+   - If prompted, configure the OAuth consent screen first (next section).
+3. **Application type: Web application**.
+4. Name: anything (e.g. `Employee Manager Drive`).
+5. **Authorized redirect URIs**: add `https://developers.google.com/oauthplayground`.
+6. Create → copy the **Client ID** and **Client secret**.
+
+### 2. Configure the OAuth consent screen
+
+(Skip if you've already done this for another project.)
+
+1. <https://console.cloud.google.com/apis/credentials/consent>.
+2. **User Type: External** (only option without Google Workspace).
+3. Fill in: App name (`Employee Manager`), User support email, Developer
+   contact email. Skip logo / URLs.
+4. **Scopes**: Add `https://www.googleapis.com/auth/drive.file`. This is the
+   only scope we need — non-sensitive, no Google verification required.
+5. **Test users**: not required for non-sensitive scopes once published, but
+   add the account you want to use as a test user anyway.
+6. **Save**, then on the consent screen overview click **Publish app** →
+   **Confirm**. Because `drive.file` is non-sensitive there's no
+   verification step — the app moves straight to "In production". This is
+   important: refresh tokens issued for apps in "Testing" status expire in
+   7 days, but production-status tokens don't expire.
+
+### 3. Get a refresh token
+
+1. Go to <https://developers.google.com/oauthplayground/>.
+2. Click the **gear icon (top right)** → check **Use your own OAuth
+   credentials** → paste the Client ID + Client secret from step 1 → Close.
+3. In the left "Select & authorize APIs" panel, scroll to the bottom and
+   paste this scope into the input field:
+   ```
+   https://www.googleapis.com/auth/drive.file
+   ```
+4. Click **Authorize APIs**. Sign in with the Google account that should
+   own the employee documents → click **Allow**.
+5. Click **Exchange authorization code for tokens**.
+6. Copy the **refresh token** value from the response.
 
 ## Set Supabase Edge Function secrets
 
-Paste these three values into the project's Edge Function secrets
-(Project Settings → Edge Functions → Secrets):
+<https://supabase.com/dashboard/project/mmkfpnshxjcyijhuydgr/functions/secrets>
 
-| Name | Value |
+| Secret name | Value |
 |---|---|
-| `GOOGLE_SERVICE_ACCOUNT_EMAIL` | The `client_email` field from the JSON key |
-| `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` | The `private_key` field from the JSON key — **keep the `\n` escape sequences as literal text**. Do not turn them into real line breaks. |
-| `GOOGLE_DRIVE_PARENT_FOLDER_ID` | The folder ID from step 6 |
+| `GOOGLE_OAUTH_CLIENT_ID` | from step 1 |
+| `GOOGLE_OAUTH_CLIENT_SECRET` | from step 1 |
+| `GOOGLE_OAUTH_REFRESH_TOKEN` | from step 3 |
 
-## Deploy the functions
+You can delete the old service-account secrets if they're still there:
+`GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`,
+`GOOGLE_DRIVE_PARENT_FOLDER_ID`. The new functions don't use them.
 
-From the project root:
+## How the functions behave
 
-```bash
-supabase functions deploy gdrive-upload-employee-doc
-supabase functions deploy gdrive-delete-employee-doc
-```
+- On the first upload, the function creates a folder named `EmployeeManager`
+  at the root of the OAuth'd account's Drive. It's tagged with an
+  `appProperties.type=employee_manager_root` flag so we can find it again
+  later even if you rename it from the Drive UI.
+- Each employee gets a subfolder `emp_<uuid>` inside that root, created on
+  first upload for that employee.
+- Files are made world-readable (anyone-with-link can view) so the URL
+  stored on `employee_documents.drive_view_url` resolves without further
+  auth.
+- Because the OAuth scope is `drive.file`, the app can ONLY see / modify
+  the files it created. It cannot snoop on the rest of the user's Drive.
 
-## How it works
+## Common errors
 
-- On upload the function authenticates as the service account, lazily
-  creates a per-employee subfolder (`emp_<uuid>`) under the parent folder,
-  and uploads the file there with `anyone-with-link can view` permission.
-- The frontend receives `drive_file_id` + `drive_view_url` and inserts an
-  `employee_documents` row referencing them.
-- Legacy rows (uploaded to Supabase Storage before the cutover) still work
-  — the frontend falls back to `storage.getPublicUrl(storage_path)` when
-  `drive_view_url` is null.
+- **`Google token exchange failed (status 400) ... invalid_grant`** — the
+  refresh token was revoked, expired (apps in Testing mode expire tokens
+  after 7 days), or doesn't match the client_id/client_secret. Re-run the
+  OAuth Playground flow.
+- **`status 401`** — usually a typo in `GOOGLE_OAUTH_CLIENT_SECRET`.
+- **`Drive folder create failed (status 403)`** — the OAuth grant was made
+  with a scope narrower than `drive.file`. Re-run the Playground flow with
+  the correct scope.
 
-## Cost / quota notes
+## Rotating credentials
 
-- Drive storage: 15 GB free on a personal account; Workspace plans go to
-  30 GB+ per user. Files attributed to the service account count against
-  whoever owns the Drive (Shared Drive = company; My Drive = service
-  account).
-- Drive API has a 1B+ requests/day quota. Way more than this app will use.
-- The first upload after a cold start pays for one OAuth token exchange
-  (~200ms); subsequent uploads on the same warm container reuse the
-  cached token for an hour.
+To rotate the refresh token (e.g. someone leaves the company and you want
+to switch ownership of the docs to a different Google account):
 
-## Rotating the service-account key
-
-When the JSON key needs rotation (recommended yearly):
-
-1. Generate a new JSON key on the same service account.
-2. Replace `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` in Supabase secrets.
-3. Delete the old key on Google Cloud after a few minutes.
+1. Run the OAuth Playground flow again, signed in with the new account.
+2. Replace `GOOGLE_OAUTH_REFRESH_TOKEN` in Supabase secrets.
+3. Note: docs uploaded before the switch belong to the previous account.
+   Either keep both accounts active, or download + re-upload existing docs.
