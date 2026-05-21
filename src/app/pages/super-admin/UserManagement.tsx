@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { Plus, Search, Loader2, UserPlus, Pencil, Trash2, KeyRound } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -160,7 +160,7 @@ export default function UserManagement() {
     setEditName(u.full_name ?? "");
     setEditTitle(u.title ?? "");
     // Head Office branch is no longer offered as a per-user scope; legacy users
-    // pinned to it surface as "No branch — unrestricted (Head Office admin)".
+    // pinned to it surface as "No branch â€” unrestricted (Head Office admin)".
     const headOfficeId = branches.find((b) => b.is_head_office)?.id ?? null;
     const branchId = u.branch_id && u.branch_id === headOfficeId ? "" : (u.branch_id ?? "");
     setEditBranchId(branchId);
@@ -257,7 +257,7 @@ export default function UserManagement() {
       />
 
       <div className="flex-1 overflow-y-auto p-4 md:p-8">
-        {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 px-4 py-2 rounded mb-4">{error}</div>}
+        {error && <div className="text-sm text-danger-600 bg-danger-50 border border-danger-200 px-4 py-2 rounded mb-4">{error}</div>}
 
         <div className="bg-white rounded-lg border border-slate-200">
           <div className="p-4 md:p-6 border-b border-slate-200 flex flex-col md:flex-row md:items-center gap-3">
@@ -265,7 +265,7 @@ export default function UserManagement() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />
               <input
                 type="text"
-                placeholder="Search by name, email, or title…"
+                placeholder="Search by name, email, or titleâ€¦"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -275,7 +275,7 @@ export default function UserManagement() {
 
           <div className="overflow-x-auto">
             {loading ? (
-              <div className="p-8 flex items-center gap-2 text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
+              <div className="p-8 flex items-center gap-2 text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Loadingâ€¦</div>
             ) : filtered.length === 0 ? (
               <div className="p-12 text-center">
                 <Plus className="w-8 h-8 text-slate-300 mx-auto mb-2" strokeWidth={1.5} />
@@ -296,22 +296,22 @@ export default function UserManagement() {
                 <tbody className="divide-y divide-slate-200">
                   {filtered.map((u) => (
                     <tr key={u.id} className="hover:bg-slate-50">
-                      <td className="px-6 py-4 text-sm text-slate-900">{u.full_name ?? "—"}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{u.email ?? "—"}</td>
+                      <td className="px-6 py-4 text-sm text-slate-900">{u.full_name ?? "â€”"}</td>
+                      <td className="px-6 py-4 text-sm text-slate-600">{u.email ?? "â€”"}</td>
                       <td className="px-6 py-4 text-sm text-slate-600">
                         {displayLabel(u)}
                         {showImplicitAll(u.role) && (
-                          <span className="ml-2 text-xs text-blue-600">(admin)</span>
+                          <span className="ml-2 text-xs text-brand-600">(admin)</span>
                         )}
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-600">
                         {u.branch_id
-                          ? branches.find((b) => b.id === u.branch_id)?.name ?? "—"
+                          ? branches.find((b) => b.id === u.branch_id)?.name ?? "â€”"
                           : <span className="text-xs text-slate-400">All branches</span>}
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-600">
                         {showImplicitAll(u.role) ? (
-                          <span className="text-xs px-2 py-1 rounded bg-blue-50 text-blue-700">All (implicit)</span>
+                          <span className="text-xs px-2 py-1 rounded bg-brand-50 text-brand-700">All (implicit)</span>
                         ) : (u.permissions?.length ?? 0) === 0 ? (
                           <span className="text-xs text-slate-400">None</span>
                         ) : (
@@ -329,7 +329,7 @@ export default function UserManagement() {
                           </button>
                           <button
                             onClick={() => { setResetPwUserId(u.id); setResetPwValue(""); setResetPwSuccess(false); }}
-                            className="p-1.5 rounded text-amber-600 hover:bg-amber-50"
+                            className="p-1.5 rounded text-warning-600 hover:bg-warning-50"
                             title="Reset Password"
                           >
                             <KeyRound className="w-4 h-4" />
@@ -337,7 +337,7 @@ export default function UserManagement() {
                           <button
                             onClick={() => handleDelete(u)}
                             disabled={u.id === profile?.id}
-                            className="p-1.5 rounded text-red-600 hover:bg-red-50 disabled:opacity-30 disabled:cursor-not-allowed"
+                            className="p-1.5 rounded text-danger-600 hover:bg-danger-50 disabled:opacity-30 disabled:cursor-not-allowed"
                             title={u.id === profile?.id ? "Cannot delete yourself" : "Delete"}
                           >
                             <Trash2 className="w-4 h-4" />
@@ -406,7 +406,7 @@ export default function UserManagement() {
                 onChange={(e) => setCreateBranchId(e.target.value)}
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
               >
-                <option value="">No branch — unrestricted (Head Office admin)</option>
+                <option value="">No branch â€” unrestricted (Head Office admin)</option>
                 {branches.filter((b) => !b.is_head_office).map((b) => (
                   <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
@@ -424,7 +424,7 @@ export default function UserManagement() {
                 <button
                   type="button"
                   onClick={() => setCreatePerms(new Set(PERMISSION_GROUPS.flatMap((g) => g.items.map((i) => i.key))))}
-                  className="text-xs text-blue-600 hover:underline"
+                  className="text-xs text-brand-600 hover:underline"
                 >
                   Select all
                 </button>
@@ -443,7 +443,7 @@ export default function UserManagement() {
             />
           </div>
 
-          {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded">{error}</div>}
+          {error && <div className="text-sm text-danger-600 bg-danger-50 border border-danger-200 px-3 py-2 rounded">{error}</div>}
           <div className="flex items-center gap-3 pt-2">
             <Button type="submit" variant="primary" size="md" className="flex-1" disabled={submitting}>
               {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
@@ -480,7 +480,7 @@ export default function UserManagement() {
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm disabled:bg-slate-50 disabled:text-slate-500"
                 />
                 {editUser.role === "super_admin" && (
-                  <p className="text-xs text-blue-600 mt-1">This user is a Super Admin — implicit full access.</p>
+                  <p className="text-xs text-brand-600 mt-1">This user is a Super Admin â€” implicit full access.</p>
                 )}
               </div>
               <div className="md:col-span-2">
@@ -490,7 +490,7 @@ export default function UserManagement() {
                   onChange={(e) => setEditBranchId(e.target.value)}
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
                 >
-                  <option value="">No branch — unrestricted (Head Office admin)</option>
+                  <option value="">No branch â€” unrestricted (Head Office admin)</option>
                   {branches.map((b) => (
                     <option key={b.id} value={b.id}>{b.name}</option>
                   ))}
@@ -509,7 +509,7 @@ export default function UserManagement() {
                     <button
                       type="button"
                       onClick={() => setEditPerms(new Set(PERMISSION_GROUPS.flatMap((g) => g.items.map((i) => i.key))))}
-                      className="text-xs text-blue-600 hover:underline"
+                      className="text-xs text-brand-600 hover:underline"
                     >
                       Select all
                     </button>
@@ -529,7 +529,7 @@ export default function UserManagement() {
               </div>
             )}
 
-            {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded">{error}</div>}
+            {error && <div className="text-sm text-danger-600 bg-danger-50 border border-danger-200 px-3 py-2 rounded">{error}</div>}
             <div className="flex items-center gap-3 pt-2">
               <Button type="submit" variant="primary" size="md" className="flex-1" disabled={editSubmitting}>
                 {editSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
@@ -551,10 +551,10 @@ export default function UserManagement() {
       >
         {resetPwSuccess ? (
           <div className="text-center py-4">
-            <div className="w-12 h-12 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-3">
-              <KeyRound className="w-6 h-6 text-green-600" strokeWidth={1.5} />
+            <div className="w-12 h-12 bg-success-50 rounded-full flex items-center justify-center mx-auto mb-3">
+              <KeyRound className="w-6 h-6 text-success-600" strokeWidth={1.5} />
             </div>
-            <p className="text-sm text-green-700 font-medium">Password reset successfully!</p>
+            <p className="text-sm text-success-700 font-medium">Password reset successfully!</p>
             <p className="text-xs text-slate-500 mt-1">The user will be prompted to set a new password on next login.</p>
           </div>
         ) : (
@@ -571,11 +571,11 @@ export default function UserManagement() {
                 required
                 minLength={8}
                 placeholder="At least 8 characters"
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               />
             </div>
             {error && (
-              <div className="text-sm text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded">{error}</div>
+              <div className="text-sm text-danger-600 bg-danger-50 border border-danger-200 px-3 py-2 rounded">{error}</div>
             )}
             <div className="flex items-center gap-3 pt-1">
               <Button type="submit" variant="primary" size="md" className="flex-1" disabled={resetPwSubmitting}>

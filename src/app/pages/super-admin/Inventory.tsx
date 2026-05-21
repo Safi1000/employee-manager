@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { Plus, Shield, Users as UsersIcon, MapPin, AlertCircle, Loader2, X, Trash2, Package, Building2 } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -180,7 +180,7 @@ export default function Inventory() {
       const r = raw as any;
       if (!r.return_date) {
         const existing = activeByItem.get(r.item_id);
-        const name = r.employee?.full_name ?? r.client?.name ?? "—";
+        const name = r.employee?.full_name ?? r.client?.name ?? "â€”";
         if (existing) {
           activeByItem.set(r.item_id, {
             name: existing.count === 0 ? name : `${existing.name}, ${name}`,
@@ -215,10 +215,10 @@ export default function Inventory() {
         return {
           ...r,
           target_kind: (isClient ? "client" : "employee") as "employee" | "client",
-          target_name: isClient ? r.client?.name ?? "—" : r.employee?.full_name ?? "—",
+          target_name: isClient ? r.client?.name ?? "â€”" : r.employee?.full_name ?? "â€”",
           target_code: isClient ? r.client?.client_code ?? "" : r.employee?.employee_code ?? "",
           employee_shift: (r.employee?.shift ?? null) as "day" | "night" | null,
-          item_type: r.item?.item_type ?? "—",
+          item_type: r.item?.item_type ?? "â€”",
           item_kind: (r.item?.kind ?? "weapon") as InventoryKind,
           serial_number: r.item?.serial_number ?? null,
           size: r.item?.size ?? null,
@@ -344,7 +344,7 @@ export default function Inventory() {
     const label =
       item.kind === "weapon"
         ? `${item.item_type}${item.serial_number ? ` (${item.serial_number})` : ""}`
-        : `${item.item_type}${item.size ? ` — ${item.size}` : ""}`;
+        : `${item.item_type}${item.size ? ` â€” ${item.size}` : ""}`;
     if (!window.confirm(`Delete ${label}? All related issuance records will also be removed.`)) return;
     setError(null);
     const { error: delErr } = await supabase.from("inventory_items").delete().eq("id", item.id);
@@ -540,7 +540,7 @@ export default function Inventory() {
 
       <div className="flex-1 overflow-y-auto p-8">
         {error && (
-          <div className="mb-4 flex items-start gap-2 p-3 bg-red-50 text-red-700 border border-red-200 rounded-md text-sm">
+          <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
             <div className="flex-1">{error}</div>
             <button onClick={() => setError(null)}>
@@ -552,7 +552,7 @@ export default function Inventory() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <div className="bg-white rounded-lg border border-slate-200 p-5">
             <div className="flex items-center gap-2 mb-4">
-              <Shield className="w-4 h-4 text-red-600" strokeWidth={1.5} />
+              <Shield className="w-4 h-4 text-danger-600" strokeWidth={1.5} />
               <h3 className="text-sm text-slate-900">Weapons</h3>
             </div>
             <div className="grid grid-cols-4 gap-3">
@@ -564,7 +564,7 @@ export default function Inventory() {
           </div>
           <div className="bg-white rounded-lg border border-slate-200 p-5">
             <div className="flex items-center gap-2 mb-4">
-              <Package className="w-4 h-4 text-blue-600" strokeWidth={1.5} />
+              <Package className="w-4 h-4 text-brand-600" strokeWidth={1.5} />
               <h3 className="text-sm text-slate-900">Uniforms &amp; Gear</h3>
             </div>
             <div className="grid grid-cols-4 gap-3">
@@ -674,7 +674,7 @@ export default function Inventory() {
                   onClick={() => setActiveTab(tab.key)}
                   className={`px-4 py-2 rounded-md text-sm transition-colors ${
                     activeTab === tab.key
-                      ? "bg-blue-600 text-white"
+                      ? "bg-brand-600 text-white"
                       : "text-slate-600 hover:bg-slate-100"
                   }`}
                 >
@@ -702,7 +702,7 @@ export default function Inventory() {
                   {loading && (
                     <tr>
                       <td colSpan={7} className="px-6 py-10 text-center text-slate-500">
-                        <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
+                        <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loadingâ€¦
                       </td>
                     </tr>
                   )}
@@ -720,33 +720,33 @@ export default function Inventory() {
                         <tr key={weapon.id} className="hover:bg-slate-50 transition-colors">
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-2">
-                              <Shield className="w-4 h-4 text-red-600" strokeWidth={1.5} />
+                              <Shield className="w-4 h-4 text-danger-600" strokeWidth={1.5} />
                               <span className="text-sm text-slate-900">{weapon.item_type}</span>
                             </div>
                           </td>
                           <td className="px-6 py-4 text-sm text-slate-600 font-mono">
-                            {weapon.serial_number ?? "—"}
+                            {weapon.serial_number ?? "â€”"}
                           </td>
                           <td className="px-6 py-4">
                             <span
                               className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
                                 weapon.status === "Issued"
-                                  ? "bg-blue-50 text-blue-700"
+                                  ? "bg-brand-50 text-brand-700"
                                   : weapon.status === "Available"
-                                  ? "bg-green-50 text-green-700"
-                                  : "bg-amber-50 text-amber-700"
+                                  ? "bg-success-50 text-success-700"
+                                  : "bg-warning-50 text-warning-700"
                               }`}
                             >
                               {weapon.status}
-                              {weapon.active_issuance_count > 1 && ` · ${weapon.active_issuance_count}x`}
+                              {weapon.active_issuance_count > 1 && ` Â· ${weapon.active_issuance_count}x`}
                             </span>
                           </td>
-                          <td className="px-6 py-4 text-sm text-slate-600">{weapon.location_name ?? "—"}</td>
+                          <td className="px-6 py-4 text-sm text-slate-600">{weapon.location_name ?? "â€”"}</td>
                           <td className="px-6 py-4 text-sm text-slate-900">
-                            {weapon.issued_to_name ?? "—"}
+                            {weapon.issued_to_name ?? "â€”"}
                           </td>
                           <td className="px-6 py-4 text-sm text-slate-600">
-                            {weapon.license_expiry ?? "—"}
+                            {weapon.license_expiry ?? "â€”"}
                           </td>
                           <td className="px-6 py-4 flex gap-1">
                             <Button variant="ghost" size="sm" onClick={() => setViewWeapon(weapon)}>
@@ -755,7 +755,7 @@ export default function Inventory() {
                             <button
                               type="button"
                               onClick={() => handleDeleteItem(weapon)}
-                              className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-red-700 hover:bg-red-50"
+                              className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-danger-700 hover:bg-danger-50"
                               title="Delete weapon"
                             >
                               <Trash2 className="w-4 h-4" strokeWidth={1.5} />
@@ -785,7 +785,7 @@ export default function Inventory() {
                   {loading && (
                     <tr>
                       <td colSpan={6} className="px-6 py-10 text-center text-slate-500">
-                        <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
+                        <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loadingâ€¦
                       </td>
                     </tr>
                   )}
@@ -805,26 +805,26 @@ export default function Inventory() {
                           <tr key={u.id} className="hover:bg-slate-50 transition-colors">
                             <td className="px-6 py-4">
                               <div className="flex items-center gap-2">
-                                <UsersIcon className="w-4 h-4 text-blue-600" strokeWidth={1.5} />
+                                <UsersIcon className="w-4 h-4 text-brand-600" strokeWidth={1.5} />
                                 <span className="text-sm text-slate-900">{u.item_type}</span>
                               </div>
                             </td>
-                            <td className="px-6 py-4 text-sm text-slate-600">{u.size ?? "—"}</td>
+                            <td className="px-6 py-4 text-sm text-slate-600">{u.size ?? "â€”"}</td>
                             <td className="px-6 py-4 text-sm text-slate-900">{u.quantity}</td>
                             <td className="px-6 py-4">
                               <div className="flex items-center gap-2">
                                 <MapPin className="w-4 h-4 text-slate-400" strokeWidth={1.5} />
-                                <span className="text-sm text-slate-600">{u.location_name ?? "—"}</span>
+                                <span className="text-sm text-slate-600">{u.location_name ?? "â€”"}</span>
                               </div>
                             </td>
                             <td className="px-6 py-4">
                               <span
                                 className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
                                   stat === "In Stock"
-                                    ? "bg-green-50 text-green-700"
+                                    ? "bg-success-50 text-success-700"
                                     : stat === "Low Stock"
-                                    ? "bg-amber-50 text-amber-700"
-                                    : "bg-red-50 text-red-700"
+                                    ? "bg-warning-50 text-warning-700"
+                                    : "bg-danger-50 text-danger-700"
                                 }`}
                               >
                                 {stat}
@@ -837,7 +837,7 @@ export default function Inventory() {
                               <button
                                 type="button"
                                 onClick={() => handleDeleteItem(u)}
-                                className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-red-700 hover:bg-red-50"
+                                className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-danger-700 hover:bg-danger-50"
                                 title="Delete item"
                               >
                                 <Trash2 className="w-4 h-4" strokeWidth={1.5} />
@@ -870,7 +870,7 @@ export default function Inventory() {
                   {loading && (
                     <tr>
                       <td colSpan={8} className="px-6 py-10 text-center text-slate-500">
-                        <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
+                        <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loadingâ€¦
                       </td>
                     </tr>
                   )}
@@ -885,8 +885,8 @@ export default function Inventory() {
                     filteredIssuances.map((r) => {
                       const detail =
                         r.item_kind === "weapon"
-                          ? r.serial_number ?? "—"
-                          : r.size ?? "—";
+                          ? r.serial_number ?? "â€”"
+                          : r.size ?? "â€”";
                       return (
                         <tr key={r.id} className="hover:bg-slate-50 transition-colors">
                           <td className="px-6 py-4 text-sm text-slate-900">
@@ -894,7 +894,7 @@ export default function Inventory() {
                               {r.target_kind === "client" ? (
                                 <Building2 className="w-3.5 h-3.5 text-purple-600" strokeWidth={1.5} />
                               ) : (
-                                <UsersIcon className="w-3.5 h-3.5 text-blue-600" strokeWidth={1.5} />
+                                <UsersIcon className="w-3.5 h-3.5 text-brand-600" strokeWidth={1.5} />
                               )}
                               <span>{r.target_name}</span>
                             </div>
@@ -907,35 +907,35 @@ export default function Inventory() {
                             <span
                               className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs capitalize ${
                                 r.item_kind === "weapon"
-                                  ? "bg-red-50 text-red-700"
-                                  : "bg-blue-50 text-blue-700"
+                                  ? "bg-danger-50 text-danger-700"
+                                  : "bg-brand-50 text-brand-700"
                               }`}
                             >
                               {r.item_kind}
                             </span>
                           </td>
                           <td className="px-6 py-4 text-sm text-slate-600">
-                            {r.location_name ?? "—"}
+                            {r.location_name ?? "â€”"}
                           </td>
                           <td className="px-6 py-4 text-sm text-slate-600">{r.issue_date}</td>
                           <td className="px-6 py-4 text-sm text-slate-600">
-                            {r.return_date ?? "—"}
+                            {r.return_date ?? "â€”"}
                           </td>
                           <td className="px-6 py-4 text-sm text-slate-600">
                             {r.condition ? (
                               <span
                                 className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
                                   r.condition === "Good"
-                                    ? "bg-green-50 text-green-700"
+                                    ? "bg-success-50 text-success-700"
                                     : r.condition === "Fair"
-                                    ? "bg-amber-50 text-amber-700"
-                                    : "bg-red-50 text-red-700"
+                                    ? "bg-warning-50 text-warning-700"
+                                    : "bg-danger-50 text-danger-700"
                                 }`}
                               >
                                 {r.condition}
                               </span>
                             ) : (
-                              "—"
+                              "â€”"
                             )}
                           </td>
                           <td className="px-6 py-4">
@@ -1071,7 +1071,7 @@ export default function Inventory() {
               </select>
               {locations.length === 0 && (
                 <p className="text-xs text-slate-500 mt-1">
-                  No locations yet. Add them from Settings → Location Management.
+                  No locations yet. Add them from Settings â†’ Location Management.
                 </p>
               )}
             </div>
@@ -1103,7 +1103,7 @@ export default function Inventory() {
 
           <div className="flex items-center gap-3 pt-4">
             <Button variant="primary" size="md" className="flex-1" disabled={addSubmitting}>
-              {addSubmitting ? "Saving…" : "Add Item"}
+              {addSubmitting ? "Savingâ€¦" : "Add Item"}
             </Button>
             <Button
               variant="secondary"
@@ -1165,11 +1165,11 @@ export default function Inventory() {
               <option value="">Select item</option>
               {issuableItems.map((i) => {
                 const activeNote =
-                  i.kind === "weapon" && (i.active_issuance_count ?? 0) === 1 ? " · 1 active" : "";
+                  i.kind === "weapon" && (i.active_issuance_count ?? 0) === 1 ? " Â· 1 active" : "";
                 const label =
                   i.kind === "weapon"
-                    ? `${i.item_type}${i.serial_number ? ` (${i.serial_number})` : ""}${i.location_name ? ` · ${i.location_name}` : ""}${activeNote}`
-                    : `${i.item_type}${i.size ? ` (${i.size})` : ""} · ${i.quantity} in stock${i.location_name ? ` · ${i.location_name}` : ""}`;
+                    ? `${i.item_type}${i.serial_number ? ` (${i.serial_number})` : ""}${i.location_name ? ` Â· ${i.location_name}` : ""}${activeNote}`
+                    : `${i.item_type}${i.size ? ` (${i.size})` : ""} Â· ${i.quantity} in stock${i.location_name ? ` Â· ${i.location_name}` : ""}`;
                 return (
                   <option key={i.id} value={i.id}>
                     {label}
@@ -1236,7 +1236,7 @@ export default function Inventory() {
                 <option value="">Select employee</option>
                 {employees.map((e) => (
                   <option key={e.id} value={e.id}>
-                    {e.full_name} ({e.employee_code}) · {e.shift}
+                    {e.full_name} ({e.employee_code}) Â· {e.shift}
                   </option>
                 ))}
               </select>
@@ -1331,7 +1331,7 @@ export default function Inventory() {
                 (issueForm.target === "client" && clients.filter((c) => c.client_type === "security_services").length === 0)
               }
             >
-              {issueSubmitting ? "Issuing…" : "Issue Item"}
+              {issueSubmitting ? "Issuingâ€¦" : "Issue Item"}
             </Button>
             <Button
               variant="secondary"
@@ -1362,17 +1362,17 @@ export default function Inventory() {
               </div>
               <div>
                 <p className="text-slate-500 mb-1">Serial Number</p>
-                <p className="text-slate-900 font-mono">{viewWeapon.serial_number ?? "—"}</p>
+                <p className="text-slate-900 font-mono">{viewWeapon.serial_number ?? "â€”"}</p>
               </div>
               <div>
                 <p className="text-slate-500 mb-1">Status</p>
                 <span
                   className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
                     viewWeapon.status === "Issued"
-                      ? "bg-blue-50 text-blue-700"
+                      ? "bg-brand-50 text-brand-700"
                       : viewWeapon.status === "Available"
-                      ? "bg-green-50 text-green-700"
-                      : "bg-amber-50 text-amber-700"
+                      ? "bg-success-50 text-success-700"
+                      : "bg-warning-50 text-warning-700"
                   }`}
                 >
                   {viewWeapon.status}
@@ -1380,19 +1380,19 @@ export default function Inventory() {
               </div>
               <div>
                 <p className="text-slate-500 mb-1">Location</p>
-                <p className="text-slate-900">{viewWeapon.location_name ?? "—"}</p>
+                <p className="text-slate-900">{viewWeapon.location_name ?? "â€”"}</p>
               </div>
               <div>
                 <p className="text-slate-500 mb-1">Issued To</p>
-                <p className="text-slate-900">{viewWeapon.issued_to_name ?? "—"}</p>
+                <p className="text-slate-900">{viewWeapon.issued_to_name ?? "â€”"}</p>
               </div>
               <div>
                 <p className="text-slate-500 mb-1">License Expiry</p>
-                <p className="text-slate-900">{viewWeapon.license_expiry ?? "—"}</p>
+                <p className="text-slate-900">{viewWeapon.license_expiry ?? "â€”"}</p>
               </div>
               <div className="col-span-2">
                 <p className="text-slate-500 mb-1">Notes</p>
-                <p className="text-slate-900">{viewWeapon.notes ?? "—"}</p>
+                <p className="text-slate-900">{viewWeapon.notes ?? "â€”"}</p>
               </div>
             </div>
             <div className="pt-4 border-t border-slate-200">
@@ -1414,7 +1414,7 @@ export default function Inventory() {
           <form className="space-y-4" onSubmit={handleStockUpdate}>
             <p className="text-sm text-slate-900">
               {stockItem.item_type}
-              {stockItem.size ? ` — Size ${stockItem.size}` : ""}
+              {stockItem.size ? ` â€” Size ${stockItem.size}` : ""}
             </p>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Quantity</label>
@@ -1431,7 +1431,7 @@ export default function Inventory() {
             </div>
             <div className="flex items-center gap-3 pt-4">
               <Button variant="primary" size="md" className="flex-1" disabled={stockSubmitting}>
-                {stockSubmitting ? "Saving…" : "Update Stock"}
+                {stockSubmitting ? "Savingâ€¦" : "Update Stock"}
               </Button>
               <Button variant="secondary" size="md" onClick={() => setStockItem(null)}>
                 Cancel
@@ -1498,7 +1498,7 @@ export default function Inventory() {
             </div>
             <div className="flex items-center gap-3 pt-4">
               <Button variant="primary" size="md" className="flex-1" disabled={returnSubmitting}>
-                {returnSubmitting ? "Saving…" : "Mark as Returned"}
+                {returnSubmitting ? "Savingâ€¦" : "Mark as Returned"}
               </Button>
               <Button variant="secondary" size="md" onClick={() => setReturnIssuance(null)}>
                 Cancel
@@ -1522,11 +1522,11 @@ function SummaryCell({
 }) {
   const colour =
     accent === "blue"
-      ? "text-blue-700"
+      ? "text-brand-700"
       : accent === "purple"
       ? "text-purple-700"
       : accent === "green"
-      ? "text-green-700"
+      ? "text-success-700"
       : "text-slate-900";
   return (
     <div className="text-center flex flex-col items-center">

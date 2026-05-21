@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { Calendar as CalendarIcon, AlertCircle, Loader2, X, CalendarRange, ChevronLeft, ChevronRight, Search } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -645,7 +645,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
 
       <div className="flex-1 overflow-y-auto p-8">
         {error && (
-          <div className="mb-4 flex items-start gap-2 p-3 bg-red-50 text-red-700 border border-red-200 rounded-md text-sm">
+          <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
             <div className="flex-1">{error}</div>
             <button onClick={() => setError(null)}>
@@ -659,17 +659,17 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <div className="bg-white rounded-lg border border-slate-200 p-4">
               <p className="text-xs text-slate-500 mb-1">Present</p>
-              <p className="text-2xl text-green-700">{stats.p}</p>
+              <p className="text-2xl text-success-700">{stats.p}</p>
               <p className="text-[11px] text-slate-400 mt-1">on {date}</p>
             </div>
             <div className="bg-white rounded-lg border border-slate-200 p-4">
               <p className="text-xs text-slate-500 mb-1">Absent</p>
-              <p className="text-2xl text-red-700">{stats.a}</p>
+              <p className="text-2xl text-danger-700">{stats.a}</p>
               <p className="text-[11px] text-slate-400 mt-1">on {date}</p>
             </div>
             <div className="bg-white rounded-lg border border-slate-200 p-4">
               <p className="text-xs text-slate-500 mb-1">Leave</p>
-              <p className="text-2xl text-amber-700">{stats.l}</p>
+              <p className="text-2xl text-warning-700">{stats.l}</p>
               <p className="text-[11px] text-slate-400 mt-1">on {date}</p>
             </div>
             <div className="bg-white rounded-lg border border-slate-200 p-4">
@@ -687,13 +687,13 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                 </h3>
                 <p className="text-xs text-slate-500 font-mono">
                   {viewEmployee.employee_code}
-                  {viewEmployee.client_name && ` · ${viewEmployee.client_name}`}
-                  {viewEmployee.location_name && ` · ${viewEmployee.location_name}`}
+                  {viewEmployee.client_name && ` Â· ${viewEmployee.client_name}`}
+                  {viewEmployee.location_name && ` Â· ${viewEmployee.location_name}`}
                 </p>
                 <p className="text-xs text-slate-600 mt-2">
-                  <span className="text-green-700">{viewStats.p} present</span> ·{" "}
-                  <span className="text-red-700">{viewStats.a} absent</span> ·{" "}
-                  <span className="text-amber-700">{viewStats.l} leave</span> ·{" "}
+                  <span className="text-success-700">{viewStats.p} present</span> Â·{" "}
+                  <span className="text-danger-700">{viewStats.a} absent</span> Â·{" "}
+                  <span className="text-warning-700">{viewStats.l} leave</span> Â·{" "}
                   <span className="text-slate-500">view-only</span>
                 </p>
               </div>
@@ -738,7 +738,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
 
             {viewLoading ? (
               <div className="flex items-center gap-2 text-slate-500 py-6">
-                <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+                <Loader2 className="w-4 h-4 animate-spin" /> Loadingâ€¦
               </div>
             ) : (
               <div className="grid grid-cols-7 gap-1">
@@ -749,11 +749,11 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                   const status = viewRecords.get(c.date);
                   const tone =
                     status === "Present"
-                      ? "bg-green-100 text-green-900 border-green-300"
+                      ? "bg-success-100 text-success-900 border-success-300"
                       : status === "Absent"
-                        ? "bg-red-100 text-red-900 border-red-300"
+                        ? "bg-danger-100 text-danger-900 border-danger-300"
                         : status === "Leave"
-                          ? "bg-amber-100 text-amber-900 border-amber-300"
+                          ? "bg-warning-100 text-warning-900 border-warning-300"
                           : "bg-white text-slate-500 border-slate-200";
                   return (
                     <div
@@ -803,7 +803,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />
                 <input
                   type="text"
-                  placeholder="Name or ID…"
+                  placeholder="Name or IDâ€¦"
                   value={empSearch}
                   onChange={(e) => setEmpSearch(e.target.value)}
                   className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -877,12 +877,12 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         <div className="bg-white rounded-lg border border-slate-200 mb-6">
           <div className="p-4 md:p-6 border-b border-slate-200 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div className="min-w-0">
-              <h3 className="text-base text-slate-900">Mark Attendance — {date}</h3>
+              <h3 className="text-base text-slate-900">Mark Attendance â€” {date}</h3>
               <p className="text-xs text-slate-500 mt-1">
-                {filteredEmployees.length} employee{filteredEmployees.length === 1 ? "" : "s"} •{" "}
-                <span className="text-green-600">{stats.p} present</span> ·{" "}
-                <span className="text-red-600">{stats.a} absent</span> ·{" "}
-                <span className="text-amber-600">{stats.l} leave</span> ·{" "}
+                {filteredEmployees.length} employee{filteredEmployees.length === 1 ? "" : "s"} â€¢{" "}
+                <span className="text-success-600">{stats.p} present</span> Â·{" "}
+                <span className="text-danger-600">{stats.a} absent</span> Â·{" "}
+                <span className="text-warning-600">{stats.l} leave</span> Â·{" "}
                 <span className="text-slate-500">{stats.unm} unmarked</span>
               </p>
             </div>
@@ -914,7 +914,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                   <tr>
                     <td colSpan={6} className="px-6 py-10 text-center text-slate-500">
                       <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
-                      Loading…
+                      Loadingâ€¦
                     </td>
                   </tr>
                 )}
@@ -935,7 +935,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                           <button
                             type="button"
                             onClick={() => setViewEmployee(employee)}
-                            className="text-blue-700 hover:text-blue-900 hover:underline"
+                            className="text-brand-700 hover:text-brand-900 hover:underline"
                             title="View attendance calendar"
                           >
                             {employee.employee_code}
@@ -945,23 +945,23 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                           <button
                             type="button"
                             onClick={() => setViewEmployee(employee)}
-                            className="text-slate-900 hover:text-blue-700 hover:underline text-left"
+                            className="text-slate-900 hover:text-brand-700 hover:underline text-left"
                             title="View attendance calendar"
                           >
                             {employee.full_name}
                           </button>
                         </td>
                         <td className="px-6 py-4 text-sm text-slate-600">
-                          {employee.client_name ?? "—"}
+                          {employee.client_name ?? "â€”"}
                         </td>
                         <td className="px-6 py-4 text-sm text-slate-600">
-                          {employee.location_name ?? "—"}
+                          {employee.location_name ?? "â€”"}
                         </td>
                         <td className="px-6 py-4">
                           <span
                             className={`inline-flex items-center px-2 py-0.5 rounded text-xs capitalize ${
                               employee.shift === "day"
-                                ? "bg-amber-50 text-amber-700"
+                                ? "bg-warning-50 text-warning-700"
                                 : "bg-indigo-50 text-indigo-700"
                             }`}
                           >
@@ -978,10 +978,10 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                                 className={`px-3 py-1.5 rounded text-xs transition-colors ${
                                   current === status
                                     ? status === "Present"
-                                      ? "bg-green-100 text-green-700"
+                                      ? "bg-success-100 text-success-700"
                                       : status === "Absent"
-                                      ? "bg-red-100 text-red-700"
-                                      : "bg-yellow-100 text-yellow-700"
+                                      ? "bg-danger-100 text-danger-700"
+                                      : "bg-warning-100 text-warning-700"
                                     : "bg-slate-50 text-slate-600 hover:bg-slate-100"
                                 } disabled:opacity-50`}
                               >
@@ -1062,11 +1062,11 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                     className="hover:bg-slate-50 transition-colors"
                   >
                     <td className="px-6 py-4 text-sm text-slate-900">{record.date}</td>
-                    <td className="px-6 py-4 text-sm text-slate-600">{record.location_name ?? "—"}</td>
-                    <td className="px-6 py-4 text-sm text-slate-600">{record.client_name ?? "—"}</td>
-                    <td className="px-6 py-4 text-sm text-green-600">{record.present}</td>
-                    <td className="px-6 py-4 text-sm text-red-600">{record.absent}</td>
-                    <td className="px-6 py-4 text-sm text-yellow-600">{record.leave}</td>
+                    <td className="px-6 py-4 text-sm text-slate-600">{record.location_name ?? "â€”"}</td>
+                    <td className="px-6 py-4 text-sm text-slate-600">{record.client_name ?? "â€”"}</td>
+                    <td className="px-6 py-4 text-sm text-success-600">{record.present}</td>
+                    <td className="px-6 py-4 text-sm text-danger-600">{record.absent}</td>
+                    <td className="px-6 py-4 text-sm text-warning-600">{record.leave}</td>
                     <td className="px-6 py-4">
                       <Button variant="ghost" size="sm" onClick={() => setDetailRecord(record)}>
                         View Details
@@ -1095,26 +1095,26 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
               </div>
               <div>
                 <p className="text-slate-500 mb-1">Location</p>
-                <p className="text-slate-900">{detailRecord.location_name ?? "—"}</p>
+                <p className="text-slate-900">{detailRecord.location_name ?? "â€”"}</p>
               </div>
               <div>
                 <p className="text-slate-500 mb-1">Client</p>
-                <p className="text-slate-900">{detailRecord.client_name ?? "—"}</p>
+                <p className="text-slate-900">{detailRecord.client_name ?? "â€”"}</p>
               </div>
             </div>
 
             <div className="grid grid-cols-3 gap-4">
-              <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-                <p className="text-sm text-green-700 mb-1">Present</p>
-                <p className="text-2xl text-green-900">{detailRecord.present}</p>
+              <div className="bg-success-50 p-4 rounded-lg border border-success-200">
+                <p className="text-sm text-success-700 mb-1">Present</p>
+                <p className="text-2xl text-success-900">{detailRecord.present}</p>
               </div>
-              <div className="bg-red-50 p-4 rounded-lg border border-red-200">
-                <p className="text-sm text-red-700 mb-1">Absent</p>
-                <p className="text-2xl text-red-900">{detailRecord.absent}</p>
+              <div className="bg-danger-50 p-4 rounded-lg border border-danger-200">
+                <p className="text-sm text-danger-700 mb-1">Absent</p>
+                <p className="text-2xl text-danger-900">{detailRecord.absent}</p>
               </div>
-              <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
-                <p className="text-sm text-amber-700 mb-1">Leave</p>
-                <p className="text-2xl text-amber-900">{detailRecord.leave}</p>
+              <div className="bg-warning-50 p-4 rounded-lg border border-warning-200">
+                <p className="text-sm text-warning-700 mb-1">Leave</p>
+                <p className="text-2xl text-warning-900">{detailRecord.leave}</p>
               </div>
             </div>
 
@@ -1133,10 +1133,10 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                     <span
                       className={`inline-flex items-center px-2 py-0.5 rounded text-xs ${
                         e.status === "Present"
-                          ? "bg-green-50 text-green-700"
+                          ? "bg-success-50 text-success-700"
                           : e.status === "Absent"
-                          ? "bg-red-50 text-red-700"
-                          : "bg-yellow-50 text-yellow-700"
+                          ? "bg-danger-50 text-danger-700"
+                          : "bg-warning-50 text-warning-700"
                       }`}
                     >
                       {e.status}
@@ -1178,7 +1178,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                   <div className="text-sm text-slate-900 truncate">{bulkEmployee.full_name}</div>
                   <div className="text-xs text-slate-500 font-mono">
                     {bulkEmployee.employee_code}
-                    {bulkEmployee.client_name && ` · ${bulkEmployee.client_name}`}
+                    {bulkEmployee.client_name && ` Â· ${bulkEmployee.client_name}`}
                   </div>
                 </div>
                 <button
@@ -1201,7 +1201,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                     type="text"
                     value={bulkEmpSearch}
                     onChange={(e) => setBulkEmpSearch(e.target.value)}
-                    placeholder="Search name or code…"
+                    placeholder="Search name or codeâ€¦"
                     className="w-full pl-10 pr-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
                   />
                 </div>
@@ -1219,7 +1219,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                         <div className="text-slate-900">{e.full_name}</div>
                         <div className="text-xs text-slate-500 font-mono">
                           {e.employee_code}
-                          {e.client_name && ` · ${e.client_name}`}
+                          {e.client_name && ` Â· ${e.client_name}`}
                         </div>
                       </button>
                     ))
@@ -1310,7 +1310,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                 </div>
                 {bulkLoading ? (
                   <div className="flex items-center gap-2 text-slate-500 py-6">
-                    <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+                    <Loader2 className="w-4 h-4 animate-spin" /> Loadingâ€¦
                   </div>
                 ) : (
                   <div className="grid grid-cols-7 gap-1">
@@ -1322,11 +1322,11 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                       const selected = bulkSelected.has(c.date);
                       const statusClass =
                         status === "Present"
-                          ? "bg-green-50 text-green-800 border-green-200"
+                          ? "bg-success-50 text-success-800 border-success-200"
                           : status === "Absent"
-                            ? "bg-red-50 text-red-800 border-red-200"
+                            ? "bg-danger-50 text-danger-800 border-danger-200"
                             : status === "Leave"
-                              ? "bg-amber-50 text-amber-800 border-amber-200"
+                              ? "bg-warning-50 text-warning-800 border-warning-200"
                               : "bg-white text-slate-700 border-slate-200";
                       const ring = selected ? "ring-2 ring-slate-900 ring-offset-1" : "";
                       return (
@@ -1360,7 +1360,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
               </div>
 
               {bulkError && (
-                <div className="text-sm text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded">
+                <div className="text-sm text-danger-600 bg-danger-50 border border-danger-200 px-3 py-2 rounded">
                   {bulkError}
                 </div>
               )}
@@ -1371,7 +1371,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                   type="button"
                   onClick={() => applyBulkStatus("Present")}
                   disabled={bulkSubmitting || bulkSelected.size === 0}
-                  className="flex-1 min-w-[120px] px-3 py-2 rounded-md text-sm bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 min-w-[120px] px-3 py-2 rounded-md text-sm bg-success-600 text-white hover:bg-success-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Mark Present
                 </button>
@@ -1379,7 +1379,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                   type="button"
                   onClick={() => applyBulkStatus("Absent")}
                   disabled={bulkSubmitting || bulkSelected.size === 0}
-                  className="flex-1 min-w-[120px] px-3 py-2 rounded-md text-sm bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 min-w-[120px] px-3 py-2 rounded-md text-sm bg-danger-600 text-white hover:bg-danger-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Mark Absent
                 </button>
@@ -1387,7 +1387,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                   type="button"
                   onClick={() => applyBulkStatus("Leave")}
                   disabled={bulkSubmitting || bulkSelected.size === 0}
-                  className="flex-1 min-w-[120px] px-3 py-2 rounded-md text-sm bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 min-w-[120px] px-3 py-2 rounded-md text-sm bg-warning-500 text-white hover:bg-warning-600 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Mark Leave
                 </button>
@@ -1401,7 +1401,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                 </button>
                 {bulkSubmitting && (
                   <span className="self-center text-xs text-slate-500 flex items-center gap-1">
-                    <Loader2 className="w-3 h-3 animate-spin" /> Saving…
+                    <Loader2 className="w-3 h-3 animate-spin" /> Savingâ€¦
                   </span>
                 )}
               </div>

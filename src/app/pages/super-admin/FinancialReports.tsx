@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { Download, Loader2, FileText, Plus, Lock, Trash2, Pencil } from "lucide-react";
 import Header from "../../components/Header";
 import ExportButton from "../../components/ExportButton";
@@ -466,7 +466,7 @@ export default function FinancialReports() {
     return m;
   }, [partnerBanks]);
 
-  // Monthly net P&L = invoices − payroll − expenses for that month.
+  // Monthly net P&L = invoices âˆ’ payroll âˆ’ expenses for that month.
   const monthlyPL = (period: string) => {
     const start = firstOfMonth(period);
     const end = lastOfMonth(period);
@@ -672,7 +672,7 @@ export default function FinancialReports() {
                 exportTable({
                   fileName: `Chart of Accounts ${formatPeriod(chartPeriod)}.xlsx`,
                   sheetName: "Chart of Accounts",
-                  title: `Chart of Accounts — ${formatPeriod(chartPeriod)}`,
+                  title: `Chart of Accounts â€” ${formatPeriod(chartPeriod)}`,
                   headers: ["Code", "Account Name", "Balance"],
                   rows: [
                     ["1000", "Assets", chartFigures.weapons],
@@ -688,7 +688,7 @@ export default function FinancialReports() {
                 exportTable({
                   fileName: `Partnership Report ${formatPeriod(partnershipPeriod)}.xlsx`,
                   sheetName: "Partnership",
-                  title: `Partnership Report — ${formatPeriod(partnershipPeriod)}`,
+                  title: `Partnership Report â€” ${formatPeriod(partnershipPeriod)}`,
                   headers: [
                     "Partner",
                     "Profit Share %",
@@ -726,7 +726,7 @@ export default function FinancialReports() {
                   key={tab.key}
                   onClick={() => setActiveTab(tab.key)}
                   className={`px-4 py-2 rounded-md text-sm whitespace-nowrap transition-colors ${activeTab === tab.key
-                      ? "bg-blue-600 text-white"
+                      ? "bg-brand-600 text-white"
                       : "text-slate-600 hover:bg-slate-100"
                     }`}
                 >
@@ -742,7 +742,7 @@ export default function FinancialReports() {
                 <div>
                   <h3 className="text-lg text-slate-900 mb-1">Profit & Loss Statement</h3>
                   <p className="text-sm text-slate-500">
-                    For {formatPeriod(plPeriod)} ({firstOfMonth(plPeriod)} – {lastOfMonth(plPeriod)})
+                    For {formatPeriod(plPeriod)} ({firstOfMonth(plPeriod)} â€“ {lastOfMonth(plPeriod)})
                   </p>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
@@ -774,7 +774,7 @@ export default function FinancialReports() {
 
               {loadingPl ? (
                 <div className="py-12 text-center text-slate-500">
-                  <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
+                  <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loadingâ€¦
                 </div>
               ) : (
                 <div className="space-y-6">
@@ -783,20 +783,20 @@ export default function FinancialReports() {
                     <div className="space-y-2 mb-3">
                       <div className="flex justify-between items-center pl-4">
                         <span className="text-sm text-slate-600">Security Services Revenue</span>
-                        <span className="text-sm text-green-600">
+                        <span className="text-sm text-success-600">
                           PKR {plFigures.securityRevenue.toLocaleString()}
                         </span>
                       </div>
                       <div className="flex justify-between items-center pl-4">
                         <span className="text-sm text-slate-600">Guard Deployment Revenue</span>
-                        <span className="text-sm text-green-600">
+                        <span className="text-sm text-success-600">
                           PKR {plFigures.guardRevenue.toLocaleString()}
                         </span>
                       </div>
                     </div>
                     <div className="flex justify-between items-center pl-4 pt-2 border-t border-slate-200">
                       <span className="text-sm text-slate-900">Total Revenue</span>
-                      <span className="text-sm text-green-600">
+                      <span className="text-sm text-success-600">
                         PKR {plFigures.totalRevenue.toLocaleString()}
                       </span>
                     </div>
@@ -819,7 +819,7 @@ export default function FinancialReports() {
                       ].map((item) => (
                         <div key={item.name} className="flex justify-between items-center pl-4">
                           <span className="text-sm text-slate-600">{item.name}</span>
-                          <span className="text-sm text-red-600">
+                          <span className="text-sm text-danger-600">
                             PKR {item.amount.toLocaleString()}
                           </span>
                         </div>
@@ -827,7 +827,7 @@ export default function FinancialReports() {
                     </div>
                     <div className="flex justify-between items-center pl-4 pt-2 border-t border-slate-200">
                       <span className="text-sm text-slate-900">Total Expenses</span>
-                      <span className="text-sm text-red-600">
+                      <span className="text-sm text-danger-600">
                         PKR {plFigures.totalExpenses.toLocaleString()}
                       </span>
                     </div>
@@ -837,7 +837,7 @@ export default function FinancialReports() {
                     <div className="flex justify-between items-center">
                       <span className="text-base text-slate-900">Gross Profit</span>
                       <span
-                        className={`text-lg ${plFigures.grossProfit >= 0 ? "text-green-600" : "text-red-600"}`}
+                        className={`text-lg ${plFigures.grossProfit >= 0 ? "text-success-600" : "text-danger-600"}`}
                       >
                         PKR {plFigures.grossProfit.toLocaleString()}
                       </span>
@@ -847,7 +847,7 @@ export default function FinancialReports() {
                   <div className="pt-2">
                     <div className="flex justify-between items-center pl-4">
                       <span className="text-sm text-slate-600">Taxes</span>
-                      <span className="text-sm text-red-600">
+                      <span className="text-sm text-danger-600">
                         PKR {plFigures.taxes.toLocaleString()}
                       </span>
                     </div>
@@ -857,7 +857,7 @@ export default function FinancialReports() {
                     <div className="flex justify-between items-center">
                       <span className="text-base text-slate-900">Net Profit</span>
                       <span
-                        className={`text-xl ${plFigures.netProfit >= 0 ? "text-green-600" : "text-red-600"}`}
+                        className={`text-xl ${plFigures.netProfit >= 0 ? "text-success-600" : "text-danger-600"}`}
                       >
                         PKR {plFigures.netProfit.toLocaleString()}
                       </span>
@@ -874,7 +874,7 @@ export default function FinancialReports() {
                 <div>
                   <h3 className="text-lg text-slate-900 mb-1">Chart of Accounts</h3>
                   <p className="text-sm text-slate-500">
-                    For {formatPeriod(chartPeriod)} ({firstOfMonth(chartPeriod)} – {lastOfMonth(chartPeriod)})
+                    For {formatPeriod(chartPeriod)} ({firstOfMonth(chartPeriod)} â€“ {lastOfMonth(chartPeriod)})
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -895,7 +895,7 @@ export default function FinancialReports() {
 
               {loadingChart ? (
                 <div className="py-12 text-center text-slate-500">
-                  <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
+                  <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loadingâ€¦
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -908,48 +908,48 @@ export default function FinancialReports() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
-                      <tr className="bg-blue-50">
+                      <tr className="bg-brand-50">
                         <td className="px-6 py-3 text-sm text-slate-900">1000</td>
                         <td className="px-6 py-3 text-sm text-slate-900">Assets</td>
                         <td className="px-6 py-3 text-sm text-slate-900 text-right">
                           PKR {chartFigures.weapons.toLocaleString()}
                         </td>
                       </tr>
-                      <tr className="bg-blue-50">
+                      <tr className="bg-brand-50">
                         <td className="px-6 py-3 text-sm text-slate-900">1100</td>
                         <td className="px-6 py-3 text-sm text-slate-900">Current Assets</td>
                         <td className="px-6 py-3 text-sm text-slate-900 text-right">
                           PKR {(chartFigures.uniform + chartFigures.cashAndBank).toLocaleString()}
                         </td>
                       </tr>
-                      <tr className="bg-blue-50">
+                      <tr className="bg-brand-50">
                         <td className="px-6 py-3 text-sm text-slate-900">2000</td>
                         <td className="px-6 py-3 text-sm text-slate-900">Liabilities</td>
                         <td className="px-6 py-3 text-sm text-slate-500 text-right">None</td>
                       </tr>
-                      <tr className="bg-blue-50">
+                      <tr className="bg-brand-50">
                         <td className="px-6 py-3 text-sm text-slate-900">2100</td>
                         <td className="px-6 py-3 text-sm text-slate-900">Current Liabilities</td>
                         <td className="px-6 py-3 text-sm text-slate-900 text-right">
                           PKR {chartFigures.currentLiabilities.toLocaleString()}
                         </td>
                       </tr>
-                      <tr className="bg-blue-50">
+                      <tr className="bg-brand-50">
                         <td className="px-6 py-3 text-sm text-slate-900">3000</td>
                         <td className="px-6 py-3 text-sm text-slate-900">Equity</td>
                         <td className="px-6 py-3 text-sm text-slate-400 text-right">To be configured</td>
                       </tr>
-                      <tr className="bg-blue-50">
+                      <tr className="bg-brand-50">
                         <td className="px-6 py-3 text-sm text-slate-900">4000</td>
                         <td className="px-6 py-3 text-sm text-slate-900">Revenue</td>
-                        <td className="px-6 py-3 text-sm text-green-700 text-right">
+                        <td className="px-6 py-3 text-sm text-success-700 text-right">
                           PKR {chartFigures.revenue.toLocaleString()}
                         </td>
                       </tr>
-                      <tr className="bg-blue-50">
+                      <tr className="bg-brand-50">
                         <td className="px-6 py-3 text-sm text-slate-900">5000</td>
                         <td className="px-6 py-3 text-sm text-slate-900">Expenses</td>
-                        <td className="px-6 py-3 text-sm text-red-700 text-right">
+                        <td className="px-6 py-3 text-sm text-danger-700 text-right">
                           PKR {chartFigures.expenses.toLocaleString()}
                         </td>
                       </tr>
@@ -989,46 +989,46 @@ export default function FinancialReports() {
                   </select>
                 </div>
                 <span className="text-xs text-slate-500">
-                  Total Income = Total Invoiced − (Payroll + Expenses)
+                  Total Income = Total Invoiced âˆ’ (Payroll + Expenses)
                 </span>
               </div>
 
               <div className="p-4 grid grid-cols-1 md:grid-cols-4 gap-3 border-b border-slate-200">
-                <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
-                  <p className="text-xs text-blue-700 mb-1">Total Invoiced</p>
-                  <p className="text-lg text-blue-900">
+                <div className="bg-brand-50 p-3 rounded-lg border border-brand-200">
+                  <p className="text-xs text-brand-700 mb-1">Total Invoiced</p>
+                  <p className="text-lg text-brand-900">
                     PKR {statementTotals.invoiced.toLocaleString()}
                   </p>
                 </div>
-                <div className="bg-red-50 p-3 rounded-lg border border-red-200">
-                  <p className="text-xs text-red-700 mb-1">Payroll Expense</p>
-                  <p className="text-lg text-red-900">
+                <div className="bg-danger-50 p-3 rounded-lg border border-danger-200">
+                  <p className="text-xs text-danger-700 mb-1">Payroll Expense</p>
+                  <p className="text-lg text-danger-900">
                     PKR {statementTotals.payroll.toLocaleString()}
                   </p>
                 </div>
-                <div className="bg-red-50 p-3 rounded-lg border border-red-200">
-                  <p className="text-xs text-red-700 mb-1">Other Expenses</p>
-                  <p className="text-lg text-red-900">
+                <div className="bg-danger-50 p-3 rounded-lg border border-danger-200">
+                  <p className="text-xs text-danger-700 mb-1">Other Expenses</p>
+                  <p className="text-lg text-danger-900">
                     PKR {statementTotals.expenses.toLocaleString()}
                   </p>
                 </div>
                 <div
                   className={`p-3 rounded-lg border ${
                     statementTotals.income >= 0
-                      ? "bg-green-50 border-green-200"
-                      : "bg-red-50 border-red-200"
+                      ? "bg-success-50 border-success-200"
+                      : "bg-danger-50 border-danger-200"
                   }`}
                 >
                   <p
                     className={`text-xs mb-1 ${
-                      statementTotals.income >= 0 ? "text-green-700" : "text-red-700"
+                      statementTotals.income >= 0 ? "text-success-700" : "text-danger-700"
                     }`}
                   >
                     Total Income
                   </p>
                   <p
                     className={`text-lg ${
-                      statementTotals.income >= 0 ? "text-green-900" : "text-red-900"
+                      statementTotals.income >= 0 ? "text-success-900" : "text-danger-900"
                     }`}
                   >
                     PKR {statementTotals.income.toLocaleString()}
@@ -1051,7 +1051,7 @@ export default function FinancialReports() {
                     {loadingClients && (
                       <tr>
                         <td colSpan={6} className="px-6 py-10 text-center text-slate-500">
-                          <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
+                          <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loadingâ€¦
                         </td>
                       </tr>
                     )}
@@ -1069,23 +1069,23 @@ export default function FinancialReports() {
                             <div>{client.name}</div>
                             <div className="text-xs text-slate-500 font-mono">{client.client_code}</div>
                           </td>
-                          <td className="px-6 py-4 text-sm text-blue-600 text-right">
+                          <td className="px-6 py-4 text-sm text-brand-600 text-right">
                             PKR {client.total_invoiced.toLocaleString()}
                           </td>
-                          <td className="px-6 py-4 text-sm text-red-600 text-right">
+                          <td className="px-6 py-4 text-sm text-danger-600 text-right">
                             PKR {client.payroll_expense.toLocaleString()}
                           </td>
-                          <td className="px-6 py-4 text-sm text-red-600 text-right">
+                          <td className="px-6 py-4 text-sm text-danger-600 text-right">
                             PKR {client.expenses.toLocaleString()}
                           </td>
                           <td className="px-6 py-4 text-sm text-right">
-                            <span className={client.total_income >= 0 ? "text-green-600" : "text-red-600"}>
+                            <span className={client.total_income >= 0 ? "text-success-600" : "text-danger-600"}>
                               PKR {client.total_income.toLocaleString()}
                             </span>
                           </td>
                           <td className="px-6 py-4">
                             <button
-                              className="text-sm text-blue-600 hover:text-blue-700"
+                              className="text-sm text-brand-600 hover:text-brand-700"
                               onClick={() => viewFullStatement(client)}
                             >
                               View Full Statement
@@ -1105,8 +1105,8 @@ export default function FinancialReports() {
                 <div>
                   <h3 className="text-lg text-slate-900 mb-1">Partnership Report</h3>
                   <p className="text-sm text-slate-500">
-                    For {formatPeriod(partnershipPeriod)} · Total share allocated:{" "}
-                    <span className={totalShare > 100 ? "text-red-600" : "text-slate-900"}>
+                    For {formatPeriod(partnershipPeriod)} Â· Total share allocated:{" "}
+                    <span className={totalShare > 100 ? "text-danger-600" : "text-slate-900"}>
                       {totalShare}%
                     </span>
                   </p>
@@ -1126,7 +1126,7 @@ export default function FinancialReports() {
               </div>
 
               {partnerError && (
-                <div className="text-sm text-red-600 bg-red-50 border border-red-200 px-4 py-2 rounded mb-4">{partnerError}</div>
+                <div className="text-sm text-danger-600 bg-danger-50 border border-danger-200 px-4 py-2 rounded mb-4">{partnerError}</div>
               )}
 
               <form onSubmit={handleAddPartner} className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-6 grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
@@ -1174,7 +1174,7 @@ export default function FinancialReports() {
               <div className="overflow-x-auto">
                 {loadingPartnership ? (
                   <div className="py-12 text-center text-slate-500">
-                    <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
+                    <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loadingâ€¦
                   </div>
                 ) : partnerRows.length === 0 ? (
                   <div className="py-12 text-center text-slate-500 text-sm">
@@ -1216,7 +1216,7 @@ export default function FinancialReports() {
                                   className="w-20 px-2 py-1 border border-slate-200 rounded text-sm text-right"
                                 />
                               ) : (
-                                <span className="text-blue-600">{Number(p.profit_share_percent)}%</span>
+                                <span className="text-brand-600">{Number(p.profit_share_percent)}%</span>
                               )}
                             </td>
                             <td className="px-4 py-3 text-sm text-right text-slate-700">
@@ -1232,13 +1232,13 @@ export default function FinancialReports() {
                                 <>PKR {Number(opening).toLocaleString(undefined, { maximumFractionDigits: 2 })}</>
                               )}
                             </td>
-                            <td className={`px-4 py-3 text-sm text-right ${profit >= 0 ? "text-green-600" : "text-red-600"}`}>
+                            <td className={`px-4 py-3 text-sm text-right ${profit >= 0 ? "text-success-600" : "text-danger-600"}`}>
                               PKR {Number(profit).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                             </td>
-                            <td className={`px-4 py-3 text-sm text-right ${adjustments >= 0 ? "text-green-600" : "text-red-600"}`}>
+                            <td className={`px-4 py-3 text-sm text-right ${adjustments >= 0 ? "text-success-600" : "text-danger-600"}`}>
                               PKR {Number(adjustments).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                             </td>
-                            <td className={`px-4 py-3 text-sm text-right ${remaining >= 0 ? "text-slate-900" : "text-red-600"}`}>
+                            <td className={`px-4 py-3 text-sm text-right ${remaining >= 0 ? "text-slate-900" : "text-danger-600"}`}>
                               PKR {Number(remaining).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                             </td>
                             <td className="px-4 py-3 text-right">
@@ -1258,7 +1258,7 @@ export default function FinancialReports() {
                                   </button>
                                   <button
                                     onClick={() => handleDeletePartner(p)}
-                                    className="p-1.5 rounded text-red-600 hover:bg-red-50"
+                                    className="p-1.5 rounded text-danger-600 hover:bg-danger-50"
                                     title="Delete"
                                   >
                                     <Trash2 className="w-4 h-4" />
@@ -1277,11 +1277,11 @@ export default function FinancialReports() {
               <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
                 <div className="bg-slate-50 border border-slate-200 p-3 rounded">
                   <p className="text-slate-500 text-xs mb-1">Total profit share allocated</p>
-                  <p className={`text-lg ${totalShare > 100 ? "text-red-600" : "text-slate-900"}`}>{totalShare}%</p>
+                  <p className={`text-lg ${totalShare > 100 ? "text-danger-600" : "text-slate-900"}`}>{totalShare}%</p>
                 </div>
                 <div className="bg-slate-50 border border-slate-200 p-3 rounded">
                   <p className="text-slate-500 text-xs mb-1">Month P&amp;L</p>
-                  <p className={`text-lg ${monthlyPL(partnershipPeriod) >= 0 ? "text-green-700" : "text-red-600"}`}>
+                  <p className={`text-lg ${monthlyPL(partnershipPeriod) >= 0 ? "text-success-700" : "text-danger-600"}`}>
                     PKR {Number(monthlyPL(partnershipPeriod)).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                   </p>
                 </div>
@@ -1311,21 +1311,21 @@ export default function FinancialReports() {
             </div>
 
             <div className="grid grid-cols-4 gap-3">
-              <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
-                <p className="text-xs text-blue-700 mb-1">Total Invoiced</p>
-                <p className="text-lg text-blue-900">PKR {selectedClient.total_invoiced.toLocaleString()}</p>
+              <div className="bg-brand-50 p-3 rounded-lg border border-brand-200">
+                <p className="text-xs text-brand-700 mb-1">Total Invoiced</p>
+                <p className="text-lg text-brand-900">PKR {selectedClient.total_invoiced.toLocaleString()}</p>
               </div>
-              <div className="bg-red-50 p-3 rounded-lg border border-red-200">
-                <p className="text-xs text-red-700 mb-1">Payroll Expense</p>
-                <p className="text-lg text-red-900">PKR {selectedClient.payroll_expense.toLocaleString()}</p>
+              <div className="bg-danger-50 p-3 rounded-lg border border-danger-200">
+                <p className="text-xs text-danger-700 mb-1">Payroll Expense</p>
+                <p className="text-lg text-danger-900">PKR {selectedClient.payroll_expense.toLocaleString()}</p>
               </div>
-              <div className="bg-red-50 p-3 rounded-lg border border-red-200">
-                <p className="text-xs text-red-700 mb-1">Expenses</p>
-                <p className="text-lg text-red-900">PKR {selectedClient.expenses.toLocaleString()}</p>
+              <div className="bg-danger-50 p-3 rounded-lg border border-danger-200">
+                <p className="text-xs text-danger-700 mb-1">Expenses</p>
+                <p className="text-lg text-danger-900">PKR {selectedClient.expenses.toLocaleString()}</p>
               </div>
-              <div className={`p-3 rounded-lg border ${selectedClient.total_income >= 0 ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}`}>
-                <p className={`text-xs mb-1 ${selectedClient.total_income >= 0 ? "text-green-700" : "text-red-700"}`}>Total Income</p>
-                <p className={`text-lg ${selectedClient.total_income >= 0 ? "text-green-900" : "text-red-900"}`}>
+              <div className={`p-3 rounded-lg border ${selectedClient.total_income >= 0 ? "bg-success-50 border-success-200" : "bg-danger-50 border-danger-200"}`}>
+                <p className={`text-xs mb-1 ${selectedClient.total_income >= 0 ? "text-success-700" : "text-danger-700"}`}>Total Income</p>
+                <p className={`text-lg ${selectedClient.total_income >= 0 ? "text-success-900" : "text-danger-900"}`}>
                   PKR {selectedClient.total_income.toLocaleString()}
                 </p>
               </div>
@@ -1355,14 +1355,14 @@ export default function FinancialReports() {
                           <tr key={inv.id}>
                             <td className="px-3 py-2 text-xs font-mono text-slate-900">{inv.invoice_number}</td>
                             <td className="px-3 py-2 text-xs text-slate-600">{inv.invoice_date}</td>
-                            <td className="px-3 py-2 text-xs text-right text-blue-600">
+                            <td className="px-3 py-2 text-xs text-right text-brand-600">
                               PKR {Number(inv.invoice_amount).toLocaleString()}
                             </td>
-                            <td className="px-3 py-2 text-xs text-right text-green-600">
+                            <td className="px-3 py-2 text-xs text-right text-success-600">
                               PKR {Number(inv.amount_received).toLocaleString()}
                             </td>
                             <td className="px-3 py-2 text-xs text-right">
-                              <span className={out > 0 ? "text-amber-600" : "text-green-600"}>
+                              <span className={out > 0 ? "text-warning-600" : "text-success-600"}>
                                 PKR {out.toLocaleString()}
                               </span>
                             </td>
@@ -1371,13 +1371,13 @@ export default function FinancialReports() {
                                 <button
                                   type="button"
                                   onClick={() => viewInvoiceAttachment(inv.attachment_path!)}
-                                  className="text-blue-600 hover:text-blue-700 inline-flex items-center gap-1"
+                                  className="text-brand-600 hover:text-brand-700 inline-flex items-center gap-1"
                                 >
                                   <FileText className="w-3 h-3" strokeWidth={1.5} />
                                   View
                                 </button>
                               ) : (
-                                <span className="text-slate-400">—</span>
+                                <span className="text-slate-400">â€”</span>
                               )}
                             </td>
                           </tr>

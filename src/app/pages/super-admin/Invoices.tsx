@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import {
   Plus,
   AlertCircle,
@@ -65,7 +65,7 @@ const currentMonthStr = () => {
 };
 
 const monthLabel = (iso: string | null | undefined) => {
-  if (!iso) return "—";
+  if (!iso) return "â€”";
   const [yStr, mStr] = iso.slice(0, 7).split("-");
   const y = Number(yStr);
   const m = Number(mStr);
@@ -490,7 +490,7 @@ export default function Invoices() {
       if (invUpErr) throw invUpErr;
 
       const clientName = paymentInvoice.client?.name ?? "Client";
-      const desc = `Payment received (${paymentForm.payment_mode.toLowerCase()}) · ${clientName} · Invoice ${paymentInvoice.invoice_number}`;
+      const desc = `Payment received (${paymentForm.payment_mode.toLowerCase()}) Â· ${clientName} Â· Invoice ${paymentInvoice.invoice_number}`;
       if (paymentForm.payment_mode === "Cash") {
         await applyCashDelta(amt);
         await logTransaction({
@@ -540,7 +540,7 @@ export default function Invoices() {
 
   const reverseOldPaymentEffects = async (p: PaymentRow, invoiceNumber: string, clientName: string) => {
     const oldAmt = Number(p.amount);
-    const desc = `Payment edit reversal (${p.payment_mode.toLowerCase()}) · ${clientName} · Invoice ${invoiceNumber}`;
+    const desc = `Payment edit reversal (${p.payment_mode.toLowerCase()}) Â· ${clientName} Â· Invoice ${invoiceNumber}`;
     if (p.payment_mode === "Cash") {
       await applyCashDelta(-oldAmt);
       await logTransaction({
@@ -600,7 +600,7 @@ export default function Invoices() {
 
       const newBankId =
         editPaymentForm.payment_mode === "Bank" ? editPaymentForm.bank_account_id : null;
-      const desc = `Payment updated (${editPaymentForm.payment_mode.toLowerCase()}) · ${clientName} · Invoice ${invoiceNumber}`;
+      const desc = `Payment updated (${editPaymentForm.payment_mode.toLowerCase()}) Â· ${clientName} Â· Invoice ${invoiceNumber}`;
       if (editPaymentForm.payment_mode === "Cash") {
         await applyCashDelta(newAmt);
         await logTransaction({
@@ -750,7 +750,7 @@ export default function Invoices() {
 
       <div className="flex-1 overflow-y-auto p-8">
         {error && (
-          <div className="mb-4 flex items-start gap-2 p-3 bg-red-50 text-red-700 border border-red-200 rounded-md text-sm">
+          <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
             <div className="flex-1">{error}</div>
             <button onClick={() => setError(null)}>
@@ -760,17 +760,17 @@ export default function Invoices() {
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-            <p className="text-xs text-blue-700 mb-1">Total Invoiced</p>
-            <p className="text-2xl text-blue-900">PKR {summary.invoiced.toLocaleString()}</p>
+          <div className="bg-brand-50 p-4 rounded-lg border border-brand-200">
+            <p className="text-xs text-brand-700 mb-1">Total Invoiced</p>
+            <p className="text-2xl text-brand-900">PKR {summary.invoiced.toLocaleString()}</p>
           </div>
-          <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-            <p className="text-xs text-green-700 mb-1">Total Received</p>
-            <p className="text-2xl text-green-900">PKR {summary.received.toLocaleString()}</p>
+          <div className="bg-success-50 p-4 rounded-lg border border-success-200">
+            <p className="text-xs text-success-700 mb-1">Total Received</p>
+            <p className="text-2xl text-success-900">PKR {summary.received.toLocaleString()}</p>
           </div>
-          <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
-            <p className="text-xs text-amber-700 mb-1">Outstanding</p>
-            <p className="text-2xl text-amber-900">PKR {summary.outstanding.toLocaleString()}</p>
+          <div className="bg-warning-50 p-4 rounded-lg border border-warning-200">
+            <p className="text-xs text-warning-700 mb-1">Outstanding</p>
+            <p className="text-2xl text-warning-900">PKR {summary.outstanding.toLocaleString()}</p>
           </div>
         </div>
 
@@ -822,7 +822,7 @@ export default function Invoices() {
                 {loading && (
                   <tr>
                     <td colSpan={10} className="px-6 py-10 text-center text-slate-500">
-                      <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
+                      <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loadingâ€¦
                     </td>
                   </tr>
                 )}
@@ -846,24 +846,24 @@ export default function Invoices() {
                         <td className="px-6 py-4 text-sm text-slate-900">
                           <div className="flex items-center gap-2">
                             <Building2 className="w-3.5 h-3.5 text-slate-400" strokeWidth={1.5} />
-                            <span>{inv.client?.name ?? "—"}</span>
+                            <span>{inv.client?.name ?? "â€”"}</span>
                           </div>
                           <div className="text-xs text-slate-500 font-mono ml-5">
                             {inv.client?.client_code ?? ""}
                           </div>
                         </td>
                         <td className="px-6 py-4 text-sm text-slate-600">{monthLabel(inv.invoice_date)}</td>
-                        <td className="px-6 py-4 text-sm text-blue-600 text-right">
+                        <td className="px-6 py-4 text-sm text-brand-600 text-right">
                           PKR {Number(inv.invoice_amount).toLocaleString()}
                         </td>
-                        <td className="px-6 py-4 text-sm text-rose-600 text-right">
-                          {wht > 0 ? `PKR ${wht.toLocaleString()}` : "—"}
+                        <td className="px-6 py-4 text-sm text-danger-600 text-right">
+                          {wht > 0 ? `PKR ${wht.toLocaleString()}` : "â€”"}
                         </td>
-                        <td className="px-6 py-4 text-sm text-green-600 text-right">
+                        <td className="px-6 py-4 text-sm text-success-600 text-right">
                           PKR {Number(inv.amount_received).toLocaleString()}
                         </td>
                         <td className="px-6 py-4 text-sm text-right">
-                          <span className={outstanding > 0 ? "text-amber-600" : "text-green-600"}>
+                          <span className={outstanding > 0 ? "text-warning-600" : "text-success-600"}>
                             PKR {outstanding.toLocaleString()}
                           </span>
                         </td>
@@ -875,8 +875,8 @@ export default function Invoices() {
                             }
                             className={`text-xs rounded-md px-2 py-1 border focus:outline-none focus:ring-2 focus:ring-slate-900 ${
                               inv.status === "Delivered"
-                                ? "bg-green-50 text-green-700 border-green-200"
-                                : "bg-amber-50 text-amber-700 border-amber-200"
+                                ? "bg-success-50 text-success-700 border-success-200"
+                                : "bg-warning-50 text-warning-700 border-warning-200"
                             }`}
                           >
                             <option value="Pending">Pending</option>
@@ -889,7 +889,7 @@ export default function Invoices() {
                               <button
                                 type="button"
                                 onClick={() => viewAttachment(inv.attachment_path!)}
-                                className="text-blue-600 hover:text-blue-700 inline-flex items-center gap-1"
+                                className="text-brand-600 hover:text-brand-700 inline-flex items-center gap-1"
                               >
                                 <FileText className="w-3.5 h-3.5" strokeWidth={1.5} />
                                 View
@@ -904,7 +904,7 @@ export default function Invoices() {
                               </button>
                             </div>
                           ) : (
-                            <span className="text-slate-400">—</span>
+                            <span className="text-slate-400">â€”</span>
                           )}
                         </td>
                         <td className="px-6 py-4 flex gap-1">
@@ -938,7 +938,7 @@ export default function Invoices() {
                           <button
                             type="button"
                             onClick={() => handleDelete(inv)}
-                            className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-red-700 hover:bg-red-50"
+                            className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-danger-700 hover:bg-danger-50"
                             title="Delete invoice"
                           >
                             <Trash2 className="w-4 h-4" strokeWidth={1.5} />
@@ -972,7 +972,7 @@ export default function Invoices() {
           />
           <div className="flex items-center gap-3 pt-4">
             <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
-              {submitting ? "Saving…" : "Create Invoice"}
+              {submitting ? "Savingâ€¦" : "Create Invoice"}
             </Button>
             <Button
               variant="secondary"
@@ -1010,21 +1010,21 @@ export default function Invoices() {
           />
 
           <div className="grid grid-cols-3 gap-2">
-            <div className="p-2 rounded-md border border-blue-200 bg-blue-50">
-              <p className="text-[11px] text-blue-700">Invoice Amount</p>
-              <p className="text-sm text-blue-900">
+            <div className="p-2 rounded-md border border-brand-200 bg-brand-50">
+              <p className="text-[11px] text-brand-700">Invoice Amount</p>
+              <p className="text-sm text-brand-900">
                 PKR {editInvoiceAmount.toLocaleString()}
               </p>
             </div>
-            <div className="p-2 rounded-md border border-green-200 bg-green-50">
-              <p className="text-[11px] text-green-700">Received</p>
-              <p className="text-sm text-green-900">
+            <div className="p-2 rounded-md border border-success-200 bg-success-50">
+              <p className="text-[11px] text-success-700">Received</p>
+              <p className="text-sm text-success-900">
                 PKR {editReceived.toLocaleString()}
               </p>
             </div>
-            <div className="p-2 rounded-md border border-amber-200 bg-amber-50">
-              <p className="text-[11px] text-amber-700">Outstanding</p>
-              <p className="text-sm text-amber-900">
+            <div className="p-2 rounded-md border border-warning-200 bg-warning-50">
+              <p className="text-[11px] text-warning-700">Outstanding</p>
+              <p className="text-sm text-warning-900">
                 PKR {editOutstanding.toLocaleString()}
               </p>
             </div>
@@ -1057,24 +1057,24 @@ export default function Invoices() {
                     {editPayments.map((p) => (
                       <tr key={p.id}>
                         <td className="px-3 py-2 text-xs text-slate-600">{p.payment_date}</td>
-                        <td className="px-3 py-2 text-xs text-green-700 text-right">
+                        <td className="px-3 py-2 text-xs text-success-700 text-right">
                           PKR {Number(p.amount).toLocaleString()}
                         </td>
                         <td className="px-3 py-2 text-xs text-slate-700">
                           {p.payment_mode}
                           {p.payment_mode === "Bank" && p.bank?.bank_name
-                            ? ` · ${p.bank.bank_name}`
+                            ? ` Â· ${p.bank.bank_name}`
                             : ""}
                         </td>
                         <td className="px-3 py-2 text-xs text-slate-500 truncate max-w-[140px]">
-                          {p.notes ?? "—"}
+                          {p.notes ?? "â€”"}
                         </td>
                         <td className="px-3 py-2 text-right">
                           <div className="inline-flex items-center gap-1">
                             <button
                               type="button"
                               onClick={() => openEditPayment(p)}
-                              className="p-1 rounded text-blue-600 hover:bg-blue-50"
+                              className="p-1 rounded text-brand-600 hover:bg-brand-50"
                               title="Edit payment"
                             >
                               <Pencil className="w-3.5 h-3.5" strokeWidth={1.5} />
@@ -1082,7 +1082,7 @@ export default function Invoices() {
                             <button
                               type="button"
                               onClick={() => handleDeletePayment(p)}
-                              className="p-1 rounded text-red-600 hover:bg-red-50"
+                              className="p-1 rounded text-danger-600 hover:bg-danger-50"
                               title="Delete payment"
                             >
                               <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
@@ -1099,7 +1099,7 @@ export default function Invoices() {
 
           <div className="flex items-center gap-3 pt-4">
             <Button variant="primary" size="md" className="flex-1" disabled={editSubmitting}>
-              {editSubmitting ? "Saving…" : "Update Invoice"}
+              {editSubmitting ? "Savingâ€¦" : "Update Invoice"}
             </Button>
             <Button
               variant="secondary"
@@ -1131,21 +1131,21 @@ export default function Invoices() {
         <form className="space-y-4" onSubmit={handleRecordPayment}>
           {paymentInvoice && (
             <div className="grid grid-cols-3 gap-2">
-              <div className="p-2 rounded-md border border-blue-200 bg-blue-50">
-                <p className="text-[11px] text-blue-700">Invoice Amount</p>
-                <p className="text-sm text-blue-900">
+              <div className="p-2 rounded-md border border-brand-200 bg-brand-50">
+                <p className="text-[11px] text-brand-700">Invoice Amount</p>
+                <p className="text-sm text-brand-900">
                   PKR {Number(paymentInvoice.invoice_amount).toLocaleString()}
                 </p>
               </div>
-              <div className="p-2 rounded-md border border-green-200 bg-green-50">
-                <p className="text-[11px] text-green-700">Received</p>
-                <p className="text-sm text-green-900">
+              <div className="p-2 rounded-md border border-success-200 bg-success-50">
+                <p className="text-[11px] text-success-700">Received</p>
+                <p className="text-sm text-success-900">
                   PKR {Number(paymentInvoice.amount_received).toLocaleString()}
                 </p>
               </div>
-              <div className="p-2 rounded-md border border-amber-200 bg-amber-50">
-                <p className="text-[11px] text-amber-700">Outstanding</p>
-                <p className="text-sm text-amber-900">
+              <div className="p-2 rounded-md border border-warning-200 bg-warning-50">
+                <p className="text-[11px] text-warning-700">Outstanding</p>
+                <p className="text-sm text-warning-900">
                   PKR {paymentOutstanding.toLocaleString()}
                 </p>
               </div>
@@ -1224,7 +1224,7 @@ export default function Invoices() {
                 <option value="">Select bank account</option>
                 {banks.map((b) => (
                   <option key={b.id} value={b.id}>
-                    {b.bank_name} — {b.account_number}
+                    {b.bank_name} â€” {b.account_number}
                   </option>
                 ))}
               </select>
@@ -1249,7 +1249,7 @@ export default function Invoices() {
               className="flex-1"
               disabled={paymentSubmitting}
             >
-              {paymentSubmitting ? "Recording…" : "Record Payment"}
+              {paymentSubmitting ? "Recordingâ€¦" : "Record Payment"}
             </Button>
             <Button
               variant="secondary"
@@ -1373,7 +1373,7 @@ export default function Invoices() {
                 <option value="">Select bank account</option>
                 {banks.map((b) => (
                   <option key={b.id} value={b.id}>
-                    {b.bank_name} — {b.account_number}
+                    {b.bank_name} â€” {b.account_number}
                   </option>
                 ))}
               </select>
@@ -1400,7 +1400,7 @@ export default function Invoices() {
               className="flex-1"
               disabled={editPaymentSubmitting}
             >
-              {editPaymentSubmitting ? "Saving…" : "Save Changes"}
+              {editPaymentSubmitting ? "Savingâ€¦" : "Save Changes"}
             </Button>
             <Button
               variant="secondary"
@@ -1511,7 +1511,7 @@ function InvoiceFields({
               <button
                 type="button"
                 onClick={onClearAttachment}
-                className="text-red-700 hover:text-red-800"
+                className="text-danger-700 hover:text-danger-800"
               >
                 Remove
               </button>
@@ -1524,7 +1524,7 @@ function InvoiceFields({
             {form.attachment_file
               ? form.attachment_file.name
               : form.existing_attachment_path
-              ? "Replace attachment…"
+              ? "Replace attachmentâ€¦"
               : "Upload invoice (PDF / image)"}
           </span>
           <input

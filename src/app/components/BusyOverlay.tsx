@@ -15,7 +15,7 @@ export default function BusyOverlay({ show, message = "Working…", detail }: Pr
       role="alert"
     >
       <div className="bg-white rounded-lg shadow-lg border border-slate-200 px-6 py-5 flex items-center gap-3 max-w-sm">
-        <Loader2 className="w-6 h-6 animate-spin text-blue-600" strokeWidth={1.5} />
+        <Loader2 className="w-6 h-6 animate-spin text-brand-600" strokeWidth={1.5} />
         <div>
           <div className="text-sm text-slate-900">{message}</div>
           {detail && <div className="text-xs text-slate-500 mt-0.5">{detail}</div>}

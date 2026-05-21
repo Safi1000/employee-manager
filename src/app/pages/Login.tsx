@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router";
 import { Lock, Mail, Loader2 } from "lucide-react";
 import { ROLE_HOMES, useAuth } from "../lib/auth";
@@ -20,7 +20,7 @@ export default function Login() {
     }
   }, [loading, session, profile, navigate, location.state]);
 
-  // Already authenticated → bounce. (Otherwise we render the form immediately,
+  // Already authenticated â†’ bounce. (Otherwise we render the form immediately,
   // even while auth is still resolving, so the user never sees a blank spinner.)
   if (!loading && session && profile) return <Navigate to={ROLE_HOMES[profile.role]} replace />;
 
@@ -66,14 +66,14 @@ export default function Login() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                placeholder="••••••••"
+                placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
                 className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
               />
             </div>
           </div>
 
           {error && (
-            <div className="text-sm text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded">{error}</div>
+            <div className="text-sm text-danger-600 bg-danger-50 border border-danger-200 px-3 py-2 rounded">{error}</div>
           )}
 
           <button

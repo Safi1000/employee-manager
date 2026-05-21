@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { Building2, Plus, Loader2, ArrowRight, Eye, Power, CreditCard, X } from "lucide-react";
 import Button from "../../components/Button";
@@ -219,10 +219,10 @@ export default function Companies() {
           </form>
         )}
 
-        {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 px-4 py-2 rounded mb-4">{error}</div>}
+        {error && <div className="text-sm text-danger-600 bg-danger-50 border border-danger-200 px-4 py-2 rounded mb-4">{error}</div>}
 
         {loading ? (
-          <div className="flex items-center gap-2 text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
+          <div className="flex items-center gap-2 text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Loadingâ€¦</div>
         ) : companies.length === 0 ? (
           <div className="bg-white border border-slate-200 rounded-lg p-12 text-center">
             <Building2 className="w-10 h-10 text-slate-300 mx-auto mb-3" strokeWidth={1.5} />
@@ -250,7 +250,7 @@ export default function Companies() {
                       <div className="text-xs text-slate-500 font-mono">{c.id.slice(0, 8)}</div>
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-600">
-                      {c.contact_email ?? "—"}
+                      {c.contact_email ?? "â€”"}
                       {c.contact_phone && <div className="text-xs text-slate-500">{c.contact_phone}</div>}
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-600">{c.user_count}</td>
@@ -261,9 +261,9 @@ export default function Companies() {
                       ) : (() => {
                         const remaining = daysBetween(todayStr(), c.subscription_expires_at);
                         const tone =
-                          remaining < 0 ? "bg-red-50 text-red-700"
-                          : remaining <= 7 ? "bg-amber-50 text-amber-700"
-                          : "bg-green-50 text-green-700";
+                          remaining < 0 ? "bg-danger-50 text-danger-700"
+                          : remaining <= 7 ? "bg-warning-50 text-warning-700"
+                          : "bg-success-50 text-success-700";
                         return (
                           <span className={`text-xs px-2 py-1 rounded ${tone}`}>
                             {remaining < 0 ? `Expired ${-remaining}d ago` : `${remaining} day${remaining === 1 ? "" : "s"} left`}
@@ -272,7 +272,7 @@ export default function Companies() {
                       })()}
                     </td>
                     <td className="px-6 py-4">
-                      <span className={`text-xs px-2 py-1 rounded ${c.active ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+                      <span className={`text-xs px-2 py-1 rounded ${c.active ? "bg-success-50 text-success-700" : "bg-danger-50 text-danger-700"}`}>
                         {c.active ? "Active" : "Suspended"}
                       </span>
                     </td>
@@ -298,15 +298,15 @@ export default function Companies() {
                           disabled={busyId === c.id}
                           className={`flex items-center gap-1 text-xs px-2 py-1 rounded border ${
                             c.active
-                              ? "border-red-200 text-red-700 hover:bg-red-50"
-                              : "border-green-200 text-green-700 hover:bg-green-50"
+                              ? "border-danger-200 text-danger-700 hover:bg-danger-50"
+                              : "border-success-200 text-success-700 hover:bg-success-50"
                           } disabled:opacity-50`}
                         >
                           <Power className="w-3 h-3" /> {c.active ? "Deactivate" : "Activate"}
                         </button>
                         <Link
                           to={`/super-super-admin/companies/${c.id}`}
-                          className="flex items-center gap-1 text-xs px-2 py-1 rounded border border-slate-200 text-blue-700 hover:bg-blue-50"
+                          className="flex items-center gap-1 text-xs px-2 py-1 rounded border border-slate-200 text-brand-700 hover:bg-brand-50"
                         >
                           Users <ArrowRight className="w-3 h-3" />
                         </Link>
@@ -325,7 +325,7 @@ export default function Companies() {
           <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
               <div>
-                <h2 className="text-lg text-slate-900">{subCompany.name} — Subscription</h2>
+                <h2 className="text-lg text-slate-900">{subCompany.name} â€” Subscription</h2>
                 <p className="text-xs text-slate-500 mt-1">
                   {subCompany.subscription_expires_at == null
                     ? "No subscription set yet."
@@ -333,7 +333,7 @@ export default function Companies() {
                         const r = daysBetween(todayStr(), subCompany.subscription_expires_at);
                         return r < 0
                           ? `Expired ${-r} day${r === -1 ? "" : "s"} ago (${subCompany.subscription_expires_at})`
-                          : `${r} day${r === 1 ? "" : "s"} remaining · expires ${subCompany.subscription_expires_at}`;
+                          : `${r} day${r === 1 ? "" : "s"} remaining Â· expires ${subCompany.subscription_expires_at}`;
                       })()}
                 </p>
               </div>
@@ -398,7 +398,7 @@ export default function Companies() {
                   </Button>
                 </div>
                 {subError && (
-                  <div className="md:col-span-5 text-sm text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded">{subError}</div>
+                  <div className="md:col-span-5 text-sm text-danger-600 bg-danger-50 border border-danger-200 px-3 py-2 rounded">{subError}</div>
                 )}
               </form>
 
@@ -406,7 +406,7 @@ export default function Companies() {
                 <h3 className="text-sm text-slate-900 mb-3">Payment History</h3>
                 {subLoading ? (
                   <div className="text-sm text-slate-500 flex items-center gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+                    <Loader2 className="w-4 h-4 animate-spin" /> Loadingâ€¦
                   </div>
                 ) : subPayments.length === 0 ? (
                   <p className="text-sm text-slate-500">No payments yet.</p>
@@ -429,7 +429,7 @@ export default function Companies() {
                               PKR {Number(p.amount).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                             </td>
                             <td className="px-3 py-2 text-right text-slate-700">{p.days_added}</td>
-                            <td className="px-3 py-2 text-slate-600">{p.notes ?? "—"}</td>
+                            <td className="px-3 py-2 text-slate-600">{p.notes ?? "â€”"}</td>
                           </tr>
                         ))}
                       </tbody>

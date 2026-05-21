@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { Plus, Building2, Download, AlertCircle, X, Loader2, ArrowDownUp, History, Trash2, CheckCircle2, RotateCcw, FileText, Pencil, ArrowLeftRight, Search } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -169,7 +169,7 @@ export default function Accounting() {
   const [paymentAmount, setPaymentAmount] = useState<string>("");
   const [paymentStandalone, setPaymentStandalone] = useState<boolean>(false);
   const [standalonePayments, setStandalonePayments] = useState<Map<string, number>>(new Map());
-  // All invoice_payment rows with dates — used to compute month-aware
+  // All invoice_payment rows with dates â€” used to compute month-aware
   // carry-forward in the Receivables view.
   const [allPaymentEvents, setAllPaymentEvents] = useState<
     { client_id: string | null; invoice_id: string | null; amount: number; payment_date: string }[]
@@ -232,7 +232,7 @@ export default function Accounting() {
   // "Opening Balance" carries forward from the prior period: it equals the
   // client's *cumulative outstanding* through the day before the selected month
   // started. The "Outstanding" column then = Opening + this-month invoiced
-  // − withholding − payments in this month, which is the running balance at
+  // âˆ’ withholding âˆ’ payments in this month, which is the running balance at
   // month-end.
   const displayedReceivables = useMemo(() => {
     if (receivablesMonth === "all") return receivables;
@@ -270,7 +270,7 @@ export default function Accounting() {
       });
     }
     // Add residuals: invoice.amount_received minus what we already counted via
-    // invoice_payments rows — dated at the invoice's invoice_date.
+    // invoice_payments rows â€” dated at the invoice's invoice_date.
     for (const inv of allInvoicesForRec) {
       const tracked = paymentsByInvoice.get(inv.id) ?? 0;
       const residual = Number(inv.amount_received ?? 0) - tracked;
@@ -760,8 +760,8 @@ export default function Accounting() {
       const fromBank = banks.find((b) => b.id === transferFromId);
       const toBank = banks.find((b) => b.id === transferToId);
       const pairId = crypto.randomUUID();
-      const noteSuffix = transferNotes.trim() ? ` · ${transferNotes.trim()}` : "";
-      const desc = `Transfer ${fromBank?.bank_name ?? "?"} → ${toBank?.bank_name ?? "?"}${noteSuffix}`;
+      const noteSuffix = transferNotes.trim() ? ` Â· ${transferNotes.trim()}` : "";
+      const desc = `Transfer ${fromBank?.bank_name ?? "?"} â†’ ${toBank?.bank_name ?? "?"}${noteSuffix}`;
       await applyBankDelta(transferFromId, -amount);
       await applyBankDelta(transferToId, amount);
       await logTransaction({
@@ -939,7 +939,7 @@ export default function Accounting() {
             account_delta: delta,
             description:
               reconcileNotes.trim() ||
-              `Reconcile ${selectedBank.bank_name} account balance → PKR ${actual.toLocaleString()}`,
+              `Reconcile ${selectedBank.bank_name} account balance â†’ PKR ${actual.toLocaleString()}`,
           });
         }
       } else if (reconcileTarget === "cash") {
@@ -954,7 +954,7 @@ export default function Accounting() {
             account_delta: 0,
             description:
               reconcileNotes.trim() ||
-              `Reconcile cash balance → PKR ${actual.toLocaleString()}`,
+              `Reconcile cash balance â†’ PKR ${actual.toLocaleString()}`,
           });
         }
       } else {
@@ -970,7 +970,7 @@ export default function Accounting() {
             account_delta: 0,
             description:
               reconcileNotes.trim() ||
-              `Reconcile total balance → PKR ${actual.toLocaleString()} (adjusted via cash)`,
+              `Reconcile total balance â†’ PKR ${actual.toLocaleString()} (adjusted via cash)`,
           });
         }
       }
@@ -1030,7 +1030,7 @@ export default function Accounting() {
           amount,
           cash_delta: -amount,
           account_delta: 0,
-          description: `Payable settled (cash) · ${vendorName}`,
+          description: `Payable settled (cash) Â· ${vendorName}`,
           reference_id: selectedPayable.id,
         });
       } else {
@@ -1041,7 +1041,7 @@ export default function Accounting() {
           amount,
           cash_delta: 0,
           account_delta: -amount,
-          description: `Payable settled (bank) · ${vendorName}`,
+          description: `Payable settled (bank) Â· ${vendorName}`,
           reference_id: selectedPayable.id,
         });
       }
@@ -1082,7 +1082,7 @@ export default function Accounting() {
           amount,
           cash_delta: amount,
           account_delta: 0,
-          description: `Payable reverted to pending (cash refund) · ${vendorName}`,
+          description: `Payable reverted to pending (cash refund) Â· ${vendorName}`,
           reference_id: row.id,
         });
       } else if (row.paid_via === "Bank" && row.paid_bank_account_id) {
@@ -1093,7 +1093,7 @@ export default function Accounting() {
           amount,
           cash_delta: 0,
           account_delta: amount,
-          description: `Payable reverted to pending (bank refund) · ${vendorName}`,
+          description: `Payable reverted to pending (bank refund) Â· ${vendorName}`,
           reference_id: row.id,
         });
       }
@@ -1224,7 +1224,7 @@ export default function Accounting() {
       setError(null);
       try {
         const today = new Date().toISOString().slice(0, 10);
-        const desc = `Payment received (${paymentVia.toLowerCase()}) · ${selectedClient.name} · No invoice`;
+        const desc = `Payment received (${paymentVia.toLowerCase()}) Â· ${selectedClient.name} Â· No invoice`;
         if (paymentVia === "Cash") {
           await applyCashDelta(amount);
           await logTransaction({
@@ -1298,7 +1298,7 @@ export default function Accounting() {
           amount,
           cash_delta: amount,
           account_delta: 0,
-          description: `Payment received (cash) · ${selectedClient.name} · Invoice ${invoice.invoice_number}`,
+          description: `Payment received (cash) Â· ${selectedClient.name} Â· Invoice ${invoice.invoice_number}`,
           reference_id: invoice.id,
         });
       } else {
@@ -1309,7 +1309,7 @@ export default function Accounting() {
           amount,
           cash_delta: 0,
           account_delta: amount,
-          description: `Payment received (bank) · ${selectedClient.name} · Invoice ${invoice.invoice_number}`,
+          description: `Payment received (bank) Â· ${selectedClient.name} Â· Invoice ${invoice.invoice_number}`,
           reference_id: invoice.id,
         });
       }
@@ -1400,7 +1400,7 @@ export default function Accounting() {
                           entries.push({
                             kind: "payment",
                             date: p.payment_date,
-                            description: `Payment via ${bankName} · Invoice ${inv.invoice_number}`,
+                            description: `Payment via ${bankName} Â· Invoice ${inv.invoice_number}`,
                             amount: Number(p.amount),
                           });
                         }
@@ -1527,7 +1527,7 @@ export default function Accounting() {
 
       <div className="flex-1 overflow-y-auto p-8">
         {error && (
-          <div className="mb-4 flex items-start gap-2 p-3 bg-red-50 text-red-700 border border-red-200 rounded-md text-sm">
+          <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
             <div className="flex-1">{error}</div>
             <button onClick={() => setError(null)}>
@@ -1538,9 +1538,9 @@ export default function Accounting() {
 
         {activeTab === "banks" && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+            <div className="bg-success-50 p-4 rounded-lg border border-success-200">
               <div className="flex items-center justify-between">
-                <p className="text-xs text-green-700 mb-1">Cash Balance (Treasury)</p>
+                <p className="text-xs text-success-700 mb-1">Cash Balance (Treasury)</p>
                 {!cashOpeningLocked ? (
                   <button
                     type="button"
@@ -1548,30 +1548,30 @@ export default function Accounting() {
                       setCashOpeningInput("");
                       setIsCashOpeningOpen(true);
                     }}
-                    className="text-[11px] px-2 py-0.5 rounded border border-green-300 text-green-800 hover:bg-green-100"
+                    className="text-[11px] px-2 py-0.5 rounded border border-success-300 text-success-800 hover:bg-success-100"
                   >
                     Set Opening
                   </button>
                 ) : (
-                  <span className="text-[10px] text-green-700/70" title={`Opening balance set to PKR ${cashOpeningBalance.toLocaleString()}`}>
+                  <span className="text-[10px] text-success-700/70" title={`Opening balance set to PKR ${cashOpeningBalance.toLocaleString()}`}>
                     Opening locked
                   </span>
                 )}
               </div>
-              <p className="text-2xl text-green-900">PKR {cashBalance.toLocaleString()}</p>
+              <p className="text-2xl text-success-900">PKR {cashBalance.toLocaleString()}</p>
               {cashOpeningLocked && (
-                <p className="text-[11px] text-green-700/80 mt-1">
+                <p className="text-[11px] text-success-700/80 mt-1">
                   Opening: PKR {cashOpeningBalance.toLocaleString()}
                 </p>
               )}
             </div>
-            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-              <p className="text-xs text-blue-700 mb-1">Total Account Balance</p>
-              <p className="text-2xl text-blue-900">PKR {totalAccountBalance.toLocaleString()}</p>
+            <div className="bg-brand-50 p-4 rounded-lg border border-brand-200">
+              <p className="text-xs text-brand-700 mb-1">Total Account Balance</p>
+              <p className="text-2xl text-brand-900">PKR {totalAccountBalance.toLocaleString()}</p>
             </div>
-            <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
-              <p className="text-xs text-amber-700 mb-1">Pending Cheques</p>
-              <p className="text-2xl text-amber-900">PKR {totalPendingCheques.toLocaleString()}</p>
+            <div className="bg-warning-50 p-4 rounded-lg border border-warning-200">
+              <p className="text-xs text-warning-700 mb-1">Pending Cheques</p>
+              <p className="text-2xl text-warning-900">PKR {totalPendingCheques.toLocaleString()}</p>
             </div>
             <div className="bg-slate-900 p-4 rounded-lg">
               <p className="text-xs text-slate-300 mb-1">Total Balance</p>
@@ -1588,27 +1588,27 @@ export default function Accounting() {
                 PKR {receivableTotals.opening.toLocaleString()}
               </p>
             </div>
-            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-              <p className="text-xs text-blue-700 mb-1">Total Invoiced</p>
-              <p className="text-xl text-blue-900">
+            <div className="bg-brand-50 p-4 rounded-lg border border-brand-200">
+              <p className="text-xs text-brand-700 mb-1">Total Invoiced</p>
+              <p className="text-xl text-brand-900">
                 PKR {receivableTotals.invoiced.toLocaleString()}
               </p>
             </div>
-            <div className="bg-rose-50 p-4 rounded-lg border border-rose-200">
-              <p className="text-xs text-rose-700 mb-1">Withholding Tax</p>
-              <p className="text-xl text-rose-900">
+            <div className="bg-danger-50 p-4 rounded-lg border border-danger-200">
+              <p className="text-xs text-danger-700 mb-1">Withholding Tax</p>
+              <p className="text-xl text-danger-900">
                 PKR {receivableTotals.withholding.toLocaleString()}
               </p>
             </div>
-            <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-              <p className="text-xs text-green-700 mb-1">Total Received</p>
-              <p className="text-xl text-green-900">
+            <div className="bg-success-50 p-4 rounded-lg border border-success-200">
+              <p className="text-xs text-success-700 mb-1">Total Received</p>
+              <p className="text-xl text-success-900">
                 PKR {receivableTotals.received.toLocaleString()}
               </p>
             </div>
-            <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
-              <p className="text-xs text-amber-700 mb-1">Outstanding</p>
-              <p className="text-xl text-amber-900">
+            <div className="bg-warning-50 p-4 rounded-lg border border-warning-200">
+              <p className="text-xs text-warning-700 mb-1">Outstanding</p>
+              <p className="text-xl text-warning-900">
                 PKR {receivableTotals.outstanding.toLocaleString()}
               </p>
             </div>
@@ -1623,21 +1623,21 @@ export default function Accounting() {
                 PKR {payableTotals.total.toLocaleString()}
               </p>
             </div>
-            <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
-              <p className="text-xs text-amber-700 mb-1">Pending</p>
-              <p className="text-xl text-amber-900">
+            <div className="bg-warning-50 p-4 rounded-lg border border-warning-200">
+              <p className="text-xs text-warning-700 mb-1">Pending</p>
+              <p className="text-xl text-warning-900">
                 PKR {payableTotals.pending.toLocaleString()}
               </p>
             </div>
-            <div className="bg-red-50 p-4 rounded-lg border border-red-200">
-              <p className="text-xs text-red-700 mb-1">Overdue</p>
-              <p className="text-xl text-red-900">
+            <div className="bg-danger-50 p-4 rounded-lg border border-danger-200">
+              <p className="text-xs text-danger-700 mb-1">Overdue</p>
+              <p className="text-xl text-danger-900">
                 PKR {payableTotals.overdue.toLocaleString()}
               </p>
             </div>
-            <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-              <p className="text-xs text-green-700 mb-1">Paid</p>
-              <p className="text-xl text-green-900">
+            <div className="bg-success-50 p-4 rounded-lg border border-success-200">
+              <p className="text-xs text-success-700 mb-1">Paid</p>
+              <p className="text-xl text-success-900">
                 PKR {payableTotals.paid.toLocaleString()}
               </p>
             </div>
@@ -1653,7 +1653,7 @@ export default function Accounting() {
                   onClick={() => setActiveTab(tab)}
                   className={`px-4 py-2 rounded-md text-sm transition-colors ${
                     activeTab === tab
-                      ? "bg-blue-600 text-white"
+                      ? "bg-brand-600 text-white"
                       : "text-slate-600 hover:bg-slate-100"
                   }`}
                 >
@@ -1671,7 +1671,7 @@ export default function Accounting() {
                     type="text"
                     value={receivablesSearch}
                     onChange={(e) => setReceivablesSearch(e.target.value)}
-                    placeholder="Search client / code…"
+                    placeholder="Search client / codeâ€¦"
                     className="pl-8 pr-3 py-1.5 border border-slate-200 rounded-md text-sm w-56"
                   />
                 </div>
@@ -1747,7 +1747,7 @@ export default function Accounting() {
                   {loading && (
                     <tr>
                       <td colSpan={7} className="px-6 py-10 text-center text-slate-500">
-                        <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
+                        <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loadingâ€¦
                       </td>
                     </tr>
                   )}
@@ -1797,17 +1797,17 @@ export default function Accounting() {
                               </button>
                             </div>
                           </td>
-                          <td className="px-6 py-4 text-sm text-blue-600 text-right">
+                          <td className="px-6 py-4 text-sm text-brand-600 text-right">
                             PKR {item.total_invoiced.toLocaleString()}
                           </td>
-                          <td className="px-6 py-4 text-sm text-rose-600 text-right">
+                          <td className="px-6 py-4 text-sm text-danger-600 text-right">
                             PKR {item.total_withholding.toLocaleString()}
                           </td>
-                          <td className="px-6 py-4 text-sm text-green-600 text-right">
+                          <td className="px-6 py-4 text-sm text-success-600 text-right">
                             PKR {item.total_received.toLocaleString()}
                           </td>
                           <td className="px-6 py-4 text-sm text-right">
-                            <span className={item.outstanding > 0 ? "text-amber-600" : "text-green-600"}>
+                            <span className={item.outstanding > 0 ? "text-warning-600" : "text-success-600"}>
                               PKR {item.outstanding.toLocaleString()}
                             </span>
                           </td>
@@ -1861,13 +1861,13 @@ export default function Accounting() {
                   ))}
                 </div>
                 <div className="ml-auto flex flex-wrap gap-3 text-xs">
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-amber-50 text-amber-800">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-warning-50 text-warning-800">
                     Pending: PKR {payablesSummary.pendingTotal.toLocaleString()}
                   </span>
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-red-50 text-red-700">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-danger-50 text-danger-700">
                     Overdue: PKR {payablesSummary.overdueTotal.toLocaleString()}
                   </span>
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-emerald-50 text-emerald-700">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-success-50 text-success-700">
                     Paid: PKR {payablesSummary.paidTotal.toLocaleString()}
                   </span>
                 </div>
@@ -1891,7 +1891,7 @@ export default function Accounting() {
                       <tr>
                         <td colSpan={8} className="px-6 py-10 text-center text-slate-500">
                           <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
-                          Loading…
+                          Loadingâ€¦
                         </td>
                       </tr>
                     )}
@@ -1909,22 +1909,22 @@ export default function Accounting() {
                         const status = payableDisplayStatus(item);
                         const statusClass =
                           status === "Paid"
-                            ? "bg-emerald-50 text-emerald-700"
+                            ? "bg-success-50 text-success-700"
                             : status === "Overdue"
-                            ? "bg-red-50 text-red-700"
-                            : "bg-amber-50 text-amber-700";
+                            ? "bg-danger-50 text-danger-700"
+                            : "bg-warning-50 text-warning-700";
                         return (
                           <tr key={item.id} className="hover:bg-slate-50 transition-colors">
-                            <td className="px-6 py-4 text-sm text-slate-900">{item.vendor?.name ?? "—"}</td>
-                            <td className="px-6 py-4 text-sm text-slate-600">{item.category?.name ?? "—"}</td>
+                            <td className="px-6 py-4 text-sm text-slate-900">{item.vendor?.name ?? "â€”"}</td>
+                            <td className="px-6 py-4 text-sm text-slate-600">{item.category?.name ?? "â€”"}</td>
                             <td className="px-6 py-4 text-sm text-slate-600">
                               {item.client?.name ?? <span className="text-slate-400">Office</span>}
                             </td>
-                            <td className="px-6 py-4 text-sm text-red-600">
+                            <td className="px-6 py-4 text-sm text-danger-600">
                               PKR {Number(item.amount).toLocaleString()}
                             </td>
                             <td className="px-6 py-4 text-sm text-slate-600">{item.expense_date}</td>
-                            <td className="px-6 py-4 text-sm text-slate-600">{item.due_date ?? "—"}</td>
+                            <td className="px-6 py-4 text-sm text-slate-600">{item.due_date ?? "â€”"}</td>
                             <td className="px-6 py-4">
                               <span className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${statusClass}`}>
                                 {status}
@@ -1932,7 +1932,7 @@ export default function Accounting() {
                               {status === "Paid" && item.paid_via && (
                                 <div className="text-[10px] text-slate-500 mt-1">
                                   via {item.paid_via}
-                                  {item.paid_at ? ` · ${new Date(item.paid_at).toLocaleDateString()}` : ""}
+                                  {item.paid_at ? ` Â· ${new Date(item.paid_at).toLocaleDateString()}` : ""}
                                 </div>
                               )}
                             </td>
@@ -1979,7 +1979,7 @@ export default function Accounting() {
                     <tr>
                       <td colSpan={8} className="px-6 py-10 text-center text-slate-500">
                         <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
-                        Loading…
+                        Loadingâ€¦
                       </td>
                     </tr>
                   )}
@@ -1999,7 +1999,7 @@ export default function Accounting() {
                         <tr key={bank.id} className="hover:bg-slate-50 transition-colors">
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-2">
-                              <Building2 className="w-4 h-4 text-blue-600" strokeWidth={1.5} />
+                              <Building2 className="w-4 h-4 text-brand-600" strokeWidth={1.5} />
                               <span className="text-sm text-slate-900">{bank.bank_name}</span>
                             </div>
                           </td>
@@ -2009,18 +2009,18 @@ export default function Accounting() {
                             {bank.owner_type === "company" && <span className="text-slate-500">Company</span>}
                             {bank.owner_type === "partner" && (
                               <span className="text-purple-700">
-                                Partner: {partners.find((p) => p.id === bank.owner_partner_id)?.name ?? "—"}
+                                Partner: {partners.find((p) => p.id === bank.owner_partner_id)?.name ?? "â€”"}
                               </span>
                             )}
                             {bank.owner_type === "client" && (
-                              <span className="text-amber-700">
-                                Client: {receivables.find((c) => c.id === bank.owner_client_id)?.name ?? "—"}
+                              <span className="text-warning-700">
+                                Client: {receivables.find((c) => c.id === bank.owner_client_id)?.name ?? "â€”"}
                               </span>
                             )}
                           </td>
-                          <td className="px-6 py-4 text-sm text-blue-600">PKR {acct.toLocaleString()}</td>
-                          <td className="px-6 py-4 text-sm text-amber-600">
-                            {pendChq > 0 ? `PKR ${pendChq.toLocaleString()}` : "—"}
+                          <td className="px-6 py-4 text-sm text-brand-600">PKR {acct.toLocaleString()}</td>
+                          <td className="px-6 py-4 text-sm text-warning-600">
+                            {pendChq > 0 ? `PKR ${pendChq.toLocaleString()}` : "â€”"}
                           </td>
                           <td className="px-6 py-4 text-sm text-slate-900">PKR {totalBal.toLocaleString()}</td>
                           <td className="px-6 py-4 flex gap-2 flex-wrap">
@@ -2033,7 +2033,7 @@ export default function Accounting() {
                             <button
                               type="button"
                               onClick={() => handleDeleteBank(bank)}
-                              className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-red-700 hover:bg-red-50"
+                              className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-danger-700 hover:bg-danger-50"
                               title="Delete bank account"
                             >
                               <Trash2 className="w-4 h-4" strokeWidth={1.5} />
@@ -2126,29 +2126,29 @@ export default function Accounting() {
                                 <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-teal-50 text-teal-700">Cash</span>
                               )}
                             </td>
-                            <td className="px-4 py-2 text-sm text-slate-600">{bank?.bank_name ?? "—"}</td>
+                            <td className="px-4 py-2 text-sm text-slate-600">{bank?.bank_name ?? "â€”"}</td>
                             <td className="px-4 py-2 text-sm text-slate-600">{c.cheque_date}</td>
-                            <td className="px-4 py-2 text-sm text-slate-600">{c.recipient ?? "—"}</td>
+                            <td className="px-4 py-2 text-sm text-slate-600">{c.recipient ?? "â€”"}</td>
                             <td className="px-4 py-2 text-sm text-slate-900 text-right">
                               PKR {Number(c.amount).toLocaleString()}
                             </td>
                             <td className="px-4 py-2 text-sm text-right">
                               {isPayment ? (
-                                <span className={canClear ? "text-emerald-700" : "text-amber-700"}>
+                                <span className={canClear ? "text-success-700" : "text-warning-700"}>
                                   PKR {linkedSum.toLocaleString()} / {Number(c.amount).toLocaleString()}
                                 </span>
                               ) : (
-                                <span className="text-slate-400">—</span>
+                                <span className="text-slate-400">â€”</span>
                               )}
                             </td>
                             <td className="px-4 py-2">
                               {c.status === "pending" ? (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-amber-50 text-amber-700">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-warning-50 text-warning-700">
                                   Pending
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-emerald-50 text-emerald-700">
-                                  Cleared{c.cleared_at ? ` · ${c.cleared_at.slice(0, 10)}` : ""}
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-success-50 text-success-700">
+                                  Cleared{c.cleared_at ? ` Â· ${c.cleared_at.slice(0, 10)}` : ""}
                                 </span>
                               )}
                             </td>
@@ -2182,7 +2182,7 @@ export default function Accounting() {
                                   for (const p of (psR.data ?? []) as any[]) {
                                     items.push({
                                       kind: "Payslip",
-                                      description: `${p.employee?.employee_code ?? ""} ${p.employee?.full_name ?? ""} · ${String(p.period_month ?? "").slice(0, 7)}`,
+                                      description: `${p.employee?.employee_code ?? ""} ${p.employee?.full_name ?? ""} Â· ${String(p.period_month ?? "").slice(0, 7)}`,
                                       amount: Number(p.net_salary ?? 0),
                                       date: String(p.period_month ?? "").slice(0, 10),
                                     });
@@ -2190,7 +2190,7 @@ export default function Accounting() {
                                   for (const e of (exR.data ?? []) as any[]) {
                                     items.push({
                                       kind: "Expense",
-                                      description: `${e.category?.name ?? "Expense"}${e.client?.name ? ` · ${e.client.name}` : ""}${e.description ? ` · ${e.description}` : ""}`,
+                                      description: `${e.category?.name ?? "Expense"}${e.client?.name ? ` Â· ${e.client.name}` : ""}${e.description ? ` Â· ${e.description}` : ""}`,
                                       amount: Number(e.amount ?? 0),
                                       date: e.expense_date,
                                     });
@@ -2198,7 +2198,7 @@ export default function Accounting() {
                                   for (const a of (advR.data ?? []) as any[]) {
                                     items.push({
                                       kind: "Advance",
-                                      description: `${a.employee?.employee_code ?? ""} ${a.employee?.full_name ?? ""}${a.client?.name ? ` · ${a.client.name}` : ""}`,
+                                      description: `${a.employee?.employee_code ?? ""} ${a.employee?.full_name ?? ""}${a.client?.name ? ` Â· ${a.client.name}` : ""}`,
                                       amount: Number(a.amount ?? 0),
                                       date: a.advance_date,
                                     });
@@ -2206,7 +2206,7 @@ export default function Accounting() {
                                   for (const p of (ipR.data ?? []) as any[]) {
                                     items.push({
                                       kind: "Invoice Payment",
-                                      description: `${p.invoice?.invoice_number ?? ""}${p.client?.name ? ` · ${p.client.name}` : ""}`,
+                                      description: `${p.invoice?.invoice_number ?? ""}${p.client?.name ? ` Â· ${p.client.name}` : ""}`,
                                       amount: Number(p.amount ?? 0),
                                       date: p.payment_date,
                                     });
@@ -2256,7 +2256,7 @@ export default function Accounting() {
                               {c.status === "pending" && (
                                 <button
                                   type="button"
-                                  className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-red-700 hover:bg-red-50"
+                                  className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-danger-700 hover:bg-danger-50"
                                   title="Delete cheque (restores bank balance)"
                                   onClick={async () => {
                                     if (!window.confirm("Delete this pending cheque? The reserved amount will be restored to the bank.")) return;
@@ -2354,7 +2354,7 @@ export default function Accounting() {
           }}
         >
           {chequeFormError && (
-            <div className="flex items-start gap-2 p-3 bg-red-50 text-red-700 border border-red-200 rounded-md text-sm">
+            <div className="flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
               <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" strokeWidth={2} />
               <div className="flex-1">{chequeFormError}</div>
               <button type="button" onClick={() => setChequeFormError(null)}>
@@ -2412,7 +2412,7 @@ export default function Accounting() {
               <option value="">Select bank</option>
               {banks.map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.bank_name} · {b.account_number} (PKR {Number(b.balance).toLocaleString()})
+                  {b.bank_name} Â· {b.account_number} (PKR {Number(b.balance).toLocaleString()})
                 </option>
               ))}
             </select>
@@ -2482,7 +2482,7 @@ export default function Accounting() {
               )}
             </div>
           </div>
-          <div className="bg-amber-50 border border-amber-200 rounded-md p-3 text-xs text-amber-800">
+          <div className="bg-warning-50 border border-warning-200 rounded-md p-3 text-xs text-warning-800">
             Issuing this cheque will <strong>reserve</strong> PKR {Number(chequeForm.amount || 0).toLocaleString()} from the selected bank's Account Balance.{" "}
             {chequeForm.cheque_type === "cash" ? (
               <>On clearance, this amount will be added to the <strong>Cash (Treasury)</strong> balance.</>
@@ -2493,7 +2493,7 @@ export default function Accounting() {
           </div>
           <div className="flex gap-2 pt-2">
             <Button variant="primary" size="md" className="flex-1" disabled={chequeSubmitting}>
-              {chequeSubmitting ? "Saving…" : "Issue Cheque"}
+              {chequeSubmitting ? "Savingâ€¦" : "Issue Cheque"}
             </Button>
             <Button variant="secondary" size="md" onClick={() => setIsChequeAddOpen(false)}>
               Cancel
@@ -2520,17 +2520,17 @@ export default function Accounting() {
                 <p className="text-xs text-slate-500">Status</p>
                 <p>
                   {chequeView.status === "pending" ? (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-amber-50 text-amber-700">Pending</span>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-warning-50 text-warning-700">Pending</span>
                   ) : (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-emerald-50 text-emerald-700">
-                      Cleared{chequeView.cleared_at ? ` · ${chequeView.cleared_at.slice(0, 10)}` : ""}
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-success-50 text-success-700">
+                      Cleared{chequeView.cleared_at ? ` Â· ${chequeView.cleared_at.slice(0, 10)}` : ""}
                     </span>
                   )}
                 </p>
               </div>
               <div>
                 <p className="text-xs text-slate-500">Bank</p>
-                <p className="text-slate-900">{banks.find((b) => b.id === chequeView.bank_account_id)?.bank_name ?? "—"}</p>
+                <p className="text-slate-900">{banks.find((b) => b.id === chequeView.bank_account_id)?.bank_name ?? "â€”"}</p>
               </div>
               <div>
                 <p className="text-xs text-slate-500">Date</p>
@@ -2538,7 +2538,7 @@ export default function Accounting() {
               </div>
               <div>
                 <p className="text-xs text-slate-500">Recipient</p>
-                <p className="text-slate-900">{chequeView.recipient ?? "—"}</p>
+                <p className="text-slate-900">{chequeView.recipient ?? "â€”"}</p>
               </div>
               <div>
                 <p className="text-xs text-slate-500">Amount</p>
@@ -2558,13 +2558,13 @@ export default function Accounting() {
                       href={chequeViewAttachmentUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center gap-1 text-sm text-blue-700 hover:underline"
+                      className="inline-flex items-center gap-1 text-sm text-brand-700 hover:underline"
                     >
                       <FileText className="w-4 h-4" strokeWidth={1.5} />
                       Open attachment
                     </a>
                   ) : (
-                    <span className="text-xs text-slate-400">Loading…</span>
+                    <span className="text-xs text-slate-400">Loadingâ€¦</span>
                   )}
                 </div>
               )}
@@ -2578,8 +2578,8 @@ export default function Accounting() {
                   const cap = Number(chequeView.amount);
                   const remaining = cap - linked;
                   return (
-                    <span className={`text-xs ${remaining === 0 ? "text-emerald-700" : remaining > 0 ? "text-amber-700" : "text-red-700"}`}>
-                      Linked PKR {linked.toLocaleString()} · Remaining PKR {remaining.toLocaleString()}
+                    <span className={`text-xs ${remaining === 0 ? "text-success-700" : remaining > 0 ? "text-warning-700" : "text-danger-700"}`}>
+                      Linked PKR {linked.toLocaleString()} Â· Remaining PKR {remaining.toLocaleString()}
                     </span>
                   );
                 })()}
@@ -2626,7 +2626,7 @@ export default function Accounting() {
               type="text"
               value={newBank.bank_name}
               onChange={(e) => setNewBank({ ...newBank, bank_name: e.target.value })}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               placeholder="e.g., Allied Bank"
             />
           </div>
@@ -2637,7 +2637,7 @@ export default function Accounting() {
               type="text"
               value={newBank.account_number}
               onChange={(e) => setNewBank({ ...newBank, account_number: e.target.value })}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               placeholder="Enter account number"
             />
           </div>
@@ -2646,7 +2646,7 @@ export default function Accounting() {
             <select
               value={newBank.account_type}
               onChange={(e) => setNewBank({ ...newBank, account_type: e.target.value as "Current" | "Savings" })}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
             >
               <option value="Current">Current</option>
               <option value="Savings">Savings</option>
@@ -2657,7 +2657,7 @@ export default function Accounting() {
             <select
               value={newBank.owner_type}
               onChange={(e) => setNewBank({ ...newBank, owner_type: e.target.value as BankAccountOwnerType, owner_partner_id: "", owner_client_id: "" })}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
             >
               <option value="company">Company</option>
               <option value="partner">Partner</option>
@@ -2671,13 +2671,13 @@ export default function Accounting() {
                 required
                 value={newBank.owner_partner_id}
                 onChange={(e) => setNewBank({ ...newBank, owner_partner_id: e.target.value })}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               >
-                <option value="">Select partner…</option>
+                <option value="">Select partnerâ€¦</option>
                 {partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
               {partners.length === 0 && (
-                <p className="text-xs text-amber-700 mt-1">No partners yet. Add partners in the Partnership Report first.</p>
+                <p className="text-xs text-warning-700 mt-1">No partners yet. Add partners in the Partnership Report first.</p>
               )}
             </div>
           )}
@@ -2688,9 +2688,9 @@ export default function Accounting() {
                 required
                 value={newBank.owner_client_id}
                 onChange={(e) => setNewBank({ ...newBank, owner_client_id: e.target.value })}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               >
-                <option value="">Select client…</option>
+                <option value="">Select clientâ€¦</option>
                 {receivables.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
@@ -2701,7 +2701,7 @@ export default function Accounting() {
               type="number"
               value={newBank.opening_balance}
               onChange={(e) => setNewBank({ ...newBank, opening_balance: e.target.value })}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               placeholder="0"
             />
             <p className="text-xs text-slate-500 mt-1">
@@ -2710,7 +2710,7 @@ export default function Accounting() {
           </div>
           <div className="flex items-center gap-3 pt-4">
             <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
-              {submitting ? "Saving…" : "Add Bank Account"}
+              {submitting ? "Savingâ€¦" : "Add Bank Account"}
             </Button>
             <Button variant="secondary" size="md" onClick={() => setIsBankModalOpen(false)}>
               Cancel
@@ -2726,7 +2726,7 @@ export default function Accounting() {
               <label className="block text-sm text-slate-700 mb-1">Bank Account</label>
               <input
                 type="text"
-                value={`${selectedBank.bank_name} · ${selectedBank.account_number}`}
+                value={`${selectedBank.bank_name} Â· ${selectedBank.account_number}`}
                 disabled
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
               />
@@ -2759,7 +2759,7 @@ export default function Accounting() {
                 min={1}
                 value={withdrawAmount}
                 onChange={(e) => setWithdrawAmount(e.target.value)}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
                 placeholder="0"
               />
               <p className="text-xs text-slate-500 mt-1">
@@ -2772,12 +2772,12 @@ export default function Accounting() {
                 value={withdrawNotes}
                 onChange={(e) => setWithdrawNotes(e.target.value)}
                 rows={2}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               />
             </div>
             <div className="flex items-center gap-3 pt-2">
               <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
-                {submitting ? "Processing…" : "Withdraw"}
+                {submitting ? "Processingâ€¦" : "Withdraw"}
               </Button>
               <Button variant="secondary" size="md" onClick={() => setIsWithdrawModalOpen(false)}>
                 Cancel
@@ -2800,17 +2800,17 @@ export default function Accounting() {
                 <p className="text-xs text-slate-600 mb-1">Opening Balance</p>
                 <p className="text-lg text-slate-900">PKR {Number(selectedClient.opening_balance ?? 0).toLocaleString()}</p>
               </div>
-              <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
-                <p className="text-xs text-blue-700 mb-1">Total Invoiced</p>
-                <p className="text-lg text-blue-900">PKR {selectedClient.total_invoiced.toLocaleString()}</p>
+              <div className="bg-brand-50 p-3 rounded-lg border border-brand-200">
+                <p className="text-xs text-brand-700 mb-1">Total Invoiced</p>
+                <p className="text-lg text-brand-900">PKR {selectedClient.total_invoiced.toLocaleString()}</p>
               </div>
-              <div className="bg-green-50 p-3 rounded-lg border border-green-200">
-                <p className="text-xs text-green-700 mb-1">Received</p>
-                <p className="text-lg text-green-900">PKR {selectedClient.total_received.toLocaleString()}</p>
+              <div className="bg-success-50 p-3 rounded-lg border border-success-200">
+                <p className="text-xs text-success-700 mb-1">Received</p>
+                <p className="text-lg text-success-900">PKR {selectedClient.total_received.toLocaleString()}</p>
               </div>
-              <div className="bg-amber-50 p-3 rounded-lg border border-amber-200">
-                <p className="text-xs text-amber-700 mb-1">Outstanding</p>
-                <p className="text-lg text-amber-900">PKR {selectedClient.outstanding.toLocaleString()}</p>
+              <div className="bg-warning-50 p-3 rounded-lg border border-warning-200">
+                <p className="text-xs text-warning-700 mb-1">Outstanding</p>
+                <p className="text-lg text-warning-900">PKR {selectedClient.outstanding.toLocaleString()}</p>
               </div>
             </div>
 
@@ -2838,14 +2838,14 @@ export default function Accounting() {
                           <tr key={inv.id}>
                             <td className="px-3 py-2 text-xs font-mono text-slate-900">{inv.invoice_number}</td>
                             <td className="px-3 py-2 text-xs text-slate-600">{inv.invoice_date}</td>
-                            <td className="px-3 py-2 text-xs text-right text-blue-600">
+                            <td className="px-3 py-2 text-xs text-right text-brand-600">
                               PKR {Number(inv.invoice_amount).toLocaleString()}
                             </td>
-                            <td className="px-3 py-2 text-xs text-right text-green-600">
+                            <td className="px-3 py-2 text-xs text-right text-success-600">
                               PKR {Number(inv.amount_received).toLocaleString()}
                             </td>
                             <td className="px-3 py-2 text-xs text-right">
-                              <span className={out > 0 ? "text-amber-600" : "text-green-600"}>
+                              <span className={out > 0 ? "text-warning-600" : "text-success-600"}>
                                 PKR {out.toLocaleString()}
                               </span>
                             </td>
@@ -2854,13 +2854,13 @@ export default function Accounting() {
                                 <button
                                   type="button"
                                   onClick={() => viewInvoiceAttachment(inv.attachment_path!)}
-                                  className="text-blue-600 hover:text-blue-700 inline-flex items-center gap-1"
+                                  className="text-brand-600 hover:text-brand-700 inline-flex items-center gap-1"
                                 >
                                   <FileText className="w-3 h-3" strokeWidth={1.5} />
                                   View
                                 </button>
                               ) : (
-                                <span className="text-slate-400">—</span>
+                                <span className="text-slate-400">â€”</span>
                               )}
                             </td>
                           </tr>
@@ -2914,7 +2914,7 @@ export default function Accounting() {
             </div>
             <div className="flex items-center gap-3 pt-2">
               <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
-                {submitting ? "Saving…" : "Save"}
+                {submitting ? "Savingâ€¦" : "Save"}
               </Button>
               <Button variant="secondary" size="md" onClick={() => setIsOpeningBalanceOpen(false)}>
                 Cancel
@@ -2937,7 +2937,7 @@ export default function Accounting() {
               />
             </div>
             {isAdmin && (
-              <label className="flex items-start gap-2 text-sm text-slate-700 bg-amber-50 border border-amber-200 rounded p-2.5 cursor-pointer">
+              <label className="flex items-start gap-2 text-sm text-slate-700 bg-warning-50 border border-warning-200 rounded p-2.5 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={paymentStandalone}
@@ -2945,7 +2945,7 @@ export default function Accounting() {
                   className="mt-0.5"
                 />
                 <span>
-                  <span className="text-slate-900">No specific invoice</span> — apply to client balance
+                  <span className="text-slate-900">No specific invoice</span> â€” apply to client balance
                   (advance / unallocated receipt). Admin-only.
                 </span>
               </label>
@@ -2959,7 +2959,7 @@ export default function Accounting() {
                   onChange={(e) => setPaymentInvoiceId(e.target.value)}
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                 >
-                  <option value="">Select an open invoice…</option>
+                  <option value="">Select an open invoiceâ€¦</option>
                   {selectedClient.invoices
                     .filter(
                       (i) =>
@@ -2975,7 +2975,7 @@ export default function Accounting() {
                         Number(i.amount_received);
                       return (
                         <option key={i.id} value={i.id}>
-                          {i.invoice_number} · {i.invoice_date} · Outstanding PKR {out.toLocaleString()}
+                          {i.invoice_number} Â· {i.invoice_date} Â· Outstanding PKR {out.toLocaleString()}
                         </option>
                       );
                     })}
@@ -3026,10 +3026,10 @@ export default function Accounting() {
                   onChange={(e) => setPaymentBankId(e.target.value)}
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                 >
-                  <option value="">Select bank account…</option>
+                  <option value="">Select bank accountâ€¦</option>
                   {banks.map((b) => (
                     <option key={b.id} value={b.id}>
-                      {b.bank_name} · {b.account_number}
+                      {b.bank_name} Â· {b.account_number}
                     </option>
                   ))}
                 </select>
@@ -3046,7 +3046,7 @@ export default function Accounting() {
             </div>
             <div className="flex items-center gap-3 pt-2">
               <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
-                {submitting ? "Recording…" : "Record Payment"}
+                {submitting ? "Recordingâ€¦" : "Record Payment"}
               </Button>
               <Button variant="secondary" size="md" onClick={() => setIsPaymentModalOpen(false)}>
                 Cancel
@@ -3063,7 +3063,7 @@ export default function Accounting() {
               <label className="block text-sm text-slate-700 mb-1">Bank Account</label>
               <input
                 type="text"
-                value={`${selectedBank.bank_name} · ${selectedBank.account_number}`}
+                value={`${selectedBank.bank_name} Â· ${selectedBank.account_number}`}
                 disabled
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
               />
@@ -3112,7 +3112,7 @@ export default function Accounting() {
                 type="number"
                 value={reconcileValue}
                 onChange={(e) => setReconcileValue(e.target.value)}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               />
               <p className="text-xs text-slate-500 mt-1">
                 {reconcileTarget === "account" && "Updates this bank account's balance."}
@@ -3126,12 +3126,12 @@ export default function Accounting() {
                 value={reconcileNotes}
                 onChange={(e) => setReconcileNotes(e.target.value)}
                 rows={2}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               />
             </div>
             <div className="flex items-center gap-3 pt-2">
               <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
-                {submitting ? "Saving…" : "Complete Reconciliation"}
+                {submitting ? "Savingâ€¦" : "Complete Reconciliation"}
               </Button>
               <Button variant="secondary" size="md" onClick={() => setIsReconcileModalOpen(false)}>
                 Cancel
@@ -3151,7 +3151,7 @@ export default function Accounting() {
                 type="text"
                 value={editBankForm.bank_name}
                 onChange={(e) => setEditBankForm({ ...editBankForm, bank_name: e.target.value })}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               />
             </div>
             <div>
@@ -3161,7 +3161,7 @@ export default function Accounting() {
                 type="text"
                 value={editBankForm.account_number}
                 onChange={(e) => setEditBankForm({ ...editBankForm, account_number: e.target.value })}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               />
             </div>
             <div>
@@ -3169,7 +3169,7 @@ export default function Accounting() {
               <select
                 value={editBankForm.account_type}
                 onChange={(e) => setEditBankForm({ ...editBankForm, account_type: e.target.value as "Current" | "Savings" })}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               >
                 <option value="Current">Current</option>
                 <option value="Savings">Savings</option>
@@ -3180,7 +3180,7 @@ export default function Accounting() {
               <select
                 value={editBankForm.owner_type}
                 onChange={(e) => setEditBankForm({ ...editBankForm, owner_type: e.target.value as BankAccountOwnerType, owner_partner_id: "", owner_client_id: "" })}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               >
                 <option value="company">Company</option>
                 <option value="partner">Partner</option>
@@ -3194,9 +3194,9 @@ export default function Accounting() {
                   required
                   value={editBankForm.owner_partner_id}
                   onChange={(e) => setEditBankForm({ ...editBankForm, owner_partner_id: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
                 >
-                  <option value="">Select partner…</option>
+                  <option value="">Select partnerâ€¦</option>
                   {partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </div>
@@ -3208,19 +3208,19 @@ export default function Accounting() {
                   required
                   value={editBankForm.owner_client_id}
                   onChange={(e) => setEditBankForm({ ...editBankForm, owner_client_id: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
                 >
-                  <option value="">Select client…</option>
+                  <option value="">Select clientâ€¦</option>
                   {receivables.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
             )}
             <p className="text-xs text-slate-500">
-              Balance cannot be edited here — use Reconcile to adjust.
+              Balance cannot be edited here â€” use Reconcile to adjust.
             </p>
             <div className="flex items-center gap-3 pt-4">
               <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
-                {submitting ? "Saving…" : "Update Account"}
+                {submitting ? "Savingâ€¦" : "Update Account"}
               </Button>
               <Button variant="secondary" size="md" onClick={() => setIsEditBankModalOpen(false)}>
                 Cancel
@@ -3239,7 +3239,7 @@ export default function Accounting() {
         <form className="space-y-4" onSubmit={handleSetCashOpening}>
           <div>
             <p className="text-sm text-slate-600 mb-3">
-              Enter the cash on hand at the start of operations. This locks once saved —
+              Enter the cash on hand at the start of operations. This locks once saved â€”
               you won&apos;t be able to change it later. Use <b>Reconcile</b> if you need
               to correct the live balance afterwards.
             </p>
@@ -3258,7 +3258,7 @@ export default function Accounting() {
           </div>
           <div className="flex items-center gap-3 pt-2">
             <Button type="submit" variant="primary" size="md" className="flex-1" disabled={submitting}>
-              {submitting ? "Saving…" : "Set & Lock"}
+              {submitting ? "Savingâ€¦" : "Set & Lock"}
             </Button>
             <Button type="button" variant="secondary" size="md" onClick={() => setIsCashOpeningOpen(false)}>
               Cancel
@@ -3275,16 +3275,16 @@ export default function Accounting() {
               required
               value={transferFromId}
               onChange={(e) => setTransferFromId(e.target.value)}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
             >
-              <option value="">Select source…</option>
+              <option value="">Select sourceâ€¦</option>
               {banks.map((b) => {
                 const ownerLabel = b.owner_type === "company" ? "Company" :
                   b.owner_type === "partner" ? `Partner: ${partners.find((p) => p.id === b.owner_partner_id)?.name ?? "?"}` :
                   `Client: ${receivables.find((c) => c.id === b.owner_client_id)?.name ?? "?"}`;
                 return (
                   <option key={b.id} value={b.id}>
-                    {b.bank_name} · {b.account_number} ({ownerLabel}) · PKR {Number(b.balance).toLocaleString()}
+                    {b.bank_name} Â· {b.account_number} ({ownerLabel}) Â· PKR {Number(b.balance).toLocaleString()}
                   </option>
                 );
               })}
@@ -3296,16 +3296,16 @@ export default function Accounting() {
               required
               value={transferToId}
               onChange={(e) => setTransferToId(e.target.value)}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
             >
-              <option value="">Select destination…</option>
+              <option value="">Select destinationâ€¦</option>
               {banks.filter((b) => b.id !== transferFromId).map((b) => {
                 const ownerLabel = b.owner_type === "company" ? "Company" :
                   b.owner_type === "partner" ? `Partner: ${partners.find((p) => p.id === b.owner_partner_id)?.name ?? "?"}` :
                   `Client: ${receivables.find((c) => c.id === b.owner_client_id)?.name ?? "?"}`;
                 return (
                   <option key={b.id} value={b.id}>
-                    {b.bank_name} · {b.account_number} ({ownerLabel})
+                    {b.bank_name} Â· {b.account_number} ({ownerLabel})
                   </option>
                 );
               })}
@@ -3320,7 +3320,7 @@ export default function Accounting() {
               step="0.01"
               value={transferAmount}
               onChange={(e) => setTransferAmount(e.target.value)}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               placeholder="0.00"
             />
           </div>
@@ -3330,13 +3330,13 @@ export default function Accounting() {
               value={transferNotes}
               onChange={(e) => setTransferNotes(e.target.value)}
               rows={2}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               placeholder="Optional"
             />
           </div>
           <div className="flex items-center gap-3 pt-2">
             <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
-              {submitting ? "Transferring…" : "Wire Transfer"}
+              {submitting ? "Transferringâ€¦" : "Wire Transfer"}
             </Button>
             <Button type="button" variant="secondary" size="md" onClick={() => setIsTransferModalOpen(false)}>
               Cancel
@@ -3353,7 +3353,7 @@ export default function Accounting() {
                 <label className="block text-sm text-slate-700 mb-1">Vendor</label>
                 <input
                   type="text"
-                  value={selectedPayable.vendor?.name ?? "—"}
+                  value={selectedPayable.vendor?.name ?? "â€”"}
                   disabled
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
                 />
@@ -3409,12 +3409,12 @@ export default function Accounting() {
                   required
                   value={markPaidBankId}
                   onChange={(e) => setMarkPaidBankId(e.target.value)}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
                 >
-                  <option value="">Select bank account…</option>
+                  <option value="">Select bank accountâ€¦</option>
                   {banks.map((b) => (
                     <option key={b.id} value={b.id}>
-                      {b.bank_name} · {b.account_number} (PKR {Number(b.balance).toLocaleString()})
+                      {b.bank_name} Â· {b.account_number} (PKR {Number(b.balance).toLocaleString()})
                     </option>
                   ))}
                 </select>
@@ -3422,7 +3422,7 @@ export default function Accounting() {
             )}
             <div className="flex items-center gap-3 pt-2">
               <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
-                {submitting ? "Processing…" : "Confirm Payment"}
+                {submitting ? "Processingâ€¦" : "Confirm Payment"}
               </Button>
               <Button variant="secondary" size="md" onClick={() => setIsMarkPaidModalOpen(false)}>
                 Cancel
@@ -3559,7 +3559,7 @@ function HistoryBody({
             <option value="__cash__">Cash (Treasury)</option>
             {banks.map((b) => (
               <option key={b.id} value={b.id}>
-                {b.bank_name} · {b.account_number}
+                {b.bank_name} Â· {b.account_number}
               </option>
             ))}
           </select>
@@ -3608,8 +3608,8 @@ function HistoryBody({
                 <th className="text-left px-3 py-2 text-xs text-slate-500">Date</th>
                 <th className="text-left px-3 py-2 text-xs text-slate-500">Kind</th>
                 <th className="text-left px-3 py-2 text-xs text-slate-500">Account</th>
-                <th className="text-right px-3 py-2 text-xs text-slate-500">Δ</th>
-                <th className="text-right px-3 py-2 text-xs text-slate-500">Before → After</th>
+                <th className="text-right px-3 py-2 text-xs text-slate-500">Î”</th>
+                <th className="text-right px-3 py-2 text-xs text-slate-500">Before â†’ After</th>
                 <th className="text-left px-3 py-2 text-xs text-slate-500">Description</th>
               </tr>
             </thead>
@@ -3622,17 +3622,17 @@ function HistoryBody({
                 return (
                   <tr key={t.id}>
                     <td className="px-3 py-2 text-xs text-slate-600">
-                      {t.created_at ? new Date(t.created_at).toLocaleString() : "—"}
+                      {t.created_at ? new Date(t.created_at).toLocaleString() : "â€”"}
                     </td>
                     <td className="px-3 py-2 text-xs text-slate-700">{kindLabel[t.kind]}</td>
                     <td className="px-3 py-2 text-xs text-slate-700">
-                      {ad !== 0 && bank ? bank.bank_name : cd !== 0 ? "Cash" : "—"}
+                      {ad !== 0 && bank ? bank.bank_name : cd !== 0 ? "Cash" : "â€”"}
                     </td>
                     <td className="px-3 py-2 text-xs text-right font-mono">
                       {ad !== 0 && (
                         <div
                           className={
-                            ad > 0 ? "text-emerald-700" : ad < 0 ? "text-red-700" : "text-slate-500"
+                            ad > 0 ? "text-success-700" : ad < 0 ? "text-danger-700" : "text-slate-500"
                           }
                         >
                           {ad > 0 ? "+" : ""}
@@ -3642,7 +3642,7 @@ function HistoryBody({
                       {cd !== 0 && (
                         <div
                           className={
-                            cd > 0 ? "text-emerald-700" : cd < 0 ? "text-red-700" : "text-slate-500"
+                            cd > 0 ? "text-success-700" : cd < 0 ? "text-danger-700" : "text-slate-500"
                           }
                         >
                           {cd > 0 ? "+" : ""}
@@ -3654,20 +3654,20 @@ function HistoryBody({
                       {ledger.bank && (
                         <div>
                           <span className="text-slate-400">Bank </span>
-                          {ledger.bank.before.toLocaleString()} →{" "}
+                          {ledger.bank.before.toLocaleString()} â†’{" "}
                           {ledger.bank.after.toLocaleString()}
                         </div>
                       )}
                       {ledger.cash && (
                         <div>
                           <span className="text-slate-400">Cash </span>
-                          {ledger.cash.before.toLocaleString()} →{" "}
+                          {ledger.cash.before.toLocaleString()} â†’{" "}
                           {ledger.cash.after.toLocaleString()}
                         </div>
                       )}
-                      {!ledger.bank && !ledger.cash && <span className="text-slate-400">—</span>}
+                      {!ledger.bank && !ledger.cash && <span className="text-slate-400">â€”</span>}
                     </td>
-                    <td className="px-3 py-2 text-xs text-slate-600">{t.description ?? "—"}</td>
+                    <td className="px-3 py-2 text-xs text-slate-600">{t.description ?? "â€”"}</td>
                   </tr>
                 );
               })}

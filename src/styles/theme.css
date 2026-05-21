@@ -1,5 +1,55 @@
 @custom-variant dark (&:is(.dark *));
 
+/* =========================================================================
+ * Semantic palette (Tailwind v4 tokens — usable as bg-success-50, etc.).
+ * Declared inside @theme so they become real utility classes (not just CSS
+ * vars). These map to Tailwind's stock palettes so existing screenshots /
+ * mocks keep the same look while the codebase moves to domain-meaningful
+ * names.
+ *   success → emerald   (cleared, disbursed, paid, received)
+ *   danger  → red       (overdue, failed, destructive, deletes)
+ *   warning → amber     (pending, due soon, attention)
+ *   info    → sky       (informational badges, neutral status)
+ *   brand   → blue      (brand, sidebar active, primary buttons)
+ * Use 50/200 for tints + borders, 600/700 for text + icons.
+ * ========================================================================= */
+@theme {
+  --color-success-50:  #ecfdf5;
+  --color-success-100: #d1fae5;
+  --color-success-200: #a7f3d0;
+  --color-success-500: #10b981;
+  --color-success-600: #059669;
+  --color-success-700: #047857;
+
+  --color-danger-50:  #fef2f2;
+  --color-danger-100: #fee2e2;
+  --color-danger-200: #fecaca;
+  --color-danger-500: #ef4444;
+  --color-danger-600: #dc2626;
+  --color-danger-700: #b91c1c;
+
+  --color-warning-50:  #fffbeb;
+  --color-warning-100: #fef3c7;
+  --color-warning-200: #fde68a;
+  --color-warning-500: #f59e0b;
+  --color-warning-600: #d97706;
+  --color-warning-700: #b45309;
+
+  --color-info-50:  #f0f9ff;
+  --color-info-100: #e0f2fe;
+  --color-info-200: #bae6fd;
+  --color-info-500: #0ea5e9;
+  --color-info-600: #0284c7;
+  --color-info-700: #0369a1;
+
+  --color-brand-50:  #eff6ff;
+  --color-brand-100: #dbeafe;
+  --color-brand-200: #bfdbfe;
+  --color-brand-500: #3b82f6;
+  --color-brand-600: #2563eb;
+  --color-brand-700: #1d4ed8;
+}
+
 :root {
   --font-size: 16px;
   --background: #ffffff;

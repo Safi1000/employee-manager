@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import {
@@ -228,7 +228,7 @@ export default function Cashflow() {
   }, [rows]);
 
   const windowLabel =
-    rows.length > 0 ? `${rows[0].label} – ${rows[rows.length - 1].label}` : "";
+    rows.length > 0 ? `${rows[0].label} â€“ ${rows[rows.length - 1].label}` : "";
 
   return (
     <>
@@ -236,7 +236,7 @@ export default function Cashflow() {
 
       <div className="flex-1 overflow-y-auto p-8">
         {error && (
-          <div className="mb-4 p-3 rounded-md border border-red-200 bg-red-50 text-red-700 text-sm">
+          <div className="mb-4 p-3 rounded-md border border-danger-200 bg-danger-50 text-danger-700 text-sm">
             {error}
           </div>
         )}
@@ -245,9 +245,9 @@ export default function Cashflow() {
           <SummaryTile
             label="Revenue"
             value={currency(totals.revenue)}
-            icon={<Wallet className="w-5 h-5 text-emerald-600" />}
+            icon={<Wallet className="w-5 h-5 text-success-600" />}
             accent="emerald"
-            subtitle={`Payments received · ${windowLabel}`}
+            subtitle={`Payments received Â· ${windowLabel}`}
           />
           <SummaryTile
             label="Total Payroll"
@@ -259,14 +259,14 @@ export default function Cashflow() {
           <SummaryTile
             label="Total Expenses"
             value={currency(totals.expenses)}
-            icon={<TrendingDown className="w-5 h-5 text-rose-600" />}
+            icon={<TrendingDown className="w-5 h-5 text-danger-600" />}
             accent="rose"
             subtitle="Cash/Bank + paid payables"
           />
           <SummaryTile
             label="Total Advances"
             value={currency(totals.advances)}
-            icon={<TrendingDown className="w-5 h-5 text-amber-600" />}
+            icon={<TrendingDown className="w-5 h-5 text-warning-600" />}
             accent="rose"
             subtitle="By advance date"
           />
@@ -275,7 +275,7 @@ export default function Cashflow() {
             value={currency(totals.net)}
             icon={<TrendingUp className="w-5 h-5 text-slate-700" />}
             accent={totals.net >= 0 ? "emerald" : "rose"}
-            subtitle="Revenue − Payroll − Expenses − Advances"
+            subtitle="Revenue âˆ’ Payroll âˆ’ Expenses âˆ’ Advances"
           />
         </div>
 
@@ -302,7 +302,7 @@ export default function Cashflow() {
           <div className="p-6">
             {loading ? (
               <div className="h-[350px] flex items-center justify-center text-slate-500 text-sm">
-                Loading cashflow…
+                Loading cashflowâ€¦
               </div>
             ) : (
               <ResponsiveContainer width="100%" height={350}>
@@ -320,14 +320,14 @@ export default function Cashflow() {
                   <Line
                     type="monotone"
                     dataKey="revenue"
-                    stroke="#10b981"
+                    stroke="var(--color-success-500)"
                     strokeWidth={2}
                     name="Revenue"
                   />
                   <Line
                     type="monotone"
                     dataKey="expenses"
-                    stroke="#ef4444"
+                    stroke="var(--color-danger-500)"
                     strokeWidth={2}
                     name="Expenses"
                   />
@@ -351,7 +351,7 @@ export default function Cashflow() {
             </h3>
             {loading ? (
               <div className="h-[300px] flex items-center justify-center text-slate-500 text-sm">
-                Loading…
+                Loadingâ€¦
               </div>
             ) : (
               <ResponsiveContainer width="100%" height={300}>
@@ -368,13 +368,13 @@ export default function Cashflow() {
                   <Legend />
                   <Bar
                     dataKey="revenue"
-                    fill="#10b981"
+                    fill="var(--color-success-500)"
                     radius={[4, 4, 0, 0]}
                     name="Revenue"
                   />
                   <Bar
                     dataKey="expenses"
-                    fill="#ef4444"
+                    fill="var(--color-danger-500)"
                     radius={[4, 4, 0, 0]}
                     name="Expenses"
                   />
@@ -387,7 +387,7 @@ export default function Cashflow() {
             <h3 className="text-base mb-6 text-slate-900">Payroll Impact</h3>
             {loading ? (
               <div className="h-[300px] flex items-center justify-center text-slate-500 text-sm">
-                Loading…
+                Loadingâ€¦
               </div>
             ) : (
               <ResponsiveContainer width="100%" height={300}>
@@ -438,7 +438,7 @@ export default function Cashflow() {
                     <td className="px-6 py-3 text-slate-900">{r.label}</td>
                     <td
                       className={`px-6 py-3 text-right ${
-                        r.revenue >= 0 ? "text-emerald-600" : "text-rose-600"
+                        r.revenue >= 0 ? "text-success-600" : "text-danger-600"
                       }`}
                     >
                       {currency(r.revenue)}
@@ -446,15 +446,15 @@ export default function Cashflow() {
                     <td className="px-6 py-3 text-right text-slate-700">
                       {currency(r.payroll)}
                     </td>
-                    <td className="px-6 py-3 text-right text-rose-600">
+                    <td className="px-6 py-3 text-right text-danger-600">
                       {currency(r.expenses)}
                     </td>
-                    <td className="px-6 py-3 text-right text-amber-600">
+                    <td className="px-6 py-3 text-right text-warning-600">
                       {currency(r.advances)}
                     </td>
                     <td
                       className={`px-6 py-3 text-right ${
-                        r.net >= 0 ? "text-emerald-600" : "text-rose-600"
+                        r.net >= 0 ? "text-success-600" : "text-danger-600"
                       }`}
                     >
                       {currency(r.net)}
@@ -517,9 +517,9 @@ function SummaryTile({
 }) {
   const accentBg =
     accent === "emerald"
-      ? "bg-emerald-50"
+      ? "bg-success-50"
       : accent === "rose"
-        ? "bg-rose-50"
+        ? "bg-danger-50"
         : "bg-slate-100";
   return (
     <div className="bg-white rounded-lg border border-slate-200 p-4">

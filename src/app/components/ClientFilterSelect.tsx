@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, ChevronDown, X } from "lucide-react";
 import type { Client } from "../lib/supabase";
 
@@ -110,7 +110,7 @@ export default function ClientFilterSelect({
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Type to filter…"
+              placeholder="Type to filterâ€¦"
               className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
             />
           </div>
@@ -118,7 +118,7 @@ export default function ClientFilterSelect({
             <button
               type="button"
               onClick={() => select(allValue)}
-              className={`w-full text-left px-3 py-1.5 text-sm hover:bg-slate-50 ${value === allValue ? "bg-blue-50 text-blue-700" : "text-slate-700"}`}
+              className={`w-full text-left px-3 py-1.5 text-sm hover:bg-slate-50 ${value === allValue ? "bg-brand-50 text-brand-700" : "text-slate-700"}`}
             >
               {allLabel}
             </button>
@@ -126,7 +126,7 @@ export default function ClientFilterSelect({
               <button
                 type="button"
                 onClick={() => select(extraOption.value)}
-                className={`w-full text-left px-3 py-1.5 text-sm hover:bg-slate-50 ${value === extraOption.value ? "bg-blue-50 text-blue-700" : "text-slate-700"}`}
+                className={`w-full text-left px-3 py-1.5 text-sm hover:bg-slate-50 ${value === extraOption.value ? "bg-brand-50 text-brand-700" : "text-slate-700"}`}
               >
                 {extraOption.label}
               </button>
@@ -139,7 +139,7 @@ export default function ClientFilterSelect({
                 type="button"
                 key={c.id}
                 onClick={() => select(c.id)}
-                className={`w-full text-left px-3 py-1.5 text-sm hover:bg-slate-50 ${value === c.id ? "bg-blue-50 text-blue-700" : "text-slate-700"}`}
+                className={`w-full text-left px-3 py-1.5 text-sm hover:bg-slate-50 ${value === c.id ? "bg-brand-50 text-brand-700" : "text-slate-700"}`}
               >
                 <span>{c.name}</span>
                 {c.client_code && (

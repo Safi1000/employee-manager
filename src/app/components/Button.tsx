@@ -1,7 +1,7 @@
 import { ButtonHTMLAttributes, ReactNode } from "react";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: "primary" | "secondary" | "ghost";
+  variant?: "primary" | "secondary" | "ghost" | "danger" | "success";
   size?: "sm" | "md" | "lg";
   children: ReactNode;
 }
@@ -13,12 +13,15 @@ export default function Button({
   className = "",
   ...props
 }: ButtonProps) {
-  const baseStyles = "inline-flex items-center justify-center rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
+  const baseStyles =
+    "inline-flex items-center justify-center rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
 
   const variantStyles = {
-    primary: "bg-blue-600 text-white hover:bg-blue-700",
+    primary: "bg-brand-600 text-white hover:bg-brand-700",
     secondary: "bg-white text-slate-900 border border-slate-200 hover:bg-slate-50",
     ghost: "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+    danger: "bg-danger-600 text-white hover:bg-danger-700",
+    success: "bg-success-600 text-white hover:bg-success-700",
   };
 
   const sizeStyles = {

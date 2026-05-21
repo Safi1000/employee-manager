@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import {
   Plus,
   Bell,
@@ -93,7 +93,7 @@ const priorityRank = (p: CompliancePriority) =>
 const triggerDayHelp = (f: RecurringFrequency) => {
   if (f === "Daily") return "Time tag (e.g. 'Every day' or '09:00')";
   if (f === "Weekly") return "Weekday (Mon, Tue, Wed, Thu, Fri, Sat, Sun)";
-  if (f === "Monthly") return "Day of month (1–31, or 'Last')";
+  if (f === "Monthly") return "Day of month (1â€“31, or 'Last')";
   return "MM-DD (e.g. 03-15)";
 };
 
@@ -251,7 +251,7 @@ export default function Compliance() {
         daysRemaining: c.daysRemaining,
         notes:
           c.daysRemaining <= 7
-            ? "Critical: contract ends within a week — renew or replace."
+            ? "Critical: contract ends within a week â€” renew or replace."
             : c.daysRemaining <= 30
               ? "Renew or replace within the next 30 days."
               : "Heads up: contract ends within 60 days.",
@@ -541,11 +541,11 @@ export default function Compliance() {
 
   const priorityBadge = (p: CompliancePriority) =>
     p === "critical"
-      ? "bg-red-100 text-red-700"
+      ? "bg-danger-100 text-danger-700"
       : p === "high"
-      ? "bg-amber-100 text-amber-700"
+      ? "bg-warning-100 text-warning-700"
       : p === "medium"
-      ? "bg-blue-100 text-blue-700"
+      ? "bg-brand-100 text-brand-700"
       : "bg-slate-100 text-slate-700";
 
   return (
@@ -554,7 +554,7 @@ export default function Compliance() {
 
       <div className="flex-1 overflow-y-auto p-8">
         {error && (
-          <div className="mb-4 flex items-start gap-2 p-3 bg-red-50 text-red-700 border border-red-200 rounded-md text-sm">
+          <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
             <div className="flex-1">{error}</div>
             <button onClick={() => setError(null)}>
@@ -564,37 +564,37 @@ export default function Compliance() {
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-6">
-          <div className="bg-red-50 p-4 rounded-lg border border-red-200">
+          <div className="bg-danger-50 p-4 rounded-lg border border-danger-200">
             <div className="flex items-center justify-between mb-2">
-              <p className="text-sm text-red-700">Critical Alerts</p>
-              <AlertCircle className="w-5 h-5 text-red-600" strokeWidth={1.5} />
+              <p className="text-sm text-danger-700">Critical Alerts</p>
+              <AlertCircle className="w-5 h-5 text-danger-600" strokeWidth={1.5} />
             </div>
-            <p className="text-2xl text-red-900">{metrics.critical}</p>
-            <p className="text-[11px] text-red-700/70 mt-1">In advance-notice window</p>
+            <p className="text-2xl text-danger-900">{metrics.critical}</p>
+            <p className="text-[11px] text-danger-700/70 mt-1">In advance-notice window</p>
           </div>
-          <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
+          <div className="bg-warning-50 p-4 rounded-lg border border-warning-200">
             <div className="flex items-center justify-between mb-2">
-              <p className="text-sm text-amber-700">High Priority</p>
-              <Bell className="w-5 h-5 text-amber-600" strokeWidth={1.5} />
+              <p className="text-sm text-warning-700">High Priority</p>
+              <Bell className="w-5 h-5 text-warning-600" strokeWidth={1.5} />
             </div>
-            <p className="text-2xl text-amber-900">{metrics.high}</p>
-            <p className="text-[11px] text-amber-700/70 mt-1">In advance-notice window</p>
+            <p className="text-2xl text-warning-900">{metrics.high}</p>
+            <p className="text-[11px] text-warning-700/70 mt-1">In advance-notice window</p>
           </div>
-          <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+          <div className="bg-brand-50 p-4 rounded-lg border border-brand-200">
             <div className="flex items-center justify-between mb-2">
-              <p className="text-sm text-blue-700">Upcoming Deadlines</p>
-              <CalendarIcon className="w-5 h-5 text-blue-600" strokeWidth={1.5} />
+              <p className="text-sm text-brand-700">Upcoming Deadlines</p>
+              <CalendarIcon className="w-5 h-5 text-brand-600" strokeWidth={1.5} />
             </div>
-            <p className="text-2xl text-blue-900">{metrics.upcoming}</p>
-            <p className="text-[11px] text-blue-700/70 mt-1">Today or later</p>
+            <p className="text-2xl text-brand-900">{metrics.upcoming}</p>
+            <p className="text-[11px] text-brand-700/70 mt-1">Today or later</p>
           </div>
-          <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+          <div className="bg-success-50 p-4 rounded-lg border border-success-200">
             <div className="flex items-center justify-between mb-2">
-              <p className="text-sm text-green-700">Active Alerts</p>
-              <Bell className="w-5 h-5 text-green-600" strokeWidth={1.5} />
+              <p className="text-sm text-success-700">Active Alerts</p>
+              <Bell className="w-5 h-5 text-success-600" strokeWidth={1.5} />
             </div>
-            <p className="text-2xl text-green-900">{metrics.activeAlerts}</p>
-            <p className="text-[11px] text-green-700/70 mt-1">Auto-derived from due dates</p>
+            <p className="text-2xl text-success-900">{metrics.activeAlerts}</p>
+            <p className="text-[11px] text-success-700/70 mt-1">Auto-derived from due dates</p>
           </div>
         </div>
 
@@ -611,7 +611,7 @@ export default function Compliance() {
                   onClick={() => setActiveTab(tab.key as typeof activeTab)}
                   className={`px-4 py-2 rounded-md text-sm transition-colors ${
                     activeTab === tab.key
-                      ? "bg-blue-600 text-white"
+                      ? "bg-brand-600 text-white"
                       : "text-slate-600 hover:bg-slate-100"
                   }`}
                 >
@@ -623,7 +623,7 @@ export default function Compliance() {
 
           {loading && (
             <div className="px-6 py-10 text-center text-slate-500">
-              <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
+              <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loadingâ€¦
             </div>
           )}
 
@@ -660,10 +660,10 @@ export default function Compliance() {
                             <CalendarIcon
                               className={`w-4 h-4 ${
                                 item.priority === "critical"
-                                  ? "text-red-600"
+                                  ? "text-danger-600"
                                   : item.priority === "high"
-                                  ? "text-amber-600"
-                                  : "text-blue-600"
+                                  ? "text-warning-600"
+                                  : "text-brand-600"
                               }`}
                               strokeWidth={1.5}
                             />
@@ -685,9 +685,9 @@ export default function Compliance() {
                           <span
                             className={`text-sm ${
                               overdue
-                                ? "text-red-600"
+                                ? "text-danger-600"
                                 : inWindow
-                                ? "text-amber-600"
+                                ? "text-warning-600"
                                 : "text-slate-600"
                             }`}
                           >
@@ -718,7 +718,7 @@ export default function Compliance() {
                           <button
                             type="button"
                             onClick={() => handleDeleteDate(item)}
-                            className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-red-700 hover:bg-red-50"
+                            className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-danger-700 hover:bg-danger-50"
                             title="Delete date"
                           >
                             <Trash2 className="w-4 h-4" strokeWidth={1.5} />
@@ -749,11 +749,11 @@ export default function Compliance() {
                     >
                       <div className="flex-shrink-0">
                         {isCritical ? (
-                          <AlertCircle className="w-5 h-5 text-red-600" strokeWidth={1.5} />
+                          <AlertCircle className="w-5 h-5 text-danger-600" strokeWidth={1.5} />
                         ) : d.priority === "high" ? (
-                          <AlertCircle className="w-5 h-5 text-amber-600" strokeWidth={1.5} />
+                          <AlertCircle className="w-5 h-5 text-warning-600" strokeWidth={1.5} />
                         ) : (
-                          <Bell className="w-5 h-5 text-blue-600" strokeWidth={1.5} />
+                          <Bell className="w-5 h-5 text-brand-600" strokeWidth={1.5} />
                         )}
                       </div>
                       <div className="flex-1">
@@ -769,15 +769,15 @@ export default function Compliance() {
                             {d.category}
                           </span>
                           {d.kind === "contract_end" && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] bg-blue-50 text-blue-700">
-                              Auto · Contract
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] bg-brand-50 text-brand-700">
+                              Auto Â· Contract
                             </span>
                           )}
                         </div>
                         <p className="text-sm text-slate-900">
                           {d.title}{" "}
                           <span className="text-slate-500">
-                            — due {formatDate(d.due_date)}
+                            â€” due {formatDate(d.due_date)}
                             {d.daysRemaining === 0
                               ? " (today)"
                               : ` (${d.daysRemaining} day${d.daysRemaining === 1 ? "" : "s"} away)`}
@@ -836,7 +836,7 @@ export default function Compliance() {
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-600">{r.frequency}</td>
                       <td className="px-6 py-4 text-sm text-slate-600">{r.trigger_day}</td>
-                      <td className="px-6 py-4 text-sm text-blue-600">
+                      <td className="px-6 py-4 text-sm text-brand-600">
                         {r.advance_notice_days === 0
                           ? "Same day"
                           : `${r.advance_notice_days} days before`}
@@ -847,7 +847,7 @@ export default function Compliance() {
                           onClick={() => toggleRec(r)}
                           className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
                             r.active
-                              ? "bg-green-50 text-green-700 hover:bg-green-100"
+                              ? "bg-success-50 text-success-700 hover:bg-success-100"
                               : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                           }`}
                         >
@@ -863,7 +863,7 @@ export default function Compliance() {
                         <button
                           type="button"
                           onClick={() => handleDeleteRec(r)}
-                          className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-red-700 hover:bg-red-50"
+                          className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-danger-700 hover:bg-danger-50"
                           title="Delete recurring alert"
                         >
                           <Trash2 className="w-4 h-4" strokeWidth={1.5} />
@@ -891,7 +891,7 @@ export default function Compliance() {
                   })
                 }
               >
-                ←
+                â†
               </Button>
               <span className="text-sm text-slate-700 min-w-[140px] text-center">
                 {calendarLabel}
@@ -906,7 +906,7 @@ export default function Compliance() {
                   })
                 }
               >
-                →
+                â†’
               </Button>
             </div>
           </div>
@@ -929,11 +929,11 @@ export default function Compliance() {
                   key={idx}
                   className={`aspect-square flex flex-col items-center justify-center rounded-md text-sm gap-1 ${
                     hasCritical
-                      ? "bg-red-100 text-red-900 border border-red-300"
+                      ? "bg-danger-100 text-danger-900 border border-danger-300"
                       : hasHigh
-                      ? "bg-amber-100 text-amber-900 border border-amber-300"
+                      ? "bg-warning-100 text-warning-900 border border-warning-300"
                       : hasEvents
-                      ? "bg-blue-50 text-blue-900 border border-blue-200"
+                      ? "bg-brand-50 text-brand-900 border border-brand-200"
                       : "text-slate-700 hover:bg-slate-50"
                   }`}
                   title={cell.events.map((e) => `${e.title} (${e.priority})`).join("\n") || ""}
@@ -964,7 +964,7 @@ export default function Compliance() {
           {renderDateFields(dateForm, setDateForm)}
           <div className="flex items-center gap-3 pt-4">
             <Button variant="primary" size="md" className="flex-1" disabled={submittingDate}>
-              {submittingDate ? "Saving…" : "Add Date"}
+              {submittingDate ? "Savingâ€¦" : "Add Date"}
             </Button>
             <Button
               variant="secondary"
@@ -993,7 +993,7 @@ export default function Compliance() {
           {renderDateFields(editDateForm, setEditDateForm)}
           <div className="flex items-center gap-3 pt-4">
             <Button variant="primary" size="md" className="flex-1" disabled={editDateSubmitting}>
-              {editDateSubmitting ? "Saving…" : "Update"}
+              {editDateSubmitting ? "Savingâ€¦" : "Update"}
             </Button>
             <Button
               variant="secondary"
@@ -1022,7 +1022,7 @@ export default function Compliance() {
           {renderRecFields(recForm, setRecForm)}
           <div className="flex items-center gap-3 pt-4">
             <Button variant="primary" size="md" className="flex-1" disabled={submittingRec}>
-              {submittingRec ? "Saving…" : "Add Alert"}
+              {submittingRec ? "Savingâ€¦" : "Add Alert"}
             </Button>
             <Button
               variant="secondary"
@@ -1051,7 +1051,7 @@ export default function Compliance() {
           {renderRecFields(editRecForm, setEditRecForm)}
           <div className="flex items-center gap-3 pt-4">
             <Button variant="primary" size="md" className="flex-1" disabled={editRecSubmitting}>
-              {editRecSubmitting ? "Saving…" : "Update"}
+              {editRecSubmitting ? "Savingâ€¦" : "Update"}
             </Button>
             <Button
               variant="secondary"

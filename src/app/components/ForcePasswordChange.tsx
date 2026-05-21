@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { Lock, Loader2, ShieldCheck } from "lucide-react";
 import { callChangePassword, useAuth } from "../lib/auth";
 
@@ -45,8 +45,8 @@ export default function ForcePasswordChange() {
     <div className="fixed inset-0 z-[100] bg-slate-900/60 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-white rounded-lg shadow-xl p-6 md:p-8">
         <div className="text-center mb-6">
-          <div className="w-12 h-12 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
-            <ShieldCheck className="w-6 h-6 text-blue-600" strokeWidth={1.5} />
+          <div className="w-12 h-12 bg-brand-50 rounded-full flex items-center justify-center mx-auto mb-4">
+            <ShieldCheck className="w-6 h-6 text-brand-600" strokeWidth={1.5} />
           </div>
           <h2 className="text-xl font-medium text-slate-900 mb-1">Set Your Password</h2>
           <p className="text-sm text-slate-500">
@@ -66,7 +66,7 @@ export default function ForcePasswordChange() {
                 required
                 minLength={8}
                 placeholder="At least 8 characters"
-                className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               />
             </div>
           </div>
@@ -82,19 +82,19 @@ export default function ForcePasswordChange() {
                 required
                 minLength={8}
                 placeholder="Re-enter your password"
-                className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               />
             </div>
           </div>
 
           {error && (
-            <div className="text-sm text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded">{error}</div>
+            <div className="text-sm text-danger-600 bg-danger-50 border border-danger-200 px-3 py-2 rounded">{error}</div>
           )}
 
           <button
             type="submit"
             disabled={submitting}
-            className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2"
+            className="w-full py-2.5 px-4 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2"
           >
             {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
             Set Password & Continue

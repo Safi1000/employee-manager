@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
 import { ArrowLeft, Plus, Loader2, UserPlus, KeyRound } from "lucide-react";
 import Button from "../../components/Button";
@@ -59,7 +59,7 @@ export default function CompanyDetail() {
     if (!id) return;
     setSubmitting(true);
     setError(null);
-    // SSA always creates super_admins from this page — the company's first admin.
+    // SSA always creates super_admins from this page â€” the company's first admin.
     // The super_admin then creates HR/Accounting/etc users with permissions via
     // the in-company User Management page.
     const res = await callCreateUser({
@@ -115,7 +115,7 @@ export default function CompanyDetail() {
         </Link>
 
         {loading ? (
-          <div className="flex items-center gap-2 text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
+          <div className="flex items-center gap-2 text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Loadingâ€¦</div>
         ) : !company ? (
           <p className="text-slate-500">Company not found.</p>
         ) : (
@@ -175,7 +175,7 @@ export default function CompanyDetail() {
               </form>
             )}
 
-            {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 px-4 py-2 rounded mb-4">{error}</div>}
+            {error && <div className="text-sm text-danger-600 bg-danger-50 border border-danger-200 px-4 py-2 rounded mb-4">{error}</div>}
 
             <h2 className="text-lg text-slate-900 mb-4">Users</h2>
             {users.length === 0 ? (
@@ -197,18 +197,18 @@ export default function CompanyDetail() {
                   <tbody className="divide-y divide-slate-200">
                     {users.map((u) => (
                       <tr key={u.id}>
-                        <td className="px-6 py-4 text-sm text-slate-900">{u.full_name ?? "—"}</td>
-                        <td className="px-6 py-4 text-sm text-slate-600">{u.email ?? "—"}</td>
+                        <td className="px-6 py-4 text-sm text-slate-900">{u.full_name ?? "â€”"}</td>
+                        <td className="px-6 py-4 text-sm text-slate-600">{u.email ?? "â€”"}</td>
                         <td className="px-6 py-4 text-sm text-slate-600">
                           {displayLabel(u)}
                           {(u.role === "super_admin" || u.role === "super_super_admin") && (
-                            <span className="ml-2 text-xs text-blue-600">(admin)</span>
+                            <span className="ml-2 text-xs text-brand-600">(admin)</span>
                           )}
                         </td>
                         <td className="px-6 py-4 text-right">
                           <button
                             onClick={() => { setResetPwUserId(u.id); setResetPwValue(""); setResetPwSuccess(false); }}
-                            className="p-1.5 rounded text-amber-600 hover:bg-amber-50"
+                            className="p-1.5 rounded text-warning-600 hover:bg-warning-50"
                             title="Reset Password"
                           >
                             <KeyRound className="w-4 h-4" />
@@ -232,10 +232,10 @@ export default function CompanyDetail() {
       >
         {resetPwSuccess ? (
           <div className="text-center py-4">
-            <div className="w-12 h-12 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-3">
-              <KeyRound className="w-6 h-6 text-green-600" strokeWidth={1.5} />
+            <div className="w-12 h-12 bg-success-50 rounded-full flex items-center justify-center mx-auto mb-3">
+              <KeyRound className="w-6 h-6 text-success-600" strokeWidth={1.5} />
             </div>
-            <p className="text-sm text-green-700 font-medium">Password reset successfully!</p>
+            <p className="text-sm text-success-700 font-medium">Password reset successfully!</p>
             <p className="text-xs text-slate-500 mt-1">The user will be prompted to set a new password on next login.</p>
           </div>
         ) : (
@@ -252,11 +252,11 @@ export default function CompanyDetail() {
                 required
                 minLength={8}
                 placeholder="At least 8 characters"
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               />
             </div>
             {error && (
-              <div className="text-sm text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded">{error}</div>
+              <div className="text-sm text-danger-600 bg-danger-50 border border-danger-200 px-3 py-2 rounded">{error}</div>
             )}
             <div className="flex items-center gap-3 pt-1">
               <Button type="submit" variant="primary" size="md" className="flex-1" disabled={resetPwSubmitting}>

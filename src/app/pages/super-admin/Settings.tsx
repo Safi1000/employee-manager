@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { Plus, Loader2, AlertCircle, X, Trash2, Mail, Send, LayoutDashboard, FileText, ArrowUp, ArrowDown } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -65,7 +65,7 @@ export default function Settings() {
     setDashboardSavedAt(null);
   };
 
-  // Invoice template — ordered list of { field, title }.
+  // Invoice template â€” ordered list of { field, title }.
   const initialInvoiceTemplate = useMemo<InvoiceTemplateItem[]>(
     () => (company?.invoice_template as InvoiceTemplateItem[] | null) ?? [],
     [company?.invoice_template],
@@ -591,7 +591,7 @@ export default function Settings() {
       <div className="space-y-3">
         {loading && (
           <div className="text-sm text-slate-500 flex items-center gap-2">
-            <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+            <Loader2 className="w-4 h-4 animate-spin" /> Loadingâ€¦
           </div>
         )}
         {!loading && locations.length === 0 && (
@@ -647,7 +647,7 @@ export default function Settings() {
                     <button
                       type="button"
                       onClick={() => handleDeleteLocation(row)}
-                      className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-red-700 hover:bg-red-50"
+                      className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-danger-700 hover:bg-danger-50"
                       title="Delete location"
                     >
                       <Trash2 className="w-4 h-4" strokeWidth={1.5} />
@@ -719,7 +719,7 @@ export default function Settings() {
       <div className="space-y-3 max-h-[40vh] overflow-y-auto pr-1">
         {loading && (
           <div className="text-sm text-slate-500 flex items-center gap-2">
-            <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+            <Loader2 className="w-4 h-4 animate-spin" /> Loadingâ€¦
           </div>
         )}
         {!loading && branches.map((b) => (
@@ -731,7 +731,7 @@ export default function Settings() {
               <div className="flex items-center gap-2">
                 <span className="text-sm text-slate-900">{b.name}</span>
                 {b.is_head_office && (
-                  <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 text-[11px]">
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-brand-50 text-brand-700 text-[11px]">
                     Default
                   </span>
                 )}
@@ -742,7 +742,7 @@ export default function Settings() {
               <button
                 type="button"
                 onClick={() => handleDeleteBranch(b)}
-                className="p-1.5 rounded text-red-600 hover:bg-red-50"
+                className="p-1.5 rounded text-danger-600 hover:bg-danger-50"
                 title="Delete branch"
               >
                 <Trash2 className="w-4 h-4" />
@@ -766,7 +766,7 @@ export default function Settings() {
       <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-1">
         {loading && (
           <div className="text-sm text-slate-500 flex items-center gap-2">
-            <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+            <Loader2 className="w-4 h-4 animate-spin" /> Loadingâ€¦
           </div>
         )}
         {!loading && clients.length === 0 && (
@@ -991,18 +991,18 @@ export default function Settings() {
                         {clientTypeLabel(row.client_type)}
                       </span>
                       {row.leave_carry_forward && (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 mr-2">
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-success-50 text-success-700 mr-2">
                           Carry-forward
                         </span>
                       )}
                       {row.eobi_enabled && (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 mr-2">
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-danger-50 text-danger-700 mr-2">
                           EOBI PKR {row.eobi_amount.toLocaleString()}
                         </span>
                       )}
-                      {row.employees} employees · {row.allowed_leaves_per_month} leaves/mo
-                      {row.email ? ` · ${row.email}` : ""}
-                      {row.phone ? ` · ${row.phone}` : ""}
+                      {row.employees} employees Â· {row.allowed_leaves_per_month} leaves/mo
+                      {row.email ? ` Â· ${row.email}` : ""}
+                      {row.phone ? ` Â· ${row.phone}` : ""}
                     </p>
                   </div>
                   <div className="flex gap-1 flex-shrink-0">
@@ -1015,7 +1015,7 @@ export default function Settings() {
                     <button
                       type="button"
                       onClick={() => handleDeleteClient(row)}
-                      className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-red-700 hover:bg-red-50"
+                      className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-danger-700 hover:bg-danger-50"
                       title="Delete client"
                     >
                       <Trash2 className="w-4 h-4" strokeWidth={1.5} />
@@ -1035,7 +1035,7 @@ export default function Settings() {
 
       <div className="flex-1 overflow-y-auto p-8">
         {error && (
-          <div className="mb-4 flex items-start gap-2 p-3 bg-red-50 text-red-700 border border-red-200 rounded-md text-sm">
+          <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
             <div className="flex-1">{error}</div>
             <button onClick={() => setError(null)}>
@@ -1059,7 +1059,7 @@ export default function Settings() {
             </div>
             <div className="flex items-center gap-3">
               {dashboardSavedAt && (
-                <span className="text-xs text-green-600">Saved at {dashboardSavedAt}</span>
+                <span className="text-xs text-success-600">Saved at {dashboardSavedAt}</span>
               )}
               <Button
                 variant="primary"
@@ -1106,7 +1106,7 @@ export default function Settings() {
             </div>
             <div className="flex items-center gap-3">
               {invoiceTplSavedAt && (
-                <span className="text-xs text-green-600">Saved at {invoiceTplSavedAt}</span>
+                <span className="text-xs text-success-600">Saved at {invoiceTplSavedAt}</span>
               )}
               <Button
                 variant="primary"
@@ -1165,7 +1165,7 @@ export default function Settings() {
                   <button
                     type="button"
                     onClick={() => removeTplRow(idx)}
-                    className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+                    className="p-1.5 text-danger-600 hover:bg-danger-50 rounded"
                     title="Remove field"
                   >
                     <Trash2 className="w-4 h-4" strokeWidth={1.5} />
@@ -1225,7 +1225,7 @@ export default function Settings() {
           </div>
           <div className="flex items-center gap-3 pt-4">
             <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
-              {submitting ? "Saving…" : "Add Location"}
+              {submitting ? "Savingâ€¦" : "Add Location"}
             </Button>
             <Button
               variant="secondary"
@@ -1269,7 +1269,7 @@ export default function Settings() {
           </div>
           <div className="flex items-center gap-3 pt-2">
             <Button type="submit" variant="primary" size="md" className="flex-1" disabled={branchSubmitting}>
-              {branchSubmitting ? "Saving…" : "Add Branch"}
+              {branchSubmitting ? "Savingâ€¦" : "Add Branch"}
             </Button>
             <Button type="button" variant="secondary" size="md" onClick={() => setBranchAddOpen(false)}>
               Cancel
@@ -1487,10 +1487,10 @@ export default function Settings() {
               </div>
             )}
           </div>
-          <p className="text-xs text-slate-500">A unique Client ID (CLI-…) is generated automatically.</p>
+          <p className="text-xs text-slate-500">A unique Client ID (CLI-â€¦) is generated automatically.</p>
           <div className="flex items-center gap-3 pt-4">
             <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
-              {submitting ? "Saving…" : "Add Client"}
+              {submitting ? "Savingâ€¦" : "Add Client"}
             </Button>
             <Button
               variant="secondary"
@@ -1512,7 +1512,7 @@ export default function Settings() {
       <Modal
         isOpen={!!renewClient}
         onClose={() => setRenewClient(null)}
-        title={`Renew Contract — ${renewClient?.name ?? ""}`}
+        title={`Renew Contract â€” ${renewClient?.name ?? ""}`}
         size="md"
       >
         {renewClient && (
@@ -1520,7 +1520,7 @@ export default function Settings() {
             <div className="bg-slate-50 border border-slate-200 rounded-md p-3 text-sm">
               <div className="text-xs text-slate-500 mb-1">Current contract</div>
               <div className="text-slate-900">
-                {renewClient.contract_start ?? "—"} → {renewClient.contract_end ?? "—"}
+                {renewClient.contract_start ?? "â€”"} â†’ {renewClient.contract_end ?? "â€”"}
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -1561,7 +1561,7 @@ export default function Settings() {
                   {renewHistory.map((h) => (
                     <div key={h.id} className="text-xs text-slate-700 bg-slate-50 rounded px-2 py-1.5 border border-slate-200">
                       <div>
-                        {h.contract_start ?? "—"} → {h.contract_end ?? "—"}
+                        {h.contract_start ?? "â€”"} â†’ {h.contract_end ?? "â€”"}
                         <span className="text-slate-400 ml-2">archived {new Date(h.renewed_at).toLocaleDateString()}</span>
                       </div>
                       {h.notes && <div className="text-slate-500 mt-0.5">{h.notes}</div>}
@@ -1579,7 +1579,7 @@ export default function Settings() {
                 onClick={handleSubmitRenew}
                 disabled={renewSubmitting || !renewStart || !renewEnd}
               >
-                {renewSubmitting ? "Renewing…" : "Confirm Renewal"}
+                {renewSubmitting ? "Renewingâ€¦" : "Confirm Renewal"}
               </Button>
               <Button
                 variant="secondary"

@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+﻿import { ReactNode } from "react";
 import { Navigate, useLocation } from "react-router";
 import { Loader2 } from "lucide-react";
 import { ROLE_HOMES, useAuth } from "../lib/auth";
@@ -44,7 +44,7 @@ export default function RequireAuth({
             </p>
             <button
               onClick={signOut}
-              className="text-sm text-blue-600 hover:underline"
+              className="text-sm text-brand-600 hover:underline"
             >
               Sign out
             </button>

@@ -1,4 +1,4 @@
-import { Outlet, useNavigate } from "react-router";
+﻿import { Outlet, useNavigate } from "react-router";
 import Sidebar, { type SidebarItem } from "../components/Sidebar";
 import { hasAnyPermission, useAuth } from "../lib/auth";
 import { Eye, X } from "lucide-react";
@@ -87,13 +87,13 @@ export default function SuperAdminLayout() {
   return (
     <div className="flex h-screen bg-slate-50">
       <Sidebar
-        title={isSsaViewing ? `Viewing: ${company?.name ?? "…"}` : (company?.name ?? "Company Panel")}
+        title={isSsaViewing ? `Viewing: ${company?.name ?? "â€¦"}` : (company?.name ?? "Company Panel")}
         links={links}
       />
       <div className="flex-1 flex flex-col overflow-hidden pt-12 md:pt-0">
         {isSsaViewing && (
-          <div className="bg-amber-50 border-b border-amber-200 px-6 py-2 flex items-center justify-between text-sm">
-            <div className="flex items-center gap-2 text-amber-900">
+          <div className="bg-warning-50 border-b border-warning-200 px-6 py-2 flex items-center justify-between text-sm">
+            <div className="flex items-center gap-2 text-warning-900">
               <Eye className="w-4 h-4" strokeWidth={1.5} />
               <span>
                 You are viewing <strong>{company?.name ?? ""}</strong> as Super Super Admin.
@@ -101,7 +101,7 @@ export default function SuperAdminLayout() {
             </div>
             <button
               onClick={handleExitView}
-              className="flex items-center gap-1 px-3 py-1 rounded text-amber-900 hover:bg-amber-100"
+              className="flex items-center gap-1 px-3 py-1 rounded text-warning-900 hover:bg-warning-100"
             >
               <X className="w-4 h-4" strokeWidth={1.5} /> Exit view
             </button>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { Plus, Search, Upload, AlertCircle, Loader2, X, Trash2 } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -152,7 +152,7 @@ export default function EmployeeManagement() {
     loadData();
   }, []);
 
-  // Branches first by Head Office then alpha — used in selects with placeholder.
+  // Branches first by Head Office then alpha â€” used in selects with placeholder.
   const branchOptions = useMemo(() => branches.slice(), [branches]);
 
   // Clients filtered by chosen branch (empty branch = show all in company).
@@ -453,7 +453,7 @@ export default function EmployeeManagement() {
 
       <div className="flex-1 overflow-y-auto p-8">
         {error && (
-          <div className="mb-4 flex items-start gap-2 p-3 bg-red-50 text-red-700 border border-red-200 rounded-md text-sm">
+          <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
             <div className="flex-1">{error}</div>
             <button onClick={() => setError(null)}>
@@ -557,7 +557,7 @@ export default function EmployeeManagement() {
                   <tr>
                     <td colSpan={9} className="px-6 py-10 text-center text-slate-500">
                       <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
-                      Loading…
+                      Loadingâ€¦
                     </td>
                   </tr>
                 )}
@@ -574,29 +574,29 @@ export default function EmployeeManagement() {
                     return (
                     <tr
                       key={employee.id}
-                      className={`transition-colors ${noDocs ? "bg-red-50 hover:bg-red-100" : "hover:bg-slate-50"}`}
+                      className={`transition-colors ${noDocs ? "bg-danger-50 hover:bg-danger-100" : "hover:bg-slate-50"}`}
                       title={noDocs ? "No documents uploaded for this employee" : undefined}
                     >
                       <td className="px-6 py-4 text-sm font-mono">
-                        <span className={noDocs ? "text-red-700" : "text-slate-600"}>{employee.employee_code}</span>
+                        <span className={noDocs ? "text-danger-700" : "text-slate-600"}>{employee.employee_code}</span>
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-900">
                         <div className="flex items-center gap-2">
                           {employee.full_name}
                           {noDocs && (
-                            <span className="inline-flex items-center text-[10px] uppercase tracking-wider text-red-700 bg-red-100 px-1.5 py-0.5 rounded">
+                            <span className="inline-flex items-center text-[10px] uppercase tracking-wider text-danger-700 bg-danger-100 px-1.5 py-0.5 rounded">
                               <AlertCircle className="w-3 h-3 mr-0.5" strokeWidth={2} />
                               No docs
                             </span>
                           )}
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{employee.phone ?? "—"}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{employee.location_name ?? "—"}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{employee.branch_name ?? "—"}</td>
+                      <td className="px-6 py-4 text-sm text-slate-600">{employee.phone ?? "â€”"}</td>
+                      <td className="px-6 py-4 text-sm text-slate-600">{employee.location_name ?? "â€”"}</td>
+                      <td className="px-6 py-4 text-sm text-slate-600">{employee.branch_name ?? "â€”"}</td>
                       <td className="px-6 py-4 text-sm text-slate-600">
                         {(employee.category ?? "client") === "client" ? (
-                          employee.client_name ?? "—"
+                          employee.client_name ?? "â€”"
                         ) : (
                           <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-700 capitalize">
                             {(employee.category ?? "client").replace("_", " ")}
@@ -607,7 +607,7 @@ export default function EmployeeManagement() {
                         <span
                           className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs capitalize ${
                             employee.shift === "day"
-                              ? "bg-amber-50 text-amber-700"
+                              ? "bg-warning-50 text-warning-700"
                               : "bg-indigo-50 text-indigo-700"
                           }`}
                         >
@@ -618,9 +618,9 @@ export default function EmployeeManagement() {
                         <span
                           className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
                             employee.status === "Active"
-                              ? "bg-green-50 text-green-700"
+                              ? "bg-success-50 text-success-700"
                               : employee.status === "On Leave"
-                              ? "bg-yellow-50 text-yellow-700"
+                              ? "bg-warning-50 text-warning-700"
                               : "bg-slate-100 text-slate-600"
                           }`}
                         >
@@ -686,7 +686,7 @@ export default function EmployeeManagement() {
                 </select>
                 {locations.length === 0 && (
                   <p className="text-xs text-slate-500 mt-1">
-                    No locations yet. Add them from Settings → Location Management.
+                    No locations yet. Add them from Settings â†’ Location Management.
                   </p>
                 )}
               </div>
@@ -796,7 +796,7 @@ export default function EmployeeManagement() {
                     <p className="text-xs text-slate-500 mt-1">
                       {form.branch_id
                         ? "No clients in this branch yet."
-                        : "No clients yet. Add them from Settings → Client Management."}
+                        : "No clients yet. Add them from Settings â†’ Client Management."}
                     </p>
                   )}
                 </div>
@@ -862,10 +862,10 @@ export default function EmployeeManagement() {
                   value={form.per_day_salary}
                   readOnly
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50 text-slate-500 cursor-not-allowed"
-                  placeholder="Auto = Base ÷ days in month"
+                  placeholder="Auto = Base Ã· days in month"
                 />
                 <p className="text-xs text-slate-500 mt-1">
-                  Auto-computed: Base Salary ÷ {daysInCurrentMonth()} days this month.
+                  Auto-computed: Base Salary Ã· {daysInCurrentMonth()} days this month.
                 </p>
               </div>
               <div>
@@ -942,7 +942,7 @@ export default function EmployeeManagement() {
 
           <div className="flex items-center gap-3 pt-4">
             <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
-              {submitting ? "Saving…" : "Add Employee"}
+              {submitting ? "Savingâ€¦" : "Add Employee"}
             </Button>
             <Button variant="secondary" size="md" onClick={() => setIsModalOpen(false)}>
               Cancel
@@ -972,15 +972,15 @@ export default function EmployeeManagement() {
                 </div>
                 <div>
                   <p className="text-slate-500 mb-1">Phone</p>
-                  <p className="text-slate-900">{selectedEmployee.phone ?? "—"}</p>
+                  <p className="text-slate-900">{selectedEmployee.phone ?? "â€”"}</p>
                 </div>
                 <div>
                   <p className="text-slate-500 mb-1">Location</p>
-                  <p className="text-slate-900">{selectedEmployee.location_name ?? "—"}</p>
+                  <p className="text-slate-900">{selectedEmployee.location_name ?? "â€”"}</p>
                 </div>
                 <div>
                   <p className="text-slate-500 mb-1">Branch</p>
-                  <p className="text-slate-900">{selectedEmployee.branch_name ?? "—"}</p>
+                  <p className="text-slate-900">{selectedEmployee.branch_name ?? "â€”"}</p>
                 </div>
                 <div>
                   <p className="text-slate-500 mb-1">Category</p>
@@ -992,13 +992,13 @@ export default function EmployeeManagement() {
                   <p className="text-slate-500 mb-1">Client</p>
                   <p className="text-slate-900">
                     {(selectedEmployee.category ?? "client") === "client"
-                      ? selectedEmployee.client_name ?? "—"
-                      : "—"}
+                      ? selectedEmployee.client_name ?? "â€”"
+                      : "â€”"}
                   </p>
                 </div>
                 <div>
                   <p className="text-slate-500 mb-1">Department</p>
-                  <p className="text-slate-900">{selectedEmployee.department ?? "—"}</p>
+                  <p className="text-slate-900">{selectedEmployee.department ?? "â€”"}</p>
                 </div>
                 <div>
                   <p className="text-slate-500 mb-1">Shift</p>
@@ -1009,7 +1009,7 @@ export default function EmployeeManagement() {
                   <p className="text-slate-900">
                     {selectedEmployee.base_salary != null
                       ? `PKR ${selectedEmployee.base_salary.toLocaleString()}`
-                      : "—"}
+                      : "â€”"}
                   </p>
                 </div>
                 <div>
@@ -1017,24 +1017,24 @@ export default function EmployeeManagement() {
                   <p className="text-slate-900">
                     {selectedEmployee.per_day_salary != null
                       ? `PKR ${selectedEmployee.per_day_salary.toLocaleString()}`
-                      : "—"}
+                      : "â€”"}
                   </p>
                 </div>
                 <div>
                   <p className="text-slate-500 mb-1">Join Date</p>
-                  <p className="text-slate-900">{selectedEmployee.join_date ?? "—"}</p>
+                  <p className="text-slate-900">{selectedEmployee.join_date ?? "â€”"}</p>
                 </div>
                 <div>
                   <p className="text-slate-500 mb-1">Bank Name</p>
-                  <p className="text-slate-900">{selectedEmployee.bank_name ?? "—"}</p>
+                  <p className="text-slate-900">{selectedEmployee.bank_name ?? "â€”"}</p>
                 </div>
                 <div>
                   <p className="text-slate-500 mb-1">Bank Account</p>
-                  <p className="text-slate-900 font-mono">{selectedEmployee.bank_account ?? "—"}</p>
+                  <p className="text-slate-900 font-mono">{selectedEmployee.bank_account ?? "â€”"}</p>
                 </div>
                 <div>
                   <p className="text-slate-500 mb-1">Status</p>
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs bg-green-50 text-green-700">
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs bg-success-50 text-success-700">
                     {selectedEmployee.status}
                   </span>
                 </div>
@@ -1272,7 +1272,7 @@ export default function EmployeeManagement() {
                     className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50 text-slate-500 cursor-not-allowed"
                   />
                   <p className="text-xs text-slate-500 mt-1">
-                    Auto-computed: Base Salary ÷ {daysInCurrentMonth()} days this month.
+                    Auto-computed: Base Salary Ã· {daysInCurrentMonth()} days this month.
                   </p>
                 </div>
                 <div>
@@ -1352,7 +1352,7 @@ export default function EmployeeManagement() {
 
             <div className="flex items-center gap-3 pt-4">
               <Button variant="primary" size="md" className="flex-1" disabled={editing}>
-                {editing ? "Updating…" : "Update Employee"}
+                {editing ? "Updatingâ€¦" : "Update Employee"}
               </Button>
               <Button variant="secondary" size="md" onClick={() => setIsEditModalOpen(false)}>
                 Cancel
@@ -1360,7 +1360,7 @@ export default function EmployeeManagement() {
               <button
                 type="button"
                 onClick={() => handleDelete(selectedEmployee)}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm text-red-700 hover:bg-red-50 border border-red-200"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm text-danger-700 hover:bg-danger-50 border border-danger-200"
               >
                 <Trash2 className="w-4 h-4" strokeWidth={1.5} />
                 Delete

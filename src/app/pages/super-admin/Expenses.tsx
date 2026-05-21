@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { Plus, Search, Upload, AlertCircle, X, Loader2, Trash2, Download, Pencil } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -270,7 +270,7 @@ export default function Expenses() {
     setAdvances(
       (advData ?? []).map((a: any) => ({
         ...a,
-        employee_name: a.employee?.full_name ?? "—",
+        employee_name: a.employee?.full_name ?? "â€”",
         employee_code: a.employee?.employee_code ?? "",
         client_name: a.client?.name ?? null,
         bank_name: a.bank?.bank_name ?? null,
@@ -525,7 +525,7 @@ export default function Expenses() {
         form.payment_mode === "Cheque"
           ? cheques.find((c) => c.id === form.cheque_id)?.bank_account_id ?? null
           : null;
-      // Resolve branch: explicit form value → client's branch → Head Office.
+      // Resolve branch: explicit form value â†’ client's branch â†’ Head Office.
       const resolvedBranch =
         form.branch_id ||
         (form.client_id ? clients.find((c) => c.id === form.client_id)?.branch_id ?? null : null) ||
@@ -624,7 +624,7 @@ export default function Expenses() {
         amount: Number(exp.amount),
         cash_delta: Number(exp.amount),
         account_delta: 0,
-        description: `Reverse expense (edit) — ${exp.description ?? exp.category_name ?? ""}`,
+        description: `Reverse expense (edit) â€” ${exp.description ?? exp.category_name ?? ""}`,
         reference_id: exp.id,
       });
     } else if (exp.payment_mode === "Bank" && exp.bank_account_id) {
@@ -634,7 +634,7 @@ export default function Expenses() {
         amount: Number(exp.amount),
         cash_delta: 0,
         account_delta: Number(exp.amount),
-        description: `Reverse expense (edit) — ${exp.description ?? exp.category_name ?? ""}`,
+        description: `Reverse expense (edit) â€” ${exp.description ?? exp.category_name ?? ""}`,
         reference_id: exp.id,
       });
     } else if (exp.payment_mode === "Payable" && exp.payable_status === "Paid") {
@@ -645,7 +645,7 @@ export default function Expenses() {
           amount: Number(exp.amount),
           cash_delta: Number(exp.amount),
           account_delta: 0,
-          description: `Reverse paid expense (edit) — ${exp.description ?? exp.category_name ?? ""}`,
+          description: `Reverse paid expense (edit) â€” ${exp.description ?? exp.category_name ?? ""}`,
           reference_id: exp.id,
         });
       } else if (exp.paid_via === "Bank" && exp.paid_bank_account_id) {
@@ -655,7 +655,7 @@ export default function Expenses() {
           amount: Number(exp.amount),
           cash_delta: 0,
           account_delta: Number(exp.amount),
-          description: `Reverse paid expense (edit) — ${exp.description ?? exp.category_name ?? ""}`,
+          description: `Reverse paid expense (edit) â€” ${exp.description ?? exp.category_name ?? ""}`,
           reference_id: exp.id,
         });
       }
@@ -846,7 +846,7 @@ export default function Expenses() {
   };
 
   const describeAdvance = (empName: string, empCode: string, clientName: string | null) => {
-    return `Advance · ${empCode} ${empName}${clientName ? ` (${clientName})` : ""}`;
+    return `Advance Â· ${empCode} ${empName}${clientName ? ` (${clientName})` : ""}`;
   };
 
   const validateAdvance = (f: AdvanceForm, existingAmount?: number): string | null => {
@@ -973,7 +973,7 @@ export default function Expenses() {
 
   const reverseAdvancePayment = async (adv: AdvanceRow) => {
     const amount = Number(adv.amount);
-    const desc = `Reverse advance · ${adv.employee_code} ${adv.employee_name}${adv.client_name ? ` (${adv.client_name})` : ""}`;
+    const desc = `Reverse advance Â· ${adv.employee_code} ${adv.employee_name}${adv.client_name ? ` (${adv.client_name})` : ""}`;
     if (adv.payment_mode === "Cash") {
       await applyCashDelta(amount);
       await logAdvanceTransaction({
@@ -1218,7 +1218,7 @@ export default function Expenses() {
     await loadAll();
   };
 
-  const selectedCatName = selected ? categories.find((c) => c.id === selected.category_id)?.name ?? "—" : "";
+  const selectedCatName = selected ? categories.find((c) => c.id === selected.category_id)?.name ?? "â€”" : "";
 
   return (
     <>
@@ -1236,7 +1236,7 @@ export default function Expenses() {
                       client: a.client_name ?? "",
                       amount: Number(a.amount),
                       mode: a.payment_mode === "Bank" && a.bank_name
-                        ? `Bank · ${a.bank_name}`
+                        ? `Bank Â· ${a.bank_name}`
                         : a.payment_mode,
                       remarks: a.notes ?? "",
                     })),
@@ -1251,7 +1251,7 @@ export default function Expenses() {
                       client: e.client_name ?? "Office",
                       amount: Number(e.amount),
                       mode: e.payment_mode === "Bank" && e.bank_name
-                        ? `Bank · ${e.bank_name}`
+                        ? `Bank Â· ${e.bank_name}`
                         : e.payment_mode,
                     })),
                     `Expenses ${new Date().toISOString().slice(0, 10)}.xlsx`
@@ -1290,7 +1290,7 @@ export default function Expenses() {
 
       <div className="flex-1 overflow-y-auto p-8">
         {error && (
-          <div className="mb-4 flex items-start gap-2 p-3 bg-red-50 text-red-700 border border-red-200 rounded-md text-sm">
+          <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
             <div className="flex-1">{error}</div>
             <button onClick={() => setError(null)}>
@@ -1402,7 +1402,7 @@ export default function Expenses() {
                 />
                 <input
                   type="text"
-                  placeholder="Search description, category, client, vendor…"
+                  placeholder="Search description, category, client, vendorâ€¦"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -1480,7 +1480,7 @@ export default function Expenses() {
                   <tr>
                     <td colSpan={7} className="px-6 py-10 text-center text-slate-500">
                       <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
-                      Loading…
+                      Loadingâ€¦
                     </td>
                   </tr>
                 )}
@@ -1495,12 +1495,12 @@ export default function Expenses() {
                   filtered.map((exp) => (
                     <tr key={exp.id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-4 py-3 text-sm text-slate-600">{exp.expense_date}</td>
-                      <td className="px-4 py-3 text-sm text-slate-900">{exp.category_name ?? "—"}</td>
+                      <td className="px-4 py-3 text-sm text-slate-900">{exp.category_name ?? "â€”"}</td>
                       <td className="px-4 py-3 text-sm text-slate-700">
                         {exp.client_name ?? <span className="text-slate-400 italic">Office</span>}
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-600 max-w-xs truncate">
-                        {exp.description ?? "—"}
+                        {exp.description ?? "â€”"}
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-900">
                         PKR {Number(exp.amount).toLocaleString()}
@@ -1509,14 +1509,14 @@ export default function Expenses() {
                         <span
                           className={`inline-flex items-center px-2 py-0.5 rounded text-xs ${
                             exp.payment_mode === "Cash"
-                              ? "bg-green-50 text-green-700"
+                              ? "bg-success-50 text-success-700"
                               : exp.payment_mode === "Bank"
-                              ? "bg-blue-50 text-blue-700"
-                              : "bg-amber-50 text-amber-700"
+                              ? "bg-brand-50 text-brand-700"
+                              : "bg-warning-50 text-warning-700"
                           }`}
                         >
                           {exp.payment_mode}
-                          {exp.payment_mode === "Payable" && exp.payable_status ? ` · ${exp.payable_status}` : ""}
+                          {exp.payment_mode === "Payable" && exp.payable_status ? ` Â· ${exp.payable_status}` : ""}
                         </span>
                       </td>
                       <td className="px-4 py-3 flex gap-1">
@@ -1529,7 +1529,7 @@ export default function Expenses() {
                         <button
                           type="button"
                           onClick={() => handleDelete(exp)}
-                          className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-red-700 hover:bg-red-50"
+                          className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-danger-700 hover:bg-danger-50"
                           title="Delete expense"
                         >
                           <Trash2 className="w-4 h-4" strokeWidth={1.5} />
@@ -1582,7 +1582,7 @@ export default function Expenses() {
                           <button
                             type="button"
                             onClick={() => handleDeleteCategory(category)}
-                            className="inline-flex items-center justify-center px-2 py-1 rounded-md text-red-700 hover:bg-red-50"
+                            className="inline-flex items-center justify-center px-2 py-1 rounded-md text-danger-700 hover:bg-danger-50"
                             title="Delete category"
                           >
                             <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
@@ -1609,7 +1609,7 @@ export default function Expenses() {
                   />
                   <input
                     type="text"
-                    placeholder="Search employee, code, client, notes…"
+                    placeholder="Search employee, code, client, notesâ€¦"
                     value={advSearch}
                     onChange={(e) => setAdvSearch(e.target.value)}
                     className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -1660,7 +1660,7 @@ export default function Expenses() {
                   <option value="Cheque">Cheque</option>
                 </select>
                 <div className="ml-auto text-xs text-slate-500">
-                  {advTotals.count} advance{advTotals.count === 1 ? "" : "s"} · PKR {advTotals.total.toLocaleString()}
+                  {advTotals.count} advance{advTotals.count === 1 ? "" : "s"} Â· PKR {advTotals.total.toLocaleString()}
                 </div>
               </div>
             </div>
@@ -1682,7 +1682,7 @@ export default function Expenses() {
                     <tr>
                       <td colSpan={7} className="px-6 py-10 text-center text-slate-500">
                         <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
-                        Loading…
+                        Loadingâ€¦
                       </td>
                     </tr>
                   )}
@@ -1702,7 +1702,7 @@ export default function Expenses() {
                           <div className="text-xs text-slate-500 font-mono">{adv.employee_code}</div>
                         </td>
                         <td className="px-4 py-3 text-sm text-slate-700">
-                          {adv.client_name ?? <span className="text-slate-400 italic">—</span>}
+                          {adv.client_name ?? <span className="text-slate-400 italic">â€”</span>}
                         </td>
                         <td className="px-4 py-3 text-sm text-right text-slate-900">
                           PKR {Number(adv.amount).toLocaleString()}
@@ -1711,16 +1711,16 @@ export default function Expenses() {
                           <span
                             className={`inline-flex items-center px-2 py-0.5 rounded text-xs ${
                               adv.payment_mode === "Cash"
-                                ? "bg-green-50 text-green-700"
-                                : "bg-blue-50 text-blue-700"
+                                ? "bg-success-50 text-success-700"
+                                : "bg-brand-50 text-brand-700"
                             }`}
                           >
                             {adv.payment_mode}
-                            {adv.bank_name ? ` · ${adv.bank_name}` : ""}
+                            {adv.bank_name ? ` Â· ${adv.bank_name}` : ""}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-sm text-slate-600 max-w-xs truncate">
-                          {adv.notes ?? "—"}
+                          {adv.notes ?? "â€”"}
                         </td>
                         <td className="px-4 py-3 flex gap-1">
                           <Button variant="ghost" size="sm" onClick={() => openAdvEdit(adv)}>
@@ -1730,7 +1730,7 @@ export default function Expenses() {
                           <button
                             type="button"
                             onClick={() => handleDeleteAdvance(adv)}
-                            className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-red-700 hover:bg-red-50"
+                            className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-danger-700 hover:bg-danger-50"
                             title="Delete advance"
                           >
                             <Trash2 className="w-4 h-4" strokeWidth={1.5} />
@@ -1755,7 +1755,7 @@ export default function Expenses() {
           {renderAdvanceFields(advForm, setAdvForm, advEmpSearch, setAdvEmpSearch, addAdvEmployeeOptions)}
           <div className="flex items-center gap-3 pt-4">
             <Button variant="primary" size="md" className="flex-1" disabled={advSubmitting}>
-              {advSubmitting ? "Saving…" : "Add Advance"}
+              {advSubmitting ? "Savingâ€¦" : "Add Advance"}
             </Button>
             <Button variant="secondary" size="md" onClick={resetAdvAddModal}>
               Cancel
@@ -1778,7 +1778,7 @@ export default function Expenses() {
             {renderAdvanceFields(advEditForm, setAdvEditForm, advEditEmpSearch, setAdvEditEmpSearch, editAdvEmployeeOptions)}
             <div className="flex items-center gap-3 pt-4">
               <Button variant="primary" size="md" className="flex-1" disabled={advSubmitting}>
-                {advSubmitting ? "Saving…" : "Update Advance"}
+                {advSubmitting ? "Savingâ€¦" : "Update Advance"}
               </Button>
               <Button
                 variant="secondary"
@@ -1861,27 +1861,27 @@ export default function Expenses() {
               {selected.payment_mode === "Bank" && (
                 <div>
                   <p className="text-slate-500 mb-1">Bank Account</p>
-                  <p className="text-slate-900">{selected.bank_name ?? "—"}</p>
+                  <p className="text-slate-900">{selected.bank_name ?? "â€”"}</p>
                 </div>
               )}
               {selected.payment_mode === "Payable" && (
                 <>
                   <div>
                     <p className="text-slate-500 mb-1">Vendor</p>
-                    <p className="text-slate-900">{selected.vendor_name ?? "—"}</p>
+                    <p className="text-slate-900">{selected.vendor_name ?? "â€”"}</p>
                   </div>
                   <div>
                     <p className="text-slate-500 mb-1">Due Date</p>
-                    <p className="text-slate-900">{selected.due_date ?? "—"}</p>
+                    <p className="text-slate-900">{selected.due_date ?? "â€”"}</p>
                   </div>
                   <div>
                     <p className="text-slate-500 mb-1">Status</p>
-                    <p className="text-slate-900">{selected.payable_status ?? "—"}</p>
+                    <p className="text-slate-900">{selected.payable_status ?? "â€”"}</p>
                   </div>
                   {selected.payable_status === "Paid" && (
                     <div>
                       <p className="text-slate-500 mb-1">Paid Via</p>
-                      <p className="text-slate-900">{selected.paid_via ?? "—"}</p>
+                      <p className="text-slate-900">{selected.paid_via ?? "â€”"}</p>
                     </div>
                   )}
                 </>
@@ -2019,7 +2019,7 @@ export default function Expenses() {
                       <button
                         type="button"
                         onClick={() => handleDeleteVendor(v)}
-                        className="inline-flex items-center justify-center px-2 py-1 rounded-md text-red-700 hover:bg-red-50"
+                        className="inline-flex items-center justify-center px-2 py-1 rounded-md text-danger-700 hover:bg-danger-50"
                         title="Delete vendor"
                       >
                         <Trash2 className="w-4 h-4" strokeWidth={1.5} />
@@ -2074,7 +2074,7 @@ export default function Expenses() {
     return (
       <>
         {formError && (
-          <div className="flex items-start gap-2 p-3 bg-red-50 text-red-700 border border-red-200 rounded-md text-sm">
+          <div className="flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" strokeWidth={2} />
             <div className="flex-1">{formError}</div>
             <button type="button" onClick={() => setFormError(null)}>
@@ -2118,7 +2118,7 @@ export default function Expenses() {
                 <div className="text-slate-900">{selectedEmp.full_name}</div>
                 <div className="text-xs text-slate-500 font-mono">
                   {selectedEmp.employee_code}
-                  {selectedEmp.phone ? ` · ${selectedEmp.phone}` : ""}
+                  {selectedEmp.phone ? ` Â· ${selectedEmp.phone}` : ""}
                 </div>
               </div>
               <button
@@ -2135,7 +2135,7 @@ export default function Expenses() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />
                 <input
                   type="text"
-                  placeholder="Search by name, code, or phone…"
+                  placeholder="Search by name, code, or phoneâ€¦"
                   value={empQuery}
                   onChange={(e) => setEmpQuery(e.target.value)}
                   className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -2158,7 +2158,7 @@ export default function Expenses() {
                       <div className="text-slate-900">{emp.full_name}</div>
                       <div className="text-xs text-slate-500 font-mono">
                         {emp.employee_code}
-                        {emp.phone ? ` · ${emp.phone}` : ""}
+                        {emp.phone ? ` Â· ${emp.phone}` : ""}
                       </div>
                     </button>
                   ))
@@ -2233,7 +2233,7 @@ export default function Expenses() {
               <option value="">Select bank account</option>
               {banks.map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.bank_name} · {b.account_number} (PKR {Number(b.balance).toLocaleString()})
+                  {b.bank_name} Â· {b.account_number} (PKR {Number(b.balance).toLocaleString()})
                 </option>
               ))}
             </select>
@@ -2256,7 +2256,7 @@ export default function Expenses() {
                   const remaining = chequeRemaining(c.id);
                   return (
                     <option key={c.id} value={c.id}>
-                      #{c.cheque_number} · {bank?.bank_name ?? "Bank"} · PKR {Number(c.amount).toLocaleString()} (remaining PKR {remaining.toLocaleString()}) · {c.status}
+                      #{c.cheque_number} Â· {bank?.bank_name ?? "Bank"} Â· PKR {Number(c.amount).toLocaleString()} (remaining PKR {remaining.toLocaleString()}) Â· {c.status}
                     </option>
                   );
                 })}
@@ -2295,7 +2295,7 @@ export default function Expenses() {
     return (
       <form className="space-y-4" onSubmit={onSubmit}>
         {formError && (
-          <div className="flex items-start gap-2 p-3 bg-red-50 text-red-700 border border-red-200 rounded-md text-sm">
+          <div className="flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" strokeWidth={2} />
             <div className="flex-1">{formError}</div>
             <button type="button" onClick={() => setFormError(null)}>
@@ -2428,7 +2428,7 @@ export default function Expenses() {
                 <option value="">Select bank account</option>
                 {banks.map((b) => (
                   <option key={b.id} value={b.id}>
-                    {b.bank_name} · {b.account_number} (PKR {Number(b.balance).toLocaleString()})
+                    {b.bank_name} Â· {b.account_number} (PKR {Number(b.balance).toLocaleString()})
                   </option>
                 ))}
               </select>
@@ -2450,13 +2450,13 @@ export default function Expenses() {
                     const bank = banks.find((b) => b.id === c.bank_account_id);
                     return (
                       <option key={c.id} value={c.id}>
-                        #{c.cheque_number} · {bank?.bank_name ?? "Bank"} · PKR {Number(c.amount).toLocaleString()} · {c.status}
+                        #{c.cheque_number} Â· {bank?.bank_name ?? "Bank"} Â· PKR {Number(c.amount).toLocaleString()} Â· {c.status}
                       </option>
                     );
                   })}
               </select>
               <p className="text-xs text-slate-500 mt-1">
-                Cashflow recognises this expense only when the cheque is marked Cleared in Bank Accounts → Cheques.
+                Cashflow recognises this expense only when the cheque is marked Cleared in Bank Accounts â†’ Cheques.
               </p>
             </div>
           )}
@@ -2473,7 +2473,7 @@ export default function Expenses() {
                   <option value="">Select vendor</option>
                   {vendors.map((v) => (
                     <option key={v.id} value={v.id}>
-                      {v.name}{v.account_number ? ` · ${v.account_number}` : ""}
+                      {v.name}{v.account_number ? ` Â· ${v.account_number}` : ""}
                     </option>
                   ))}
                 </select>
@@ -2493,7 +2493,7 @@ export default function Expenses() {
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
                 />
                 <p className="text-xs text-slate-500 mt-1">
-                  This expense will appear in Accounting → Accounts Payable until it is marked Paid.
+                  This expense will appear in Accounting â†’ Accounts Payable until it is marked Paid.
                 </p>
               </div>
             </>
@@ -2561,7 +2561,7 @@ export default function Expenses() {
         </div>
         <div className="flex items-center gap-3 pt-4">
           <Button variant="primary" size="md" className="flex-1" disabled={isSubmitting}>
-            {isSubmitting ? "Saving…" : submitLabel}
+            {isSubmitting ? "Savingâ€¦" : submitLabel}
           </Button>
           <Button variant="secondary" size="md" onClick={onCancel}>
             Cancel

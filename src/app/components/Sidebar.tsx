@@ -73,7 +73,7 @@ export default function Sidebar({ title, links }: SidebarProps) {
             className={({ isActive }) =>
               `flex items-center gap-3 px-4 py-2.5 rounded-md text-sm transition-colors ${
                 isActive
-                  ? "bg-blue-50 text-blue-700 border-l-2 border-blue-600"
+                  ? "bg-brand-50 text-brand-700 border-l-2 border-brand-600"
                   : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
               }`
             }
@@ -198,7 +198,7 @@ function SidebarGroupNode({ group, activePath }: { group: SidebarGroup; activePa
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
                   isActive
-                    ? "bg-blue-50 text-blue-700"
+                    ? "bg-brand-50 text-brand-700"
                     : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                 }`
               }

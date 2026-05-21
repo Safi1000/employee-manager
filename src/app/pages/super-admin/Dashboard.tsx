@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { Users, Calendar, Receipt, DollarSign, Building2, TrendingUp, AlertCircle, Loader2, Trophy } from "lucide-react";
 import Header from "../../components/Header";
 import StatCard from "../../components/StatCard";
@@ -48,9 +48,9 @@ const deltaLabel = (curr: number, prev: number): { value: string; positive: bool
 };
 
 const PRIORITY_COLOR: Record<string, string> = {
-  critical: "text-red-700 bg-red-50",
-  high: "text-amber-700 bg-amber-50",
-  medium: "text-blue-700 bg-blue-50",
+  critical: "text-danger-700 bg-danger-50",
+  high: "text-warning-700 bg-warning-50",
+  medium: "text-brand-700 bg-brand-50",
   low: "text-slate-600 bg-slate-100",
 };
 
@@ -116,7 +116,7 @@ export default function SuperAdminDashboard() {
           return d.toISOString().slice(0, 10);
         })();
 
-        // Fan out — all under RLS, so a branched user gets only their slice.
+        // Fan out â€” all under RLS, so a branched user gets only their slice.
         const [
           empRes,
           attTodayRes,
@@ -331,11 +331,11 @@ export default function SuperAdminDashboard() {
 
       <div className="flex-1 overflow-y-auto p-4 md:p-8">
         {error && (
-          <div className="mb-4 p-3 bg-red-50 text-red-700 border border-red-200 rounded text-sm">{error}</div>
+          <div className="mb-4 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded text-sm">{error}</div>
         )}
 
         {branchScopeNote && (
-          <div className="mb-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-50 text-blue-700 text-xs">
+          <div className="mb-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-brand-50 text-brand-700 text-xs">
             <Building2 className="w-3.5 h-3.5" strokeWidth={1.5} />
             {branchScopeNote}
           </div>
@@ -352,19 +352,20 @@ export default function SuperAdminDashboard() {
 
         {loading ? (
           <div className="bg-white border border-slate-200 rounded-lg p-10 text-center text-slate-500">
-            <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading dashboard…
+            <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading dashboardâ€¦
           </div>
         ) : (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8">
               {can.employees && show("stat_employees") && (
-                <StatCard title="Total Employees" value={employeeCount} icon={Users} />
+                <StatCard title="Total Employees" value={employeeCount} icon={Users} tone="brand" />
               )}
               {can.attendance && show("stat_attendance_today") && (
                 <StatCard
                   title="Attendance Today"
                   value={`${attendanceTodayPct}%`}
                   icon={Calendar}
+                  tone="success"
                   trend={
                     attendanceTodayPct === 0 && attendanceYesterdayPct === 0
                       ? undefined
@@ -379,17 +380,19 @@ export default function SuperAdminDashboard() {
               )}
               {can.expenses && show("stat_expenses_mtd") && (
                 <StatCard
-                  title={`Expenses · ${monthLabel(0)}`}
+                  title={`Expenses Â· ${monthLabel(0)}`}
                   value={compact(expensesMtd)}
                   icon={Receipt}
+                  tone="warning"
                   trend={deltaLabel(expensesMtd, expensesPrev)}
                 />
               )}
               {can.payroll && show("stat_payroll_mtd") && (
                 <StatCard
-                  title={`Payroll · ${monthLabel(0)}`}
+                  title={`Payroll Â· ${monthLabel(0)}`}
                   value={compact(payrollMtd)}
                   icon={DollarSign}
+                  tone="info"
                   trend={deltaLabel(payrollMtd, payrollPrev)}
                 />
               )}
@@ -400,7 +403,7 @@ export default function SuperAdminDashboard() {
                 <div className="bg-white rounded-lg border border-slate-200 p-6">
                   <div className="flex items-center justify-between mb-6">
                     <h3 className="text-base text-slate-900">Bank Account Overview</h3>
-                    <Building2 className="w-5 h-5 text-blue-600" strokeWidth={1.5} />
+                    <Building2 className="w-5 h-5 text-brand-600" strokeWidth={1.5} />
                   </div>
                   {banks.length === 0 ? (
                     <p className="text-sm text-slate-500">No bank accounts yet.</p>
@@ -438,12 +441,12 @@ export default function SuperAdminDashboard() {
                   <div className="flex items-center justify-between mb-6">
                     <div>
                       <h3 className="text-base text-slate-900 flex items-center gap-2">
-                        <Trophy className="w-4 h-4 text-amber-500" strokeWidth={1.5} />
-                        Top 10 Clients · {monthLabel(0)}
+                        <Trophy className="w-4 h-4 text-warning-500" strokeWidth={1.5} />
+                        Top 10 Clients Â· {monthLabel(0)}
                       </h3>
                       <p className="text-xs text-slate-500 mt-0.5">By payments received this month.</p>
                     </div>
-                    <TrendingUp className="w-5 h-5 text-green-600" strokeWidth={1.5} />
+                    <TrendingUp className="w-5 h-5 text-success-600" strokeWidth={1.5} />
                   </div>
                   {topClients.length === 0 ? (
                     <p className="text-sm text-slate-500">No client payments received this month yet.</p>
@@ -459,7 +462,7 @@ export default function SuperAdminDashboard() {
                             </div>
                             <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
                               <div
-                                className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-emerald-600"
+                                className="h-full rounded-full bg-gradient-to-r from-success-400 to-success-600"
                                 style={{ width: `${Math.max(2, (c.revenue / maxClient) * 100)}%` }}
                               />
                             </div>
@@ -475,7 +478,7 @@ export default function SuperAdminDashboard() {
             <div className={`grid grid-cols-1 ${can.attendance && show("attendance_trend") && show("compliance_alerts") ? "lg:grid-cols-2" : ""} gap-6 mb-6 md:mb-8`}>
               {can.attendance && show("attendance_trend") && (
                 <div className="bg-white rounded-lg border border-slate-200 p-6">
-                  <h3 className="text-base mb-6 text-slate-900">Attendance Trend · Last 7 Days</h3>
+                  <h3 className="text-base mb-6 text-slate-900">Attendance Trend Â· Last 7 Days</h3>
                   {attendanceTrend.every((p) => p.present + p.absent + p.leave === 0) ? (
                     <p className="text-sm text-slate-500">No attendance recorded in the last 7 days.</p>
                   ) : (
@@ -486,9 +489,9 @@ export default function SuperAdminDashboard() {
                         <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
                         <Tooltip />
                         <Legend />
-                        <Line type="monotone" dataKey="present" stroke="#10b981" strokeWidth={2} dot={{ fill: "#10b981" }} name="Present" />
-                        <Line type="monotone" dataKey="absent" stroke="#ef4444" strokeWidth={2} dot={{ fill: "#ef4444" }} name="Absent" />
-                        <Line type="monotone" dataKey="leave" stroke="#f59e0b" strokeWidth={2} dot={{ fill: "#f59e0b" }} name="Leave" />
+                        <Line type="monotone" dataKey="present" stroke="var(--color-success-500)" strokeWidth={2} dot={{ fill: "var(--color-success-500)" }} name="Present" />
+                        <Line type="monotone" dataKey="absent" stroke="var(--color-danger-500)" strokeWidth={2} dot={{ fill: "var(--color-danger-500)" }} name="Absent" />
+                        <Line type="monotone" dataKey="leave" stroke="var(--color-warning-500)" strokeWidth={2} dot={{ fill: "var(--color-warning-500)" }} name="Leave" />
                       </LineChart>
                     </ResponsiveContainer>
                   )}
@@ -498,7 +501,7 @@ export default function SuperAdminDashboard() {
               {show("compliance_alerts") && (
               <div className="bg-white rounded-lg border border-slate-200">
                 <div className="p-6 border-b border-slate-200">
-                  <h3 className="text-base text-slate-900">Upcoming Compliance · Next 30 Days</h3>
+                  <h3 className="text-base text-slate-900">Upcoming Compliance Â· Next 30 Days</h3>
                 </div>
                 {alerts.length === 0 ? (
                   <div className="p-6 text-sm text-slate-500">Nothing due in the next 60 days.</div>
@@ -512,7 +515,7 @@ export default function SuperAdminDashboard() {
                       const priorityClass = PRIORITY_COLOR[a.priority] ?? PRIORITY_COLOR.low;
                       return (
                         <div key={a.id} className="p-4 flex items-start gap-3 hover:bg-slate-50 transition-colors">
-                          <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" strokeWidth={1.5} />
+                          <AlertCircle className="w-4 h-4 text-warning-600 flex-shrink-0 mt-0.5" strokeWidth={1.5} />
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
                               <p className="text-sm text-slate-900 truncate">{a.title}</p>
@@ -520,7 +523,7 @@ export default function SuperAdminDashboard() {
                                 {a.priority}
                               </span>
                             </div>
-                            <p className="text-xs text-slate-500">{a.category} · due {a.due_date}</p>
+                            <p className="text-xs text-slate-500">{a.category} Â· due {a.due_date}</p>
                           </div>
                           <span className="text-xs text-slate-400 tabular-nums">
                             {daysLeft === 0 ? "today" : `${daysLeft}d`}

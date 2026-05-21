@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { Search, FileText, Download, AlertCircle, Loader2, X, Upload } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -29,9 +29,9 @@ type EditForm = {
 };
 
 const formatDate = (iso: string | null) => {
-  if (!iso) return "—";
+  if (!iso) return "â€”";
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
+  if (Number.isNaN(d.getTime())) return "â€”";
   return d.toISOString().slice(0, 10);
 };
 
@@ -255,7 +255,7 @@ export default function Documents() {
 
       <div className="flex-1 overflow-y-auto p-8">
         {error && (
-          <div className="mb-4 flex items-start gap-2 p-3 bg-red-50 text-red-700 border border-red-200 rounded-md text-sm">
+          <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
             <div className="flex-1">{error}</div>
             <button onClick={() => setError(null)}>
@@ -329,7 +329,7 @@ export default function Documents() {
                 {loading && (
                   <tr>
                     <td colSpan={9} className="px-6 py-10 text-center text-slate-500">
-                      <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
+                      <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loadingâ€¦
                     </td>
                   </tr>
                 )}
@@ -347,18 +347,18 @@ export default function Documents() {
                         {emp.employee_code}
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-900">{emp.full_name}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{emp.phone ?? "—"}</td>
+                      <td className="px-6 py-4 text-sm text-slate-600">{emp.phone ?? "â€”"}</td>
                       <td className="px-6 py-4 text-sm text-slate-600">
-                        {emp.location_name ?? "—"}
+                        {emp.location_name ?? "â€”"}
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-600">
-                        {emp.client_name ?? "—"}
+                        {emp.client_name ?? "â€”"}
                       </td>
                       <td className="px-6 py-4">
                         <span
                           className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs capitalize ${
                             emp.shift === "day"
-                              ? "bg-amber-50 text-amber-700"
+                              ? "bg-warning-50 text-warning-700"
                               : "bg-indigo-50 text-indigo-700"
                           }`}
                         >
@@ -414,7 +414,7 @@ export default function Documents() {
               </div>
               <div>
                 <p className="text-slate-500 mb-1">Phone</p>
-                <p className="text-slate-900">{viewing.phone ?? "—"}</p>
+                <p className="text-slate-900">{viewing.phone ?? "â€”"}</p>
               </div>
               <div>
                 <p className="text-slate-500 mb-1">Shift</p>
@@ -422,11 +422,11 @@ export default function Documents() {
               </div>
               <div>
                 <p className="text-slate-500 mb-1">Location</p>
-                <p className="text-slate-900">{viewing.location_name ?? "—"}</p>
+                <p className="text-slate-900">{viewing.location_name ?? "â€”"}</p>
               </div>
               <div>
                 <p className="text-slate-500 mb-1">Client</p>
-                <p className="text-slate-900">{viewing.client_name ?? "—"}</p>
+                <p className="text-slate-900">{viewing.client_name ?? "â€”"}</p>
               </div>
               <div>
                 <p className="text-slate-500 mb-1">Last Updated</p>
@@ -456,7 +456,7 @@ export default function Documents() {
               </div>
               {viewLoading ? (
                 <div className="text-sm text-slate-500 flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+                  <Loader2 className="w-4 h-4 animate-spin" /> Loadingâ€¦
                 </div>
               ) : viewDocs.length === 0 ? (
                 <p className="text-sm text-slate-500">No documents uploaded yet.</p>
@@ -472,7 +472,7 @@ export default function Documents() {
                         <div className="min-w-0">
                           <p className="text-sm text-slate-900 truncate">{d.file_name}</p>
                           <p className="text-xs text-slate-500 mt-0.5">
-                            {d.doc_type} · Uploaded {formatDate(d.uploaded_at ?? null)}
+                            {d.doc_type} Â· Uploaded {formatDate(d.uploaded_at ?? null)}
                           </p>
                         </div>
                       </div>
@@ -498,7 +498,7 @@ export default function Documents() {
                         <button
                           type="button"
                           onClick={() => deleteDoc(d)}
-                          className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-red-700 hover:bg-red-50"
+                          className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-danger-700 hover:bg-danger-50"
                           title="Delete"
                         >
                           <X className="w-4 h-4" strokeWidth={1.5} />
@@ -576,7 +576,7 @@ export default function Documents() {
 
             <div className="flex items-center gap-3 pt-4">
               <Button variant="primary" size="md" className="flex-1" disabled={editSubmitting}>
-                {editSubmitting ? "Uploading…" : "Save Documents"}
+                {editSubmitting ? "Uploadingâ€¦" : "Save Documents"}
               </Button>
               <Button
                 variant="secondary"

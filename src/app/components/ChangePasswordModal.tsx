@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { Lock, Loader2 } from "lucide-react";
 import Modal from "./Modal";
 import Button from "./Button";
@@ -66,10 +66,10 @@ export default function ChangePasswordModal({ isOpen, onClose }: ChangePasswordM
     <Modal isOpen={isOpen} onClose={handleClose} title="Change Password" size="sm">
       {success ? (
         <div className="text-center py-4">
-          <div className="w-12 h-12 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-3">
-            <Lock className="w-6 h-6 text-green-600" strokeWidth={1.5} />
+          <div className="w-12 h-12 bg-success-50 rounded-full flex items-center justify-center mx-auto mb-3">
+            <Lock className="w-6 h-6 text-success-600" strokeWidth={1.5} />
           </div>
-          <p className="text-sm text-green-700 font-medium">Password changed successfully!</p>
+          <p className="text-sm text-success-700 font-medium">Password changed successfully!</p>
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -80,7 +80,7 @@ export default function ChangePasswordModal({ isOpen, onClose }: ChangePasswordM
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
               required
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
             />
           </div>
 
@@ -93,7 +93,7 @@ export default function ChangePasswordModal({ isOpen, onClose }: ChangePasswordM
               required
               minLength={8}
               placeholder="At least 8 characters"
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
             />
           </div>
 
@@ -105,12 +105,12 @@ export default function ChangePasswordModal({ isOpen, onClose }: ChangePasswordM
               onChange={(e) => setConfirmPassword(e.target.value)}
               required
               minLength={8}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
             />
           </div>
 
           {error && (
-            <div className="text-sm text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded">{error}</div>
+            <div className="text-sm text-danger-600 bg-danger-50 border border-danger-200 px-3 py-2 rounded">{error}</div>
           )}
 
           <div className="flex items-center gap-3 pt-1">

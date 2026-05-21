@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { Search, Download, AlertCircle, X, Loader2 } from "lucide-react";
 import jsPDF from "jspdf";
 import Header from "../../components/Header";
@@ -79,7 +79,7 @@ type PayrollManagementProps = { relieversOnly?: boolean };
 export default function PayrollManagement({ relieversOnly = false }: PayrollManagementProps = {}) {
   const today = new Date();
   const currentPeriod = firstOfMonth(today);
-  // Default the filter to the previous month — payroll is typically processed
+  // Default the filter to the previous month â€” payroll is typically processed
   // after a month has ended.
   const previousPeriod = firstOfMonth(new Date(today.getFullYear(), today.getMonth() - 1, 1));
 
@@ -156,7 +156,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     const carryWindowStartIso = `${carryWindowStart.getFullYear()}-${String(
       carryWindowStart.getMonth() + 1
     ).padStart(2, "0")}-01`;
-    // Server-side aggregation RPCs — raw SELECT was hitting PostgREST's
+    // Server-side aggregation RPCs â€” raw SELECT was hitting PostgREST's
     // ~1000-row response cap once a company crossed ~30 employees with full
     // month coverage, silently dropping attendance for most people.
     const [attRes, payRes, advRes, attHistRes] = await Promise.all([
@@ -545,7 +545,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
 
   const markAllCleared = async () => {
     // Cleared = status is "Cleared"; this just flips Pending rows in the
-    // current filter. No money moves — purely a status change.
+    // current filter. No money moves â€” purely a status change.
     const pending = filtered.filter((r) => r.status === "Pending");
     if (pending.length === 0) {
       setError("No pending rows in the current filter to clear.");
@@ -613,7 +613,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
             amount: row.net_salary,
             cash_delta: 0,
             account_delta: -row.net_salary,
-            description: `Payroll ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
+            description: `Payroll ${formatPeriod(row.period_month)} Â· ${row.employee.employee_code} ${row.employee.full_name}`,
           });
         } else if (row.payment_mode === "Cheque") {
           if (!row.cheque_id) {
@@ -651,7 +651,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
             amount: row.net_salary,
             cash_delta: -row.net_salary,
             account_delta: 0,
-            description: `Payroll (cash) ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
+            description: `Payroll (cash) ${formatPeriod(row.period_month)} Â· ${row.employee.employee_code} ${row.employee.full_name}`,
           });
         }
         await savePayslip({
@@ -678,7 +678,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
             amount: row.net_salary,
             cash_delta: 0,
             account_delta: row.net_salary,
-            description: `Reverse payroll ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
+            description: `Reverse payroll ${formatPeriod(row.period_month)} Â· ${row.employee.employee_code} ${row.employee.full_name}`,
           });
         } else if (row.payment_mode === "Cheque") {
           // Cheque-paid: do not touch bank balance. Un-disburse only flips the flag.
@@ -703,7 +703,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
             amount: row.net_salary,
             cash_delta: row.net_salary,
             account_delta: 0,
-            description: `Reverse payroll (cash) ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
+            description: `Reverse payroll (cash) ${formatPeriod(row.period_month)} Â· ${row.employee.employee_code} ${row.employee.full_name}`,
           });
         }
         await savePayslip({ ...row, disbursed: false, disbursed_at: null });
@@ -773,7 +773,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
             amount: net,
             cash_delta: 0,
             account_delta: -net,
-            description: `Payroll ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
+            description: `Payroll ${formatPeriod(row.period_month)} Â· ${row.employee.employee_code} ${row.employee.full_name}`,
           });
         } else {
           const { data: trea } = await supabase
@@ -798,7 +798,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
             amount: net,
             cash_delta: -net,
             account_delta: 0,
-            description: `Payroll (cash) ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
+            description: `Payroll (cash) ${formatPeriod(row.period_month)} Â· ${row.employee.employee_code} ${row.employee.full_name}`,
           });
         }
         await savePayslip({
@@ -877,16 +877,16 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     line("Base Salary", `PKR ${row.base_salary.toLocaleString()}`);
     if (row.per_day_salary != null)
       line("Per Day Salary", `PKR ${Number(row.per_day_salary).toLocaleString()}`);
-    line("Earned (Per Day × Paid Days)", `PKR ${Math.round((row.per_day_salary ?? 0) * row.effective_present_days).toLocaleString()}`);
+    line("Earned (Per Day Ã— Paid Days)", `PKR ${Math.round((row.per_day_salary ?? 0) * row.effective_present_days).toLocaleString()}`);
     line("Bonus", `PKR ${row.bonus.toLocaleString()}`);
     line("Deductions", `PKR ${row.deductions.toLocaleString()}`);
     y += 4;
     doc.setFontSize(12);
-    line("Final Salary (Earned + Bonus − Deductions)", `PKR ${row.final_salary.toLocaleString()}`);
+    line("Final Salary (Earned + Bonus âˆ’ Deductions)", `PKR ${row.final_salary.toLocaleString()}`);
     doc.setFontSize(11);
-    if (row.income_tax > 0) line("Income Tax (1% over PKR 50,000)", `− PKR ${Math.round(row.income_tax).toLocaleString()}`);
-    if (row.eobi > 0) line("EOBI", `− PKR ${Math.round(row.eobi).toLocaleString()}`);
-    line("Advance", `− PKR ${row.advance.toLocaleString()}`);
+    if (row.income_tax > 0) line("Income Tax (1% over PKR 50,000)", `âˆ’ PKR ${Math.round(row.income_tax).toLocaleString()}`);
+    if (row.eobi > 0) line("EOBI", `âˆ’ PKR ${Math.round(row.eobi).toLocaleString()}`);
+    line("Advance", `âˆ’ PKR ${row.advance.toLocaleString()}`);
     y += 6;
     doc.setFontSize(14);
     line("Net Salary", `PKR ${row.net_salary.toLocaleString()}`);
@@ -895,7 +895,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     line("Payment Mode", row.payment_mode);
     if (row.payment_mode === "Bank" && row.bank_account_id) {
       const bank = banks.find((b) => b.id === row.bank_account_id);
-      if (bank) line("Bank Account", `${bank.bank_name} · ${bank.account_number}`);
+      if (bank) line("Bank Account", `${bank.bank_name} Â· ${bank.account_number}`);
     }
     line("Status", row.status);
     line("Disbursed", row.disbursed ? "Yes" : "No");
@@ -908,7 +908,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     <>
       <BusyOverlay
         show={bulkSubmitting || bulkClearing}
-        message={bulkSubmitting ? "Disbursing payslips…" : "Clearing payslips…"}
+        message={bulkSubmitting ? "Disbursing payslipsâ€¦" : "Clearing payslipsâ€¦"}
         detail="This may take a moment for large batches. Please don't close this tab."
       />
       <Header
@@ -926,7 +926,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
               disabled={bulkClearing}
             >
               {bulkClearing && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              {bulkClearing ? "Clearing…" : "Mark All as Cleared"}
+              {bulkClearing ? "Clearingâ€¦" : "Mark All as Cleared"}
             </Button>
             <Button
               variant="primary"
@@ -945,7 +945,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
 
       <div className="flex-1 overflow-y-auto p-8">
         {error && (
-          <div className="mb-4 flex items-start gap-2 p-3 bg-red-50 text-red-700 border border-red-200 rounded-md text-sm">
+          <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
             <div className="flex-1">{error}</div>
             <button onClick={() => setError(null)}>
@@ -955,32 +955,32 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="bg-emerald-50 p-4 rounded-lg border border-emerald-200">
-            <p className="text-xs text-emerald-700 mb-1">Total Disbursed</p>
-            <p className="text-2xl text-emerald-900">
+          <div className="bg-success-50 p-4 rounded-lg border border-success-200">
+            <p className="text-xs text-success-700 mb-1">Total Disbursed</p>
+            <p className="text-2xl text-success-900">
               PKR {payrollTotals.disbursed.toLocaleString()}
             </p>
-            <p className="text-xs text-emerald-700/70 mt-0.5">
+            <p className="text-xs text-success-700/70 mt-0.5">
               {filtered.filter((r) => r.disbursed).length} payslip
               {filtered.filter((r) => r.disbursed).length === 1 ? "" : "s"}
             </p>
           </div>
-          <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
-            <p className="text-xs text-amber-700 mb-1">Total Not Disbursed</p>
-            <p className="text-2xl text-amber-900">
+          <div className="bg-warning-50 p-4 rounded-lg border border-warning-200">
+            <p className="text-xs text-warning-700 mb-1">Total Not Disbursed</p>
+            <p className="text-2xl text-warning-900">
               PKR {payrollTotals.notDisbursed.toLocaleString()}
             </p>
-            <p className="text-xs text-amber-700/70 mt-0.5">
+            <p className="text-xs text-warning-700/70 mt-0.5">
               {filtered.filter((r) => !r.disbursed).length} payslip
               {filtered.filter((r) => !r.disbursed).length === 1 ? "" : "s"}
             </p>
           </div>
-          <div className="bg-rose-50 p-4 rounded-lg border border-rose-200">
-            <p className="text-xs text-rose-700 mb-1">Total Advance</p>
-            <p className="text-2xl text-rose-900">
+          <div className="bg-danger-50 p-4 rounded-lg border border-danger-200">
+            <p className="text-xs text-danger-700 mb-1">Total Advance</p>
+            <p className="text-2xl text-danger-900">
               PKR {payrollTotals.advance.toLocaleString()}
             </p>
-            <p className="text-xs text-rose-700/70 mt-0.5">
+            <p className="text-xs text-danger-700/70 mt-0.5">
               for {formatPeriod(selectedPeriod)}
             </p>
           </div>
@@ -1000,7 +1000,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                       type="text"
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
-                      placeholder="Search by employee ID, name, or phone…"
+                      placeholder="Search by employee ID, name, or phoneâ€¦"
                       className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                     />
                   </div>
@@ -1095,7 +1095,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                       <tr>
                         <td colSpan={8} className="px-6 py-10 text-center text-slate-500">
                           <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
-                          Loading…
+                          Loadingâ€¦
                         </td>
                       </tr>
                     )}
@@ -1121,19 +1121,19 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                               <div className="text-sm text-slate-900">{e.full_name}</div>
                               <div className="text-xs text-slate-500 font-mono">
                                 {e.employee_code}
-                                {e.phone ? ` · ${e.phone}` : ""}
+                                {e.phone ? ` Â· ${e.phone}` : ""}
                               </div>
                             </td>
                             <td className="px-4 py-3 text-sm text-slate-700">
-                              {e.client_name ?? <span className="text-slate-400">—</span>}
+                              {e.client_name ?? <span className="text-slate-400">â€”</span>}
                             </td>
                             <td className="px-4 py-3 text-xs text-slate-600">
                               <div>
-                                <span className="text-green-700">P {row.present_days}</span>
+                                <span className="text-success-700">P {row.present_days}</span>
                                 {" / "}
-                                <span className="text-red-700">A {row.absent_days}</span>
+                                <span className="text-danger-700">A {row.absent_days}</span>
                                 {" / "}
-                                <span className="text-amber-700">L {row.leave_days}</span>
+                                <span className="text-warning-700">L {row.leave_days}</span>
                               </div>
                               <div className="text-slate-400">of {row.working_days} wd</div>
                             </td>
@@ -1153,8 +1153,8 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                                 }}
                                 className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
                                   row.status === "Cleared"
-                                    ? "bg-green-50 text-green-700 hover:bg-green-100"
-                                    : "bg-amber-50 text-amber-700 hover:bg-amber-100"
+                                    ? "bg-success-50 text-success-700 hover:bg-success-100"
+                                    : "bg-warning-50 text-warning-700 hover:bg-warning-100"
                                 }`}
                               >
                                 {row.status}
@@ -1176,7 +1176,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                                 }}
                                 className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
                                   row.disbursed
-                                    ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                    ? "bg-success-50 text-success-700 hover:bg-success-100"
                                     : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                                 }`}
                               >
@@ -1209,7 +1209,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
               <h3 className="text-base mb-4 text-slate-900">
                 Salary Calculation
                 {!isCurrent && (
-                  <span className="ml-2 text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded">
+                  <span className="ml-2 text-xs text-warning-700 bg-warning-50 px-2 py-0.5 rounded">
                     History
                   </span>
                 )}
@@ -1230,15 +1230,15 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                     </div>
                     <div className="flex justify-between">
                       <span className="text-slate-500">Present</span>
-                      <span className="text-green-600">{selectedRow.present_days}</span>
+                      <span className="text-success-600">{selectedRow.present_days}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-slate-500">Absent</span>
-                      <span className="text-red-600">{selectedRow.absent_days}</span>
+                      <span className="text-danger-600">{selectedRow.absent_days}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-slate-500">Leave</span>
-                      <span className="text-amber-600">{selectedRow.leave_days}</span>
+                      <span className="text-warning-600">{selectedRow.leave_days}</span>
                     </div>
                   </div>
 
@@ -1287,7 +1287,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                     </div>
                     <div className="col-span-2">
                       <label className="block text-xs text-slate-500 mb-1">
-                        Advance <span className="text-slate-400">(from Expenses · Advances)</span>
+                        Advance <span className="text-slate-400">(from Expenses Â· Advances)</span>
                       </label>
                       <input
                         type="number"
@@ -1296,7 +1296,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                         className="w-full px-2 py-1 border border-slate-200 rounded text-sm bg-slate-50 text-slate-500"
                       />
                       <p className="text-xs text-slate-400 mt-1">
-                        Sum of advances recorded for {formatPeriod(selectedPeriod)}. Edit in Expenses → Advances.
+                        Sum of advances recorded for {formatPeriod(selectedPeriod)}. Edit in Expenses â†’ Advances.
                       </p>
                     </div>
                   </div>
@@ -1313,7 +1313,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                     {!selectedRow.override_leaves && selectedRow.extra_leave_absent > 0 && (
                       <div className="flex justify-between text-xs">
                         <span className="text-slate-500">Absent due to extra leaves</span>
-                        <span className="text-red-600">+{selectedRow.extra_leave_absent}</span>
+                        <span className="text-danger-600">+{selectedRow.extra_leave_absent}</span>
                       </div>
                     )}
                     <div className="flex justify-between text-xs">
@@ -1323,9 +1323,9 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                       </span>
                     </div>
                     <div className="flex justify-between text-xs">
-                      <span className="text-slate-500">Per Day × Paid Days</span>
+                      <span className="text-slate-500">Per Day Ã— Paid Days</span>
                       <span className="text-slate-700">
-                        PKR {Number(selectedRow.per_day_salary ?? 0).toLocaleString()} ×{" "}
+                        PKR {Number(selectedRow.per_day_salary ?? 0).toLocaleString()} Ã—{" "}
                         {selectedRow.effective_present_days} = PKR{" "}
                         {Math.round(
                           (selectedRow.per_day_salary ?? 0) *
@@ -1349,8 +1349,8 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                       </span>
                     </label>
                     {selectedRow.override_leaves && (
-                      <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-1">
-                        Override on — all {selectedRow.leave_days} leaves counted as paid days.
+                      <p className="text-xs text-success-700 bg-success-50 border border-success-200 rounded px-2 py-1">
+                        Override on â€” all {selectedRow.leave_days} leaves counted as paid days.
                         Remember to click Save.
                       </p>
                     )}
@@ -1364,18 +1364,18 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                     {selectedRow.income_tax > 0 && (
                       <div className="flex justify-between">
                         <span className="text-slate-500">Income Tax (1% over 50K)</span>
-                        <span className="text-rose-700">− PKR {Math.round(selectedRow.income_tax).toLocaleString()}</span>
+                        <span className="text-danger-700">âˆ’ PKR {Math.round(selectedRow.income_tax).toLocaleString()}</span>
                       </div>
                     )}
                     {selectedRow.eobi > 0 && (
                       <div className="flex justify-between">
                         <span className="text-slate-500">EOBI</span>
-                        <span className="text-rose-700">− PKR {Math.round(selectedRow.eobi).toLocaleString()}</span>
+                        <span className="text-danger-700">âˆ’ PKR {Math.round(selectedRow.eobi).toLocaleString()}</span>
                       </div>
                     )}
                     <div className="flex justify-between">
                       <span className="text-slate-500">Advance</span>
-                      <span className="text-rose-700">− PKR {Math.round(selectedRow.advance).toLocaleString()}</span>
+                      <span className="text-danger-700">âˆ’ PKR {Math.round(selectedRow.advance).toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between pt-1 border-t border-slate-100">
                       <span className="text-base text-slate-900">Net Salary</span>
@@ -1412,7 +1412,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                         <option value="">Select bank account</option>
                         {banks.map((b) => (
                           <option key={b.id} value={b.id}>
-                            {b.bank_name} · {b.account_number} (PKR {Number(b.balance).toLocaleString()})
+                            {b.bank_name} Â· {b.account_number} (PKR {Number(b.balance).toLocaleString()})
                           </option>
                         ))}
                       </select>
@@ -1440,20 +1440,20 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                               const remaining = chequeRemaining(c.id, ownPrev);
                               return (
                                 <option key={c.id} value={c.id}>
-                                  #{c.cheque_number} · {bank?.bank_name ?? "Bank"} · PKR {Number(c.amount).toLocaleString()} (remaining PKR {remaining.toLocaleString()}) · {c.status}
+                                  #{c.cheque_number} Â· {bank?.bank_name ?? "Bank"} Â· PKR {Number(c.amount).toLocaleString()} (remaining PKR {remaining.toLocaleString()}) Â· {c.status}
                                 </option>
                               );
                             })}
                         </select>
                         <p className="text-[11px] text-slate-500">
-                          Cashflow recognises this salary only after the cheque is marked Cleared in Bank Accounts → Cheques.
+                          Cashflow recognises this salary only after the cheque is marked Cleared in Bank Accounts â†’ Cheques.
                         </p>
                       </>
                     )}
                   </div>
 
                   {rowError && (
-                    <div className="flex items-start gap-2 p-2 bg-red-50 text-red-700 border border-red-200 rounded text-xs">
+                    <div className="flex items-start gap-2 p-2 bg-danger-50 text-danger-700 border border-danger-200 rounded text-xs">
                       <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" strokeWidth={2} />
                       <div className="flex-1">{rowError}</div>
                       <button type="button" onClick={() => setRowError(null)}>
@@ -1493,7 +1493,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                       onClick={() => handleSaveRow(selectedRow)}
                       disabled={savingId === selectedRow.employee.id}
                     >
-                      {savingId === selectedRow.employee.id ? "Saving…" : "Save"}
+                      {savingId === selectedRow.employee.id ? "Savingâ€¦" : "Save"}
                     </Button>
                     <Button
                       variant="primary"
@@ -1556,17 +1556,17 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                   <p className="text-xs text-slate-500">Working</p>
                   <p className="text-slate-900">{payslipData.working_days}</p>
                 </div>
-                <div className="bg-green-50 p-2 rounded">
-                  <p className="text-xs text-green-700">Present</p>
-                  <p className="text-green-900">{payslipData.present_days}</p>
+                <div className="bg-success-50 p-2 rounded">
+                  <p className="text-xs text-success-700">Present</p>
+                  <p className="text-success-900">{payslipData.present_days}</p>
                 </div>
-                <div className="bg-red-50 p-2 rounded">
-                  <p className="text-xs text-red-700">Absent</p>
-                  <p className="text-red-900">{payslipData.absent_days}</p>
+                <div className="bg-danger-50 p-2 rounded">
+                  <p className="text-xs text-danger-700">Absent</p>
+                  <p className="text-danger-900">{payslipData.absent_days}</p>
                 </div>
-                <div className="bg-amber-50 p-2 rounded">
-                  <p className="text-xs text-amber-700">Leave</p>
-                  <p className="text-amber-900">{payslipData.leave_days}</p>
+                <div className="bg-warning-50 p-2 rounded">
+                  <p className="text-xs text-warning-700">Leave</p>
+                  <p className="text-warning-900">{payslipData.leave_days}</p>
                 </div>
               </div>
             </div>
@@ -1581,13 +1581,13 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                 {payslipData.override_leaves && (
                   <div className="flex justify-between">
                     <span className="text-slate-600">Leave Override</span>
-                    <span className="text-emerald-700">Yes (all leaves paid)</span>
+                    <span className="text-success-700">Yes (all leaves paid)</span>
                   </div>
                 )}
                 {payslipData.extra_leave_absent > 0 && !payslipData.override_leaves && (
                   <div className="flex justify-between">
                     <span className="text-slate-600">Absent (extra leaves)</span>
-                    <span className="text-red-600">{payslipData.extra_leave_absent}</span>
+                    <span className="text-danger-600">{payslipData.extra_leave_absent}</span>
                   </div>
                 )}
                 <div className="flex justify-between">
@@ -1609,7 +1609,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                   </div>
                 )}
                 <div className="flex justify-between">
-                  <span className="text-slate-600">Earned (Per Day × Paid Days)</span>
+                  <span className="text-slate-600">Earned (Per Day Ã— Paid Days)</span>
                   <span className="text-slate-900">
                     PKR{" "}
                     {Math.round(
@@ -1620,11 +1620,11 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-600">Bonus</span>
-                  <span className="text-green-600">+ PKR {payslipData.bonus.toLocaleString()}</span>
+                  <span className="text-success-600">+ PKR {payslipData.bonus.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-600">Deductions</span>
-                  <span className="text-red-600">− PKR {payslipData.deductions.toLocaleString()}</span>
+                  <span className="text-danger-600">âˆ’ PKR {payslipData.deductions.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between pt-2 border-t border-slate-200">
                   <span className="text-slate-700">Final Salary</span>
@@ -1633,18 +1633,18 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                 {payslipData.income_tax > 0 && (
                   <div className="flex justify-between">
                     <span className="text-slate-600">Income Tax (1% over PKR 50,000)</span>
-                    <span className="text-red-600">− PKR {Math.round(payslipData.income_tax).toLocaleString()}</span>
+                    <span className="text-danger-600">âˆ’ PKR {Math.round(payslipData.income_tax).toLocaleString()}</span>
                   </div>
                 )}
                 {payslipData.eobi > 0 && (
                   <div className="flex justify-between">
                     <span className="text-slate-600">EOBI</span>
-                    <span className="text-red-600">− PKR {Math.round(payslipData.eobi).toLocaleString()}</span>
+                    <span className="text-danger-600">âˆ’ PKR {Math.round(payslipData.eobi).toLocaleString()}</span>
                   </div>
                 )}
                 <div className="flex justify-between">
                   <span className="text-slate-600">Advance</span>
-                  <span className="text-red-600">− PKR {payslipData.advance.toLocaleString()}</span>
+                  <span className="text-danger-600">âˆ’ PKR {payslipData.advance.toLocaleString()}</span>
                 </div>
               </div>
             </div>
@@ -1740,7 +1740,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                     <option value="">Select bank account</option>
                     {banks.map((b) => (
                       <option key={b.id} value={b.id}>
-                        {b.bank_name} · {b.account_number} (PKR {Number(b.balance).toLocaleString()})
+                        {b.bank_name} Â· {b.account_number} (PKR {Number(b.balance).toLocaleString()})
                       </option>
                     ))}
                   </select>
@@ -1775,7 +1775,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                   disabled={bulkSubmitting || candidates.length === 0}
                 >
                   {bulkSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                  {bulkSubmitting ? `Disbursing ${candidates.length} payslip${candidates.length === 1 ? "" : "s"}…` : `Disburse ${candidates.length} Payslip${candidates.length === 1 ? "" : "s"}`}
+                  {bulkSubmitting ? `Disbursing ${candidates.length} payslip${candidates.length === 1 ? "" : "s"}â€¦` : `Disburse ${candidates.length} Payslip${candidates.length === 1 ? "" : "s"}`}
                 </Button>
                 <Button
                   variant="secondary"
@@ -1802,7 +1802,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
             <p className="text-sm text-slate-600">
               Disbursing payroll for{" "}
               <span className="text-slate-900">{rowDisburseTarget.employee.full_name}</span>{" "}
-              ({rowDisburseTarget.employee.employee_code}) · PKR {rowDisburseTarget.net_salary.toLocaleString()}
+              ({rowDisburseTarget.employee.employee_code}) Â· PKR {rowDisburseTarget.net_salary.toLocaleString()}
             </p>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Disbursement Date *</label>
