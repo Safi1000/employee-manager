@@ -708,23 +708,23 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         {/* Metrics row OR per-employee calendar */}
         {!viewEmployee ? (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            <div className="bg-white rounded-lg border border-slate-200 p-4">
-              <p className="text-xs text-slate-500 mb-1">Present</p>
+            <div className="bg-white rounded-lg border border-slate-200 border-l-4 border-l-success-500 p-4">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Present</p>
               <p className="text-2xl text-success-700">{stats.p}</p>
               <p className="text-[11px] text-slate-400 mt-1">on {date}</p>
             </div>
-            <div className="bg-white rounded-lg border border-slate-200 p-4">
-              <p className="text-xs text-slate-500 mb-1">Absent</p>
+            <div className="bg-white rounded-lg border border-slate-200 border-l-4 border-l-danger-500 p-4">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Absent</p>
               <p className="text-2xl text-danger-700">{stats.a}</p>
               <p className="text-[11px] text-slate-400 mt-1">on {date}</p>
             </div>
-            <div className="bg-white rounded-lg border border-slate-200 p-4">
-              <p className="text-xs text-slate-500 mb-1">Leave</p>
+            <div className="bg-white rounded-lg border border-slate-200 border-l-4 border-l-warning-500 p-4">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Leave</p>
               <p className="text-2xl text-warning-700">{stats.l}</p>
               <p className="text-[11px] text-slate-400 mt-1">on {date}</p>
             </div>
-            <div className="bg-white rounded-lg border border-slate-200 p-4">
-              <p className="text-xs text-slate-500 mb-1">Unmarked</p>
+            <div className="bg-white rounded-lg border border-slate-200 border-l-4 border-l-slate-400 p-4">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Unmarked</p>
               <p className="text-2xl text-slate-700">{stats.unm}</p>
               <p className="text-[11px] text-slate-400 mt-1">{filteredEmployees.length} in filter</p>
             </div>

@@ -2796,21 +2796,21 @@ export default function Accounting() {
             </div>
 
             <div className="grid grid-cols-4 gap-3">
-              <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
-                <p className="text-xs text-slate-600 mb-1">Opening Balance</p>
+              <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-slate-400">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Opening Balance</p>
                 <p className="text-lg text-slate-900">PKR {Number(selectedClient.opening_balance ?? 0).toLocaleString()}</p>
               </div>
-              <div className="bg-brand-50 p-3 rounded-lg border border-brand-200">
+              <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-brand-500">
                 <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Invoiced</p>
-                <p className="text-lg text-brand-900">PKR {selectedClient.total_invoiced.toLocaleString()}</p>
+                <p className="text-lg text-brand-700">PKR {selectedClient.total_invoiced.toLocaleString()}</p>
               </div>
-              <div className="bg-success-50 p-3 rounded-lg border border-success-200">
+              <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-success-500">
                 <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Received</p>
-                <p className="text-lg text-success-900">PKR {selectedClient.total_received.toLocaleString()}</p>
+                <p className="text-lg text-success-700">PKR {selectedClient.total_received.toLocaleString()}</p>
               </div>
-              <div className="bg-warning-50 p-3 rounded-lg border border-warning-200">
+              <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-warning-500">
                 <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Outstanding</p>
-                <p className="text-lg text-warning-900">PKR {selectedClient.outstanding.toLocaleString()}</p>
+                <p className="text-lg text-warning-700">PKR {selectedClient.outstanding.toLocaleString()}</p>
               </div>
             </div>
 

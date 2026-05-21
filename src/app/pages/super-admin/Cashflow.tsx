@@ -521,12 +521,24 @@ function SummaryTile({
       : accent === "rose"
         ? "bg-danger-50"
         : "bg-slate-100";
+  const valueText =
+    accent === "emerald"
+      ? "text-success-700"
+      : accent === "rose"
+        ? "text-danger-700"
+        : "text-slate-900";
+  const borderL =
+    accent === "emerald"
+      ? "border-l-success-500"
+      : accent === "rose"
+        ? "border-l-danger-500"
+        : "border-l-slate-400";
   return (
-    <div className="bg-white rounded-lg border border-slate-200 p-4">
+    <div className={`bg-white rounded-lg border border-slate-200 border-l-4 ${borderL} p-4`}>
       <div className="flex items-start justify-between">
         <div>
-          <div className="text-xs text-slate-500">{label}</div>
-          <div className="text-lg text-slate-900 mt-1">{value}</div>
+          <div className="text-[11px] uppercase tracking-wide text-slate-500">{label}</div>
+          <div className={`text-lg mt-1 ${valueText}`}>{value}</div>
           {subtitle && (
             <div className="text-xs text-slate-400 mt-1">{subtitle}</div>
           )}
