@@ -36,6 +36,9 @@ type ClientRow = {
   contract_start: string | null;
   contract_end: string | null;
   advance_payment: boolean;
+  contract_drive_file_id: string | null;
+  contract_drive_view_url: string | null;
+  contract_file_name: string | null;
   employees: number;
 };
 
@@ -195,6 +198,11 @@ export default function Settings() {
   const [editClientContractEnd, setEditClientContractEnd] = useState<string>("");
   const [editClientAdvancePayment, setEditClientAdvancePayment] = useState<boolean>(false);
 
+  // Contract file upload state — keyed by client id so multiple rows can be
+  // expanded simultaneously without sharing a loading spinner.
+  const [contractUploadingId, setContractUploadingId] = useState<string | null>(null);
+  const [contractError, setContractError] = useState<string | null>(null);
+
   // Contract renewal modal.
   const [renewClient, setRenewClient] = useState<ClientRow | null>(null);
   const [renewStart, setRenewStart] = useState<string>("");
@@ -312,7 +320,7 @@ export default function Settings() {
       supabase.from("locations").select("id, name").order("name"),
       supabase
         .from("clients")
-        .select("id, client_code, name, email, phone, allowed_leaves_per_month, client_type, leave_carry_forward, eobi_enabled, eobi_amount, branch_id, auto_invoice_enabled, auto_invoice_amount, auto_invoice_withholding, contract_start, contract_end, advance_payment")
+        .select("id, client_code, name, email, phone, allowed_leaves_per_month, client_type, leave_carry_forward, eobi_enabled, eobi_amount, branch_id, auto_invoice_enabled, auto_invoice_amount, auto_invoice_withholding, contract_start, contract_end, advance_payment, contract_drive_file_id, contract_drive_view_url, contract_file_name")
         .order("client_code"),
       supabase
         .from("branches")
@@ -367,6 +375,9 @@ export default function Settings() {
         contract_start: r.contract_start ?? null,
         contract_end: r.contract_end ?? null,
         advance_payment: !!r.advance_payment,
+        contract_drive_file_id: r.contract_drive_file_id ?? null,
+        contract_drive_view_url: r.contract_drive_view_url ?? null,
+        contract_file_name: r.contract_file_name ?? null,
         employees: cliCounts[r.id] ?? 0,
       }))
     );
@@ -517,6 +528,94 @@ export default function Settings() {
     }
     setClientEditingId(null);
     await loadAll();
+  };
+
+  // Upload (or replace) the contract document for a client. The file is stored
+  // on Google Drive under <Company>/Contracts/<code> - <name>/, and the file
+  // ID + view URL are persisted on the clients row. Replacing an existing
+  // contract deletes the previous Drive file so we don't accumulate orphans.
+  const uploadContract = async (row: ClientRow, file: File) => {
+    if (!profile?.company_id || !company?.name) {
+      setContractError("Company not loaded — refresh and try again.");
+      return;
+    }
+    setContractUploadingId(row.id);
+    setContractError(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("category", "contracts");
+      form.append("company_id", profile.company_id);
+      form.append("company_name", company.name);
+      form.append("entity_id", row.id);
+      form.append("entity_code", row.client_code);
+      form.append("entity_name", row.name);
+
+      const { data, error: fnErr } = await supabase.functions.invoke("gdrive-upload", {
+        body: form,
+      });
+      if (fnErr) {
+        // Surface the actual error body from the function rather than the
+        // generic "non-2xx" wrapper that supabase-js returns.
+        let detail = fnErr.message;
+        const ctx = (fnErr as { context?: Response }).context;
+        if (ctx) {
+          try { detail = (await ctx.clone().json())?.error ?? detail; } catch { /* ignore */ }
+        }
+        throw new Error(detail);
+      }
+      const result = data as { drive_file_id: string; drive_view_url: string; file_name: string };
+
+      // Delete the old file (if any) only after the new upload succeeds, so a
+      // failed re-upload doesn't leave the client with no contract.
+      const previousFileId = row.contract_drive_file_id;
+
+      const { error: upErr } = await supabase
+        .from("clients")
+        .update({
+          contract_drive_file_id: result.drive_file_id,
+          contract_drive_view_url: result.drive_view_url,
+          contract_file_name: result.file_name,
+        })
+        .eq("id", row.id);
+      if (upErr) throw upErr;
+
+      if (previousFileId) {
+        await supabase.functions
+          .invoke("gdrive-delete", { body: { drive_file_id: previousFileId } })
+          .catch(() => { /* best effort — file may already be gone */ });
+      }
+      await loadAll();
+    } catch (e: any) {
+      setContractError(e?.message ?? String(e));
+    } finally {
+      setContractUploadingId(null);
+    }
+  };
+
+  const removeContract = async (row: ClientRow) => {
+    if (!row.contract_drive_file_id) return;
+    setContractUploadingId(row.id);
+    setContractError(null);
+    try {
+      await supabase.functions
+        .invoke("gdrive-delete", { body: { drive_file_id: row.contract_drive_file_id } })
+        .catch(() => { /* idempotent */ });
+      const { error: upErr } = await supabase
+        .from("clients")
+        .update({
+          contract_drive_file_id: null,
+          contract_drive_view_url: null,
+          contract_file_name: null,
+        })
+        .eq("id", row.id);
+      if (upErr) throw upErr;
+      await loadAll();
+    } catch (e: any) {
+      setContractError(e?.message ?? String(e));
+    } finally {
+      setContractUploadingId(null);
+    }
   };
 
   const openRenewModal = async (row: ClientRow) => {
@@ -920,6 +1019,72 @@ export default function Settings() {
                     <p className="text-[11px] text-slate-500">
                       Contract dates apply whether or not auto-invoicing is enabled. Used by contract-ending alerts.
                     </p>
+                    <div className="pt-1">
+                      <label className="block text-[11px] text-slate-600 mb-1">Contract document</label>
+                      {row.contract_drive_view_url ? (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <a
+                            href={row.contract_drive_view_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-slate-200 text-xs text-slate-700 hover:bg-slate-50"
+                            title={row.contract_file_name ?? "View contract"}
+                          >
+                            <FileText className="w-3 h-3" strokeWidth={1.5} />
+                            <span className="truncate max-w-[180px]">{row.contract_file_name ?? "View contract"}</span>
+                          </a>
+                          <label className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-slate-200 text-xs text-slate-700 hover:bg-slate-50 cursor-pointer">
+                            {contractUploadingId === row.id ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <Plus className="w-3 h-3" strokeWidth={1.5} />
+                            )}
+                            Replace
+                            <input
+                              type="file"
+                              className="hidden"
+                              disabled={contractUploadingId === row.id}
+                              onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                if (f) uploadContract(row, f);
+                                e.currentTarget.value = "";
+                              }}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            disabled={contractUploadingId === row.id}
+                            onClick={() => removeContract(row)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-slate-200 text-xs text-danger-700 hover:bg-danger-50 disabled:opacity-50"
+                          >
+                            <Trash2 className="w-3 h-3" strokeWidth={1.5} />
+                            Remove
+                          </button>
+                        </div>
+                      ) : (
+                        <label className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-slate-200 text-xs text-slate-700 hover:bg-slate-50 cursor-pointer">
+                          {contractUploadingId === row.id ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Plus className="w-3 h-3" strokeWidth={1.5} />
+                          )}
+                          Upload contract
+                          <input
+                            type="file"
+                            className="hidden"
+                            disabled={contractUploadingId === row.id}
+                            onChange={(e) => {
+                              const f = e.target.files?.[0];
+                              if (f) uploadContract(row, f);
+                              e.currentTarget.value = "";
+                            }}
+                          />
+                        </label>
+                      )}
+                      {contractError && contractUploadingId === null && (
+                        <p className="text-[11px] text-danger-700 mt-1">{contractError}</p>
+                      )}
+                    </div>
                   </div>
                   <div className="space-y-2 border-t border-slate-200 pt-3">
                     <label className="flex items-start gap-2 text-sm text-slate-700">

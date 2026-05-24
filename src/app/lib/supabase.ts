@@ -271,6 +271,9 @@ export type Client = {
   contract_start: string | null;
   contract_end: string | null;
   advance_payment: boolean;
+  contract_drive_file_id: string | null;
+  contract_drive_view_url: string | null;
+  contract_file_name: string | null;
   created_at?: string;
 };
 
