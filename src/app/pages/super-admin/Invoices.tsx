@@ -46,7 +46,12 @@ type InvoiceForm = {
   withholding_tax: string;
   notes: string;
   attachment_file: File | null;
+  // Existing attachment metadata for edit modal — either a legacy Storage path
+  // or the Drive triple. Falls back to whichever the row has.
   existing_attachment_path: string | null;
+  existing_drive_file_id: string | null;
+  existing_drive_view_url: string | null;
+  existing_attachment_file_name: string | null;
 };
 
 type PaymentForm = {
@@ -85,6 +90,9 @@ const emptyForm = (): InvoiceForm => ({
   notes: "",
   attachment_file: null,
   existing_attachment_path: null,
+  existing_drive_file_id: null,
+  existing_drive_view_url: null,
+  existing_attachment_file_name: null,
 });
 
 const emptyPaymentForm = (): PaymentForm => ({
@@ -96,7 +104,7 @@ const emptyPaymentForm = (): PaymentForm => ({
 });
 
 export default function Invoices() {
-  const { company } = useAuth();
+  const { profile, company } = useAuth();
   const [clients, setClients] = useState<Client[]>([]);
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [banks, setBanks] = useState<BankAccount[]>([]);
@@ -195,27 +203,86 @@ export default function Invoices() {
     return { invoiced, received, outstanding: invoiced - received };
   }, [filteredInvoices]);
 
-  const uploadAttachment = async (invoiceId: string, file: File): Promise<string> => {
-    const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-    const path = `${invoiceId}/${Date.now()}_${safe}`;
-    const { error: upErr } = await supabase.storage
+  // Upload to Google Drive under <Company>/Invoices/<year>/.
+  // Returns the triple we persist on the invoices row.
+  const uploadAttachmentToDrive = async (
+    file: File,
+  ): Promise<{ drive_file_id: string; drive_view_url: string; file_name: string }> => {
+    const effectiveCompanyId =
+      profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
+    if (!effectiveCompanyId || !company?.name) {
+      throw new Error("Company not loaded — refresh and try again.");
+    }
+    const form = new FormData();
+    form.append("file", file);
+    form.append("category", "invoices");
+    form.append("company_id", effectiveCompanyId);
+    form.append("company_name", company.name);
+    const { data, error: fnErr } = await supabase.functions.invoke("gdrive-upload", { body: form });
+    if (fnErr) {
+      let detail = fnErr.message;
+      try {
+        const ctx = (fnErr as { context?: Response }).context;
+        if (ctx) detail = (await ctx.clone().json())?.error ?? detail;
+      } catch { /* ignore */ }
+      throw new Error(`Drive upload failed: ${detail}`);
+    }
+    if (!data?.drive_file_id) throw new Error(data?.error ?? "Upload failed");
+    return {
+      drive_file_id: data.drive_file_id as string,
+      drive_view_url: data.drive_view_url as string,
+      file_name: (data.file_name as string) ?? file.name,
+    };
+  };
+
+  // Removes the attachment whether it lives on Drive or legacy Storage.
+  const removeAttachment = async (row: {
+    drive_file_id?: string | null;
+    attachment_path?: string | null;
+  }) => {
+    if (row.drive_file_id) {
+      await supabase.functions
+        .invoke("gdrive-delete", { body: { drive_file_id: row.drive_file_id } })
+        .catch(() => { /* idempotent */ });
+      return;
+    }
+    if (row.attachment_path) {
+      await supabase.storage.from(INVOICE_ATTACHMENTS_BUCKET).remove([row.attachment_path]);
+    }
+  };
+
+  // Opens whichever URL the invoice has — Drive view link or legacy public URL.
+  const viewAttachment = (row: {
+    drive_view_url?: string | null;
+    attachment_path?: string | null;
+  }) => {
+    if (row.drive_view_url) {
+      window.open(row.drive_view_url, "_blank");
+      return;
+    }
+    if (row.attachment_path) {
+      const { data } = supabase.storage
+        .from(INVOICE_ATTACHMENTS_BUCKET)
+        .getPublicUrl(row.attachment_path);
+      if (data?.publicUrl) window.open(data.publicUrl, "_blank");
+    }
+  };
+
+  // Legacy storage rows still need a "download" path; Drive view URL already
+  // serves the file inline, so we just re-open it.
+  const downloadAttachment = async (row: {
+    drive_view_url?: string | null;
+    attachment_path?: string | null;
+  }) => {
+    if (row.drive_view_url) {
+      window.open(row.drive_view_url, "_blank");
+      return;
+    }
+    const path = row.attachment_path;
+    if (!path) return;
+    const { data, error: dErr } = await supabase.storage
       .from(INVOICE_ATTACHMENTS_BUCKET)
-      .upload(path, file, { upsert: false });
-    if (upErr) throw upErr;
-    return path;
-  };
-
-  const removeAttachment = async (path: string) => {
-    await supabase.storage.from(INVOICE_ATTACHMENTS_BUCKET).remove([path]);
-  };
-
-  const viewAttachment = (path: string) => {
-    const { data } = supabase.storage.from(INVOICE_ATTACHMENTS_BUCKET).getPublicUrl(path);
-    if (data?.publicUrl) window.open(data.publicUrl, "_blank");
-  };
-
-  const downloadAttachment = async (path: string) => {
-    const { data, error: dErr } = await supabase.storage.from(INVOICE_ATTACHMENTS_BUCKET).download(path);
+      .download(path);
     if (dErr) {
       setError(dErr.message);
       return;
@@ -308,10 +375,15 @@ export default function Invoices() {
       if (insErr) throw insErr;
       const inv = data as Invoice;
       if (form.attachment_file) {
-        const path = await uploadAttachment(inv.id, form.attachment_file);
+        const drive = await uploadAttachmentToDrive(form.attachment_file);
         const { error: upErr } = await supabase
           .from("invoices")
-          .update({ attachment_path: path, updated_at: new Date().toISOString() })
+          .update({
+            drive_file_id: drive.drive_file_id,
+            drive_view_url: drive.drive_view_url,
+            attachment_file_name: drive.file_name,
+            updated_at: new Date().toISOString(),
+          })
           .eq("id", inv.id);
         if (upErr) throw upErr;
       }
@@ -337,6 +409,9 @@ export default function Invoices() {
       notes: row.notes ?? "",
       attachment_file: null,
       existing_attachment_path: row.attachment_path,
+      existing_drive_file_id: row.drive_file_id ?? null,
+      existing_drive_view_url: row.drive_view_url ?? null,
+      existing_attachment_file_name: row.attachment_file_name ?? null,
     });
     setEditPayments([]);
     setIsEditOpen(true);
@@ -354,10 +429,22 @@ export default function Invoices() {
     setEditSubmitting(true);
     setError(null);
     try {
-      let path: string | null = editForm.existing_attachment_path;
+      // Replace path: keep whatever was there unless the user picked a new file.
+      let driveFileId = editForm.existing_drive_file_id;
+      let driveViewUrl = editForm.existing_drive_view_url;
+      let attachmentFileName = editForm.existing_attachment_file_name;
+      let legacyPath = editForm.existing_attachment_path;
       if (editForm.attachment_file) {
-        if (path) await removeAttachment(path);
-        path = await uploadAttachment(editingId, editForm.attachment_file);
+        // Wipe the previous attachment (Drive or legacy) before uploading new.
+        await removeAttachment({
+          drive_file_id: editForm.existing_drive_file_id,
+          attachment_path: editForm.existing_attachment_path,
+        });
+        const drive = await uploadAttachmentToDrive(editForm.attachment_file);
+        driveFileId = drive.drive_file_id;
+        driveViewUrl = drive.drive_view_url;
+        attachmentFileName = drive.file_name;
+        legacyPath = null;
       }
       const invAmt = Number(editForm.invoice_amount);
       const wht = Number(editForm.withholding_tax || 0);
@@ -370,7 +457,10 @@ export default function Invoices() {
           invoice_amount: invAmt,
           withholding_tax: wht,
           notes: editForm.notes.trim() || null,
-          attachment_path: path,
+          attachment_path: legacyPath,
+          drive_file_id: driveFileId,
+          drive_view_url: driveViewUrl,
+          attachment_file_name: attachmentFileName,
           updated_at: new Date().toISOString(),
         })
         .eq("id", editingId);
@@ -389,16 +479,34 @@ export default function Invoices() {
   };
 
   const clearEditAttachment = async () => {
-    if (!editingId || !editForm.existing_attachment_path) return;
+    if (!editingId) return;
+    const hasAttachment =
+      editForm.existing_drive_file_id || editForm.existing_attachment_path;
+    if (!hasAttachment) return;
     if (!window.confirm("Remove the current attachment?")) return;
     try {
-      await removeAttachment(editForm.existing_attachment_path);
+      await removeAttachment({
+        drive_file_id: editForm.existing_drive_file_id,
+        attachment_path: editForm.existing_attachment_path,
+      });
       const { error: upErr } = await supabase
         .from("invoices")
-        .update({ attachment_path: null, updated_at: new Date().toISOString() })
+        .update({
+          attachment_path: null,
+          drive_file_id: null,
+          drive_view_url: null,
+          attachment_file_name: null,
+          updated_at: new Date().toISOString(),
+        })
         .eq("id", editingId);
       if (upErr) throw upErr;
-      setEditForm({ ...editForm, existing_attachment_path: null });
+      setEditForm({
+        ...editForm,
+        existing_attachment_path: null,
+        existing_drive_file_id: null,
+        existing_drive_view_url: null,
+        existing_attachment_file_name: null,
+      });
       await loadAll();
     } catch (e: any) {
       setError(e.message ?? String(e));
@@ -424,7 +532,10 @@ export default function Invoices() {
     if (!window.confirm(`Delete invoice "${row.invoice_number}"? This cannot be undone.`)) return;
     setError(null);
     try {
-      if (row.attachment_path) await removeAttachment(row.attachment_path);
+      await removeAttachment({
+        drive_file_id: row.drive_file_id,
+        attachment_path: row.attachment_path,
+      });
       const { error: delErr } = await supabase.from("invoices").delete().eq("id", row.id);
       if (delErr) throw delErr;
       await loadAll();
@@ -885,11 +996,11 @@ export default function Invoices() {
                           </select>
                         </td>
                         <td className="px-6 py-4 text-sm">
-                          {inv.attachment_path ? (
+                          {(inv.drive_view_url || inv.attachment_path) ? (
                             <div className="flex items-center gap-2">
                               <button
                                 type="button"
-                                onClick={() => viewAttachment(inv.attachment_path!)}
+                                onClick={() => viewAttachment(inv)}
                                 className="text-brand-600 hover:text-brand-700 inline-flex items-center gap-1"
                               >
                                 <FileText className="w-3.5 h-3.5" strokeWidth={1.5} />
@@ -897,7 +1008,7 @@ export default function Invoices() {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => downloadAttachment(inv.attachment_path!)}
+                                onClick={() => downloadAttachment(inv)}
                                 className="text-slate-600 hover:text-slate-900"
                                 title="Download"
                               >
@@ -1502,12 +1613,24 @@ function InvoiceFields({
       </div>
       <div>
         <label className="block text-sm text-slate-700 mb-1">Attachment</label>
-        {form.existing_attachment_path && !form.attachment_file && (
+        {(form.existing_drive_view_url || form.existing_attachment_path) && !form.attachment_file && (
           <div className="flex items-center gap-2 text-xs text-slate-600 mb-2">
             <FileText className="w-3.5 h-3.5" strokeWidth={1.5} />
             <span className="font-mono truncate flex-1">
-              {form.existing_attachment_path.split("/").pop()}
+              {form.existing_attachment_file_name
+                ?? form.existing_attachment_path?.split("/").pop()
+                ?? "Attached"}
             </span>
+            {form.existing_drive_view_url && (
+              <a
+                href={form.existing_drive_view_url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-brand-700 hover:text-brand-800"
+              >
+                View
+              </a>
+            )}
             {allowClearAttachment && (
               <button
                 type="button"
@@ -1524,7 +1647,7 @@ function InvoiceFields({
           <span>
             {form.attachment_file
               ? form.attachment_file.name
-              : form.existing_attachment_path
+              : (form.existing_drive_view_url || form.existing_attachment_path)
               ? "Replace attachment…"
               : "Upload invoice (PDF / image)"}
           </span>

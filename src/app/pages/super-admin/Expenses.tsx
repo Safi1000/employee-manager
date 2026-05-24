@@ -30,6 +30,7 @@ import {
   type Cheque,
   type Branch,
 } from "../../lib/supabase";
+import { useAuth } from "../../lib/auth";
 
 const PIE_COLORS = [
   "#3b82f6",
@@ -114,6 +115,7 @@ const emptyForm: ExpenseForm = {
 };
 
 export default function Expenses() {
+  const { profile, company } = useAuth();
   const [activeTab, setActiveTab] = useState<"expenses" | "advances">("expenses");
   const [expenses, setExpenses] = useState<ExpenseRow[]>([]);
   const [advances, setAdvances] = useState<AdvanceRow[]>([]);
@@ -456,18 +458,55 @@ export default function Expenses() {
     if (txErr) throw txErr;
   };
 
-  const uploadReceipt = async (expenseId: string, file: File): Promise<string> => {
-    const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-    const path = `${expenseId}/${Date.now()}_${safe}`;
-    const { error: upErr } = await supabase.storage
-      .from(EXPENSE_RECEIPTS_BUCKET)
-      .upload(path, file, { upsert: false });
-    if (upErr) throw upErr;
-    return path;
+  // Receipts now upload to Google Drive (under <Company>/Expenses/<year>/).
+  // Returns the triple we persist on the expenses row. Legacy rows still
+  // carry receipt_path on Supabase Storage and the rest of the file falls
+  // back to that whenever drive_file_id is null.
+  const uploadReceiptToDrive = async (
+    file: File,
+  ): Promise<{ drive_file_id: string; drive_view_url: string; file_name: string }> => {
+    const effectiveCompanyId =
+      profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
+    if (!effectiveCompanyId || !company?.name) {
+      throw new Error("Company not loaded — refresh and try again.");
+    }
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("category", "expenses");
+    fd.append("company_id", effectiveCompanyId);
+    fd.append("company_name", company.name);
+    const { data, error: fnErr } = await supabase.functions.invoke("gdrive-upload", { body: fd });
+    if (fnErr) {
+      let detail = fnErr.message;
+      try {
+        const ctx = (fnErr as { context?: Response }).context;
+        if (ctx) detail = (await ctx.clone().json())?.error ?? detail;
+      } catch { /* ignore */ }
+      throw new Error(`Drive upload failed: ${detail}`);
+    }
+    if (!data?.drive_file_id) throw new Error(data?.error ?? "Upload failed");
+    return {
+      drive_file_id: data.drive_file_id as string,
+      drive_view_url: data.drive_view_url as string,
+      file_name: (data.file_name as string) ?? file.name,
+    };
   };
 
-  const removeReceipt = async (path: string) => {
-    await supabase.storage.from(EXPENSE_RECEIPTS_BUCKET).remove([path]);
+  // Cleans up an expense receipt regardless of whether it lives on Drive
+  // (new uploads) or legacy Supabase Storage. Both calls are idempotent.
+  const removeReceipt = async (row: {
+    drive_file_id?: string | null;
+    receipt_path?: string | null;
+  }) => {
+    if (row.drive_file_id) {
+      await supabase.functions
+        .invoke("gdrive-delete", { body: { drive_file_id: row.drive_file_id } })
+        .catch(() => { /* idempotent */ });
+      return;
+    }
+    if (row.receipt_path) {
+      await supabase.storage.from(EXPENSE_RECEIPTS_BUCKET).remove([row.receipt_path]);
+    }
   };
 
   const describeExpense = (catId: string, client: string | null, desc: string | null) => {
@@ -559,8 +598,12 @@ export default function Expenses() {
       const expId = (inserted as Expense).id;
 
       if (form.receipt) {
-        const path = await uploadReceipt(expId, form.receipt);
-        await supabase.from("expenses").update({ receipt_path: path }).eq("id", expId);
+        const drive = await uploadReceiptToDrive(form.receipt);
+        await supabase.from("expenses").update({
+          drive_file_id: drive.drive_file_id,
+          drive_view_url: drive.drive_view_url,
+          receipt_file_name: drive.file_name,
+        }).eq("id", expId);
       }
 
       const desc = describeExpense(form.category_id, clientName, form.description.trim() || null);
@@ -720,12 +763,25 @@ export default function Expenses() {
       const vendorId = editForm.payment_mode === "Payable" ? editForm.vendor_id || null : null;
       const clientName = editForm.client_id ? clients.find((c) => c.id === editForm.client_id)?.name ?? null : null;
 
+      // Receipt edit: keep existing values unless the user opted to replace.
       let receiptPath: string | null = selected.receipt_path;
+      let receiptDriveFileId: string | null = selected.drive_file_id;
+      let receiptDriveViewUrl: string | null = selected.drive_view_url;
+      let receiptFileName: string | null = selected.receipt_file_name;
       if (replaceReceipt) {
-        if (selected.receipt_path) await removeReceipt(selected.receipt_path);
+        await removeReceipt({
+          drive_file_id: selected.drive_file_id,
+          receipt_path: selected.receipt_path,
+        });
         receiptPath = null;
+        receiptDriveFileId = null;
+        receiptDriveViewUrl = null;
+        receiptFileName = null;
         if (editForm.receipt) {
-          receiptPath = await uploadReceipt(selected.id, editForm.receipt);
+          const drive = await uploadReceiptToDrive(editForm.receipt);
+          receiptDriveFileId = drive.drive_file_id;
+          receiptDriveViewUrl = drive.drive_view_url;
+          receiptFileName = drive.file_name;
         }
       }
 
@@ -768,6 +824,9 @@ export default function Expenses() {
           paid_at: editForm.payment_mode === "Payable" ? selected.paid_at : null,
           notes: editForm.notes.trim() || null,
           receipt_path: receiptPath,
+          drive_file_id: receiptDriveFileId,
+          drive_view_url: receiptDriveViewUrl,
+          receipt_file_name: receiptFileName,
           updated_at: new Date().toISOString(),
         })
         .eq("id", selected.id);
@@ -811,7 +870,10 @@ export default function Expenses() {
     setError(null);
     try {
       await reverseExistingPayment(exp);
-      if (exp.receipt_path) await removeReceipt(exp.receipt_path);
+      await removeReceipt({
+        drive_file_id: exp.drive_file_id,
+        receipt_path: exp.receipt_path,
+      });
       const { error: delErr } = await supabase.from("expenses").delete().eq("id", exp.id);
       if (delErr) throw delErr;
       await loadAll();
@@ -1087,13 +1149,37 @@ export default function Expenses() {
     }
   };
 
-  const getReceiptUrl = (path: string): string | null => {
-    const { data } = supabase.storage.from(EXPENSE_RECEIPTS_BUCKET).getPublicUrl(path);
-    return data.publicUrl ?? null;
+  // Resolves the URL for an expense receipt regardless of storage backend.
+  // Drive rows store a webViewLink directly; legacy rows still come from
+  // Supabase Storage and need a public URL lookup.
+  const getReceiptUrl = (row: {
+    drive_view_url?: string | null;
+    receipt_path?: string | null;
+  }): string | null => {
+    if (row.drive_view_url) return row.drive_view_url;
+    if (row.receipt_path) {
+      const { data } = supabase.storage
+        .from(EXPENSE_RECEIPTS_BUCKET)
+        .getPublicUrl(row.receipt_path);
+      return data.publicUrl ?? null;
+    }
+    return null;
   };
 
-  const downloadReceipt = async (path: string, fileName?: string) => {
-    const { data, error: dErr } = await supabase.storage.from(EXPENSE_RECEIPTS_BUCKET).download(path);
+  const downloadReceipt = async (row: {
+    drive_view_url?: string | null;
+    receipt_path?: string | null;
+    receipt_file_name?: string | null;
+  }) => {
+    if (row.drive_view_url) {
+      window.open(row.drive_view_url, "_blank");
+      return;
+    }
+    const path = row.receipt_path;
+    if (!path) return;
+    const { data, error: dErr } = await supabase.storage
+      .from(EXPENSE_RECEIPTS_BUCKET)
+      .download(path);
     if (dErr || !data) {
       setError(dErr?.message ?? "Unable to download receipt");
       return;
@@ -1101,7 +1187,7 @@ export default function Expenses() {
     const url = URL.createObjectURL(data);
     const a = document.createElement("a");
     a.href = url;
-    a.download = fileName ?? path.split("/").pop() ?? "receipt";
+    a.download = row.receipt_file_name ?? path.split("/").pop() ?? "receipt";
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -1826,7 +1912,12 @@ export default function Expenses() {
             "Update Expense",
             () => setIsEditOpen(false),
             {
-              existingReceipt: selected.receipt_path,
+              // Display label: prefer the Drive-side file name, fall back to
+              // the legacy path's basename, or null if nothing attached.
+              existingReceipt:
+                selected.receipt_file_name
+                ?? selected.receipt_path
+                ?? (selected.drive_view_url ? "Attached receipt" : null),
               replaceReceipt,
               setReplaceReceipt,
             }
@@ -1902,15 +1993,17 @@ export default function Expenses() {
             )}
             <div className="pt-3 border-t border-slate-200">
               <p className="text-slate-500 mb-2 text-sm">Receipt</p>
-              {selected.receipt_path ? (
+              {(selected.drive_view_url || selected.receipt_path) ? (
                 <div className="border border-slate-200 rounded-lg p-3 flex items-center justify-between">
                   <span className="text-sm text-slate-700 truncate">
-                    {selected.receipt_path.split("/").pop()}
+                    {selected.receipt_file_name
+                      ?? selected.receipt_path?.split("/").pop()
+                      ?? "Receipt"}
                   </span>
                   <div className="flex gap-2">
-                    {getReceiptUrl(selected.receipt_path) && (
+                    {getReceiptUrl(selected) && (
                       <a
-                        href={getReceiptUrl(selected.receipt_path) ?? "#"}
+                        href={getReceiptUrl(selected) ?? "#"}
                         target="_blank"
                         rel="noreferrer"
                         className="text-sm text-slate-700 hover:text-slate-900 underline"
@@ -1919,7 +2012,7 @@ export default function Expenses() {
                       </a>
                     )}
                     <button
-                      onClick={() => downloadReceipt(selected.receipt_path!, undefined)}
+                      onClick={() => downloadReceipt(selected)}
                       className="inline-flex items-center gap-1 text-sm text-slate-700 hover:text-slate-900"
                     >
                       <Download className="w-4 h-4" strokeWidth={1.5} />

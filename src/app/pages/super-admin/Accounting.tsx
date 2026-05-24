@@ -69,7 +69,7 @@ const payableDisplayStatus = (row: PayableRow): PayableDisplayStatus => {
 };
 
 export default function Accounting() {
-  const { profile } = useAuth();
+  const { profile, company } = useAuth();
   const isAdmin = profile?.role === "super_super_admin" || profile?.role === "super_admin";
   const [activeTab, setActiveTab] = useState<"receivables" | "payables" | "banks">("receivables");
 
@@ -2214,7 +2214,11 @@ export default function Accounting() {
                                   }
                                   items.sort((a, b) => (a.date < b.date ? 1 : -1));
                                   setChequeViewItems(items);
-                                  if (c.attachment_path) {
+                                  // Prefer Drive URL when present (new uploads).
+                                  // Fall back to a signed Storage URL for legacy rows.
+                                  if (c.drive_view_url) {
+                                    setChequeViewAttachmentUrl(c.drive_view_url);
+                                  } else if (c.attachment_path) {
                                     const { data: signed } = await supabase.storage
                                       .from(CHEQUE_ATTACHMENTS_BUCKET)
                                       .createSignedUrl(c.attachment_path, 3600);
@@ -2327,13 +2331,36 @@ export default function Accounting() {
               const chequeId = (inserted as Cheque).id;
               if (chequeForm.attachment) {
                 const file = chequeForm.attachment;
-                const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-                const path = `${chequeId}/${Date.now()}_${safe}`;
-                const { error: upErr } = await supabase.storage
-                  .from(CHEQUE_ATTACHMENTS_BUCKET)
-                  .upload(path, file, { upsert: false });
-                if (upErr) throw upErr;
-                await supabase.from("cheques").update({ attachment_path: path }).eq("id", chequeId);
+                const effectiveCompanyId =
+                  profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
+                if (!effectiveCompanyId || !company?.name) {
+                  throw new Error("Company not loaded — refresh and try again.");
+                }
+                const fd = new FormData();
+                fd.append("file", file);
+                fd.append("category", "cheques");
+                fd.append("company_id", effectiveCompanyId);
+                fd.append("company_name", company.name);
+                const { data: uploaded, error: fnErr } = await supabase.functions.invoke(
+                  "gdrive-upload",
+                  { body: fd },
+                );
+                if (fnErr) {
+                  let detail = fnErr.message;
+                  try {
+                    const ctx = (fnErr as { context?: Response }).context;
+                    if (ctx) detail = (await ctx.clone().json())?.error ?? detail;
+                  } catch { /* ignore */ }
+                  throw new Error(`Drive upload failed: ${detail}`);
+                }
+                if (!uploaded?.drive_file_id) {
+                  throw new Error(uploaded?.error ?? "Upload failed");
+                }
+                await supabase.from("cheques").update({
+                  drive_file_id: uploaded.drive_file_id,
+                  drive_view_url: uploaded.drive_view_url,
+                  attachment_file_name: uploaded.file_name ?? file.name,
+                }).eq("id", chequeId);
               }
               setIsChequeAddOpen(false);
               setChequeForm({
@@ -2551,7 +2578,7 @@ export default function Accounting() {
                   <p className="text-slate-900 whitespace-pre-wrap">{chequeView.notes}</p>
                 </div>
               )}
-              {chequeView.attachment_path && (
+              {(chequeView.drive_view_url || chequeView.attachment_path) && (
                 <div className="col-span-2">
                   <p className="text-xs text-slate-500 mb-1">Attachment</p>
                   {chequeViewAttachmentUrl ? (

@@ -12,6 +12,7 @@ import {
   type EmployeeDocument,
   type Location,
 } from "../../lib/supabase";
+import { useAuth } from "../../lib/auth";
 
 type EmployeeRow = Employee & {
   location_name: string | null;
@@ -36,6 +37,7 @@ const formatDate = (iso: string | null) => {
 };
 
 export default function Documents() {
+  const { profile, company } = useAuth();
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -124,14 +126,22 @@ export default function Documents() {
   type EmpRef = { id: string; employee_code: string; full_name: string };
 
   const uploadDoc = async (employee: EmpRef, docType: string, file: File) => {
+    const effectiveCompanyId =
+      profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
+    if (!effectiveCompanyId || !company?.name) {
+      throw new Error("Company not loaded — refresh and try again.");
+    }
     const form = new FormData();
     form.append("file", file);
-    form.append("employee_id", employee.id);
-    form.append("employee_code", employee.employee_code);
-    form.append("employee_name", employee.full_name);
+    form.append("category", "employees");
+    form.append("company_id", effectiveCompanyId);
+    form.append("company_name", company.name);
+    form.append("entity_id", employee.id);
+    form.append("entity_code", employee.employee_code);
+    form.append("entity_name", employee.full_name);
     form.append("doc_type", docType);
     const { data, error: fnErr } = await supabase.functions.invoke(
-      "gdrive-upload-employee-doc",
+      "gdrive-upload",
       { body: form },
     );
     if (fnErr) {
@@ -165,7 +175,7 @@ export default function Documents() {
     const drivePromises = rows
       .filter((r) => r.drive_file_id)
       .map((r) =>
-        supabase.functions.invoke("gdrive-delete-employee-doc", {
+        supabase.functions.invoke("gdrive-delete", {
           body: { drive_file_id: r.drive_file_id },
         }),
       );

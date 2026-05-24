@@ -300,6 +300,9 @@ export type Cheque = {
   cheque_type: ChequeType;
   status: "pending" | "cleared";
   attachment_path: string | null;
+  drive_file_id: string | null;
+  drive_view_url: string | null;
+  attachment_file_name: string | null;
   notes: string | null;
   recipient: string | null;
   cleared_at: string | null;
@@ -528,6 +531,9 @@ export type Invoice = {
   withholding_tax: number;
   amount_received: number;
   attachment_path: string | null;
+  drive_file_id: string | null;
+  drive_view_url: string | null;
+  attachment_file_name: string | null;
   notes: string | null;
   status: InvoiceStatus;
   created_at?: string;
@@ -624,6 +630,9 @@ export type Expense = {
   paid_at: string | null;
   cheque_id: string | null;
   receipt_path: string | null;
+  drive_file_id: string | null;
+  drive_view_url: string | null;
+  receipt_file_name: string | null;
   notes: string | null;
   created_at?: string;
   updated_at?: string;
