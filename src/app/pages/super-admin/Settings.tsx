@@ -535,7 +535,11 @@ export default function Settings() {
   // ID + view URL are persisted on the clients row. Replacing an existing
   // contract deletes the previous Drive file so we don't accumulate orphans.
   const uploadContract = async (row: ClientRow, file: File) => {
-    if (!profile?.company_id || !company?.name) {
+    // SSA users have profile.company_id = null but get the active company via
+    // view_as_company. Use whichever ID actually backs the loaded `company`.
+    const effectiveCompanyId =
+      profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
+    if (!effectiveCompanyId || !company?.name) {
       setContractError("Company not loaded — refresh and try again.");
       return;
     }
@@ -545,7 +549,7 @@ export default function Settings() {
       const form = new FormData();
       form.append("file", file);
       form.append("category", "contracts");
-      form.append("company_id", profile.company_id);
+      form.append("company_id", effectiveCompanyId);
       form.append("company_name", company.name);
       form.append("entity_id", row.id);
       form.append("entity_code", row.client_code);
