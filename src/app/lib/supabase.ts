@@ -493,7 +493,128 @@ export type AttendanceRecord = {
   /** Per-day client attribution used for relievers (NULL for everyone else;
    * regular staff inherit their primary client from employees.client_id). */
   worked_for_client_id?: string | null;
+  // Sprint 3 enhancements
+  half_day?: boolean;
+  late_arrival?: boolean;
+  hours_worked?: number | null;
+  overtime_hours?: number;
   marked_at?: string;
+};
+
+// Sprint 3 — Posts / Deployment Sites (spec section 4.1)
+export type Post = {
+  id: string;
+  company_id?: string;
+  client_id: string;
+  branch_id: string | null;
+  contract_id: string | null;
+  name: string;
+  address: string | null;
+  required_guards: number;
+  shift_pattern: ContractShiftPattern;
+  active: boolean;
+  notes: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+// Sprint 3 — Deployment Roster (spec section 3.4 + 4.1)
+export type RosterShift = "day" | "night";
+export type RosterStatus =
+  | "assigned"
+  | "confirmed"
+  | "leave_requested"
+  | "reliever_needed"
+  | "unassigned";
+
+export type RosterAssignment = {
+  id: string;
+  company_id?: string;
+  employee_id: string;
+  post_id: string | null;
+  client_id: string | null;
+  assignment_date: string;
+  shift: RosterShift;
+  status: RosterStatus;
+  notes: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export const ROSTER_STATUS_LABEL: Record<RosterStatus, string> = {
+  assigned: "Assigned",
+  confirmed: "Confirmed",
+  leave_requested: "Leave Requested",
+  reliever_needed: "Reliever Needed",
+  unassigned: "Unassigned",
+};
+
+// Sprint 3 — Incidents (spec section 4.2)
+export type IncidentSeverity = "low" | "medium" | "high" | "critical";
+export type IncidentCategory =
+  | "theft"
+  | "altercation"
+  | "guard_injury"
+  | "weapon_discharge"
+  | "no_show"
+  | "asset_damage"
+  | "client_complaint"
+  | "other";
+export type IncidentStatus =
+  | "open"
+  | "under_investigation"
+  | "resolved"
+  | "closed";
+
+export type Incident = {
+  id: string;
+  company_id?: string;
+  incident_code: string;
+  occurred_at: string;
+  client_id: string | null;
+  post_id: string | null;
+  severity: IncidentSeverity;
+  category: IncidentCategory;
+  description: string | null;
+  client_notified: boolean;
+  client_notified_at: string | null;
+  action_taken: string | null;
+  status: IncidentStatus;
+  drive_file_id: string | null;
+  drive_view_url: string | null;
+  attachment_file_name: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type IncidentGuard = {
+  incident_id: string;
+  employee_id: string;
+};
+
+export const INCIDENT_SEVERITY_LABEL: Record<IncidentSeverity, string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  critical: "Critical",
+};
+
+export const INCIDENT_CATEGORY_LABEL: Record<IncidentCategory, string> = {
+  theft: "Theft",
+  altercation: "Altercation",
+  guard_injury: "Guard Injury",
+  weapon_discharge: "Weapon Discharge",
+  no_show: "No-show",
+  asset_damage: "Asset Damage",
+  client_complaint: "Client Complaint",
+  other: "Other",
+};
+
+export const INCIDENT_STATUS_LABEL: Record<IncidentStatus, string> = {
+  open: "Open",
+  under_investigation: "Under Investigation",
+  resolved: "Resolved",
+  closed: "Closed",
 };
 
 export type EmployeeDocument = {

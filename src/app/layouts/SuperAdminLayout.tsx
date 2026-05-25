@@ -23,6 +23,8 @@ import {
   Building2,
   FileSignature,
   ShieldAlert,
+  CalendarRange,
+  Siren,
 } from "lucide-react";
 
 type LinkDef = {
@@ -64,6 +66,8 @@ export default function SuperAdminLayout() {
   const RELIEVER_ATT: LinkDef = { to: "/super-admin/relievers/attendance", label: "Attendance", icon: Calendar, perms: ["attendance.view", "attendance.edit"] };
   const RELIEVER_PAY: LinkDef = { to: "/super-admin/relievers/payroll", label: "Payroll", icon: DollarSign, perms: ["payroll.view", "payroll.edit"] };
   const INVENTORY: LinkDef = { to: "/super-admin/inventory", label: "Inventory", icon: Package, perms: ["inventory.view", "inventory.edit"] };
+  const ROSTER: LinkDef = { to: "/super-admin/roster", label: "Deployment Roster", icon: CalendarRange, perms: ["attendance.view", "attendance.edit"] };
+  const INCIDENTS: LinkDef = { to: "/super-admin/incidents", label: "Incidents", icon: Siren, perms: ["attendance.view", "attendance.edit"] };
   const BANKS: LinkDef = { to: "/super-admin/accounting", label: "Banks & Ledgers", icon: Landmark, perms: ["accounting.view", "accounting.edit"] };
   const EXPENSES: LinkDef = { to: "/super-admin/expenses", label: "Expenses", icon: Receipt, perms: ["expenses.view", "expenses.edit"] };
   const CASHFLOW: LinkDef = { to: "/super-admin/cashflow", label: "Cash Flow", icon: TrendingUp, perms: ["cashflow.view"] };
@@ -140,8 +144,12 @@ export default function SuperAdminLayout() {
   ]);
   if (workforce) links.push(workforce);
 
-  // OPERATIONS — only Inventory for now; Deployment Roster + Incidents arrive in Sprint 3.
-  const operations = buildGroup("Operations", "/super-admin/operations", [INVENTORY]);
+  // OPERATIONS
+  const operations = buildGroup("Operations", "/super-admin/operations", [
+    ROSTER,
+    INCIDENTS,
+    INVENTORY,
+  ]);
   if (operations) links.push(operations);
 
   // FINANCE

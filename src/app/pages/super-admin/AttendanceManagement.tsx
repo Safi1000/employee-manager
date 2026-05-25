@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Calendar as CalendarIcon, AlertCircle, Loader2, X, CalendarRange, ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { Calendar as CalendarIcon, AlertCircle, Loader2, X, CalendarRange, ChevronLeft, ChevronRight, Search, Clock, MoreHorizontal } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -236,6 +236,16 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
 
   // ---- Inline employee calendar (read-only swap of metrics area) ----
   const [viewEmployee, setViewEmployee] = useState<EmployeeLite | null>(null);
+
+  // Sprint 3: detail editor for half-day / late / OT (only meaningful when Present).
+  const [detailsEmp, setDetailsEmp] = useState<EmployeeLite | null>(null);
+  const [detailsForm, setDetailsForm] = useState<{
+    half_day: boolean;
+    late_arrival: boolean;
+    hours_worked: string;
+    overtime_hours: string;
+  }>({ half_day: false, late_arrival: false, hours_worked: "", overtime_hours: "0" });
+  const [detailsSaving, setDetailsSaving] = useState(false);
   const [viewMonth, setViewMonth] = useState<string>(today().slice(0, 7));
   const [viewRecords, setViewRecords] = useState<Map<string, AttendanceStatus>>(new Map());
   const [viewLoading, setViewLoading] = useState(false);
@@ -516,6 +526,46 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       return;
     }
     loadHistory();
+  };
+
+  // Sprint 3: open the half-day / late / OT editor for a given employee on the
+  // currently-selected date. Loads any existing detail values from the
+  // attendance_records row.
+  const openDetailsEditor = async (employee: EmployeeLite) => {
+    setDetailsEmp(employee);
+    const { data } = await supabase
+      .from("attendance_records")
+      .select("half_day, late_arrival, hours_worked, overtime_hours")
+      .eq("employee_id", employee.id)
+      .eq("attendance_date", date)
+      .maybeSingle();
+    setDetailsForm({
+      half_day: !!data?.half_day,
+      late_arrival: !!data?.late_arrival,
+      hours_worked: data?.hours_worked != null ? String(data.hours_worked) : "",
+      overtime_hours: data?.overtime_hours != null ? String(data.overtime_hours) : "0",
+    });
+  };
+
+  const saveDetails = async () => {
+    if (!detailsEmp) return;
+    setDetailsSaving(true);
+    const { error: upErr } = await supabase
+      .from("attendance_records")
+      .update({
+        half_day: detailsForm.half_day,
+        late_arrival: detailsForm.late_arrival,
+        hours_worked: detailsForm.hours_worked === "" ? null : Number(detailsForm.hours_worked),
+        overtime_hours: Number(detailsForm.overtime_hours) || 0,
+      })
+      .eq("employee_id", detailsEmp.id)
+      .eq("attendance_date", date);
+    setDetailsSaving(false);
+    if (upErr) {
+      setError(upErr.message);
+      return;
+    }
+    setDetailsEmp(null);
   };
 
   const markAllPresent = async () => {
@@ -1079,6 +1129,16 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                                 {status}
                               </button>
                             ))}
+                            {current === "Present" && (
+                              <button
+                                type="button"
+                                onClick={() => openDetailsEditor(employee)}
+                                className="p-1.5 rounded text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                                title="Half-day / Late / Overtime"
+                              >
+                                <MoreHorizontal className="w-4 h-4" />
+                              </button>
+                            )}
                             {isSaving && <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" />}
                           </div>
                         </td>
@@ -1499,6 +1559,78 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
             </>
           )}
         </div>
+      </Modal>
+
+      {/* Sprint 3 — half-day / late / OT editor for a Present employee */}
+      <Modal
+        isOpen={detailsEmp !== null}
+        onClose={() => setDetailsEmp(null)}
+        title={detailsEmp ? `Attendance details — ${detailsEmp.full_name}` : ""}
+        size="sm"
+      >
+        {detailsEmp && (
+          <div className="space-y-3">
+            <div className="text-xs text-slate-500">
+              Date: <strong className="text-slate-700">{date}</strong> ·
+              <span className="ml-1 font-mono">{detailsEmp.employee_code}</span>
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={detailsForm.half_day}
+                onChange={(e) => setDetailsForm({ ...detailsForm, half_day: e.target.checked })}
+              />
+              <span>Half-day</span>
+            </label>
+            {detailsForm.half_day && (
+              <div>
+                <label className="block text-xs text-slate-700 mb-1">Hours worked</label>
+                <input
+                  type="number"
+                  step="0.25"
+                  min="0"
+                  max="12"
+                  value={detailsForm.hours_worked}
+                  onChange={(e) => setDetailsForm({ ...detailsForm, hours_worked: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  placeholder="e.g., 4"
+                />
+              </div>
+            )}
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={detailsForm.late_arrival}
+                onChange={(e) => setDetailsForm({ ...detailsForm, late_arrival: e.target.checked })}
+              />
+              <span>Late arrival</span>
+              <span className="text-xs text-slate-500">(does not affect Present status)</span>
+            </label>
+            <div>
+              <label className="block text-xs text-slate-700 mb-1 inline-flex items-center gap-1">
+                <Clock className="w-3 h-3" /> Overtime hours
+              </label>
+              <input
+                type="number"
+                step="0.25"
+                min="0"
+                max="12"
+                value={detailsForm.overtime_hours}
+                onChange={(e) => setDetailsForm({ ...detailsForm, overtime_hours: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              />
+            </div>
+            <div className="flex items-center gap-2 pt-3 border-t border-slate-200">
+              <Button variant="primary" size="md" disabled={detailsSaving} onClick={saveDetails} className="flex-1">
+                {detailsSaving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : null}
+                Save details
+              </Button>
+              <Button variant="secondary" size="md" onClick={() => setDetailsEmp(null)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
     </>
   );
