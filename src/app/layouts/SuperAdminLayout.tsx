@@ -20,6 +20,9 @@ import {
   Shuffle,
   Trello,
   Landmark,
+  Building2,
+  FileSignature,
+  ShieldAlert,
 } from "lucide-react";
 
 type LinkDef = {
@@ -51,6 +54,9 @@ export default function SuperAdminLayout() {
 
   // Module definitions with their permission gates.
   const DASHBOARD: LinkDef = { to: "/super-admin", label: "Dashboard", icon: LayoutDashboard };
+  const CLIENTS: LinkDef = { to: "/super-admin/clients", label: "Clients", icon: Building2, perms: ["settings.view", "settings.edit"] };
+  const CONTRACTS: LinkDef = { to: "/super-admin/contracts", label: "Contracts", icon: FileSignature, perms: ["settings.view", "settings.edit"] };
+  const LICENCES: LinkDef = { to: "/super-admin/licences", label: "Licences & Renewals", icon: ShieldAlert, perms: ["compliance.view", "compliance.edit"] };
   const INVOICES: LinkDef = { to: "/super-admin/invoices", label: "Invoices", icon: ReceiptText, perms: ["invoices.view", "invoices.edit"] };
   const EMPLOYEES: LinkDef = { to: "/super-admin/employees", label: "Employees", icon: UserCircle, perms: ["employees.view", "employees.edit"] };
   const ATTENDANCE: LinkDef = { to: "/super-admin/attendance", label: "Attendance", icon: Calendar, perms: ["attendance.view", "attendance.edit"] };
@@ -111,9 +117,12 @@ export default function SuperAdminLayout() {
   const overview = buildGroup("Overview", "/super-admin/overview", [DASHBOARD]);
   if (overview) links.push(overview);
 
-  // CONTRACTS & CLIENTS — Clients & Contracts pages live inside Settings for now;
-  // when they're promoted to top-level (Sprint 2) they'll get their own links here.
-  const contractsClients = buildGroup("Contracts & Clients", "/super-admin/billing", [INVOICES]);
+  // CONTRACTS & CLIENTS
+  const contractsClients = buildGroup("Contracts & Clients", "/super-admin/billing", [
+    CLIENTS,
+    CONTRACTS,
+    INVOICES,
+  ]);
   if (contractsClients) links.push(contractsClients);
 
   // WORKFORCE
@@ -146,6 +155,7 @@ export default function SuperAdminLayout() {
 
   // COMPLIANCE
   const compliance = buildGroup("Compliance", "/super-admin/comply", [
+    LICENCES,
     COMPLIANCE,
     DOCUMENTS,
   ]);

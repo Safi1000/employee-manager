@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Search, Upload, AlertCircle, Loader2, X, Trash2 } from "lucide-react";
+import { Plus, Search, Upload, AlertCircle, Loader2, X, Trash2, ChevronDown, ChevronRight as ChevronRightIcon } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -7,6 +7,8 @@ import ClientFilterSelect from "../../components/ClientFilterSelect";
 import {
   supabase,
   EMPLOYEE_DOCS_BUCKET,
+  BLOOD_GROUPS,
+  EMERGENCY_CONTACT_RELATIONS,
   type Employee,
   type EmployeeDocument,
   type Location,
@@ -40,6 +42,26 @@ type FormState = {
   join_date: string;
   bank_name: string;
   bank_account: string;
+  // Sprint 2 HR additions
+  cnic_number: string;
+  date_of_birth: string;
+  father_or_husband_name: string;
+  blood_group: string;
+  permanent_address: string;
+  current_address: string;
+  emergency_contact_name: string;
+  emergency_contact_relation: string;
+  emergency_contact_phone: string;
+  reporting_to_employee_id: string;
+  employee_contract_type: "" | "permanent" | "contract" | "probation" | "daily_wages";
+  probation_end_date: string;
+  weapon_licence_number: string;
+  weapon_licence_expiry: string;
+  guard_service_licence_number: string;
+  guard_service_licence_expiry: string;
+  medical_fitness_expiry: string;
+  eobi_registration_number: string;
+  iban: string;
   cnic?: File;
   police_verification?: File;
   other?: FileList;
@@ -60,7 +82,27 @@ const emptyForm: FormState = {
   join_date: "",
   bank_name: "",
   bank_account: "",
+  cnic_number: "",
+  date_of_birth: "",
+  father_or_husband_name: "",
+  blood_group: "",
+  permanent_address: "",
+  current_address: "",
+  emergency_contact_name: "",
+  emergency_contact_relation: "",
+  emergency_contact_phone: "",
+  reporting_to_employee_id: "",
+  employee_contract_type: "",
+  probation_end_date: "",
+  weapon_licence_number: "",
+  weapon_licence_expiry: "",
+  guard_service_licence_number: "",
+  guard_service_licence_expiry: "",
+  medical_fitness_expiry: "",
+  eobi_registration_number: "",
+  iban: "",
 };
+
 
 const daysInCurrentMonth = () => {
   const d = new Date();
@@ -367,6 +409,25 @@ export default function EmployeeManagement() {
           join_date: form.join_date || null,
           bank_name: form.bank_name.trim() || null,
           bank_account: form.bank_account.trim() || null,
+          cnic_number: form.cnic_number.trim() || null,
+          date_of_birth: form.date_of_birth || null,
+          father_or_husband_name: form.father_or_husband_name.trim() || null,
+          blood_group: form.blood_group || null,
+          permanent_address: form.permanent_address.trim() || null,
+          current_address: form.current_address.trim() || null,
+          emergency_contact_name: form.emergency_contact_name.trim() || null,
+          emergency_contact_relation: form.emergency_contact_relation || null,
+          emergency_contact_phone: form.emergency_contact_phone.trim() || null,
+          reporting_to_employee_id: form.reporting_to_employee_id || null,
+          employee_contract_type: form.employee_contract_type || null,
+          probation_end_date: form.probation_end_date || null,
+          weapon_licence_number: form.weapon_licence_number.trim() || null,
+          weapon_licence_expiry: form.weapon_licence_expiry || null,
+          guard_service_licence_number: form.guard_service_licence_number.trim() || null,
+          guard_service_licence_expiry: form.guard_service_licence_expiry || null,
+          medical_fitness_expiry: form.medical_fitness_expiry || null,
+          eobi_registration_number: form.eobi_registration_number.trim() || null,
+          iban: form.iban.trim() || null,
         })
         .select()
         .single();
@@ -463,6 +524,25 @@ export default function EmployeeManagement() {
       join_date: emp.join_date ?? "",
       bank_name: emp.bank_name ?? "",
       bank_account: emp.bank_account ?? "",
+      cnic_number: emp.cnic_number ?? "",
+      date_of_birth: emp.date_of_birth ?? "",
+      father_or_husband_name: emp.father_or_husband_name ?? "",
+      blood_group: emp.blood_group ?? "",
+      permanent_address: emp.permanent_address ?? "",
+      current_address: emp.current_address ?? "",
+      emergency_contact_name: emp.emergency_contact_name ?? "",
+      emergency_contact_relation: emp.emergency_contact_relation ?? "",
+      emergency_contact_phone: emp.emergency_contact_phone ?? "",
+      reporting_to_employee_id: emp.reporting_to_employee_id ?? "",
+      employee_contract_type: emp.employee_contract_type ?? "",
+      probation_end_date: emp.probation_end_date ?? "",
+      weapon_licence_number: emp.weapon_licence_number ?? "",
+      weapon_licence_expiry: emp.weapon_licence_expiry ?? "",
+      guard_service_licence_number: emp.guard_service_licence_number ?? "",
+      guard_service_licence_expiry: emp.guard_service_licence_expiry ?? "",
+      medical_fitness_expiry: emp.medical_fitness_expiry ?? "",
+      eobi_registration_number: emp.eobi_registration_number ?? "",
+      iban: emp.iban ?? "",
     });
     setIsEditModalOpen(true);
   };
@@ -490,6 +570,25 @@ export default function EmployeeManagement() {
           join_date: editForm.join_date || null,
           bank_name: editForm.bank_name.trim() || null,
           bank_account: editForm.bank_account.trim() || null,
+          cnic_number: editForm.cnic_number.trim() || null,
+          date_of_birth: editForm.date_of_birth || null,
+          father_or_husband_name: editForm.father_or_husband_name.trim() || null,
+          blood_group: editForm.blood_group || null,
+          permanent_address: editForm.permanent_address.trim() || null,
+          current_address: editForm.current_address.trim() || null,
+          emergency_contact_name: editForm.emergency_contact_name.trim() || null,
+          emergency_contact_relation: editForm.emergency_contact_relation || null,
+          emergency_contact_phone: editForm.emergency_contact_phone.trim() || null,
+          reporting_to_employee_id: editForm.reporting_to_employee_id || null,
+          employee_contract_type: editForm.employee_contract_type || null,
+          probation_end_date: editForm.probation_end_date || null,
+          weapon_licence_number: editForm.weapon_licence_number.trim() || null,
+          weapon_licence_expiry: editForm.weapon_licence_expiry || null,
+          guard_service_licence_number: editForm.guard_service_licence_number.trim() || null,
+          guard_service_licence_expiry: editForm.guard_service_licence_expiry || null,
+          medical_fitness_expiry: editForm.medical_fitness_expiry || null,
+          eobi_registration_number: editForm.eobi_registration_number.trim() || null,
+          iban: editForm.iban.trim() || null,
         })
         .eq("id", selectedEmployee.id);
       if (upErr) throw upErr;
@@ -972,8 +1071,26 @@ export default function EmployeeManagement() {
                   placeholder="e.g., PK36SCBL0000001123456702"
                 />
               </div>
+              <div className="col-span-2">
+                <label className="block text-sm text-slate-700 mb-1">IBAN (24 chars)</label>
+                <input
+                  type="text"
+                  maxLength={24}
+                  value={form.iban}
+                  onChange={(e) => setForm({ ...form, iban: e.target.value.toUpperCase().replace(/\s+/g, "") })}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm font-mono"
+                  placeholder="PKxx XXXX XXXX XXXX XXXX XXXX"
+                />
+                {form.iban && form.iban.length !== 24 && (
+                  <p className="text-xs text-warning-700 mt-1">
+                    Pakistani IBANs are 24 characters (currently {form.iban.length}).
+                  </p>
+                )}
+              </div>
             </div>
           </div>
+
+          <EmployeeHrSection form={form} setForm={setForm} employees={employees} />
 
           <div className="pt-4 border-t border-slate-200">
             <h4 className="text-sm text-slate-900 mb-4">Documents</h4>
@@ -1391,8 +1508,21 @@ export default function EmployeeManagement() {
                     <option value="Inactive">Inactive</option>
                   </select>
                 </div>
+                <div className="col-span-2">
+                  <label className="block text-sm text-slate-700 mb-1">IBAN (24 chars)</label>
+                  <input
+                    type="text"
+                    maxLength={24}
+                    value={editForm.iban}
+                    onChange={(e) => setEditForm({ ...editForm, iban: e.target.value.toUpperCase().replace(/\s+/g, "") })}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm font-mono"
+                    placeholder="PKxx XXXX XXXX XXXX XXXX XXXX"
+                  />
+                </div>
               </div>
             </div>
+
+            <EmployeeHrSection form={editForm} setForm={setEditForm} employees={employees} excludeEmployeeId={selectedEmployee?.id} />
 
             <div className="pt-4 border-t border-slate-200">
               <h4 className="text-sm text-slate-900 mb-4">Add Documents</h4>
@@ -1445,5 +1575,305 @@ export default function EmployeeManagement() {
         )}
       </Modal>
     </>
+  );
+}
+
+function formatCnicInline(raw: string): string {
+  const digits = raw.replace(/\D/g, "").slice(0, 13);
+  if (digits.length <= 5) return digits;
+  if (digits.length <= 12) return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+  return `${digits.slice(0, 5)}-${digits.slice(5, 12)}-${digits.slice(12)}`;
+}
+
+// Collapsible HR/compliance fields appended to both Add and Edit employee
+// forms. Spec section 3.3 + Appendix A.1.
+function EmployeeHrSection({
+  form,
+  setForm,
+  employees,
+  excludeEmployeeId,
+}: {
+  form: FormState;
+  setForm: (f: FormState) => void;
+  employees: EmployeeRow[];
+  excludeEmployeeId?: string;
+}) {
+  const [openPersonal, setOpenPersonal] = useState(false);
+  const [openEmergency, setOpenEmergency] = useState(false);
+  const [openEmployment, setOpenEmployment] = useState(false);
+  const [openLicences, setOpenLicences] = useState(false);
+
+  const supervisorOptions = useMemo(
+    () => employees.filter((e) => e.id !== excludeEmployeeId && e.status === "Active"),
+    [employees, excludeEmployeeId],
+  );
+
+  const SectionHeader = ({
+    open,
+    onClick,
+    title,
+    hint,
+  }: {
+    open: boolean;
+    onClick: () => void;
+    title: string;
+    hint?: string;
+  }) => (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full flex items-center gap-2 py-2 text-left text-sm text-slate-900 hover:text-brand-700"
+    >
+      {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />}
+      <span className="flex-1">
+        {title}
+        {hint && <span className="text-xs text-slate-500 font-normal ml-2">{hint}</span>}
+      </span>
+    </button>
+  );
+
+  return (
+    <div className="pt-4 border-t border-slate-200">
+      <h4 className="text-sm text-slate-900 mb-2">HR Details & Compliance</h4>
+      <p className="text-xs text-slate-500 mb-3">
+        Optional Pakistani-HR-compliant fields. Expiry dates feed the Compliance Calendar.
+      </p>
+
+      {/* Personal */}
+      <div className="border-t border-slate-100">
+        <SectionHeader open={openPersonal} onClick={() => setOpenPersonal((v) => !v)} title="Personal Information" />
+        {openPersonal && (
+          <div className="grid grid-cols-2 gap-3 pb-3">
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">CNIC Number</label>
+              <input
+                type="text"
+                maxLength={15}
+                value={form.cnic_number}
+                onChange={(e) => setForm({ ...form, cnic_number: formatCnicInline(e.target.value) })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm font-mono"
+                placeholder="XXXXX-XXXXXXX-X"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Date of Birth</label>
+              <input
+                type="date"
+                value={form.date_of_birth}
+                onChange={(e) => setForm({ ...form, date_of_birth: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Father / Husband Name</label>
+              <input
+                type="text"
+                value={form.father_or_husband_name}
+                onChange={(e) => setForm({ ...form, father_or_husband_name: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                placeholder="As per CNIC"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Blood Group</label>
+              <select
+                value={form.blood_group}
+                onChange={(e) => setForm({ ...form, blood_group: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              >
+                <option value="">—</option>
+                {BLOOD_GROUPS.map((bg) => (
+                  <option key={bg} value={bg}>{bg}</option>
+                ))}
+              </select>
+            </div>
+            <div className="col-span-2">
+              <label className="block text-sm text-slate-700 mb-1">Permanent Address</label>
+              <textarea
+                rows={2}
+                value={form.permanent_address}
+                onChange={(e) => setForm({ ...form, permanent_address: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-sm text-slate-700 mb-1">Current Address</label>
+              <textarea
+                rows={2}
+                value={form.current_address}
+                onChange={(e) => setForm({ ...form, current_address: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                placeholder="Leave blank to default to permanent address"
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Emergency Contact */}
+      <div className="border-t border-slate-100">
+        <SectionHeader
+          open={openEmergency}
+          onClick={() => setOpenEmergency((v) => !v)}
+          title="Emergency Contact"
+          hint="Required by labour regulations"
+        />
+        {openEmergency && (
+          <div className="grid grid-cols-3 gap-3 pb-3">
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Name</label>
+              <input
+                type="text"
+                value={form.emergency_contact_name}
+                onChange={(e) => setForm({ ...form, emergency_contact_name: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Relation</label>
+              <select
+                value={form.emergency_contact_relation}
+                onChange={(e) => setForm({ ...form, emergency_contact_relation: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              >
+                <option value="">—</option>
+                {EMERGENCY_CONTACT_RELATIONS.map((r) => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Phone</label>
+              <input
+                type="tel"
+                value={form.emergency_contact_phone}
+                onChange={(e) => setForm({ ...form, emergency_contact_phone: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                placeholder="+92 …"
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Employment specifics */}
+      <div className="border-t border-slate-100">
+        <SectionHeader open={openEmployment} onClick={() => setOpenEmployment((v) => !v)} title="Contract & Reporting" />
+        {openEmployment && (
+          <div className="grid grid-cols-2 gap-3 pb-3">
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Contract Type</label>
+              <select
+                value={form.employee_contract_type}
+                onChange={(e) =>
+                  setForm({ ...form, employee_contract_type: e.target.value as FormState["employee_contract_type"] })
+                }
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              >
+                <option value="">—</option>
+                <option value="permanent">Permanent</option>
+                <option value="contract">Contract</option>
+                <option value="probation">Probation</option>
+                <option value="daily_wages">Daily Wages</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Probation End Date</label>
+              <input
+                type="date"
+                value={form.probation_end_date}
+                onChange={(e) => setForm({ ...form, probation_end_date: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                disabled={form.employee_contract_type !== "probation"}
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-sm text-slate-700 mb-1">Reporting To (supervisor)</label>
+              <select
+                value={form.reporting_to_employee_id}
+                onChange={(e) => setForm({ ...form, reporting_to_employee_id: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              >
+                <option value="">— Nobody —</option>
+                {supervisorOptions.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.full_name} ({e.employee_code})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Licences & Compliance */}
+      <div className="border-t border-slate-100">
+        <SectionHeader
+          open={openLicences}
+          onClick={() => setOpenLicences((v) => !v)}
+          title="Licences & Compliance"
+          hint="Expiry dates feed Compliance Calendar"
+        />
+        {openLicences && (
+          <div className="grid grid-cols-2 gap-3 pb-3">
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Weapon Licence #</label>
+              <input
+                type="text"
+                value={form.weapon_licence_number}
+                onChange={(e) => setForm({ ...form, weapon_licence_number: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Weapon Licence Expiry</label>
+              <input
+                type="date"
+                value={form.weapon_licence_expiry}
+                onChange={(e) => setForm({ ...form, weapon_licence_expiry: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Guard Service Licence #</label>
+              <input
+                type="text"
+                value={form.guard_service_licence_number}
+                onChange={(e) => setForm({ ...form, guard_service_licence_number: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Guard Service Licence Expiry</label>
+              <input
+                type="date"
+                value={form.guard_service_licence_expiry}
+                onChange={(e) => setForm({ ...form, guard_service_licence_expiry: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Medical Fitness Expiry</label>
+              <input
+                type="date"
+                value={form.medical_fitness_expiry}
+                onChange={(e) => setForm({ ...form, medical_fitness_expiry: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">EOBI Registration #</label>
+              <input
+                type="text"
+                value={form.eobi_registration_number}
+                onChange={(e) => setForm({ ...form, eobi_registration_number: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                placeholder="Once issued"
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

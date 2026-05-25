@@ -21,6 +21,9 @@ import Compliance from "./pages/super-admin/Compliance";
 import Documents from "./pages/super-admin/Documents";
 import Settings from "./pages/super-admin/Settings";
 import Tasks from "./pages/super-admin/Tasks";
+import Clients from "./pages/super-admin/Clients";
+import Contracts from "./pages/super-admin/Contracts";
+import Licences from "./pages/super-admin/Licences";
 
 import Companies from "./pages/super-super-admin/Companies";
 import CompanyDetail from "./pages/super-super-admin/CompanyDetail";
@@ -54,6 +57,9 @@ export const router = createBrowserRouter([
     children: [
       { index: true, Component: Dashboard },
       { path: "users", element: guard(["users.manage"], <UserManagement />) },
+      { path: "clients", element: guard(["settings.view", "settings.edit"], <Clients />) },
+      { path: "contracts", element: guard(["settings.view", "settings.edit"], <Contracts />) },
+      { path: "licences", element: guard(["compliance.view", "compliance.edit"], <Licences />) },
       { path: "employees", element: guard(["employees.view", "employees.edit"], <EmployeeManagement />) },
       { path: "attendance", element: guard(["attendance.view", "attendance.edit"], <AttendanceManagement />) },
       { path: "payroll", element: guard(["payroll.view", "payroll.edit"], <PayrollManagement />) },

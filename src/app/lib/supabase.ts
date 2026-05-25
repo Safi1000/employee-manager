@@ -251,6 +251,7 @@ export type Location = {
 };
 
 export type ClientType = "security_services" | "guard_deployment";
+export type ClientFilerStatus = "filer" | "non_filer";
 
 export type Client = {
   id: string;
@@ -274,8 +275,105 @@ export type Client = {
   contract_drive_file_id: string | null;
   contract_drive_view_url: string | null;
   contract_file_name: string | null;
+  // Sprint 2 additions (spec section 3.1)
+  ntn: string | null;
+  strn: string | null;
+  filer_status: ClientFilerStatus | null;
+  withholding_tax_rate: number | null;
+  billing_address: string | null;
+  authorised_signatory: string | null;
+  signatory_cnic: string | null;
+  industry: string | null;
   created_at?: string;
 };
+
+// Sprint 2: separate Contracts entity (spec section 3.2).
+export type ContractType = "static" | "mobile_patrol" | "event" | "reliever_pool";
+export type ContractShiftPattern = "day" | "night" | "both" | "custom";
+export type ContractStatus = "active" | "expired" | "terminated" | "draft";
+
+export type Contract = {
+  id: string;
+  company_id?: string;
+  client_id: string;
+  contract_code: string;
+  contract_type: ContractType;
+  start_date: string;
+  end_date: string | null;
+  number_of_guards: number;
+  shift_pattern: ContractShiftPattern;
+  rate_per_guard_per_month: number;
+  allowed_leaves_per_month: number | null;
+  eobi_deduction: boolean;
+  eobi_amount: number | null;
+  annual_escalation_pct: number | null;
+  auto_invoice_enabled: boolean;
+  renewal_terms: string | null;
+  status: ContractStatus;
+  drive_file_id: string | null;
+  drive_view_url: string | null;
+  contract_file_name: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export const CONTRACT_TYPE_LABEL: Record<ContractType, string> = {
+  static: "Static",
+  mobile_patrol: "Mobile Patrol",
+  event: "Event-based",
+  reliever_pool: "Reliever Pool",
+};
+
+export const CONTRACT_SHIFT_LABEL: Record<ContractShiftPattern, string> = {
+  day: "Day",
+  night: "Night",
+  both: "Both",
+  custom: "Custom",
+};
+
+export const CONTRACT_STATUS_LABEL: Record<ContractStatus, string> = {
+  active: "Active",
+  expired: "Expired",
+  terminated: "Terminated",
+  draft: "Draft",
+};
+
+export const PAKISTAN_INDUSTRIES = [
+  "Banking",
+  "Education",
+  "Residential",
+  "Retail",
+  "Industrial",
+  "Healthcare",
+  "Hospitality",
+  "Telecom",
+  "Government",
+  "NGO",
+  "Other",
+] as const;
+
+export const PAKISTAN_BANKS = [
+  "Allied Bank Limited",
+  "Askari Bank Limited",
+  "Bank Alfalah Limited",
+  "Bank AL Habib Limited",
+  "BankIslami Pakistan",
+  "Dubai Islamic Bank Pakistan",
+  "Faysal Bank Limited",
+  "Habib Bank Limited (HBL)",
+  "Habib Metropolitan Bank",
+  "JS Bank Limited",
+  "MCB Bank Limited",
+  "Meezan Bank Limited",
+  "National Bank of Pakistan (NBP)",
+  "Soneri Bank Limited",
+  "Standard Chartered Pakistan",
+  "Summit Bank Limited",
+  "The Bank of Khyber",
+  "The Bank of Punjab",
+  "United Bank Limited (UBL)",
+  "Other",
+] as const;
 
 export type Branch = {
   id: string;
@@ -287,6 +385,22 @@ export type Branch = {
 };
 
 export type EmployeeCategory = "client" | "office_staff" | "reliever";
+
+export type EmployeeContractType =
+  | "permanent"
+  | "contract"
+  | "probation"
+  | "daily_wages";
+
+export const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"] as const;
+export const EMERGENCY_CONTACT_RELATIONS = [
+  "Spouse",
+  "Parent",
+  "Sibling",
+  "Child",
+  "Friend",
+  "Other",
+] as const;
 
 export type ChequeType = "payment" | "cash";
 
@@ -344,6 +458,27 @@ export type Employee = {
   join_date: string | null;
   bank_name: string | null;
   bank_account: string | null;
+  // Sprint 2 HR field expansion (spec section 3.3 + Appendix A.1)
+  cnic_number: string | null;
+  date_of_birth: string | null;
+  father_or_husband_name: string | null;
+  blood_group: string | null;
+  permanent_address: string | null;
+  current_address: string | null;
+  emergency_contact_name: string | null;
+  emergency_contact_relation: string | null;
+  emergency_contact_phone: string | null;
+  reporting_to_employee_id: string | null;
+  employee_contract_type: EmployeeContractType | null;
+  probation_end_date: string | null;
+  contract_id: string | null;
+  weapon_licence_number: string | null;
+  weapon_licence_expiry: string | null;
+  guard_service_licence_number: string | null;
+  guard_service_licence_expiry: string | null;
+  medical_fitness_expiry: string | null;
+  eobi_registration_number: string | null;
+  iban: string | null;
   created_at?: string;
   updated_at?: string;
 };
