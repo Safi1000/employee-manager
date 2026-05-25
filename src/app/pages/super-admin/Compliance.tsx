@@ -551,7 +551,7 @@ export default function Compliance() {
   return (
     <>
       <Header
-        title="Compliance & Alerts"
+        title="Compliance Calendar"
         subtitle="Important dates, contract endings and recurring reminders"
         actions={headerActions}
       />

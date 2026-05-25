@@ -13,7 +13,6 @@ import {
   supabase,
   fetchAllRows,
   INVOICE_ATTACHMENTS_BUCKET,
-  isHardcodedCategory,
   type Client,
   type Invoice,
   type Payslip,
@@ -79,8 +78,17 @@ export default function FinancialReports() {
   const [loadingChart, setLoadingChart] = useState(false);
 
   type PlInvoiceRow = { invoice_amount: number; client?: { client_type: ClientType; branch_id: string | null } | null };
-  type PlExpenseRow = { amount: number; client_id?: string | null; client?: { branch_id: string | null } | null; category?: { name: string } | null };
-  type PlPayslipRow = { final_salary: number; employee?: { branch_id: string | null } | null };
+  type PlExpenseRow = {
+    amount: number;
+    pl_category: "cost_of_services" | "operating_expense";
+    client_id?: string | null;
+    client?: { branch_id: string | null } | null;
+    category?: { name: string } | null;
+  };
+  type PlPayslipRow = {
+    final_salary: number;
+    employee?: { branch_id: string | null; category: "client" | "office_staff" | "reliever" } | null;
+  };
   const [plPeriod, setPlPeriod] = useState<string>(previousMonthKey());
   const [plInvoices, setPlInvoices] = useState<PlInvoiceRow[]>([]);
   const [plPayslips, setPlPayslips] = useState<PlPayslipRow[]>([]);
@@ -208,11 +216,11 @@ export default function FinancialReports() {
           .lte("invoice_date", end),
         supabase
           .from("payslips")
-          .select("final_salary, employee:employee_id(branch_id)")
+          .select("final_salary, employee:employee_id(branch_id, category)")
           .eq("period_month", `${plPeriod}-01`),
         supabase
           .from("expenses")
-          .select("amount, expense_date, category_id, client_id, category:category_id(name), client:client_id(branch_id)")
+          .select("amount, expense_date, category_id, client_id, pl_category, category:category_id(name), client:client_id(branch_id)")
           .gte("expense_date", start)
           .lte("expense_date", end),
       ]);
@@ -230,6 +238,7 @@ export default function FinancialReports() {
     const branchOk = (bid: string | null | undefined): boolean =>
       plBranchFilter === "all" ? true : bid === plBranchFilter;
 
+    // --- Revenue ---
     let securityRevenue = 0;
     let guardRevenue = 0;
     for (const i of plInvoices) {
@@ -239,17 +248,31 @@ export default function FinancialReports() {
       if (t === "guard_deployment") guardRevenue += amt;
       else securityRevenue += amt;
     }
-    const payroll = plPayslips.reduce((s, p) => branchOk(p.employee?.branch_id) ? s + Number(p.final_salary) : s, 0);
-    let equipment = 0;
-    let transportation = 0;
-    let utilities = 0;
-    let insurance = 0;
-    let licenses = 0;
-    let eobi = 0;
-    let iessi = 0;
-    let pessi = 0;
+    const totalRevenue = securityRevenue + guardRevenue;
+
+    // --- Payroll: split by employee category ---
+    // Guards/relievers are deployed → Cost of Services.
+    // Office staff are non-billable → Operating Expense.
+    let guardPayroll = 0;
+    let officePayroll = 0;
+    for (const p of plPayslips) {
+      if (!branchOk(p.employee?.branch_id)) continue;
+      const amt = Number(p.final_salary);
+      if (p.employee?.category === "office_staff") officePayroll += amt;
+      else guardPayroll += amt;
+    }
+
+    // --- Expenses: split by pl_category (with named buckets for the well-known
+    // hardcoded categories so the report keeps showing the same line items). ---
+    let cosStatutory = 0;     // EOBI + IESSI + PESSI billed by company
+    let cosTransport = 0;     // Transportation & Fuel
+    let cosEquipment = 0;     // Equipment & Supplies
+    let cosOther = 0;         // any other COS expense
+    let opUtilities = 0;
+    let opInsurance = 0;
+    let opLicenses = 0;
+    let opOther = 0;
     let taxes = 0;
-    let operating = 0;
     for (const e of plExpenses) {
       // Office expenses (no client) belong to Head Office. So they count under
       // "All Branches" AND under "Head Office", but not under any other branch.
@@ -262,38 +285,50 @@ export default function FinancialReports() {
       }
       const name = e.category?.name ?? "";
       const amt = Number(e.amount);
-      if (name === "Equipment & Supplies") equipment += amt;
-      else if (name === "Transportation & Fuel") transportation += amt;
-      else if (name === "Utilities & Rent") utilities += amt;
-      else if (name === "Insurance") insurance += amt;
-      else if (name === "Licenses") licenses += amt;
-      else if (name === "EOBI") eobi += amt;
-      else if (name === "IESSI") iessi += amt;
-      else if (name === "PESSI") pessi += amt;
-      else if (name === "Taxes") taxes += amt;
-      else if (!isHardcodedCategory(name)) operating += amt;
+      if (name === "Taxes") { taxes += amt; continue; }
+
+      const isCos = e.pl_category === "cost_of_services";
+      if (isCos) {
+        if (name === "Equipment & Supplies") cosEquipment += amt;
+        else if (name === "Transportation & Fuel") cosTransport += amt;
+        else if (name === "EOBI" || name === "IESSI" || name === "PESSI") cosStatutory += amt;
+        else cosOther += amt;
+      } else {
+        if (name === "Utilities & Rent") opUtilities += amt;
+        else if (name === "Insurance") opInsurance += amt;
+        else if (name === "Licenses") opLicenses += amt;
+        else opOther += amt;
+      }
     }
-    const totalRevenue = securityRevenue + guardRevenue;
-    const totalExpenses =
-      payroll + equipment + transportation + utilities + insurance + licenses + eobi + iessi + pessi + operating;
-    const grossProfit = totalRevenue - totalExpenses;
-    const netProfit = grossProfit - taxes;
+
+    const totalCos =
+      guardPayroll + cosStatutory + cosTransport + cosEquipment + cosOther;
+    const grossProfit = totalRevenue - totalCos;
+    const totalOpex = officePayroll + opUtilities + opInsurance + opLicenses + opOther;
+    const operatingProfit = grossProfit - totalOpex;
+    // No "Other Income / (Expenses)" line yet — EBT == Operating Profit.
+    const ebt = operatingProfit;
+    const netProfit = ebt - taxes;
+
     return {
       securityRevenue,
       guardRevenue,
       totalRevenue,
-      payroll,
-      equipment,
-      transportation,
-      utilities,
-      insurance,
-      licenses,
-      eobi,
-      iessi,
-      pessi,
-      operating,
-      totalExpenses,
+      guardPayroll,
+      cosStatutory,
+      cosTransport,
+      cosEquipment,
+      cosOther,
+      totalCos,
       grossProfit,
+      officePayroll,
+      opUtilities,
+      opInsurance,
+      opLicenses,
+      opOther,
+      totalOpex,
+      operatingProfit,
+      ebt,
       taxes,
       netProfit,
     };
@@ -640,19 +675,26 @@ export default function FinancialReports() {
               if (activeTab === "pl") {
                 exportProfitLoss(
                   {
-                    revenue: plFigures.totalRevenue,
-                    payroll: plFigures.payroll,
-                    operating: plFigures.operating,
-                    equipment: plFigures.equipment,
-                    transportation: plFigures.transportation,
-                    utilities: plFigures.utilities,
-                    insurance: plFigures.insurance,
-                    licenses: plFigures.licenses,
-                    eobi: plFigures.eobi,
-                    iessi: plFigures.iessi,
-                    pessi: plFigures.pessi,
-                    totalExpenses: plFigures.totalExpenses,
-                    total: plFigures.netProfit,
+                    securityRevenue: plFigures.securityRevenue,
+                    guardRevenue: plFigures.guardRevenue,
+                    totalRevenue: plFigures.totalRevenue,
+                    guardPayroll: plFigures.guardPayroll,
+                    cosStatutory: plFigures.cosStatutory,
+                    cosTransport: plFigures.cosTransport,
+                    cosEquipment: plFigures.cosEquipment,
+                    cosOther: plFigures.cosOther,
+                    totalCos: plFigures.totalCos,
+                    grossProfit: plFigures.grossProfit,
+                    officePayroll: plFigures.officePayroll,
+                    opUtilities: plFigures.opUtilities,
+                    opInsurance: plFigures.opInsurance,
+                    opLicenses: plFigures.opLicenses,
+                    opOther: plFigures.opOther,
+                    totalOpex: plFigures.totalOpex,
+                    operatingProfit: plFigures.operatingProfit,
+                    ebt: plFigures.ebt,
+                    taxes: plFigures.taxes,
+                    netProfit: plFigures.netProfit,
                   },
                   formatPeriod(plPeriod),
                   `P&L ${formatPeriod(plPeriod)}.xlsx`
@@ -779,6 +821,7 @@ export default function FinancialReports() {
                 </div>
               ) : (
                 <div className="space-y-6">
+                  {/* Revenue */}
                   <div>
                     <h4 className="text-sm text-slate-900 mb-3 pb-2 border-b border-slate-200">Revenue</h4>
                     <div className="space-y-2 mb-3">
@@ -803,20 +846,16 @@ export default function FinancialReports() {
                     </div>
                   </div>
 
+                  {/* Cost of Services */}
                   <div>
-                    <h4 className="text-sm text-slate-900 mb-3 pb-2 border-b border-slate-200">Expenses</h4>
+                    <h4 className="text-sm text-slate-900 mb-3 pb-2 border-b border-slate-200">Cost of Services</h4>
                     <div className="space-y-2 mb-3">
                       {[
-                        { name: "Payroll & Salaries", amount: plFigures.payroll },
-                        { name: "Operating Expenses", amount: plFigures.operating },
-                        { name: "Equipment & Supplies", amount: plFigures.equipment },
-                        { name: "Transportation & Fuel", amount: plFigures.transportation },
-                        { name: "Utilities & Rent", amount: plFigures.utilities },
-                        { name: "Insurance", amount: plFigures.insurance },
-                        { name: "Licenses", amount: plFigures.licenses },
-                        { name: "EOBI", amount: plFigures.eobi },
-                        { name: "IESSI", amount: plFigures.iessi },
-                        { name: "PESSI", amount: plFigures.pessi },
+                        { name: "Guard Payroll & Salaries", amount: plFigures.guardPayroll },
+                        { name: "Guard Statutory (EOBI / IESSI / PESSI)", amount: plFigures.cosStatutory },
+                        { name: "Transportation & Fuel", amount: plFigures.cosTransport },
+                        { name: "Equipment & Supplies", amount: plFigures.cosEquipment },
+                        { name: "Other Cost of Services", amount: plFigures.cosOther },
                       ].map((item) => (
                         <div key={item.name} className="flex justify-between items-center pl-4">
                           <span className="text-sm text-slate-600">{item.name}</span>
@@ -827,13 +866,14 @@ export default function FinancialReports() {
                       ))}
                     </div>
                     <div className="flex justify-between items-center pl-4 pt-2 border-t border-slate-200">
-                      <span className="text-sm text-slate-900">Total Expenses</span>
+                      <span className="text-sm text-slate-900">Total Cost of Services</span>
                       <span className="text-sm text-danger-600">
-                        PKR {plFigures.totalExpenses.toLocaleString()}
+                        PKR {plFigures.totalCos.toLocaleString()}
                       </span>
                     </div>
                   </div>
 
+                  {/* Gross Profit */}
                   <div className="pt-4 border-t-2 border-slate-300">
                     <div className="flex justify-between items-center">
                       <span className="text-base text-slate-900">Gross Profit</span>
@@ -845,9 +885,55 @@ export default function FinancialReports() {
                     </div>
                   </div>
 
-                  <div className="pt-2">
+                  {/* Operating Expenses */}
+                  <div>
+                    <h4 className="text-sm text-slate-900 mb-3 pb-2 border-b border-slate-200">Operating Expenses</h4>
+                    <div className="space-y-2 mb-3">
+                      {[
+                        { name: "Office Salaries (non-billable staff)", amount: plFigures.officePayroll },
+                        { name: "Utilities & Rent (HQ)", amount: plFigures.opUtilities },
+                        { name: "Insurance", amount: plFigures.opInsurance },
+                        { name: "Licences (company-level)", amount: plFigures.opLicenses },
+                        { name: "Other Operating Expenses", amount: plFigures.opOther },
+                      ].map((item) => (
+                        <div key={item.name} className="flex justify-between items-center pl-4">
+                          <span className="text-sm text-slate-600">{item.name}</span>
+                          <span className="text-sm text-danger-600">
+                            PKR {item.amount.toLocaleString()}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex justify-between items-center pl-4 pt-2 border-t border-slate-200">
+                      <span className="text-sm text-slate-900">Total Operating Expenses</span>
+                      <span className="text-sm text-danger-600">
+                        PKR {plFigures.totalOpex.toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Operating Profit */}
+                  <div className="pt-4 border-t-2 border-slate-300">
+                    <div className="flex justify-between items-center">
+                      <span className="text-base text-slate-900">Operating Profit</span>
+                      <span
+                        className={`text-lg ${plFigures.operatingProfit >= 0 ? "text-success-600" : "text-danger-600"}`}
+                      >
+                        PKR {plFigures.operatingProfit.toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* EBT / Tax / Net */}
+                  <div className="pt-2 space-y-2">
                     <div className="flex justify-between items-center pl-4">
-                      <span className="text-sm text-slate-600">Taxes</span>
+                      <span className="text-sm text-slate-600">Earnings Before Tax (EBT)</span>
+                      <span className={`text-sm ${plFigures.ebt >= 0 ? "text-slate-900" : "text-danger-600"}`}>
+                        PKR {plFigures.ebt.toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center pl-4">
+                      <span className="text-sm text-slate-600">Income Tax</span>
                       <span className="text-sm text-danger-600">
                         PKR {plFigures.taxes.toLocaleString()}
                       </span>

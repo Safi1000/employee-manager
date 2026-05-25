@@ -189,19 +189,30 @@ export function exportClientStatements(
 
 // ---------- Profit & Loss Format ----------
 export type PLFigures = {
-  revenue: number;
-  payroll: number;
-  operating: number;
-  equipment: number;
-  transportation: number;
-  utilities: number;
-  insurance: number;
-  licenses: number;
-  eobi: number;
-  iessi: number;
-  pessi: number;
-  totalExpenses: number;
-  total: number;
+  // Revenue
+  securityRevenue: number;
+  guardRevenue: number;
+  totalRevenue: number;
+  // Cost of Services
+  guardPayroll: number;
+  cosStatutory: number; // EOBI + IESSI + PESSI
+  cosTransport: number;
+  cosEquipment: number;
+  cosOther: number;
+  totalCos: number;
+  grossProfit: number;
+  // Operating Expenses
+  officePayroll: number;
+  opUtilities: number;
+  opInsurance: number;
+  opLicenses: number;
+  opOther: number;
+  totalOpex: number;
+  operatingProfit: number;
+  // Below the line
+  ebt: number;
+  taxes: number;
+  netProfit: number;
 };
 
 export function exportProfitLoss(
@@ -215,26 +226,39 @@ export function exportProfitLoss(
   data.push([]);
   data.push(["PROFIT AND LOSS STATEMENT", "", "", "", ""]);
   data.push([]);
-  data.push(["Revenue", "", "", "", fig.revenue]);
-  data.push(["Expenses", "", "", "", ""]);
-  data.push(["Payroll & Salaries", "", "", fig.payroll, ""]);
-  data.push(["Operating Expenses", "", "", fig.operating, ""]);
-  data.push(["Equipment and Supplies", "", "", fig.equipment, ""]);
-  data.push(["Transportation & Fuel", "", "", fig.transportation, ""]);
-  data.push(["Utilities & Rent", "", "", fig.utilities, ""]);
-  data.push(["Insurance", "", "", fig.insurance, ""]);
-  data.push(["Licenses", "", "", fig.licenses, ""]);
-  data.push(["EOBI", "", "", fig.eobi, ""]);
-  data.push(["IESSI", "", "", fig.iessi, ""]);
-  data.push(["PESSI", "", "", fig.pessi, ""]);
-  data.push(["TOTAL EXPENSES", "", "", fig.totalExpenses, ""]);
+  data.push(["Revenue", "", "", "", ""]);
+  data.push(["  Security Services Revenue", "", "", fig.securityRevenue, ""]);
+  data.push(["  Guard Deployment Revenue", "", "", fig.guardRevenue, ""]);
+  data.push(["  Total Revenue", "", "", "", fig.totalRevenue]);
   data.push([]);
-  data.push(["Total", "", "", "", fig.total]);
+  data.push(["Cost of Services", "", "", "", ""]);
+  data.push(["  Guard Payroll & Salaries", "", "", fig.guardPayroll, ""]);
+  data.push(["  Guard Statutory (EOBI/IESSI/PESSI)", "", "", fig.cosStatutory, ""]);
+  data.push(["  Transportation & Fuel", "", "", fig.cosTransport, ""]);
+  data.push(["  Equipment & Supplies", "", "", fig.cosEquipment, ""]);
+  data.push(["  Other Cost of Services", "", "", fig.cosOther, ""]);
+  data.push(["  Total Cost of Services", "", "", "", fig.totalCos]);
+  data.push([]);
+  data.push(["Gross Profit", "", "", "", fig.grossProfit]);
+  data.push([]);
+  data.push(["Operating Expenses", "", "", "", ""]);
+  data.push(["  Office Salaries", "", "", fig.officePayroll, ""]);
+  data.push(["  Utilities & Rent", "", "", fig.opUtilities, ""]);
+  data.push(["  Insurance", "", "", fig.opInsurance, ""]);
+  data.push(["  Licences (company-level)", "", "", fig.opLicenses, ""]);
+  data.push(["  Other Operating Expenses", "", "", fig.opOther, ""]);
+  data.push(["  Total Operating Expenses", "", "", "", fig.totalOpex]);
+  data.push([]);
+  data.push(["Operating Profit", "", "", "", fig.operatingProfit]);
+  data.push([]);
+  data.push(["Earnings Before Tax (EBT)", "", "", "", fig.ebt]);
+  data.push(["Income Tax", "", "", "", fig.taxes]);
+  data.push(["Net Profit", "", "", "", fig.netProfit]);
   const ws = XLSX.utils.aoa_to_sheet(data);
   mergeCell(ws, 0, 0, 0, 4);
   mergeCell(ws, 1, 0, 1, 4);
   mergeCell(ws, 3, 0, 3, 4);
-  setColWidths(ws, [32, 4, 4, 18, 18]);
+  setColWidths(ws, [36, 4, 4, 18, 18]);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "P&L");
   downloadWorkbook(wb, fileName);

@@ -410,6 +410,11 @@ export type BankAccount = {
   owner_type: BankAccountOwnerType;
   owner_partner_id: string | null;
   owner_client_id: string | null;
+  iban: string | null;
+  branch_code: string | null;
+  branch_name: string | null;
+  swift_code: string | null;
+  currency_code: string;
   created_at?: string;
   updated_at?: string;
 };
@@ -611,10 +616,12 @@ export type RecurringAlert = {
 
 export type ExpensePaymentMode = "Cash" | "Bank" | "Payable" | "Cheque";
 export type PayableStatus = "Pending" | "Paid";
+export type ExpensePlCategory = "cost_of_services" | "operating_expense";
 
 export type Expense = {
   id: string;
   category_id: string | null;
+  pl_category: ExpensePlCategory;
   client_id: string | null;
   branch_id: string | null;
   vendor_id: string | null;

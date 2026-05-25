@@ -14,7 +14,7 @@ export default function AccountsLayout() {
     { to: "/accounts/attendance", label: "Attendance", icon: Calendar },
     { to: "/accounts/payroll", label: "Payroll", icon: DollarSign },
     { to: "/accounts/expenses", label: "Expenses", icon: Receipt },
-    { to: "/accounts/cashflow", label: "Cashflow", icon: TrendingUp },
+    { to: "/accounts/cashflow", label: "Cash Flow", icon: TrendingUp },
   ];
 
   return (

@@ -14,9 +14,15 @@ type SidebarLink = {
 type SidebarGroup = {
   type: "group";
   label: string;
-  icon: LucideIcon;
+  icon?: LucideIcon;
   basePath: string;
-  children: SidebarLink[];
+  // section = spec-style heading (smaller caps, muted, no icon, no chevron).
+  //          Default expanded; children always rendered. Used for top-level
+  //          groups like WORKFORCE, FINANCE, etc.
+  // collapsible = old behaviour: clickable header with chevron and icon.
+  //          Used for nested sub-groups like Relievers.
+  variant?: "section" | "collapsible";
+  children: (SidebarLink | SidebarGroup)[];
 };
 
 export type SidebarItem = SidebarLink | SidebarGroup;
@@ -26,11 +32,31 @@ interface SidebarProps {
   links: SidebarItem[];
 }
 
+const STORAGE_KEY = "sidebar.expandedGroups.v1";
+
+function loadExpanded(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveExpanded(state: Record<string, boolean>) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // ignore quota / privacy errors
+  }
+}
+
 export default function Sidebar({ title, links }: SidebarProps) {
   const { profile, signOut } = useAuth();
   const location = useLocation();
   const [open, setOpen] = useState(false);
   const [pwModalOpen, setPwModalOpen] = useState(false);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>(() => loadExpanded());
 
   // Close drawer on route change
   useEffect(() => {
@@ -47,42 +73,73 @@ export default function Sidebar({ title, links }: SidebarProps) {
     }
   }, [open]);
 
+  const toggleGroup = (basePath: string, isAnyChildActive: boolean) => {
+    setExpanded((prev) => {
+      // If never toggled, current state = isAnyChildActive (auto-expanded).
+      // First click should flip from that.
+      const current = basePath in prev ? prev[basePath] : isAnyChildActive;
+      const next = { ...prev, [basePath]: !current };
+      saveExpanded(next);
+      return next;
+    });
+  };
+
   const handleSignOut = async () => {
     await signOut();
     setOpen(false);
   };
 
+  const renderItem = (item: SidebarItem, depth: number): React.ReactNode => {
+    if ("type" in item && item.type === "group") {
+      const variant = item.variant ?? "collapsible";
+      if (variant === "section") {
+        return (
+          <SidebarSection
+            key={item.basePath}
+            group={item}
+            depth={depth}
+            renderItem={renderItem}
+          />
+        );
+      }
+      const isAnyChildActive = anyChildActive(item, location.pathname);
+      const isOpen =
+        item.basePath in expanded ? expanded[item.basePath] : isAnyChildActive;
+      return (
+        <SidebarCollapsibleGroup
+          key={item.basePath}
+          group={item}
+          depth={depth}
+          isOpen={isOpen}
+          isAnyChildActive={isAnyChildActive}
+          onToggle={() => toggleGroup(item.basePath, isAnyChildActive)}
+          renderItem={renderItem}
+        />
+      );
+    }
+    const link = item as SidebarLink;
+    return (
+      <NavLink
+        key={link.to}
+        to={link.to}
+        end={link.to.split("/").length === 2}
+        className={({ isActive }) =>
+          `flex items-center gap-3 px-4 py-2.5 rounded-md text-sm transition-colors ${
+            isActive
+              ? "bg-brand-50 text-brand-700 border-l-2 border-brand-600"
+              : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+          }`
+        }
+      >
+        <link.icon className="w-4 h-4" strokeWidth={1.5} />
+        <span>{link.label}</span>
+      </NavLink>
+    );
+  };
+
   const navItems = (
     <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-      {links.map((item) => {
-        if ("type" in item && item.type === "group") {
-          return (
-            <SidebarGroupNode
-              key={item.basePath}
-              group={item}
-              activePath={location.pathname}
-            />
-          );
-        }
-        const link = item as SidebarLink;
-        return (
-          <NavLink
-            key={link.to}
-            to={link.to}
-            end={link.to.split("/").length === 2}
-            className={({ isActive }) =>
-              `flex items-center gap-3 px-4 py-2.5 rounded-md text-sm transition-colors ${
-                isActive
-                  ? "bg-brand-50 text-brand-700 border-l-2 border-brand-600"
-                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-              }`
-            }
-          >
-            <link.icon className="w-4 h-4" strokeWidth={1.5} />
-            <span>{link.label}</span>
-          </NavLink>
-        );
-      })}
+      {links.map((item) => renderItem(item, 0))}
     </nav>
   );
 
@@ -166,47 +223,73 @@ export default function Sidebar({ title, links }: SidebarProps) {
   );
 }
 
-function SidebarGroupNode({ group, activePath }: { group: SidebarGroup; activePath: string }) {
-  const isAnyChildActive = group.children.some((c) => activePath.startsWith(c.to));
-  const [expanded, setExpanded] = useState(isAnyChildActive);
-  useEffect(() => {
-    if (isAnyChildActive) setExpanded(true);
-  }, [isAnyChildActive]);
+function anyChildActive(group: SidebarGroup, activePath: string): boolean {
+  for (const child of group.children) {
+    if ("type" in child && child.type === "group") {
+      if (anyChildActive(child, activePath)) return true;
+    } else if (activePath.startsWith((child as SidebarLink).to)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function SidebarSection({
+  group,
+  depth,
+  renderItem,
+}: {
+  group: SidebarGroup;
+  depth: number;
+  renderItem: (item: SidebarItem, depth: number) => React.ReactNode;
+}) {
+  return (
+    <div className={depth === 0 ? "pt-3 first:pt-0" : ""}>
+      <div className="px-4 pt-2 pb-1 text-[10px] uppercase tracking-wider text-slate-400">
+        {group.label}
+      </div>
+      <div className="space-y-1">
+        {group.children.map((child) => renderItem(child, depth + 1))}
+      </div>
+    </div>
+  );
+}
+
+function SidebarCollapsibleGroup({
+  group,
+  depth,
+  isOpen,
+  isAnyChildActive,
+  onToggle,
+  renderItem,
+}: {
+  group: SidebarGroup;
+  depth: number;
+  isOpen: boolean;
+  isAnyChildActive: boolean;
+  onToggle: () => void;
+  renderItem: (item: SidebarItem, depth: number) => React.ReactNode;
+}) {
   const Icon = group.icon;
   return (
     <div>
       <button
         type="button"
-        onClick={() => setExpanded((v) => !v)}
+        onClick={onToggle}
         className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-md text-sm transition-colors ${
           isAnyChildActive ? "text-slate-900" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
         }`}
       >
-        <Icon className="w-4 h-4" strokeWidth={1.5} />
+        {Icon && <Icon className="w-4 h-4" strokeWidth={1.5} />}
         <span className="flex-1 text-left">{group.label}</span>
         <ChevronRight
-          className={`w-3.5 h-3.5 transition-transform ${expanded ? "rotate-90" : ""}`}
+          className={`w-3.5 h-3.5 transition-transform ${isOpen ? "rotate-90" : ""}`}
           strokeWidth={1.5}
         />
       </button>
-      {expanded && (
+      {isOpen && (
         <div className="ml-5 pl-2 border-l border-slate-200 mt-0.5 space-y-1">
-          {group.children.map((child) => (
-            <NavLink
-              key={child.to}
-              to={child.to}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
-                  isActive
-                    ? "bg-brand-50 text-brand-700"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                }`
-              }
-            >
-              <child.icon className="w-3.5 h-3.5" strokeWidth={1.5} />
-              <span>{child.label}</span>
-            </NavLink>
-          ))}
+          {group.children.map((child) => renderItem(child, depth + 1))}
         </div>
       )}
     </div>

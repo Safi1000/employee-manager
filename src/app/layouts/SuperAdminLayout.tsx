@@ -13,21 +13,34 @@ import {
   ReceiptText,
   TrendingUp,
   Settings as SettingsIcon,
-  BookOpen,
   FileText,
   Package,
   Bell,
   Folder,
   Shuffle,
   Trello,
+  Landmark,
 } from "lucide-react";
 
 type LinkDef = {
   to: string;
   label: string;
   icon: typeof LayoutDashboard;
-  perms?: string[]; // any-of; undefined = always visible
+  perms?: string[];
 };
+
+const has = (
+  profile: Parameters<typeof hasAnyPermission>[0],
+  perms?: string[],
+) => !perms || hasAnyPermission(profile, perms);
+
+const linkOrNull = (
+  profile: Parameters<typeof hasAnyPermission>[0],
+  def: LinkDef,
+) =>
+  has(profile, def.perms)
+    ? { to: def.to, label: def.label, icon: def.icon }
+    : null;
 
 export default function SuperAdminLayout() {
   const { profile, company, setViewAsCompany } = useAuth();
@@ -36,49 +49,115 @@ export default function SuperAdminLayout() {
   const isSsaViewing =
     profile?.role === "super_super_admin" && !!profile.view_as_company;
 
-  const allLinks: LinkDef[] = [
-    { to: "/super-admin", label: "Dashboard", icon: LayoutDashboard }, // always visible
-    { to: "/super-admin/users", label: "User Management", icon: Users, perms: ["users.manage"] },
-    { to: "/super-admin/employees", label: "Employees", icon: UserCircle, perms: ["employees.view", "employees.edit"] },
-    { to: "/super-admin/attendance", label: "Attendance", icon: Calendar, perms: ["attendance.view", "attendance.edit"] },
-    { to: "/super-admin/payroll", label: "Payroll", icon: DollarSign, perms: ["payroll.view", "payroll.edit"] },
-    { to: "/super-admin/accounting", label: "Accounting", icon: BookOpen, perms: ["accounting.view", "accounting.edit"] },
-    { to: "/super-admin/reports", label: "Financial Reports", icon: FileText, perms: ["reports.view"] },
-    { to: "/super-admin/expenses", label: "Expenses", icon: Receipt, perms: ["expenses.view", "expenses.edit"] },
-    { to: "/super-admin/invoices", label: "Invoices", icon: ReceiptText, perms: ["invoices.view", "invoices.edit"] },
-    { to: "/super-admin/cashflow", label: "Cashflow", icon: TrendingUp, perms: ["cashflow.view"] },
-    { to: "/super-admin/inventory", label: "Inventory", icon: Package, perms: ["inventory.view", "inventory.edit"] },
-    { to: "/super-admin/documents", label: "Documents", icon: Folder, perms: ["documents.view", "documents.edit"] },
-    { to: "/super-admin/compliance", label: "Compliance & Alerts", icon: Bell, perms: ["compliance.view", "compliance.edit"] },
-    { to: "/super-admin/tasks", label: "Tasks", icon: Trello },
-    { to: "/super-admin/settings", label: "Settings", icon: SettingsIcon, perms: ["settings.view", "settings.edit"] },
-  ];
+  // Module definitions with their permission gates.
+  const DASHBOARD: LinkDef = { to: "/super-admin", label: "Dashboard", icon: LayoutDashboard };
+  const INVOICES: LinkDef = { to: "/super-admin/invoices", label: "Invoices", icon: ReceiptText, perms: ["invoices.view", "invoices.edit"] };
+  const EMPLOYEES: LinkDef = { to: "/super-admin/employees", label: "Employees", icon: UserCircle, perms: ["employees.view", "employees.edit"] };
+  const ATTENDANCE: LinkDef = { to: "/super-admin/attendance", label: "Attendance", icon: Calendar, perms: ["attendance.view", "attendance.edit"] };
+  const PAYROLL: LinkDef = { to: "/super-admin/payroll", label: "Payroll", icon: DollarSign, perms: ["payroll.view", "payroll.edit"] };
+  const RELIEVER_ATT: LinkDef = { to: "/super-admin/relievers/attendance", label: "Attendance", icon: Calendar, perms: ["attendance.view", "attendance.edit"] };
+  const RELIEVER_PAY: LinkDef = { to: "/super-admin/relievers/payroll", label: "Payroll", icon: DollarSign, perms: ["payroll.view", "payroll.edit"] };
+  const INVENTORY: LinkDef = { to: "/super-admin/inventory", label: "Inventory", icon: Package, perms: ["inventory.view", "inventory.edit"] };
+  const BANKS: LinkDef = { to: "/super-admin/accounting", label: "Banks & Ledgers", icon: Landmark, perms: ["accounting.view", "accounting.edit"] };
+  const EXPENSES: LinkDef = { to: "/super-admin/expenses", label: "Expenses", icon: Receipt, perms: ["expenses.view", "expenses.edit"] };
+  const CASHFLOW: LinkDef = { to: "/super-admin/cashflow", label: "Cash Flow", icon: TrendingUp, perms: ["cashflow.view"] };
+  const REPORTS: LinkDef = { to: "/super-admin/reports", label: "Financial Reports", icon: FileText, perms: ["reports.view"] };
+  const COMPLIANCE: LinkDef = { to: "/super-admin/compliance", label: "Compliance Calendar", icon: Bell, perms: ["compliance.view", "compliance.edit"] };
+  const DOCUMENTS: LinkDef = { to: "/super-admin/documents", label: "Documents", icon: Folder, perms: ["documents.view", "documents.edit"] };
+  const TASKS: LinkDef = { to: "/super-admin/tasks", label: "Tasks", icon: Trello };
+  const USERS: LinkDef = { to: "/super-admin/users", label: "Users & Permissions", icon: Users, perms: ["users.manage"] };
+  const SETTINGS: LinkDef = { to: "/super-admin/settings", label: "Settings", icon: SettingsIcon, perms: ["settings.view", "settings.edit"] };
 
-  const flatLinks = allLinks
-    .filter((l) => !l.perms || hasAnyPermission(profile, l.perms))
-    .map(({ to, label, icon }) => ({ to, label, icon }));
-
-  // Inject the nested "Relievers" group right after Payroll, if the user has
-  // either attendance or payroll permission for at least one of the children.
-  const relieverChildren: { to: string; label: string; icon: typeof Calendar }[] = [];
-  if (hasAnyPermission(profile, ["attendance.view", "attendance.edit"])) {
-    relieverChildren.push({ to: "/super-admin/relievers/attendance", label: "Attendance", icon: Calendar });
-  }
-  if (hasAnyPermission(profile, ["payroll.view", "payroll.edit"])) {
-    relieverChildren.push({ to: "/super-admin/relievers/payroll", label: "Payroll", icon: DollarSign });
-  }
-  const links: SidebarItem[] = [...flatLinks];
-  if (relieverChildren.length > 0) {
-    const payrollIdx = links.findIndex((l) => "to" in l && l.to === "/super-admin/payroll");
-    const insertAt = payrollIdx >= 0 ? payrollIdx + 1 : links.length;
-    links.splice(insertAt, 0, {
+  // Build groups, dropping any link the user lacks permission for. Drop the
+  // group entirely if it ends up with no visible children.
+  const buildGroup = (
+    label: string,
+    basePath: string,
+    children: Array<LinkDef | { _group: true; label: string; basePath: string; icon?: typeof LayoutDashboard; children: LinkDef[] }>,
+  ): SidebarItem | null => {
+    const visibleChildren: SidebarItem[] = [];
+    for (const c of children) {
+      if ("_group" in c) {
+        const subChildren = c.children
+          .map((cd) => linkOrNull(profile, cd))
+          .filter((x): x is { to: string; label: string; icon: typeof LayoutDashboard } => x !== null);
+        if (subChildren.length === 0) continue;
+        visibleChildren.push({
+          type: "group",
+          label: c.label,
+          icon: c.icon,
+          basePath: c.basePath,
+          variant: "collapsible",
+          children: subChildren,
+        });
+      } else {
+        const link = linkOrNull(profile, c);
+        if (link) visibleChildren.push(link);
+      }
+    }
+    if (visibleChildren.length === 0) return null;
+    return {
       type: "group",
+      label,
+      basePath,
+      variant: "section",
+      children: visibleChildren,
+    };
+  };
+
+  const links: SidebarItem[] = [];
+
+  // OVERVIEW
+  const overview = buildGroup("Overview", "/super-admin/overview", [DASHBOARD]);
+  if (overview) links.push(overview);
+
+  // CONTRACTS & CLIENTS — Clients & Contracts pages live inside Settings for now;
+  // when they're promoted to top-level (Sprint 2) they'll get their own links here.
+  const contractsClients = buildGroup("Contracts & Clients", "/super-admin/billing", [INVOICES]);
+  if (contractsClients) links.push(contractsClients);
+
+  // WORKFORCE
+  const workforce = buildGroup("Workforce", "/super-admin/workforce", [
+    EMPLOYEES,
+    ATTENDANCE,
+    PAYROLL,
+    {
+      _group: true,
       label: "Relievers",
-      icon: Shuffle,
       basePath: "/super-admin/relievers",
-      children: relieverChildren,
-    });
-  }
+      icon: Shuffle,
+      children: [RELIEVER_ATT, RELIEVER_PAY],
+    },
+  ]);
+  if (workforce) links.push(workforce);
+
+  // OPERATIONS — only Inventory for now; Deployment Roster + Incidents arrive in Sprint 3.
+  const operations = buildGroup("Operations", "/super-admin/operations", [INVENTORY]);
+  if (operations) links.push(operations);
+
+  // FINANCE
+  const finance = buildGroup("Finance", "/super-admin/finance", [
+    BANKS,
+    EXPENSES,
+    CASHFLOW,
+    REPORTS,
+  ]);
+  if (finance) links.push(finance);
+
+  // COMPLIANCE
+  const compliance = buildGroup("Compliance", "/super-admin/comply", [
+    COMPLIANCE,
+    DOCUMENTS,
+  ]);
+  if (compliance) links.push(compliance);
+
+  // ADMIN
+  const admin = buildGroup("Admin", "/super-admin/admin", [
+    TASKS,
+    USERS,
+    SETTINGS,
+  ]);
+  if (admin) links.push(admin);
 
   const handleExitView = async () => {
     await setViewAsCompany(null);

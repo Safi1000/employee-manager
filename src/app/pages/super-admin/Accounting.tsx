@@ -186,6 +186,11 @@ export default function Accounting() {
     owner_type: "company" as BankAccountOwnerType,
     owner_partner_id: "",
     owner_client_id: "",
+    iban: "",
+    branch_code: "",
+    branch_name: "",
+    swift_code: "",
+    currency_code: "PKR",
   });
   const [editBankForm, setEditBankForm] = useState({
     bank_name: "",
@@ -194,6 +199,11 @@ export default function Accounting() {
     owner_type: "company" as BankAccountOwnerType,
     owner_partner_id: "",
     owner_client_id: "",
+    iban: "",
+    branch_code: "",
+    branch_name: "",
+    swift_code: "",
+    currency_code: "PKR",
   });
   const [partners, setPartners] = useState<Partner[]>([]);
 
@@ -657,6 +667,11 @@ export default function Accounting() {
           owner_type: newBank.owner_type,
           owner_partner_id: newBank.owner_type === "partner" ? newBank.owner_partner_id : null,
           owner_client_id: newBank.owner_type === "client" ? newBank.owner_client_id : null,
+          iban: newBank.iban.trim() || null,
+          branch_code: newBank.branch_code.trim() || null,
+          branch_name: newBank.branch_name.trim() || null,
+          swift_code: newBank.swift_code.trim() || null,
+          currency_code: newBank.currency_code || "PKR",
         })
         .select()
         .single();
@@ -679,6 +694,11 @@ export default function Accounting() {
         owner_type: "company",
         owner_partner_id: "",
         owner_client_id: "",
+        iban: "",
+        branch_code: "",
+        branch_name: "",
+        swift_code: "",
+        currency_code: "PKR",
       });
       setIsBankModalOpen(false);
       await loadAll();
@@ -810,6 +830,11 @@ export default function Accounting() {
       owner_type: bank.owner_type,
       owner_partner_id: bank.owner_partner_id ?? "",
       owner_client_id: bank.owner_client_id ?? "",
+      iban: bank.iban ?? "",
+      branch_code: bank.branch_code ?? "",
+      branch_name: bank.branch_name ?? "",
+      swift_code: bank.swift_code ?? "",
+      currency_code: bank.currency_code ?? "PKR",
     });
     setIsEditBankModalOpen(true);
   };
@@ -829,6 +854,11 @@ export default function Accounting() {
           owner_type: editBankForm.owner_type,
           owner_partner_id: editBankForm.owner_type === "partner" ? editBankForm.owner_partner_id : null,
           owner_client_id: editBankForm.owner_type === "client" ? editBankForm.owner_client_id : null,
+          iban: editBankForm.iban.trim() || null,
+          branch_code: editBankForm.branch_code.trim() || null,
+          branch_name: editBankForm.branch_name.trim() || null,
+          swift_code: editBankForm.swift_code.trim() || null,
+          currency_code: editBankForm.currency_code || "PKR",
           updated_at: new Date().toISOString(),
         })
         .eq("id", selectedBank.id);
@@ -1351,8 +1381,8 @@ export default function Accounting() {
   return (
     <>
       <Header
-        title="Financial Accounting"
-        subtitle="Receivables, payables and bank reconciliation"
+        title="Banks & Ledgers"
+        subtitle="Bank accounts, cheques and reconciliation"
         actions={
           <>
             <ExportButton
@@ -1541,7 +1571,7 @@ export default function Accounting() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-success-500">
               <div className="flex items-center justify-between">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Cash Balance (Treasury)</p>
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Cash in Hand</p>
                 {!cashOpeningLocked ? (
                   <button
                     type="button"
@@ -1567,15 +1597,15 @@ export default function Accounting() {
               )}
             </div>
             <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-brand-500">
-              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Account Balance</p>
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Bank Balance</p>
               <p className="text-2xl text-brand-900">PKR {totalAccountBalance.toLocaleString()}</p>
             </div>
             <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-warning-500">
-              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Pending Cheques</p>
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Cheques in Transit</p>
               <p className="text-2xl text-warning-900">PKR {totalPendingCheques.toLocaleString()}</p>
             </div>
             <div className="bg-slate-900 p-4 rounded-lg">
-              <p className="text-xs text-slate-300 mb-1">Total Balance</p>
+              <p className="text-xs text-slate-300 mb-1">Net Available Cash</p>
               <p className="text-2xl text-white">PKR {grandTotal.toLocaleString()}</p>
             </div>
           </div>
@@ -2670,6 +2700,71 @@ export default function Accounting() {
             />
           </div>
           <div>
+            <label className="block text-sm text-slate-700 mb-1">IBAN</label>
+            <input
+              type="text"
+              value={newBank.iban}
+              maxLength={24}
+              onChange={(e) => setNewBank({ ...newBank, iban: e.target.value.toUpperCase().replace(/\s+/g, "") })}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent font-mono"
+              placeholder="PKxx XXXX XXXX XXXX XXXX XXXX"
+            />
+            {newBank.iban && newBank.iban.length !== 24 && (
+              <p className="text-xs text-warning-700 mt-1">
+                Pakistani IBANs are 24 characters (currently {newBank.iban.length}).
+              </p>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Branch Code</label>
+              <input
+                type="text"
+                value={newBank.branch_code}
+                onChange={(e) => setNewBank({ ...newBank, branch_code: e.target.value })}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                placeholder="e.g., 0123"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Branch Name</label>
+              <input
+                type="text"
+                value={newBank.branch_name}
+                onChange={(e) => setNewBank({ ...newBank, branch_name: e.target.value })}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                placeholder="e.g., DHA Phase 5"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">SWIFT Code</label>
+              <input
+                type="text"
+                value={newBank.swift_code}
+                onChange={(e) => setNewBank({ ...newBank, swift_code: e.target.value.toUpperCase() })}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent font-mono"
+                placeholder="ABPAPKKA"
+              />
+              <p className="text-[10px] text-slate-500 mt-1">Optional — for future foreign transfers.</p>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Currency</label>
+              <select
+                value={newBank.currency_code}
+                onChange={(e) => setNewBank({ ...newBank, currency_code: e.target.value })}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+              >
+                <option value="PKR">PKR — Pakistani Rupee</option>
+                <option value="USD">USD — US Dollar</option>
+                <option value="AED">AED — UAE Dirham</option>
+                <option value="GBP">GBP — British Pound</option>
+                <option value="EUR">EUR — Euro</option>
+              </select>
+            </div>
+          </div>
+          <div>
             <label className="block text-sm text-slate-700 mb-1">Account Type</label>
             <select
               value={newBank.account_type}
@@ -3191,6 +3286,67 @@ export default function Accounting() {
                 onChange={(e) => setEditBankForm({ ...editBankForm, account_number: e.target.value })}
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">IBAN</label>
+              <input
+                type="text"
+                maxLength={24}
+                value={editBankForm.iban}
+                onChange={(e) => setEditBankForm({ ...editBankForm, iban: e.target.value.toUpperCase().replace(/\s+/g, "") })}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent font-mono"
+                placeholder="PKxx XXXX XXXX XXXX XXXX XXXX"
+              />
+              {editBankForm.iban && editBankForm.iban.length !== 24 && (
+                <p className="text-xs text-warning-700 mt-1">
+                  Pakistani IBANs are 24 characters (currently {editBankForm.iban.length}).
+                </p>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Branch Code</label>
+                <input
+                  type="text"
+                  value={editBankForm.branch_code}
+                  onChange={(e) => setEditBankForm({ ...editBankForm, branch_code: e.target.value })}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Branch Name</label>
+                <input
+                  type="text"
+                  value={editBankForm.branch_name}
+                  onChange={(e) => setEditBankForm({ ...editBankForm, branch_name: e.target.value })}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">SWIFT Code</label>
+                <input
+                  type="text"
+                  value={editBankForm.swift_code}
+                  onChange={(e) => setEditBankForm({ ...editBankForm, swift_code: e.target.value.toUpperCase() })}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Currency</label>
+                <select
+                  value={editBankForm.currency_code}
+                  onChange={(e) => setEditBankForm({ ...editBankForm, currency_code: e.target.value })}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                >
+                  <option value="PKR">PKR</option>
+                  <option value="USD">USD</option>
+                  <option value="AED">AED</option>
+                  <option value="GBP">GBP</option>
+                  <option value="EUR">EUR</option>
+                </select>
+              </div>
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Account Type</label>

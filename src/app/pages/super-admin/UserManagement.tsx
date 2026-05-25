@@ -247,7 +247,7 @@ export default function UserManagement() {
   return (
     <>
       <Header
-        title="User Management"
+        title="Users & Permissions"
         subtitle="Access control, permissions and branch scope"
         actions={
           <Button variant="primary" size="md" onClick={() => setCreateOpen(true)}>

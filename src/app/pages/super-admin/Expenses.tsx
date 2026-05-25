@@ -85,6 +85,7 @@ const emptyAdvanceForm: AdvanceForm = {
 
 type ExpenseForm = {
   category_id: string;
+  pl_category: "cost_of_services" | "operating_expense";
   client_id: string;
   branch_id: string;
   vendor_id: string;
@@ -101,6 +102,7 @@ type ExpenseForm = {
 
 const emptyForm: ExpenseForm = {
   category_id: "",
+  pl_category: "operating_expense",
   client_id: "",
   branch_id: "",
   vendor_id: "",
@@ -574,6 +576,7 @@ export default function Expenses() {
         .from("expenses")
         .insert({
           category_id: form.category_id,
+          pl_category: form.pl_category,
           client_id: form.client_id || null,
           branch_id: resolvedBranch,
           vendor_id: vendorId,
@@ -643,6 +646,7 @@ export default function Expenses() {
     setSelected(expense);
     setEditForm({
       category_id: expense.category_id ?? "",
+      pl_category: expense.pl_category ?? "operating_expense",
       client_id: expense.client_id ?? "",
       branch_id: expense.branch_id ?? "",
       vendor_id: expense.vendor_id ?? "",
@@ -803,6 +807,7 @@ export default function Expenses() {
         .from("expenses")
         .update({
           category_id: editForm.category_id,
+          pl_category: editForm.pl_category,
           client_id: editForm.client_id || null,
           branch_id: resolvedEditBranch,
           vendor_id: vendorId,
@@ -2441,10 +2446,13 @@ export default function Expenses() {
                 const id = e.target.value;
                 const c = id ? clients.find((x) => x.id === id) : null;
                 // Auto-fill branch from the picked client (don't clobber explicit branch if same).
+                // Also default the P&L category: client-tagged expenses are
+                // Cost of Services; office expenses are Operating.
                 setState({
                   ...state,
                   client_id: id,
                   branch_id: c?.branch_id ?? state.branch_id,
+                  pl_category: id ? "cost_of_services" : "operating_expense",
                 });
               }}
               className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
@@ -2463,6 +2471,41 @@ export default function Expenses() {
               {state.branch_id
                 ? "Showing clients in the selected branch only."
                 : "Leave empty to log as an Office expense (Head Office)."}
+            </p>
+          </div>
+          <div className="col-span-2">
+            <label className="block text-sm text-slate-700 mb-1">P&amp;L Category *</label>
+            <div className="grid grid-cols-2 gap-2">
+              {(
+                [
+                  { value: "cost_of_services", label: "Cost of Services", hint: "Tied to a client / contract (guard payroll, equipment, transport)" },
+                  { value: "operating_expense", label: "Operating Expense", hint: "Head-office overhead (rent, office salaries, utilities)" },
+                ] as const
+              ).map((opt) => (
+                <label
+                  key={opt.value}
+                  className={`flex flex-col items-start gap-1 px-3 py-2 border rounded-md cursor-pointer text-sm ${
+                    state.pl_category === opt.value
+                      ? "border-slate-900 bg-slate-50"
+                      : "border-slate-200 hover:border-slate-300"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name={`pl_category_${submitLabel}`}
+                      checked={state.pl_category === opt.value}
+                      onChange={() => setState({ ...state, pl_category: opt.value })}
+                    />
+                    <span>{opt.label}</span>
+                  </div>
+                  <span className="text-xs text-slate-500 ml-6">{opt.hint}</span>
+                </label>
+              ))}
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              Drives the P&amp;L split between Gross Profit and Operating Profit.
+              Defaults from the client selection above; override if needed.
             </p>
           </div>
           <div>
