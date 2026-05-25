@@ -384,13 +384,13 @@ const TOOLS = [
     function: {
       name: "get_average_salary",
       description:
-        "Returns average base salary across active employees, optionally filtered by category (client / office / reliever).",
+        "Returns average base salary across active employees, optionally filtered by category (client / office_staff / reliever).",
       parameters: {
         type: "object",
         properties: {
           category: {
             type: "string",
-            enum: ["client", "office", "reliever"],
+            enum: ["client", "office_staff", "reliever"],
             description: "Optional category filter",
           },
         },
@@ -734,22 +734,40 @@ async function runTool(
         byStatus[key].total += net;
         if (p.disbursed) totalDisbursed += net;
       }
+      // Help the assistant give a useful answer when the requested month is
+      // empty / has stub-only rows: look up the most recent month that DOES
+      // have real payslip data so the AI can offer it as a fallback.
+      let mostRecentPopulated: string | null = null;
+      if (totalAll === 0) {
+        const { data: recent } = await db
+          .from("payslips")
+          .select("period_month")
+          .gt("net_salary", 0)
+          .lt("period_month", start)
+          .order("period_month", { ascending: false })
+          .limit(1);
+        mostRecentPopulated = (recent?.[0] as { period_month?: string } | undefined)
+          ?.period_month?.slice(0, 7) ?? null;
+      }
       return {
         month,
         payslip_count: data?.length ?? 0,
         total_net_pkr: totalAll,
         total_disbursed_pkr: totalDisbursed,
         by_status: byStatus,
+        most_recent_month_with_data: mostRecentPopulated,
       };
     }
 
     case "get_top_employees_by_salary": {
       if (!hasPermission(caller, "employees.view")) return denied("employees.view");
       const limit = Math.min(50, Math.max(1, Number(args.limit) || 5));
+      // Status is stored capitalized ("Active"), not lowercase — case-sensitive
+      // .eq filter was returning zero rows.
       const { data, error } = await db
         .from("employees")
         .select("employee_code, full_name, base_salary, status, category")
-        .eq("status", "active")
+        .eq("status", "Active")
         .order("base_salary", { ascending: false })
         .limit(limit);
       if (error) throw new Error(error.message);
@@ -882,7 +900,7 @@ async function runTool(
       if (!q) return { error: "query_required" };
       const { data, error } = await db
         .from("employees")
-        .select("employee_code, full_name, phone, status, category, base_salary, designation")
+        .select("employee_code, full_name, phone, status, category, base_salary, department")
         .or(`full_name.ilike.%${q}%,employee_code.ilike.%${q}%,phone.ilike.%${q}%`)
         .limit(5);
       if (error) throw new Error(error.message);
@@ -935,7 +953,7 @@ async function runTool(
         const { count } = await db
           .from("employees")
           .select("*", { count: "exact", head: true })
-          .eq("status", "active");
+          .eq("status", "Active");
         out.active_employees = count ?? 0;
       }
       if (hasPermission(caller, "payroll.view")) {
@@ -1028,12 +1046,16 @@ async function runTool(
       if (!hasPermission(caller, "payroll.view")) return denied("payroll.view");
       const dim = String(args.dimension) as "branch" | "client" | "location";
       const { start } = monthRange(String(args.month));
-      // Join out the employee's grouping column. Doing this in one Postgres
-      // round-trip is the right call; the aggregation is small enough to do
-      // in JS.
+      // Join out the employee's grouping column. PostgREST can't disambiguate
+      // employees→branches on its own because the `employee_branches` junction
+      // table creates a second relationship; force the direct FK explicitly.
       const { data, error } = await db
         .from("payslips")
-        .select("net_salary, disbursed, employees(branch_id, client_id, location_id, branches(name), clients(name), locations(name))")
+        .select(
+          "net_salary, disbursed, employees(branch_id, client_id, location_id, " +
+            "branches!employees_branch_id_fkey(name), " +
+            "clients(name), locations(name))",
+        )
         .eq("period_month", start);
       if (error) throw new Error(error.message);
       const groups: Record<string, { count: number; total: number; disbursed: number }> = {};
@@ -1118,7 +1140,7 @@ async function runTool(
       let q = db
         .from("employees")
         .select("base_salary")
-        .eq("status", "active");
+        .eq("status", "Active");
       if (args.category) q = q.eq("category", String(args.category));
       const { data, error } = await q;
       if (error) throw new Error(error.message);
@@ -1263,26 +1285,40 @@ async function runTool(
         period === "month"
           ? `${today.slice(0, 7)}-01`
           : `${today.slice(0, 4)}-01-01`;
+      // invoice_payments.client_id is null in practice — the canonical client
+      // lives on the parent invoice. Embed invoices(client_id) and group via
+      // that, falling back to a direct client_id if it ever IS populated.
       const { data, error } = await db
         .from("invoice_payments")
-        .select("amount, client_id, clients(name, client_code)")
+        .select(
+          "amount, client_id, payment_date, " +
+            "invoices(client_id, clients(name, client_code))",
+        )
         .gte("payment_date", start);
       if (error) throw new Error(error.message);
       const byClient: Record<string, { name: string; code: string; total: number }> = {};
       for (const p of (data ?? []) as any[]) {
-        const key = p.client_id;
-        if (!key) continue;
-        if (!byClient[key]) {
-          byClient[key] = {
-            name: p.clients?.name ?? "(unknown)",
-            code: p.clients?.client_code ?? "",
+        const inv = p.invoices;
+        const cid = p.client_id ?? inv?.client_id;
+        if (!cid) continue;
+        if (!byClient[cid]) {
+          byClient[cid] = {
+            name: inv?.clients?.name ?? "(unknown)",
+            code: inv?.clients?.client_code ?? "",
             total: 0,
           };
         }
-        byClient[key].total += Number(p.amount ?? 0);
+        byClient[cid].total += Number(p.amount ?? 0);
       }
-      const ranked = Object.values(byClient).sort((a, b) => b.total - a.total).slice(0, limit);
-      return { period, top_clients: ranked };
+      const ranked = Object.values(byClient)
+        .sort((a, b) => b.total - a.total)
+        .slice(0, limit);
+      return {
+        period,
+        period_start: start,
+        total_payments_considered: data?.length ?? 0,
+        top_clients: ranked,
+      };
     }
     case "get_client_receivables": {
       if (!hasPermission(caller, "invoices.view")) return denied("invoices.view");
@@ -1357,11 +1393,25 @@ async function runTool(
         const m = a.payment_mode ?? "Unknown";
         byMode[m] = (byMode[m] ?? 0) + Number(a.amount ?? 0);
       }
+      // If the requested month is empty, surface the most recent month with
+      // advances so the assistant can offer it as a fallback.
+      let mostRecentPopulated: string | null = null;
+      if ((data?.length ?? 0) === 0) {
+        const { data: recent } = await db
+          .from("advances")
+          .select("advance_date")
+          .lt("advance_date", start)
+          .order("advance_date", { ascending: false })
+          .limit(1);
+        mostRecentPopulated = (recent?.[0] as { advance_date?: string } | undefined)
+          ?.advance_date?.slice(0, 7) ?? null;
+      }
       return {
         month,
         count: data?.length ?? 0,
         total_pkr: total,
         by_payment_mode: byMode,
+        most_recent_month_with_data: mostRecentPopulated,
       };
     }
     case "get_advances_for_employee": {
@@ -1556,19 +1606,41 @@ async function runTool(
 function buildSystemPrompt(caller: CallerProfile): string {
   const today = todayUTC();
   const currentMonth = today.slice(0, 7);
-  return `You are the Employee Manager CRM assistant. You answer questions ONLY about the user's CRM data (employees, attendance, payroll, invoices, expenses, cashflow, cheques, banks, clients, contracts).
+  return `You are the Employee Manager CRM assistant. You answer questions ONLY about the user's CRM data (employees, attendance, payroll, invoices, expenses, cashflow, cheques, banks, clients, contracts, compliance dates, inventory, tasks).
 
-Hard rules:
+# Hard rules
 - Use the provided tools to fetch live data. NEVER make up numbers.
-- If the user asks anything outside the CRM (weather, general knowledge, opinions, code help, jokes), respond exactly: "I can only answer questions about your CRM data."
-- If a tool returns { "error": "permission_denied", ... }, tell the user politely they don't have access to that area. Do not try a different tool.
-- Format money as "PKR " followed by a comma-separated integer (e.g. PKR 1,250,000). Round to whole rupees.
+- Format money as "PKR " + comma-separated integer (e.g. PKR 1,250,000). Round to whole rupees.
 - When showing lists, use compact markdown tables.
-- Be concise. No filler phrases like "Sure!" or "Here you go!".
+- Be concise. No filler phrases ("Sure!", "Here you go!", "Great question!").
+- Do not apologize unnecessarily — explain the situation and offer the next useful step.
 
-Context:
+# How to handle "can't help" situations
+There are four distinct cases. Use the matching template — do not improvise refusals.
+
+## 1. Off-topic question (weather, jokes, general knowledge, coding help, opinions)
+Respond exactly:
+"That's outside what I can help with — I'm focused on your CRM data (employees, payroll, attendance, invoices, expenses, cashflow, clients, inventory, tasks). Ask me about any of those and I'll dig in."
+
+## 2. On-topic but no tool exists for it
+Tell the user honestly what you CAN look up nearby and suggest the closest alternative. Format:
+"I don't have a direct lookup for that. I can show you: [2-3 closest available queries phrased naturally]. Want one of those?"
+
+## 3. Tool returned permission_denied
+"You don't have access to [area]. Ask your admin to enable the '[permission]' permission on your account if you need it."
+Do not try a different tool.
+
+## 4. Tool ran fine but returned empty / zero data
+Be specific about WHAT was empty and offer a concrete next step. Patterns:
+- If the response contains "most_recent_month_with_data": offer that month as a fallback. Example: "No payslips have net amounts for May 2026 yet — payroll is usually generated at the end of the month. The most recent populated month is April 2026 — want me to show that?"
+- If the response is empty for a query that depends on user input (employee/client search): ask for clarification. Example: "No matches for 'Ahmad'. Try a fuller name, the employee code, or the phone number."
+- If the response is genuinely zero (e.g. zero unpaid invoices): state it plainly. Example: "All invoices are paid — no outstanding receivables."
+- Never say "no data found" without context. Always say WHAT period / filter / threshold was used so the user can adjust it.
+
+# Context
 - Today is ${today}. Current month is ${currentMonth}.
-- The signed-in user's role is "${caller.role}". Their company is automatically scoped to their account — you cannot see other companies' data.`;
+- Signed-in user's role: "${caller.role}". Their company is automatically scoped to their account — they cannot see other companies' data.
+- A new period (current month) often has no data yet because operations like payroll, payslip generation, and reconciliation happen at month-end. When asked about "this month" and the answer is zero, gently suggest the prior month.`;
 }
 
 // ---------------------------------------------------------------------------
