@@ -1,0 +1,1705 @@
+// Edge function: ai-chat
+// Read-only AI assistant for the Employee Manager CRM.
+//
+// Architecture (Scenario A — see chat with user):
+//   - The browser sends the user's message + chat history + the user's JWT.
+//   - We create a Supabase client *with that JWT* (NOT the service role key) so
+//     every query naturally inherits the user's RLS scope. That gives us free
+//     multi-tenant isolation: company A's user can never see company B's rows.
+//   - The model gets a fixed catalogue of read-only tools. tool_choice="auto"
+//     lets it small-talk ("thanks") but the system prompt explicitly forbids
+//     answering anything not backed by a tool.
+//   - Per-tool permission gates mirror the frontend's `hasPermission()`:
+//     accounting tools need `accounting.view`, etc. super_admin /
+//     super_super_admin bypass all checks, matching auth.tsx behaviour.
+//
+// Why a hand-written tool list instead of letting the model write SQL:
+//   - Predictable cost — each tool has a known query plan.
+//   - No SQL-injection / prompt-injection surface.
+//   - Easy to log which tool ran (for cost analysis + future Scenario B).
+
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
+
+const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+// gpt-5-mini per user's choice. Strong on tool calling, cheap, fast.
+const MODEL = "gpt-5-mini";
+// Hard ceiling on tool-call iterations per request, in case the model gets
+// stuck in a loop. Five is enough for "compare X to Y" multi-step questions.
+const MAX_TOOL_ITERATIONS = 5;
+
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+};
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json", ...CORS },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Auth helpers
+// ---------------------------------------------------------------------------
+
+type CallerProfile = {
+  user_id: string;
+  company_id: string | null;
+  role: string;
+  permissions: string[];
+};
+
+async function resolveCaller(jwt: string): Promise<CallerProfile | null> {
+  // Service-role client just for the auth lookup. After this, all data reads
+  // go through `userClient` so RLS does the company scoping.
+  const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  const { data, error } = await admin.auth.getUser(jwt);
+  if (error || !data.user) return null;
+  const { data: p } = await admin
+    .from("profiles")
+    .select("company_id, role, permissions, view_as_company")
+    .eq("id", data.user.id)
+    .maybeSingle();
+  if (!p) return null;
+  return {
+    user_id: data.user.id,
+    // SSA users get scoped to whichever company they're "viewing as" — same
+    // semantics as the frontend auth context.
+    company_id: (p.view_as_company as string | null) ?? (p.company_id as string | null),
+    role: p.role as string,
+    permissions: (p.permissions as string[]) ?? [],
+  };
+}
+
+function hasPermission(caller: CallerProfile, perm: string): boolean {
+  if (caller.role === "super_super_admin") return true;
+  if (caller.role === "super_admin") return true;
+  return caller.permissions.includes(perm);
+}
+
+function hasAny(caller: CallerProfile, perms: string[]): boolean {
+  return perms.some((p) => hasPermission(caller, p));
+}
+
+// ---------------------------------------------------------------------------
+// Tool catalogue — JSON Schema definitions sent to OpenAI
+// ---------------------------------------------------------------------------
+
+const TOOLS = [
+  {
+    type: "function",
+    function: {
+      name: "get_cashflow_summary",
+      description:
+        "Returns cash inflow, outflow and net change for a given month. Sums cash and bank deltas from bank_transactions.",
+      parameters: {
+        type: "object",
+        properties: {
+          month: {
+            type: "string",
+            description:
+              "Month to summarise in YYYY-MM format. Use the current month if the user says 'this month'.",
+          },
+        },
+        required: ["month"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_payroll_summary",
+      description:
+        "Returns total salary disbursed (net), count of payslips, and breakdown by status (pending / approved / disbursed) for a month.",
+      parameters: {
+        type: "object",
+        properties: {
+          month: { type: "string", description: "YYYY-MM" },
+        },
+        required: ["month"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_top_employees_by_salary",
+      description:
+        "Returns the top N employees ordered by base salary, descending. Only includes active employees.",
+      parameters: {
+        type: "object",
+        properties: {
+          limit: { type: "integer", minimum: 1, maximum: 50, default: 5 },
+        },
+        required: ["limit"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_today_attendance",
+      description:
+        "Returns today's attendance counts: how many marked Present / Absent / Leave so far.",
+      parameters: { type: "object", properties: {}, required: [] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_outstanding_invoices",
+      description:
+        "Returns total outstanding receivables across all invoices, plus a list of the top N unpaid invoices.",
+      parameters: {
+        type: "object",
+        properties: {
+          limit: { type: "integer", minimum: 1, maximum: 50, default: 10 },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_expenses_summary",
+      description:
+        "Returns total expenses for a month, with an optional breakdown by category.",
+      parameters: {
+        type: "object",
+        properties: {
+          month: { type: "string", description: "YYYY-MM" },
+          group_by_category: { type: "boolean", default: true },
+        },
+        required: ["month"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_pending_cheques",
+      description:
+        "Returns total amount and list of cheques still in pending status (not yet cleared).",
+      parameters: {
+        type: "object",
+        properties: {
+          limit: { type: "integer", minimum: 1, maximum: 50, default: 10 },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_bank_balances",
+      description:
+        "Returns the current balance of every bank account, plus the total across accounts.",
+      parameters: { type: "object", properties: {}, required: [] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_contract_endings",
+      description:
+        "Returns clients whose contract is ending within the given number of days. Used for renewal planning.",
+      parameters: {
+        type: "object",
+        properties: {
+          within_days: { type: "integer", minimum: 1, maximum: 365, default: 60 },
+        },
+        required: ["within_days"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "lookup_employee",
+      description:
+        "Searches for an employee by name, employee code, or phone number. Returns the top matches with their key details.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Name, code, or phone" },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "lookup_client",
+      description:
+        "Searches for a client by name or client code. Returns the top matches.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string" },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_employee_counts",
+      description:
+        "Returns counts of employees grouped by status (active / inactive) and by category (client / office / reliever).",
+      parameters: { type: "object", properties: {}, required: [] },
+    },
+  },
+
+  // ---------- Overview / dashboards ----------
+  {
+    type: "function",
+    function: {
+      name: "get_company_overview",
+      description:
+        "High-level snapshot of the business: active employee count, this-month payroll disbursed, total outstanding receivables, total bank + cash on hand, today's marked attendance count. One call answers 'how are we doing?'",
+      parameters: { type: "object", properties: {}, required: [] },
+    },
+  },
+
+  // ---------- Cashflow / banking ----------
+  {
+    type: "function",
+    function: {
+      name: "get_cashflow_breakdown",
+      description:
+        "Breaks down cash movement for a month by what caused it (invoice payments, expenses, payroll, advances, transfers, other). Use this when the user asks WHY cashflow looks the way it does.",
+      parameters: {
+        type: "object",
+        properties: {
+          month: { type: "string", description: "YYYY-MM" },
+        },
+        required: ["month"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_cash_balance",
+      description: "Returns the current cash-on-hand balance from the treasury.",
+      parameters: { type: "object", properties: {}, required: [] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_recent_bank_transactions",
+      description:
+        "Returns the most recent bank/cash transactions across all accounts.",
+      parameters: {
+        type: "object",
+        properties: {
+          days: { type: "integer", minimum: 1, maximum: 365, default: 7 },
+          limit: { type: "integer", minimum: 1, maximum: 50, default: 15 },
+        },
+        required: [],
+      },
+    },
+  },
+
+  // ---------- Payroll ----------
+  {
+    type: "function",
+    function: {
+      name: "get_payroll_by_dimension",
+      description:
+        "Aggregates a month's payroll grouped by one dimension: 'branch', 'client', or 'location'. Use this when the user wants payroll broken down by group.",
+      parameters: {
+        type: "object",
+        properties: {
+          month: { type: "string", description: "YYYY-MM" },
+          dimension: { type: "string", enum: ["branch", "client", "location"] },
+        },
+        required: ["month", "dimension"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_undisbursed_payslips",
+      description:
+        "Returns payslips that have been generated but not yet disbursed for the given month, with their total amount.",
+      parameters: {
+        type: "object",
+        properties: {
+          month: { type: "string", description: "YYYY-MM (defaults to current month)" },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_employee_payslip",
+      description:
+        "Returns the payslip details (base, bonus, deductions, advance, net, status) for one employee in a given month. Match the employee by name or code.",
+      parameters: {
+        type: "object",
+        properties: {
+          employee_query: { type: "string", description: "Name or employee code" },
+          month: { type: "string", description: "YYYY-MM" },
+        },
+        required: ["employee_query", "month"],
+      },
+    },
+  },
+
+  // ---------- Employees ----------
+  {
+    type: "function",
+    function: {
+      name: "get_recent_hires",
+      description:
+        "Returns employees who joined within the last N days, with their join date and base salary.",
+      parameters: {
+        type: "object",
+        properties: {
+          within_days: { type: "integer", minimum: 1, maximum: 365, default: 30 },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_average_salary",
+      description:
+        "Returns average base salary across active employees, optionally filtered by category (client / office / reliever).",
+      parameters: {
+        type: "object",
+        properties: {
+          category: {
+            type: "string",
+            enum: ["client", "office", "reliever"],
+            description: "Optional category filter",
+          },
+        },
+        required: [],
+      },
+    },
+  },
+
+  // ---------- Attendance ----------
+  {
+    type: "function",
+    function: {
+      name: "get_attendance_summary",
+      description:
+        "Counts attendance statuses (Present / Absent / Leave) for an entire month, optionally narrowed to a specific employee.",
+      parameters: {
+        type: "object",
+        properties: {
+          month: { type: "string", description: "YYYY-MM" },
+          employee_query: {
+            type: "string",
+            description: "Optional: employee name or code to filter to one person",
+          },
+        },
+        required: ["month"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_absent_today",
+      description:
+        "Returns the list of employees marked Absent today (with name and code).",
+      parameters: { type: "object", properties: {}, required: [] },
+    },
+  },
+
+  // ---------- Invoices / receivables ----------
+  {
+    type: "function",
+    function: {
+      name: "get_invoices_summary",
+      description:
+        "Returns totals for a month: how much was invoiced, how much was received (across all clients).",
+      parameters: {
+        type: "object",
+        properties: {
+          month: { type: "string", description: "YYYY-MM" },
+        },
+        required: ["month"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_invoice_aging",
+      description:
+        "Buckets outstanding invoice amounts by how overdue they are: 0-30 days, 31-60, 61-90, 90+ days. The classic aging report.",
+      parameters: { type: "object", properties: {}, required: [] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_top_clients_by_revenue",
+      description:
+        "Returns top N clients by amount actually received in a period. Period can be 'month' (current month) or 'year' (current year-to-date).",
+      parameters: {
+        type: "object",
+        properties: {
+          period: { type: "string", enum: ["month", "year"], default: "year" },
+          limit: { type: "integer", minimum: 1, maximum: 20, default: 5 },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_client_receivables",
+      description:
+        "Returns total outstanding amount and list of unpaid invoices for one client. Match the client by name or code.",
+      parameters: {
+        type: "object",
+        properties: {
+          client_query: { type: "string" },
+        },
+        required: ["client_query"],
+      },
+    },
+  },
+
+  // ---------- Expenses / advances ----------
+  {
+    type: "function",
+    function: {
+      name: "get_top_expense_categories",
+      description:
+        "Returns top N expense categories ranked by total spend over a period ('month' = current month, 'year' = year-to-date).",
+      parameters: {
+        type: "object",
+        properties: {
+          period: { type: "string", enum: ["month", "year"], default: "month" },
+          limit: { type: "integer", minimum: 1, maximum: 20, default: 5 },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_advances_summary",
+      description:
+        "Returns total advances given to employees in a month, count of advances, and breakdown by payment mode.",
+      parameters: {
+        type: "object",
+        properties: {
+          month: { type: "string", description: "YYYY-MM (defaults to current month)" },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_advances_for_employee",
+      description:
+        "Returns all advances given to one employee, sorted by date desc, with running total.",
+      parameters: {
+        type: "object",
+        properties: {
+          employee_query: { type: "string", description: "Name or code" },
+        },
+        required: ["employee_query"],
+      },
+    },
+  },
+
+  // ---------- Cheques ----------
+  {
+    type: "function",
+    function: {
+      name: "get_cheques_summary",
+      description:
+        "Returns counts and totals of cheques for a month, split by status (pending / cleared) and type (payment / receipt).",
+      parameters: {
+        type: "object",
+        properties: {
+          month: { type: "string", description: "YYYY-MM" },
+        },
+        required: ["month"],
+      },
+    },
+  },
+
+  // ---------- Clients ----------
+  {
+    type: "function",
+    function: {
+      name: "get_clients_summary",
+      description:
+        "Returns a count of clients by type (security_services / guard_deployment) and how many have an active contract right now.",
+      parameters: { type: "object", properties: {}, required: [] },
+    },
+  },
+
+  // ---------- Compliance ----------
+  {
+    type: "function",
+    function: {
+      name: "get_upcoming_compliance_alerts",
+      description:
+        "Returns important_dates rows that are due within the next N days (licence renewals, audits, etc).",
+      parameters: {
+        type: "object",
+        properties: {
+          within_days: { type: "integer", minimum: 1, maximum: 365, default: 30 },
+        },
+        required: [],
+      },
+    },
+  },
+
+  // ---------- Inventory ----------
+  {
+    type: "function",
+    function: {
+      name: "get_inventory_summary",
+      description:
+        "Returns total inventory items grouped by kind (weapons / uniforms / equipment) with available vs issued counts.",
+      parameters: { type: "object", properties: {}, required: [] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_low_stock_items",
+      description:
+        "Returns inventory items with quantity at or below the given threshold. Default threshold is 5.",
+      parameters: {
+        type: "object",
+        properties: {
+          threshold: { type: "integer", minimum: 0, maximum: 100, default: 5 },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_recent_issuances",
+      description:
+        "Returns inventory items issued to employees within the last N days.",
+      parameters: {
+        type: "object",
+        properties: {
+          within_days: { type: "integer", minimum: 1, maximum: 90, default: 7 },
+          limit: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+        },
+        required: [],
+      },
+    },
+  },
+
+  // ---------- Tasks (Kanban) ----------
+  {
+    type: "function",
+    function: {
+      name: "get_my_tasks",
+      description:
+        "Returns tasks assigned to the calling user, optionally filtered by status (todo / in_progress / done).",
+      parameters: {
+        type: "object",
+        properties: {
+          status: {
+            type: "string",
+            enum: ["todo", "in_progress", "done"],
+            description: "Optional status filter",
+          },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_overdue_tasks",
+      description:
+        "Returns tasks whose due_date has passed and are not yet marked done. Super-admins see all; regular users see only their own.",
+      parameters: { type: "object", properties: {}, required: [] },
+    },
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Date helpers
+// ---------------------------------------------------------------------------
+
+function monthRange(month: string): { start: string; endExclusive: string } {
+  // month = "YYYY-MM" → ["YYYY-MM-01", "YYYY-(MM+1)-01")
+  const [y, m] = month.split("-").map(Number);
+  if (!y || !m) throw new Error(`Invalid month format: ${month} (expected YYYY-MM)`);
+  const start = `${y}-${String(m).padStart(2, "0")}-01`;
+  const ny = m === 12 ? y + 1 : y;
+  const nm = m === 12 ? 1 : m + 1;
+  const endExclusive = `${ny}-${String(nm).padStart(2, "0")}-01`;
+  return { start, endExclusive };
+}
+
+const todayUTC = () => new Date().toISOString().slice(0, 10);
+const addDays = (n: number) => {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+
+// ---------------------------------------------------------------------------
+// Tool executor — runs against the per-user Supabase client (RLS-scoped)
+// ---------------------------------------------------------------------------
+
+async function runTool(
+  name: string,
+  args: Record<string, unknown>,
+  db: SupabaseClient,
+  caller: CallerProfile,
+): Promise<unknown> {
+  // Permission gates. The error string flows back to the model so it can tell
+  // the user politely, e.g. "You don't have access to payroll data."
+  const denied = (perm: string) =>
+    ({ error: `permission_denied`, required_permission: perm });
+
+  switch (name) {
+    case "get_cashflow_summary": {
+      if (!hasPermission(caller, "cashflow.view")) return denied("cashflow.view");
+      const { start, endExclusive } = monthRange(String(args.month));
+      const { data, error } = await db
+        .from("bank_transactions")
+        .select("amount, cash_delta, account_delta, kind")
+        .gte("created_at", start)
+        .lt("created_at", endExclusive);
+      if (error) throw new Error(error.message);
+      let inflow = 0, outflow = 0;
+      for (const t of data ?? []) {
+        const delta = Number(t.cash_delta ?? 0) + Number(t.account_delta ?? 0);
+        if (delta > 0) inflow += delta;
+        else outflow += Math.abs(delta);
+      }
+      return {
+        month: args.month,
+        inflow_pkr: inflow,
+        outflow_pkr: outflow,
+        net_pkr: inflow - outflow,
+        transaction_count: data?.length ?? 0,
+      };
+    }
+
+    case "get_payroll_summary": {
+      if (!hasPermission(caller, "payroll.view")) return denied("payroll.view");
+      const month = String(args.month);
+      const { start } = monthRange(month);
+      const { data, error } = await db
+        .from("payslips")
+        .select("net_salary, status, disbursed")
+        .eq("period_month", start);
+      if (error) throw new Error(error.message);
+      const byStatus: Record<string, { count: number; total: number }> = {};
+      let totalDisbursed = 0, totalAll = 0;
+      for (const p of data ?? []) {
+        const net = Number(p.net_salary ?? 0);
+        totalAll += net;
+        const key = (p.status as string) ?? "unknown";
+        if (!byStatus[key]) byStatus[key] = { count: 0, total: 0 };
+        byStatus[key].count++;
+        byStatus[key].total += net;
+        if (p.disbursed) totalDisbursed += net;
+      }
+      return {
+        month,
+        payslip_count: data?.length ?? 0,
+        total_net_pkr: totalAll,
+        total_disbursed_pkr: totalDisbursed,
+        by_status: byStatus,
+      };
+    }
+
+    case "get_top_employees_by_salary": {
+      if (!hasPermission(caller, "employees.view")) return denied("employees.view");
+      const limit = Math.min(50, Math.max(1, Number(args.limit) || 5));
+      const { data, error } = await db
+        .from("employees")
+        .select("employee_code, full_name, base_salary, status, category")
+        .eq("status", "active")
+        .order("base_salary", { ascending: false })
+        .limit(limit);
+      if (error) throw new Error(error.message);
+      return { employees: data ?? [] };
+    }
+
+    case "get_today_attendance": {
+      if (!hasPermission(caller, "attendance.view")) return denied("attendance.view");
+      const today = todayUTC();
+      const { data, error } = await db
+        .from("attendance_records")
+        .select("status")
+        .eq("attendance_date", today);
+      if (error) throw new Error(error.message);
+      const counts: Record<string, number> = {};
+      for (const r of data ?? []) {
+        const k = (r.status as string) ?? "unknown";
+        counts[k] = (counts[k] ?? 0) + 1;
+      }
+      return { date: today, counts, total_marked: data?.length ?? 0 };
+    }
+
+    case "get_outstanding_invoices": {
+      if (!hasPermission(caller, "invoices.view")) return denied("invoices.view");
+      const limit = Math.min(50, Math.max(1, Number(args.limit) || 10));
+      const { data, error } = await db
+        .from("invoices")
+        .select(
+          "invoice_number, invoice_date, invoice_amount, withholding_tax, amount_received, status, client_id, clients(name)",
+        )
+        .order("invoice_date", { ascending: false });
+      if (error) throw new Error(error.message);
+      const unpaid = (data ?? [])
+        .map((inv: any) => {
+          const outstanding =
+            Number(inv.invoice_amount ?? 0) -
+            Number(inv.withholding_tax ?? 0) -
+            Number(inv.amount_received ?? 0);
+          return {
+            invoice_number: inv.invoice_number,
+            client_name: inv.clients?.name ?? null,
+            invoice_date: inv.invoice_date,
+            outstanding_pkr: outstanding,
+          };
+        })
+        .filter((x) => x.outstanding_pkr > 0.01);
+      const total = unpaid.reduce((acc, x) => acc + x.outstanding_pkr, 0);
+      unpaid.sort((a, b) => b.outstanding_pkr - a.outstanding_pkr);
+      return {
+        total_outstanding_pkr: total,
+        unpaid_count: unpaid.length,
+        top_unpaid: unpaid.slice(0, limit),
+      };
+    }
+
+    case "get_expenses_summary": {
+      if (!hasPermission(caller, "expenses.view")) return denied("expenses.view");
+      const { start, endExclusive } = monthRange(String(args.month));
+      const { data, error } = await db
+        .from("expenses")
+        .select("amount, category_id, expense_categories(name)")
+        .gte("expense_date", start)
+        .lt("expense_date", endExclusive);
+      if (error) throw new Error(error.message);
+      let total = 0;
+      const byCat: Record<string, number> = {};
+      for (const e of (data ?? []) as any[]) {
+        const amt = Number(e.amount ?? 0);
+        total += amt;
+        const cat = e.expense_categories?.name ?? "Uncategorized";
+        byCat[cat] = (byCat[cat] ?? 0) + amt;
+      }
+      return {
+        month: args.month,
+        total_pkr: total,
+        expense_count: data?.length ?? 0,
+        by_category: args.group_by_category === false ? undefined : byCat,
+      };
+    }
+
+    case "get_pending_cheques": {
+      if (!hasPermission(caller, "accounting.view")) return denied("accounting.view");
+      const limit = Math.min(50, Math.max(1, Number(args.limit) || 10));
+      const { data, error } = await db
+        .from("cheques")
+        .select("cheque_number, amount, cheque_date, cheque_type, recipient")
+        .eq("status", "pending")
+        .order("cheque_date", { ascending: true });
+      if (error) throw new Error(error.message);
+      const total = (data ?? []).reduce((acc, c: any) => acc + Number(c.amount ?? 0), 0);
+      return {
+        total_pending_pkr: total,
+        pending_count: data?.length ?? 0,
+        cheques: (data ?? []).slice(0, limit),
+      };
+    }
+
+    case "get_bank_balances": {
+      if (!hasPermission(caller, "accounting.view")) return denied("accounting.view");
+      const { data, error } = await db
+        .from("bank_accounts")
+        .select("bank_name, account_number, balance")
+        .order("bank_name");
+      if (error) throw new Error(error.message);
+      const total = (data ?? []).reduce((acc, b: any) => acc + Number(b.balance ?? 0), 0);
+      return { total_pkr: total, accounts: data ?? [] };
+    }
+
+    case "get_contract_endings": {
+      if (!hasAny(caller, ["compliance.view", "settings.view"])) {
+        return denied("compliance.view");
+      }
+      const days = Math.max(1, Math.min(365, Number(args.within_days) || 60));
+      const today = todayUTC();
+      const cutoff = addDays(days);
+      const { data, error } = await db
+        .from("clients")
+        .select("client_code, name, contract_end")
+        .not("contract_end", "is", null)
+        .gte("contract_end", today)
+        .lte("contract_end", cutoff)
+        .order("contract_end", { ascending: true });
+      if (error) throw new Error(error.message);
+      return { window_days: days, ending_count: data?.length ?? 0, clients: data ?? [] };
+    }
+
+    case "lookup_employee": {
+      if (!hasPermission(caller, "employees.view")) return denied("employees.view");
+      const q = String(args.query ?? "").trim();
+      if (!q) return { error: "query_required" };
+      const { data, error } = await db
+        .from("employees")
+        .select("employee_code, full_name, phone, status, category, base_salary, designation")
+        .or(`full_name.ilike.%${q}%,employee_code.ilike.%${q}%,phone.ilike.%${q}%`)
+        .limit(5);
+      if (error) throw new Error(error.message);
+      return { matches: data ?? [] };
+    }
+
+    case "lookup_client": {
+      // No dedicated client permission; gate by any of the data perms that
+      // imply you'd be looking clients up at all.
+      if (!hasAny(caller, ["invoices.view", "settings.view", "accounting.view"])) {
+        return denied("invoices.view");
+      }
+      const q = String(args.query ?? "").trim();
+      if (!q) return { error: "query_required" };
+      const { data, error } = await db
+        .from("clients")
+        .select("client_code, name, email, phone, contract_start, contract_end")
+        .or(`name.ilike.%${q}%,client_code.ilike.%${q}%`)
+        .limit(5);
+      if (error) throw new Error(error.message);
+      return { matches: data ?? [] };
+    }
+
+    case "get_employee_counts": {
+      if (!hasPermission(caller, "employees.view")) return denied("employees.view");
+      const { data, error } = await db
+        .from("employees")
+        .select("status, category");
+      if (error) throw new Error(error.message);
+      const byStatus: Record<string, number> = {};
+      const byCategory: Record<string, number> = {};
+      for (const e of data ?? []) {
+        const s = (e.status as string) ?? "unknown";
+        const c = (e.category as string) ?? "unknown";
+        byStatus[s] = (byStatus[s] ?? 0) + 1;
+        byCategory[c] = (byCategory[c] ?? 0) + 1;
+      }
+      return { total: data?.length ?? 0, by_status: byStatus, by_category: byCategory };
+    }
+
+    // ---------- Overview ----------
+    case "get_company_overview": {
+      // Each sub-query is gated by its own permission; we silently skip pieces
+      // the user can't see so the AI gets back a partial-but-valid overview
+      // rather than a hard failure.
+      const out: Record<string, unknown> = {};
+      const month = todayUTC().slice(0, 7);
+      const { start } = monthRange(month);
+      if (hasPermission(caller, "employees.view")) {
+        const { count } = await db
+          .from("employees")
+          .select("*", { count: "exact", head: true })
+          .eq("status", "active");
+        out.active_employees = count ?? 0;
+      }
+      if (hasPermission(caller, "payroll.view")) {
+        const { data: ps } = await db
+          .from("payslips")
+          .select("net_salary, disbursed")
+          .eq("period_month", start);
+        let disbursed = 0;
+        for (const p of ps ?? []) if (p.disbursed) disbursed += Number(p.net_salary ?? 0);
+        out.payroll_disbursed_this_month_pkr = disbursed;
+      }
+      if (hasPermission(caller, "invoices.view")) {
+        const { data: inv } = await db
+          .from("invoices")
+          .select("invoice_amount, withholding_tax, amount_received");
+        let outstanding = 0;
+        for (const i of inv ?? []) {
+          outstanding +=
+            Number(i.invoice_amount ?? 0) -
+            Number(i.withholding_tax ?? 0) -
+            Number(i.amount_received ?? 0);
+        }
+        out.outstanding_receivables_pkr = Math.max(0, outstanding);
+      }
+      if (hasPermission(caller, "accounting.view")) {
+        const { data: banks } = await db.from("bank_accounts").select("balance");
+        const bankTotal = (banks ?? []).reduce((a, b: any) => a + Number(b.balance ?? 0), 0);
+        const { data: treas } = await db
+          .from("treasury")
+          .select("cash_balance")
+          .limit(1)
+          .maybeSingle();
+        out.bank_total_pkr = bankTotal;
+        out.cash_on_hand_pkr = Number((treas as any)?.cash_balance ?? 0);
+      }
+      if (hasPermission(caller, "attendance.view")) {
+        const today = todayUTC();
+        const { count } = await db
+          .from("attendance_records")
+          .select("*", { count: "exact", head: true })
+          .eq("attendance_date", today);
+        out.attendance_marked_today = count ?? 0;
+      }
+      return out;
+    }
+
+    // ---------- Cashflow / banking ----------
+    case "get_cashflow_breakdown": {
+      if (!hasPermission(caller, "cashflow.view")) return denied("cashflow.view");
+      const { start, endExclusive } = monthRange(String(args.month));
+      const { data, error } = await db
+        .from("bank_transactions")
+        .select("kind, cash_delta, account_delta")
+        .gte("created_at", start)
+        .lt("created_at", endExclusive);
+      if (error) throw new Error(error.message);
+      const buckets: Record<string, { inflow: number; outflow: number }> = {};
+      for (const t of data ?? []) {
+        const kind = (t.kind as string) ?? "other";
+        const delta = Number(t.cash_delta ?? 0) + Number(t.account_delta ?? 0);
+        if (!buckets[kind]) buckets[kind] = { inflow: 0, outflow: 0 };
+        if (delta > 0) buckets[kind].inflow += delta;
+        else buckets[kind].outflow += Math.abs(delta);
+      }
+      return { month: args.month, breakdown_by_kind: buckets };
+    }
+    case "get_cash_balance": {
+      if (!hasPermission(caller, "accounting.view")) return denied("accounting.view");
+      const { data } = await db.from("treasury").select("cash_balance").limit(1).maybeSingle();
+      return { cash_balance_pkr: Number((data as any)?.cash_balance ?? 0) };
+    }
+    case "get_recent_bank_transactions": {
+      if (!hasPermission(caller, "accounting.view")) return denied("accounting.view");
+      const days = Math.max(1, Math.min(365, Number(args.days) || 7));
+      const limit = Math.max(1, Math.min(50, Number(args.limit) || 15));
+      const since = new Date();
+      since.setUTCDate(since.getUTCDate() - days);
+      const { data, error } = await db
+        .from("bank_transactions")
+        .select("created_at, kind, description, amount, cash_delta, account_delta")
+        .gte("created_at", since.toISOString())
+        .order("created_at", { ascending: false })
+        .limit(limit);
+      if (error) throw new Error(error.message);
+      return { days, count: data?.length ?? 0, transactions: data ?? [] };
+    }
+
+    // ---------- Payroll ----------
+    case "get_payroll_by_dimension": {
+      if (!hasPermission(caller, "payroll.view")) return denied("payroll.view");
+      const dim = String(args.dimension) as "branch" | "client" | "location";
+      const { start } = monthRange(String(args.month));
+      // Join out the employee's grouping column. Doing this in one Postgres
+      // round-trip is the right call; the aggregation is small enough to do
+      // in JS.
+      const { data, error } = await db
+        .from("payslips")
+        .select("net_salary, disbursed, employees(branch_id, client_id, location_id, branches(name), clients(name), locations(name))")
+        .eq("period_month", start);
+      if (error) throw new Error(error.message);
+      const groups: Record<string, { count: number; total: number; disbursed: number }> = {};
+      for (const p of (data ?? []) as any[]) {
+        const emp = p.employees;
+        let key = "Unassigned";
+        if (dim === "branch") key = emp?.branches?.name ?? "Unassigned";
+        else if (dim === "client") key = emp?.clients?.name ?? "Office / no client";
+        else if (dim === "location") key = emp?.locations?.name ?? "Unassigned";
+        if (!groups[key]) groups[key] = { count: 0, total: 0, disbursed: 0 };
+        const net = Number(p.net_salary ?? 0);
+        groups[key].count++;
+        groups[key].total += net;
+        if (p.disbursed) groups[key].disbursed += net;
+      }
+      return { month: args.month, dimension: dim, groups };
+    }
+    case "get_undisbursed_payslips": {
+      if (!hasPermission(caller, "payroll.view")) return denied("payroll.view");
+      const month = (args.month as string | undefined) ?? todayUTC().slice(0, 7);
+      const { start } = monthRange(month);
+      const { data, error } = await db
+        .from("payslips")
+        .select("net_salary, status, employees(employee_code, full_name)")
+        .eq("period_month", start)
+        .eq("disbursed", false);
+      if (error) throw new Error(error.message);
+      const total = (data ?? []).reduce((a, p: any) => a + Number(p.net_salary ?? 0), 0);
+      return {
+        month,
+        undisbursed_count: data?.length ?? 0,
+        undisbursed_total_pkr: total,
+        payslips: (data ?? []).map((p: any) => ({
+          employee_code: p.employees?.employee_code,
+          full_name: p.employees?.full_name,
+          net_salary: Number(p.net_salary ?? 0),
+          status: p.status,
+        })),
+      };
+    }
+    case "get_employee_payslip": {
+      if (!hasPermission(caller, "payroll.view")) return denied("payroll.view");
+      const q = String(args.employee_query ?? "").trim();
+      if (!q) return { error: "employee_query_required" };
+      const { start } = monthRange(String(args.month));
+      const { data: emp } = await db
+        .from("employees")
+        .select("id, employee_code, full_name")
+        .or(`full_name.ilike.%${q}%,employee_code.ilike.%${q}%`)
+        .limit(1)
+        .maybeSingle();
+      if (!emp) return { error: "employee_not_found", query: q };
+      const { data: ps, error } = await db
+        .from("payslips")
+        .select("base_salary, per_day_salary, working_days, present_days, absent_days, leave_days, bonus, deductions, advance, income_tax, eobi, final_salary, net_salary, status, disbursed, disbursed_at")
+        .eq("employee_id", (emp as any).id)
+        .eq("period_month", start)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      return {
+        employee: emp,
+        month: args.month,
+        payslip: ps ?? null,
+      };
+    }
+
+    // ---------- Employees ----------
+    case "get_recent_hires": {
+      if (!hasPermission(caller, "employees.view")) return denied("employees.view");
+      const days = Math.max(1, Math.min(365, Number(args.within_days) || 30));
+      const since = addDays(-days);
+      const { data, error } = await db
+        .from("employees")
+        .select("employee_code, full_name, join_date, base_salary, category")
+        .gte("join_date", since)
+        .order("join_date", { ascending: false });
+      if (error) throw new Error(error.message);
+      return { window_days: days, count: data?.length ?? 0, employees: data ?? [] };
+    }
+    case "get_average_salary": {
+      if (!hasPermission(caller, "employees.view")) return denied("employees.view");
+      let q = db
+        .from("employees")
+        .select("base_salary")
+        .eq("status", "active");
+      if (args.category) q = q.eq("category", String(args.category));
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      const salaries = (data ?? []).map((e: any) => Number(e.base_salary ?? 0)).filter((n) => n > 0);
+      if (salaries.length === 0) {
+        return { count: 0, average_pkr: 0, category: args.category ?? "all" };
+      }
+      const avg = salaries.reduce((a, b) => a + b, 0) / salaries.length;
+      return {
+        count: salaries.length,
+        average_pkr: Math.round(avg),
+        category: args.category ?? "all",
+      };
+    }
+
+    // ---------- Attendance ----------
+    case "get_attendance_summary": {
+      if (!hasPermission(caller, "attendance.view")) return denied("attendance.view");
+      const { start, endExclusive } = monthRange(String(args.month));
+      const q = String(args.employee_query ?? "").trim();
+      let employeeId: string | null = null;
+      let employeeInfo: unknown = null;
+      if (q) {
+        const { data: emp } = await db
+          .from("employees")
+          .select("id, employee_code, full_name")
+          .or(`full_name.ilike.%${q}%,employee_code.ilike.%${q}%`)
+          .limit(1)
+          .maybeSingle();
+        if (!emp) return { error: "employee_not_found", query: q };
+        employeeId = (emp as any).id;
+        employeeInfo = emp;
+      }
+      let query = db
+        .from("attendance_records")
+        .select("status")
+        .gte("attendance_date", start)
+        .lt("attendance_date", endExclusive);
+      if (employeeId) query = query.eq("employee_id", employeeId);
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      const counts: Record<string, number> = {};
+      for (const r of data ?? []) {
+        const k = (r.status as string) ?? "unknown";
+        counts[k] = (counts[k] ?? 0) + 1;
+      }
+      return {
+        month: args.month,
+        employee: employeeInfo,
+        total_records: data?.length ?? 0,
+        counts,
+      };
+    }
+    case "get_absent_today": {
+      if (!hasPermission(caller, "attendance.view")) return denied("attendance.view");
+      const today = todayUTC();
+      const { data, error } = await db
+        .from("attendance_records")
+        .select("employees(employee_code, full_name)")
+        .eq("attendance_date", today)
+        .eq("status", "Absent");
+      if (error) throw new Error(error.message);
+      return {
+        date: today,
+        absent_count: data?.length ?? 0,
+        employees: (data ?? []).map((r: any) => r.employees).filter(Boolean),
+      };
+    }
+
+    // ---------- Invoices / receivables ----------
+    case "get_invoices_summary": {
+      if (!hasPermission(caller, "invoices.view")) return denied("invoices.view");
+      const { start, endExclusive } = monthRange(String(args.month));
+      const { data: inv, error } = await db
+        .from("invoices")
+        .select("invoice_amount, withholding_tax, amount_received, status")
+        .gte("invoice_date", start)
+        .lt("invoice_date", endExclusive);
+      if (error) throw new Error(error.message);
+      let invoiced = 0, received = 0, withheld = 0;
+      for (const i of inv ?? []) {
+        invoiced += Number(i.invoice_amount ?? 0);
+        withheld += Number(i.withholding_tax ?? 0);
+        received += Number(i.amount_received ?? 0);
+      }
+      // Receipts can also relate to invoices issued earlier — also surface
+      // the cash that landed THIS month regardless of issue month.
+      const { data: pays } = await db
+        .from("invoice_payments")
+        .select("amount")
+        .gte("payment_date", start)
+        .lt("payment_date", endExclusive);
+      const receivedThisMonth = (pays ?? []).reduce(
+        (a, p: any) => a + Number(p.amount ?? 0),
+        0,
+      );
+      return {
+        month: args.month,
+        invoices_issued: inv?.length ?? 0,
+        total_invoiced_pkr: invoiced,
+        withholding_tax_pkr: withheld,
+        total_received_against_these_invoices_pkr: received,
+        total_payments_received_this_month_pkr: receivedThisMonth,
+      };
+    }
+    case "get_invoice_aging": {
+      if (!hasPermission(caller, "invoices.view")) return denied("invoices.view");
+      const { data, error } = await db
+        .from("invoices")
+        .select("invoice_date, invoice_amount, withholding_tax, amount_received, clients(name)");
+      if (error) throw new Error(error.message);
+      const buckets = {
+        "0_30_days": { count: 0, total_pkr: 0 },
+        "31_60_days": { count: 0, total_pkr: 0 },
+        "61_90_days": { count: 0, total_pkr: 0 },
+        "over_90_days": { count: 0, total_pkr: 0 },
+      };
+      const now = new Date(todayUTC()).getTime();
+      for (const i of (data ?? []) as any[]) {
+        const outstanding =
+          Number(i.invoice_amount ?? 0) -
+          Number(i.withholding_tax ?? 0) -
+          Number(i.amount_received ?? 0);
+        if (outstanding <= 0.01) continue;
+        const days = Math.floor((now - new Date(i.invoice_date).getTime()) / 86_400_000);
+        const b =
+          days <= 30 ? buckets["0_30_days"]
+          : days <= 60 ? buckets["31_60_days"]
+          : days <= 90 ? buckets["61_90_days"]
+          : buckets["over_90_days"];
+        b.count++;
+        b.total_pkr += outstanding;
+      }
+      return { aging_buckets: buckets };
+    }
+    case "get_top_clients_by_revenue": {
+      if (!hasPermission(caller, "invoices.view")) return denied("invoices.view");
+      const period = (args.period as string) ?? "year";
+      const limit = Math.max(1, Math.min(20, Number(args.limit) || 5));
+      const today = todayUTC();
+      const start =
+        period === "month"
+          ? `${today.slice(0, 7)}-01`
+          : `${today.slice(0, 4)}-01-01`;
+      const { data, error } = await db
+        .from("invoice_payments")
+        .select("amount, client_id, clients(name, client_code)")
+        .gte("payment_date", start);
+      if (error) throw new Error(error.message);
+      const byClient: Record<string, { name: string; code: string; total: number }> = {};
+      for (const p of (data ?? []) as any[]) {
+        const key = p.client_id;
+        if (!key) continue;
+        if (!byClient[key]) {
+          byClient[key] = {
+            name: p.clients?.name ?? "(unknown)",
+            code: p.clients?.client_code ?? "",
+            total: 0,
+          };
+        }
+        byClient[key].total += Number(p.amount ?? 0);
+      }
+      const ranked = Object.values(byClient).sort((a, b) => b.total - a.total).slice(0, limit);
+      return { period, top_clients: ranked };
+    }
+    case "get_client_receivables": {
+      if (!hasPermission(caller, "invoices.view")) return denied("invoices.view");
+      const q = String(args.client_query ?? "").trim();
+      if (!q) return { error: "client_query_required" };
+      const { data: client } = await db
+        .from("clients")
+        .select("id, client_code, name")
+        .or(`name.ilike.%${q}%,client_code.ilike.%${q}%`)
+        .limit(1)
+        .maybeSingle();
+      if (!client) return { error: "client_not_found", query: q };
+      const { data: inv, error } = await db
+        .from("invoices")
+        .select("invoice_number, invoice_date, invoice_amount, withholding_tax, amount_received")
+        .eq("client_id", (client as any).id)
+        .order("invoice_date", { ascending: false });
+      if (error) throw new Error(error.message);
+      const unpaid = (inv ?? [])
+        .map((i: any) => ({
+          invoice_number: i.invoice_number,
+          invoice_date: i.invoice_date,
+          outstanding_pkr:
+            Number(i.invoice_amount ?? 0) -
+            Number(i.withholding_tax ?? 0) -
+            Number(i.amount_received ?? 0),
+        }))
+        .filter((x) => x.outstanding_pkr > 0.01);
+      const total = unpaid.reduce((a, x) => a + x.outstanding_pkr, 0);
+      return { client, total_outstanding_pkr: total, unpaid_invoices: unpaid };
+    }
+
+    // ---------- Expenses / advances ----------
+    case "get_top_expense_categories": {
+      if (!hasPermission(caller, "expenses.view")) return denied("expenses.view");
+      const period = (args.period as string) ?? "month";
+      const limit = Math.max(1, Math.min(20, Number(args.limit) || 5));
+      const today = todayUTC();
+      const start =
+        period === "month"
+          ? `${today.slice(0, 7)}-01`
+          : `${today.slice(0, 4)}-01-01`;
+      const { data, error } = await db
+        .from("expenses")
+        .select("amount, expense_categories(name)")
+        .gte("expense_date", start);
+      if (error) throw new Error(error.message);
+      const byCat: Record<string, number> = {};
+      for (const e of (data ?? []) as any[]) {
+        const name = e.expense_categories?.name ?? "Uncategorized";
+        byCat[name] = (byCat[name] ?? 0) + Number(e.amount ?? 0);
+      }
+      const ranked = Object.entries(byCat)
+        .map(([category, total]) => ({ category, total_pkr: total }))
+        .sort((a, b) => b.total_pkr - a.total_pkr)
+        .slice(0, limit);
+      return { period, top_categories: ranked };
+    }
+    case "get_advances_summary": {
+      if (!hasPermission(caller, "expenses.view")) return denied("expenses.view");
+      const month = (args.month as string | undefined) ?? todayUTC().slice(0, 7);
+      const { start, endExclusive } = monthRange(month);
+      const { data, error } = await db
+        .from("advances")
+        .select("amount, payment_mode")
+        .gte("advance_date", start)
+        .lt("advance_date", endExclusive);
+      if (error) throw new Error(error.message);
+      const total = (data ?? []).reduce((a, x: any) => a + Number(x.amount ?? 0), 0);
+      const byMode: Record<string, number> = {};
+      for (const a of (data ?? []) as any[]) {
+        const m = a.payment_mode ?? "Unknown";
+        byMode[m] = (byMode[m] ?? 0) + Number(a.amount ?? 0);
+      }
+      return {
+        month,
+        count: data?.length ?? 0,
+        total_pkr: total,
+        by_payment_mode: byMode,
+      };
+    }
+    case "get_advances_for_employee": {
+      if (!hasPermission(caller, "expenses.view")) return denied("expenses.view");
+      const q = String(args.employee_query ?? "").trim();
+      if (!q) return { error: "employee_query_required" };
+      const { data: emp } = await db
+        .from("employees")
+        .select("id, employee_code, full_name")
+        .or(`full_name.ilike.%${q}%,employee_code.ilike.%${q}%`)
+        .limit(1)
+        .maybeSingle();
+      if (!emp) return { error: "employee_not_found", query: q };
+      const { data, error } = await db
+        .from("advances")
+        .select("advance_date, amount, payment_mode, notes")
+        .eq("employee_id", (emp as any).id)
+        .order("advance_date", { ascending: false });
+      if (error) throw new Error(error.message);
+      const total = (data ?? []).reduce((a, x: any) => a + Number(x.amount ?? 0), 0);
+      return { employee: emp, total_pkr: total, advances: data ?? [] };
+    }
+
+    // ---------- Cheques ----------
+    case "get_cheques_summary": {
+      if (!hasPermission(caller, "accounting.view")) return denied("accounting.view");
+      const { start, endExclusive } = monthRange(String(args.month));
+      const { data, error } = await db
+        .from("cheques")
+        .select("amount, status, cheque_type")
+        .gte("cheque_date", start)
+        .lt("cheque_date", endExclusive);
+      if (error) throw new Error(error.message);
+      const out = {
+        issued_count: 0,
+        issued_total_pkr: 0,
+        pending_count: 0,
+        pending_total_pkr: 0,
+        cleared_count: 0,
+        cleared_total_pkr: 0,
+        by_type: {} as Record<string, { count: number; total: number }>,
+      };
+      for (const c of (data ?? []) as any[]) {
+        const amt = Number(c.amount ?? 0);
+        out.issued_count++;
+        out.issued_total_pkr += amt;
+        if (c.status === "pending") {
+          out.pending_count++;
+          out.pending_total_pkr += amt;
+        } else if (c.status === "cleared") {
+          out.cleared_count++;
+          out.cleared_total_pkr += amt;
+        }
+        const t = c.cheque_type ?? "unknown";
+        if (!out.by_type[t]) out.by_type[t] = { count: 0, total: 0 };
+        out.by_type[t].count++;
+        out.by_type[t].total += amt;
+      }
+      return { month: args.month, ...out };
+    }
+
+    // ---------- Clients ----------
+    case "get_clients_summary": {
+      if (!hasAny(caller, ["invoices.view", "settings.view", "accounting.view"])) {
+        return denied("invoices.view");
+      }
+      const today = todayUTC();
+      const { data, error } = await db
+        .from("clients")
+        .select("client_type, contract_start, contract_end");
+      if (error) throw new Error(error.message);
+      const byType: Record<string, number> = {};
+      let activeContracts = 0;
+      for (const c of (data ?? []) as any[]) {
+        const t = c.client_type ?? "unknown";
+        byType[t] = (byType[t] ?? 0) + 1;
+        const startOk = !c.contract_start || c.contract_start <= today;
+        const endOk = !c.contract_end || c.contract_end >= today;
+        if (startOk && endOk) activeContracts++;
+      }
+      return {
+        total: data?.length ?? 0,
+        by_type: byType,
+        active_contracts: activeContracts,
+      };
+    }
+
+    // ---------- Compliance ----------
+    case "get_upcoming_compliance_alerts": {
+      if (!hasPermission(caller, "compliance.view")) return denied("compliance.view");
+      const days = Math.max(1, Math.min(365, Number(args.within_days) || 30));
+      const today = todayUTC();
+      const cutoff = addDays(days);
+      const { data, error } = await db
+        .from("important_dates")
+        .select("title, due_date, category, priority, advance_notice_days")
+        .gte("due_date", today)
+        .lte("due_date", cutoff)
+        .order("due_date", { ascending: true });
+      if (error) throw new Error(error.message);
+      return { window_days: days, count: data?.length ?? 0, alerts: data ?? [] };
+    }
+
+    // ---------- Inventory ----------
+    case "get_inventory_summary": {
+      if (!hasPermission(caller, "inventory.view")) return denied("inventory.view");
+      const { data, error } = await db
+        .from("inventory_items")
+        .select("kind, status, quantity");
+      if (error) throw new Error(error.message);
+      const byKind: Record<string, { items: number; total_quantity: number; available: number; issued: number }> = {};
+      for (const i of (data ?? []) as any[]) {
+        const k = i.kind ?? "unknown";
+        if (!byKind[k]) byKind[k] = { items: 0, total_quantity: 0, available: 0, issued: 0 };
+        byKind[k].items++;
+        const q = Number(i.quantity ?? 1);
+        byKind[k].total_quantity += q;
+        if (i.status === "issued") byKind[k].issued += q;
+        else byKind[k].available += q;
+      }
+      return { by_kind: byKind };
+    }
+    case "get_low_stock_items": {
+      if (!hasPermission(caller, "inventory.view")) return denied("inventory.view");
+      const threshold = Math.max(0, Math.min(100, Number(args.threshold) ?? 5));
+      const { data, error } = await db
+        .from("inventory_items")
+        .select("kind, item_type, serial_number, size, quantity, status")
+        .lte("quantity", threshold)
+        .neq("status", "issued")
+        .order("quantity", { ascending: true });
+      if (error) throw new Error(error.message);
+      return { threshold, count: data?.length ?? 0, items: data ?? [] };
+    }
+    case "get_recent_issuances": {
+      if (!hasPermission(caller, "inventory.view")) return denied("inventory.view");
+      const days = Math.max(1, Math.min(90, Number(args.within_days) || 7));
+      const limit = Math.max(1, Math.min(50, Number(args.limit) || 20));
+      const since = addDays(-days);
+      const { data, error } = await db
+        .from("issuances")
+        .select(
+          "issue_date, condition, inventory_items(kind, item_type, serial_number), employees(employee_code, full_name)",
+        )
+        .gte("issue_date", since)
+        .order("issue_date", { ascending: false })
+        .limit(limit);
+      if (error) throw new Error(error.message);
+      return { window_days: days, count: data?.length ?? 0, issuances: data ?? [] };
+    }
+
+    // ---------- Tasks ----------
+    case "get_my_tasks": {
+      // Tasks always visible — they're scoped to the user via assignee_id and
+      // the tasks RLS already enforces that regular users see only their own.
+      let q = db
+        .from("tasks")
+        .select("title, status, due_date, description")
+        .eq("assignee_id", caller.user_id)
+        .order("position", { ascending: true });
+      if (args.status) q = q.eq("status", String(args.status));
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      return { count: data?.length ?? 0, tasks: data ?? [] };
+    }
+    case "get_overdue_tasks": {
+      const today = todayUTC();
+      let q = db
+        .from("tasks")
+        .select("title, status, due_date, assignee_id, profiles!tasks_assignee_id_fkey(full_name)")
+        .neq("status", "done")
+        .lt("due_date", today)
+        .order("due_date", { ascending: true });
+      // Non-admins only see their own overdue items, mirroring the Kanban UI.
+      if (caller.role !== "super_admin" && caller.role !== "super_super_admin") {
+        q = q.eq("assignee_id", caller.user_id);
+      }
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      return { count: data?.length ?? 0, tasks: data ?? [] };
+    }
+
+    default:
+      return { error: `unknown_tool: ${name}` };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// System prompt — strict scoping to the CRM
+// ---------------------------------------------------------------------------
+
+function buildSystemPrompt(caller: CallerProfile): string {
+  const today = todayUTC();
+  const currentMonth = today.slice(0, 7);
+  return `You are the Employee Manager CRM assistant. You answer questions ONLY about the user's CRM data (employees, attendance, payroll, invoices, expenses, cashflow, cheques, banks, clients, contracts).
+
+Hard rules:
+- Use the provided tools to fetch live data. NEVER make up numbers.
+- If the user asks anything outside the CRM (weather, general knowledge, opinions, code help, jokes), respond exactly: "I can only answer questions about your CRM data."
+- If a tool returns { "error": "permission_denied", ... }, tell the user politely they don't have access to that area. Do not try a different tool.
+- Format money as "PKR " followed by a comma-separated integer (e.g. PKR 1,250,000). Round to whole rupees.
+- When showing lists, use compact markdown tables.
+- Be concise. No filler phrases like "Sure!" or "Here you go!".
+
+Context:
+- Today is ${today}. Current month is ${currentMonth}.
+- The signed-in user's role is "${caller.role}". Their company is automatically scoped to their account — you cannot see other companies' data.`;
+}
+
+// ---------------------------------------------------------------------------
+// OpenAI loop
+// ---------------------------------------------------------------------------
+
+type ChatMessage = {
+  role: "system" | "user" | "assistant" | "tool";
+  content: string | null;
+  tool_calls?: Array<{
+    id: string;
+    type: "function";
+    function: { name: string; arguments: string };
+  }>;
+  tool_call_id?: string;
+  name?: string;
+};
+
+async function callOpenAI(messages: ChatMessage[]): Promise<ChatMessage> {
+  const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      messages,
+      tools: TOOLS,
+      tool_choice: "auto",
+    }),
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`OpenAI request failed (${resp.status}): ${text}`);
+  }
+  const body = await resp.json();
+  return body.choices?.[0]?.message as ChatMessage;
+}
+
+// ---------------------------------------------------------------------------
+// Request handler
+// ---------------------------------------------------------------------------
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+  if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+
+  if (!OPENAI_API_KEY) {
+    return json(
+      { error: "OPENAI_API_KEY secret is not set on the Edge Function." },
+      500,
+    );
+  }
+
+  const authHeader = req.headers.get("Authorization");
+  const jwt = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+  if (!jwt) return json({ error: "unauthorized" }, 401);
+
+  const caller = await resolveCaller(jwt);
+  if (!caller) return json({ error: "invalid_token" }, 401);
+
+  let body: { messages?: Array<{ role: string; content: string }> };
+  try {
+    body = await req.json();
+  } catch {
+    return json({ error: "invalid_json" }, 400);
+  }
+  const inboundMessages = body.messages ?? [];
+  if (!Array.isArray(inboundMessages) || inboundMessages.length === 0) {
+    return json({ error: "messages_required" }, 400);
+  }
+
+  // User-scoped Supabase client. Every tool query will inherit this JWT, so
+  // RLS handles cross-company isolation and per-row visibility for us.
+  const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    global: { headers: { Authorization: `Bearer ${jwt}` } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  const messages: ChatMessage[] = [
+    { role: "system", content: buildSystemPrompt(caller) },
+    ...inboundMessages.map((m) => ({
+      role: m.role as ChatMessage["role"],
+      content: m.content,
+    })),
+  ];
+
+  try {
+    for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
+      const assistant = await callOpenAI(messages);
+      messages.push(assistant);
+
+      const toolCalls = assistant.tool_calls;
+      if (!toolCalls || toolCalls.length === 0) {
+        // Plain text response — done.
+        return json({ reply: assistant.content ?? "" });
+      }
+
+      // Run every tool the model requested this turn. Results are appended in
+      // matching order; OpenAI requires the tool message to reference the
+      // tool_call_id from the assistant message.
+      for (const call of toolCalls) {
+        let parsedArgs: Record<string, unknown> = {};
+        try {
+          parsedArgs = JSON.parse(call.function.arguments || "{}");
+        } catch {
+          parsedArgs = {};
+        }
+        let result: unknown;
+        try {
+          result = await runTool(call.function.name, parsedArgs, userClient, caller);
+        } catch (e) {
+          result = { error: e instanceof Error ? e.message : String(e) };
+        }
+        messages.push({
+          role: "tool",
+          tool_call_id: call.id,
+          name: call.function.name,
+          content: JSON.stringify(result),
+        });
+      }
+    }
+    // Hit the iteration cap without a final answer. Return a friendly fallback.
+    return json({
+      reply:
+        "I needed too many steps to answer that — could you ask it in a smaller piece?",
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("ai-chat:", msg);
+    return json({ error: msg }, 500);
+  }
+});

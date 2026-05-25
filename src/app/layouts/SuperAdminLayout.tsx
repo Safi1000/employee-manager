@@ -1,5 +1,6 @@
 import { Outlet, useNavigate } from "react-router";
 import Sidebar, { type SidebarItem } from "../components/Sidebar";
+import AiChatWidget from "../components/AiChatWidget";
 import { hasAnyPermission, useAuth } from "../lib/auth";
 import { Eye, X } from "lucide-react";
 import {
@@ -109,6 +110,7 @@ export default function SuperAdminLayout() {
         )}
         <Outlet />
       </div>
+      <AiChatWidget />
     </div>
   );
 }

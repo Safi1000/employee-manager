@@ -3,7 +3,10 @@
     "allow": [
       "Bash(git -C \"c:/Users/Abuzar/Desktop/employee-manager\" add src/app/lib/auth.tsx)",
       "Bash(git -C c:/Users/Abuzar/Desktop/employee-manager commit -m 'fix: defer profile load outside onAuthStateChange lock *)",
-      "Bash(git -C \"c:/Users/Abuzar/Desktop/employee-manager\" push origin main)"
+      "Bash(git -C \"c:/Users/Abuzar/Desktop/employee-manager\" push origin main)",
+      "mcp__claude_ai_Supabase__execute_sql",
+      "Bash(node -e \"const fs=require\\('fs'\\);const c=fs.readFileSync\\('supabase/functions/ai-chat/index.ts','utf8'\\);console.log\\('len:',c.length\\);console.log\\('encoded length:',JSON.stringify\\(c\\).length\\);\")",
+      "Bash(supabase functions *)"
     ]
   }
 }
