@@ -25,6 +25,9 @@ import {
   ShieldAlert,
   CalendarRange,
   Siren,
+  BookOpen,
+  Lock,
+  History,
 } from "lucide-react";
 
 type LinkDef = {
@@ -72,10 +75,13 @@ export default function SuperAdminLayout() {
   const EXPENSES: LinkDef = { to: "/super-admin/expenses", label: "Expenses", icon: Receipt, perms: ["expenses.view", "expenses.edit"] };
   const CASHFLOW: LinkDef = { to: "/super-admin/cashflow", label: "Cash Flow", icon: TrendingUp, perms: ["cashflow.view"] };
   const REPORTS: LinkDef = { to: "/super-admin/reports", label: "Financial Reports", icon: FileText, perms: ["reports.view"] };
+  const CHART_OF_ACCOUNTS: LinkDef = { to: "/super-admin/chart-of-accounts", label: "Chart of Accounts", icon: BookOpen, perms: ["reports.view"] };
+  const PERIOD_CLOSE: LinkDef = { to: "/super-admin/period-close", label: "Period Close", icon: Lock, perms: ["reports.view"] };
   const COMPLIANCE: LinkDef = { to: "/super-admin/compliance", label: "Compliance Calendar", icon: Bell, perms: ["compliance.view", "compliance.edit"] };
   const DOCUMENTS: LinkDef = { to: "/super-admin/documents", label: "Documents", icon: Folder, perms: ["documents.view", "documents.edit"] };
   const TASKS: LinkDef = { to: "/super-admin/tasks", label: "Tasks", icon: Trello };
   const USERS: LinkDef = { to: "/super-admin/users", label: "Users & Permissions", icon: Users, perms: ["users.manage"] };
+  const AUDIT_LOG: LinkDef = { to: "/super-admin/audit-log", label: "Audit Log", icon: History, perms: ["users.manage"] };
   const SETTINGS: LinkDef = { to: "/super-admin/settings", label: "Settings", icon: SettingsIcon, perms: ["settings.view", "settings.edit"] };
 
   // Build groups, dropping any link the user lacks permission for. Drop the
@@ -158,6 +164,8 @@ export default function SuperAdminLayout() {
     EXPENSES,
     CASHFLOW,
     REPORTS,
+    CHART_OF_ACCOUNTS,
+    PERIOD_CLOSE,
   ]);
   if (finance) links.push(finance);
 
@@ -173,6 +181,7 @@ export default function SuperAdminLayout() {
   const admin = buildGroup("Admin", "/super-admin/admin", [
     TASKS,
     USERS,
+    AUDIT_LOG,
     SETTINGS,
   ]);
   if (admin) links.push(admin);

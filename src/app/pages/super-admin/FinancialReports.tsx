@@ -55,7 +55,7 @@ const formatPeriod = (periodMonth: string) => {
 };
 
 export default function FinancialReports() {
-  const [activeTab, setActiveTab] = useState<"pl" | "chart" | "clients" | "partnership">("pl");
+  const [activeTab, setActiveTab] = useState<"pl" | "clients" | "partnership">("pl");
   const [branches, setBranches] = useState<Branch[]>([]);
   const [plBranchFilter, setPlBranchFilter] = useState<string>("all");
   const [statementBranchFilter, setStatementBranchFilter] = useState<string>("all");
@@ -711,22 +711,6 @@ export default function FinancialReports() {
                   formatPeriod(statementPeriod),
                   `Client Statement ${formatPeriod(statementPeriod)}.xlsx`
                 );
-              } else if (activeTab === "chart") {
-                exportTable({
-                  fileName: `Chart of Accounts ${formatPeriod(chartPeriod)}.xlsx`,
-                  sheetName: "Chart of Accounts",
-                  title: `Chart of Accounts — ${formatPeriod(chartPeriod)}`,
-                  headers: ["Code", "Account Name", "Balance"],
-                  rows: [
-                    ["1000", "Assets", chartFigures.weapons],
-                    ["1100", "Current Assets", chartFigures.uniform + chartFigures.cashAndBank],
-                    ["2000", "Liabilities", "None"],
-                    ["2100", "Current Liabilities", chartFigures.currentLiabilities],
-                    ["3000", "Equity", "To be configured"],
-                    ["4000", "Revenue", chartFigures.revenue],
-                    ["5000", "Expenses", chartFigures.expenses],
-                  ],
-                });
               } else if (activeTab === "partnership") {
                 exportTable({
                   fileName: `Partnership Report ${formatPeriod(partnershipPeriod)}.xlsx`,
@@ -762,7 +746,6 @@ export default function FinancialReports() {
               {([
                 { key: "pl", label: "Profit & Loss" },
                 { key: "clients", label: "Client Statements" },
-                { key: "chart", label: "Chart of Accounts" },
                 { key: "partnership", label: "Partnership Report" },
               ] as const).map((tab) => (
                 <button
@@ -950,98 +933,6 @@ export default function FinancialReports() {
                       </span>
                     </div>
                   </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {activeTab === "chart" && (
-            <div className="p-6">
-              <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-                <div>
-                  <h3 className="text-lg text-slate-900 mb-1">Chart of Accounts</h3>
-                  <p className="text-sm text-slate-500">
-                    For {formatPeriod(chartPeriod)} ({firstOfMonth(chartPeriod)} – {lastOfMonth(chartPeriod)})
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-sm text-slate-600">Month:</label>
-                  <select
-                    value={chartPeriod}
-                    onChange={(e) => setChartPeriod(e.target.value)}
-                    className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
-                  >
-                    {chartPeriodOptions.map((p) => (
-                      <option key={p} value={p}>
-                        {formatPeriod(p)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {loadingChart ? (
-                <div className="py-12 text-center text-slate-500">
-                  <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-slate-200">
-                        <th className="text-left px-6 py-3 text-sm text-slate-500">Code</th>
-                        <th className="text-left px-6 py-3 text-sm text-slate-500">Account Name</th>
-                        <th className="text-right px-6 py-3 text-sm text-slate-500">Balance</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200">
-                      <tr className="bg-brand-50">
-                        <td className="px-6 py-3 text-sm text-slate-900">1000</td>
-                        <td className="px-6 py-3 text-sm text-slate-900">Assets</td>
-                        <td className="px-6 py-3 text-sm text-slate-900 text-right">
-                          PKR {chartFigures.weapons.toLocaleString()}
-                        </td>
-                      </tr>
-                      <tr className="bg-brand-50">
-                        <td className="px-6 py-3 text-sm text-slate-900">1100</td>
-                        <td className="px-6 py-3 text-sm text-slate-900">Current Assets</td>
-                        <td className="px-6 py-3 text-sm text-slate-900 text-right">
-                          PKR {(chartFigures.uniform + chartFigures.cashAndBank).toLocaleString()}
-                        </td>
-                      </tr>
-                      <tr className="bg-brand-50">
-                        <td className="px-6 py-3 text-sm text-slate-900">2000</td>
-                        <td className="px-6 py-3 text-sm text-slate-900">Liabilities</td>
-                        <td className="px-6 py-3 text-sm text-slate-500 text-right">None</td>
-                      </tr>
-                      <tr className="bg-brand-50">
-                        <td className="px-6 py-3 text-sm text-slate-900">2100</td>
-                        <td className="px-6 py-3 text-sm text-slate-900">Current Liabilities</td>
-                        <td className="px-6 py-3 text-sm text-slate-900 text-right">
-                          PKR {chartFigures.currentLiabilities.toLocaleString()}
-                        </td>
-                      </tr>
-                      <tr className="bg-brand-50">
-                        <td className="px-6 py-3 text-sm text-slate-900">3000</td>
-                        <td className="px-6 py-3 text-sm text-slate-900">Equity</td>
-                        <td className="px-6 py-3 text-sm text-slate-400 text-right">To be configured</td>
-                      </tr>
-                      <tr className="bg-brand-50">
-                        <td className="px-6 py-3 text-sm text-slate-900">4000</td>
-                        <td className="px-6 py-3 text-sm text-slate-900">Revenue</td>
-                        <td className="px-6 py-3 text-sm text-success-700 text-right">
-                          PKR {chartFigures.revenue.toLocaleString()}
-                        </td>
-                      </tr>
-                      <tr className="bg-brand-50">
-                        <td className="px-6 py-3 text-sm text-slate-900">5000</td>
-                        <td className="px-6 py-3 text-sm text-slate-900">Expenses</td>
-                        <td className="px-6 py-3 text-sm text-danger-700 text-right">
-                          PKR {chartFigures.expenses.toLocaleString()}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
                 </div>
               )}
             </div>

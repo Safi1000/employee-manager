@@ -617,6 +617,97 @@ export const INCIDENT_STATUS_LABEL: Record<IncidentStatus, string> = {
   closed: "Closed",
 };
 
+// Sprint 4 — Chart of Accounts (spec section 8.1)
+export type AccountType = "asset" | "liability" | "equity" | "revenue" | "expense";
+export type AccountNormalSide = "debit" | "credit";
+
+export type ChartAccount = {
+  id: string;
+  company_id?: string;
+  account_code: string;
+  account_name: string;
+  account_type: AccountType;
+  normal_side: AccountNormalSide;
+  parent_id: string | null;
+  system_key: string | null;
+  system_account: boolean;
+  active: boolean;
+  notes: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export const ACCOUNT_TYPE_LABEL: Record<AccountType, string> = {
+  asset: "Assets",
+  liability: "Liabilities",
+  equity: "Equity",
+  revenue: "Revenue",
+  expense: "Expenses",
+};
+
+export const ACCOUNT_TYPE_ORDER: AccountType[] = [
+  "asset",
+  "liability",
+  "equity",
+  "revenue",
+  "expense",
+];
+
+// Sprint 4 — Period close (spec section 6.5 + 8.4)
+export type AccountingPeriod = {
+  id: string;
+  company_id?: string;
+  period_month: string;   // YYYY-MM-01
+  closed_by: string | null;
+  closed_at: string;
+  note: string | null;
+};
+
+// Sprint 4 — Audit log (spec section 6.4)
+export type AuditAction = "insert" | "update" | "delete";
+
+// changes shape:
+//   insert: { field: { after: value } }
+//   update: { field: { before: old, after: new } }
+//   delete: { field: { before: value } }
+export type AuditChanges = Record<string, { before?: unknown; after?: unknown }>;
+
+export type AuditLogEntry = {
+  id: string;
+  company_id: string | null;
+  table_name: string;
+  record_id: string | null;
+  action: AuditAction;
+  changed_by: string | null;
+  changed_at: string;
+  changes: AuditChanges;
+};
+
+// The tables that are wired up to the audit log trigger. Kept in sync with
+// the array in migration 0041.
+export const AUDITED_TABLES = [
+  "employees",
+  "clients",
+  "contracts",
+  "invoices",
+  "invoice_payments",
+  "expenses",
+  "payslips",
+  "advances",
+  "cheques",
+  "bank_accounts",
+  "bank_transactions",
+  "branches",
+  "profiles",
+  "chart_of_accounts",
+  "accounting_periods",
+  "posts",
+  "incidents",
+  "roster_assignments",
+] as const;
+
+export type AuditedTable = (typeof AUDITED_TABLES)[number];
+
 export type EmployeeDocument = {
   id: string;
   employee_id: string;
