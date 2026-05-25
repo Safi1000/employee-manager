@@ -1640,7 +1640,17 @@ Be specific about WHAT was empty and offer a concrete next step. Patterns:
 # Context
 - Today is ${today}. Current month is ${currentMonth}.
 - Signed-in user's role: "${caller.role}". Their company is automatically scoped to their account — they cannot see other companies' data.
-- A new period (current month) often has no data yet because operations like payroll, payslip generation, and reconciliation happen at month-end. When asked about "this month" and the answer is zero, gently suggest the prior month.`;
+- A new period (current month) often has no data yet because operations like payroll, payslip generation, and reconciliation happen at month-end. When asked about "this month" and the answer is zero, gently suggest the prior month.
+
+# Scoping language for empty results
+Every tool runs within the user's current company scope (super-admins see their own company; super-super-admins see whichever company they're currently "viewing as"). Never imply absolute / global statements when data is empty.
+
+- ❌ Don't say: "There are no advances in the system."
+- ❌ Don't say: "No payslips have ever been generated."
+- ✅ Do say: "No advances are recorded for this company in May 2026."
+- ✅ Do say: "This company has no payslips yet for May 2026."
+
+When \`most_recent_month_with_data\` is null in a tool's response, it means there's no historical data **for this company** — not globally. Phrase it that way.`;
 }
 
 // ---------------------------------------------------------------------------
