@@ -1610,6 +1610,51 @@ async function callOpenAI(messages: ChatMessage[]): Promise<ChatMessage> {
 }
 
 // ---------------------------------------------------------------------------
+// Persistence — writes the user/assistant turn to ai_chat_threads + messages.
+// Failures are swallowed and logged: a saved-history bug should never break
+// the chat itself.
+// ---------------------------------------------------------------------------
+
+async function persistTurn(
+  db: SupabaseClient,
+  caller: CallerProfile,
+  existingThreadId: string | null,
+  userContent: string | null,
+  assistantContent: string,
+): Promise<string | null> {
+  try {
+    let threadId = existingThreadId;
+    if (!threadId) {
+      // First turn of a new conversation. Seed the title from the user's
+      // first message so the row is easy to find later.
+      const title = userContent ? userContent.slice(0, 80) : "New conversation";
+      const { data: thread, error: threadErr } = await db
+        .from("ai_chat_threads")
+        .insert({ user_id: caller.user_id, company_id: caller.company_id, title })
+        .select("id")
+        .single();
+      if (threadErr) throw threadErr;
+      threadId = (thread as { id: string }).id;
+    } else {
+      // Touch updated_at so threads list naturally sorts most-recent-first.
+      await db
+        .from("ai_chat_threads")
+        .update({ updated_at: new Date().toISOString() })
+        .eq("id", threadId);
+    }
+    const rows: Array<{ thread_id: string; role: string; content: string }> = [];
+    if (userContent) rows.push({ thread_id: threadId, role: "user", content: userContent });
+    rows.push({ thread_id: threadId, role: "assistant", content: assistantContent });
+    const { error: msgErr } = await db.from("ai_chat_messages").insert(rows);
+    if (msgErr) throw msgErr;
+    return threadId;
+  } catch (e) {
+    console.error("persistTurn failed (non-fatal):", e instanceof Error ? e.message : e);
+    return existingThreadId;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Request handler
 // ---------------------------------------------------------------------------
 
@@ -1631,7 +1676,10 @@ Deno.serve(async (req) => {
   const caller = await resolveCaller(jwt);
   if (!caller) return json({ error: "invalid_token" }, 401);
 
-  let body: { messages?: Array<{ role: string; content: string }> };
+  let body: {
+    messages?: Array<{ role: string; content: string }>;
+    thread_id?: string | null;
+  };
   try {
     body = await req.json();
   } catch {
@@ -1641,6 +1689,9 @@ Deno.serve(async (req) => {
   if (!Array.isArray(inboundMessages) || inboundMessages.length === 0) {
     return json({ error: "messages_required" }, 400);
   }
+  // Client-managed thread ID. Stays null on the very first message of a new
+  // conversation — we create the thread row below and echo it back.
+  let threadId = body.thread_id ?? null;
 
   // User-scoped Supabase client. Every tool query will inherit this JWT, so
   // RLS handles cross-company isolation and per-row visibility for us.
@@ -1657,6 +1708,11 @@ Deno.serve(async (req) => {
     })),
   ];
 
+  // The most recent user message is the one we'll persist if the request
+  // succeeds (avoids saving anything if OpenAI errors before we get a reply).
+  const lastUserContent =
+    [...inboundMessages].reverse().find((m) => m.role === "user")?.content ?? null;
+
   try {
     for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
       const assistant = await callOpenAI(messages);
@@ -1664,8 +1720,17 @@ Deno.serve(async (req) => {
 
       const toolCalls = assistant.tool_calls;
       if (!toolCalls || toolCalls.length === 0) {
-        // Plain text response — done.
-        return json({ reply: assistant.content ?? "" });
+        // Plain text response — done. Persist the turn before returning so
+        // the client never sees a reply that isn't in the DB.
+        const replyText = assistant.content ?? "";
+        threadId = await persistTurn(
+          userClient,
+          caller,
+          threadId,
+          lastUserContent,
+          replyText,
+        );
+        return json({ reply: replyText, thread_id: threadId });
       }
 
       // Run every tool the model requested this turn. Results are appended in
@@ -1692,11 +1757,12 @@ Deno.serve(async (req) => {
         });
       }
     }
-    // Hit the iteration cap without a final answer. Return a friendly fallback.
-    return json({
-      reply:
-        "I needed too many steps to answer that — could you ask it in a smaller piece?",
-    });
+    // Hit the iteration cap without a final answer. Persist a placeholder so
+    // the transcript still reflects what the user asked.
+    const fallback =
+      "I needed too many steps to answer that — could you ask it in a smaller piece?";
+    threadId = await persistTurn(userClient, caller, threadId, lastUserContent, fallback);
+    return json({ reply: fallback, thread_id: threadId });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("ai-chat:", msg);
