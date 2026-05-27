@@ -708,6 +708,28 @@ export const AUDITED_TABLES = [
 
 export type AuditedTable = (typeof AUDITED_TABLES)[number];
 
+// Sprint 5 — Double-entry journal (spec section 6.2)
+export type JournalEntry = {
+  id: string;
+  company_id?: string;
+  entry_date: string;
+  description: string | null;
+  source_table: string | null;
+  source_id: string | null;
+  is_reversal: boolean;
+  manual: boolean;
+  posted_by: string | null;
+  created_at?: string;
+};
+
+export type JournalLine = {
+  id: string;
+  journal_entry_id: string;
+  account_id: string;
+  debit: number;
+  credit: number;
+};
+
 export type EmployeeDocument = {
   id: string;
   employee_id: string;
