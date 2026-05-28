@@ -650,6 +650,176 @@ const TOOLS = [
       parameters: { type: "object", properties: {}, required: [] },
     },
   },
+  // ---- Sprint 1–5 additions ----
+  {
+    type: "function",
+    function: {
+      name: "get_contracts_summary",
+      description:
+        "Returns count of contracts broken down by status (active, expired, terminated, draft). Use for questions like 'how many active contracts do we have'.",
+      parameters: { type: "object", properties: {}, required: [] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_contracts_ending_soon",
+      description:
+        "Returns contracts whose end_date is within the next N days. Use for renewal-watch / contract-ending questions.",
+      parameters: {
+        type: "object",
+        properties: {
+          days_ahead: { type: "integer", minimum: 1, maximum: 365, default: 60 },
+        },
+        required: ["days_ahead"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "lookup_contract",
+      description:
+        "Find a contract by client name or contract_code (e.g. CON-0001). Returns matching contracts with full detail.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Client name fragment or full contract code." },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_incidents_summary",
+      description:
+        "Counts of incidents grouped by severity and status. Optionally filter to a date range. Use for safety/incident review questions.",
+      parameters: {
+        type: "object",
+        properties: {
+          days_back: { type: "integer", minimum: 1, maximum: 365, default: 30 },
+        },
+        required: ["days_back"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_recent_incidents",
+      description:
+        "Returns the most recent incidents with code, severity, category, status, and date. Use when the user asks about recent / latest incidents.",
+      parameters: {
+        type: "object",
+        properties: {
+          limit: { type: "integer", minimum: 1, maximum: 50, default: 10 },
+        },
+        required: ["limit"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_incidents_for_employee",
+      description:
+        "Returns all incidents linked to a specific guard, identified by employee_code (e.g. EMP-0001) or exact full name. Useful for disciplinary / review questions about a specific guard.",
+      parameters: {
+        type: "object",
+        properties: {
+          employee: { type: "string", description: "Employee code or full name." },
+        },
+        required: ["employee"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_roster_gaps",
+      description:
+        "Returns count of unassigned slots in the deployment roster for the next N days. Use for capacity / understaffing questions.",
+      parameters: {
+        type: "object",
+        properties: {
+          days_ahead: { type: "integer", minimum: 1, maximum: 60, default: 7 },
+        },
+        required: ["days_ahead"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_expiring_licences",
+      description:
+        "Aggregates expiring items across the system: weapon licences, guard service licences, medical fitness, probation ends, contract ends, and company compliance dates. Returns counts and the top expiring items sorted by days remaining.",
+      parameters: {
+        type: "object",
+        properties: {
+          days_ahead: { type: "integer", minimum: 1, maximum: 365, default: 30 },
+        },
+        required: ["days_ahead"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_trial_balance",
+      description:
+        "Returns the Trial Balance from the double-entry journal for a date range: every account with non-zero debit/credit totals, plus the grand totals. Use for accounting/audit questions.",
+      parameters: {
+        type: "object",
+        properties: {
+          from: { type: "string", description: "Start date YYYY-MM-DD. Default: start of current year." },
+          to: { type: "string", description: "End date YYYY-MM-DD. Default: today." },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_period_close_status",
+      description:
+        "Returns the list of closed accounting periods (months) and whether the current month is locked. Use to answer 'is May closed?' / 'which months are open?' questions.",
+      parameters: { type: "object", properties: {}, required: [] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_clients_with_expiring_contracts",
+      description:
+        "Lists clients with at least one master contract_end date within the next N days. Use for client retention / renewal questions.",
+      parameters: {
+        type: "object",
+        properties: {
+          days_ahead: { type: "integer", minimum: 1, maximum: 365, default: 60 },
+        },
+        required: ["days_ahead"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_employee_compliance",
+      description:
+        "Returns one employee's full compliance picture: CNIC, weapon licence + expiry, guard service licence + expiry, medical fitness expiry, EOBI registration, probation end. Identify by employee_code or full name.",
+      parameters: {
+        type: "object",
+        properties: {
+          employee: { type: "string", description: "Employee code or full name." },
+        },
+        required: ["employee"],
+      },
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -1594,6 +1764,374 @@ async function runTool(
       return { count: data?.length ?? 0, tasks: data ?? [] };
     }
 
+    // ---- Sprint 1–5 additions ----
+    case "get_contracts_summary": {
+      if (!hasAny(caller, ["contracts.view", "contracts.edit"])) return denied("contracts.view");
+      const { data, error } = await db.from("contracts").select("status");
+      if (error) throw new Error(error.message);
+      const counts: Record<string, number> = { active: 0, expired: 0, terminated: 0, draft: 0 };
+      for (const r of (data ?? []) as { status: string }[]) {
+        counts[r.status] = (counts[r.status] ?? 0) + 1;
+      }
+      return { total: (data ?? []).length, by_status: counts };
+    }
+
+    case "get_contracts_ending_soon": {
+      if (!hasAny(caller, ["contracts.view", "contracts.edit"])) return denied("contracts.view");
+      const daysAhead = Number(args.days_ahead ?? 60);
+      const today = todayUTC();
+      const end = addDays(daysAhead);
+      const { data, error } = await db
+        .from("contracts")
+        .select("id, contract_code, client_id, end_date, contract_type, number_of_guards, rate_per_guard_per_month, clients(name, client_code)")
+        .eq("status", "active")
+        .not("end_date", "is", null)
+        .gte("end_date", today)
+        .lte("end_date", end)
+        .order("end_date", { ascending: true });
+      if (error) throw new Error(error.message);
+      const rows = (data ?? []).map((r: any) => {
+        const daysLeft = Math.round((new Date(r.end_date).getTime() - new Date(today).getTime()) / 86400000);
+        return {
+          contract_code: r.contract_code,
+          client: r.clients?.name ?? null,
+          client_code: r.clients?.client_code ?? null,
+          contract_type: r.contract_type,
+          number_of_guards: r.number_of_guards,
+          rate_per_guard_per_month: Number(r.rate_per_guard_per_month),
+          end_date: r.end_date,
+          days_left: daysLeft,
+        };
+      });
+      return { count: rows.length, days_ahead: daysAhead, contracts: rows };
+    }
+
+    case "lookup_contract": {
+      if (!hasAny(caller, ["contracts.view", "contracts.edit"])) return denied("contracts.view");
+      const query = String(args.query ?? "").trim();
+      if (!query) return { count: 0, contracts: [], note: "empty_query" };
+      // Try contract_code first; fall back to client name fragment.
+      const codeMatch = await db
+        .from("contracts")
+        .select("id, contract_code, contract_type, start_date, end_date, status, number_of_guards, rate_per_guard_per_month, clients(name, client_code)")
+        .ilike("contract_code", `%${query}%`)
+        .limit(10);
+      if (codeMatch.data && codeMatch.data.length > 0) {
+        return {
+          count: codeMatch.data.length,
+          contracts: codeMatch.data.map((r: any) => ({
+            contract_code: r.contract_code,
+            client: r.clients?.name ?? null,
+            contract_type: r.contract_type,
+            start_date: r.start_date,
+            end_date: r.end_date,
+            status: r.status,
+            number_of_guards: r.number_of_guards,
+            rate_per_guard_per_month: Number(r.rate_per_guard_per_month),
+          })),
+        };
+      }
+      // Fall back to joining via client name
+      const { data: clientRows } = await db
+        .from("clients")
+        .select("id")
+        .ilike("name", `%${query}%`)
+        .limit(5);
+      const ids = ((clientRows ?? []) as { id: string }[]).map((c) => c.id);
+      if (ids.length === 0) return { count: 0, contracts: [], note: "no_match" };
+      const { data, error } = await db
+        .from("contracts")
+        .select("id, contract_code, contract_type, start_date, end_date, status, number_of_guards, rate_per_guard_per_month, clients(name, client_code)")
+        .in("client_id", ids)
+        .order("start_date", { ascending: false })
+        .limit(20);
+      if (error) throw new Error(error.message);
+      return {
+        count: (data ?? []).length,
+        contracts: (data ?? []).map((r: any) => ({
+          contract_code: r.contract_code,
+          client: r.clients?.name ?? null,
+          contract_type: r.contract_type,
+          start_date: r.start_date,
+          end_date: r.end_date,
+          status: r.status,
+          number_of_guards: r.number_of_guards,
+          rate_per_guard_per_month: Number(r.rate_per_guard_per_month),
+        })),
+      };
+    }
+
+    case "get_incidents_summary": {
+      if (!hasAny(caller, ["incidents.view", "incidents.edit"])) return denied("incidents.view");
+      const daysBack = Number(args.days_back ?? 30);
+      const since = addDays(-daysBack);
+      const { data, error } = await db
+        .from("incidents")
+        .select("severity, status")
+        .gte("occurred_at", `${since}T00:00:00Z`);
+      if (error) throw new Error(error.message);
+      const bySeverity: Record<string, number> = { critical: 0, high: 0, medium: 0, low: 0 };
+      const byStatus: Record<string, number> = { open: 0, under_investigation: 0, resolved: 0, closed: 0 };
+      for (const r of (data ?? []) as { severity: string; status: string }[]) {
+        bySeverity[r.severity] = (bySeverity[r.severity] ?? 0) + 1;
+        byStatus[r.status] = (byStatus[r.status] ?? 0) + 1;
+      }
+      return { total: (data ?? []).length, period_days: daysBack, by_severity: bySeverity, by_status: byStatus };
+    }
+
+    case "get_recent_incidents": {
+      if (!hasAny(caller, ["incidents.view", "incidents.edit"])) return denied("incidents.view");
+      const limit = Number(args.limit ?? 10);
+      const { data, error } = await db
+        .from("incidents")
+        .select("incident_code, severity, category, status, occurred_at, description, client_notified, clients(name)")
+        .order("occurred_at", { ascending: false })
+        .limit(limit);
+      if (error) throw new Error(error.message);
+      return {
+        count: (data ?? []).length,
+        incidents: (data ?? []).map((r: any) => ({
+          incident_code: r.incident_code,
+          severity: r.severity,
+          category: r.category,
+          status: r.status,
+          occurred_at: r.occurred_at,
+          client: r.clients?.name ?? null,
+          client_notified: r.client_notified,
+          description: r.description,
+        })),
+      };
+    }
+
+    case "get_incidents_for_employee": {
+      if (!hasAny(caller, ["incidents.view", "incidents.edit"])) return denied("incidents.view");
+      const q = String(args.employee ?? "").trim();
+      if (!q) return { count: 0, incidents: [], note: "empty_query" };
+      const { data: empRows } = await db
+        .from("employees")
+        .select("id, full_name, employee_code")
+        .or(`employee_code.ilike.%${q}%,full_name.ilike.%${q}%`)
+        .limit(1);
+      const emp = ((empRows ?? []) as { id: string; full_name: string; employee_code: string }[])[0];
+      if (!emp) return { count: 0, incidents: [], note: "employee_not_found" };
+      const { data: linkRows } = await db
+        .from("incident_guards")
+        .select("incident_id")
+        .eq("employee_id", emp.id);
+      const incIds = ((linkRows ?? []) as { incident_id: string }[]).map((r) => r.incident_id);
+      if (incIds.length === 0) return { employee: emp, count: 0, incidents: [] };
+      const { data, error } = await db
+        .from("incidents")
+        .select("incident_code, severity, category, status, occurred_at, description")
+        .in("id", incIds)
+        .order("occurred_at", { ascending: false });
+      if (error) throw new Error(error.message);
+      return { employee: emp, count: (data ?? []).length, incidents: data ?? [] };
+    }
+
+    case "get_roster_gaps": {
+      if (!hasAny(caller, ["roster.view", "roster.edit"])) return denied("roster.view");
+      const daysAhead = Number(args.days_ahead ?? 7);
+      const today = todayUTC();
+      const end = addDays(daysAhead);
+      const [empsRes, slotsRes] = await Promise.all([
+        db.from("employees").select("id", { count: "exact", head: true })
+          .eq("status", "Active").in("category", ["client", "reliever"]),
+        db.from("roster_assignments").select("employee_id, assignment_date, status")
+          .gte("assignment_date", today).lte("assignment_date", end),
+      ]);
+      const empCount = empsRes.count ?? 0;
+      const slots = (slotsRes.data ?? []) as { status: string }[];
+      const totalSlots = empCount * daysAhead;
+      const filled = slots.length;
+      const relieverNeeded = slots.filter((s) => s.status === "reliever_needed").length;
+      return {
+        days_ahead: daysAhead,
+        active_field_employees: empCount,
+        total_required_slots: totalSlots,
+        filled_slots: filled,
+        unassigned_slots: Math.max(0, totalSlots - filled),
+        reliever_needed: relieverNeeded,
+      };
+    }
+
+    case "get_expiring_licences": {
+      if (!hasAny(caller, ["compliance.view", "compliance.edit"])) return denied("compliance.view");
+      const daysAhead = Number(args.days_ahead ?? 30);
+      const today = todayUTC();
+      const end = addDays(daysAhead);
+      const [empRes, conRes, dateRes] = await Promise.all([
+        db.from("employees")
+          .select("id, full_name, employee_code, weapon_licence_expiry, guard_service_licence_expiry, medical_fitness_expiry, probation_end_date, status")
+          .neq("status", "Inactive"),
+        db.from("contracts")
+          .select("contract_code, end_date, status, clients(name)")
+          .eq("status", "active").not("end_date", "is", null)
+          .gte("end_date", today).lte("end_date", end)
+          .order("end_date", { ascending: true }),
+        db.from("important_dates")
+          .select("title, due_date, category, priority")
+          .gte("due_date", today).lte("due_date", end)
+          .order("due_date", { ascending: true }),
+      ]);
+      type Item = { kind: string; title: string; expiry: string; days_left: number };
+      const items: Item[] = [];
+      const dayDelta = (d: string) =>
+        Math.round((new Date(d).getTime() - new Date(today).getTime()) / 86400000);
+      for (const e of ((empRes.data ?? []) as any[])) {
+        const checks: [string | null, string][] = [
+          [e.weapon_licence_expiry, "Weapon licence"],
+          [e.guard_service_licence_expiry, "Guard service licence"],
+          [e.medical_fitness_expiry, "Medical fitness"],
+          [e.probation_end_date, "Probation ends"],
+        ];
+        for (const [date, label] of checks) {
+          if (date && date >= today && date <= end) {
+            items.push({ kind: label, title: `${e.full_name} (${e.employee_code})`, expiry: date, days_left: dayDelta(date) });
+          }
+        }
+      }
+      for (const c of ((conRes.data ?? []) as any[])) {
+        items.push({ kind: "Contract end", title: `${c.contract_code} — ${c.clients?.name ?? ""}`, expiry: c.end_date, days_left: dayDelta(c.end_date) });
+      }
+      for (const d of ((dateRes.data ?? []) as any[])) {
+        items.push({ kind: `Company ${d.category}`, title: d.title, expiry: d.due_date, days_left: dayDelta(d.due_date) });
+      }
+      items.sort((a, b) => a.days_left - b.days_left);
+      return {
+        days_ahead: daysAhead,
+        total: items.length,
+        items: items.slice(0, 30),
+        by_kind: items.reduce<Record<string, number>>((acc, i) => {
+          acc[i.kind] = (acc[i.kind] ?? 0) + 1;
+          return acc;
+        }, {}),
+      };
+    }
+
+    case "get_trial_balance": {
+      if (!hasAny(caller, ["coa.view", "reports.view"])) return denied("coa.view");
+      const today = todayUTC();
+      const yearStart = `${today.slice(0, 4)}-01-01`;
+      const from = String(args.from ?? yearStart);
+      const to = String(args.to ?? today);
+      const [coaRes, jlRes] = await Promise.all([
+        db.from("chart_of_accounts").select("id, account_code, account_name, account_type, normal_side").eq("active", true),
+        db.from("journal_lines")
+          .select("account_id, debit, credit, journal_entry:journal_entry_id(entry_date)")
+          .gte("journal_entry.entry_date", from)
+          .lte("journal_entry.entry_date", to),
+      ]);
+      if (coaRes.error) throw new Error(coaRes.error.message);
+      if (jlRes.error) throw new Error(jlRes.error.message);
+      const balances = new Map<string, { debit: number; credit: number }>();
+      for (const r of ((jlRes.data ?? []) as any[])) {
+        if (!r.journal_entry) continue;
+        const cur = balances.get(r.account_id) ?? { debit: 0, credit: 0 };
+        cur.debit += Number(r.debit);
+        cur.credit += Number(r.credit);
+        balances.set(r.account_id, cur);
+      }
+      const rows = ((coaRes.data ?? []) as any[])
+        .map((a) => {
+          const b = balances.get(a.id) ?? { debit: 0, credit: 0 };
+          return {
+            account_code: a.account_code,
+            account_name: a.account_name,
+            account_type: a.account_type,
+            debit: b.debit,
+            credit: b.credit,
+          };
+        })
+        .filter((r) => r.debit !== 0 || r.credit !== 0)
+        .sort((a, b) => a.account_code.localeCompare(b.account_code));
+      const totalDebit = rows.reduce((s, r) => s + r.debit, 0);
+      const totalCredit = rows.reduce((s, r) => s + r.credit, 0);
+      return {
+        period: { from, to },
+        accounts: rows,
+        total_debit: totalDebit,
+        total_credit: totalCredit,
+        balanced: Math.abs(totalDebit - totalCredit) < 1,
+      };
+    }
+
+    case "get_period_close_status": {
+      if (!hasAny(caller, ["period_close.manage", "reports.view"])) return denied("period_close.manage");
+      const today = todayUTC();
+      const currentMonth = `${today.slice(0, 7)}-01`;
+      const { data, error } = await db
+        .from("accounting_periods")
+        .select("period_month, closed_at, note")
+        .order("period_month", { ascending: false })
+        .limit(24);
+      if (error) throw new Error(error.message);
+      const rows = (data ?? []) as { period_month: string; closed_at: string; note: string | null }[];
+      const currentClosed = rows.some((r) => r.period_month.slice(0, 10) === currentMonth);
+      return {
+        current_month: currentMonth,
+        current_month_closed: currentClosed,
+        closed_periods: rows.map((r) => ({
+          month: r.period_month.slice(0, 7),
+          closed_at: r.closed_at,
+          note: r.note,
+        })),
+      };
+    }
+
+    case "get_clients_with_expiring_contracts": {
+      if (!hasAny(caller, ["clients.view", "clients.edit"])) return denied("clients.view");
+      const daysAhead = Number(args.days_ahead ?? 60);
+      const today = todayUTC();
+      const end = addDays(daysAhead);
+      const { data, error } = await db
+        .from("clients")
+        .select("name, client_code, contract_end, industry")
+        .not("contract_end", "is", null)
+        .gte("contract_end", today)
+        .lte("contract_end", end)
+        .order("contract_end", { ascending: true });
+      if (error) throw new Error(error.message);
+      const rows = (data ?? []).map((c: any) => ({
+        name: c.name,
+        client_code: c.client_code,
+        industry: c.industry,
+        contract_end: c.contract_end,
+        days_left: Math.round((new Date(c.contract_end).getTime() - new Date(today).getTime()) / 86400000),
+      }));
+      return { days_ahead: daysAhead, count: rows.length, clients: rows };
+    }
+
+    case "get_employee_compliance": {
+      if (!hasAny(caller, ["employees.view", "employees.edit", "compliance.view"]))
+        return denied("employees.view");
+      const q = String(args.employee ?? "").trim();
+      if (!q) return { found: false, note: "empty_query" };
+      const { data, error } = await db
+        .from("employees")
+        .select("employee_code, full_name, cnic_number, date_of_birth, weapon_licence_number, weapon_licence_expiry, guard_service_licence_number, guard_service_licence_expiry, medical_fitness_expiry, eobi_registration_number, employee_contract_type, probation_end_date, status")
+        .or(`employee_code.ilike.%${q}%,full_name.ilike.%${q}%`)
+        .limit(3);
+      if (error) throw new Error(error.message);
+      if (!data || data.length === 0) return { found: false, note: "not_found" };
+      const today = todayUTC();
+      const enrich = (row: any) => {
+        const flags: string[] = [];
+        const check = (label: string, date: string | null) => {
+          if (!date) return;
+          const days = Math.round((new Date(date).getTime() - new Date(today).getTime()) / 86400000);
+          if (days < 0) flags.push(`${label} expired ${Math.abs(days)} days ago`);
+          else if (days <= 30) flags.push(`${label} expires in ${days} days`);
+        };
+        check("Weapon licence", row.weapon_licence_expiry);
+        check("Guard service licence", row.guard_service_licence_expiry);
+        check("Medical fitness", row.medical_fitness_expiry);
+        if (row.employee_contract_type === "probation") check("Probation", row.probation_end_date);
+        return { ...row, alerts: flags };
+      };
+      return { found: true, count: data.length, employees: data.map(enrich) };
+    }
+
     default:
       return { error: `unknown_tool: ${name}` };
   }
@@ -1606,7 +2144,14 @@ async function runTool(
 function buildSystemPrompt(caller: CallerProfile): string {
   const today = todayUTC();
   const currentMonth = today.slice(0, 7);
-  return `You are the Employee Manager CRM assistant. You answer questions ONLY about the user's CRM data (employees, attendance, payroll, invoices, expenses, cashflow, cheques, banks, clients, contracts, compliance dates, inventory, tasks).
+  return `You are the Employee Manager CRM assistant for a Pakistani security-services company. You answer questions ONLY about the user's CRM data:
+- Workforce: employees (with HR fields: CNIC, DOB, addresses, emergency contact, weapon/guard-service/medical licences, EOBI registration, supervisor, contract type, probation), attendance (with half-day/late/overtime), payroll, relievers.
+- Operations: deployment roster (guards × dates × shifts), posts (deployment sites), incidents (theft / altercations / no-shows / weapon discharges with severity + status).
+- Clients & Contracts: clients (with NTN/STRN/filer status/withholding tax rate/billing address/signatory), contracts (one client can have many — each with rate per guard, shift pattern, end date, auto-invoice).
+- Finance: invoices, payments, expenses (tagged Cost of Services vs Operating Expense), cashflow, cheques, banks (with IBAN/SWIFT/currency).
+- Accounting-grade: Chart of Accounts, Trial Balance (from double-entry journal — always balanced), General Ledger, period close, audit log.
+- Compliance: Licences & Renewals centre aggregating weapon/guard/medical licence expiries, contract endings, and company compliance dates.
+- Other: inventory, documents, tasks.
 
 # Hard rules
 - Use the provided tools to fetch live data. NEVER make up numbers.
@@ -1620,7 +2165,7 @@ There are four distinct cases. Use the matching template — do not improvise re
 
 ## 1. Off-topic question (weather, jokes, general knowledge, coding help, opinions)
 Respond exactly:
-"That's outside what I can help with — I'm focused on your CRM data (employees, payroll, attendance, invoices, expenses, cashflow, clients, inventory, tasks). Ask me about any of those and I'll dig in."
+"That's outside what I can help with — I'm focused on your CRM data (employees, payroll, attendance, invoices, expenses, cashflow, clients, contracts, deployment roster, incidents, licences, accounting, inventory, tasks). Ask me about any of those and I'll dig in."
 
 ## 2. On-topic but no tool exists for it
 Tell the user honestly what you CAN look up nearby and suggest the closest alternative. Format:
@@ -1641,6 +2186,22 @@ Be specific about WHAT was empty and offer a concrete next step. Patterns:
 - Today is ${today}. Current month is ${currentMonth}.
 - Signed-in user's role: "${caller.role}". Their company is automatically scoped to their account — they cannot see other companies' data.
 - A new period (current month) often has no data yet because operations like payroll, payslip generation, and reconciliation happen at month-end. When asked about "this month" and the answer is zero, gently suggest the prior month.
+
+# Tool selection cheatsheet (Sprint 1–5 modules)
+- "active contracts / contracts ending / renewal" → get_contracts_summary, get_contracts_ending_soon
+- "find contract CON-0001 / contracts for Tapal" → lookup_contract
+- "incidents / how many open incidents / safety review" → get_incidents_summary, get_recent_incidents
+- "incidents for Guard X / disciplinary history" → get_incidents_for_employee
+- "deployment roster / unfilled slots / understaffing" → get_roster_gaps
+- "what's expiring / licences / renewals / compliance" → get_expiring_licences
+- "weapon licence / EOBI reg / probation for employee X" → get_employee_compliance
+- "trial balance / debits credits / accounting balances" → get_trial_balance
+- "is May closed / which months are locked" → get_period_close_status
+- "clients with contract ending" → get_clients_with_expiring_contracts
+
+# Calling conventions
+- Tools that take \`days_ahead\` or \`days_back\` default to sensible windows; pick a window that matches the user's phrasing ("this week" → 7, "this month" → 30, "this quarter" → 90).
+- For period parameters in get_trial_balance, default to year-to-date unless the user specifies a range.
 
 # Scoping language for empty results
 Every tool runs within the user's current company scope (super-admins see their own company; super-super-admins see whichever company they're currently "viewing as"). Never imply absolute / global statements when data is empty.

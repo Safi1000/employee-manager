@@ -53,10 +53,20 @@ export const DASHBOARD_WIDGET_KEYS = [
   "stat_attendance_today",
   "stat_expenses_mtd",
   "stat_payroll_mtd",
+  // Sprint 1-5 additions
+  "stat_active_contracts",
+  "stat_open_incidents",
+  "stat_licences_expiring",
+  "stat_roster_gaps",
   "bank_overview",
   "top_clients",
   "attendance_trend",
   "compliance_alerts",
+  // Sprint 1-5 additions
+  "expenses_pie",
+  "contracts_ending",
+  "incidents_recent",
+  "period_close_status",
 ] as const;
 export type DashboardWidgetKey = (typeof DASHBOARD_WIDGET_KEYS)[number];
 
@@ -65,10 +75,18 @@ export const DASHBOARD_WIDGET_LABELS: Record<DashboardWidgetKey, string> = {
   stat_attendance_today: "Attendance Today (stat card)",
   stat_expenses_mtd: "Expenses MTD (stat card)",
   stat_payroll_mtd: "Payroll MTD (stat card)",
+  stat_active_contracts: "Active Contracts (stat card)",
+  stat_open_incidents: "Open Incidents (stat card)",
+  stat_licences_expiring: "Licences expiring <30d (stat card)",
+  stat_roster_gaps: "Roster gaps next 7d (stat card)",
   bank_overview: "Bank Account Overview",
   top_clients: "Top 10 Clients",
   attendance_trend: "Attendance Trend (7 days)",
   compliance_alerts: "Compliance Alerts",
+  expenses_pie: "Expenses by Category (pie chart)",
+  contracts_ending: "Contracts ending soon",
+  incidents_recent: "Recent incidents",
+  period_close_status: "Period close status",
 };
 
 export const INVOICE_TEMPLATE_FIELDS = [
@@ -225,18 +243,39 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
     ],
   },
   {
-    label: "Reports",
+    label: "Clients & Contracts",
+    items: [
+      { key: "clients.view", label: "View clients" },
+      { key: "clients.edit", label: "Add / edit clients" },
+      { key: "contracts.view", label: "View contracts" },
+      { key: "contracts.edit", label: "Add / edit contracts" },
+    ],
+  },
+  {
+    label: "Deployment & Incidents",
+    items: [
+      { key: "roster.view", label: "View deployment roster" },
+      { key: "roster.edit", label: "Edit roster / manage posts" },
+      { key: "incidents.view", label: "View incidents" },
+      { key: "incidents.edit", label: "Log / edit incidents" },
+    ],
+  },
+  {
+    label: "Reports & Finance",
     items: [
       { key: "reports.view", label: "View financial reports & partnership" },
       { key: "cashflow.view", label: "View cashflow" },
+      { key: "coa.view", label: "View Chart of Accounts & Trial Balance" },
+      { key: "period_close.manage", label: "Close / reopen accounting periods" },
     ],
   },
   {
     label: "Settings & Users",
     items: [
-      { key: "settings.view", label: "View settings (clients, locations, notifications)" },
+      { key: "settings.view", label: "View settings (locations, notifications)" },
       { key: "settings.edit", label: "Edit settings" },
       { key: "users.manage", label: "Create / edit other users" },
+      { key: "audit_log.view", label: "View audit log" },
     ],
   },
 ];

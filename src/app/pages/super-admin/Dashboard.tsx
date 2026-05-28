@@ -1,8 +1,38 @@
 import { useEffect, useMemo, useState } from "react";
-import { Users, Calendar, Receipt, DollarSign, Building2, TrendingUp, AlertCircle, Loader2, Trophy } from "lucide-react";
+import {
+  Users,
+  Calendar,
+  Receipt,
+  DollarSign,
+  Building2,
+  TrendingUp,
+  AlertCircle,
+  Loader2,
+  Trophy,
+  FileSignature,
+  Siren,
+  ShieldAlert,
+  CalendarRange,
+  Lock,
+  Unlock,
+  PieChart as PieIcon,
+} from "lucide-react";
+import { Link } from "react-router";
 import Header from "../../components/Header";
 import StatCard from "../../components/StatCard";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+  PieChart,
+  Pie,
+  Cell,
+} from "recharts";
 import { hasPermission, useAuth } from "../../lib/auth";
 import { supabase, fetchAllRows } from "../../lib/supabase";
 
@@ -10,6 +40,15 @@ type BankRow = { id: string; bank_name: string; balance: number };
 type TopClientRow = { id: string; name: string; revenue: number };
 type AttendancePoint = { date: string; label: string; present: number; absent: number; leave: number };
 type AlertRow = { id: string; title: string; due_date: string; category: string; priority: string };
+type ExpensePieRow = { name: string; value: number };
+type ContractEndingRow = { id: string; code: string; client_name: string; end_date: string; days_left: number };
+type IncidentRow = { id: string; code: string; severity: string; category: string; occurred_at: string; status: string };
+
+const PIE_COLORS = [
+  "#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6",
+  "#ec4899", "#14b8a6", "#f97316", "#06b6d4", "#84cc16",
+  "#a855f7", "#64748b",
+];
 
 const currency = (n: number) => `PKR ${Math.round(n).toLocaleString("en-PK")}`;
 const compact = (n: number) => {
@@ -38,6 +77,11 @@ const daysAgoIso = (n: number) => {
   d.setDate(d.getDate() - n);
   return d.toISOString().slice(0, 10);
 };
+const daysAheadIso = (n: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+};
 
 const deltaLabel = (curr: number, prev: number): { value: string; positive: boolean } => {
   if (prev === 0 && curr === 0) return { value: "no change", positive: true };
@@ -52,6 +96,13 @@ const PRIORITY_COLOR: Record<string, string> = {
   high: "text-warning-700 bg-warning-50",
   medium: "text-brand-700 bg-brand-50",
   low: "text-slate-600 bg-slate-100",
+};
+
+const SEVERITY_COLOR: Record<string, string> = {
+  critical: "bg-danger-600 text-white border-danger-700",
+  high: "bg-danger-50 text-danger-700 border-danger-200",
+  medium: "bg-warning-50 text-warning-700 border-warning-200",
+  low: "bg-slate-100 text-slate-700 border-slate-200",
 };
 
 export default function SuperAdminDashboard() {
@@ -70,11 +121,17 @@ export default function SuperAdminDashboard() {
     payroll: hasPermission(profile, "payroll.view"),
     accounting: hasPermission(profile, "accounting.view"),
     reports: hasPermission(profile, "reports.view"),
+    contracts: hasPermission(profile, "contracts.view"),
+    roster: hasPermission(profile, "roster.view"),
+    incidents: hasPermission(profile, "incidents.view"),
+    coa: hasPermission(profile, "coa.view") || hasPermission(profile, "reports.view"),
+    periodClose: hasPermission(profile, "period_close.manage") || hasPermission(profile, "reports.view"),
   };
 
   const nothingToShow =
     !can.compliance && !can.employees && !can.attendance && !can.expenses &&
-    !can.payroll && !can.accounting && !can.reports;
+    !can.payroll && !can.accounting && !can.reports && !can.contracts &&
+    !can.roster && !can.incidents;
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -94,6 +151,17 @@ export default function SuperAdminDashboard() {
   const [attendanceTrend, setAttendanceTrend] = useState<AttendancePoint[]>([]);
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
 
+  // Sprint 1-5 additions
+  const [activeContracts, setActiveContracts] = useState(0);
+  const [openIncidents, setOpenIncidents] = useState(0);
+  const [licencesExpiring, setLicencesExpiring] = useState(0);
+  const [rosterGaps, setRosterGaps] = useState(0);
+  const [expensesPie, setExpensesPie] = useState<ExpensePieRow[]>([]);
+  const [contractsEnding, setContractsEnding] = useState<ContractEndingRow[]>([]);
+  const [recentIncidents, setRecentIncidents] = useState<IncidentRow[]>([]);
+  const [periodClosedThisMonth, setPeriodClosedThisMonth] = useState<boolean | null>(null);
+  const [lastClosedMonth, setLastClosedMonth] = useState<string | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -105,18 +173,11 @@ export default function SuperAdminDashboard() {
         const today = todayIso();
         const yesterday = daysAgoIso(1);
         const sevenDaysAgo = daysAgoIso(6);
-        const in30 = (() => {
-          const d = new Date();
-          d.setDate(d.getDate() + 30);
-          return d.toISOString().slice(0, 10);
-        })();
-        const in60 = (() => {
-          const d = new Date();
-          d.setDate(d.getDate() + 60);
-          return d.toISOString().slice(0, 10);
-        })();
+        const in30 = daysAheadIso(30);
+        const in60 = daysAheadIso(60);
+        const next7 = daysAheadIso(7);
+        const periodMonthKey = `${mStart.slice(0, 7)}-01`;
 
-        // Fan out — all under RLS, so a branched user gets only their slice.
         const [
           empRes,
           attTodayRes,
@@ -130,18 +191,25 @@ export default function SuperAdminDashboard() {
           payMtdRes,
           datesRes,
           contractEndsRes,
+          // Sprint 1-5 additions
+          activeContractsRes,
+          openIncidentsRes,
+          expCatRes,
+          contractsEndingRes,
+          recentIncRes,
+          rosterRes,
+          rosterEmpsRes,
+          empExpRes,
+          periodRes,
+          periodLastRes,
         ] = await Promise.all([
           supabase.from("employees").select("id", { count: "exact", head: true }).eq("status", "Active"),
           supabase.from("attendance_records").select("status").eq("attendance_date", today),
           supabase.from("attendance_records").select("status").eq("attendance_date", yesterday),
-          supabase
-            .from("attendance_records")
-            .select("attendance_date, status")
-            .gte("attendance_date", sevenDaysAgo)
-            .lte("attendance_date", today),
-          supabase.from("expenses").select("amount, expense_date").gte("expense_date", mStart).lte("expense_date", mEnd),
+          supabase.from("attendance_records").select("attendance_date, status").gte("attendance_date", sevenDaysAgo).lte("attendance_date", today),
+          supabase.from("expenses").select("amount, expense_date, category_id").gte("expense_date", mStart).lte("expense_date", mEnd),
           supabase.from("expenses").select("amount, expense_date").gte("expense_date", pStart).lte("expense_date", pEnd),
-          supabase.from("payslips").select("net_salary, disbursed").eq("period_month", `${mStart.slice(0, 7)}-01`).eq("disbursed", true),
+          supabase.from("payslips").select("net_salary, disbursed").eq("period_month", periodMonthKey).eq("disbursed", true),
           supabase.from("payslips").select("net_salary, disbursed").eq("period_month", `${pStart.slice(0, 7)}-01`).eq("disbursed", true),
           supabase.from("bank_accounts").select("id, bank_name, balance").order("bank_name"),
           fetchAllRows<{ client_id: string | null; invoice_id: string | null; amount: number; payment_date: string }>(() =>
@@ -153,28 +221,67 @@ export default function SuperAdminDashboard() {
                 range: (from: number, to: number) => Promise<{ data: unknown; error: { message: string } | null }>;
               },
           ),
+          supabase.from("important_dates").select("id, title, due_date, category, priority").gte("due_date", today).lte("due_date", in30).order("due_date"),
+          supabase.from("clients").select("id, name, contract_end").not("contract_end", "is", null).gte("contract_end", today).lte("contract_end", in60).order("contract_end"),
+          // active contracts count
+          supabase.from("contracts").select("id", { count: "exact", head: true }).eq("status", "active"),
+          // open incidents count (open + under_investigation)
+          supabase.from("incidents").select("id", { count: "exact", head: true }).in("status", ["open", "under_investigation"]),
+          // expense categories for pie chart
+          supabase.from("expense_categories").select("id, name"),
+          // contracts ending in next 60 days
           supabase
-            .from("important_dates")
-            .select("id, title, due_date, category, priority")
-            .gte("due_date", today)
-            .lte("due_date", in30)
-            .order("due_date"),
+            .from("contracts")
+            .select("id, contract_code, client_id, end_date")
+            .eq("status", "active")
+            .not("end_date", "is", null)
+            .gte("end_date", today)
+            .lte("end_date", in60)
+            .order("end_date")
+            .limit(10),
+          // recent incidents (last 30 days)
           supabase
-            .from("clients")
-            .select("id, name, contract_end")
-            .not("contract_end", "is", null)
-            .gte("contract_end", today)
-            .lte("contract_end", in60)
-            .order("contract_end"),
+            .from("incidents")
+            .select("id, incident_code, severity, category, occurred_at, status")
+            .gte("occurred_at", daysAgoIso(30) + "T00:00:00Z")
+            .order("occurred_at", { ascending: false })
+            .limit(8),
+          // roster gaps: scheduled assignments for next 7 days
+          supabase
+            .from("roster_assignments")
+            .select("employee_id, assignment_date")
+            .gte("assignment_date", today)
+            .lte("assignment_date", next7),
+          // employees who should be on roster (active client/reliever)
+          supabase
+            .from("employees")
+            .select("id")
+            .eq("status", "Active")
+            .in("category", ["client", "reliever"]),
+          // employee licence expiries
+          supabase
+            .from("employees")
+            .select("weapon_licence_expiry, guard_service_licence_expiry, medical_fitness_expiry, probation_end_date, status"),
+          // current month period closed?
+          supabase
+            .from("accounting_periods")
+            .select("period_month")
+            .eq("period_month", periodMonthKey)
+            .maybeSingle(),
+          // most recent closed month
+          supabase
+            .from("accounting_periods")
+            .select("period_month")
+            .order("period_month", { ascending: false })
+            .limit(1)
+            .maybeSingle(),
         ]);
 
         if (cancelled) return;
 
-        // Employee count.
         if (empRes.error) throw empRes.error;
         setEmployeeCount(empRes.count ?? 0);
 
-        // Attendance % today and yesterday.
         const attPct = (rows: { status: string }[] | null): number => {
           if (!rows || rows.length === 0) return 0;
           const present = rows.filter((r) => r.status === "Present").length;
@@ -185,7 +292,6 @@ export default function SuperAdminDashboard() {
         setAttendanceTodayPct(attPct(attTodayRes.data as { status: string }[]));
         setAttendanceYesterdayPct(attPct(attYestRes.data as { status: string }[]));
 
-        // 7-day trend.
         if (attTrendRes.error) throw attTrendRes.error;
         const byDay = new Map<string, { present: number; absent: number; leave: number }>();
         const dayList: string[] = [];
@@ -209,7 +315,6 @@ export default function SuperAdminDashboard() {
           }),
         );
 
-        // Expenses MTD + previous month.
         if (expMtdRes.error) throw expMtdRes.error;
         if (expPrevRes.error) throw expPrevRes.error;
         const sum = (rows: { amount: number }[] | null) =>
@@ -217,7 +322,20 @@ export default function SuperAdminDashboard() {
         setExpensesMtd(sum(expMtdRes.data as { amount: number }[]));
         setExpensesPrev(sum(expPrevRes.data as { amount: number }[]));
 
-        // Payroll MTD + previous month.
+        // Expense pie — group MTD expenses by category name
+        const catMap = new Map<string, string>();
+        for (const c of (expCatRes.data ?? []) as { id: string; name: string }[]) catMap.set(c.id, c.name);
+        const pieMap = new Map<string, number>();
+        for (const e of ((expMtdRes.data ?? []) as { amount: number; category_id: string | null }[])) {
+          const name = e.category_id ? catMap.get(e.category_id) ?? "Other" : "Uncategorised";
+          pieMap.set(name, (pieMap.get(name) ?? 0) + Number(e.amount ?? 0));
+        }
+        const pieData: ExpensePieRow[] = Array.from(pieMap.entries())
+          .map(([name, value]) => ({ name, value }))
+          .filter((r) => r.value > 0)
+          .sort((a, b) => b.value - a.value);
+        setExpensesPie(pieData);
+
         if (psMtdRes.error) throw psMtdRes.error;
         if (psPrevRes.error) throw psPrevRes.error;
         const sumPay = (rows: { net_salary: number }[] | null) =>
@@ -225,7 +343,6 @@ export default function SuperAdminDashboard() {
         setPayrollMtd(sumPay(psMtdRes.data as { net_salary: number }[]));
         setPayrollPrev(sumPay(psPrevRes.data as { net_salary: number }[]));
 
-        // Bank accounts.
         if (banksRes.error) throw banksRes.error;
         setBanks(
           ((banksRes.data ?? []) as BankRow[]).map((b) => ({
@@ -235,22 +352,15 @@ export default function SuperAdminDashboard() {
           })),
         );
 
-        // Top 10 clients by current-month invoice payments.
+        // Top clients by payments
         const payByClient = new Map<string, number>();
-        // Need client_ids for invoice payments that only carry invoice_id.
         const invoiceOnly: string[] = [];
         for (const r of payMtdRes) {
-          if (r.client_id) {
-            payByClient.set(r.client_id, (payByClient.get(r.client_id) ?? 0) + Number(r.amount));
-          } else if (r.invoice_id) {
-            invoiceOnly.push(r.invoice_id);
-          }
+          if (r.client_id) payByClient.set(r.client_id, (payByClient.get(r.client_id) ?? 0) + Number(r.amount));
+          else if (r.invoice_id) invoiceOnly.push(r.invoice_id);
         }
         if (invoiceOnly.length > 0) {
-          const { data: invs } = await supabase
-            .from("invoices")
-            .select("id, client_id")
-            .in("id", invoiceOnly);
+          const { data: invs } = await supabase.from("invoices").select("id, client_id").in("id", invoiceOnly);
           const map = new Map<string, string>();
           for (const i of (invs ?? []) as { id: string; client_id: string }[]) map.set(i.id, i.client_id);
           for (const r of payMtdRes) {
@@ -262,10 +372,7 @@ export default function SuperAdminDashboard() {
         }
         const clientIds = Array.from(payByClient.keys());
         if (clientIds.length > 0) {
-          const { data: clientRows } = await supabase
-            .from("clients")
-            .select("id, name")
-            .in("id", clientIds);
+          const { data: clientRows } = await supabase.from("clients").select("id, name").in("id", clientIds);
           const nameMap = new Map<string, string>();
           for (const c of (clientRows ?? []) as { id: string; name: string }[]) nameMap.set(c.id, c.name);
           const list: TopClientRow[] = clientIds.map((id) => ({
@@ -279,20 +386,15 @@ export default function SuperAdminDashboard() {
           setTopClients([]);
         }
 
-        // Compliance alerts + synthesized contract-end alerts (60/30/7 day windows).
+        // Compliance + contract-end alerts
         if (datesRes.error) throw datesRes.error;
         if (contractEndsRes.error) throw contractEndsRes.error;
         const todayDate = new Date(today);
         const contractAlerts: AlertRow[] = ((contractEndsRes.data ?? []) as {
-          id: string;
-          name: string;
-          contract_end: string;
+          id: string; name: string; contract_end: string;
         }[]).flatMap((c) => {
           const endDate = new Date(c.contract_end);
-          const daysLeft = Math.round(
-            (endDate.getTime() - todayDate.getTime()) / (1000 * 60 * 60 * 24),
-          );
-          // Only fire at the 60/30/7-day windows (and anything shorter than 7).
+          const daysLeft = Math.round((endDate.getTime() - todayDate.getTime()) / (1000 * 60 * 60 * 24));
           if (daysLeft > 60) return [];
           const priority = daysLeft <= 7 ? "critical" : daysLeft <= 30 ? "high" : "medium";
           return [{
@@ -303,20 +405,76 @@ export default function SuperAdminDashboard() {
             priority,
           }];
         });
-        const merged = [
-          ...((datesRes.data ?? []) as AlertRow[]),
-          ...contractAlerts,
-        ].sort((a, b) => a.due_date.localeCompare(b.due_date));
+        const merged = [...((datesRes.data ?? []) as AlertRow[]), ...contractAlerts].sort((a, b) => a.due_date.localeCompare(b.due_date));
         setAlerts(merged);
+
+        // Sprint 1-5 stat tallies
+        setActiveContracts(activeContractsRes.count ?? 0);
+        setOpenIncidents(openIncidentsRes.count ?? 0);
+
+        // Licences expiring in next 30 days (count employees with any expiring item)
+        const empExpRows = ((empExpRes.data ?? []) as {
+          weapon_licence_expiry: string | null;
+          guard_service_licence_expiry: string | null;
+          medical_fitness_expiry: string | null;
+          probation_end_date: string | null;
+          status: string;
+        }[]).filter((e) => e.status !== "Inactive");
+        let licCount = 0;
+        for (const e of empExpRows) {
+          const dates = [
+            e.weapon_licence_expiry,
+            e.guard_service_licence_expiry,
+            e.medical_fitness_expiry,
+            e.probation_end_date,
+          ].filter(Boolean) as string[];
+          if (dates.some((d) => d >= today && d <= in30)) licCount += 1;
+        }
+        setLicencesExpiring(licCount);
+
+        // Roster gaps: employees x 7 days minus filled assignments
+        const rosterEmps = ((rosterEmpsRes.data ?? []) as { id: string }[]).length;
+        const filledSlots = ((rosterRes.data ?? []) as { employee_id: string; assignment_date: string }[]).length;
+        const totalSlots = rosterEmps * 7;
+        setRosterGaps(Math.max(0, totalSlots - filledSlots));
+
+        // Contracts ending list
+        const contractsEndingRaw = (contractsEndingRes.data ?? []) as { id: string; contract_code: string; client_id: string | null; end_date: string }[];
+        const ceClientIds = Array.from(new Set(contractsEndingRaw.map((c) => c.client_id).filter(Boolean) as string[]));
+        const ceClientMap = new Map<string, string>();
+        if (ceClientIds.length > 0) {
+          const { data: ceClients } = await supabase.from("clients").select("id, name").in("id", ceClientIds);
+          for (const c of (ceClients ?? []) as { id: string; name: string }[]) ceClientMap.set(c.id, c.name);
+        }
+        setContractsEnding(contractsEndingRaw.map((c) => ({
+          id: c.id,
+          code: c.contract_code,
+          client_name: c.client_id ? ceClientMap.get(c.client_id) ?? "—" : "—",
+          end_date: c.end_date,
+          days_left: Math.round((new Date(c.end_date).getTime() - todayDate.getTime()) / (1000 * 60 * 60 * 24)),
+        })));
+
+        // Recent incidents
+        type IncidentRaw = { id: string; incident_code: string; severity: string; category: string; occurred_at: string; status: string };
+        setRecentIncidents(((recentIncRes.data ?? []) as IncidentRaw[]).map((i) => ({
+          id: i.id,
+          code: i.incident_code,
+          severity: i.severity,
+          category: i.category,
+          occurred_at: i.occurred_at,
+          status: i.status,
+        })));
+
+        // Period close status
+        setPeriodClosedThisMonth(periodRes.data != null);
+        setLastClosedMonth((periodLastRes.data as { period_month: string } | null)?.period_month ?? null);
       } catch (e: any) {
         if (!cancelled) setError(e.message ?? String(e));
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
   const totalBankBalance = useMemo(() => banks.reduce((s, b) => s + b.balance, 0), [banks]);
@@ -330,10 +488,7 @@ export default function SuperAdminDashboard() {
       <Header
         title="Dashboard"
         subtitle={`Financial overview — ${new Date().toLocaleDateString(undefined, {
-          weekday: "long",
-          day: "numeric",
-          month: "long",
-          year: "numeric",
+          weekday: "long", day: "numeric", month: "long", year: "numeric",
         })}`}
       />
 
@@ -364,7 +519,8 @@ export default function SuperAdminDashboard() {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8">
+            {/* Primary stat cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6">
               {can.employees && show("stat_employees") && (
                 <StatCard title="Total Employees" value={employeeCount} icon={Users} tone="brand" />
               )}
@@ -374,38 +530,37 @@ export default function SuperAdminDashboard() {
                   value={`${attendanceTodayPct}%`}
                   icon={Calendar}
                   tone="info"
-                  trend={
-                    attendanceTodayPct === 0 && attendanceYesterdayPct === 0
-                      ? undefined
-                      : {
-                          value: `${attendanceTodayPct - attendanceYesterdayPct >= 0 ? "+" : ""}${
-                            attendanceTodayPct - attendanceYesterdayPct
-                          }% from yesterday`,
-                          positive: attendanceTodayPct - attendanceYesterdayPct >= 0,
-                        }
-                  }
+                  trend={attendanceTodayPct === 0 && attendanceYesterdayPct === 0 ? undefined : {
+                    value: `${attendanceTodayPct - attendanceYesterdayPct >= 0 ? "+" : ""}${attendanceTodayPct - attendanceYesterdayPct}% from yesterday`,
+                    positive: attendanceTodayPct - attendanceYesterdayPct >= 0,
+                  }}
                 />
               )}
               {can.expenses && show("stat_expenses_mtd") && (
-                <StatCard
-                  title={`Expenses · ${monthLabel(0)}`}
-                  value={compact(expensesMtd)}
-                  icon={Receipt}
-                  tone="danger"
-                  trend={deltaLabel(expensesMtd, expensesPrev)}
-                />
+                <StatCard title={`Expenses · ${monthLabel(0)}`} value={compact(expensesMtd)} icon={Receipt} tone="danger" trend={deltaLabel(expensesMtd, expensesPrev)} />
               )}
               {can.payroll && show("stat_payroll_mtd") && (
-                <StatCard
-                  title={`Payroll · ${monthLabel(0)}`}
-                  value={compact(payrollMtd)}
-                  icon={DollarSign}
-                  tone="warning"
-                  trend={deltaLabel(payrollMtd, payrollPrev)}
-                />
+                <StatCard title={`Payroll · ${monthLabel(0)}`} value={compact(payrollMtd)} icon={DollarSign} tone="warning" trend={deltaLabel(payrollMtd, payrollPrev)} />
               )}
             </div>
 
+            {/* Sprint 1-5 stat cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8">
+              {can.contracts && show("stat_active_contracts") && (
+                <StatCard title="Active Contracts" value={activeContracts} icon={FileSignature} tone="brand" />
+              )}
+              {can.incidents && show("stat_open_incidents") && (
+                <StatCard title="Open Incidents" value={openIncidents} icon={Siren} tone={openIncidents > 0 ? "danger" : "info"} />
+              )}
+              {can.compliance && show("stat_licences_expiring") && (
+                <StatCard title="Licences expiring <30d" value={licencesExpiring} icon={ShieldAlert} tone={licencesExpiring > 0 ? "warning" : "info"} />
+              )}
+              {can.roster && show("stat_roster_gaps") && (
+                <StatCard title="Roster gaps · next 7d" value={rosterGaps} icon={CalendarRange} tone={rosterGaps > 0 ? "warning" : "info"} />
+              )}
+            </div>
+
+            {/* Bank overview + Top clients */}
             <div className={`grid grid-cols-1 ${can.accounting && show("bank_overview") && can.reports && show("top_clients") ? "lg:grid-cols-2" : ""} gap-6 mb-6 md:mb-8`}>
               {can.accounting && show("bank_overview") && (
                 <div className="bg-white rounded-lg border border-slate-200 p-6">
@@ -418,8 +573,7 @@ export default function SuperAdminDashboard() {
                   ) : (
                     <div className="space-y-4">
                       {banks.map((b) => {
-                        const colors = ["#3b82f6", "#10b981", "#8b5cf6", "#f59e0b", "#ec4899", "#14b8a6"];
-                        const color = colors[banks.indexOf(b) % colors.length];
+                        const color = PIE_COLORS[banks.indexOf(b) % PIE_COLORS.length];
                         return (
                           <div key={b.id} className="border-l-4 pl-4 py-2" style={{ borderColor: color }}>
                             <div className="flex justify-between items-center mb-1">
@@ -427,10 +581,7 @@ export default function SuperAdminDashboard() {
                               <p className="text-base" style={{ color }}>{currency(b.balance)}</p>
                             </div>
                             <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                              <div
-                                className="h-full rounded-full"
-                                style={{ width: `${(b.balance / maxBank) * 100}%`, backgroundColor: color }}
-                              />
+                              <div className="h-full rounded-full" style={{ width: `${(b.balance / maxBank) * 100}%`, backgroundColor: color }} />
                             </div>
                           </div>
                         );
@@ -469,10 +620,7 @@ export default function SuperAdminDashboard() {
                               <span className="text-xs text-slate-600 tabular-nums">{currency(c.revenue)}</span>
                             </div>
                             <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                              <div
-                                className="h-full rounded-full bg-gradient-to-r from-success-400 to-success-600"
-                                style={{ width: `${Math.max(2, (c.revenue / maxClient) * 100)}%` }}
-                              />
+                              <div className="h-full rounded-full bg-gradient-to-r from-success-400 to-success-600" style={{ width: `${Math.max(2, (c.revenue / maxClient) * 100)}%` }} />
                             </div>
                           </div>
                         </div>
@@ -483,6 +631,52 @@ export default function SuperAdminDashboard() {
               )}
             </div>
 
+            {/* Expenses pie chart */}
+            {can.expenses && show("expenses_pie") && (
+              <div className="bg-white rounded-lg border border-slate-200 p-6 mb-6 md:mb-8">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h3 className="text-base text-slate-900 flex items-center gap-2">
+                      <PieIcon className="w-4 h-4 text-brand-600" strokeWidth={1.5} />
+                      Expenses by Category · {monthLabel(0)}
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-0.5">Where the money went this month.</p>
+                  </div>
+                </div>
+                {expensesPie.length === 0 ? (
+                  <p className="text-sm text-slate-500">No expenses recorded this month.</p>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+                    <ResponsiveContainer width="100%" height={260}>
+                      <PieChart>
+                        <Pie data={expensesPie} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} innerRadius={45} paddingAngle={2}>
+                          {expensesPie.map((_, i) => (
+                            <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip formatter={(value: number) => currency(value)} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="space-y-2">
+                      {expensesPie.slice(0, 10).map((row, i) => {
+                        const total = expensesPie.reduce((s, r) => s + r.value, 0);
+                        const pct = total > 0 ? Math.round((row.value / total) * 100) : 0;
+                        return (
+                          <div key={row.name} className="flex items-center gap-3 text-sm">
+                            <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
+                            <span className="flex-1 truncate text-slate-700">{row.name}</span>
+                            <span className="text-xs text-slate-500 w-10 text-right tabular-nums">{pct}%</span>
+                            <span className="text-sm text-slate-900 w-24 text-right tabular-nums">{currency(row.value)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Attendance trend + Compliance alerts */}
             <div className={`grid grid-cols-1 ${can.attendance && show("attendance_trend") && show("compliance_alerts") ? "lg:grid-cols-2" : ""} gap-6 mb-6 md:mb-8`}>
               {can.attendance && show("attendance_trend") && (
                 <div className="bg-white rounded-lg border border-slate-200 p-6">
@@ -507,43 +701,129 @@ export default function SuperAdminDashboard() {
               )}
 
               {show("compliance_alerts") && (
-              <div className="bg-white rounded-lg border border-slate-200">
-                <div className="p-6 border-b border-slate-200">
-                  <h3 className="text-base text-slate-900">Upcoming Compliance · Next 30 Days</h3>
-                </div>
-                {alerts.length === 0 ? (
-                  <div className="p-6 text-sm text-slate-500">Nothing due in the next 60 days.</div>
-                ) : (
-                  <div className="divide-y divide-slate-200">
-                    {alerts.map((a) => {
-                      const daysLeft = Math.max(
-                        0,
-                        Math.ceil((new Date(a.due_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)),
-                      );
-                      const priorityClass = PRIORITY_COLOR[a.priority] ?? PRIORITY_COLOR.low;
-                      return (
-                        <div key={a.id} className="p-4 flex items-start gap-3 hover:bg-slate-50 transition-colors">
-                          <AlertCircle className="w-4 h-4 text-warning-600 flex-shrink-0 mt-0.5" strokeWidth={1.5} />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <p className="text-sm text-slate-900 truncate">{a.title}</p>
-                              <span className={`text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wide ${priorityClass}`}>
-                                {a.priority}
-                              </span>
-                            </div>
-                            <p className="text-xs text-slate-500">{a.category} · due {a.due_date}</p>
-                          </div>
-                          <span className="text-xs text-slate-400 tabular-nums">
-                            {daysLeft === 0 ? "today" : `${daysLeft}d`}
-                          </span>
-                        </div>
-                      );
-                    })}
+                <div className="bg-white rounded-lg border border-slate-200">
+                  <div className="p-6 border-b border-slate-200">
+                    <h3 className="text-base text-slate-900">Upcoming Compliance · Next 30 Days</h3>
                   </div>
-                )}
-              </div>
+                  {alerts.length === 0 ? (
+                    <div className="p-6 text-sm text-slate-500">Nothing due in the next 60 days.</div>
+                  ) : (
+                    <div className="divide-y divide-slate-200">
+                      {alerts.map((a) => {
+                        const daysLeft = Math.max(0, Math.ceil((new Date(a.due_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)));
+                        const priorityClass = PRIORITY_COLOR[a.priority] ?? PRIORITY_COLOR.low;
+                        return (
+                          <div key={a.id} className="p-4 flex items-start gap-3 hover:bg-slate-50 transition-colors">
+                            <AlertCircle className="w-4 h-4 text-warning-600 flex-shrink-0 mt-0.5" strokeWidth={1.5} />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <p className="text-sm text-slate-900 truncate">{a.title}</p>
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wide ${priorityClass}`}>{a.priority}</span>
+                              </div>
+                              <p className="text-xs text-slate-500">{a.category} · due {a.due_date}</p>
+                            </div>
+                            <span className="text-xs text-slate-400 tabular-nums">{daysLeft === 0 ? "today" : `${daysLeft}d`}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
+
+            {/* Contracts ending + Recent incidents */}
+            <div className={`grid grid-cols-1 ${can.contracts && show("contracts_ending") && can.incidents && show("incidents_recent") ? "lg:grid-cols-2" : ""} gap-6 mb-6 md:mb-8`}>
+              {can.contracts && show("contracts_ending") && (
+                <div className="bg-white rounded-lg border border-slate-200">
+                  <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+                    <h3 className="text-base text-slate-900 flex items-center gap-2">
+                      <FileSignature className="w-4 h-4 text-brand-600" strokeWidth={1.5} />
+                      Contracts ending soon
+                    </h3>
+                    <Link to="/super-admin/contracts" className="text-xs text-brand-600 hover:text-brand-700">All contracts →</Link>
+                  </div>
+                  {contractsEnding.length === 0 ? (
+                    <div className="p-6 text-sm text-slate-500">No active contracts ending in the next 60 days.</div>
+                  ) : (
+                    <div className="divide-y divide-slate-200">
+                      {contractsEnding.map((c) => {
+                        const tone = c.days_left <= 7 ? "text-danger-700" : c.days_left <= 30 ? "text-warning-700" : "text-slate-700";
+                        return (
+                          <div key={c.id} className="p-4 flex items-center gap-3 hover:bg-slate-50 transition-colors">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-mono text-slate-500">{c.code}</span>
+                                <span className="text-sm text-slate-900 truncate">{c.client_name}</span>
+                              </div>
+                              <p className="text-xs text-slate-500">Ends {c.end_date}</p>
+                            </div>
+                            <span className={`text-sm tabular-nums ${tone}`}>{c.days_left}d</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {can.incidents && show("incidents_recent") && (
+                <div className="bg-white rounded-lg border border-slate-200">
+                  <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+                    <h3 className="text-base text-slate-900 flex items-center gap-2">
+                      <Siren className="w-4 h-4 text-danger-600" strokeWidth={1.5} />
+                      Recent incidents · last 30 days
+                    </h3>
+                    <Link to="/super-admin/incidents" className="text-xs text-brand-600 hover:text-brand-700">All incidents →</Link>
+                  </div>
+                  {recentIncidents.length === 0 ? (
+                    <div className="p-6 text-sm text-slate-500">No incidents in the last 30 days.</div>
+                  ) : (
+                    <div className="divide-y divide-slate-200">
+                      {recentIncidents.map((i) => (
+                        <div key={i.id} className="p-4 flex items-center gap-3 hover:bg-slate-50 transition-colors">
+                          <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] uppercase border ${SEVERITY_COLOR[i.severity] ?? SEVERITY_COLOR.low}`}>
+                            {i.severity}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-mono text-slate-500">{i.code}</span>
+                              <span className="text-sm text-slate-700 capitalize">{i.category.replace(/_/g, " ")}</span>
+                            </div>
+                            <p className="text-xs text-slate-500">{new Date(i.occurred_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</p>
+                          </div>
+                          <span className="text-xs text-slate-400 capitalize">{i.status.replace(/_/g, " ")}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Period close status */}
+            {can.periodClose && show("period_close_status") && (
+              <div className="bg-white rounded-lg border border-slate-200 p-6 mb-6 md:mb-8">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    {periodClosedThisMonth ? (
+                      <Lock className="w-5 h-5 text-success-600" />
+                    ) : (
+                      <Unlock className="w-5 h-5 text-warning-600" />
+                    )}
+                    <div>
+                      <h3 className="text-base text-slate-900">Period Close Status</h3>
+                      <p className="text-xs text-slate-500">
+                        {periodClosedThisMonth
+                          ? `${monthLabel(0)} is closed — writes to this month are blocked.`
+                          : `${monthLabel(0)} is open. ${lastClosedMonth ? `Last closed: ${lastClosedMonth.slice(0, 7)}.` : "No months closed yet."}`}
+                      </p>
+                    </div>
+                  </div>
+                  <Link to="/super-admin/period-close" className="text-xs text-brand-600 hover:text-brand-700">Manage →</Link>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
