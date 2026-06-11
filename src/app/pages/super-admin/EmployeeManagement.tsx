@@ -1585,6 +1585,34 @@ function formatCnicInline(raw: string): string {
   return `${digits.slice(0, 5)}-${digits.slice(5, 12)}-${digits.slice(12)}`;
 }
 
+// Header for the collapsible HR field groups. Declared at module scope (not nested inside
+// EmployeeHrSection) so its component identity stays stable across renders.
+function SectionHeader({
+  open,
+  onClick,
+  title,
+  hint,
+}: {
+  open: boolean;
+  onClick: () => void;
+  title: string;
+  hint?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full flex items-center gap-2 py-2 text-left text-sm text-slate-900 hover:text-brand-700"
+    >
+      {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />}
+      <span className="flex-1">
+        {title}
+        {hint && <span className="text-xs text-slate-500 font-normal ml-2">{hint}</span>}
+      </span>
+    </button>
+  );
+}
+
 // Collapsible HR/compliance fields appended to both Add and Edit employee
 // forms. Spec section 3.3 + Appendix A.1.
 function EmployeeHrSection({
@@ -1606,30 +1634,6 @@ function EmployeeHrSection({
   const supervisorOptions = useMemo(
     () => employees.filter((e) => e.id !== excludeEmployeeId && e.status === "Active"),
     [employees, excludeEmployeeId],
-  );
-
-  const SectionHeader = ({
-    open,
-    onClick,
-    title,
-    hint,
-  }: {
-    open: boolean;
-    onClick: () => void;
-    title: string;
-    hint?: string;
-  }) => (
-    <button
-      type="button"
-      onClick={onClick}
-      className="w-full flex items-center gap-2 py-2 text-left text-sm text-slate-900 hover:text-brand-700"
-    >
-      {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />}
-      <span className="flex-1">
-        {title}
-        {hint && <span className="text-xs text-slate-500 font-normal ml-2">{hint}</span>}
-      </span>
-    </button>
   );
 
   return (

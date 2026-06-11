@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Plus,
   Search,
@@ -78,6 +78,37 @@ const formatCnic = (raw: string): string => {
   if (digits.length <= 12) return `${digits.slice(0, 5)}-${digits.slice(5)}`;
   return `${digits.slice(0, 5)}-${digits.slice(5, 12)}-${digits.slice(12)}`;
 };
+
+/**
+ * Collapsible form section. Defined at module scope (NOT inside Clients) so its component
+ * identity is stable across renders. When it was declared inside Clients, every keystroke in
+ * a field re-created the component, remounting the section and stealing focus from the input.
+ */
+function Section({
+  isOpen,
+  onToggle,
+  title,
+  children,
+}: {
+  isOpen: boolean;
+  onToggle: () => void;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="border border-slate-200 rounded-md">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-slate-900 hover:bg-slate-50"
+      >
+        {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />}
+        <span className="flex-1 text-left">{title}</span>
+      </button>
+      {isOpen && <div className="p-4 border-t border-slate-200 space-y-3">{children}</div>}
+    </div>
+  );
+}
 
 export default function Clients() {
   const { profile, company } = useAuth();
@@ -351,31 +382,6 @@ export default function Clients() {
     await loadAll();
   };
 
-  const Section = ({
-    id,
-    title,
-    children,
-  }: {
-    id: keyof typeof expanded | string;
-    title: string;
-    children: React.ReactNode;
-  }) => {
-    const isOpen = !!expanded[id as string];
-    return (
-      <div className="border border-slate-200 rounded-md">
-        <button
-          type="button"
-          onClick={() => setExpanded((prev) => ({ ...prev, [id as string]: !prev[id as string] }))}
-          className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-slate-900 hover:bg-slate-50"
-        >
-          {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />}
-          <span className="flex-1 text-left">{title}</span>
-        </button>
-        {isOpen && <div className="p-4 border-t border-slate-200 space-y-3">{children}</div>}
-      </div>
-    );
-  };
-
   const renderForm = (onSubmit: (e: React.FormEvent) => void, submitLabel: string) => (
     <form className="space-y-3" onSubmit={onSubmit}>
       {error && (
@@ -388,7 +394,7 @@ export default function Clients() {
         </div>
       )}
 
-      <Section id="basic" title="Basic Information">
+      <Section isOpen={!!expanded.basic} onToggle={() => setExpanded((prev) => ({ ...prev, basic: !prev.basic }))} title="Basic Information">
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2">
             <label className="block text-sm text-slate-700 mb-1">Client Name *</label>
@@ -463,7 +469,7 @@ export default function Clients() {
         </div>
       </Section>
 
-      <Section id="tax" title="Tax Information">
+      <Section isOpen={!!expanded.tax} onToggle={() => setExpanded((prev) => ({ ...prev, tax: !prev.tax }))} title="Tax Information">
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-sm text-slate-700 mb-1">NTN</label>
@@ -514,7 +520,7 @@ export default function Clients() {
         </div>
       </Section>
 
-      <Section id="billing" title="Billing & Signatory">
+      <Section isOpen={!!expanded.billing} onToggle={() => setExpanded((prev) => ({ ...prev, billing: !prev.billing }))} title="Billing & Signatory">
         <div>
           <label className="block text-sm text-slate-700 mb-1">Billing Address</label>
           <textarea
@@ -550,7 +556,7 @@ export default function Clients() {
         </div>
       </Section>
 
-      <Section id="contract" title="Contract Defaults">
+      <Section isOpen={!!expanded.contract} onToggle={() => setExpanded((prev) => ({ ...prev, contract: !prev.contract }))} title="Contract Defaults">
         <p className="text-xs text-slate-500">
           These defaults are inherited by all employees of this client. Per-contract overrides go on the Contracts page.
         </p>
