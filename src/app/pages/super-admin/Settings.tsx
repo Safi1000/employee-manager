@@ -1200,14 +1200,15 @@ export default function Settings() {
 
 // Item 6: Company Profile — name, legal address, tax/NTN, currency, fiscal year
 // start and logo. Saved via the update_company_profile RPC (super_admin / SSA).
+// Per-user "Company Profile" — logo, company name, email and username live on
+// the signed-in user's own profile row (self_update RLS). They only change what
+// THIS user sees in the app shell; the company record and other users are
+// unaffected. The logo is the same per-user image as the sidebar avatar.
 function CompanyProfileSection() {
-  const { company, profile, refreshProfile } = useAuth();
-  const canEdit = profile?.role === "super_admin" || profile?.role === "super_super_admin";
-  const [name, setName] = useState("");
-  const [legalAddress, setLegalAddress] = useState("");
-  const [taxNtn, setTaxNtn] = useState("");
-  const [currency, setCurrency] = useState("PKR");
-  const [fiscalStart, setFiscalStart] = useState("July");
+  const { profile, refreshProfile } = useAuth();
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [companyName, setCompanyName] = useState("");
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -1215,14 +1216,12 @@ function CompanyProfileSection() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!company) return;
-    setName(company.name ?? "");
-    setLegalAddress(company.legal_address ?? "");
-    setTaxNtn(company.tax_ntn ?? "");
-    setCurrency(company.presentation_currency ?? "PKR");
-    setFiscalStart(company.fiscal_year_start ?? "July");
-    setLogoUrl(company.logo_url ?? null);
-  }, [company]);
+    if (!profile) return;
+    setUsername(profile.full_name ?? "");
+    setEmail(profile.email ?? "");
+    setCompanyName(profile.display_company_name ?? "");
+    setLogoUrl(profile.avatar_url ?? null);
+  }, [profile]);
 
   const onPickLogo = (file: File) => {
     if (file.size > 512 * 1024) {
@@ -1235,19 +1234,22 @@ function CompanyProfileSection() {
   };
 
   const save = async () => {
+    if (!profile) return;
     setSaving(true);
     setErr(null);
-    const { error: rpcErr } = await supabase.rpc("update_company_profile", {
-      p_name: name,
-      p_legal_address: legalAddress.trim() || null,
-      p_tax_ntn: taxNtn.trim() || null,
-      p_presentation_currency: currency,
-      p_fiscal_year_start: fiscalStart,
-      p_logo_url: logoUrl,
-    });
+    const { error: upErr } = await supabase
+      .from("profiles")
+      .update({
+        full_name: username.trim() || null,
+        email: email.trim() || null,
+        display_company_name: companyName.trim() || null,
+        avatar_url: logoUrl,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", profile.id);
     setSaving(false);
-    if (rpcErr) {
-      setErr(rpcErr.message);
+    if (upErr) {
+      setErr(upErr.message);
       return;
     }
     setSavedAt(new Date().toLocaleTimeString());
@@ -1263,15 +1265,17 @@ function CompanyProfileSection() {
         </div>
         <div className="flex items-center gap-3">
           {savedAt && <span className="text-xs text-success-600">Saved at {savedAt}</span>}
-          {canEdit && (
-            <Button variant="primary" size="sm" onClick={save} disabled={saving}>
-              {saving && <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />}
-              Save
-            </Button>
-          )}
+          <Button variant="primary" size="sm" onClick={save} disabled={saving}>
+            {saving && <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />}
+            Save
+          </Button>
         </div>
       </div>
       <div className="p-6 space-y-4">
+        <p className="text-xs text-slate-500">
+          Personal display only — these change what you see in the app and don't affect the
+          company record or other users.
+        </p>
         {err && (
           <div className="flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" />
@@ -1282,14 +1286,14 @@ function CompanyProfileSection() {
         <div className="flex items-center gap-4 pb-4 border-b border-slate-200">
           <div className="h-16 w-16 rounded-lg overflow-hidden bg-slate-50 border border-slate-200 flex items-center justify-center">
             {logoUrl ? (
-              <img src={logoUrl} alt="Company logo" className="h-full w-full object-contain" />
+              <img src={logoUrl} alt="Logo" className="h-full w-full object-contain" />
             ) : (
               <Building2 className="w-6 h-6 text-slate-300" />
             )}
           </div>
           <div>
-            <p className="text-sm text-slate-900">Company Logo</p>
-            <p className="text-xs text-slate-500 mb-2">Shown on the sidebar and invoice PDFs.</p>
+            <p className="text-sm text-slate-900">Logo</p>
+            <p className="text-xs text-slate-500 mb-2">Shown in your sidebar.</p>
             <input
               ref={fileRef}
               type="file"
@@ -1302,10 +1306,10 @@ function CompanyProfileSection() {
               }}
             />
             <div className="flex items-center gap-2">
-              <Button variant="secondary" size="sm" onClick={() => fileRef.current?.click()} disabled={!canEdit}>
+              <Button variant="secondary" size="sm" onClick={() => fileRef.current?.click()}>
                 Upload Logo
               </Button>
-              {logoUrl && canEdit && (
+              {logoUrl && (
                 <button onClick={() => setLogoUrl(null)} className="text-xs text-danger-600 hover:underline">
                   Remove
                 </button>
@@ -1317,60 +1321,33 @@ function CompanyProfileSection() {
           <div className="md:col-span-2">
             <label className="block text-xs text-slate-500 mb-1">Company Name</label>
             <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              disabled={!canEdit}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm disabled:bg-slate-50"
+              value={companyName}
+              onChange={(e) => setCompanyName(e.target.value)}
+              placeholder="How the company name appears to you"
+              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
             />
           </div>
-          <div className="md:col-span-2">
-            <label className="block text-xs text-slate-500 mb-1">Legal Address</label>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Username</label>
             <input
-              value={legalAddress}
-              onChange={(e) => setLegalAddress(e.target.value)}
-              disabled={!canEdit}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm disabled:bg-slate-50"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="Your name"
+              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
             />
           </div>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">Tax ID (NTN)</label>
+            <label className="block text-xs text-slate-500 mb-1">User Email</label>
             <input
-              value={taxNtn}
-              onChange={(e) => setTaxNtn(e.target.value)}
-              disabled={!canEdit}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm font-mono disabled:bg-slate-50"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
             />
-          </div>
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">Presentation Currency</label>
-            <select
-              value={currency}
-              onChange={(e) => setCurrency(e.target.value)}
-              disabled={!canEdit}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm disabled:bg-slate-50"
-            >
-              {["PKR", "USD", "EUR", "GBP", "AED"].map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">Fiscal Year Start</label>
-            <select
-              value={fiscalStart}
-              onChange={(e) => setFiscalStart(e.target.value)}
-              disabled={!canEdit}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm disabled:bg-slate-50"
-            >
-              {["January", "April", "July", "October"].map((m) => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
+            <p className="text-[10px] text-slate-500 mt-1">Display only — does not change your sign-in email.</p>
           </div>
         </div>
-        {!canEdit && (
-          <p className="text-xs text-slate-500">Only a company admin can edit the company profile.</p>
-        )}
       </div>
     </div>
   );

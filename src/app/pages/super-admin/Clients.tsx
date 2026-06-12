@@ -154,6 +154,9 @@ export default function Clients() {
   const [contractEditorOpen, setContractEditorOpen] = useState(false);
   const [editingContract, setEditingContract] = useState<Contract | null>(null);
 
+  // Item 9: in-form prompt for the leave carry-forward roll-over choice.
+  const [carryPromptOpen, setCarryPromptOpen] = useState(false);
+
   const loadAll = async () => {
     setLoading(true);
     setError(null);
@@ -257,16 +260,17 @@ export default function Clients() {
       setForm((f) => ({ ...f, leave_carry_forward: false, leave_carry_start: "" }));
       return;
     }
-    const rollover = window.confirm(
-      "Roll over employees' EXISTING leave reserve?\n\n" +
-        "OK  → include the reserve accrued over the last 12 months.\n" +
-        "Cancel → start accruing fresh from this month (no backlog).",
-    );
+    // Open the in-form prompt instead of a browser confirm; carry is only switched
+    // on once the user picks a roll-over option.
+    setCarryPromptOpen(true);
+  };
+  const applyCarryChoice = (rollover: boolean) => {
     setForm((f) => ({
       ...f,
       leave_carry_forward: true,
       leave_carry_start: rollover ? monthStart(-12) : monthStart(0),
     }));
+    setCarryPromptOpen(false);
   };
 
   const populateForm = (row: ClientRow) => {
@@ -1174,6 +1178,43 @@ export default function Clients() {
           onSaved={loadAll}
         />
       )}
+
+      {/* Item 9: leave carry-forward roll-over choice (in-form, not a browser popup) */}
+      <Modal
+        isOpen={carryPromptOpen}
+        onClose={() => setCarryPromptOpen(false)}
+        title="Carry forward unused leaves"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">
+            Roll over employees' existing leave reserve, or start accruing fresh from this month?
+          </p>
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={() => applyCarryChoice(true)}
+              className="w-full text-left px-4 py-3 rounded-md border border-slate-200 hover:border-brand-400 hover:bg-brand-50/40"
+            >
+              <div className="text-sm text-slate-900">Roll over existing reserve</div>
+              <div className="text-xs text-slate-500">Include the reserve accrued over the last 12 months.</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => applyCarryChoice(false)}
+              className="w-full text-left px-4 py-3 rounded-md border border-slate-200 hover:border-brand-400 hover:bg-brand-50/40"
+            >
+              <div className="text-sm text-slate-900">Start fresh from this month</div>
+              <div className="text-xs text-slate-500">No backlog — begin accruing carry from this month onward.</div>
+            </button>
+          </div>
+          <div className="flex justify-end">
+            <Button variant="secondary" size="sm" onClick={() => setCarryPromptOpen(false)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </>
   );
 }

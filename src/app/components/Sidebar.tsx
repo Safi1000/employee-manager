@@ -59,6 +59,9 @@ export default function Sidebar({ title, links }: SidebarProps) {
   const [pwModalOpen, setPwModalOpen] = useState(false);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => loadExpanded());
+  // Per-user company-name override (Settings → Company Profile). Falls back to the
+  // real company name passed in. Only affects this user's view.
+  const displayTitle = profile?.display_company_name || title;
 
   // Close drawer on route change
   useEffect(() => {
@@ -214,7 +217,7 @@ export default function Sidebar({ title, links }: SidebarProps) {
         }`}
       >
         <div className="h-16 px-6 flex items-center justify-between border-b border-slate-200">
-          <h1 className="text-lg text-slate-900 truncate">{title}</h1>
+          <h1 className="text-lg text-slate-900 truncate">{displayTitle}</h1>
           <button
             type="button"
             onClick={() => setOpen(false)}
@@ -231,7 +234,7 @@ export default function Sidebar({ title, links }: SidebarProps) {
       {/* Desktop sidebar */}
       <aside className="hidden md:flex w-64 bg-white border-r border-slate-200 flex-col">
         <div className="h-16 px-6 flex items-center border-b border-slate-200">
-          <h1 className="text-lg text-slate-900 truncate">{title}</h1>
+          <h1 className="text-lg text-slate-900 truncate">{displayTitle}</h1>
         </div>
         {navItems}
         {footer}

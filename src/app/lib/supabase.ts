@@ -177,6 +177,7 @@ export type Profile = {
   full_name: string | null;
   email: string | null;
   avatar_url: string | null;
+  display_company_name: string | null;
   view_as_company: string | null;
   permissions: string[];
   must_change_password: boolean;
