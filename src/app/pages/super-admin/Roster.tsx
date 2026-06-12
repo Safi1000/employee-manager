@@ -79,6 +79,9 @@ export default function Roster() {
     status: RosterStatus;
     notes: string;
   }>({ post_id: "", client_id: "", status: "assigned", notes: "" });
+  // Item 12: keep an assignment in place on the following days until the user
+  // changes it, instead of re-assigning each day from scratch.
+  const [keepForward, setKeepForward] = useState(true);
 
   // Posts management modal
   const [postsModalOpen, setPostsModalOpen] = useState(false);
@@ -163,33 +166,50 @@ export default function Roster() {
     if (!editCell) return;
     const { employee, date } = editCell;
     const existing = rosterByKey.get(`${employee.id}:${date}`);
-    const payload = {
+    const base = {
       employee_id: employee.id,
       post_id: cellForm.post_id || null,
       client_id: cellForm.client_id || null,
-      assignment_date: date,
       shift,
       status: cellForm.status,
       notes: cellForm.notes.trim() || null,
     };
+    const friendly = (msg: string) =>
+      /duplicate key|unique/i.test(msg)
+        ? "This guard already has an assignment for this shift on that day (a guard can only be at one post per shift)."
+        : msg;
+
     if (existing) {
       const { error: upErr } = await supabase
         .from("roster_assignments")
-        .update(payload)
+        .update({ ...base, assignment_date: date })
         .eq("id", existing.id);
-      if (upErr) {
-        setError(upErr.message);
-        return;
-      }
+      if (upErr) { setError(friendly(upErr.message)); return; }
     } else {
       const { error: insErr } = await supabase
         .from("roster_assignments")
-        .insert(payload);
-      if (insErr) {
-        setError(insErr.message);
-        return;
+        .insert({ ...base, assignment_date: date });
+      if (insErr) { setError(friendly(insErr.message)); return; }
+    }
+
+    // Item 12: carry the assignment forward over the following days in view that
+    // are still empty, stopping at the first day the user already set (so manual
+    // changes downstream are preserved).
+    if (keepForward) {
+      const laterEmpty: string[] = [];
+      for (const d of dates) {
+        if (d <= date) continue;
+        if (rosterByKey.get(`${employee.id}:${d}`)) break;
+        laterEmpty.push(d);
+      }
+      if (laterEmpty.length > 0) {
+        const { error: fillErr } = await supabase
+          .from("roster_assignments")
+          .insert(laterEmpty.map((d) => ({ ...base, assignment_date: d })));
+        if (fillErr) { setError(friendly(fillErr.message)); return; }
       }
     }
+
     setEditCell(null);
     await loadRoster();
   };
@@ -546,6 +566,15 @@ export default function Roster() {
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
               />
             </div>
+            <label className="flex items-center gap-2 text-xs text-slate-700">
+              <input
+                type="checkbox"
+                checked={keepForward}
+                onChange={(e) => setKeepForward(e.target.checked)}
+                className="rounded border-slate-300"
+              />
+              Keep this assignment on the following days until changed
+            </label>
             <div className="flex items-center gap-2 pt-3 border-t border-slate-200">
               <Button variant="primary" size="md" onClick={saveCell} className="flex-1">
                 Save

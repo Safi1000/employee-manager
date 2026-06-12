@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Building2, Download, AlertCircle, X, Loader2, ArrowDownUp, History, Trash2, CheckCircle2, RotateCcw, FileText, Pencil, ArrowLeftRight, Search } from "lucide-react";
+import { Plus, Building2, Download, AlertCircle, X, Loader2, ArrowDownUp, History, Trash2, CheckCircle2, RotateCcw, FileText, Pencil, ArrowLeftRight, Search, Power } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -872,11 +872,17 @@ export default function Accounting() {
     }
   };
 
-  const handleDeleteBank = async (bank: BankAccount) => {
-    if (!window.confirm(`Delete "${bank.bank_name} (${bank.account_number})"? Transaction history is preserved (account reference will be cleared).`))
-      return;
+  const handleToggleBankActive = async (bank: BankAccount) => {
+    const next = !bank.active;
+    const msg = next
+      ? `Activate "${bank.bank_name} (${bank.account_number})"? It will be selectable again for payments and reconciliation.`
+      : `Deactivate "${bank.bank_name} (${bank.account_number})"? Its balance and history are preserved; it just won't appear in new payment/selection lists.`;
+    if (!window.confirm(msg)) return;
     setError(null);
-    const { error: delErr } = await supabase.from("bank_accounts").delete().eq("id", bank.id);
+    const { error: delErr } = await supabase
+      .from("bank_accounts")
+      .update({ active: next, updated_at: new Date().toISOString() })
+      .eq("id", bank.id);
     if (delErr) {
       setError(delErr.message);
       return;
@@ -2027,11 +2033,16 @@ export default function Accounting() {
                       const pendChq = pendingChequesByBank.get(bank.id) ?? 0;
                       const totalBal = acct + pendChq;
                       return (
-                        <tr key={bank.id} className="hover:bg-slate-50 transition-colors">
+                        <tr key={bank.id} className={`hover:bg-slate-50 transition-colors ${bank.active ? "" : "opacity-60"}`}>
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-2">
                               <Building2 className="w-4 h-4 text-brand-600" strokeWidth={1.5} />
                               <span className="text-sm text-slate-900">{bank.bank_name}</span>
+                              {!bank.active && (
+                                <span className="inline-block px-2 py-0.5 rounded-full text-[11px] bg-slate-100 text-slate-600 border border-slate-200">
+                                  Inactive
+                                </span>
+                              )}
                             </div>
                           </td>
                           <td className="px-6 py-4 text-sm text-slate-600 font-mono">{bank.account_number}</td>
@@ -2063,11 +2074,16 @@ export default function Accounting() {
                             </Button>
                             <button
                               type="button"
-                              onClick={() => handleDeleteBank(bank)}
-                              className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-danger-700 hover:bg-danger-50"
-                              title="Delete bank account"
+                              onClick={() => handleToggleBankActive(bank)}
+                              className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs ${
+                                bank.active
+                                  ? "text-danger-700 hover:bg-danger-50"
+                                  : "text-success-700 hover:bg-success-50"
+                              }`}
+                              title={bank.active ? "Deactivate bank account" : "Activate bank account"}
                             >
-                              <Trash2 className="w-4 h-4" strokeWidth={1.5} />
+                              <Power className="w-4 h-4" strokeWidth={1.5} />
+                              {bank.active ? "Deactivate" : "Activate"}
                             </button>
                           </td>
                         </tr>

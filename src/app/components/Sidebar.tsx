@@ -4,6 +4,7 @@ import { LucideIcon, LogOut, Menu, X, KeyRound, ChevronRight, ChevronDown } from
 import { useAuth } from "../lib/auth";
 import ForcePasswordChange from "./ForcePasswordChange";
 import ChangePasswordModal from "./ChangePasswordModal";
+import ProfileModal from "./ProfileModal";
 
 type SidebarLink = {
   to: string;
@@ -56,6 +57,7 @@ export default function Sidebar({ title, links }: SidebarProps) {
   const location = useLocation();
   const [open, setOpen] = useState(false);
   const [pwModalOpen, setPwModalOpen] = useState(false);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => loadExpanded());
 
   // Close drawer on route change
@@ -146,12 +148,27 @@ export default function Sidebar({ title, links }: SidebarProps) {
     </nav>
   );
 
+  const initials = (profile?.full_name || profile?.email || "?").trim().slice(0, 1).toUpperCase();
   const footer = (
     <div className="p-4 border-t border-slate-200 space-y-2">
-      {profile?.email && (
-        <div className="px-4 text-xs text-slate-500 truncate" title={profile.email}>
-          {profile.full_name ?? profile.email}
-        </div>
+      {profile && (
+        <button
+          onClick={() => setProfileModalOpen(true)}
+          className="w-full flex items-center gap-3 px-3 py-2 rounded-md hover:bg-slate-50 transition-colors text-left"
+          title="Edit my profile"
+        >
+          <span className="h-8 w-8 rounded-full overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center flex-shrink-0">
+            {profile.avatar_url ? (
+              <img src={profile.avatar_url} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <span className="text-xs text-slate-500">{initials}</span>
+            )}
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm text-slate-800 truncate">{profile.full_name ?? "Set your name"}</span>
+            {profile.email && <span className="block text-xs text-slate-500 truncate">{profile.email}</span>}
+          </span>
+        </button>
       )}
       <button
         onClick={() => setPwModalOpen(true)}
@@ -222,6 +239,7 @@ export default function Sidebar({ title, links }: SidebarProps) {
 
       <ForcePasswordChange />
       <ChangePasswordModal isOpen={pwModalOpen} onClose={() => setPwModalOpen(false)} />
+      <ProfileModal isOpen={profileModalOpen} onClose={() => setProfileModalOpen(false)} />
     </>
   );
 }

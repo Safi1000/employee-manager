@@ -40,7 +40,6 @@ type ContractForm = {
   eobi_deduction: boolean;
   eobi_amount: string;
   annual_escalation_pct: string;
-  auto_invoice_enabled: boolean;
   renewal_terms: string;
   status: ContractStatus;
 };
@@ -57,7 +56,6 @@ const emptyForm: ContractForm = {
   eobi_deduction: false,
   eobi_amount: "",
   annual_escalation_pct: "",
-  auto_invoice_enabled: false,
   renewal_terms: "",
   status: "active",
 };
@@ -68,6 +66,7 @@ export default function Contracts() {
   const { profile, company } = useAuth();
   const [rows, setRows] = useState<ContractRow[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [activeGuardsByContract, setActiveGuardsByContract] = useState<Map<string, number>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -85,9 +84,10 @@ export default function Contracts() {
   const loadAll = async () => {
     setLoading(true);
     setError(null);
-    const [contractsRes, clientsRes] = await Promise.all([
+    const [contractsRes, clientsRes, empRes] = await Promise.all([
       supabase.from("contracts").select("*").order("start_date", { ascending: false }),
       supabase.from("clients").select("*").order("name"),
+      supabase.from("employees").select("contract_id, status"),
     ]);
     const cs = (clientsRes.data ?? []) as Client[];
     const byId = new Map(cs.map((c) => [c.id, c]));
@@ -96,6 +96,13 @@ export default function Contracts() {
       client_name: byId.get(c.client_id)?.name ?? "(deleted)",
       client_code: byId.get(c.client_id)?.client_code ?? "—",
     }));
+    // Item 4: count ACTIVE guards tagged to each contract for the overage flag.
+    const guardCounts = new Map<string, number>();
+    for (const e of (empRes.data ?? []) as { contract_id: string | null; status: string }[]) {
+      if (!e.contract_id || e.status !== "Active") continue;
+      guardCounts.set(e.contract_id, (guardCounts.get(e.contract_id) ?? 0) + 1);
+    }
+    setActiveGuardsByContract(guardCounts);
     setRows(list);
     setClients(cs);
     setLoading(false);
@@ -127,7 +134,6 @@ export default function Contracts() {
     eobi_deduction: form.eobi_deduction,
     eobi_amount: form.eobi_deduction && form.eobi_amount !== "" ? Number(form.eobi_amount) : null,
     annual_escalation_pct: form.annual_escalation_pct === "" ? null : Number(form.annual_escalation_pct),
-    auto_invoice_enabled: form.auto_invoice_enabled,
     renewal_terms: form.renewal_terms.trim() || null,
     status: form.status,
   });
@@ -227,7 +233,6 @@ export default function Contracts() {
       eobi_deduction: row.eobi_deduction,
       eobi_amount: row.eobi_amount != null ? String(row.eobi_amount) : "",
       annual_escalation_pct: row.annual_escalation_pct != null ? String(row.annual_escalation_pct) : "",
-      auto_invoice_enabled: row.auto_invoice_enabled,
       renewal_terms: row.renewal_terms ?? "",
       status: row.status,
     });
@@ -463,17 +468,6 @@ export default function Contracts() {
         </div>
 
         <div className="col-span-2">
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={form.auto_invoice_enabled}
-              onChange={(e) => setForm({ ...form, auto_invoice_enabled: e.target.checked })}
-            />
-            Auto-generate monthly invoice on the 1st
-          </label>
-        </div>
-
-        <div className="col-span-2">
           <label className="block text-sm text-slate-700 mb-1">Renewal Terms</label>
           <textarea
             value={form.renewal_terms}
@@ -615,7 +609,7 @@ export default function Contracts() {
                   <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Client</th>
                   <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Type</th>
                   <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Period</th>
-                  <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Guards</th>
+                  <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Guards (active/allotted)</th>
                   <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Rate/mo</th>
                   <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Status</th>
                   <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Document</th>
@@ -640,8 +634,10 @@ export default function Contracts() {
                 {!loading && filteredRows.map((row) => {
                   const dleft = daysUntilEnd(row.end_date);
                   const endingSoon = dleft != null && dleft <= 90 && dleft >= 0;
+                  const activeGuards = activeGuardsByContract.get(row.id) ?? 0;
+                  const overStaffed = activeGuards > row.number_of_guards;
                   return (
-                    <tr key={row.id} className="hover:bg-slate-50 transition-colors">
+                    <tr key={row.id} className={`hover:bg-slate-50 transition-colors ${overStaffed ? "bg-danger-50/40" : ""}`}>
                       <td className="px-4 py-3 text-xs font-mono text-slate-900">{row.contract_code}</td>
                       <td className="px-4 py-3 text-sm text-slate-900">
                         <div>{row.client_name}</div>
@@ -657,12 +653,26 @@ export default function Contracts() {
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-sm text-right text-slate-900">{row.number_of_guards}</td>
+                      <td className="px-4 py-3 text-sm text-right">
+                        <span className={overStaffed ? "text-danger-700 font-medium" : "text-slate-900"}>
+                          {activeGuards} / {row.number_of_guards}
+                        </span>
+                        {overStaffed && (
+                          <div className="text-[10px] text-danger-600">over by {activeGuards - row.number_of_guards}</div>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-sm text-right text-slate-900">
                         PKR {Number(row.rate_per_guard_per_month).toLocaleString()}
                       </td>
                       <td className="px-4 py-3 text-sm">
-                        <StatusBadge status={row.status} />
+                        <div className="flex flex-col items-start gap-1">
+                          <StatusBadge status={row.status} />
+                          {overStaffed && (
+                            <span className="inline-block px-2 py-0.5 rounded-full text-xs bg-danger-50 text-danger-700 border border-danger-200">
+                              Guards exceeded
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-sm">
                         {row.drive_view_url ? (

@@ -44,6 +44,11 @@ export type Company = {
   subscription_expires_at: string | null;
   dashboard_hidden_widgets?: string[] | null;
   invoice_template?: { field: string; title: string }[] | null;
+  legal_address?: string | null;
+  tax_ntn?: string | null;
+  presentation_currency?: string | null;
+  fiscal_year_start?: string | null;
+  logo_url?: string | null;
   created_at?: string;
   updated_at?: string;
 };
@@ -66,6 +71,7 @@ export const DASHBOARD_WIDGET_KEYS = [
   "expenses_pie",
   "contracts_ending",
   "incidents_recent",
+  "roster_overview",
   "period_close_status",
 ] as const;
 export type DashboardWidgetKey = (typeof DASHBOARD_WIDGET_KEYS)[number];
@@ -86,6 +92,7 @@ export const DASHBOARD_WIDGET_LABELS: Record<DashboardWidgetKey, string> = {
   expenses_pie: "Expenses by Category (pie chart)",
   contracts_ending: "Contracts ending soon",
   incidents_recent: "Recent incidents",
+  roster_overview: "Deployment roster (next 7 days)",
   period_close_status: "Period close status",
 };
 
@@ -169,6 +176,7 @@ export type Profile = {
   title: string | null;
   full_name: string | null;
   email: string | null;
+  avatar_url: string | null;
   view_as_company: string | null;
   permissions: string[];
   must_change_password: boolean;
@@ -302,6 +310,7 @@ export type Client = {
   opening_balance: number;
   client_type: ClientType;
   leave_carry_forward: boolean;
+  leave_carry_start: string | null;
   eobi_enabled: boolean;
   eobi_amount: number;
   branch_id: string | null;
@@ -823,6 +832,7 @@ export type BankAccount = {
   branch_name: string | null;
   swift_code: string | null;
   currency_code: string;
+  active: boolean;
   created_at?: string;
   updated_at?: string;
 };

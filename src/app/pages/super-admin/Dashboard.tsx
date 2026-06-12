@@ -156,6 +156,8 @@ export default function SuperAdminDashboard() {
   const [openIncidents, setOpenIncidents] = useState(0);
   const [licencesExpiring, setLicencesExpiring] = useState(0);
   const [rosterGaps, setRosterGaps] = useState(0);
+  const [rosterFilled, setRosterFilled] = useState(0);
+  const [rosterTotal, setRosterTotal] = useState(0);
   const [expensesPie, setExpensesPie] = useState<ExpensePieRow[]>([]);
   const [contractsEnding, setContractsEnding] = useState<ContractEndingRow[]>([]);
   const [recentIncidents, setRecentIncidents] = useState<IncidentRow[]>([]);
@@ -437,6 +439,8 @@ export default function SuperAdminDashboard() {
         const filledSlots = ((rosterRes.data ?? []) as { employee_id: string; assignment_date: string }[]).length;
         const totalSlots = rosterEmps * 7;
         setRosterGaps(Math.max(0, totalSlots - filledSlots));
+        setRosterFilled(filledSlots);
+        setRosterTotal(totalSlots);
 
         // Contracts ending list
         const contractsEndingRaw = (contractsEndingRes.data ?? []) as { id: string; contract_code: string; client_id: string | null; end_date: string }[];
@@ -800,6 +804,42 @@ export default function SuperAdminDashboard() {
                 </div>
               )}
             </div>
+
+            {/* Deployment roster overview (item 13) */}
+            {can.roster && show("roster_overview") && (
+              <div className="bg-white rounded-lg border border-slate-200 p-6 mb-6 md:mb-8">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-base text-slate-900 flex items-center gap-2">
+                    <CalendarRange className="w-4 h-4 text-brand-600" strokeWidth={1.5} />
+                    Deployment roster · next 7 days
+                  </h3>
+                  <Link to="/super-admin/roster" className="text-xs text-brand-600 hover:text-brand-700">Open roster →</Link>
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="rounded-lg border border-slate-200 p-4">
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Slots filled</div>
+                    <div className="text-2xl text-success-700">{rosterFilled}</div>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 p-4">
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Total slots</div>
+                    <div className="text-2xl text-slate-900">{rosterTotal}</div>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 p-4">
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Gaps</div>
+                    <div className={`text-2xl ${rosterGaps > 0 ? "text-danger-600" : "text-slate-900"}`}>{rosterGaps}</div>
+                  </div>
+                </div>
+                <div className="mt-4 h-2 w-full rounded-full bg-slate-100 overflow-hidden">
+                  <div
+                    className="h-full bg-success-500"
+                    style={{ width: `${rosterTotal > 0 ? Math.round((rosterFilled / rosterTotal) * 100) : 0}%` }}
+                  />
+                </div>
+                <p className="text-xs text-slate-500 mt-2">
+                  {rosterTotal > 0 ? Math.round((rosterFilled / rosterTotal) * 100) : 0}% of guard-days covered across the next week.
+                </p>
+              </div>
+            )}
 
             {/* Period close status */}
             {can.periodClose && show("period_close_status") && (

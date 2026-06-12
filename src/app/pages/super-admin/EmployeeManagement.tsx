@@ -13,6 +13,7 @@ import {
   type EmployeeDocument,
   type Location,
   type Client,
+  type Contract,
   type Branch,
   type EmployeeCategory,
 } from "../../lib/supabase";
@@ -32,6 +33,7 @@ type FormState = {
   phone: string;
   location_id: string;
   client_id: string;
+  contract_id: string;
   branch_id: string;
   additional_branch_ids: string[];
   category: EmployeeCategory;
@@ -72,6 +74,7 @@ const emptyForm: FormState = {
   phone: "",
   location_id: "",
   client_id: "",
+  contract_id: "",
   branch_id: "",
   additional_branch_ids: [],
   category: "client",
@@ -122,6 +125,7 @@ export default function EmployeeManagement() {
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [contracts, setContracts] = useState<Contract[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -150,7 +154,7 @@ export default function EmployeeManagement() {
   const loadData = async () => {
     setLoading(true);
     setError(null);
-    const [locRes, cliRes, brRes, empRes, docRes, ebRes] = await Promise.all([
+    const [locRes, cliRes, brRes, empRes, docRes, ebRes, conRes] = await Promise.all([
       supabase.from("locations").select("*").order("name"),
       supabase.from("clients").select("*").order("name"),
       supabase.from("branches").select("*").order("is_head_office", { ascending: false }).order("name"),
@@ -160,6 +164,7 @@ export default function EmployeeManagement() {
         .order("created_at", { ascending: false }),
       supabase.from("employee_documents").select("employee_id"),
       supabase.from("employee_branches").select("employee_id, branch_id"),
+      supabase.from("contracts").select("*").order("start_date", { ascending: false }),
     ]);
     if (locRes.error) setError(locRes.error.message);
     if (cliRes.error) setError(cliRes.error.message);
@@ -168,6 +173,7 @@ export default function EmployeeManagement() {
     if (docRes.error) setError(docRes.error.message);
     setLocations(locRes.data ?? []);
     setClients(cliRes.data ?? []);
+    setContracts((conRes.data ?? []) as Contract[]);
     setBranches(brRes.data ?? []);
     const docCount = new Map<string, number>();
     for (const d of (docRes.data ?? []) as { employee_id: string }[]) {
@@ -226,6 +232,7 @@ export default function EmployeeManagement() {
     setF({
       ...f,
       client_id: clientId,
+      contract_id: "", // contracts are per-client; clear stale selection
       branch_id: primary,
       additional_branch_ids: additional,
     });
@@ -400,6 +407,7 @@ export default function EmployeeManagement() {
           phone: form.phone.trim() || null,
           location_id: form.location_id || null,
           client_id: form.category === "client" ? form.client_id : null,
+          contract_id: form.category === "client" ? (form.contract_id || null) : null,
           branch_id: form.branch_id || null,
           category: form.category,
           department: form.department.trim() || null,
@@ -514,6 +522,7 @@ export default function EmployeeManagement() {
       phone: emp.phone ?? "",
       location_id: emp.location_id ?? "",
       client_id: emp.client_id ?? "",
+      contract_id: emp.contract_id ?? "",
       branch_id: emp.branch_id ?? "",
       additional_branch_ids: [...(emp.additional_branch_ids ?? [])],
       category: (emp.category ?? "client") as EmployeeCategory,
@@ -560,6 +569,7 @@ export default function EmployeeManagement() {
           phone: editForm.phone.trim() || null,
           location_id: editForm.location_id || null,
           client_id: editForm.category === "client" ? (editForm.client_id || null) : null,
+          contract_id: editForm.category === "client" ? (editForm.contract_id || null) : null,
           branch_id: editForm.branch_id || null,
           category: editForm.category,
           department: editForm.department.trim() || null,
@@ -973,6 +983,28 @@ export default function EmployeeManagement() {
                         : "No clients yet. Add them from Settings → Client Management."}
                     </p>
                   )}
+                </div>
+              )}
+              {form.category === "client" && form.client_id && (
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">Contract</label>
+                  <select
+                    value={form.contract_id}
+                    onChange={(e) => setForm({ ...form, contract_id: e.target.value })}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  >
+                    <option value="">— Unassigned —</option>
+                    {contracts
+                      .filter((c) => c.client_id === form.client_id)
+                      .map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.contract_code} · {c.number_of_guards} guards · {c.status}
+                        </option>
+                      ))}
+                  </select>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Tracks this guard against a contract's allotted headcount.
+                  </p>
                 </div>
               )}
               <div>
@@ -1417,6 +1449,25 @@ export default function EmployeeManagement() {
                           {c.name}
                         </option>
                       ))}
+                    </select>
+                  </div>
+                )}
+                {editForm.category === "client" && editForm.client_id && (
+                  <div>
+                    <label className="block text-sm text-slate-700 mb-1">Contract</label>
+                    <select
+                      value={editForm.contract_id}
+                      onChange={(e) => setEditForm({ ...editForm, contract_id: e.target.value })}
+                      className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    >
+                      <option value="">— Unassigned —</option>
+                      {contracts
+                        .filter((c) => c.client_id === editForm.client_id)
+                        .map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.contract_code} · {c.number_of_guards} guards · {c.status}
+                          </option>
+                        ))}
                     </select>
                   </div>
                 )}

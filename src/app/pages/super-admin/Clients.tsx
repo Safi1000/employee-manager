@@ -16,6 +16,7 @@ import {
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
+import ContractEditorModal from "../../components/ContractEditorModal";
 import {
   supabase,
   PAKISTAN_INDUSTRIES,
@@ -46,9 +47,12 @@ type ClientForm = {
   signatory_cnic: string;
   allowed_leaves_per_month: string;
   leave_carry_forward: boolean;
+  leave_carry_start: string;
   eobi_enabled: boolean;
   eobi_amount: string;
   advance_payment: boolean;
+  auto_invoice_enabled: boolean;
+  auto_invoice_amount: string;
 };
 
 const emptyForm: ClientForm = {
@@ -67,9 +71,12 @@ const emptyForm: ClientForm = {
   signatory_cnic: "",
   allowed_leaves_per_month: "0",
   leave_carry_forward: false,
+  leave_carry_start: "",
   eobi_enabled: false,
   eobi_amount: "0",
   advance_payment: false,
+  auto_invoice_enabled: false,
+  auto_invoice_amount: "0",
 };
 
 const formatCnic = (raw: string): string => {
@@ -116,12 +123,13 @@ export default function Clients() {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [postedByClientId, setPostedByClientId] = useState<Map<string, number>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
   const [branchFilter, setBranchFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive" | "ended">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [industryFilter, setIndustryFilter] = useState("all");
 
   const [addOpen, setAddOpen] = useState(false);
@@ -142,10 +150,14 @@ export default function Clients() {
   const [contractUploadingId, setContractUploadingId] = useState<string | null>(null);
   const [contractError, setContractError] = useState<string | null>(null);
 
+  // Item 1: add/edit contracts directly from the Clients page.
+  const [contractEditorOpen, setContractEditorOpen] = useState(false);
+  const [editingContract, setEditingContract] = useState<Contract | null>(null);
+
   const loadAll = async () => {
     setLoading(true);
     setError(null);
-    const [clientsRes, branchesRes, contractsRes, invoicesRes, employeesRes] = await Promise.all([
+    const [clientsRes, branchesRes, contractsRes, invoicesRes, employeesRes, rosterRes] = await Promise.all([
       supabase.from("clients").select("*").order("name"),
       supabase
         .from("branches")
@@ -155,6 +167,7 @@ export default function Clients() {
       supabase.from("contracts").select("*").order("start_date", { ascending: false }),
       supabase.from("invoices").select("*").order("invoice_date", { ascending: false }),
       supabase.from("employees").select("id, client_id, status"),
+      supabase.from("roster_assignments").select("employee_id, client_id, assignment_date"),
     ]);
     const emps = (employeesRes.data ?? []) as { id: string; client_id: string | null; status: string }[];
     const cs = (contractsRes.data ?? []) as Contract[];
@@ -164,6 +177,25 @@ export default function Clients() {
       if (e.status !== "Active") continue;
       empByClient.set(e.client_id, (empByClient.get(e.client_id) ?? 0) + 1);
     }
+    // "Posted" guards per client = distinct employees on that client's most recent
+    // roster date. Compared against assigned employees for the understaffed flag (item 17).
+    const roster = (rosterRes.data ?? []) as { employee_id: string; client_id: string | null; assignment_date: string }[];
+    const latestDateByClient = new Map<string, string>();
+    for (const a of roster) {
+      if (!a.client_id) continue;
+      const cur = latestDateByClient.get(a.client_id);
+      if (!cur || a.assignment_date > cur) latestDateByClient.set(a.client_id, a.assignment_date);
+    }
+    const postedByClient = new Map<string, Set<string>>();
+    for (const a of roster) {
+      if (!a.client_id) continue;
+      if (a.assignment_date !== latestDateByClient.get(a.client_id)) continue;
+      if (!postedByClient.has(a.client_id)) postedByClient.set(a.client_id, new Set());
+      postedByClient.get(a.client_id)!.add(a.employee_id);
+    }
+    const postedCount = new Map<string, number>();
+    for (const [cid, set] of postedByClient) postedCount.set(cid, set.size);
+    setPostedByClientId(postedCount);
     const conByClient = new Map<string, number>();
     for (const c of cs) {
       if (c.status !== "active") continue;
@@ -185,23 +217,62 @@ export default function Clients() {
     loadAll();
   }, []);
 
+  // A client is Active when it has at least one contract that is currently valid:
+  // status = active AND today within [start_date, end_date] (open-ended if no end).
+  const activeClientIds = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const s = new Set<string>();
+    for (const c of contracts) {
+      if (
+        c.status === "active" &&
+        c.start_date <= today &&
+        (c.end_date == null || c.end_date >= today)
+      ) {
+        s.add(c.client_id);
+      }
+    }
+    return s;
+  }, [contracts]);
+
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const today = new Date().toISOString().slice(0, 10);
     return rows.filter((r) => {
       if (branchFilter !== "all" && r.branch_id !== branchFilter) return false;
       if (industryFilter !== "all" && (r.industry ?? "") !== industryFilter) return false;
-      if (statusFilter === "active" && (r.contract_end && r.contract_end < today)) return false;
-      if (statusFilter === "ended" && !(r.contract_end && r.contract_end < today)) return false;
-      if (statusFilter === "inactive" && r.employees_count > 0) return false;
+      if (statusFilter === "active" && !activeClientIds.has(r.id)) return false;
+      if (statusFilter === "inactive" && activeClientIds.has(r.id)) return false;
       if (q && !r.name.toLowerCase().includes(q) && !r.client_code.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [rows, search, branchFilter, statusFilter, industryFilter]);
+  }, [rows, search, branchFilter, statusFilter, industryFilter, activeClientIds]);
 
   const resetForm = () => {
     setForm(emptyForm);
     setExpanded({ basic: true, tax: false, billing: false, contract: false });
+  };
+
+  // Item 9: when carry-forward is switched on, let the user choose whether to
+  // roll over employees' existing reserve or start accruing fresh from this month.
+  const monthStart = (offsetMonths: number) => {
+    const d = new Date();
+    d.setMonth(d.getMonth() + offsetMonths, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+  };
+  const onToggleCarry = (checked: boolean) => {
+    if (!checked) {
+      setForm((f) => ({ ...f, leave_carry_forward: false, leave_carry_start: "" }));
+      return;
+    }
+    const rollover = window.confirm(
+      "Roll over employees' EXISTING leave reserve?\n\n" +
+        "OK  → include the reserve accrued over the last 12 months.\n" +
+        "Cancel → start accruing fresh from this month (no backlog).",
+    );
+    setForm((f) => ({
+      ...f,
+      leave_carry_forward: true,
+      leave_carry_start: rollover ? monthStart(-12) : monthStart(0),
+    }));
   };
 
   const populateForm = (row: ClientRow) => {
@@ -221,9 +292,12 @@ export default function Clients() {
       signatory_cnic: row.signatory_cnic ?? "",
       allowed_leaves_per_month: String(row.allowed_leaves_per_month ?? 0),
       leave_carry_forward: !!row.leave_carry_forward,
+      leave_carry_start: row.leave_carry_start ?? "",
       eobi_enabled: !!row.eobi_enabled,
       eobi_amount: String(row.eobi_amount ?? 0),
       advance_payment: !!row.advance_payment,
+      auto_invoice_enabled: !!row.auto_invoice_enabled,
+      auto_invoice_amount: String(row.auto_invoice_amount ?? 0),
     });
   };
 
@@ -243,9 +317,14 @@ export default function Clients() {
     signatory_cnic: form.signatory_cnic.trim() || null,
     allowed_leaves_per_month: Math.max(0, Math.floor(Number(form.allowed_leaves_per_month) || 0)),
     leave_carry_forward: form.leave_carry_forward,
+    leave_carry_start: form.leave_carry_forward ? (form.leave_carry_start || null) : null,
     eobi_enabled: form.eobi_enabled,
     eobi_amount: form.eobi_enabled ? Math.max(0, Number(form.eobi_amount) || 0) : 0,
     advance_payment: form.advance_payment,
+    auto_invoice_enabled: form.auto_invoice_enabled,
+    auto_invoice_amount: form.auto_invoice_enabled
+      ? Math.max(0, Number(form.auto_invoice_amount) || 0)
+      : 0,
     // Mirror the new withholding_tax_rate into the legacy column so existing
     // auto-invoice logic on the clients table keeps producing the same WHT.
     auto_invoice_withholding:
@@ -576,7 +655,7 @@ export default function Clients() {
               <input
                 type="checkbox"
                 checked={form.leave_carry_forward}
-                onChange={(e) => setForm({ ...form, leave_carry_forward: e.target.checked })}
+                onChange={(e) => onToggleCarry(e.target.checked)}
               />
               Carry forward unused leaves
             </label>
@@ -614,6 +693,44 @@ export default function Clients() {
         </div>
       </Section>
 
+      <Section
+        isOpen={!!expanded.autoInvoice}
+        onToggle={() => setExpanded((prev) => ({ ...prev, autoInvoice: !prev.autoInvoice }))}
+        title="Auto-Invoicing"
+      >
+        <p className="text-xs text-slate-500">
+          When enabled, a monthly invoice is auto-issued on the 1st for the fixed amount below —
+          but only while this client has an <span className="text-slate-700">active contract</span> covering
+          that month. Timing follows the "Pays in advance" setting above (advance = current month, otherwise
+          previous month in arrears). The client's withholding tax rate is applied automatically.
+        </p>
+        <label className="flex items-center gap-2 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            checked={form.auto_invoice_enabled}
+            onChange={(e) => setForm({ ...form, auto_invoice_enabled: e.target.checked })}
+          />
+          Enable monthly auto-invoicing
+        </label>
+        {form.auto_invoice_enabled && (
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Monthly Invoice Amount (PKR)</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={form.auto_invoice_amount}
+              onChange={(e) => setForm({ ...form, auto_invoice_amount: e.target.value })}
+              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              placeholder="e.g. 250000"
+            />
+            <p className="text-[10px] text-slate-500 mt-1">
+              Flat amount billed each month. Withholding tax is added from the Tax Information section.
+            </p>
+          </div>
+        )}
+      </Section>
+
       <div className="sticky bottom-0 -mx-6 -mb-6 px-6 py-3 bg-white border-t border-slate-200 flex items-center gap-2">
         <Button variant="primary" size="md" disabled={submitting} className="flex-1">
           {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
@@ -633,9 +750,6 @@ export default function Clients() {
       </div>
     </form>
   );
-
-  const today = new Date().toISOString().slice(0, 10);
-  const isContractEnded = (r: ClientRow) => r.contract_end && r.contract_end < today;
 
   return (
     <>
@@ -697,8 +811,7 @@ export default function Clients() {
             {([
               { v: "all", label: "All" },
               { v: "active", label: "Active" },
-              { v: "inactive", label: "No employees" },
-              { v: "ended", label: "Contract ended" },
+              { v: "inactive", label: "Inactive" },
             ] as const).map((s) => (
               <button
                 key={s.v}
@@ -748,9 +861,11 @@ export default function Clients() {
                 )}
                 {!loading && filteredRows.map((row) => {
                   const branchName = branches.find((b) => b.id === row.branch_id)?.name ?? "—";
-                  const ended = isContractEnded(row);
+                  const isActive = activeClientIds.has(row.id);
+                  const posted = postedByClientId.get(row.id) ?? 0;
+                  const understaffed = row.employees_count > 0 && posted < row.employees_count;
                   return (
-                    <tr key={row.id} className="hover:bg-slate-50 transition-colors">
+                    <tr key={row.id} className={`hover:bg-slate-50 transition-colors ${understaffed ? "bg-warning-50/40" : ""}`}>
                       <td className="px-4 py-3 text-sm">
                         <div className="text-slate-900">{row.name}</div>
                         <div className="text-xs text-slate-500 font-mono">{row.client_code}</div>
@@ -760,19 +875,25 @@ export default function Clients() {
                       <td className="px-4 py-3 text-sm text-right text-slate-900">{row.employees_count}</td>
                       <td className="px-4 py-3 text-sm text-right text-slate-900">{row.contracts_count}</td>
                       <td className="px-4 py-3 text-sm">
-                        {ended ? (
-                          <span className="inline-block px-2 py-0.5 rounded-full text-xs bg-danger-50 text-danger-700 border border-danger-200">
-                            Contract ended
-                          </span>
-                        ) : row.employees_count === 0 ? (
-                          <span className="inline-block px-2 py-0.5 rounded-full text-xs bg-warning-50 text-warning-700 border border-warning-200">
-                            No employees
-                          </span>
-                        ) : (
-                          <span className="inline-block px-2 py-0.5 rounded-full text-xs bg-success-50 text-success-700 border border-success-200">
-                            Active
-                          </span>
-                        )}
+                        <div className="flex flex-col items-start gap-1">
+                          {isActive ? (
+                            <span className="inline-block px-2 py-0.5 rounded-full text-xs bg-success-50 text-success-700 border border-success-200">
+                              Active
+                            </span>
+                          ) : (
+                            <span className="inline-block px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-600 border border-slate-200">
+                              Inactive
+                            </span>
+                          )}
+                          {understaffed && (
+                            <span
+                              className="inline-block px-2 py-0.5 rounded-full text-xs bg-warning-50 text-warning-700 border border-warning-200"
+                              title={`${posted} guard(s) posted vs ${row.employees_count} assigned`}
+                            >
+                              Understaffed {posted}/{row.employees_count}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex gap-1 justify-end">
@@ -895,10 +1016,20 @@ export default function Clients() {
 
             {detailTab === "contracts" && (
               <div className="space-y-2">
+                <div className="flex justify-end">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => {
+                      setEditingContract(null);
+                      setContractEditorOpen(true);
+                    }}
+                  >
+                    <Plus className="w-4 h-4 mr-1" /> Add Contract
+                  </Button>
+                </div>
                 {contracts.filter((c) => c.client_id === detailRow.id).length === 0 ? (
-                  <p className="text-sm text-slate-500">
-                    No contracts yet. Add one from the Contracts page.
-                  </p>
+                  <p className="text-sm text-slate-500">No contracts yet. Use “Add Contract” above.</p>
                 ) : (
                   <table className="w-full text-sm">
                     <thead>
@@ -906,8 +1037,10 @@ export default function Clients() {
                         <th className="text-left px-2 py-2 text-xs text-slate-500 uppercase">Code</th>
                         <th className="text-left px-2 py-2 text-xs text-slate-500 uppercase">Type</th>
                         <th className="text-left px-2 py-2 text-xs text-slate-500 uppercase">Period</th>
+                        <th className="text-left px-2 py-2 text-xs text-slate-500 uppercase">Status</th>
                         <th className="text-right px-2 py-2 text-xs text-slate-500 uppercase">Guards</th>
                         <th className="text-right px-2 py-2 text-xs text-slate-500 uppercase">Rate</th>
+                        <th className="text-right px-2 py-2 text-xs text-slate-500 uppercase">Edit</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -916,8 +1049,22 @@ export default function Clients() {
                           <td className="px-2 py-2 font-mono text-xs">{c.contract_code}</td>
                           <td className="px-2 py-2 text-xs">{c.contract_type}</td>
                           <td className="px-2 py-2 text-xs">{c.start_date}{c.end_date ? ` → ${c.end_date}` : ""}</td>
+                          <td className="px-2 py-2 text-xs capitalize">{c.status}</td>
                           <td className="px-2 py-2 text-xs text-right">{c.number_of_guards}</td>
                           <td className="px-2 py-2 text-xs text-right">PKR {Number(c.rate_per_guard_per_month).toLocaleString()}</td>
+                          <td className="px-2 py-2 text-xs text-right">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingContract(c);
+                                setContractEditorOpen(true);
+                              }}
+                              className="p-1 rounded text-slate-600 hover:bg-slate-100"
+                              title="Edit contract"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -1022,6 +1169,17 @@ export default function Clients() {
           </div>
         )}
       </Modal>
+
+      {detailRow && (
+        <ContractEditorModal
+          isOpen={contractEditorOpen}
+          clientId={detailRow.id}
+          clientName={detailRow.name}
+          contract={editingContract}
+          onClose={() => setContractEditorOpen(false)}
+          onSaved={loadAll}
+        />
+      )}
     </>
   );
 }

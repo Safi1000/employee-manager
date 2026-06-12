@@ -334,23 +334,40 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     return m;
   }, [clients]);
 
+  // Item 9: carry accrual is anchored to each client's leave_carry_start month
+  // (chosen when the feature is enabled), not a blanket 12-month lookback.
+  const clientCarryStart = useMemo(() => {
+    const m = new Map<string, string | null>();
+    for (const c of clients as Array<{ id: string; leave_carry_start?: string | null }>) {
+      m.set(c.id, c.leave_carry_start ?? null);
+    }
+    return m;
+  }, [clients]);
+
   const carriedAllowance = useMemo(() => {
     const out = new Map<string, number>();
     if (!selectedPeriod) return out;
     const [pyStr, pmStr] = selectedPeriod.split("-");
     const py = Number(pyStr);
     const pm = Number(pmStr);
-    const monthKeys: string[] = [];
-    for (let i = 12; i >= 1; i -= 1) {
-      const d = new Date(py, pm - 1 - i, 1);
-      monthKeys.push(
-        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
-      );
-    }
     for (const emp of employees) {
       if (!emp.client_id) continue;
       if (!clientCarryEnabled.get(emp.client_id)) continue;
       const base = clientAllowedLeaves.get(emp.client_id) ?? 0;
+      // Months from the carry anchor up to (but excluding) the selected period.
+      // No anchor → no backlog (this period simply gets `base`), which avoids the
+      // old "compounds out of nowhere" bug (item 8).
+      const startStr = clientCarryStart.get(emp.client_id);
+      const monthKeys: string[] = [];
+      if (startStr) {
+        let y = Number(startStr.slice(0, 4));
+        let mo = Number(startStr.slice(5, 7));
+        while (y < py || (y === py && mo < pm)) {
+          monthKeys.push(`${y}-${String(mo).padStart(2, "0")}`);
+          mo += 1;
+          if (mo > 12) { mo = 1; y += 1; }
+        }
+      }
       const empLeaves = priorLeavesByMonth.get(emp.id) ?? new Map<string, number>();
       let allowed = base;
       for (const k of monthKeys) {
@@ -361,7 +378,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       out.set(emp.id, allowed);
     }
     return out;
-  }, [employees, clientCarryEnabled, clientAllowedLeaves, priorLeavesByMonth, selectedPeriod]);
+  }, [employees, clientCarryEnabled, clientAllowedLeaves, clientCarryStart, priorLeavesByMonth, selectedPeriod]);
 
   const rows = useMemo<RowState[]>(() => {
     const daysThisPeriod = daysInMonth(selectedPeriod);
@@ -1273,8 +1290,8 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
               </h3>
 
               {selectedRow ? (
-                <div className="space-y-3 text-sm">
-                  <div className="pb-3 border-b border-slate-200">
+                <div className="space-y-2.5 text-sm">
+                  <div className="pb-2.5 border-b border-slate-200">
                     <p className="text-xs text-slate-500">Employee</p>
                     <p className="text-slate-900">{selectedRow.employee.full_name}</p>
                     <p className="text-xs text-slate-500 font-mono">{selectedRow.employee.employee_code}</p>
@@ -1352,9 +1369,6 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                         disabled
                         className="w-full px-2 py-1 border border-slate-200 rounded text-sm bg-slate-50 text-slate-500"
                       />
-                      <p className="text-xs text-slate-400 mt-1">
-                        Sum of advances recorded for {formatPeriod(selectedPeriod)}. Edit in Expenses → Advances.
-                      </p>
                     </div>
                   </div>
 
@@ -1379,17 +1393,6 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                         {selectedRow.effective_present_days} / {selectedRow.working_days}
                       </span>
                     </div>
-                    <div className="flex justify-between text-xs">
-                      <span className="text-slate-500">Per Day × Paid Days</span>
-                      <span className="text-slate-700">
-                        PKR {Number(selectedRow.per_day_salary ?? 0).toLocaleString()} ×{" "}
-                        {selectedRow.effective_present_days} = PKR{" "}
-                        {Math.round(
-                          (selectedRow.per_day_salary ?? 0) *
-                            selectedRow.effective_present_days
-                        ).toLocaleString()}
-                      </span>
-                    </div>
                     <label className="flex items-center gap-2 text-xs pt-1">
                       <input
                         type="checkbox"
@@ -1407,8 +1410,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                     </label>
                     {selectedRow.override_leaves && (
                       <p className="text-xs text-success-700 bg-success-50 border border-success-200 rounded px-2 py-1">
-                        Override on — all {selectedRow.leave_days} leaves counted as paid days.
-                        Remember to click Save.
+                        Override on — all leaves paid. Click Save.
                       </p>
                     )}
                   </div>

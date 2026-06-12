@@ -103,7 +103,7 @@ export default function Incidents() {
       supabase.from("incidents").select("*").order("occurred_at", { ascending: false }),
       supabase.from("clients").select("*").order("name"),
       supabase.from("posts").select("*").order("name"),
-      supabase.from("employees").select("id, full_name, employee_code, status").order("full_name"),
+      supabase.from("employees").select("id, full_name, employee_code, status, client_id").order("full_name"),
       supabase.from("incident_guards").select("*"),
     ]);
     if (incRes.error) setError(incRes.error.message);
@@ -348,6 +348,11 @@ export default function Incidents() {
   };
 
   const activeGuards = useMemo(() => employees.filter((e) => e.status === "Active"), [employees]);
+  // Item 11: only offer guards that belong to the selected client.
+  const guardsForClient = useMemo(
+    () => (form.client_id ? activeGuards.filter((e) => e.client_id === form.client_id) : []),
+    [activeGuards, form.client_id],
+  );
   const filteredPosts = useMemo(
     () => (form.client_id ? posts.filter((p) => p.client_id === form.client_id) : posts),
     [posts, form.client_id],
@@ -393,7 +398,7 @@ export default function Incidents() {
           <label className="block text-sm text-slate-700 mb-1">Client</label>
           <select
             value={form.client_id}
-            onChange={(e) => setForm({ ...form, client_id: e.target.value, post_id: "" })}
+            onChange={(e) => setForm({ ...form, client_id: e.target.value, post_id: "", guard_ids: [] })}
             className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
           >
             <option value="">— Unspecified —</option>
@@ -449,11 +454,22 @@ export default function Incidents() {
 
         <div className="col-span-2">
           <label className="block text-sm text-slate-700 mb-1">Guards Involved</label>
-          <GuardMultiSelect
-            allGuards={activeGuards}
-            selectedIds={form.guard_ids}
-            onChange={(ids) => setForm({ ...form, guard_ids: ids })}
-          />
+          {!form.client_id ? (
+            <p className="text-xs text-slate-500 border border-dashed border-slate-200 rounded-md px-3 py-2">
+              Select a client first to choose the guards involved.
+            </p>
+          ) : (
+            <>
+              <GuardMultiSelect
+                allGuards={guardsForClient}
+                selectedIds={form.guard_ids}
+                onChange={(ids) => setForm({ ...form, guard_ids: ids })}
+              />
+              {guardsForClient.length === 0 && (
+                <p className="text-xs text-slate-500 mt-1">No active guards are assigned to this client.</p>
+              )}
+            </>
+          )}
         </div>
 
         <div className="col-span-2">

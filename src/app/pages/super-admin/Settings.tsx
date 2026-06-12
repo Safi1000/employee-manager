@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Plus, Loader2, AlertCircle, X, Trash2, Mail, Send, LayoutDashboard, FileText, ArrowUp, ArrowDown } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Plus, Loader2, AlertCircle, X, Trash2, Mail, Send, LayoutDashboard, FileText, ArrowUp, ArrowDown, Building2 } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -882,6 +882,10 @@ export default function Settings() {
           </div>
         )}
 
+        <div className="mb-6">
+          <CompanyProfileSection />
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           {renderLocations()}
           {renderBranches()}
@@ -1191,5 +1195,183 @@ export default function Settings() {
       </Modal>
 
     </>
+  );
+}
+
+// Item 6: Company Profile — name, legal address, tax/NTN, currency, fiscal year
+// start and logo. Saved via the update_company_profile RPC (super_admin / SSA).
+function CompanyProfileSection() {
+  const { company, profile, refreshProfile } = useAuth();
+  const canEdit = profile?.role === "super_admin" || profile?.role === "super_super_admin";
+  const [name, setName] = useState("");
+  const [legalAddress, setLegalAddress] = useState("");
+  const [taxNtn, setTaxNtn] = useState("");
+  const [currency, setCurrency] = useState("PKR");
+  const [fiscalStart, setFiscalStart] = useState("July");
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!company) return;
+    setName(company.name ?? "");
+    setLegalAddress(company.legal_address ?? "");
+    setTaxNtn(company.tax_ntn ?? "");
+    setCurrency(company.presentation_currency ?? "PKR");
+    setFiscalStart(company.fiscal_year_start ?? "July");
+    setLogoUrl(company.logo_url ?? null);
+  }, [company]);
+
+  const onPickLogo = (file: File) => {
+    if (file.size > 512 * 1024) {
+      setErr("Please choose an image under 512 KB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setLogoUrl(typeof reader.result === "string" ? reader.result : null);
+    reader.readAsDataURL(file);
+  };
+
+  const save = async () => {
+    setSaving(true);
+    setErr(null);
+    const { error: rpcErr } = await supabase.rpc("update_company_profile", {
+      p_name: name,
+      p_legal_address: legalAddress.trim() || null,
+      p_tax_ntn: taxNtn.trim() || null,
+      p_presentation_currency: currency,
+      p_fiscal_year_start: fiscalStart,
+      p_logo_url: logoUrl,
+    });
+    setSaving(false);
+    if (rpcErr) {
+      setErr(rpcErr.message);
+      return;
+    }
+    setSavedAt(new Date().toLocaleTimeString());
+    await refreshProfile();
+  };
+
+  return (
+    <div className="bg-white rounded-lg border border-slate-200">
+      <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Building2 className="w-4 h-4 text-slate-600" strokeWidth={1.5} />
+          <h2 className="text-base text-slate-900">Company Profile</h2>
+        </div>
+        <div className="flex items-center gap-3">
+          {savedAt && <span className="text-xs text-success-600">Saved at {savedAt}</span>}
+          {canEdit && (
+            <Button variant="primary" size="sm" onClick={save} disabled={saving}>
+              {saving && <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />}
+              Save
+            </Button>
+          )}
+        </div>
+      </div>
+      <div className="p-6 space-y-4">
+        {err && (
+          <div className="flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
+            <AlertCircle className="w-4 h-4 mt-0.5" />
+            <div className="flex-1">{err}</div>
+            <button onClick={() => setErr(null)}><X className="w-4 h-4" /></button>
+          </div>
+        )}
+        <div className="flex items-center gap-4 pb-4 border-b border-slate-200">
+          <div className="h-16 w-16 rounded-lg overflow-hidden bg-slate-50 border border-slate-200 flex items-center justify-center">
+            {logoUrl ? (
+              <img src={logoUrl} alt="Company logo" className="h-full w-full object-contain" />
+            ) : (
+              <Building2 className="w-6 h-6 text-slate-300" />
+            )}
+          </div>
+          <div>
+            <p className="text-sm text-slate-900">Company Logo</p>
+            <p className="text-xs text-slate-500 mb-2">Shown on the sidebar and invoice PDFs.</p>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) onPickLogo(f);
+                e.target.value = "";
+              }}
+            />
+            <div className="flex items-center gap-2">
+              <Button variant="secondary" size="sm" onClick={() => fileRef.current?.click()} disabled={!canEdit}>
+                Upload Logo
+              </Button>
+              {logoUrl && canEdit && (
+                <button onClick={() => setLogoUrl(null)} className="text-xs text-danger-600 hover:underline">
+                  Remove
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="md:col-span-2">
+            <label className="block text-xs text-slate-500 mb-1">Company Name</label>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              disabled={!canEdit}
+              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm disabled:bg-slate-50"
+            />
+          </div>
+          <div className="md:col-span-2">
+            <label className="block text-xs text-slate-500 mb-1">Legal Address</label>
+            <input
+              value={legalAddress}
+              onChange={(e) => setLegalAddress(e.target.value)}
+              disabled={!canEdit}
+              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm disabled:bg-slate-50"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Tax ID (NTN)</label>
+            <input
+              value={taxNtn}
+              onChange={(e) => setTaxNtn(e.target.value)}
+              disabled={!canEdit}
+              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm font-mono disabled:bg-slate-50"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Presentation Currency</label>
+            <select
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value)}
+              disabled={!canEdit}
+              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm disabled:bg-slate-50"
+            >
+              {["PKR", "USD", "EUR", "GBP", "AED"].map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Fiscal Year Start</label>
+            <select
+              value={fiscalStart}
+              onChange={(e) => setFiscalStart(e.target.value)}
+              disabled={!canEdit}
+              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm disabled:bg-slate-50"
+            >
+              {["January", "April", "July", "October"].map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        {!canEdit && (
+          <p className="text-xs text-slate-500">Only a company admin can edit the company profile.</p>
+        )}
+      </div>
+    </div>
   );
 }
