@@ -167,7 +167,7 @@ export default function Clients() {
       supabase.from("contracts").select("*").order("start_date", { ascending: false }),
       supabase.from("invoices").select("*").order("invoice_date", { ascending: false }),
       supabase.from("employees").select("id, client_id, status"),
-      supabase.from("roster_assignments").select("employee_id, client_id, assignment_date"),
+      supabase.from("roster_assignments").select("employee_id, client_id").eq("assignment_date", new Date().toISOString().slice(0, 10)),
     ]);
     const emps = (employeesRes.data ?? []) as { id: string; client_id: string | null; status: string }[];
     const cs = (contractsRes.data ?? []) as Contract[];
@@ -177,19 +177,13 @@ export default function Clients() {
       if (e.status !== "Active") continue;
       empByClient.set(e.client_id, (empByClient.get(e.client_id) ?? 0) + 1);
     }
-    // "Posted" guards per client = distinct employees on that client's most recent
-    // roster date. Compared against assigned employees for the understaffed flag (item 17).
-    const roster = (rosterRes.data ?? []) as { employee_id: string; client_id: string | null; assignment_date: string }[];
-    const latestDateByClient = new Map<string, string>();
-    for (const a of roster) {
-      if (!a.client_id) continue;
-      const cur = latestDateByClient.get(a.client_id);
-      if (!cur || a.assignment_date > cur) latestDateByClient.set(a.client_id, a.assignment_date);
-    }
+    // "Posted" guards per client = distinct employees rostered for the client TODAY
+    // (future-dated assignments don't count). Compared against assigned employees
+    // for the understaffed flag (item 17).
+    const roster = (rosterRes.data ?? []) as { employee_id: string; client_id: string | null }[];
     const postedByClient = new Map<string, Set<string>>();
     for (const a of roster) {
       if (!a.client_id) continue;
-      if (a.assignment_date !== latestDateByClient.get(a.client_id)) continue;
       if (!postedByClient.has(a.client_id)) postedByClient.set(a.client_id, new Set());
       postedByClient.get(a.client_id)!.add(a.employee_id);
     }
@@ -888,7 +882,7 @@ export default function Clients() {
                           {understaffed && (
                             <span
                               className="inline-block px-2 py-0.5 rounded-full text-xs bg-warning-50 text-warning-700 border border-warning-200"
-                              title={`${posted} guard(s) posted vs ${row.employees_count} assigned`}
+                              title={`${posted} guard(s) posted today vs ${row.employees_count} assigned`}
                             >
                               Understaffed {posted}/{row.employees_count}
                             </span>
