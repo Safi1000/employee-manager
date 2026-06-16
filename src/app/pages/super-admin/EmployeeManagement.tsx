@@ -138,6 +138,8 @@ export default function EmployeeManagement() {
   const [categoryFilter, setCategoryFilter] = useState<"all" | EmployeeCategory>("all");
   const [shiftFilter, setShiftFilter] = useState<"all" | "day" | "night">("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  // Quick Active / Inactive tab split (Inactive = anything not currently Active).
+  const [empTab, setEmpTab] = useState<"all" | "active" | "inactive">("all");
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
@@ -263,9 +265,11 @@ export default function EmployeeManagement() {
       if (categoryFilter !== "all" && (e.category ?? "client") !== categoryFilter) return false;
       if (shiftFilter !== "all" && e.shift !== shiftFilter) return false;
       if (statusFilter !== "all" && e.status !== statusFilter) return false;
+      if (empTab === "active" && e.status !== "Active") return false;
+      if (empTab === "inactive" && e.status === "Active") return false;
       return true;
     });
-  }, [employees, search, locationFilter, clientFilter, branchFilter, categoryFilter, shiftFilter, statusFilter, branches]);
+  }, [employees, search, locationFilter, clientFilter, branchFilter, categoryFilter, shiftFilter, statusFilter, empTab, branches]);
 
   type EmpRef = { id: string; employee_code: string; full_name: string };
 
@@ -724,6 +728,27 @@ export default function EmployeeManagement() {
                 <option value="Inactive">Inactive</option>
               </select>
             </div>
+          </div>
+
+          <div className="px-6 pt-4 flex gap-2">
+            {([
+              { v: "all", label: "All" },
+              { v: "active", label: "Active" },
+              { v: "inactive", label: "Inactive" },
+            ] as const).map((t) => (
+              <button
+                key={t.v}
+                type="button"
+                onClick={() => setEmpTab(t.v)}
+                className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${
+                  empTab === t.v
+                    ? "border-brand-600 bg-brand-50 text-brand-700"
+                    : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
           </div>
 
           <div className="overflow-x-auto">

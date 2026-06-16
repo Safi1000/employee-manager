@@ -178,6 +178,7 @@ export default function Accounting() {
   const [paymentVia, setPaymentVia] = useState<"Cash" | "Bank">("Bank");
   const [paymentBankId, setPaymentBankId] = useState<string>("");
   const [paymentNotes, setPaymentNotes] = useState<string>("");
+  const [paymentDate, setPaymentDate] = useState<string>(todayStr());
 
   const [newBank, setNewBank] = useState({
     bank_name: "",
@@ -213,6 +214,7 @@ export default function Accounting() {
   const [transferToId, setTransferToId] = useState<string>("");
   const [transferAmount, setTransferAmount] = useState<string>("");
   const [transferNotes, setTransferNotes] = useState<string>("");
+  const [transferDate, setTransferDate] = useState<string>(todayStr());
   const [reconcileTarget, setReconcileTarget] = useState<"account" | "cash" | "total">("account");
   const [reconcileValue, setReconcileValue] = useState("");
   const [reconcileNotes, setReconcileNotes] = useState("");
@@ -622,10 +624,15 @@ export default function Accounting() {
     account_delta: number;
     description: string | null;
     reference_id?: string | null;
+    created_at?: string;
   }) => {
     const { error: logErr } = await supabase.from("bank_transactions").insert(row);
     if (logErr) throw logErr;
   };
+
+  // Convert a YYYY-MM-DD date into a midday ISO timestamp so the ledger entry
+  // lands on the chosen day regardless of timezone.
+  const dateToTs = (d: string) => new Date(`${d}T12:00:00`).toISOString();
 
   const applyBankDelta = async (bankId: string, delta: number) => {
     const { data: bank, error: selErr } = await supabase
@@ -775,6 +782,10 @@ export default function Accounting() {
       setError("Enter a positive amount.");
       return;
     }
+    if (!transferDate) {
+      setError("Select a transfer date.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -783,6 +794,7 @@ export default function Accounting() {
       const pairId = crypto.randomUUID();
       const noteSuffix = transferNotes.trim() ? ` · ${transferNotes.trim()}` : "";
       const desc = `Transfer ${fromBank?.bank_name ?? "?"} → ${toBank?.bank_name ?? "?"}${noteSuffix}`;
+      const ts = dateToTs(transferDate);
       await applyBankDelta(transferFromId, -amount);
       await applyBankDelta(transferToId, amount);
       await logTransaction({
@@ -793,6 +805,7 @@ export default function Accounting() {
         account_delta: -amount,
         description: desc,
         reference_id: pairId,
+        created_at: ts,
       });
       await logTransaction({
         bank_account_id: transferToId,
@@ -802,6 +815,7 @@ export default function Accounting() {
         account_delta: amount,
         description: desc,
         reference_id: pairId,
+        created_at: ts,
       });
       // Mark transfer_pair_id explicitly on both rows
       await supabase
@@ -1204,6 +1218,7 @@ export default function Accounting() {
     setPaymentVia("Bank");
     setPaymentBankId(banks[0]?.id ?? "");
     setPaymentNotes("");
+    setPaymentDate(todayStr());
     setIsPaymentModalOpen(true);
   };
 
@@ -1260,7 +1275,7 @@ export default function Accounting() {
       setSubmitting(true);
       setError(null);
       try {
-        const today = new Date().toISOString().slice(0, 10);
+        const ts = dateToTs(paymentDate);
         const desc = `Payment received (${paymentVia.toLowerCase()}) · ${selectedClient.name} · No invoice`;
         if (paymentVia === "Cash") {
           await applyCashDelta(amount);
@@ -1272,6 +1287,7 @@ export default function Accounting() {
             account_delta: 0,
             description: desc,
             reference_id: selectedClient.id,
+            created_at: ts,
           });
         } else {
           await applyBankDelta(paymentBankId, amount);
@@ -1283,13 +1299,14 @@ export default function Accounting() {
             account_delta: amount,
             description: desc,
             reference_id: selectedClient.id,
+            created_at: ts,
           });
         }
         const { error: payErr } = await supabase.from("invoice_payments").insert({
           invoice_id: null,
           client_id: selectedClient.id,
           amount,
-          payment_date: today,
+          payment_date: paymentDate,
           payment_mode: paymentVia,
           bank_account_id: paymentVia === "Bank" ? paymentBankId : null,
           notes: paymentNotes.trim() || null,
@@ -1326,7 +1343,7 @@ export default function Accounting() {
     setSubmitting(true);
     setError(null);
     try {
-      const today = new Date().toISOString().slice(0, 10);
+      const ts = dateToTs(paymentDate);
       if (paymentVia === "Cash") {
         await applyCashDelta(amount);
         await logTransaction({
@@ -1337,6 +1354,7 @@ export default function Accounting() {
           account_delta: 0,
           description: `Payment received (cash) · ${selectedClient.name} · Invoice ${invoice.invoice_number}`,
           reference_id: invoice.id,
+          created_at: ts,
         });
       } else {
         await applyBankDelta(paymentBankId, amount);
@@ -1348,6 +1366,7 @@ export default function Accounting() {
           account_delta: amount,
           description: `Payment received (bank) · ${selectedClient.name} · Invoice ${invoice.invoice_number}`,
           reference_id: invoice.id,
+          created_at: ts,
         });
       }
       const { error: upErr } = await supabase
@@ -1355,7 +1374,7 @@ export default function Accounting() {
         .update({
           amount_received: Number(invoice.amount_received) + amount,
           notes: paymentNotes.trim()
-            ? `${invoice.notes ? invoice.notes + "\n" : ""}[${today}] Payment PKR ${amount.toLocaleString()} via ${paymentVia}: ${paymentNotes.trim()}`
+            ? `${invoice.notes ? invoice.notes + "\n" : ""}[${paymentDate}] Payment PKR ${amount.toLocaleString()} via ${paymentVia}: ${paymentNotes.trim()}`
             : invoice.notes,
           updated_at: new Date().toISOString(),
         })
@@ -1366,7 +1385,7 @@ export default function Accounting() {
         invoice_id: invoice.id,
         client_id: selectedClient.id,
         amount,
-        payment_date: today,
+        payment_date: paymentDate,
         payment_mode: paymentVia,
         bank_account_id: paymentVia === "Bank" ? paymentBankId : null,
         notes: paymentNotes.trim() || null,
@@ -1517,6 +1536,7 @@ export default function Accounting() {
                     setTransferToId("");
                     setTransferAmount("");
                     setTransferNotes("");
+                    setTransferDate(todayStr());
                     setIsTransferModalOpen(true);
                   }}
                   disabled={banks.length < 2}
@@ -3135,6 +3155,16 @@ export default function Accounting() {
               />
             </div>
             <div>
+              <label className="block text-sm text-slate-700 mb-1">Payment Date *</label>
+              <input
+                required
+                type="date"
+                value={paymentDate}
+                onChange={(e) => setPaymentDate(e.target.value)}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              />
+            </div>
+            <div>
               <label className="block text-sm text-slate-700 mb-2">Received Via *</label>
               <div className="grid grid-cols-2 gap-2">
                 {(["Cash", "Bank"] as const).map((v) => (
@@ -3523,6 +3553,16 @@ export default function Accounting() {
               onChange={(e) => setTransferAmount(e.target.value)}
               className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               placeholder="0.00"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Transfer Date *</label>
+            <input
+              required
+              type="date"
+              value={transferDate}
+              onChange={(e) => setTransferDate(e.target.value)}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
             />
           </div>
           <div>

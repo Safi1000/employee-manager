@@ -139,6 +139,8 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
   const [employeeAddlBranches, setEmployeeAddlBranches] = useState<Map<string, string[]>>(new Map());
   const [statusFilter, setStatusFilter] = useState<"all" | "Cleared" | "Pending">("all");
   const [disbursedFilter, setDisbursedFilter] = useState<"all" | "yes" | "no">("all");
+  // Active / Inactive employee tab split (Inactive = anything not currently Active).
+  const [empTab, setEmpTab] = useState<"all" | "active" | "inactive">("all");
   const [branches, setBranches] = useState<Branch[]>([]);
 
   const [periodOptions, setPeriodOptions] = useState<string[]>([currentPeriod, previousPeriod]);
@@ -513,9 +515,11 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       }
       if (statusFilter !== "all" && r.status !== statusFilter) return false;
       if (disbursedFilter !== "all" && (disbursedFilter === "yes" ? !r.disbursed : r.disbursed)) return false;
+      if (empTab === "active" && e.status !== "Active") return false;
+      if (empTab === "inactive" && e.status === "Active") return false;
       return true;
     });
-  }, [rows, search, shiftFilter, locationFilter, clientFilter, branchFilter, statusFilter, disbursedFilter, employeeAddlBranches, relieversOnly, branches]);
+  }, [rows, search, shiftFilter, locationFilter, clientFilter, branchFilter, statusFilter, disbursedFilter, empTab, employeeAddlBranches, relieversOnly, branches]);
 
   const selectedRow = useMemo(
     () => rows.find((r) => r.employee.id === selectedId) ?? null,
@@ -1150,6 +1154,27 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                 </div>
               </div>
 
+              <div className="px-2 pb-3 flex gap-2">
+                {([
+                  { v: "all", label: "All" },
+                  { v: "active", label: "Active" },
+                  { v: "inactive", label: "Inactive" },
+                ] as const).map((t) => (
+                  <button
+                    key={t.v}
+                    type="button"
+                    onClick={() => setEmpTab(t.v)}
+                    className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${
+                      empTab === t.v
+                        ? "border-brand-600 bg-brand-50 text-brand-700"
+                        : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
@@ -1194,7 +1219,20 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                             onClick={() => { setSelectedId(e.id); setRowError(null); }}
                           >
                             <td className="px-4 py-3">
-                              <div className="text-sm text-slate-900">{e.full_name}</div>
+                              <div className="text-sm text-slate-900 flex items-center gap-2">
+                                {e.full_name}
+                                <span
+                                  className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] ${
+                                    e.status === "Active"
+                                      ? "bg-success-50 text-success-700"
+                                      : e.status === "On Leave"
+                                        ? "bg-warning-50 text-warning-700"
+                                        : "bg-slate-100 text-slate-600"
+                                  }`}
+                                >
+                                  {e.status}
+                                </span>
+                              </div>
                               <div className="text-xs text-slate-500 font-mono">
                                 {e.employee_code}
                                 {e.phone ? ` · ${e.phone}` : ""}
