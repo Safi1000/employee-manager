@@ -83,6 +83,17 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
   // after a month has ended.
   const previousPeriod = firstOfMonth(new Date(today.getFullYear(), today.getMonth() - 1, 1));
 
+  // Item 1: remember the selected period + payslip across navigation so the user
+  // resumes where they left off. Scoped so reliever and main payroll don't clash.
+  const selStoreKey = `payroll.selection.${relieversOnly ? "reliever" : "main"}.v1`;
+  const readSel = (): { period?: string; id?: string | null } => {
+    try {
+      return JSON.parse(localStorage.getItem(selStoreKey) || "null") ?? {};
+    } catch {
+      return {};
+    }
+  };
+
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -131,9 +142,9 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
   const [branches, setBranches] = useState<Branch[]>([]);
 
   const [periodOptions, setPeriodOptions] = useState<string[]>([currentPeriod, previousPeriod]);
-  const [selectedPeriod, setSelectedPeriod] = useState(previousPeriod);
+  const [selectedPeriod, setSelectedPeriod] = useState(() => readSel().period ?? previousPeriod);
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(() => readSel().id ?? null);
   const [rowEdits, setRowEdits] = useState<Map<string, Partial<RowState>>>(new Map());
   const [savingId, setSavingId] = useState<string | null>(null);
 
@@ -227,7 +238,9 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     });
     setPriorLeavesByMonth(histMap);
     setRowEdits(new Map());
-    setSelectedId(null);
+    // Selection is intentionally preserved here (item 1) so switching away and
+    // back keeps the chosen payslip. It's cleared explicitly when the user picks
+    // a different period.
   };
 
   const loadAll = async () => {
@@ -307,6 +320,15 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
   useEffect(() => {
     if (!loading) loadPeriodData(selectedPeriod);
   }, [selectedPeriod]);
+
+  // Item 1: persist the period + selected payslip so navigation resumes here.
+  useEffect(() => {
+    try {
+      localStorage.setItem(selStoreKey, JSON.stringify({ period: selectedPeriod, id: selectedId }));
+    } catch {
+      /* ignore quota / privacy errors */
+    }
+  }, [selStoreKey, selectedPeriod, selectedId]);
 
   const clientAllowedLeaves = useMemo(() => {
     const m = new Map<string, number>();
@@ -481,7 +503,11 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       if (locationFilter !== "all" && e.location_id !== locationFilter) return false;
       if (clientFilter !== "all" && e.client_id !== clientFilter) return false;
       if (branchFilter !== "all") {
-        const inPrimary = e.branch_id === branchFilter;
+        // Employees created with "Head Office (default)" have a null branch_id;
+        // treat them as belonging to the head-office branch so the HO filter shows them.
+        const hoId = branches.find((b) => b.is_head_office)?.id;
+        const effectivePrimary = e.branch_id ?? hoId ?? null;
+        const inPrimary = effectivePrimary === branchFilter;
         const inAdditional = (employeeAddlBranches.get(e.id) ?? []).includes(branchFilter);
         if (!inPrimary && !inAdditional) return false;
       }
@@ -489,7 +515,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       if (disbursedFilter !== "all" && (disbursedFilter === "yes" ? !r.disbursed : r.disbursed)) return false;
       return true;
     });
-  }, [rows, search, shiftFilter, locationFilter, clientFilter, branchFilter, statusFilter, disbursedFilter, employeeAddlBranches, relieversOnly]);
+  }, [rows, search, shiftFilter, locationFilter, clientFilter, branchFilter, statusFilter, disbursedFilter, employeeAddlBranches, relieversOnly, branches]);
 
   const selectedRow = useMemo(
     () => rows.find((r) => r.employee.id === selectedId) ?? null,
@@ -1054,7 +1080,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                   </div>
                   <select
                     value={selectedPeriod}
-                    onChange={(e) => setSelectedPeriod(e.target.value)}
+                    onChange={(e) => { setSelectedId(null); setSelectedPeriod(e.target.value); }}
                     className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
                   >
                     {periodOptions.map((p) => (
@@ -1235,27 +1261,16 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                               </button>
                             </td>
                             <td className="px-4 py-3">
-                              <button
-                                type="button"
-                                disabled={savingId === e.id}
-                                onClick={(ev) => {
-                                  ev.stopPropagation();
-                                  if (!row.disbursed) {
-                                    // Open date picker before disbursing
-                                    setRowDisburseDate(todayISO());
-                                    setRowDisburseTarget(row);
-                                  } else {
-                                    toggleDisbursed(row);
-                                  }
-                                }}
+                              {/* Status only — disbursing is done from the side panel (item 2). */}
+                              <span
                                 className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
                                   row.disbursed
-                                    ? "bg-success-50 text-success-700 hover:bg-success-100"
-                                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                                    ? "bg-success-50 text-success-700"
+                                    : "bg-slate-100 text-slate-600"
                                 }`}
                               >
                                 {row.disbursed ? "Disbursed" : "Not Disbursed"}
-                              </button>
+                              </span>
                             </td>
                             <td className="px-4 py-3">
                               <Button

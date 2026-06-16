@@ -14,6 +14,7 @@ import {
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
+import { formatDateTime } from "../../lib/date";
 import {
   supabase,
   INCIDENT_SEVERITY_LABEL,
@@ -703,10 +704,7 @@ export default function Incidents() {
                     <tr key={row.id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-4 py-3 text-xs font-mono text-slate-900">{row.incident_code}</td>
                       <td className="px-4 py-3 text-xs text-slate-700">
-                        {new Date(row.occurred_at).toLocaleString(undefined, {
-                          dateStyle: "medium",
-                          timeStyle: "short",
-                        })}
+                        {formatDateTime(row.occurred_at)}
                       </td>
                       <td className="px-4 py-3 text-sm">
                         <div className="text-slate-900">{row.client_name ?? "—"}</div>

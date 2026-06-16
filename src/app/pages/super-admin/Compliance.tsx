@@ -80,11 +80,7 @@ const dayDiff = (iso: string) => {
 
 const formatDate = (iso: string) => {
   const [y, m, d] = iso.split("-").map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return `${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}/${y}`;
 };
 
 const priorityRank = (p: CompliancePriority) =>

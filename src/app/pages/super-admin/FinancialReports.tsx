@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Download, Loader2, FileText, Plus, Lock, Trash2, Pencil } from "lucide-react";
 import Header from "../../components/Header";
+import { formatDate } from "../../lib/date";
 import ExportButton from "../../components/ExportButton";
 import {
   exportProfitLoss,
@@ -285,20 +286,24 @@ export default function FinancialReports() {
       }
       const name = e.category?.name ?? "";
       const amt = Number(e.amount);
-      if (name === "Taxes") { taxes += amt; continue; }
 
-      const isCos = e.pl_category === "cost_of_services";
-      if (isCos) {
-        if (name === "Equipment & Supplies") cosEquipment += amt;
-        else if (name === "Transportation & Fuel") cosTransport += amt;
-        else if (name === "EOBI" || name === "IESSI" || name === "PESSI") cosStatutory += amt;
-        else cosOther += amt;
-      } else {
-        if (name === "Utilities & Rent") opUtilities += amt;
-        else if (name === "Insurance") opInsurance += amt;
-        else if (name === "Licenses") opLicenses += amt;
-        else opOther += amt;
-      }
+      // Item 8: the well-known hardcoded categories map to a fixed P&L line by
+      // NAME, regardless of the pl_category stored on the expense (the form
+      // defaults to operating_expense, which previously dumped CoS categories
+      // like Transportation/Equipment into "Other Operating Expenses" so their
+      // named line showed nothing). Only genuinely custom categories fall back
+      // to the user-chosen pl_category.
+      if (name === "Taxes") { taxes += amt; continue; }
+      if (name === "Equipment & Supplies") { cosEquipment += amt; continue; }
+      if (name === "Transportation & Fuel") { cosTransport += amt; continue; }
+      if (name === "EOBI" || name === "IESSI" || name === "PESSI") { cosStatutory += amt; continue; }
+      if (name === "Weapons & Ammunition" || name === "Uniform") { cosOther += amt; continue; }
+      if (name === "Utilities & Rent") { opUtilities += amt; continue; }
+      if (name === "Insurance") { opInsurance += amt; continue; }
+      if (name === "Licenses") { opLicenses += amt; continue; }
+
+      if (e.pl_category === "cost_of_services") cosOther += amt;
+      else opOther += amt;
     }
 
     const totalCos =
@@ -1332,7 +1337,7 @@ export default function FinancialReports() {
                         return (
                           <tr key={inv.id}>
                             <td className="px-3 py-2 text-xs font-mono text-slate-900">{inv.invoice_number}</td>
-                            <td className="px-3 py-2 text-xs text-slate-600">{inv.invoice_date}</td>
+                            <td className="px-3 py-2 text-xs text-slate-600">{formatDate(inv.invoice_date)}</td>
                             <td className="px-3 py-2 text-xs text-right text-brand-600">
                               PKR {Number(inv.invoice_amount).toLocaleString()}
                             </td>

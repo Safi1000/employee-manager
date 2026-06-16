@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
+import { formatDateTime } from "../../lib/date";
 import {
   supabase,
   AUDITED_TABLES,
@@ -334,7 +335,7 @@ export default function AuditLog() {
                           {isOpen ? <ChevronDown className="w-4 h-4 text-slate-400 inline" /> : <ChevronRight className="w-4 h-4 text-slate-400 inline" />}
                         </td>
                         <td className="px-4 py-3 text-xs text-slate-700 whitespace-nowrap">
-                          {new Date(e.changed_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
+                          {formatDateTime(e.changed_at)}
                         </td>
                         <td className="px-4 py-3 text-sm text-slate-900 whitespace-nowrap">
                           {userName(e.changed_by)}

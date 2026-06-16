@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { Link } from "react-router";
 import Header from "../../components/Header";
+import { formatDate } from "../../lib/date";
 import StatCard from "../../components/StatCard";
 import {
   LineChart,
@@ -724,7 +725,7 @@ export default function SuperAdminDashboard() {
                                 <p className="text-sm text-slate-900 truncate">{a.title}</p>
                                 <span className={`text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wide ${priorityClass}`}>{a.priority}</span>
                               </div>
-                              <p className="text-xs text-slate-500">{a.category} · due {a.due_date}</p>
+                              <p className="text-xs text-slate-500">{a.category} · due {formatDate(a.due_date)}</p>
                             </div>
                             <span className="text-xs text-slate-400 tabular-nums">{daysLeft === 0 ? "today" : `${daysLeft}d`}</span>
                           </div>
@@ -760,7 +761,7 @@ export default function SuperAdminDashboard() {
                                 <span className="text-xs font-mono text-slate-500">{c.code}</span>
                                 <span className="text-sm text-slate-900 truncate">{c.client_name}</span>
                               </div>
-                              <p className="text-xs text-slate-500">Ends {c.end_date}</p>
+                              <p className="text-xs text-slate-500">Ends {formatDate(c.end_date)}</p>
                             </div>
                             <span className={`text-sm tabular-nums ${tone}`}>{c.days_left}d</span>
                           </div>

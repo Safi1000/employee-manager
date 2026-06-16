@@ -6,6 +6,7 @@ import Modal from "../../components/Modal";
 import ExportButton from "../../components/ExportButton";
 import ClientFilterSelect from "../../components/ClientFilterSelect";
 import { exportExpenses, exportAdvances } from "../../lib/excel";
+import { formatDate } from "../../lib/date";
 import {
   PieChart,
   Pie,
@@ -1586,7 +1587,7 @@ export default function Expenses() {
                 {!loading &&
                   filtered.map((exp) => (
                     <tr key={exp.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-4 py-3 text-sm text-slate-600">{exp.expense_date}</td>
+                      <td className="px-4 py-3 text-sm text-slate-600">{formatDate(exp.expense_date)}</td>
                       <td className="px-4 py-3 text-sm text-slate-900">{exp.category_name ?? "—"}</td>
                       <td className="px-4 py-3 text-sm text-slate-700">
                         {exp.client_name ?? <span className="text-slate-400 italic">Office</span>}
@@ -1935,7 +1936,7 @@ export default function Expenses() {
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
                 <p className="text-slate-500 mb-1">Date</p>
-                <p className="text-slate-900">{selected.expense_date}</p>
+                <p className="text-slate-900">{formatDate(selected.expense_date)}</p>
               </div>
               <div>
                 <p className="text-slate-500 mb-1">Category</p>
@@ -1969,7 +1970,7 @@ export default function Expenses() {
                   </div>
                   <div>
                     <p className="text-slate-500 mb-1">Due Date</p>
-                    <p className="text-slate-900">{selected.due_date ?? "—"}</p>
+                    <p className="text-slate-900">{selected.due_date ? formatDate(selected.due_date) : "—"}</p>
                   </div>
                   <div>
                     <p className="text-slate-500 mb-1">Status</p>

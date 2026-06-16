@@ -31,6 +31,7 @@ import {
 } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
 import { generateInvoicePdf } from "../../lib/invoicePdf";
+import { formatDate } from "../../lib/date";
 
 type InvoiceRow = Invoice & { client?: { name: string; client_code: string } | null };
 
@@ -114,6 +115,7 @@ export default function Invoices() {
 
   const [clientFilter, setClientFilter] = useState<string>("");
   const [branchFilter, setBranchFilter] = useState<string>("all");
+  const [monthFilter, setMonthFilter] = useState<string>("all");
 
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [form, setForm] = useState<InvoiceForm>(emptyForm());
@@ -183,15 +185,23 @@ export default function Invoices() {
     setEditPayments((data ?? []) as PaymentRow[]);
   };
 
+  // Item 7: distinct YYYY-MM present in invoices, newest first, for the month filter.
+  const monthOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const i of invoices) if (i.invoice_date) set.add(i.invoice_date.slice(0, 7));
+    return Array.from(set).sort((a, b) => (a < b ? 1 : -1));
+  }, [invoices]);
+
   const filteredInvoices = useMemo(() => {
     const clientBranch = new Map<string, string | null>();
     for (const c of clients) clientBranch.set(c.id, c.branch_id);
     return invoices.filter((i) => {
       if (clientFilter && i.client_id !== clientFilter) return false;
       if (branchFilter !== "all" && clientBranch.get(i.client_id) !== branchFilter) return false;
+      if (monthFilter !== "all" && (i.invoice_date ?? "").slice(0, 7) !== monthFilter) return false;
       return true;
     });
-  }, [invoices, clientFilter, branchFilter, clients]);
+  }, [invoices, clientFilter, branchFilter, monthFilter, clients]);
 
   const summary = useMemo(() => {
     let invoiced = 0;
@@ -558,13 +568,40 @@ export default function Invoices() {
       setError("Enter a positive payment amount.");
       return;
     }
-    const outstanding =
-      Number(paymentInvoice.invoice_amount) -
-      Number(paymentInvoice.withholding_tax ?? 0) -
-      Number(paymentInvoice.amount_received);
-    if (amt > outstanding + 0.0001) {
-      setError(`Payment cannot exceed outstanding of PKR ${outstanding.toLocaleString()}.`);
-      return;
+    // Item 6: allocate the payment to this client's unpaid invoices oldest-first.
+    // The FULL amount is always recorded into the chosen bank/cash; any excess
+    // beyond what's owed lands on the newest invoice, pushing that invoice's (and
+    // the client's) outstanding negative — i.e. a credit / advance.
+    const clientId = paymentInvoice.client_id;
+    const unpaid = invoices
+      .filter((i) => i.client_id === clientId)
+      .map((i) => ({
+        inv: i,
+        out: Number(i.invoice_amount) - Number(i.withholding_tax ?? 0) - Number(i.amount_received),
+      }))
+      .filter((x) => x.out > 0.0001)
+      .sort((a, b) =>
+        a.inv.invoice_date < b.inv.invoice_date
+          ? -1
+          : a.inv.invoice_date > b.inv.invoice_date
+            ? 1
+            : (a.inv.invoice_number ?? "").localeCompare(b.inv.invoice_number ?? ""),
+      );
+    // Build the allocation plan. The newest unpaid invoice absorbs whatever is
+    // left after clearing the rest (so an overpayment makes it negative). If
+    // nothing is outstanding, the whole payment goes on the clicked invoice.
+    const plan: { inv: InvoiceRow; pay: number }[] = [];
+    if (unpaid.length === 0) {
+      plan.push({ inv: paymentInvoice, pay: amt });
+    } else {
+      let left = amt;
+      unpaid.forEach(({ inv, out }, idx) => {
+        const isLast = idx === unpaid.length - 1;
+        const pay = isLast ? left : Math.min(left, out);
+        if (pay <= 0.0001) return;
+        plan.push({ inv, pay });
+        left -= pay;
+      });
     }
     if (!paymentForm.payment_date) {
       setError("Select a payment date.");
@@ -579,50 +616,57 @@ export default function Invoices() {
     try {
       const bankId =
         paymentForm.payment_mode === "Bank" ? paymentForm.bank_account_id : null;
-      const { data: payRow, error: payErr } = await supabase
-        .from("invoice_payments")
-        .insert({
-          invoice_id: paymentInvoice.id,
-          amount: amt,
-          payment_date: paymentForm.payment_date,
-          payment_mode: paymentForm.payment_mode,
-          bank_account_id: bankId,
-          notes: paymentForm.notes.trim() || null,
-        })
-        .select()
-        .single();
-      if (payErr) throw payErr;
 
-      const newReceived = Number(paymentInvoice.amount_received) + amt;
-      const { error: invUpErr } = await supabase
-        .from("invoices")
-        .update({ amount_received: newReceived, updated_at: new Date().toISOString() })
-        .eq("id", paymentInvoice.id);
-      if (invUpErr) throw invUpErr;
+      // Record the FULL amount received into the chosen bank/cash, applying the
+      // planned split across invoices (the last one may go negative).
+      const totalApplied = amt;
+      let firstPayId: string | null = null;
+      for (const { inv, pay } of plan) {
+        const { data: payRow, error: payErr } = await supabase
+          .from("invoice_payments")
+          .insert({
+            invoice_id: inv.id,
+            amount: pay,
+            payment_date: paymentForm.payment_date,
+            payment_mode: paymentForm.payment_mode,
+            bank_account_id: bankId,
+            notes: paymentForm.notes.trim() || null,
+          })
+          .select()
+          .single();
+        if (payErr) throw payErr;
+        if (!firstPayId) firstPayId = (payRow as InvoicePayment).id;
+        const { error: invUpErr } = await supabase
+          .from("invoices")
+          .update({ amount_received: Number(inv.amount_received) + pay, updated_at: new Date().toISOString() })
+          .eq("id", inv.id);
+        if (invUpErr) throw invUpErr;
+      }
+      const touched = plan.length;
 
       const clientName = paymentInvoice.client?.name ?? "Client";
-      const desc = `Payment received (${paymentForm.payment_mode.toLowerCase()}) · ${clientName} · Invoice ${paymentInvoice.invoice_number}`;
+      const desc = `Payment received (${paymentForm.payment_mode.toLowerCase()}) · ${clientName} · ${touched} invoice${touched === 1 ? "" : "s"} (oldest first)`;
       if (paymentForm.payment_mode === "Cash") {
-        await applyCashDelta(amt);
+        await applyCashDelta(totalApplied);
         await logTransaction({
           bank_account_id: null,
           kind: "receipt",
-          amount: amt,
-          cash_delta: amt,
+          amount: totalApplied,
+          cash_delta: totalApplied,
           account_delta: 0,
           description: desc,
-          reference_id: (payRow as InvoicePayment).id,
+          reference_id: firstPayId ?? undefined,
         });
       } else {
-        await applyBankDelta(bankId!, amt);
+        await applyBankDelta(bankId!, totalApplied);
         await logTransaction({
           bank_account_id: bankId,
           kind: "receipt",
-          amount: amt,
+          amount: totalApplied,
           cash_delta: 0,
-          account_delta: amt,
+          account_delta: totalApplied,
           description: desc,
-          reference_id: (payRow as InvoicePayment).id,
+          reference_id: firstPayId ?? undefined,
         });
       }
 
@@ -849,7 +893,8 @@ export default function Invoices() {
               variant="primary"
               size="md"
               onClick={() => {
-                setForm(emptyForm());
+                // Item 9: prefill the next invoice number = total invoices + 1.
+                setForm({ ...emptyForm(), invoice_number: String(invoices.length + 1) });
                 setIsAddOpen(true);
               }}
             >
@@ -906,6 +951,19 @@ export default function Invoices() {
                 <option value="all">All Branches</option>
                 {branches.map((b) => (
                   <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-slate-600">Month:</label>
+              <select
+                value={monthFilter}
+                onChange={(e) => setMonthFilter(e.target.value)}
+                className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
+              >
+                <option value="all">All Months</option>
+                {monthOptions.map((m) => (
+                  <option key={m} value={m}>{monthLabel(m)}</option>
                 ))}
               </select>
             </div>
@@ -1168,7 +1226,7 @@ export default function Invoices() {
                   <tbody className="divide-y divide-slate-200">
                     {editPayments.map((p) => (
                       <tr key={p.id}>
-                        <td className="px-3 py-2 text-xs text-slate-600">{p.payment_date}</td>
+                        <td className="px-3 py-2 text-xs text-slate-600">{formatDate(p.payment_date)}</td>
                         <td className="px-3 py-2 text-xs text-success-700 text-right">
                           PKR {Number(p.amount).toLocaleString()}
                         </td>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Search, Upload, AlertCircle, Loader2, X, Trash2, ChevronDown, ChevronRight as ChevronRightIcon } from "lucide-react";
 import Header from "../../components/Header";
+import { formatDate } from "../../lib/date";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import ClientFilterSelect from "../../components/ClientFilterSelect";
@@ -251,7 +252,11 @@ export default function EmployeeManagement() {
       if (locationFilter !== "all" && e.location_id !== locationFilter) return false;
       if (clientFilter !== "all" && e.client_id !== clientFilter) return false;
       if (branchFilter !== "all") {
-        const inPrimary = e.branch_id === branchFilter;
+        // Null branch_id = "Head Office (default)"; treat it as the HO branch so
+        // those employees show under the Head Office filter.
+        const hoId = branches.find((b) => b.is_head_office)?.id;
+        const effectivePrimary = e.branch_id ?? hoId ?? null;
+        const inPrimary = effectivePrimary === branchFilter;
         const inAdditional = (e.additional_branch_ids ?? []).includes(branchFilter);
         if (!inPrimary && !inAdditional) return false;
       }
@@ -260,7 +265,7 @@ export default function EmployeeManagement() {
       if (statusFilter !== "all" && e.status !== statusFilter) return false;
       return true;
     });
-  }, [employees, search, locationFilter, clientFilter, branchFilter, categoryFilter, shiftFilter, statusFilter]);
+  }, [employees, search, locationFilter, clientFilter, branchFilter, categoryFilter, shiftFilter, statusFilter, branches]);
 
   type EmpRef = { id: string; employee_code: string; full_name: string };
 
@@ -1246,7 +1251,7 @@ export default function EmployeeManagement() {
                 </div>
                 <div>
                   <p className="text-slate-500 mb-1">Join Date</p>
-                  <p className="text-slate-900">{selectedEmployee.join_date ?? "—"}</p>
+                  <p className="text-slate-900">{selectedEmployee.join_date ? formatDate(selectedEmployee.join_date) : "—"}</p>
                 </div>
                 <div>
                   <p className="text-slate-500 mb-1">Bank Name</p>

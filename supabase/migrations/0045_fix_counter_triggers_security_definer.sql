@@ -1,3 +1,4 @@
+
 -- Fix: creating a contract or incident as a company admin fails with
 --   "new row violates row-level security policy for table company_counters"
 --

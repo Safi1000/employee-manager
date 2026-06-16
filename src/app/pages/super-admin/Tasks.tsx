@@ -3,6 +3,7 @@ import { Plus, Loader2, AlertCircle, X, Trash2, Pencil, Calendar as CalendarIcon
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
+import { formatDate } from "../../lib/date";
 import {
   supabase,
   TASK_STATUS_LABEL,
@@ -338,7 +339,7 @@ export default function Tasks() {
                               }`}
                             >
                               <CalendarIcon className="w-3 h-3" strokeWidth={1.5} />
-                              {t.due_date}
+                              {formatDate(t.due_date)}
                               {overdue ? " · overdue" : soon ? ` · ${daysLeft}d left` : ""}
                             </span>
                           )}

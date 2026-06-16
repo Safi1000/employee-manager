@@ -10,6 +10,7 @@ import {
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
+import { formatDate } from "../../lib/date";
 import {
   supabase,
   type AccountingPeriod,
@@ -312,7 +313,7 @@ export default function PeriodClose() {
                             </span>
                             <div className="text-[10px] text-slate-500 mt-1">
                               {row.closed_by_name && <>by {row.closed_by_name} · </>}
-                              {row.closed_at && new Date(row.closed_at).toLocaleDateString()}
+                              {row.closed_at && formatDate(row.closed_at)}
                             </div>
                           </div>
                         ) : (

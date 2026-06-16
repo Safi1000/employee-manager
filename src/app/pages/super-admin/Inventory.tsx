@@ -4,6 +4,7 @@ import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import ClientFilterSelect from "../../components/ClientFilterSelect";
+import { formatDate } from "../../lib/date";
 import {
   supabase,
   type InventoryItem,
@@ -747,7 +748,7 @@ export default function Inventory() {
                             {weapon.issued_to_name ?? "—"}
                           </td>
                           <td className="px-6 py-4 text-sm text-slate-600">
-                            {weapon.license_expiry ?? "—"}
+                            {weapon.license_expiry ? formatDate(weapon.license_expiry) : "—"}
                           </td>
                           <td className="px-6 py-4 flex gap-1">
                             <Button variant="ghost" size="sm" onClick={() => setViewWeapon(weapon)}>
@@ -1389,7 +1390,7 @@ export default function Inventory() {
               </div>
               <div>
                 <p className="text-slate-500 mb-1">License Expiry</p>
-                <p className="text-slate-900">{viewWeapon.license_expiry ?? "—"}</p>
+                <p className="text-slate-900">{viewWeapon.license_expiry ? formatDate(viewWeapon.license_expiry) : "—"}</p>
               </div>
               <div className="col-span-2">
                 <p className="text-slate-500 mb-1">Notes</p>

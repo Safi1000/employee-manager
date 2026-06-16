@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router";
 import { Building2, Plus, Loader2, ArrowRight, Eye, Power, CreditCard, X } from "lucide-react";
 import Button from "../../components/Button";
 import { supabase, type Company, type SubscriptionPayment } from "../../lib/supabase";
+import { formatDate } from "../../lib/date";
 import { useAuth } from "../../lib/auth";
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
@@ -332,8 +333,8 @@ export default function Companies() {
                     : (() => {
                         const r = daysBetween(todayStr(), subCompany.subscription_expires_at);
                         return r < 0
-                          ? `Expired ${-r} day${r === -1 ? "" : "s"} ago (${subCompany.subscription_expires_at})`
-                          : `${r} day${r === 1 ? "" : "s"} remaining · expires ${subCompany.subscription_expires_at}`;
+                          ? `Expired ${-r} day${r === -1 ? "" : "s"} ago (${formatDate(subCompany.subscription_expires_at)})`
+                          : `${r} day${r === 1 ? "" : "s"} remaining · expires ${formatDate(subCompany.subscription_expires_at)}`;
                       })()}
                 </p>
               </div>
@@ -424,7 +425,7 @@ export default function Companies() {
                       <tbody className="divide-y divide-slate-200 text-sm">
                         {subPayments.map((p) => (
                           <tr key={p.id}>
-                            <td className="px-3 py-2 text-slate-700">{p.payment_date}</td>
+                            <td className="px-3 py-2 text-slate-700">{formatDate(p.payment_date)}</td>
                             <td className="px-3 py-2 text-right text-slate-900">
                               PKR {Number(p.amount).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                             </td>

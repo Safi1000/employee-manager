@@ -17,6 +17,7 @@ import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import ContractEditorModal from "../../components/ContractEditorModal";
+import { formatDate } from "../../lib/date";
 import {
   supabase,
   PAKISTAN_INDUSTRIES,
@@ -1046,7 +1047,7 @@ export default function Clients() {
                         <tr key={c.id}>
                           <td className="px-2 py-2 font-mono text-xs">{c.contract_code}</td>
                           <td className="px-2 py-2 text-xs">{c.contract_type}</td>
-                          <td className="px-2 py-2 text-xs">{c.start_date}{c.end_date ? ` → ${c.end_date}` : ""}</td>
+                          <td className="px-2 py-2 text-xs">{formatDate(c.start_date)}{c.end_date ? ` → ${formatDate(c.end_date)}` : ""}</td>
                           <td className="px-2 py-2 text-xs capitalize">{c.status}</td>
                           <td className="px-2 py-2 text-xs text-right">{c.number_of_guards}</td>
                           <td className="px-2 py-2 text-xs text-right">PKR {Number(c.rate_per_guard_per_month).toLocaleString()}</td>
@@ -1089,7 +1090,7 @@ export default function Clients() {
                       {invoices.filter((i) => i.client_id === detailRow.id).slice(0, 50).map((inv) => (
                         <tr key={inv.id}>
                           <td className="px-2 py-2 font-mono text-xs">{inv.invoice_number}</td>
-                          <td className="px-2 py-2 text-xs">{inv.invoice_date}</td>
+                          <td className="px-2 py-2 text-xs">{formatDate(inv.invoice_date)}</td>
                           <td className="px-2 py-2 text-xs text-right">PKR {Number(inv.invoice_amount).toLocaleString()}</td>
                           <td className="px-2 py-2 text-xs text-right text-success-700">PKR {Number(inv.amount_received).toLocaleString()}</td>
                         </tr>

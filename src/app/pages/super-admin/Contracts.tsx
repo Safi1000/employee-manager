@@ -13,6 +13,7 @@ import {
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
+import { formatDate } from "../../lib/date";
 import {
   supabase,
   CONTRACT_TYPE_LABEL,
@@ -645,10 +646,10 @@ export default function Contracts() {
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-600">{CONTRACT_TYPE_LABEL[row.contract_type]}</td>
                       <td className="px-4 py-3 text-sm text-slate-600">
-                        <div>{row.start_date}</div>
+                        <div>{formatDate(row.start_date)}</div>
                         {row.end_date && (
                           <div className={endingSoon ? "text-warning-700 text-xs" : "text-xs text-slate-500"}>
-                            → {row.end_date}
+                            → {formatDate(row.end_date)}
                             {endingSoon && ` (${dleft}d)`}
                           </div>
                         )}

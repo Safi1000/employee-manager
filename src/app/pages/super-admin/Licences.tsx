@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Loader2, AlertCircle, X, ArrowUpDown, Search, Calendar } from "lucide-react";
 import { Link } from "react-router";
 import Header from "../../components/Header";
+import { formatDate } from "../../lib/date";
 import {
   supabase,
   CONTRACT_TYPE_LABEL,
@@ -332,7 +333,7 @@ export default function Licences() {
                       <td className="px-4 py-3 text-sm text-slate-600">
                         <span className="inline-flex items-center gap-1">
                           <Calendar className="w-3 h-3 text-slate-400" />
-                          {row.expiry_date}
+                          {formatDate(row.expiry_date)}
                         </span>
                       </td>
                       <td className={`px-4 py-3 text-sm text-right ${c.text}`}>

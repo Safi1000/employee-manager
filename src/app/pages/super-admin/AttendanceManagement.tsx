@@ -98,6 +98,10 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
   const [bulkError, setBulkError] = useState<string | null>(null);
   const [bulkDragMode, setBulkDragMode] = useState<"add" | "remove" | null>(null);
+  // Gallery-style range drag: anchor = where the drag started, base = the selection
+  // snapshot before the drag, so the live range can be recomputed on every move.
+  const [bulkDragAnchor, setBulkDragAnchor] = useState<string | null>(null);
+  const [bulkDragBase, setBulkDragBase] = useState<Set<string>>(new Set());
 
   const bulkEmployee = useMemo(
     () => employees.find((e) => e.id === bulkEmployeeId),
@@ -184,14 +188,58 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     });
   };
 
-  const applyBulkDrag = (date: string) => {
-    if (!bulkDragMode) return;
-    setBulkSelected((prev) => {
-      const next = new Set(prev);
-      if (bulkDragMode === "add") next.add(date);
-      else next.delete(date);
-      return next;
-    });
+  // Chronological list of selectable dates + their index, for range computation.
+  const bulkOrderedDates = useMemo(
+    () => bulkCalendarCells.filter((c) => c.date).map((c) => c.date as string),
+    [bulkCalendarCells],
+  );
+  const bulkDateIndex = useMemo(() => {
+    const m = new Map<string, number>();
+    bulkOrderedDates.forEach((d, i) => m.set(d, i));
+    return m;
+  }, [bulkOrderedDates]);
+
+  const applyBulkRange = (
+    base: Set<string>,
+    from: string,
+    to: string,
+    mode: "add" | "remove",
+  ): Set<string> => {
+    const a = bulkDateIndex.get(from);
+    const b = bulkDateIndex.get(to);
+    if (a == null || b == null) return base;
+    const [lo, hi] = a <= b ? [a, b] : [b, a];
+    const next = new Set(base);
+    for (let i = lo; i <= hi; i += 1) {
+      const d = bulkOrderedDates[i];
+      if (mode === "add") next.add(d);
+      else next.delete(d);
+    }
+    return next;
+  };
+
+  // Begin a drag from `date`: remember the anchor and pre-drag selection, then
+  // apply the (single-cell) range so a plain tap still toggles.
+  const startBulkDrag = (date: string) => {
+    const mode: "add" | "remove" = bulkSelected.has(date) ? "remove" : "add";
+    const base = new Set(bulkSelected);
+    setBulkDragMode(mode);
+    setBulkDragAnchor(date);
+    setBulkDragBase(base);
+    setBulkSelected(applyBulkRange(base, date, date, mode));
+  };
+
+  // Recompute the live selection as the pointer moves over `date` during a drag:
+  // everything between the anchor and the current cell takes the drag's mode,
+  // even cells the pointer skipped — like selecting in a phone gallery.
+  const extendBulkDrag = (date: string) => {
+    if (!bulkDragMode || !bulkDragAnchor) return;
+    setBulkSelected(applyBulkRange(bulkDragBase, bulkDragAnchor, date, bulkDragMode));
+  };
+
+  const endBulkDrag = () => {
+    setBulkDragMode(null);
+    setBulkDragAnchor(null);
   };
 
   const applyBulkStatus = async (status: AttendanceStatus) => {
@@ -1451,8 +1499,8 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
               {/* Calendar grid */}
               <div
                 className="select-none"
-                onMouseUp={() => setBulkDragMode(null)}
-                onMouseLeave={() => setBulkDragMode(null)}
+                onMouseUp={endBulkDrag}
+                onMouseLeave={endBulkDrag}
               >
                 <div className="grid grid-cols-7 gap-1 text-[10px] uppercase tracking-wider text-slate-500 mb-1">
                   {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
@@ -1486,11 +1534,9 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                           type="button"
                           onMouseDown={(e) => {
                             e.preventDefault();
-                            const isSel = bulkSelected.has(c.date!);
-                            setBulkDragMode(isSel ? "remove" : "add");
-                            toggleBulkCell(c.date!);
+                            startBulkDrag(c.date!);
                           }}
-                          onMouseEnter={() => applyBulkDrag(c.date!)}
+                          onMouseEnter={() => extendBulkDrag(c.date!)}
                           className={`h-12 rounded border text-left p-1.5 transition-colors ${statusClass} ${ring}`}
                           title={status ? `Currently: ${status}` : "Unmarked"}
                         >
@@ -1506,7 +1552,8 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                   </div>
                 )}
                 <p className="text-[11px] text-slate-500 mt-2">
-                  Tap a date to toggle, or click-and-drag to multi-select. P = Present, A = Absent, L = Leave.
+                  Tap a date to toggle, or press and drag to select a whole range (everything between the
+                  start and where you drag fills in automatically). P = Present, A = Absent, L = Leave.
                 </p>
               </div>
 

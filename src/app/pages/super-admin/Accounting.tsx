@@ -4,6 +4,7 @@ import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import ExportButton from "../../components/ExportButton";
+import { formatDate } from "../../lib/date";
 import {
   exportReceivableLedger,
   exportTable,
@@ -1960,8 +1961,8 @@ export default function Accounting() {
                             <td className="px-6 py-4 text-sm text-danger-600">
                               PKR {Number(item.amount).toLocaleString()}
                             </td>
-                            <td className="px-6 py-4 text-sm text-slate-600">{item.expense_date}</td>
-                            <td className="px-6 py-4 text-sm text-slate-600">{item.due_date ?? "—"}</td>
+                            <td className="px-6 py-4 text-sm text-slate-600">{formatDate(item.expense_date)}</td>
+                            <td className="px-6 py-4 text-sm text-slate-600">{item.due_date ? formatDate(item.due_date) : "—"}</td>
                             <td className="px-6 py-4">
                               <span className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${statusClass}`}>
                                 {status}
@@ -1969,7 +1970,7 @@ export default function Accounting() {
                               {status === "Paid" && item.paid_via && (
                                 <div className="text-[10px] text-slate-500 mt-1">
                                   via {item.paid_via}
-                                  {item.paid_at ? ` · ${new Date(item.paid_at).toLocaleDateString()}` : ""}
+                                  {item.paid_at ? ` · ${formatDate(item.paid_at)}` : ""}
                                 </div>
                               )}
                             </td>
@@ -2174,7 +2175,7 @@ export default function Accounting() {
                               )}
                             </td>
                             <td className="px-4 py-2 text-sm text-slate-600">{bank?.bank_name ?? "—"}</td>
-                            <td className="px-4 py-2 text-sm text-slate-600">{c.cheque_date}</td>
+                            <td className="px-4 py-2 text-sm text-slate-600">{formatDate(c.cheque_date)}</td>
                             <td className="px-4 py-2 text-sm text-slate-600">{c.recipient ?? "—"}</td>
                             <td className="px-4 py-2 text-sm text-slate-900 text-right">
                               PKR {Number(c.amount).toLocaleString()}
@@ -2608,7 +2609,7 @@ export default function Accounting() {
               </div>
               <div>
                 <p className="text-xs text-slate-500">Date</p>
-                <p className="text-slate-900">{chequeView.cheque_date}</p>
+                <p className="text-slate-900">{formatDate(chequeView.cheque_date)}</p>
               </div>
               <div>
                 <p className="text-xs text-slate-500">Recipient</p>
@@ -2976,7 +2977,7 @@ export default function Accounting() {
                         return (
                           <tr key={inv.id}>
                             <td className="px-3 py-2 text-xs font-mono text-slate-900">{inv.invoice_number}</td>
-                            <td className="px-3 py-2 text-xs text-slate-600">{inv.invoice_date}</td>
+                            <td className="px-3 py-2 text-xs text-slate-600">{formatDate(inv.invoice_date)}</td>
                             <td className="px-3 py-2 text-xs text-right text-brand-600">
                               PKR {Number(inv.invoice_amount).toLocaleString()}
                             </td>
@@ -3114,7 +3115,7 @@ export default function Accounting() {
                         Number(i.amount_received);
                       return (
                         <option key={i.id} value={i.id}>
-                          {i.invoice_number} · {i.invoice_date} · Outstanding PKR {out.toLocaleString()}
+                          {i.invoice_number} · {formatDate(i.invoice_date)} · Outstanding PKR {out.toLocaleString()}
                         </option>
                       );
                     })}
