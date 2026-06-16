@@ -568,41 +568,6 @@ export default function Invoices() {
       setError("Enter a positive payment amount.");
       return;
     }
-    // Item 6: allocate the payment to this client's unpaid invoices oldest-first.
-    // The FULL amount is always recorded into the chosen bank/cash; any excess
-    // beyond what's owed lands on the newest invoice, pushing that invoice's (and
-    // the client's) outstanding negative — i.e. a credit / advance.
-    const clientId = paymentInvoice.client_id;
-    const unpaid = invoices
-      .filter((i) => i.client_id === clientId)
-      .map((i) => ({
-        inv: i,
-        out: Number(i.invoice_amount) - Number(i.withholding_tax ?? 0) - Number(i.amount_received),
-      }))
-      .filter((x) => x.out > 0.0001)
-      .sort((a, b) =>
-        a.inv.invoice_date < b.inv.invoice_date
-          ? -1
-          : a.inv.invoice_date > b.inv.invoice_date
-            ? 1
-            : (a.inv.invoice_number ?? "").localeCompare(b.inv.invoice_number ?? ""),
-      );
-    // Build the allocation plan. The newest unpaid invoice absorbs whatever is
-    // left after clearing the rest (so an overpayment makes it negative). If
-    // nothing is outstanding, the whole payment goes on the clicked invoice.
-    const plan: { inv: InvoiceRow; pay: number }[] = [];
-    if (unpaid.length === 0) {
-      plan.push({ inv: paymentInvoice, pay: amt });
-    } else {
-      let left = amt;
-      unpaid.forEach(({ inv, out }, idx) => {
-        const isLast = idx === unpaid.length - 1;
-        const pay = isLast ? left : Math.min(left, out);
-        if (pay <= 0.0001) return;
-        plan.push({ inv, pay });
-        left -= pay;
-      });
-    }
     if (!paymentForm.payment_date) {
       setError("Select a payment date.");
       return;
@@ -614,61 +579,20 @@ export default function Invoices() {
     setPaymentSubmitting(true);
     setError(null);
     try {
-      const bankId =
-        paymentForm.payment_mode === "Bank" ? paymentForm.bank_account_id : null;
-
-      // Record the FULL amount received into the chosen bank/cash, applying the
-      // planned split across invoices (the last one may go negative).
-      const totalApplied = amt;
-      let firstPayId: string | null = null;
-      for (const { inv, pay } of plan) {
-        const { data: payRow, error: payErr } = await supabase
-          .from("invoice_payments")
-          .insert({
-            invoice_id: inv.id,
-            amount: pay,
-            payment_date: paymentForm.payment_date,
-            payment_mode: paymentForm.payment_mode,
-            bank_account_id: bankId,
-            notes: paymentForm.notes.trim() || null,
-          })
-          .select()
-          .single();
-        if (payErr) throw payErr;
-        if (!firstPayId) firstPayId = (payRow as InvoicePayment).id;
-        const { error: invUpErr } = await supabase
-          .from("invoices")
-          .update({ amount_received: Number(inv.amount_received) + pay, updated_at: new Date().toISOString() })
-          .eq("id", inv.id);
-        if (invUpErr) throw invUpErr;
-      }
-      const touched = plan.length;
-
-      const clientName = paymentInvoice.client?.name ?? "Client";
-      const desc = `Payment received (${paymentForm.payment_mode.toLowerCase()}) · ${clientName} · ${touched} invoice${touched === 1 ? "" : "s"} (oldest first)`;
-      if (paymentForm.payment_mode === "Cash") {
-        await applyCashDelta(totalApplied);
-        await logTransaction({
-          bank_account_id: null,
-          kind: "receipt",
-          amount: totalApplied,
-          cash_delta: totalApplied,
-          account_delta: 0,
-          description: desc,
-          reference_id: firstPayId ?? undefined,
-        });
-      } else {
-        await applyBankDelta(bankId!, totalApplied);
-        await logTransaction({
-          bank_account_id: bankId,
-          kind: "receipt",
-          amount: totalApplied,
-          cash_delta: 0,
-          account_delta: totalApplied,
-          description: desc,
-          reference_id: firstPayId ?? undefined,
-        });
-      }
+      // Single atomic DB transaction: oldest-first allocation across invoices,
+      // amount_received updates, the bank/cash move and the ledger entry all
+      // commit or roll back together — so a partial failure can never leave an
+      // orphaned payment row again.
+      const { error: rpcErr } = await supabase.rpc("record_invoice_payment", {
+        p_invoice_id: paymentInvoice.id,
+        p_amount: amt,
+        p_payment_date: paymentForm.payment_date,
+        p_payment_mode: paymentForm.payment_mode,
+        p_bank_account_id:
+          paymentForm.payment_mode === "Bank" ? paymentForm.bank_account_id : null,
+        p_notes: paymentForm.notes.trim() || null,
+      });
+      if (rpcErr) throw rpcErr;
 
       setIsPaymentOpen(false);
       setPaymentInvoice(null);
