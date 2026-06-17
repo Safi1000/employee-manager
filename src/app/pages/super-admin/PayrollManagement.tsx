@@ -35,6 +35,7 @@ type RowState = {
   advance: number;
   income_tax: number;
   eobi: number;
+  allowance: number;
   final_salary: number;
   net_salary: number;
   payment_mode: PaymentMode;
@@ -395,7 +396,10 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
         }
       }
       const empLeaves = priorLeavesByMonth.get(emp.id) ?? new Map<string, number>();
-      let allowed = base;
+      // Seed the accrual with the employee's one-time opening leave balance, so
+      // leaves banked before the carry anchor are available and then deplete/
+      // roll forward exactly like accrued leaves.
+      let allowed = base + Number(emp.opening_leaves ?? 0);
       for (const k of monthKeys) {
         const used = empLeaves.get(k) ?? 0;
         const unused = Math.max(0, allowed - used);
@@ -430,6 +434,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
         advance: computedAdvance,
         income_tax: 0,
         eobi: 0,
+        allowance: Number(existing?.allowance ?? emp.allowance ?? 0),
         final_salary: 0,
         net_salary: 0,
         payment_mode: (existing?.payment_mode ?? "Cash") as PaymentMode,
@@ -480,10 +485,13 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       // EOBI: per-client flat amount, applied when employee has a client and
       // that client has eobi_enabled.
       merged.eobi = emp.client_id ? clientEobiAmount.get(emp.client_id) ?? 0 : 0;
-      merged.net_salary = Math.max(
-        0,
-        Math.round(merged.final_salary - merged.income_tax - merged.eobi - merged.advance),
-      );
+      // Allowance is always disbursed alongside salary, untaxed, regardless of
+      // attendance — so it's added flat on top of the (clamped) net.
+      merged.net_salary =
+        Math.max(
+          0,
+          Math.round(merged.final_salary - merged.income_tax - merged.eobi - merged.advance),
+        ) + Math.round(merged.allowance);
       return merged;
     });
   }, [employees, payslipsMap, attendanceAgg, advancesByEmployee, clientAllowedLeaves, clientEobiAmount, carriedAllowance, selectedPeriod, rowEdits]);
@@ -565,6 +573,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       advance: row.advance,
       income_tax: row.income_tax,
       eobi: row.eobi,
+      allowance: row.allowance,
       final_salary: row.final_salary,
       net_salary: row.net_salary,
       payment_mode: row.payment_mode,
@@ -963,6 +972,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     if (row.income_tax > 0) line("Income Tax (1% over PKR 50,000)", `− PKR ${Math.round(row.income_tax).toLocaleString()}`);
     if (row.eobi > 0) line("EOBI", `− PKR ${Math.round(row.eobi).toLocaleString()}`);
     line("Advance", `− PKR ${row.advance.toLocaleString()}`);
+    if (row.allowance > 0) line("Allowance (always paid)", `+ PKR ${Math.round(row.allowance).toLocaleString()}`);
     y += 6;
     doc.setFontSize(14);
     line("Net Salary", `PKR ${row.net_salary.toLocaleString()}`);
@@ -1507,6 +1517,23 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                     <div className="flex justify-between">
                       <span className="text-slate-500">Advance</span>
                       <span className="text-danger-700">− PKR {Math.round(selectedRow.advance).toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500">Allowance (always paid)</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-success-700">+ PKR</span>
+                        <input
+                          type="number"
+                          min={0}
+                          value={selectedRow.allowance}
+                          onChange={(e) =>
+                            updateEdit(selectedRow.employee.id, {
+                              allowance: Math.max(0, Number(e.target.value) || 0),
+                            })
+                          }
+                          className="w-24 px-2 py-1 border border-slate-200 rounded text-sm text-right"
+                        />
+                      </div>
                     </div>
                     <div className="flex justify-between pt-1 border-t border-slate-100">
                       <span className="text-base text-slate-900">Net Salary</span>

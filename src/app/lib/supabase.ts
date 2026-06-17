@@ -504,6 +504,11 @@ export type Employee = {
   status: "Active" | "On Leave" | "Inactive";
   base_salary: number | null;
   per_day_salary: number | null;
+  // Always disbursed alongside salary, regardless of attendance. Untaxed.
+  allowance: number | null;
+  // One-time opening leave balance (seeds carry-forward accrual). null = never
+  // set yet (form still editable); any number incl. 0 = set (form locks it).
+  opening_leaves: number | null;
   join_date: string | null;
   bank_name: string | null;
   bank_account: string | null;
@@ -903,6 +908,7 @@ export type Payslip = {
   advance: number;
   income_tax: number;
   eobi: number;
+  allowance: number;
   final_salary: number;
   net_salary: number;
   payment_mode: PaymentMode;

@@ -42,6 +42,8 @@ type FormState = {
   shift: "day" | "night";
   base_salary: string;
   per_day_salary: string;
+  allowance: string;
+  opening_leaves: string;
   join_date: string;
   bank_name: string;
   bank_account: string;
@@ -83,6 +85,8 @@ const emptyForm: FormState = {
   shift: "day",
   base_salary: "",
   per_day_salary: "",
+  allowance: "",
+  opening_leaves: "",
   join_date: "",
   bank_name: "",
   bank_account: "",
@@ -451,6 +455,11 @@ export default function EmployeeManagement() {
           shift: form.shift,
           base_salary: form.base_salary ? Number(form.base_salary) : null,
           per_day_salary: form.per_day_salary ? Number(form.per_day_salary) : null,
+          allowance: form.allowance ? Math.max(0, Number(form.allowance)) : 0,
+          opening_leaves:
+            form.opening_leaves === ""
+              ? null
+              : Math.max(0, Math.floor(Number(form.opening_leaves) || 0)),
           join_date: form.join_date || null,
           bank_name: form.bank_name.trim() || null,
           bank_account: form.bank_account.trim() || null,
@@ -567,6 +576,8 @@ export default function EmployeeManagement() {
       shift: emp.shift,
       base_salary: baseStr,
       per_day_salary: computePerDay(baseStr),
+      allowance: emp.allowance != null ? String(emp.allowance) : "",
+      opening_leaves: emp.opening_leaves != null ? String(emp.opening_leaves) : "",
       join_date: emp.join_date ?? "",
       bank_name: emp.bank_name ?? "",
       bank_account: emp.bank_account ?? "",
@@ -614,6 +625,17 @@ export default function EmployeeManagement() {
           status: editStatus,
           base_salary: editForm.base_salary ? Number(editForm.base_salary) : null,
           per_day_salary: editForm.per_day_salary ? Number(editForm.per_day_salary) : null,
+          allowance: editForm.allowance ? Math.max(0, Number(editForm.allowance)) : 0,
+          // Opening leaves are one-time: only writable while still unset (null).
+          // Once a value exists it's locked, so we omit it from the update.
+          ...(selectedEmployee.opening_leaves == null
+            ? {
+                opening_leaves:
+                  editForm.opening_leaves === ""
+                    ? null
+                    : Math.max(0, Math.floor(Number(editForm.opening_leaves) || 0)),
+              }
+            : {}),
           join_date: editForm.join_date || null,
           bank_name: editForm.bank_name.trim() || null,
           bank_account: editForm.bank_account.trim() || null,
@@ -1137,6 +1159,37 @@ export default function EmployeeManagement() {
                 </p>
               </div>
               <div>
+                <label className="block text-sm text-slate-700 mb-1">Allowance (PKR)</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={form.allowance}
+                  onChange={(e) => setForm({ ...form, allowance: e.target.value })}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  placeholder="0"
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  Always paid with salary, regardless of attendance.
+                </p>
+              </div>
+              {form.category === "client" &&
+                clients.find((c) => c.id === form.client_id)?.leave_carry_forward && (
+                  <div>
+                    <label className="block text-sm text-slate-700 mb-1">Opening Leaves</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={form.opening_leaves}
+                      onChange={(e) => setForm({ ...form, opening_leaves: e.target.value })}
+                      className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                      placeholder="0"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">
+                      One-time starting leave balance for carry-forward. Set once — can't be changed later.
+                    </p>
+                  </div>
+                )}
+              <div>
                 <label className="block text-sm text-slate-700 mb-1">Join Date</label>
                 <input
                   type="date"
@@ -1306,6 +1359,20 @@ export default function EmployeeManagement() {
                       : "—"}
                   </p>
                 </div>
+                <div>
+                  <p className="text-slate-500 mb-1">Allowance</p>
+                  <p className="text-slate-900">
+                    {selectedEmployee.allowance
+                      ? `PKR ${Number(selectedEmployee.allowance).toLocaleString()}`
+                      : "—"}
+                  </p>
+                </div>
+                {selectedEmployee.opening_leaves != null && (
+                  <div>
+                    <p className="text-slate-500 mb-1">Opening Leaves</p>
+                    <p className="text-slate-900">{selectedEmployee.opening_leaves}</p>
+                  </div>
+                )}
                 <div>
                   <p className="text-slate-500 mb-1">Join Date</p>
                   <p className="text-slate-900">{selectedEmployee.join_date ? formatDate(selectedEmployee.join_date) : "—"}</p>
@@ -1580,6 +1647,45 @@ export default function EmployeeManagement() {
                     Auto-computed: Base Salary ÷ {daysInCurrentMonth()} days this month.
                   </p>
                 </div>
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">Allowance (PKR)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editForm.allowance}
+                    onChange={(e) => setEditForm({ ...editForm, allowance: e.target.value })}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    placeholder="0"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">
+                    Always paid with salary, regardless of attendance.
+                  </p>
+                </div>
+                {editForm.category === "client" &&
+                  clients.find((c) => c.id === editForm.client_id)?.leave_carry_forward && (
+                    <div>
+                      <label className="block text-sm text-slate-700 mb-1">Opening Leaves</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={editForm.opening_leaves}
+                        disabled={selectedEmployee?.opening_leaves != null}
+                        readOnly={selectedEmployee?.opening_leaves != null}
+                        onChange={(e) => setEditForm({ ...editForm, opening_leaves: e.target.value })}
+                        className={
+                          selectedEmployee?.opening_leaves != null
+                            ? "w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50 text-slate-500 cursor-not-allowed"
+                            : "w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                        }
+                        placeholder="0"
+                      />
+                      <p className="text-xs text-slate-500 mt-1">
+                        {selectedEmployee?.opening_leaves != null
+                          ? "Locked — opening leaves can only be set once."
+                          : "One-time starting leave balance for carry-forward. Set once — can't be changed later."}
+                      </p>
+                    </div>
+                  )}
                 <div>
                   <label className="block text-sm text-slate-700 mb-1">Join Date</label>
                   <input
