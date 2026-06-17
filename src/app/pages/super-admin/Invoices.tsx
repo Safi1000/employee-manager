@@ -817,8 +817,12 @@ export default function Invoices() {
               variant="primary"
               size="md"
               onClick={() => {
-                // Item 9: prefill the next invoice number = total invoices + 1.
-                setForm({ ...emptyForm(), invoice_number: String(invoices.length + 1) });
+                // Prefill the next invoice number as INV-0NN (total invoices + 1,
+                // zero-padded to at least 3 digits) — e.g. 56 invoices → INV-057.
+                setForm({
+                  ...emptyForm(),
+                  invoice_number: `INV-${String(invoices.length + 1).padStart(3, "0")}`,
+                });
                 setIsAddOpen(true);
               }}
             >

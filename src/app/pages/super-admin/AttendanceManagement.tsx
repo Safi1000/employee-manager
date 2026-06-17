@@ -77,6 +77,8 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   const [locationFilter, setLocationFilter] = useState("all");
   const [branchFilter, setBranchFilter] = useState("all");
   const [shiftFilter, setShiftFilter] = useState<"all" | "day" | "night">("all");
+  // Employee category filter (same set as the Employees tab) — e.g. Office Staff only.
+  const [categoryFilter, setCategoryFilter] = useState<"all" | "client" | "office_staff" | "reliever">("all");
   const [unmarkedOnly, setUnmarkedOnly] = useState<boolean>(false);
   const [empSearch, setEmpSearch] = useState("");
   const [historyFrom, setHistoryFrom] = useState<string>(daysAgo(13));
@@ -519,11 +521,12 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         if (!inPrimary && !inAdditional) return false;
       }
       if (shiftFilter !== "all" && e.shift !== shiftFilter) return false;
+      if (categoryFilter !== "all" && e.category !== categoryFilter) return false;
       if (unmarkedOnly && todayRecords[e.id]) return false;
       if (q && !e.full_name.toLowerCase().includes(q) && !e.employee_code.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [employees, clientFilter, locationFilter, branchFilter, shiftFilter, unmarkedOnly, todayRecords, empSearch, relieversOnly]);
+  }, [employees, clientFilter, locationFilter, branchFilter, shiftFilter, categoryFilter, unmarkedOnly, todayRecords, empSearch, relieversOnly]);
 
   const markStatus = async (
     employeeId: string,
@@ -1001,6 +1004,21 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                 ))}
               </select>
             </div>
+            {!relieversOnly && (
+              <div>
+                <label className="block text-sm text-slate-700 mb-2">Category</label>
+                <select
+                  value={categoryFilter}
+                  onChange={(e) => setCategoryFilter(e.target.value as typeof categoryFilter)}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                >
+                  <option value="all">All Categories</option>
+                  <option value="client">Client</option>
+                  <option value="office_staff">Office Staff</option>
+                  <option value="reliever">Reliever</option>
+                </select>
+              </div>
+            )}
             <div>
               <label className="block text-sm text-slate-700 mb-2">Shift</label>
               <select

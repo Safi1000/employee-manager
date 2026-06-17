@@ -372,6 +372,25 @@ export default function EmployeeManagement() {
     }
   };
 
+  // Toggle Active ↔ Inactive straight from the status badge (no Edit needed).
+  // "On Leave" toggles to Active. Use the Edit form to set On Leave specifically.
+  const [statusTogglingId, setStatusTogglingId] = useState<string | null>(null);
+  const toggleEmployeeStatus = async (emp: EmployeeRow) => {
+    const next = emp.status === "Active" ? "Inactive" : "Active";
+    setStatusTogglingId(emp.id);
+    setError(null);
+    const { error: upErr } = await supabase
+      .from("employees")
+      .update({ status: next, updated_at: new Date().toISOString() })
+      .eq("id", emp.id);
+    setStatusTogglingId(null);
+    if (upErr) {
+      setError(upErr.message);
+      return;
+    }
+    await loadData();
+  };
+
   const handleDelete = async (emp: EmployeeRow) => {
     const confirmed = window.confirm(
       `Delete ${emp.full_name} (${emp.employee_code})? This will permanently remove the employee and all their uploaded documents.`
@@ -829,17 +848,21 @@ export default function EmployeeManagement() {
                         </span>
                       </td>
                       <td className="px-6 py-4">
-                        <span
-                          className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
+                        <button
+                          type="button"
+                          disabled={statusTogglingId === employee.id}
+                          onClick={() => toggleEmployeeStatus(employee)}
+                          title={employee.status === "Active" ? "Click to mark Inactive" : "Click to mark Active"}
+                          className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs transition-colors disabled:opacity-50 ${
                             employee.status === "Active"
-                              ? "bg-success-50 text-success-700"
+                              ? "bg-success-50 text-success-700 hover:bg-success-100"
                               : employee.status === "On Leave"
-                              ? "bg-warning-50 text-warning-700"
-                              : "bg-slate-100 text-slate-600"
+                              ? "bg-warning-50 text-warning-700 hover:bg-warning-100"
+                              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                           }`}
                         >
                           {employee.status}
-                        </span>
+                        </button>
                       </td>
                       <td className="px-6 py-4 flex gap-2">
                         <Button variant="ghost" size="sm" onClick={() => openView(employee)}>

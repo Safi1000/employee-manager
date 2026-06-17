@@ -141,6 +141,8 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
   const [disbursedFilter, setDisbursedFilter] = useState<"all" | "yes" | "no">("all");
   // Active / Inactive employee tab split (Inactive = anything not currently Active).
   const [empTab, setEmpTab] = useState<"all" | "active" | "inactive">("all");
+  // Employee category filter (same set as the Employees tab) — e.g. Office Staff only.
+  const [categoryFilter, setCategoryFilter] = useState<"all" | "client" | "office_staff" | "reliever">("all");
   const [branches, setBranches] = useState<Branch[]>([]);
 
   const [periodOptions, setPeriodOptions] = useState<string[]>([currentPeriod, previousPeriod]);
@@ -517,9 +519,10 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       if (disbursedFilter !== "all" && (disbursedFilter === "yes" ? !r.disbursed : r.disbursed)) return false;
       if (empTab === "active" && e.status !== "Active") return false;
       if (empTab === "inactive" && e.status === "Active") return false;
+      if (categoryFilter !== "all" && (e.category ?? "client") !== categoryFilter) return false;
       return true;
     });
-  }, [rows, search, shiftFilter, locationFilter, clientFilter, branchFilter, statusFilter, disbursedFilter, empTab, employeeAddlBranches, relieversOnly, branches]);
+  }, [rows, search, shiftFilter, locationFilter, clientFilter, branchFilter, statusFilter, disbursedFilter, empTab, categoryFilter, employeeAddlBranches, relieversOnly, branches]);
 
   const selectedRow = useMemo(
     () => rows.find((r) => r.employee.id === selectedId) ?? null,
@@ -1133,6 +1136,19 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                       <option key={b.id} value={b.id}>{b.name}</option>
                     ))}
                   </select>
+                  {!relieversOnly && (
+                    <select
+                      value={categoryFilter}
+                      onChange={(e) => setCategoryFilter(e.target.value as typeof categoryFilter)}
+                      className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                      title="Filter by employee category"
+                    >
+                      <option value="all">All Categories</option>
+                      <option value="client">Client</option>
+                      <option value="office_staff">Office Staff</option>
+                      <option value="reliever">Reliever</option>
+                    </select>
+                  )}
                   <select
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value as "all" | "Cleared" | "Pending")}
