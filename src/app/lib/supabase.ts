@@ -506,9 +506,13 @@ export type Employee = {
   per_day_salary: number | null;
   // Always disbursed alongside salary, regardless of attendance. Untaxed.
   allowance: number | null;
-  // One-time opening leave balance (seeds carry-forward accrual). null = never
-  // set yet (form still editable); any number incl. 0 = set (form locks it).
+  // One-time opening leave balance that OVERRIDES the accumulated carry-forward
+  // balance from `opening_leaves_month` forward. null = never set yet (form still
+  // editable); any number incl. 0 = set (form locks it).
   opening_leaves: number | null;
+  // Month (first-of-month) the opening override takes effect. Set alongside
+  // opening_leaves; null when no opening is set.
+  opening_leaves_month: string | null;
   join_date: string | null;
   bank_name: string | null;
   bank_account: string | null;

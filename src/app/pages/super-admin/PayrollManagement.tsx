@@ -381,10 +381,21 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       if (!emp.client_id) continue;
       if (!clientCarryEnabled.get(emp.client_id)) continue;
       const base = clientAllowedLeaves.get(emp.client_id) ?? 0;
-      // Months from the carry anchor up to (but excluding) the selected period.
-      // No anchor → no backlog (this period simply gets `base`), which avoids the
-      // old "compounds out of nowhere" bug (item 8).
-      const startStr = clientCarryStart.get(emp.client_id);
+      // Opening leaves OVERRIDE the accumulated balance from their effective
+      // month forward: once active, the accrual restarts at `base + opening` and
+      // anchors at opening_leaves_month instead of the client's carry start, so
+      // any accrual recorded before it is discarded. Earlier periods keep the
+      // client's original carry-start accrual (no opening).
+      const selKey = `${py}-${String(pm).padStart(2, "0")}`;
+      const openingMonth = emp.opening_leaves_month;
+      const openingActive =
+        emp.opening_leaves != null &&
+        !!openingMonth &&
+        openingMonth.slice(0, 7) <= selKey;
+      const startStr = openingActive ? openingMonth : clientCarryStart.get(emp.client_id);
+      // Months from the anchor up to (but excluding) the selected period.
+      // No anchor → no backlog (this period simply gets the seed), which avoids
+      // the old "compounds out of nowhere" bug (item 8).
       const monthKeys: string[] = [];
       if (startStr) {
         let y = Number(startStr.slice(0, 4));
@@ -396,10 +407,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
         }
       }
       const empLeaves = priorLeavesByMonth.get(emp.id) ?? new Map<string, number>();
-      // Seed the accrual with the employee's one-time opening leave balance, so
-      // leaves banked before the carry anchor are available and then deplete/
-      // roll forward exactly like accrued leaves.
-      let allowed = base + Number(emp.opening_leaves ?? 0);
+      let allowed = openingActive ? base + Number(emp.opening_leaves ?? 0) : base;
       for (const k of monthKeys) {
         const used = empLeaves.get(k) ?? 0;
         const unused = Math.max(0, allowed - used);

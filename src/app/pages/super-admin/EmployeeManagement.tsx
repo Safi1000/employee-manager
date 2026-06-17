@@ -117,6 +117,23 @@ const daysInCurrentMonth = () => {
   return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
 };
 
+// First-of-month for today, used to stamp when an opening-leaves override takes
+// effect (the override applies from the month it's entered, forward).
+const firstOfCurrentMonth = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+};
+
+// Parse the "Opening Leaves" form field into the {opening_leaves, month} pair to
+// persist. Empty string → not set (null). Stamps the effective month on set.
+const openingLeavesPayload = (raw: string) =>
+  raw === ""
+    ? { opening_leaves: null, opening_leaves_month: null }
+    : {
+        opening_leaves: Math.max(0, Math.floor(Number(raw) || 0)),
+        opening_leaves_month: firstOfCurrentMonth(),
+      };
+
 const computePerDay = (baseStr: string): string => {
   const base = Number(baseStr);
   if (!Number.isFinite(base) || base <= 0) return "";
@@ -456,10 +473,7 @@ export default function EmployeeManagement() {
           base_salary: form.base_salary ? Number(form.base_salary) : null,
           per_day_salary: form.per_day_salary ? Number(form.per_day_salary) : null,
           allowance: form.allowance ? Math.max(0, Number(form.allowance)) : 0,
-          opening_leaves:
-            form.opening_leaves === ""
-              ? null
-              : Math.max(0, Math.floor(Number(form.opening_leaves) || 0)),
+          ...openingLeavesPayload(form.opening_leaves),
           join_date: form.join_date || null,
           bank_name: form.bank_name.trim() || null,
           bank_account: form.bank_account.trim() || null,
@@ -629,12 +643,7 @@ export default function EmployeeManagement() {
           // Opening leaves are one-time: only writable while still unset (null).
           // Once a value exists it's locked, so we omit it from the update.
           ...(selectedEmployee.opening_leaves == null
-            ? {
-                opening_leaves:
-                  editForm.opening_leaves === ""
-                    ? null
-                    : Math.max(0, Math.floor(Number(editForm.opening_leaves) || 0)),
-              }
+            ? openingLeavesPayload(editForm.opening_leaves)
             : {}),
           join_date: editForm.join_date || null,
           bank_name: editForm.bank_name.trim() || null,
@@ -1185,7 +1194,8 @@ export default function EmployeeManagement() {
                       placeholder="0"
                     />
                     <p className="text-xs text-slate-500 mt-1">
-                      One-time starting leave balance for carry-forward. Set once — can't be changed later.
+                      One-time. Becomes the accumulated balance from this month forward
+                      (overrides prior accrual), then rolls forward. Can't be changed later.
                     </p>
                   </div>
                 )}
@@ -1370,7 +1380,12 @@ export default function EmployeeManagement() {
                 {selectedEmployee.opening_leaves != null && (
                   <div>
                     <p className="text-slate-500 mb-1">Opening Leaves</p>
-                    <p className="text-slate-900">{selectedEmployee.opening_leaves}</p>
+                    <p className="text-slate-900">
+                      {selectedEmployee.opening_leaves}
+                      {selectedEmployee.opening_leaves_month
+                        ? ` (from ${formatDate(selectedEmployee.opening_leaves_month)})`
+                        : ""}
+                    </p>
                   </div>
                 )}
                 <div>
@@ -1681,8 +1696,12 @@ export default function EmployeeManagement() {
                       />
                       <p className="text-xs text-slate-500 mt-1">
                         {selectedEmployee?.opening_leaves != null
-                          ? "Locked — opening leaves can only be set once."
-                          : "One-time starting leave balance for carry-forward. Set once — can't be changed later."}
+                          ? `Locked — set once${
+                              selectedEmployee.opening_leaves_month
+                                ? `, effective ${formatDate(selectedEmployee.opening_leaves_month)}`
+                                : ""
+                            }.`
+                          : "One-time. Becomes the accumulated balance from this month forward (overrides prior accrual), then rolls forward. Can't be changed later."}
                       </p>
                     </div>
                   )}
