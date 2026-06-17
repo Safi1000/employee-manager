@@ -49,6 +49,7 @@ export type Company = {
   presentation_currency?: string | null;
   fiscal_year_start?: string | null;
   logo_url?: string | null;
+  theme?: string | null;
   created_at?: string;
   updated_at?: string;
 };

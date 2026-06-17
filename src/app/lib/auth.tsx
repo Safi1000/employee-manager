@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase, type Company, type Profile, type UserRole } from "./supabase";
+import { applyTheme } from "./theme";
 
 type AuthCtx = {
   session: Session | null;
@@ -139,6 +140,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       sub.subscription.unsubscribe();
     };
   }, []);
+
+  // Apply the active company's brand palette (overrides the --color-brand-*
+  // CSS vars). Resets to the default palette when no company is loaded
+  // (logged out / SSA at the company picker).
+  useEffect(() => {
+    applyTheme(company?.theme);
+  }, [company?.theme]);
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });

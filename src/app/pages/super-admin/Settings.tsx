@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Plus, Loader2, AlertCircle, X, Trash2, Mail, Send, LayoutDashboard, FileText, ArrowUp, ArrowDown, Building2 } from "lucide-react";
+import { Plus, Loader2, AlertCircle, X, Trash2, Mail, Send, LayoutDashboard, FileText, ArrowUp, ArrowDown, Building2, Palette, Check } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -15,6 +15,7 @@ import {
   type InvoiceTemplateItem,
 } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
+import { THEME_OPTIONS, DEFAULT_THEME, applyTheme, type ThemeKey } from "../../lib/theme";
 
 type LocationRow = { id: string; name: string; employees: number };
 type BranchRow = { id: string; name: string; is_head_office: boolean; employees: number };
@@ -54,6 +55,41 @@ export default function Settings() {
     [company?.dashboard_hidden_widgets],
   );
   const [hiddenWidgets, setHiddenWidgets] = useState<Set<string>>(initialHidden);
+
+  // Appearance (brand palette). SA/SSA only — see canManageNotifications gate.
+  const [themeKey, setThemeKey] = useState<string>(company?.theme ?? DEFAULT_THEME);
+  const [themeSaving, setThemeSaving] = useState<string | null>(null);
+  const [themeSavedAt, setThemeSavedAt] = useState<string | null>(null);
+  useEffect(() => {
+    setThemeKey(company?.theme ?? DEFAULT_THEME);
+  }, [company?.theme]);
+
+  const selectTheme = async (key: ThemeKey) => {
+    if (!company?.id || themeKey === key || themeSaving) return;
+    const prev = themeKey;
+    setThemeKey(key);
+    applyTheme(key); // instant, optimistic preview
+    setThemeSaving(key);
+    setThemeSavedAt(null);
+    setError(null);
+    try {
+      const { error: upErr } = await supabase
+        .from("companies")
+        .update({ theme: key })
+        .eq("id", company.id);
+      if (upErr) throw upErr;
+      setThemeSavedAt(new Date().toLocaleTimeString());
+      await refreshProfile();
+    } catch (e: any) {
+      // Roll back the preview if the write failed.
+      setThemeKey(prev);
+      applyTheme(prev);
+      setError(e?.message ?? String(e));
+    } finally {
+      setThemeSaving(null);
+    }
+  };
+
   const [dashboardSaving, setDashboardSaving] = useState(false);
   const [dashboardSavedAt, setDashboardSavedAt] = useState<string | null>(null);
   useEffect(() => {
@@ -885,6 +921,67 @@ export default function Settings() {
         <div className="mb-6">
           <CompanyProfileSection />
         </div>
+
+        {canManageNotifications && (
+          <div className="bg-white rounded-lg border border-slate-200 mb-6">
+            <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Palette className="w-4 h-4 text-slate-600" strokeWidth={1.5} />
+                <h2 className="text-base text-slate-900">Appearance</h2>
+              </div>
+              {themeSavedAt && (
+                <span className="text-xs text-success-600">Saved at {themeSavedAt}</span>
+              )}
+            </div>
+            <div className="p-6">
+              <p className="text-xs text-slate-500 mb-4">
+                Choose the accent color for {company?.name ?? "your company"}. This applies to
+                every user in the company — sidebar highlights, primary buttons and badges.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {THEME_OPTIONS.map((opt) => {
+                  const selected = themeKey === opt.key;
+                  const busy = themeSaving === opt.key;
+                  return (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      onClick={() => selectTheme(opt.key)}
+                      disabled={!!themeSaving}
+                      aria-pressed={selected}
+                      className={`text-left rounded-lg border p-4 transition-colors disabled:cursor-not-allowed ${
+                        selected
+                          ? "border-brand-600 ring-2 ring-brand-200 bg-brand-50"
+                          : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                      } ${themeSaving && !busy ? "opacity-60" : ""}`}
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-sm text-slate-900">{opt.label}</span>
+                        {busy ? (
+                          <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+                        ) : selected ? (
+                          <Check className="w-4 h-4 text-brand-600" strokeWidth={2} />
+                        ) : null}
+                      </div>
+                      <div className="flex gap-1.5 mb-2">
+                        {[opt.scale[600], opt.scale[500], opt.scale[200], opt.scale[100]].map(
+                          (c, i) => (
+                            <span
+                              key={i}
+                              className="h-6 flex-1 rounded"
+                              style={{ backgroundColor: c }}
+                            />
+                          ),
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500">{opt.description}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           {renderLocations()}
