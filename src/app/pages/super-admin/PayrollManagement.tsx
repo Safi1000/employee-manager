@@ -1024,7 +1024,8 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
         }
       />
 
-      <div className="flex-1 overflow-y-auto p-8">
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="px-8 pt-8 pb-0 flex-shrink-0">
         {error && (
           <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
@@ -1066,9 +1067,11 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
             </p>
           </div>
         </div>
+        </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2">
+        <div className="flex-1 overflow-hidden px-8 pb-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
+          <div className="lg:col-span-2 overflow-y-auto">
             <div className="bg-white rounded-lg border border-slate-200">
               <div className="p-6 border-b border-slate-200 space-y-3">
                 <div className="flex items-center gap-3 flex-wrap">
@@ -1347,8 +1350,8 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
             </div>
           </div>
 
-          <div className="lg:col-span-1">
-            <div className="bg-white rounded-lg border border-slate-200 p-6 sticky top-4 max-h-[calc(100vh-6rem)] overflow-y-auto">
+          <div className="lg:col-span-1 overflow-y-auto">
+            <div className="bg-white rounded-lg border border-slate-200 p-6">
               <h3 className="text-base mb-4 text-slate-900">
                 Salary Calculation
                 {!isCurrent && (
@@ -1640,6 +1643,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
               )}
             </div>
           </div>
+        </div>
         </div>
       </div>
 
