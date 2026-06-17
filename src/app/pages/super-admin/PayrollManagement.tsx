@@ -1072,7 +1072,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
             <div className="bg-white rounded-lg border border-slate-200">
               <div className="p-6 border-b border-slate-200 space-y-3">
                 <div className="flex items-center gap-3 flex-wrap">
-                  <div className="flex-1 min-w-[220px] relative">
+                  <div className="w-[220px] min-w-[180px] relative">
                     <Search
                       className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
                       strokeWidth={1.5}
@@ -1081,7 +1081,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                       type="text"
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
-                      placeholder="Search by employee ID, name, or phone…"
+                      placeholder="Search employee…"
                       className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                     />
                   </div>
@@ -1097,8 +1097,6 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                       </option>
                     ))}
                   </select>
-                </div>
-                <div className="flex items-center gap-3 flex-wrap">
                   <select
                     value={shiftFilter}
                     onChange={(e) => setShiftFilter(e.target.value as "all" | "day" | "night")}
@@ -1108,6 +1106,26 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                     <option value="day">Day</option>
                     <option value="night">Night</option>
                   </select>
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value as "all" | "Cleared" | "Pending")}
+                    className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  >
+                    <option value="all">All Status</option>
+                    <option value="Pending">Pending</option>
+                    <option value="Cleared">Cleared</option>
+                  </select>
+                  <select
+                    value={disbursedFilter}
+                    onChange={(e) => setDisbursedFilter(e.target.value as "all" | "yes" | "no")}
+                    className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  >
+                    <option value="all">All Disbursed</option>
+                    <option value="yes">Disbursed</option>
+                    <option value="no">Not Disbursed</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-3 flex-wrap">
                   <select
                     value={locationFilter}
                     onChange={(e) => setLocationFilter(e.target.value)}
@@ -1149,24 +1167,6 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                       <option value="reliever">Reliever</option>
                     </select>
                   )}
-                  <select
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value as "all" | "Cleared" | "Pending")}
-                    className="px-3 py-2 border border-slate-200 rounded-md text-sm"
-                  >
-                    <option value="all">All Status</option>
-                    <option value="Pending">Pending</option>
-                    <option value="Cleared">Cleared</option>
-                  </select>
-                  <select
-                    value={disbursedFilter}
-                    onChange={(e) => setDisbursedFilter(e.target.value as "all" | "yes" | "no")}
-                    className="px-3 py-2 border border-slate-200 rounded-md text-sm"
-                  >
-                    <option value="all">All Disbursed</option>
-                    <option value="yes">Disbursed</option>
-                    <option value="no">Not Disbursed</option>
-                  </select>
                 </div>
               </div>
 
@@ -1348,7 +1348,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
           </div>
 
           <div className="lg:col-span-1">
-            <div className="bg-white rounded-lg border border-slate-200 p-6 sticky top-4">
+            <div className="bg-white rounded-lg border border-slate-200 p-6 sticky top-4 max-h-[calc(100vh-6rem)] overflow-y-auto">
               <h3 className="text-base mb-4 text-slate-900">
                 Salary Calculation
                 {!isCurrent && (
