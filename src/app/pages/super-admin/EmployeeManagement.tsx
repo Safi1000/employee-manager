@@ -375,8 +375,17 @@ export default function EmployeeManagement() {
   // Toggle Active ↔ Inactive straight from the status badge (no Edit needed).
   // "On Leave" toggles to Active. Use the Edit form to set On Leave specifically.
   const [statusTogglingId, setStatusTogglingId] = useState<string | null>(null);
-  const toggleEmployeeStatus = async (emp: EmployeeRow) => {
+  const [statusConfirmTarget, setStatusConfirmTarget] = useState<EmployeeRow | null>(null);
+
+  const requestStatusToggle = (emp: EmployeeRow) => {
+    setStatusConfirmTarget(emp);
+  };
+
+  const confirmStatusToggle = async () => {
+    if (!statusConfirmTarget) return;
+    const emp = statusConfirmTarget;
     const next = emp.status === "Active" ? "Inactive" : "Active";
+    setStatusConfirmTarget(null);
     setStatusTogglingId(emp.id);
     setError(null);
     const { error: upErr } = await supabase
@@ -851,7 +860,7 @@ export default function EmployeeManagement() {
                         <button
                           type="button"
                           disabled={statusTogglingId === employee.id}
-                          onClick={() => toggleEmployeeStatus(employee)}
+                          onClick={() => requestStatusToggle(employee)}
                           title={employee.status === "Active" ? "Click to mark Inactive" : "Click to mark Active"}
                           className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs transition-colors disabled:opacity-50 ${
                             employee.status === "Active"
@@ -1676,6 +1685,45 @@ export default function EmployeeManagement() {
               </button>
             </div>
           </form>
+        )}
+      </Modal>
+      <Modal
+        isOpen={statusConfirmTarget !== null}
+        onClose={() => setStatusConfirmTarget(null)}
+        title="Confirm Status Change"
+        size="sm"
+      >
+        {statusConfirmTarget && (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600">
+              Are you sure you want to mark{" "}
+              <span className="text-slate-900 font-medium">
+                {statusConfirmTarget.full_name}
+              </span>{" "}
+              ({statusConfirmTarget.employee_code}) as{" "}
+              <span className="font-medium">
+                {statusConfirmTarget.status === "Active" ? "Inactive" : "Active"}
+              </span>
+              ?
+            </p>
+            <div className="flex items-center gap-3 pt-2">
+              <Button
+                variant="primary"
+                size="md"
+                className="flex-1"
+                onClick={confirmStatusToggle}
+              >
+                Yes, Mark {statusConfirmTarget.status === "Active" ? "Inactive" : "Active"}
+              </Button>
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={() => setStatusConfirmTarget(null)}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
         )}
       </Modal>
     </>
