@@ -214,6 +214,43 @@ export function useAuth() {
   return ctx;
 }
 
+// Map the edge functions' machine error codes to readable messages. Anything
+// not listed falls through to the raw code/detail so we never hide information.
+const FN_ERROR_MESSAGES: Record<string, string> = {
+  missing_token: "Your session expired — sign in again.",
+  invalid_token: "Your session expired — sign in again.",
+  no_profile: "Your account has no profile on this company.",
+  forbidden: "You don't have permission to do that.",
+  wrong_company: "You can only manage users in your own company.",
+  company_id_required: "Cannot determine your company.",
+  company_not_found: "That company no longer exists.",
+  branch_not_found: "The selected branch no longer exists.",
+  branch_company_mismatch: "The selected branch belongs to another company.",
+  email_and_password_required: "Email and password are required.",
+  password_too_short: "Password must be at least 8 characters.",
+  invalid_role: "Invalid role.",
+};
+
+// supabase-js replaces any non-2xx response body with the generic
+// "Edge Function returned a non-2xx status code", hiding the real reason. Pull
+// the structured { error, detail } back out of the response so the UI can show
+// what actually went wrong.
+async function unwrapFnError(error: unknown): Promise<string> {
+  const fallback = error instanceof Error ? error.message : String(error);
+  const ctx = (error as { context?: Response })?.context;
+  if (!ctx || typeof ctx.clone !== "function") return fallback;
+  try {
+    const body = await ctx.clone().json();
+    const code = body?.error ? String(body.error) : null;
+    if (!code) return fallback;
+    const friendly = FN_ERROR_MESSAGES[code];
+    if (friendly) return friendly;
+    return body?.detail ? `${code}: ${body.detail}` : code;
+  } catch {
+    return fallback;
+  }
+}
+
 export async function callCreateUser(input: {
   email: string;
   password: string;
@@ -225,7 +262,7 @@ export async function callCreateUser(input: {
   permissions?: string[];
 }) {
   const { data, error } = await supabase.functions.invoke("create-user", { body: input });
-  if (error) return { error: error.message };
+  if (error) return { error: await unwrapFnError(error) };
   if (data && typeof data === "object" && "error" in data) {
     return { error: String((data as { error: unknown }).error) };
   }
@@ -251,7 +288,7 @@ export async function callChangePassword(input: {
   target_user_id?: string;
 }) {
   const { data, error } = await supabase.functions.invoke("change-password", { body: input });
-  if (error) return { error: error.message };
+  if (error) return { error: await unwrapFnError(error) };
   if (data && typeof data === "object" && "error" in data) {
     return { error: String((data as { error: unknown }).error) };
   }

@@ -61,7 +61,7 @@ function PermissionCheckboxes({
 }
 
 export default function UserManagement() {
-  const { profile } = useAuth();
+  const { profile, company } = useAuth();
   const [users, setUsers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -125,7 +125,11 @@ export default function UserManagement() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!profile?.company_id) {
+    // SSA has no company_id of their own — they act on the company they're
+    // viewing as, which the auth context exposes as `company`. Fall back to
+    // profile.company_id for super_admin / hr / accounting.
+    const companyId = company?.id ?? profile?.company_id ?? null;
+    if (!companyId) {
       setError("Cannot determine your company.");
       return;
     }
@@ -135,7 +139,7 @@ export default function UserManagement() {
       email: email.trim(),
       password,
       title: title.trim() || null,
-      company_id: profile.company_id,
+      company_id: companyId,
       branch_id: createBranchId || null,
       full_name: fullName.trim() || null,
       permissions: Array.from(createPerms),
