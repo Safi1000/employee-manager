@@ -716,8 +716,8 @@ export default function EmployeeManagement() {
 
         <div className="bg-white rounded-lg border border-slate-200">
           <div className="p-6 border-b border-slate-200">
-            <div className="flex items-center gap-4">
-              <div className="flex-1 relative">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex-1 min-w-[200px] relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />
                 <input
                   type="text"
