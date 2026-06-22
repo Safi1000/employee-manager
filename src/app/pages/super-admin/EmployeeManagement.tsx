@@ -822,7 +822,7 @@ export default function EmployeeManagement() {
                   <th className="text-left px-6 py-3 text-sm text-slate-500">Client / Category</th>
                   <th className="text-left px-6 py-3 text-sm text-slate-500">Shift</th>
                   <th className="text-left px-6 py-3 text-sm text-slate-500">Status</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Actions</th>
+                  <th className="text-left px-6 py-3 text-sm text-slate-500 sticky right-0 z-10 bg-white border-l border-slate-200">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
@@ -847,7 +847,7 @@ export default function EmployeeManagement() {
                     return (
                     <tr
                       key={employee.id}
-                      className={`transition-colors ${noDocs ? "bg-danger-50 hover:bg-danger-100" : "hover:bg-slate-50"}`}
+                      className={`group transition-colors ${noDocs ? "bg-danger-50 hover:bg-danger-100" : "hover:bg-slate-50"}`}
                       title={noDocs ? "No documents uploaded for this employee" : undefined}
                     >
                       <td className="px-6 py-4 text-sm font-mono">
@@ -904,7 +904,13 @@ export default function EmployeeManagement() {
                           {employee.status}
                         </button>
                       </td>
-                      <td className="px-6 py-4 flex gap-2">
+                      <td
+                        className={`px-6 py-4 flex gap-2 sticky right-0 z-10 border-l border-slate-200 ${
+                          noDocs
+                            ? "bg-danger-50 group-hover:bg-danger-100"
+                            : "bg-white group-hover:bg-slate-50"
+                        }`}
+                      >
                         <Button variant="ghost" size="sm" onClick={() => openView(employee)}>
                           View
                         </Button>
