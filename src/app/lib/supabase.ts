@@ -844,6 +844,8 @@ export type BankAccount = {
   swift_code: string | null;
   currency_code: string;
   active: boolean;
+  auto_zero_monthly?: boolean;
+  last_zeroed_month?: string | null;
   created_at?: string;
   updated_at?: string;
 };

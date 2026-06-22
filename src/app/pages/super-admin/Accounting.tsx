@@ -193,6 +193,7 @@ export default function Accounting() {
     branch_name: "",
     swift_code: "",
     currency_code: "PKR",
+    auto_zero_monthly: false,
   });
   const [editBankForm, setEditBankForm] = useState({
     bank_name: "",
@@ -448,6 +449,14 @@ export default function Accounting() {
   const loadAll = async () => {
     setLoading(true);
     setError(null);
+    // Roll any month-flagged accounts (e.g. Shayan Ahmed) to 0 for every
+    // completed month before reading balances. Idempotent + best-effort: if the
+    // migration that adds this function hasn't been applied yet, ignore the error.
+    try {
+      await supabase.rpc("apply_monthly_account_zeroing");
+    } catch {
+      /* ignore — function may not exist yet */
+    }
     const [
       banksRes,
       treasuryRes,
@@ -680,6 +689,7 @@ export default function Accounting() {
           branch_name: newBank.branch_name.trim() || null,
           swift_code: newBank.swift_code.trim() || null,
           currency_code: newBank.currency_code || "PKR",
+          auto_zero_monthly: newBank.auto_zero_monthly,
         })
         .select()
         .single();
@@ -707,6 +717,7 @@ export default function Accounting() {
         branch_name: "",
         swift_code: "",
         currency_code: "PKR",
+        auto_zero_monthly: false,
       });
       setIsBankModalOpen(false);
       await loadAll();
@@ -2064,6 +2075,14 @@ export default function Accounting() {
                                   Inactive
                                 </span>
                               )}
+                              {bank.auto_zero_monthly && (
+                                <span
+                                  className="inline-block px-2 py-0.5 rounded-full text-[11px] bg-warning-50 text-warning-700 border border-warning-200"
+                                  title="This account is automatically zeroed at the end of each month (remaining balance treated as withdrawn)."
+                                >
+                                  Resets monthly
+                                </span>
+                              )}
                             </div>
                           </td>
                           <td className="px-6 py-4 text-sm text-slate-600 font-mono">{bank.account_number}</td>
@@ -2868,6 +2887,23 @@ export default function Accounting() {
               Seeded into Account Balance and logged as an opening transaction.
             </p>
           </div>
+          <div>
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={newBank.auto_zero_monthly}
+                onChange={(e) => setNewBank({ ...newBank, auto_zero_monthly: e.target.checked })}
+                className="mt-0.5 rounded border-slate-300"
+              />
+              <span className="text-sm text-slate-700">
+                Reset balance to 0 at each month-end
+                <span className="block text-xs text-slate-500">
+                  Any remaining balance is removed via an adjusting entry (treated as
+                  withdrawn). Use for pass-through / personal accounts.
+                </span>
+              </span>
+            </label>
+          </div>
           <div className="flex items-center gap-3 pt-4">
             <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
               {submitting ? "Saving…" : "Add Bank Account"}
@@ -3280,14 +3316,17 @@ export default function Accounting() {
               <input
                 required
                 type="number"
+                step="0.01"
                 value={reconcileValue}
                 onChange={(e) => setReconcileValue(e.target.value)}
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                placeholder="e.g. -5000 if overdrawn"
               />
               <p className="text-xs text-slate-500 mt-1">
                 {reconcileTarget === "account" && "Updates this bank account's balance."}
                 {reconcileTarget === "cash" && "Updates the global cash balance."}
                 {reconcileTarget === "total" && "Adjusts the cash balance to match the desired total."}
+                {" "}A negative value is allowed (cash/accounts can be overdrawn).
               </p>
             </div>
             <div>
