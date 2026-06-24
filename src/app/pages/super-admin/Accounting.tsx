@@ -2075,14 +2075,6 @@ export default function Accounting() {
                                   Inactive
                                 </span>
                               )}
-                              {bank.auto_zero_monthly && (
-                                <span
-                                  className="inline-block px-2 py-0.5 rounded-full text-[11px] bg-warning-50 text-warning-700 border border-warning-200"
-                                  title="This account is automatically zeroed at the end of each month (remaining balance treated as withdrawn)."
-                                >
-                                  Resets monthly
-                                </span>
-                              )}
                             </div>
                           </td>
                           <td className="px-6 py-4 text-sm text-slate-600 font-mono">{bank.account_number}</td>

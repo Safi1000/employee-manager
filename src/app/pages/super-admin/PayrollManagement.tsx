@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, Download, AlertCircle, X, Loader2 } from "lucide-react";
 import jsPDF from "jspdf";
 import Header from "../../components/Header";
@@ -566,44 +566,71 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     });
   };
 
-  const savePayslip = async (row: RowState): Promise<void> => {
-    const payload = {
-      employee_id: row.employee.id,
-      period_month: row.period_month,
-      working_days: row.working_days,
-      present_days: row.present_days,
-      absent_days: row.absent_days,
-      leave_days: row.leave_days,
-      base_salary: row.base_salary,
-      per_day_salary: row.per_day_salary,
-      bonus: row.bonus,
-      deductions: row.deductions,
-      advance: row.advance,
-      income_tax: row.income_tax,
-      eobi: row.eobi,
-      allowance: row.allowance,
-      final_salary: row.final_salary,
-      net_salary: row.net_salary,
-      payment_mode: row.payment_mode,
-      bank_account_id:
-        row.payment_mode === "Bank"
+  const buildPayslipPayload = (row: RowState) => ({
+    employee_id: row.employee.id,
+    period_month: row.period_month,
+    working_days: row.working_days,
+    present_days: row.present_days,
+    absent_days: row.absent_days,
+    leave_days: row.leave_days,
+    base_salary: row.base_salary,
+    per_day_salary: row.per_day_salary,
+    bonus: row.bonus,
+    deductions: row.deductions,
+    advance: row.advance,
+    income_tax: row.income_tax,
+    eobi: row.eobi,
+    allowance: row.allowance,
+    final_salary: row.final_salary,
+    net_salary: row.net_salary,
+    payment_mode: row.payment_mode,
+    bank_account_id:
+      row.payment_mode === "Bank"
+        ? row.bank_account_id
+        : row.payment_mode === "Cheque"
           ? row.bank_account_id
-          : row.payment_mode === "Cheque"
-            ? row.bank_account_id
-            : null,
-      cheque_id: row.payment_mode === "Cheque" ? row.cheque_id : null,
-      status: row.status,
-      disbursed: row.disbursed,
-      disbursed_at: row.disbursed_at,
-      notes: row.notes,
-      override_leaves: row.override_leaves,
-      updated_at: new Date().toISOString(),
-    };
+          : null,
+    cheque_id: row.payment_mode === "Cheque" ? row.cheque_id : null,
+    status: row.status,
+    disbursed: row.disbursed,
+    disbursed_at: row.disbursed_at,
+    notes: row.notes,
+    override_leaves: row.override_leaves,
+    updated_at: new Date().toISOString(),
+  });
+
+  const savePayslip = async (row: RowState): Promise<void> => {
     const { error: upErr } = await supabase
       .from("payslips")
-      .upsert(payload, { onConflict: "employee_id,period_month" });
+      .upsert(buildPayslipPayload(row), { onConflict: "employee_id,period_month" });
     if (upErr) throw upErr;
   };
+
+  // Item 4: a friendlier message when a write is blocked by the period-close
+  // guard (raised as a Postgres P0001 exception from enforce_period_lock).
+  const friendlyError = (err: any): string => {
+    const msg = err?.message ?? String(err);
+    if (/period for .* is closed/i.test(msg) || /period .* is closed/i.test(msg)) {
+      return msg.includes("Reopen") || msg.includes("reopen")
+        ? msg
+        : `${msg} Reopen the month in Period Close to continue.`;
+    }
+    return msg;
+  };
+
+  // True if the given payslip period (YYYY-MM-01) is a closed accounting period.
+  const isPeriodClosed = async (periodMonth: string): Promise<boolean> => {
+    const { data } = await supabase
+      .from("accounting_periods")
+      .select("id")
+      .eq("period_month", periodMonth)
+      .maybeSingle();
+    return !!data;
+  };
+
+  // Item 3: synchronous re-entry guard so rapid clicks / double-submits can't
+  // disburse the same salary more than once (root cause of the triple-pay bug).
+  const disburseLockRef = useRef(false);
 
   const handleSaveRow = async (row: RowState) => {
     setSavingId(row.employee.id);
@@ -666,24 +693,39 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
   };
 
   const toggleDisbursed = async (row: RowState, dateOverride?: string) => {
+    // Item 3: synchronous re-entry guard — blocks rapid double/triple clicks
+    // from firing this twice before the first finishes.
+    if (disburseLockRef.current) return;
+    disburseLockRef.current = true;
     setSavingId(row.employee.id);
     setError(null);
     setRowError(null);
     try {
+      // Item 4: don't allow disbursing/reversing in a closed month (checked
+      // before any money moves; the DB also enforces this as a backstop).
+      if (await isPeriodClosed(row.period_month)) {
+        setRowError(
+          `The period ${formatPeriod(row.period_month)} is closed. Reopen it in Period Close to make changes.`,
+        );
+        return;
+      }
       if (!row.disbursed) {
         const disburseIso = dateOverride
           ? new Date(`${dateOverride}T12:00:00`).toISOString()
           : new Date().toISOString();
+
+        // ---- Phase 1: validate only (no mutations yet) ----
         if (row.net_salary <= 0) {
           setRowError("Net salary must be greater than 0 to disburse.");
           return;
         }
+        let bank: (typeof banks)[number] | undefined;
         if (row.payment_mode === "Bank") {
           if (!row.bank_account_id) {
             setRowError("Select a bank account before disbursing.");
             return;
           }
-          const bank = banks.find((b) => b.id === row.bank_account_id);
+          bank = banks.find((b) => b.id === row.bank_account_id);
           if (!bank) {
             setRowError("Bank account not found.");
             return;
@@ -692,22 +734,6 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
             setRowError("Selected bank account balance is insufficient.");
             return;
           }
-          const { error: bErr } = await supabase
-            .from("bank_accounts")
-            .update({
-              balance: Number(bank.balance) - row.net_salary,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", bank.id);
-          if (bErr) throw bErr;
-          await supabase.from("bank_transactions").insert({
-            bank_account_id: bank.id,
-            kind: "payroll",
-            amount: row.net_salary,
-            cash_delta: 0,
-            account_delta: -row.net_salary,
-            description: `Payroll ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
-          });
         } else if (row.payment_mode === "Cheque") {
           if (!row.cheque_id) {
             setRowError("Select a cheque before disbursing.");
@@ -724,35 +750,94 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
             setRowError("Cash balance is insufficient.");
             return;
           }
-          const { data: trea } = await supabase
-            .from("treasury")
-            .select("id, cash_balance")
-            .limit(1)
-            .maybeSingle();
-          if (trea) {
-            await supabase
-              .from("treasury")
+        }
+
+        // ---- Phase 2: atomically claim the disbursement (item 3) ----
+        // Ensure the payslip row exists, then flip disbursed false→true only if
+        // it isn't already disbursed. Only the winner proceeds to move money,
+        // so concurrent clicks / tabs can never pay the same salary twice.
+        let payslipId = row.payslip_id;
+        if (!payslipId) {
+          const { data: up, error: upErr } = await supabase
+            .from("payslips")
+            .upsert(buildPayslipPayload({ ...row, disbursed: false, disbursed_at: null }), {
+              onConflict: "employee_id,period_month",
+            })
+            .select("id")
+            .single();
+          if (upErr) throw upErr;
+          payslipId = (up as { id: string }).id;
+        }
+        const { data: claimRows, error: claimErr } = await supabase
+          .from("payslips")
+          .update({
+            disbursed: true,
+            disbursed_at: disburseIso,
+            status: "Cleared",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", payslipId)
+          .eq("disbursed", false)
+          .select("id");
+        if (claimErr) throw claimErr;
+        if (!claimRows || claimRows.length === 0) {
+          setRowError("This salary is already disbursed for this month.");
+          await loadAll();
+          return;
+        }
+
+        // ---- Phase 3: move the money; release the claim if anything fails ----
+        try {
+          if (row.payment_mode === "Bank" && bank) {
+            const { error: bErr } = await supabase
+              .from("bank_accounts")
               .update({
-                cash_balance: Number(trea.cash_balance) - row.net_salary,
+                balance: Number(bank.balance) - row.net_salary,
                 updated_at: new Date().toISOString(),
               })
-              .eq("id", trea.id);
+              .eq("id", bank.id);
+            if (bErr) throw bErr;
+            await supabase.from("bank_transactions").insert({
+              bank_account_id: bank.id,
+              kind: "payroll",
+              amount: row.net_salary,
+              cash_delta: 0,
+              account_delta: -row.net_salary,
+              description: `Payroll ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
+            });
+          } else if (row.payment_mode === "Cheque") {
+            // Cheque-paid: cheque clearance handles the bank side; nothing here.
+          } else {
+            const { data: trea } = await supabase
+              .from("treasury")
+              .select("id, cash_balance")
+              .limit(1)
+              .maybeSingle();
+            if (trea) {
+              await supabase
+                .from("treasury")
+                .update({
+                  cash_balance: Number(trea.cash_balance) - row.net_salary,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("id", trea.id);
+            }
+            await supabase.from("bank_transactions").insert({
+              bank_account_id: null,
+              kind: "payroll",
+              amount: row.net_salary,
+              cash_delta: -row.net_salary,
+              account_delta: 0,
+              description: `Payroll (cash) ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
+            });
           }
-          await supabase.from("bank_transactions").insert({
-            bank_account_id: null,
-            kind: "payroll",
-            amount: row.net_salary,
-            cash_delta: -row.net_salary,
-            account_delta: 0,
-            description: `Payroll (cash) ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
-          });
+          // Persist any other edited values alongside the disbursed flag.
+          await savePayslip({ ...row, disbursed: true, disbursed_at: disburseIso, status: "Cleared" });
+        } catch (moneyErr) {
+          // Release the claim so the row can be retried after the issue is fixed.
+          await supabase.from("payslips").update({ disbursed: false, disbursed_at: null }).eq("id", payslipId);
+          throw moneyErr;
         }
-        await savePayslip({
-          ...row,
-          disbursed: true,
-          disbursed_at: disburseIso,
-          status: "Cleared",
-        });
       } else {
         if (row.payment_mode === "Bank" && row.bank_account_id) {
           const bank = banks.find((b) => b.id === row.bank_account_id);
@@ -803,13 +888,15 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       }
       await loadAll();
     } catch (err: any) {
-      setRowError(err.message ?? String(err));
+      setRowError(friendlyError(err));
     } finally {
       setSavingId(null);
+      disburseLockRef.current = false;
     }
   };
 
   const handleBulkDisburse = async () => {
+    if (disburseLockRef.current) return;
     setError(null);
     const candidates = filtered.filter((r) => !r.disbursed && r.net_salary > 0);
     if (candidates.length === 0) {
@@ -818,6 +905,11 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     }
     if (bulkMode === "Bank" && !bulkBankId) {
       setError("Select a bank account for bulk disbursement.");
+      return;
+    }
+    // Item 4: block bulk disbursing into a closed month.
+    if (await isPeriodClosed(selectedPeriod)) {
+      setError(`The period ${formatPeriod(selectedPeriod)} is closed. Reopen it in Period Close to disburse.`);
       return;
     }
     const total = candidates.reduce((s, r) => s + r.net_salary, 0);
@@ -840,9 +932,47 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       }
     }
     setBulkSubmitting(true);
+    disburseLockRef.current = true;
+    const bulkDisburseIso = new Date(`${bulkDisburseDate}T12:00:00`).toISOString();
     try {
       for (const row of candidates) {
         const net = row.net_salary;
+        // Item 3: atomically claim this payslip before moving money; skip if it
+        // was already disbursed (e.g. concurrently in another tab).
+        let payslipId = row.payslip_id;
+        if (!payslipId) {
+          const { data: up, error: upErr } = await supabase
+            .from("payslips")
+            .upsert(
+              buildPayslipPayload({
+                ...row,
+                payment_mode: bulkMode,
+                bank_account_id: bulkMode === "Bank" ? bulkBankId : null,
+                disbursed: false,
+                disbursed_at: null,
+              }),
+              { onConflict: "employee_id,period_month" },
+            )
+            .select("id")
+            .single();
+          if (upErr) throw upErr;
+          payslipId = (up as { id: string }).id;
+        }
+        const { data: claimRows, error: claimErr } = await supabase
+          .from("payslips")
+          .update({
+            disbursed: true,
+            disbursed_at: bulkDisburseIso,
+            status: "Cleared",
+            payment_mode: bulkMode,
+            bank_account_id: bulkMode === "Bank" ? bulkBankId : null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", payslipId)
+          .eq("disbursed", false)
+          .select("id");
+        if (claimErr) throw claimErr;
+        if (!claimRows || claimRows.length === 0) continue;
         if (bulkMode === "Bank") {
           const { data: bankNow } = await supabase
             .from("bank_accounts")
@@ -906,10 +1036,11 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       setIsBulkDisburseOpen(false);
       await loadAll();
     } catch (err: any) {
-      setError(err.message ?? String(err));
+      setError(friendlyError(err));
       await loadAll();
     } finally {
       setBulkSubmitting(false);
+      disburseLockRef.current = false;
     }
   };
 
