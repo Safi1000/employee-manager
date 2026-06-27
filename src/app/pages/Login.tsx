@@ -34,7 +34,7 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-8">
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-8">
       <div className="w-full max-w-md bg-white rounded-lg shadow-sm border border-slate-200 p-8">
         <div className="text-center mb-8">
           <h1 className="text-2xl font-medium text-slate-900 mb-2">Welcome Back</h1>
@@ -85,6 +85,16 @@ export default function Login() {
             Sign In
           </button>
         </form>
+      </div>
+
+      {/* TechxServe attribution */}
+      <div className="mt-6 flex flex-col items-center gap-1 opacity-40">
+        <img src="/logo.png" alt="TechxServe" className="h-5 w-auto" />
+        <div className="flex items-center gap-2 text-xs text-slate-500">
+          <span>techxserve.com</span>
+          <span>·</span>
+          <span>info@techxserve.com</span>
+        </div>
       </div>
     </div>
   );
