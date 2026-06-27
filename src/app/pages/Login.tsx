@@ -90,7 +90,7 @@ export default function Login() {
       {/* TechxServe attribution */}
       <div className="mt-8 flex flex-col items-center gap-3">
         <a href="https://techxserve.com" target="_blank" rel="noopener noreferrer" className="hover:opacity-80 transition-opacity">
-          <img src="/logo.png" alt="TechxServe" className="h-9 w-auto" />
+          <img src="/logo.png" alt="TechxServe" className="h-[72px] w-auto" />
         </a>
         <p className="text-sm font-bold text-slate-700">Built by TechxServe</p>
         <div className="flex items-center gap-3 text-sm font-semibold">
