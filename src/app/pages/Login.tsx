@@ -177,17 +177,11 @@ export default function Login() {
           </div>
 
           {/* TechxServe attribution */}
-          <div className="mt-8 flex flex-col items-center gap-3">
-            <a
-              href="https://techxserve.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="transition-opacity hover:opacity-80"
-            >
-              <img src="/logo.png" alt="TechxServe" className="h-[72px] w-auto" />
-            </a>
-            <p className="text-xs font-bold text-slate-600">Built by TechxServe</p>
-            <div className="flex items-center gap-3 text-sm font-semibold">
+          <div className="mt-8 border-t border-slate-200 pt-6 text-center">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-3">
+              Built by TechxServe
+            </p>
+            <div className="flex items-center justify-center gap-3 text-sm font-semibold">
               <a
                 href="https://techxserve.com"
                 target="_blank"
