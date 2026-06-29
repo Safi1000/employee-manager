@@ -28,6 +28,10 @@ import {
   BookOpen,
   Lock,
   History,
+  Users2,
+  Wallet,
+  PieChart,
+  Briefcase,
 } from "lucide-react";
 
 type LinkDef = {
@@ -78,6 +82,10 @@ export default function SuperAdminLayout() {
   const CHART_OF_ACCOUNTS: LinkDef = { to: "/super-admin/chart-of-accounts", label: "Chart of Accounts", icon: BookOpen, perms: ["coa.view", "reports.view"] };
   const PERIOD_CLOSE: LinkDef = { to: "/super-admin/period-close", label: "Period Close", icon: Lock, perms: ["period_close.manage", "reports.view"] };
   const AUDIT_LOG: LinkDef = { to: "/super-admin/audit-log", label: "Audit Log", icon: History, perms: ["audit_log.view", "users.manage"] };
+  const PARTNERS: LinkDef = { to: "/super-admin/partners", label: "Partner Accounts", icon: Users2, perms: ["accounting.view", "accounting.edit"] };
+  const CASH_CUSTODY: LinkDef = { to: "/super-admin/cash-custody", label: "Cash Custody", icon: Wallet, perms: ["accounting.view", "accounting.edit"] };
+  const PROFIT_DIST: LinkDef = { to: "/super-admin/profit-distribution", label: "Profit Distribution", icon: PieChart, perms: ["accounting.view", "accounting.edit"] };
+  const PROJECT_FIN: LinkDef = { to: "/super-admin/project-financing", label: "Project Financing", icon: Briefcase, perms: ["accounting.view", "accounting.edit"] };
   const COMPLIANCE: LinkDef = { to: "/super-admin/compliance", label: "Compliance Calendar", icon: Bell, perms: ["compliance.view", "compliance.edit"] };
   const DOCUMENTS: LinkDef = { to: "/super-admin/documents", label: "Documents", icon: Folder, perms: ["documents.view", "documents.edit"] };
   const TASKS: LinkDef = { to: "/super-admin/tasks", label: "Tasks", icon: Trello };
@@ -168,6 +176,15 @@ export default function SuperAdminLayout() {
     PERIOD_CLOSE,
   ]);
   if (finance) links.push(finance);
+
+  // PARTNERSHIP FINANCE
+  const partnerFinance = buildGroup("Partnership Finance", "/super-admin/partnership", [
+    PARTNERS,
+    CASH_CUSTODY,
+    PROFIT_DIST,
+    PROJECT_FIN,
+  ]);
+  if (partnerFinance) links.push(partnerFinance);
 
   // COMPLIANCE
   const compliance = buildGroup("Compliance", "/super-admin/comply", [

@@ -29,6 +29,10 @@ import Incidents from "./pages/super-admin/Incidents";
 import ChartOfAccounts from "./pages/super-admin/ChartOfAccounts";
 import PeriodClose from "./pages/super-admin/PeriodClose";
 import AuditLog from "./pages/super-admin/AuditLog";
+import Partners from "./pages/super-admin/Partners";
+import CashCustody from "./pages/super-admin/CashCustody";
+import ProfitDistribution from "./pages/super-admin/ProfitDistribution";
+import ProjectFinancing from "./pages/super-admin/ProjectFinancing";
 
 import Companies from "./pages/super-super-admin/Companies";
 import CompanyDetail from "./pages/super-super-admin/CompanyDetail";
@@ -80,6 +84,10 @@ export const router = createBrowserRouter([
       { path: "expenses", element: guard(["expenses.view", "expenses.edit"], <Expenses />) },
       { path: "invoices", element: guard(["invoices.view", "invoices.edit"], <Invoices />) },
       { path: "cashflow", element: guard(["cashflow.view"], <Cashflow />) },
+      { path: "partners", element: guard(["accounting.view", "accounting.edit"], <Partners />) },
+      { path: "cash-custody", element: guard(["accounting.view", "accounting.edit"], <CashCustody />) },
+      { path: "profit-distribution", element: guard(["accounting.view", "accounting.edit"], <ProfitDistribution />) },
+      { path: "project-financing", element: guard(["accounting.view", "accounting.edit"], <ProjectFinancing />) },
       { path: "inventory", element: guard(["inventory.view", "inventory.edit"], <Inventory />) },
       { path: "compliance", element: guard(["compliance.view", "compliance.edit"], <Compliance />) },
       { path: "documents", element: guard(["documents.view", "documents.edit"], <Documents />) },
