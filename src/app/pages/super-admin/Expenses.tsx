@@ -98,7 +98,7 @@ type ExpenseForm = {
   cheque_id: string;
   due_date: string;
   notes: string;
-  receipt?: File;
+  receipts?: File[];
 };
 
 const emptyForm: ExpenseForm = {
@@ -175,6 +175,7 @@ export default function Expenses() {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [selected, setSelected] = useState<ExpenseRow | null>(null);
+  const [viewReceipts, setViewReceipts] = useState<{ id: string; drive_file_id: string | null; drive_view_url: string | null; file_name: string | null }[]>([]);
 
   const [form, setForm] = useState<ExpenseForm>(emptyForm);
   const [editForm, setEditForm] = useState<ExpenseForm>(emptyForm);
@@ -601,13 +602,19 @@ export default function Expenses() {
       if (insErr) throw insErr;
       const expId = (inserted as Expense).id;
 
-      if (form.receipt) {
-        const drive = await uploadReceiptToDrive(form.receipt);
-        await supabase.from("expenses").update({
-          drive_file_id: drive.drive_file_id,
-          drive_view_url: drive.drive_view_url,
-          receipt_file_name: drive.file_name,
-        }).eq("id", expId);
+      if (form.receipts && form.receipts.length > 0) {
+        const effectiveCompanyId = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
+        let firstDrive: { drive_file_id: string; drive_view_url: string; file_name: string } | null = null;
+        for (const file of form.receipts) {
+          const drive = await uploadReceiptToDrive(file);
+          if (!firstDrive) firstDrive = drive;
+          if (effectiveCompanyId) {
+            await supabase.from("expense_receipts").insert({ expense_id: expId, company_id: effectiveCompanyId, drive_file_id: drive.drive_file_id, drive_view_url: drive.drive_view_url, file_name: drive.file_name });
+          }
+        }
+        if (firstDrive) {
+          await supabase.from("expenses").update({ drive_file_id: firstDrive.drive_file_id, drive_view_url: firstDrive.drive_view_url, receipt_file_name: firstDrive.file_name }).eq("id", expId);
+        }
       }
 
       const desc = describeExpense(form.category_id, clientName, form.description.trim() || null);
@@ -774,19 +781,32 @@ export default function Expenses() {
       let receiptDriveViewUrl: string | null = selected.drive_view_url;
       let receiptFileName: string | null = selected.receipt_file_name;
       if (replaceReceipt) {
-        await removeReceipt({
-          drive_file_id: selected.drive_file_id,
-          receipt_path: selected.receipt_path,
-        });
+        // Remove old expense_receipts rows and their Drive files.
+        const { data: oldReceipts } = await supabase.from("expense_receipts").select("drive_file_id").eq("expense_id", selected.id);
+        for (const r of oldReceipts ?? []) {
+          if (r.drive_file_id) await supabase.functions.invoke("gdrive-delete", { body: { drive_file_id: r.drive_file_id } }).catch(() => {});
+        }
+        await supabase.from("expense_receipts").delete().eq("expense_id", selected.id);
+        await removeReceipt({ drive_file_id: selected.drive_file_id, receipt_path: selected.receipt_path });
         receiptPath = null;
         receiptDriveFileId = null;
         receiptDriveViewUrl = null;
         receiptFileName = null;
-        if (editForm.receipt) {
-          const drive = await uploadReceiptToDrive(editForm.receipt);
-          receiptDriveFileId = drive.drive_file_id;
-          receiptDriveViewUrl = drive.drive_view_url;
-          receiptFileName = drive.file_name;
+        if (editForm.receipts && editForm.receipts.length > 0) {
+          const effectiveCompanyId = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
+          let firstDrive: { drive_file_id: string; drive_view_url: string; file_name: string } | null = null;
+          for (const file of editForm.receipts) {
+            const drive = await uploadReceiptToDrive(file);
+            if (!firstDrive) firstDrive = drive;
+            if (effectiveCompanyId) {
+              await supabase.from("expense_receipts").insert({ expense_id: selected.id, company_id: effectiveCompanyId, drive_file_id: drive.drive_file_id, drive_view_url: drive.drive_view_url, file_name: drive.file_name });
+            }
+          }
+          if (firstDrive) {
+            receiptDriveFileId = firstDrive.drive_file_id;
+            receiptDriveViewUrl = firstDrive.drive_view_url;
+            receiptFileName = firstDrive.file_name;
+          }
         }
       }
 
@@ -888,9 +908,12 @@ export default function Expenses() {
     }
   };
 
-  const openView = (exp: ExpenseRow) => {
+  const openView = async (exp: ExpenseRow) => {
     setSelected(exp);
+    setViewReceipts([]);
     setIsViewOpen(true);
+    const { data } = await supabase.from("expense_receipts").select("id, drive_file_id, drive_view_url, file_name").eq("expense_id", exp.id).order("created_at");
+    setViewReceipts((data ?? []) as typeof viewReceipts);
   };
 
   const logAdvanceTransaction = async (args: {
@@ -1555,9 +1578,9 @@ export default function Expenses() {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto overflow-y-auto max-h-[480px]">
             <table className="w-full">
-              <thead>
+              <thead className="sticky top-0 z-10 bg-white">
                 <tr className="border-b border-slate-200">
                   <th className="text-left px-4 py-3 text-xs text-slate-500">Date</th>
                   <th className="text-left px-4 py-3 text-xs text-slate-500">Category</th>
@@ -1998,29 +2021,38 @@ export default function Expenses() {
               </div>
             )}
             <div className="pt-3 border-t border-slate-200">
-              <p className="text-slate-500 mb-2 text-sm">Receipt</p>
-              {(selected.drive_view_url || selected.receipt_path) ? (
+              <p className="text-slate-500 mb-2 text-sm">Receipt(s)</p>
+              {viewReceipts.length > 0 ? (
+                <div className="space-y-2">
+                  {viewReceipts.map((r) => (
+                    <div key={r.id} className="border border-slate-200 rounded-lg p-3 flex items-center justify-between gap-3">
+                      <span className="text-sm text-slate-700 truncate flex-1">{r.file_name ?? "Receipt"}</span>
+                      {r.drive_view_url && (
+                        <a
+                          href={r.drive_view_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-sm text-slate-700 hover:text-slate-900 underline shrink-0"
+                        >
+                          <Download className="w-4 h-4" strokeWidth={1.5} />
+                          View / Download
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (selected.drive_view_url || selected.receipt_path) ? (
                 <div className="border border-slate-200 rounded-lg p-3 flex items-center justify-between">
                   <span className="text-sm text-slate-700 truncate">
-                    {selected.receipt_file_name
-                      ?? selected.receipt_path?.split("/").pop()
-                      ?? "Receipt"}
+                    {selected.receipt_file_name ?? selected.receipt_path?.split("/").pop() ?? "Receipt"}
                   </span>
                   <div className="flex gap-2">
                     {getReceiptUrl(selected) && (
-                      <a
-                        href={getReceiptUrl(selected) ?? "#"}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-sm text-slate-700 hover:text-slate-900 underline"
-                      >
+                      <a href={getReceiptUrl(selected) ?? "#"} target="_blank" rel="noreferrer" className="text-sm text-slate-700 hover:text-slate-900 underline">
                         View
                       </a>
                     )}
-                    <button
-                      onClick={() => downloadReceipt(selected)}
-                      className="inline-flex items-center gap-1 text-sm text-slate-700 hover:text-slate-900"
-                    >
+                    <button onClick={() => downloadReceipt(selected)} className="inline-flex items-center gap-1 text-sm text-slate-700 hover:text-slate-900">
                       <Download className="w-4 h-4" strokeWidth={1.5} />
                       Download
                     </button>
@@ -2655,7 +2687,7 @@ export default function Expenses() {
             />
           </div>
           <div className="col-span-2">
-            <label className="block text-sm text-slate-700 mb-1">Receipt</label>
+            <label className="block text-sm text-slate-700 mb-1">Receipt(s)</label>
             {edit?.existingReceipt && !edit.replaceReceipt ? (
               <div className="flex items-center justify-between p-3 border border-slate-200 rounded-md">
                 <span className="text-sm text-slate-700 truncate">
@@ -2673,13 +2705,37 @@ export default function Expenses() {
                 </Button>
               </div>
             ) : (
-              <div className="flex items-center gap-3">
-                <input
-                  type="file"
-                  onChange={(e) => setState({ ...state, receipt: e.target.files?.[0] })}
-                  className="flex-1 px-4 py-2 border border-slate-200 rounded-md text-sm"
-                />
-                <Upload className="w-4 h-4 text-slate-400" strokeWidth={1.5} />
+              <div className="space-y-2">
+                <label className="flex items-center gap-3 cursor-pointer px-4 py-2 border border-slate-200 border-dashed rounded-md hover:bg-slate-50 transition-colors">
+                  <Upload className="w-4 h-4 text-slate-400 shrink-0" strokeWidth={1.5} />
+                  <span className="text-sm text-slate-500 flex-1">
+                    {state.receipts?.length
+                      ? `${state.receipts.length} file(s) selected`
+                      : "Click to choose file(s)…"}
+                  </span>
+                  <input
+                    type="file"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => setState({ ...state, receipts: e.target.files ? Array.from(e.target.files) : undefined })}
+                  />
+                </label>
+                {state.receipts && state.receipts.length > 0 && (
+                  <ul className="space-y-1">
+                    {state.receipts.map((f, i) => (
+                      <li key={i} className="flex items-center justify-between text-xs text-slate-600 bg-slate-50 px-3 py-1.5 rounded">
+                        <span className="truncate">{f.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => setState({ ...state, receipts: state.receipts?.filter((_, j) => j !== i) })}
+                          className="ml-2 text-slate-400 hover:text-slate-700"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 {edit?.replaceReceipt && (
                   <Button
                     variant="ghost"
@@ -2687,7 +2743,7 @@ export default function Expenses() {
                     onClick={(ev: React.MouseEvent) => {
                       ev.preventDefault();
                       edit.setReplaceReceipt(false);
-                      setState({ ...state, receipt: undefined });
+                      setState({ ...state, receipts: undefined });
                     }}
                   >
                     Cancel

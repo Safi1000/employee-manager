@@ -8,6 +8,8 @@ import { formatDate } from "../../lib/date";
 import {
   exportReceivableLedger,
   exportTable,
+  exportBankStatement,
+  type BankStatementRow,
   type LedgerEntry,
 } from "../../lib/excel";
 import {
@@ -158,6 +160,11 @@ export default function Accounting() {
   const [isPayablesLogOpen, setIsPayablesLogOpen] = useState(false);
   const [logBankFilter, setLogBankFilter] = useState<string>("all");
   const [logScope, setLogScope] = useState<"all" | "cash" | "account">("all");
+  // Bank statement export modal
+  const [isBankExportOpen, setIsBankExportOpen] = useState(false);
+  const [bankExportBankId, setBankExportBankId] = useState<string>("all");
+  const [bankExportFrom, setBankExportFrom] = useState<string>("");
+  const [bankExportTo, setBankExportTo] = useState<string>("");
   const [isMarkPaidModalOpen, setIsMarkPaidModalOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<ReceivableRow | null>(null);
   const [selectedBank, setSelectedBank] = useState<BankAccount | null>(null);
@@ -1510,18 +1517,11 @@ export default function Accounting() {
                     ]),
                   });
                 } else if (activeTab === "banks") {
-                  exportTable({
-                    fileName: "Bank Accounts.xlsx",
-                    sheetName: "Bank Accounts",
-                    title: "Bank Accounts",
-                    headers: ["Bank Name", "Account Number", "Type", "Balance"],
-                    rows: banks.map((b) => [
-                      b.bank_name,
-                      b.account_number,
-                      b.account_type,
-                      Number(b.balance ?? 0),
-                    ]),
-                  });
+                  setBankExportBankId("all");
+                  setBankExportFrom("");
+                  setBankExportTo("");
+                  setIsBankExportOpen(true);
+                  return;
                 }
               }}
             />
@@ -3704,6 +3704,87 @@ export default function Accounting() {
         )}
       </Modal>
 
+      {/* Bank Statement Export Modal */}
+      <Modal isOpen={isBankExportOpen} onClose={() => setIsBankExportOpen(false)} title="Export Bank Statement" size="sm">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Bank Account</label>
+            <select
+              value={bankExportBankId}
+              onChange={(e) => setBankExportBankId(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+            >
+              <option value="all">All Banks</option>
+              {banks.map((b) => (
+                <option key={b.id} value={b.id}>{b.bank_name} — {b.account_number}</option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">From Date</label>
+              <input
+                type="date"
+                value={bankExportFrom}
+                onChange={(e) => setBankExportFrom(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">To Date</label>
+              <input
+                type="date"
+                value={bankExportTo}
+                onChange={(e) => setBankExportTo(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              />
+            </div>
+          </div>
+          <div className="flex gap-3 pt-2">
+            <Button
+              variant="primary"
+              size="md"
+              className="flex-1"
+              onClick={() => {
+                const bankById = new Map(banks.map((b) => [b.id, b]));
+                let txs = transactions;
+                if (bankExportBankId !== "all") txs = txs.filter((t) => t.bank_account_id === bankExportBankId);
+                if (bankExportFrom) txs = txs.filter((t) => (t.created_at ?? "") >= bankExportFrom);
+                if (bankExportTo) txs = txs.filter((t) => (t.created_at ?? "").slice(0, 10) <= bankExportTo);
+                const rows: BankStatementRow[] = txs
+                  .slice()
+                  .sort((a, b) => (a.created_at ?? "") < (b.created_at ?? "") ? -1 : 1)
+                  .map((t) => {
+                    const bk = t.bank_account_id ? bankById.get(t.bank_account_id) : null;
+                    return {
+                      date: (t.created_at ?? "").slice(0, 10),
+                      kind: kindLabel[t.kind] ?? t.kind,
+                      description: t.description,
+                      bankName: bk ? `${bk.bank_name} (${bk.account_number})` : "Cash",
+                      credit: t.account_delta > 0 ? t.account_delta : 0,
+                      debit: t.account_delta < 0 ? -t.account_delta : 0,
+                      cashIn: t.cash_delta > 0 ? t.cash_delta : 0,
+                      cashOut: t.cash_delta < 0 ? -t.cash_delta : 0,
+                    };
+                  });
+                const bankLabel = bankExportBankId === "all"
+                  ? "All Banks"
+                  : (() => { const b = bankById.get(bankExportBankId); return b ? `${b.bank_name} (${b.account_number})` : ""; })();
+                const dateRange = bankExportFrom || bankExportTo ? `_${bankExportFrom || "start"}_to_${bankExportTo || "end"}` : "";
+                exportBankStatement(rows, { fromDate: bankExportFrom || undefined, toDate: bankExportTo || undefined, bankLabel }, `Bank Statement${dateRange}.xlsx`);
+                setIsBankExportOpen(false);
+              }}
+            >
+              <Download className="w-4 h-4 mr-2" strokeWidth={1.5} />
+              Download Excel
+            </Button>
+            <Button variant="secondary" size="md" onClick={() => setIsBankExportOpen(false)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
       <Modal isOpen={isLogModalOpen} onClose={() => setIsLogModalOpen(false)} title="Transaction Log" size="lg">
         <HistoryBody
           transactions={transactions}
@@ -3768,7 +3849,7 @@ export default function Accounting() {
   );
 }
 
-type LedgerEntry = {
+type TxLedgerEntry = {
   cash?: { before: number; after: number };
   bank?: { before: number; after: number };
 };
@@ -3789,7 +3870,7 @@ function HistoryBody({
 }: {
   transactions: BankTransaction[];
   banks: BankAccount[];
-  balanceLedger: Map<string, LedgerEntry>;
+  balanceLedger: Map<string, TxLedgerEntry>;
   bankFilter: string;
   setBankFilter: (v: string) => void;
   scope: "all" | "cash" | "account";

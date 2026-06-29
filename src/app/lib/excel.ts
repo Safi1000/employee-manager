@@ -379,6 +379,74 @@ export function exportReceivableLedger(
   downloadWorkbook(wb, fileName);
 }
 
+// ---------- Bank Statement Format ----------
+export type BankStatementRow = {
+  date: string;
+  kind: string;
+  description: string | null;
+  bankName: string;
+  credit: number;
+  debit: number;
+  cashIn: number;
+  cashOut: number;
+};
+
+export function exportBankStatement(
+  rows: BankStatementRow[],
+  opts: { fromDate?: string; toDate?: string; bankLabel: string },
+  fileName = "Bank Statement.xlsx",
+) {
+  const periodLabel =
+    opts.fromDate && opts.toDate
+      ? `${opts.fromDate} to ${opts.toDate}`
+      : opts.fromDate
+      ? `From ${opts.fromDate}`
+      : opts.toDate
+      ? `To ${opts.toDate}`
+      : "All time";
+
+  const headers = ["Date", "Type", "Bank", "Description", "Credit (In)", "Debit (Out)", "Cash In", "Cash Out"];
+  const data: any[][] = [];
+  data.push([DEFAULT_COMPANY]);
+  data.push([`Bank Statement — ${opts.bankLabel} — ${periodLabel}`]);
+  data.push([]);
+  data.push(headers);
+
+  let totalCredit = 0;
+  let totalDebit = 0;
+  let totalCashIn = 0;
+  let totalCashOut = 0;
+
+  for (const r of rows) {
+    totalCredit += Number(r.credit || 0);
+    totalDebit += Number(r.debit || 0);
+    totalCashIn += Number(r.cashIn || 0);
+    totalCashOut += Number(r.cashOut || 0);
+    data.push([
+      fmtDate(r.date),
+      r.kind,
+      r.bankName,
+      r.description ?? "",
+      r.credit || "",
+      r.debit || "",
+      r.cashIn || "",
+      r.cashOut || "",
+    ]);
+  }
+
+  data.push([]);
+  data.push(["Total", "", "", "", totalCredit, totalDebit, totalCashIn, totalCashOut]);
+
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  mergeCell(ws, 0, 0, 0, headers.length - 1);
+  mergeCell(ws, 1, 0, 1, headers.length - 1);
+  setColWidths(ws, [14, 18, 22, 40, 14, 14, 12, 12]);
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, safeSheetName(`Bank Statement`));
+  downloadWorkbook(wb, fileName);
+}
+
 // ---------- Attendance Format ----------
 export type AttendanceEmployeeRow = {
   serial: number;

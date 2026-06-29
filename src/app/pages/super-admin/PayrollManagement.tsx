@@ -701,14 +701,6 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     setError(null);
     setRowError(null);
     try {
-      // Item 4: don't allow disbursing/reversing in a closed month (checked
-      // before any money moves; the DB also enforces this as a backstop).
-      if (await isPeriodClosed(row.period_month)) {
-        setRowError(
-          `The period ${formatPeriod(row.period_month)} is closed. Reopen it in Period Close to make changes.`,
-        );
-        return;
-      }
       if (!row.disbursed) {
         const disburseIso = dateOverride
           ? new Date(`${dateOverride}T12:00:00`).toISOString()
@@ -905,11 +897,6 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     }
     if (bulkMode === "Bank" && !bulkBankId) {
       setError("Select a bank account for bulk disbursement.");
-      return;
-    }
-    // Item 4: block bulk disbursing into a closed month.
-    if (await isPeriodClosed(selectedPeriod)) {
-      setError(`The period ${formatPeriod(selectedPeriod)} is closed. Reopen it in Period Close to disburse.`);
       return;
     }
     const total = candidates.reduce((s, r) => s + r.net_salary, 0);
@@ -1403,7 +1390,6 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                               </div>
                               <div className="text-xs text-slate-500 font-mono">
                                 {e.employee_code}
-                                {e.phone ? ` · ${e.phone}` : ""}
                               </div>
                             </td>
                             <td className="px-4 py-3 text-sm text-slate-700">

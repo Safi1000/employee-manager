@@ -104,6 +104,22 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   // snapshot before the drag, so the live range can be recomputed on every move.
   const [bulkDragAnchor, setBulkDragAnchor] = useState<string | null>(null);
   const [bulkDragBase, setBulkDragBase] = useState<Set<string>>(new Set());
+  // ---- Bulk-mark filters (mirror the daily attendance tab filters) ----
+  const [bulkClientFilter, setBulkClientFilter] = useState("all");
+  const [bulkLocationFilter, setBulkLocationFilter] = useState("all");
+  const [bulkBranchFilter, setBulkBranchFilter] = useState("all");
+  const [bulkShiftFilter, setBulkShiftFilter] = useState<"all" | "day" | "night">("all");
+  const [bulkCategoryFilter, setBulkCategoryFilter] = useState<"all" | "client" | "office_staff" | "reliever">("all");
+
+  // ---- Main tab ----
+  const [mainTab, setMainTab] = useState<"attendance" | "shift_override">("attendance");
+
+  // ---- Shift Override tab ----
+  const [overrideDate, setOverrideDate] = useState<string>(today());
+  const [overrides, setOverrides] = useState<Map<string, "day" | "night">>(new Map());
+  const [overrideSaving, setOverrideSaving] = useState<Set<string>>(new Set());
+  const [overrideShiftFilter, setOverrideShiftFilter] = useState<"all" | "day" | "night">("all");
+  const [overrideSearch, setOverrideSearch] = useState("");
 
   const bulkEmployee = useMemo(
     () => employees.find((e) => e.id === bulkEmployeeId),
@@ -111,16 +127,17 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   );
 
   const bulkEmployeeOptions = useMemo(() => {
+    let pool = employees;
+    if (relieversOnly) pool = pool.filter((e) => e.category === "reliever");
+    if (bulkClientFilter !== "all") pool = pool.filter((e) => e.client_id === bulkClientFilter);
+    if (bulkLocationFilter !== "all") pool = pool.filter((e) => e.location_id === bulkLocationFilter);
+    if (bulkBranchFilter !== "all") pool = pool.filter((e) => e.branch_id === bulkBranchFilter || e.additional_branch_ids?.includes(bulkBranchFilter));
+    if (bulkShiftFilter !== "all") pool = pool.filter((e) => e.shift === bulkShiftFilter);
+    if (bulkCategoryFilter !== "all") pool = pool.filter((e) => e.category === bulkCategoryFilter);
     const q = bulkEmpSearch.trim().toLowerCase();
-    if (!q) return employees.slice(0, 50);
-    return employees
-      .filter(
-        (e) =>
-          e.full_name.toLowerCase().includes(q) ||
-          e.employee_code.toLowerCase().includes(q),
-      )
-      .slice(0, 50);
-  }, [employees, bulkEmpSearch]);
+    if (q) pool = pool.filter((e) => e.full_name.toLowerCase().includes(q) || e.employee_code.toLowerCase().includes(q));
+    return pool.slice(0, 100);
+  }, [employees, bulkEmpSearch, bulkClientFilter, bulkLocationFilter, bulkBranchFilter, bulkShiftFilter, bulkCategoryFilter, relieversOnly]);
 
   const loadBulkMonth = async (employeeId: string, monthKey: string) => {
     setBulkLoading(true);
@@ -157,8 +174,59 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     setBulkSelected(new Set());
     setBulkExisting(new Map());
     setBulkError(null);
+    setBulkClientFilter("all");
+    setBulkLocationFilter("all");
+    setBulkBranchFilter("all");
+    setBulkShiftFilter("all");
+    setBulkCategoryFilter("all");
     setIsBulkOpen(true);
   };
+
+  // ---- Shift Override functions ----
+  const loadOverrides = async (dt: string) => {
+    const companyId = profile?.view_as_company ?? profile?.company_id ?? null;
+    if (!companyId) return;
+    const { data } = await supabase
+      .from("attendance_shift_overrides")
+      .select("employee_id, override_shift")
+      .eq("company_id", companyId)
+      .eq("attendance_date", dt);
+    const map = new Map<string, "day" | "night">();
+    for (const r of (data ?? [])) map.set(r.employee_id, r.override_shift as "day" | "night");
+    setOverrides(map);
+  };
+
+  const toggleShiftOverride = async (emp: EmployeeLite) => {
+    const companyId = profile?.view_as_company ?? profile?.company_id ?? null;
+    if (!companyId) return;
+    setOverrideSaving((s) => new Set(s).add(emp.id));
+    if (overrides.has(emp.id)) {
+      await supabase
+        .from("attendance_shift_overrides")
+        .delete()
+        .eq("employee_id", emp.id)
+        .eq("attendance_date", overrideDate);
+      setOverrides((prev) => { const m = new Map(prev); m.delete(emp.id); return m; });
+    } else {
+      const overrideShift = emp.shift === "day" ? "night" : "day";
+      await supabase
+        .from("attendance_shift_overrides")
+        .upsert(
+          { employee_id: emp.id, company_id: companyId, attendance_date: overrideDate, override_shift: overrideShift },
+          { onConflict: "employee_id,attendance_date" }
+        );
+      setOverrides((prev) => new Map(prev).set(emp.id, overrideShift as "day" | "night"));
+    }
+    setOverrideSaving((s) => { const n = new Set(s); n.delete(emp.id); return n; });
+  };
+
+  const filteredOverrideEmployees = useMemo(() => {
+    let pool = employees.filter((e) => e.category === "client" || e.category === "reliever");
+    if (overrideShiftFilter !== "all") pool = pool.filter((e) => e.shift === overrideShiftFilter);
+    const q = overrideSearch.trim().toLowerCase();
+    if (q) pool = pool.filter((e) => e.full_name.toLowerCase().includes(q) || e.employee_code.toLowerCase().includes(q));
+    return pool;
+  }, [employees, overrideShiftFilter, overrideSearch]);
 
   const bulkCalendarCells = useMemo(() => {
     const [y, m] = bulkMonth.split("-").map(Number);
@@ -507,6 +575,10 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     loadHistory();
   }, [historyFrom, historyTo, employees, clientFilter, locationFilter, branchFilter, shiftFilter]);
 
+  useEffect(() => {
+    if (mainTab === "shift_override") loadOverrides(overrideDate);
+  }, [overrideDate, mainTab]);
+
   const filteredEmployees = useMemo(() => {
     const q = empSearch.trim().toLowerCase();
     return employees.filter((e) => {
@@ -801,6 +873,20 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       />
 
       <div className="flex-1 overflow-y-auto p-8">
+        {/* Main tab bar */}
+        <div className="flex gap-1 bg-slate-100 rounded-md p-1 mb-6 w-fit">
+          {(["attendance", "shift_override"] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setMainTab(t)}
+              className={`px-3 py-1.5 text-sm rounded transition-colors ${mainTab === t ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}
+            >
+              {t === "attendance" ? "Daily Attendance" : "Shift Override"}
+            </button>
+          ))}
+        </div>
+
         {error && (
           <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
@@ -810,6 +896,8 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
             </button>
           </div>
         )}
+
+        {mainTab === "attendance" && (<>
 
         {/* Metrics row OR per-employee calendar */}
         {!viewEmployee ? (
@@ -1295,6 +1383,120 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
             </table>
           </div>
         </div>
+
+        </>)}
+
+        {mainTab === "shift_override" && (
+          <div className="space-y-4">
+            {/* Filters */}
+            <div className="bg-white rounded-lg border border-slate-200 p-4 flex flex-wrap gap-4 items-end">
+              <div>
+                <label className="block text-sm text-slate-700 mb-2">Date</label>
+                <input
+                  type="date"
+                  value={overrideDate}
+                  onChange={(e) => setOverrideDate(e.target.value)}
+                  className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-700 mb-2">Base Shift</label>
+                <select
+                  value={overrideShiftFilter}
+                  onChange={(e) => setOverrideShiftFilter(e.target.value as typeof overrideShiftFilter)}
+                  className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                >
+                  <option value="all">All Shifts</option>
+                  <option value="day">Day</option>
+                  <option value="night">Night</option>
+                </select>
+              </div>
+              <div className="flex-1 min-w-[180px]">
+                <label className="block text-sm text-slate-700 mb-2">Search Employee</label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />
+                  <input
+                    type="text"
+                    placeholder="Name or ID…"
+                    value={overrideSearch}
+                    onChange={(e) => setOverrideSearch(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Override table */}
+            <div className="bg-white rounded-lg border border-slate-200">
+              <div className="p-4 border-b border-slate-200">
+                <h3 className="text-base text-slate-900">Shift Overrides — {overrideDate}</h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Toggle a guard's shift for this day only. Attendance will be marked against the working shift.
+                </p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-slate-200">
+                      <th className="text-left px-6 py-3 text-sm text-slate-500">Employee</th>
+                      <th className="text-left px-6 py-3 text-sm text-slate-500">Base Shift</th>
+                      <th className="text-left px-6 py-3 text-sm text-slate-500">Working Shift</th>
+                      <th className="text-right px-6 py-3 text-sm text-slate-500">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {filteredOverrideEmployees.length === 0 && (
+                      <tr>
+                        <td colSpan={4} className="px-6 py-10 text-center text-slate-500 text-sm">
+                          No guards found.
+                        </td>
+                      </tr>
+                    )}
+                    {filteredOverrideEmployees.map((emp) => {
+                      const overrideShift = overrides.get(emp.id);
+                      const workingShift = overrideShift ?? emp.shift;
+                      const isSaving = overrideSaving.has(emp.id);
+                      return (
+                        <tr key={emp.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="px-6 py-4">
+                            <p className="text-sm text-slate-900">{emp.full_name}</p>
+                            <p className="text-xs text-slate-500 font-mono">{emp.employee_code}</p>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs ${emp.shift === "day" ? "bg-amber-50 text-amber-700" : "bg-indigo-50 text-indigo-700"}`}>
+                              {emp.shift === "day" ? "Day" : "Night"}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs ${workingShift === "day" ? "bg-amber-50 text-amber-700" : "bg-indigo-50 text-indigo-700"}`}>
+                              {workingShift === "day" ? "Day" : "Night"}
+                              {overrideShift && <span className="text-slate-500">(override)</span>}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <Button
+                              variant={overrideShift ? "danger" : "secondary"}
+                              size="sm"
+                              disabled={isSaving}
+                              onClick={() => toggleShiftOverride(emp)}
+                            >
+                              {isSaving
+                                ? "Saving…"
+                                : overrideShift
+                                ? "Revert"
+                                : `Switch to ${emp.shift === "day" ? "Night" : "Day"}`}
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
 
       <Modal
@@ -1384,6 +1586,57 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         size="lg"
       >
         <div className="space-y-4">
+          {/* Filters */}
+          {!bulkEmployee && (
+            <div className="grid grid-cols-2 gap-2">
+              {!relieversOnly && (
+                <select
+                  value={bulkCategoryFilter}
+                  onChange={(e) => { setBulkCategoryFilter(e.target.value as typeof bulkCategoryFilter); setBulkEmployeeId(""); }}
+                  className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                >
+                  <option value="all">All Categories</option>
+                  <option value="client">Client Guards</option>
+                  <option value="office_staff">Office Staff</option>
+                  <option value="reliever">Relievers</option>
+                </select>
+              )}
+              <select
+                value={bulkShiftFilter}
+                onChange={(e) => { setBulkShiftFilter(e.target.value as typeof bulkShiftFilter); setBulkEmployeeId(""); }}
+                className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+              >
+                <option value="all">All Shifts</option>
+                <option value="day">Day</option>
+                <option value="night">Night</option>
+              </select>
+              <select
+                value={bulkClientFilter}
+                onChange={(e) => { setBulkClientFilter(e.target.value); setBulkEmployeeId(""); }}
+                className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+              >
+                <option value="all">All Clients</option>
+                {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <select
+                value={bulkLocationFilter}
+                onChange={(e) => { setBulkLocationFilter(e.target.value); setBulkEmployeeId(""); }}
+                className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+              >
+                <option value="all">All Locations</option>
+                {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+              </select>
+              <select
+                value={bulkBranchFilter}
+                onChange={(e) => { setBulkBranchFilter(e.target.value); setBulkEmployeeId(""); }}
+                className="px-3 py-2 border border-slate-200 rounded-md text-sm col-span-2"
+              >
+                <option value="all">All Branches</option>
+                {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+            </div>
+          )}
+
           {/* Employee picker */}
           <div>
             <label className="block text-xs uppercase tracking-wider text-slate-500 mb-2">

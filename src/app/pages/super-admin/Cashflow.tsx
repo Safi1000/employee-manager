@@ -219,14 +219,16 @@ export default function Cashflow() {
     return { revenue, payroll, expenses: exp, advances: adv, net: revenue - payroll - exp - adv };
   }, [filtered]);
 
-  // Monthly aggregation (for the charts + table) over the filtered set.
+  // Aggregation for charts + table. In single-month mode, group by day; otherwise by month.
   const rows: MonthRow[] = useMemo(() => {
+    const isDaily = mode === "month";
     const map = new Map<string, MonthRow>();
     const bump = (date: string, field: keyof Omit<MonthRow, "key" | "label" | "net">, amt: number) => {
-      const key = monthKey(date);
+      const key = isDaily ? date : monthKey(date);
+      const label = isDaily ? String(Number(date.slice(8, 10))) : monthLabel(key);
       let r = map.get(key);
       if (!r) {
-        r = { key, label: monthLabel(key), revenue: 0, expenses: 0, payroll: 0, advances: 0, net: 0 };
+        r = { key, label, revenue: 0, expenses: 0, payroll: 0, advances: 0, net: 0 };
         map.set(key, r);
       }
       r[field] += amt;
@@ -238,7 +240,7 @@ export default function Cashflow() {
     const arr = Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key));
     for (const r of arr) r.net = r.revenue - r.payroll - r.expenses - r.advances;
     return arr;
-  }, [filtered]);
+  }, [filtered, mode]);
 
   // Grouped breakdown for the currently-open card.
   const breakdown = useMemo(() => {
@@ -458,7 +460,7 @@ export default function Cashflow() {
         <div className="bg-white rounded-lg border border-slate-200 mb-6">
           <div className="p-6 border-b border-slate-200 flex items-center justify-between">
             <div>
-              <h2 className="text-base text-slate-900">Monthly Cashflow</h2>
+              <h2 className="text-base text-slate-900">{mode === "month" ? "Daily Cashflow" : "Monthly Cashflow"}</h2>
               <p className="text-xs text-slate-500 mt-1">
                 Cash-basis: revenue = payments received, payroll = disbursed net salaries,
                 expenses = Cash/Bank + paid payables, advances by advance/clear date.
@@ -535,13 +537,13 @@ export default function Cashflow() {
 
         <div className="bg-white rounded-lg border border-slate-200">
           <div className="p-6 border-b border-slate-200">
-            <h3 className="text-base text-slate-900">Monthly Breakdown · {periodLabel}</h3>
+            <h3 className="text-base text-slate-900">{mode === "month" ? "Daily" : "Monthly"} Breakdown · {periodLabel}</h3>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-50 text-slate-600 text-xs uppercase tracking-wide">
-                  <th className="px-6 py-3 text-left">Month</th>
+                  <th className="px-6 py-3 text-left">{mode === "month" ? "Day" : "Month"}</th>
                   <th className="px-6 py-3 text-right">Revenue</th>
                   <th className="px-6 py-3 text-right">Payroll</th>
                   <th className="px-6 py-3 text-right">Expenses</th>
