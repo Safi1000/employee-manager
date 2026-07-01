@@ -29,6 +29,7 @@ import {
   type BankAccountOwnerType,
   type Cheque,
   type ChequeType,
+  type ChequeDirection,
 } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
 
@@ -86,6 +87,7 @@ export default function Accounting() {
     amount: string;
     cheque_date: string;
     cheque_type: ChequeType;
+    direction: ChequeDirection;
     recipient: string;
     notes: string;
     attachment?: File;
@@ -95,6 +97,7 @@ export default function Accounting() {
     amount: "",
     cheque_date: new Date().toISOString().slice(0, 10),
     cheque_type: "payment",
+    direction: "outgoing",
     recipient: "",
     notes: "",
   });
@@ -228,17 +231,24 @@ export default function Accounting() {
   const [reconcileNotes, setReconcileNotes] = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [withdrawNotes, setWithdrawNotes] = useState("");
+  const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
+  const [depositAmount, setDepositAmount] = useState("");
+  const [depositDate, setDepositDate] = useState(todayStr());
+  const [depositDescription, setDepositDescription] = useState("");
+  const [depositNotes, setDepositNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const totalAccountBalance = useMemo(
     () => banks.reduce((acc, b) => acc + Number(b.balance ?? 0), 0),
     [banks]
   );
-  // Per-bank pending cheque amounts (locked but not yet cleared).
+  // Per-bank pending outgoing cheque amounts (locked but not yet cleared).
+  // Incoming deposit cheques are excluded — they haven't changed the bank balance yet.
   const pendingChequesByBank = useMemo(() => {
     const m = new Map<string, number>();
     for (const c of cheques) {
       if (c.status !== "pending") continue;
+      if ((c.direction ?? "outgoing") !== "outgoing") continue;
       m.set(c.bank_account_id, (m.get(c.bank_account_id) ?? 0) + Number(c.amount));
     }
     return m;
@@ -965,6 +975,51 @@ export default function Accounting() {
           `Withdraw PKR ${amount.toLocaleString()} from ${selectedBank.bank_name} to cash`,
       });
       setIsWithdrawModalOpen(false);
+      await loadAll();
+    } catch (err: any) {
+      setError(err.message ?? String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const openDeposit = (bank: BankAccount) => {
+    setSelectedBank(bank);
+    setDepositAmount("");
+    setDepositDate(todayStr());
+    setDepositDescription("");
+    setDepositNotes("");
+    setIsDepositModalOpen(true);
+  };
+
+  const handleDeposit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedBank) return;
+    const amount = Number(depositAmount);
+    if (!amount || amount <= 0) {
+      setError("Enter a positive deposit amount.");
+      return;
+    }
+    if (!depositDate) {
+      setError("Select a deposit date.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      await applyBankDelta(selectedBank.id, amount);
+      await logTransaction({
+        bank_account_id: selectedBank.id,
+        kind: "deposit",
+        amount,
+        cash_delta: 0,
+        account_delta: amount,
+        description:
+          depositDescription.trim() ||
+          `Cash deposit PKR ${amount.toLocaleString()} to ${selectedBank.bank_name}`,
+        created_at: dateToTs(depositDate),
+      });
+      setIsDepositModalOpen(false);
       await loadAll();
     } catch (err: any) {
       setError(err.message ?? String(err));
@@ -2098,6 +2153,12 @@ export default function Accounting() {
                           </td>
                           <td className="px-6 py-4 text-sm text-slate-900">PKR {totalBal.toLocaleString()}</td>
                           <td className="px-6 py-4 flex gap-2 flex-wrap">
+                            <Button variant="ghost" size="sm" onClick={() => openDeposit(bank)} disabled={!bank.active}>
+                              Deposit
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => openWithdraw(bank)} disabled={!bank.active}>
+                              Withdraw
+                            </Button>
                             <Button variant="ghost" size="sm" onClick={() => openReconcile(bank)}>
                               Reconcile
                             </Button>
@@ -2130,7 +2191,7 @@ export default function Accounting() {
                 <div>
                   <h3 className="text-base text-slate-900">Cheques</h3>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Outgoing cheques deduct the bank's Account Balance immediately. Pending cheques add to the Total Balance until cleared.
+                    Outgoing cheques deduct the bank balance immediately. Deposit (incoming) cheques credit the bank only on clearance.
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -2163,7 +2224,21 @@ export default function Accounting() {
                       <option key={m.key} value={m.key}>{m.label}</option>
                     ))}
                   </select>
-                  <Button variant="primary" size="sm" onClick={() => setIsChequeAddOpen(true)} disabled={banks.length === 0}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => { setChequeForm((f) => ({ ...f, direction: "incoming", cheque_type: "cash" })); setIsChequeAddOpen(true); }}
+                    disabled={banks.length === 0}
+                  >
+                    <Plus className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
+                    Deposit Cheque
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => { setChequeForm((f) => ({ ...f, direction: "outgoing", cheque_type: "payment" })); setIsChequeAddOpen(true); }}
+                    disabled={banks.length === 0}
+                  >
                     <Plus className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
                     New Cheque
                   </Button>
@@ -2178,7 +2253,7 @@ export default function Accounting() {
                       <th className="text-left px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">Type</th>
                       <th className="text-left px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">Bank</th>
                       <th className="text-left px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">Date</th>
-                      <th className="text-left px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">Recipient</th>
+                      <th className="text-left px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">Recipient / Payer</th>
                       <th className="text-right px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">Amount</th>
                       <th className="text-right px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">Used / Linked</th>
                       <th className="text-left px-4 py-2 text-xs text-slate-500 uppercase tracking-wide">Status</th>
@@ -2194,12 +2269,19 @@ export default function Accounting() {
                         const bank = banks.find((b) => b.id === c.bank_account_id);
                         const linkedSum = chequeLinkedSums.get(c.id) ?? 0;
                         const isPayment = c.cheque_type === "payment";
-                        const canClear = isPayment ? Math.abs(linkedSum - Number(c.amount)) < 0.005 : true;
+                        const isIncoming = (c.direction ?? "outgoing") === "incoming";
+                        const canClear = isIncoming
+                          ? true
+                          : isPayment
+                            ? Math.abs(linkedSum - Number(c.amount)) < 0.005
+                            : true;
                         return (
                           <tr key={c.id} className="hover:bg-slate-50">
                             <td className="px-4 py-2 text-sm text-slate-900 font-mono">{c.cheque_number}</td>
                             <td className="px-4 py-2 text-sm">
-                              {isPayment ? (
+                              {isIncoming ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-emerald-50 text-emerald-700">Deposit</span>
+                              ) : isPayment ? (
                                 <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-indigo-50 text-indigo-700">Payment</span>
                               ) : (
                                 <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-teal-50 text-teal-700">Cash</span>
@@ -2212,7 +2294,7 @@ export default function Accounting() {
                               PKR {Number(c.amount).toLocaleString()}
                             </td>
                             <td className="px-4 py-2 text-sm text-right">
-                              {isPayment ? (
+                              {!isIncoming && isPayment ? (
                                 <span className={canClear ? "text-success-700" : "text-warning-700"}>
                                   PKR {linkedSum.toLocaleString()} / {Number(c.amount).toLocaleString()}
                                 </span>
@@ -2314,15 +2396,19 @@ export default function Accounting() {
                                   disabled={!canClear}
                                   title={
                                     canClear
-                                      ? (isPayment
-                                          ? "Mark cleared (bank balance stays deducted)"
-                                          : "Mark cleared (cash balance increases by cheque amount)")
+                                      ? (isIncoming
+                                          ? `Mark cleared (PKR ${Number(c.amount).toLocaleString()} will be credited to bank balance)`
+                                          : isPayment
+                                            ? "Mark cleared (bank balance stays deducted)"
+                                            : "Mark cleared (cash balance increases by cheque amount)")
                                       : `Linked items total PKR ${linkedSum.toLocaleString()} must equal cheque amount PKR ${Number(c.amount).toLocaleString()} before clearing.`
                                   }
                                   onClick={async () => {
-                                    const msg = isPayment
-                                      ? "Mark this payment cheque as cleared? Bank stays deducted; cashflow recognises linked expenses/salaries/advances now."
-                                      : "Mark this cash cheque as cleared? Bank stays deducted; PKR " + Number(c.amount).toLocaleString() + " will be added to the Cash (Treasury) balance.";
+                                    const msg = isIncoming
+                                      ? `Mark this deposit cheque as cleared? PKR ${Number(c.amount).toLocaleString()} will be added to ${bank?.bank_name ?? "the bank"}'s balance.`
+                                      : isPayment
+                                        ? "Mark this payment cheque as cleared? Bank stays deducted; cashflow recognises linked expenses/salaries/advances now."
+                                        : "Mark this cash cheque as cleared? Bank stays deducted; PKR " + Number(c.amount).toLocaleString() + " will be added to the Cash (Treasury) balance.";
                                     if (!window.confirm(msg)) return;
                                     const { error: e } = await supabase
                                       .from("cheques")
@@ -2340,9 +2426,12 @@ export default function Accounting() {
                                 <button
                                   type="button"
                                   className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-danger-700 hover:bg-danger-50"
-                                  title="Delete cheque (restores bank balance)"
+                                  title={isIncoming ? "Delete deposit cheque (no bank change)" : "Delete cheque (restores bank balance)"}
                                   onClick={async () => {
-                                    if (!window.confirm("Delete this pending cheque? The reserved amount will be restored to the bank.")) return;
+                                    const msg = isIncoming
+                                      ? "Delete this pending deposit cheque? No balance change will occur (the bank was not debited)."
+                                      : "Delete this pending cheque? The reserved amount will be restored to the bank.";
+                                    if (!window.confirm(msg)) return;
                                     const { error: e } = await supabase.from("cheques").delete().eq("id", c.id);
                                     if (e) { setError(e.message); return; }
                                     await loadAll();
@@ -2373,7 +2462,12 @@ export default function Accounting() {
         </div>
       </div>
 
-      <Modal isOpen={isChequeAddOpen} onClose={() => { setIsChequeAddOpen(false); setChequeFormError(null); }} title="New Cheque" size="md">
+      <Modal
+        isOpen={isChequeAddOpen}
+        onClose={() => { setIsChequeAddOpen(false); setChequeFormError(null); }}
+        title={chequeForm.direction === "incoming" ? "Record Deposit Cheque" : "New Cheque"}
+        size="md"
+      >
         <form
           className="space-y-4"
           onSubmit={async (e) => {
@@ -2381,12 +2475,13 @@ export default function Accounting() {
             setChequeFormError(null);
             const amount = Number(chequeForm.amount);
             if (!chequeForm.bank_account_id || !chequeForm.cheque_number || !amount || amount <= 0 || !chequeForm.cheque_date) return;
-            // Block over-issue at the moment of cheque creation: amount must not exceed
-            // the issuing bank account's available balance.
-            const issuingBank = banks.find((b) => b.id === chequeForm.bank_account_id);
-            if (issuingBank && amount > Number(issuingBank.balance)) {
-              setChequeFormError(`Cheque amount (PKR ${amount.toLocaleString()}) exceeds the bank's available balance (PKR ${Number(issuingBank.balance).toLocaleString()}).`);
-              return;
+            // For outgoing cheques only: block over-issue if bank balance is insufficient
+            if (chequeForm.direction !== "incoming") {
+              const issuingBank = banks.find((b) => b.id === chequeForm.bank_account_id);
+              if (issuingBank && amount > Number(issuingBank.balance)) {
+                setChequeFormError(`Cheque amount (PKR ${amount.toLocaleString()}) exceeds the bank's available balance (PKR ${Number(issuingBank.balance).toLocaleString()}).`);
+                return;
+              }
             }
             setChequeSubmitting(true);
             setError(null);
@@ -2398,7 +2493,8 @@ export default function Accounting() {
                   cheque_number: chequeForm.cheque_number.trim(),
                   amount,
                   cheque_date: chequeForm.cheque_date,
-                  cheque_type: chequeForm.cheque_type,
+                  cheque_type: chequeForm.direction === "incoming" ? "cash" : chequeForm.cheque_type,
+                  direction: chequeForm.direction,
                   recipient: chequeForm.recipient.trim() || null,
                   notes: chequeForm.notes.trim() || null,
                   status: "pending",
@@ -2447,6 +2543,7 @@ export default function Accounting() {
                 amount: "",
                 cheque_date: new Date().toISOString().slice(0, 10),
                 cheque_type: "payment",
+                direction: "outgoing",
                 recipient: "",
                 notes: "",
                 attachment: undefined,
@@ -2468,6 +2565,11 @@ export default function Accounting() {
               </button>
             </div>
           )}
+          {chequeForm.direction === "incoming" ? (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-md text-xs text-emerald-800">
+              <strong>Deposit Cheque</strong> — Recording a cheque received from a payer. The bank balance will be credited <strong>only when you mark it as cleared</strong>. No balance change on issue.
+            </div>
+          ) : (
           <div>
             <label className="block text-sm text-slate-700 mb-1">Cheque Type *</label>
             <div className="grid grid-cols-2 gap-2">
@@ -2507,6 +2609,7 @@ export default function Accounting() {
               </label>
             </div>
           </div>
+          )}
           <div>
             <label className="block text-sm text-slate-700 mb-1">Bank Account *</label>
             <select
@@ -2558,13 +2661,15 @@ export default function Accounting() {
               />
             </div>
             <div className="col-span-2">
-              <label className="block text-sm text-slate-700 mb-1">Recipient</label>
+              <label className="block text-sm text-slate-700 mb-1">
+                {chequeForm.direction === "incoming" ? "Received From (Payer)" : "Recipient"}
+              </label>
               <input
                 type="text"
                 value={chequeForm.recipient}
                 onChange={(e) => setChequeForm({ ...chequeForm, recipient: e.target.value })}
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
-                placeholder="Payee name"
+                placeholder={chequeForm.direction === "incoming" ? "Payer / drawer name" : "Payee name"}
               />
             </div>
             <div className="col-span-2">
@@ -2588,18 +2693,20 @@ export default function Accounting() {
               )}
             </div>
           </div>
-          <div className="bg-warning-50 border border-warning-200 rounded-md p-3 text-xs text-warning-800">
-            Issuing this cheque will <strong>reserve</strong> PKR {Number(chequeForm.amount || 0).toLocaleString()} from the selected bank's Account Balance.{" "}
-            {chequeForm.cheque_type === "cash" ? (
-              <>On clearance, this amount will be added to the <strong>Cash (Treasury)</strong> balance.</>
-            ) : (
-              <>This payment cheque can only be cleared once linked expenses/salaries/advances total exactly its amount.</>
-            )}
-            {" "}Deleting it while Pending restores the bank balance.
-          </div>
+          {chequeForm.direction === "outgoing" && (
+            <div className="bg-warning-50 border border-warning-200 rounded-md p-3 text-xs text-warning-800">
+              Issuing this cheque will <strong>reserve</strong> PKR {Number(chequeForm.amount || 0).toLocaleString()} from the selected bank's Account Balance.{" "}
+              {chequeForm.cheque_type === "cash" ? (
+                <>On clearance, this amount will be added to the <strong>Cash (Treasury)</strong> balance.</>
+              ) : (
+                <>This payment cheque can only be cleared once linked expenses/salaries/advances total exactly its amount.</>
+              )}
+              {" "}Deleting it while Pending restores the bank balance.
+            </div>
+          )}
           <div className="flex gap-2 pt-2">
             <Button variant="primary" size="md" className="flex-1" disabled={chequeSubmitting}>
-              {chequeSubmitting ? "Saving…" : "Issue Cheque"}
+              {chequeSubmitting ? "Saving…" : chequeForm.direction === "incoming" ? "Record Deposit Cheque" : "Issue Cheque"}
             </Button>
             <Button variant="secondary" size="md" onClick={() => setIsChequeAddOpen(false)}>
               Cancel
@@ -2613,12 +2720,14 @@ export default function Accounting() {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div>
-                <p className="text-xs text-slate-500">Type</p>
-                <p>
-                  {chequeView.cheque_type === "payment" ? (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-indigo-50 text-indigo-700">Payment</span>
+                <p className="text-xs text-slate-500">Direction / Type</p>
+                <p className="flex gap-1">
+                  {(chequeView.direction ?? "outgoing") === "incoming" ? (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-emerald-50 text-emerald-700">Deposit (Incoming)</span>
+                  ) : chequeView.cheque_type === "payment" ? (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-indigo-50 text-indigo-700">Payment (Outgoing)</span>
                   ) : (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-teal-50 text-teal-700">Cash</span>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-teal-50 text-teal-700">Cash (Outgoing)</span>
                   )}
                 </p>
               </div>
@@ -2643,7 +2752,9 @@ export default function Accounting() {
                 <p className="text-slate-900">{formatDate(chequeView.cheque_date)}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-500">Recipient</p>
+                <p className="text-xs text-slate-500">
+                  {(chequeView.direction ?? "outgoing") === "incoming" ? "Received From" : "Recipient"}
+                </p>
                 <p className="text-slate-900">{chequeView.recipient ?? "—"}</p>
               </div>
               <div>
@@ -2676,6 +2787,7 @@ export default function Accounting() {
               )}
             </div>
 
+            {(chequeView.direction ?? "outgoing") !== "incoming" && (
             <div className="border-t border-slate-200 pt-3">
               <div className="flex items-center justify-between mb-2">
                 <h4 className="text-sm text-slate-900">Linked Items</h4>
@@ -2719,6 +2831,7 @@ export default function Accounting() {
                 </div>
               )}
             </div>
+            )}
           </div>
         )}
       </Modal>
@@ -2905,6 +3018,87 @@ export default function Accounting() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal isOpen={isDepositModalOpen} onClose={() => setIsDepositModalOpen(false)} title="Cash Deposit" size="md">
+        {selectedBank && (
+          <form className="space-y-4" onSubmit={handleDeposit}>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Bank Account</label>
+              <input
+                type="text"
+                value={`${selectedBank.bank_name} · ${selectedBank.account_number}`}
+                disabled
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Current Balance</label>
+              <input
+                type="text"
+                value={`PKR ${Number(selectedBank.balance).toLocaleString()}`}
+                disabled
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Deposit Date *</label>
+                <input
+                  required
+                  type="date"
+                  value={depositDate}
+                  onChange={(e) => setDepositDate(e.target.value)}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Amount (PKR) *</label>
+                <input
+                  required
+                  type="number"
+                  min={1}
+                  step="0.01"
+                  value={depositAmount}
+                  onChange={(e) => setDepositAmount(e.target.value)}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                  placeholder="0"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Description</label>
+              <input
+                type="text"
+                value={depositDescription}
+                onChange={(e) => setDepositDescription(e.target.value)}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                placeholder="e.g. Client payment, proceeds from sale…"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Notes</label>
+              <textarea
+                value={depositNotes}
+                onChange={(e) => setDepositNotes(e.target.value)}
+                rows={2}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                placeholder="Internal reference, source of funds…"
+              />
+            </div>
+            <p className="text-xs text-slate-500">
+              Adds directly to the Account Balance and logs a Deposit entry in the transaction ledger.
+            </p>
+            <div className="flex items-center gap-3 pt-2">
+              <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
+                {submitting ? "Processing…" : "Deposit"}
+              </Button>
+              <Button variant="secondary" size="md" onClick={() => setIsDepositModalOpen(false)}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        )}
       </Modal>
 
       <Modal isOpen={isWithdrawModalOpen} onClose={() => setIsWithdrawModalOpen(false)} title="Withdraw to Cash" size="md">

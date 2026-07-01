@@ -73,7 +73,7 @@ export const router = createBrowserRouter([
       { path: "incidents", element: guard(["incidents.view", "incidents.edit"], <Incidents />) },
       { path: "chart-of-accounts", element: guard(["coa.view", "reports.view"], <ChartOfAccounts />) },
       { path: "period-close", element: guard(["period_close.manage", "reports.view"], <PeriodClose />) },
-      { path: "audit-log", element: guard(["audit_log.view", "users.manage"], <AuditLog />) },
+      { path: "audit-log", element: <RequireAuth roles={["super_super_admin", "super_admin"]}><AuditLog /></RequireAuth> },
       { path: "employees", element: guard(["employees.view", "employees.edit"], <EmployeeManagement />) },
       { path: "attendance", element: guard(["attendance.view", "attendance.edit"], <AttendanceManagement />) },
       { path: "payroll", element: guard(["payroll.view", "payroll.edit"], <PayrollManagement />) },

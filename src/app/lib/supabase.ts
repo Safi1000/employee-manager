@@ -453,6 +453,7 @@ export const EMERGENCY_CONTACT_RELATIONS = [
 ] as const;
 
 export type ChequeType = "payment" | "cash";
+export type ChequeDirection = "outgoing" | "incoming";
 
 export type Cheque = {
   id: string;
@@ -462,6 +463,7 @@ export type Cheque = {
   amount: number;
   cheque_date: string;
   cheque_type: ChequeType;
+  direction: ChequeDirection;
   status: "pending" | "cleared";
   attachment_path: string | null;
   drive_file_id: string | null;

@@ -39,18 +39,22 @@ type LinkDef = {
   label: string;
   icon: typeof LayoutDashboard;
   perms?: string[];
+  roles?: string[]; // If set, user role must be in this list (takes priority over perms)
 };
 
 const has = (
   profile: Parameters<typeof hasAnyPermission>[0],
-  perms?: string[],
-) => !perms || hasAnyPermission(profile, perms);
+  def: LinkDef,
+) => {
+  if (def.roles) return def.roles.includes(profile?.role ?? "");
+  return !def.perms || hasAnyPermission(profile, def.perms);
+};
 
 const linkOrNull = (
   profile: Parameters<typeof hasAnyPermission>[0],
   def: LinkDef,
 ) =>
-  has(profile, def.perms)
+  has(profile, def)
     ? { to: def.to, label: def.label, icon: def.icon }
     : null;
 
@@ -81,7 +85,7 @@ export default function SuperAdminLayout() {
   const REPORTS: LinkDef = { to: "/super-admin/reports", label: "Financial Reports", icon: FileText, perms: ["reports.view"] };
   const CHART_OF_ACCOUNTS: LinkDef = { to: "/super-admin/chart-of-accounts", label: "Chart of Accounts", icon: BookOpen, perms: ["coa.view", "reports.view"] };
   const PERIOD_CLOSE: LinkDef = { to: "/super-admin/period-close", label: "Period Close", icon: Lock, perms: ["period_close.manage", "reports.view"] };
-  const AUDIT_LOG: LinkDef = { to: "/super-admin/audit-log", label: "Audit Log", icon: History, perms: ["audit_log.view", "users.manage"] };
+  const AUDIT_LOG: LinkDef = { to: "/super-admin/audit-log", label: "Audit Log", icon: History, roles: ["super_super_admin", "super_admin"] };
   const PARTNERS: LinkDef = { to: "/super-admin/partners", label: "Partner Accounts", icon: Users2, perms: ["accounting.view", "accounting.edit"] };
   const CASH_CUSTODY: LinkDef = { to: "/super-admin/cash-custody", label: "Cash Custody", icon: Wallet, perms: ["accounting.view", "accounting.edit"] };
   const PROFIT_DIST: LinkDef = { to: "/super-admin/profit-distribution", label: "Profit Distribution", icon: PieChart, perms: ["accounting.view", "accounting.edit"] };

@@ -11,10 +11,12 @@ import {
   Trash2,
   Filter,
   RefreshCw,
+  ShieldOff,
 } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import { formatDateTime } from "../../lib/date";
+import { useAuth } from "../../lib/auth";
 import {
   supabase,
   AUDITED_TABLES,
@@ -69,6 +71,9 @@ const TABLE_LABEL: Record<string, string> = {
 type ProfileLite = { id: string; full_name: string | null; email: string | null };
 
 export default function AuditLog() {
+  const { profile } = useAuth();
+  const isAdmin = profile?.role === "super_super_admin" || profile?.role === "super_admin";
+
   const [entries, setEntries] = useState<AuditLogEntry[]>([]);
   const [profiles, setProfiles] = useState<Map<string, ProfileLite>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -177,6 +182,15 @@ export default function AuditLog() {
     if (fields.length <= 3) return fields.join(", ");
     return `${fields.slice(0, 3).join(", ")} +${fields.length - 3} more`;
   };
+
+  if (!isAdmin) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 text-slate-500">
+        <ShieldOff className="w-10 h-10 text-slate-300" strokeWidth={1.5} />
+        <p className="text-sm">Audit Log is restricted to Super Admin and above.</p>
+      </div>
+    );
+  }
 
   return (
     <>
