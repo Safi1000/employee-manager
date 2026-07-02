@@ -243,6 +243,8 @@ export default function Accounting() {
   const [depositDate, setDepositDate] = useState(todayStr());
   const [depositDescription, setDepositDescription] = useState("");
   const [depositNotes, setDepositNotes] = useState("");
+  // Target bank when Cash Deposit is opened from the toolbar (no pre-selected row).
+  const [depositBankId, setDepositBankId] = useState<string>("");
   const [depositError, setDepositError] = useState<string | null>(null);
   // Set after a successful deposit so the modal shows a "Download Slip" confirmation.
   const [depositSuccess, setDepositSuccess] = useState<null | {
@@ -1022,14 +1024,28 @@ export default function Accounting() {
     }
   };
 
-  const openDeposit = (bank: BankAccount) => {
-    setSelectedBank(bank);
+  const resetDepositForm = () => {
     setDepositAmount("");
     setDepositDate(todayStr());
     setDepositDescription("");
     setDepositNotes("");
     setDepositError(null);
     setDepositSuccess(null);
+  };
+
+  // Per-row entry point: bank is fixed to the row clicked.
+  const openDeposit = (bank: BankAccount) => {
+    setSelectedBank(bank);
+    setDepositBankId("");
+    resetDepositForm();
+    setIsDepositModalOpen(true);
+  };
+
+  // Toolbar entry point (Cheques section): user picks the destination bank.
+  const openCashDeposit = () => {
+    setSelectedBank(null);
+    setDepositBankId(banks[0]?.id ?? "");
+    resetDepositForm();
     setIsDepositModalOpen(true);
   };
 
@@ -1048,8 +1064,13 @@ export default function Accounting() {
   // an expense / payroll / partner entry.
   const handleDeposit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedBank) return;
     setDepositError(null);
+    // Bank is either the pre-selected row (per-row Deposit) or the toolbar dropdown.
+    const targetBank = selectedBank ?? banks.find((b) => b.id === depositBankId) ?? null;
+    if (!targetBank) {
+      setDepositError("Select a bank account.");
+      return;
+    }
     const amount = Number(depositAmount);
     if (!amount || amount <= 0) {
       setDepositError("Enter a positive deposit amount.");
@@ -1067,7 +1088,7 @@ export default function Accounting() {
     setSubmitting(true);
     try {
       const { data, error: rpcErr } = await supabase.rpc("record_cash_deposit", {
-        p_bank_account_id: selectedBank.id,
+        p_bank_account_id: targetBank.id,
         p_amount: amount,
         p_date: depositDate,
         p_notes: notes,
@@ -1076,8 +1097,8 @@ export default function Accounting() {
       const dep = (Array.isArray(data) ? data[0] : data) as { slip_number: number };
       setDepositSuccess({
         slip_number: dep.slip_number,
-        bank_name: selectedBank.bank_name,
-        account_number: selectedBank.account_number,
+        bank_name: targetBank.bank_name,
+        account_number: targetBank.account_number,
         amount,
         deposit_date: depositDate,
         notes,
@@ -2335,6 +2356,15 @@ export default function Accounting() {
                     Deposit Cheque
                   </Button>
                   <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={openCashDeposit}
+                    disabled={banks.length === 0}
+                  >
+                    <Plus className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
+                    Cash Deposit
+                  </Button>
+                  <Button
                     variant="primary"
                     size="sm"
                     onClick={() => { setChequeForm((f) => ({ ...f, direction: "outgoing", cheque_type: "payment" })); setIsChequeAddOpen(true); }}
@@ -3128,7 +3158,7 @@ export default function Accounting() {
       </Modal>
 
       <Modal isOpen={isDepositModalOpen} onClose={() => setIsDepositModalOpen(false)} title="Cash Deposit" size="md">
-        {selectedBank && depositSuccess && (
+        {depositSuccess && (
           <div className="space-y-4">
             <div className="flex items-start gap-3 p-3 bg-success-50 border border-success-200 rounded-md">
               <CheckCircle2 className="w-5 h-5 text-success-600 mt-0.5" strokeWidth={1.5} />
@@ -3147,7 +3177,7 @@ export default function Accounting() {
             </div>
           </div>
         )}
-        {selectedBank && !depositSuccess && (
+        {!depositSuccess && (
           <form className="space-y-4" onSubmit={handleDeposit}>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Source</label>
@@ -3160,12 +3190,26 @@ export default function Accounting() {
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Bank Account</label>
-              <input
-                type="text"
-                value={`${selectedBank.bank_name} · ${selectedBank.account_number}`}
-                disabled
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
-              />
+              {selectedBank ? (
+                <input
+                  type="text"
+                  value={`${selectedBank.bank_name} · ${selectedBank.account_number}`}
+                  disabled
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
+                />
+              ) : (
+                <select
+                  required
+                  value={depositBankId}
+                  onChange={(e) => setDepositBankId(e.target.value)}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                >
+                  <option value="">Select bank account…</option>
+                  {banks.filter((b) => b.active).map((b) => (
+                    <option key={b.id} value={b.id}>{b.bank_name} · {b.account_number}</option>
+                  ))}
+                </select>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
