@@ -29,7 +29,6 @@ import {
   Lock,
   History,
   Users2,
-  Wallet,
   PieChart,
   Briefcase,
 } from "lucide-react";
@@ -87,7 +86,6 @@ export default function SuperAdminLayout() {
   const PERIOD_CLOSE: LinkDef = { to: "/super-admin/period-close", label: "Period Close", icon: Lock, perms: ["period_close.manage", "reports.view"] };
   const AUDIT_LOG: LinkDef = { to: "/super-admin/audit-log", label: "Audit Log", icon: History, roles: ["super_super_admin", "super_admin"] };
   const PARTNERS: LinkDef = { to: "/super-admin/partners", label: "Partner Accounts", icon: Users2, perms: ["accounting.view", "accounting.edit"] };
-  const CASH_CUSTODY: LinkDef = { to: "/super-admin/cash-custody", label: "Cash Custody", icon: Wallet, perms: ["accounting.view", "accounting.edit"] };
   const PROFIT_DIST: LinkDef = { to: "/super-admin/profit-distribution", label: "Profit Distribution", icon: PieChart, perms: ["accounting.view", "accounting.edit"] };
   const PROJECT_FIN: LinkDef = { to: "/super-admin/project-financing", label: "Project Financing", icon: Briefcase, perms: ["accounting.view", "accounting.edit"] };
   const COMPLIANCE: LinkDef = { to: "/super-admin/compliance", label: "Compliance Calendar", icon: Bell, perms: ["compliance.view", "compliance.edit"] };
@@ -182,9 +180,9 @@ export default function SuperAdminLayout() {
   if (finance) links.push(finance);
 
   // PARTNERSHIP FINANCE
+  // Cash Custody now lives as a tab inside Banks & Ledgers (Finance group), not here.
   const partnerFinance = buildGroup("Partnership Finance", "/super-admin/partnership", [
     PARTNERS,
-    CASH_CUSTODY,
     PROFIT_DIST,
     PROJECT_FIN,
   ]);

@@ -30,7 +30,6 @@ import ChartOfAccounts from "./pages/super-admin/ChartOfAccounts";
 import PeriodClose from "./pages/super-admin/PeriodClose";
 import AuditLog from "./pages/super-admin/AuditLog";
 import Partners from "./pages/super-admin/Partners";
-import CashCustody from "./pages/super-admin/CashCustody";
 import ProfitDistribution from "./pages/super-admin/ProfitDistribution";
 import ProjectFinancing from "./pages/super-admin/ProjectFinancing";
 
@@ -85,7 +84,8 @@ export const router = createBrowserRouter([
       { path: "invoices", element: guard(["invoices.view", "invoices.edit"], <Invoices />) },
       { path: "cashflow", element: guard(["cashflow.view"], <Cashflow />) },
       { path: "partners", element: guard(["accounting.view", "accounting.edit"], <Partners />) },
-      { path: "cash-custody", element: guard(["accounting.view", "accounting.edit"], <CashCustody />) },
+      // Cash Custody moved into Banks & Ledgers as a 4th tab; redirect the old route.
+      { path: "cash-custody", element: <Navigate to="/super-admin/accounting?tab=cash-custody" replace /> },
       { path: "profit-distribution", element: guard(["accounting.view", "accounting.edit"], <ProfitDistribution />) },
       { path: "project-financing", element: guard(["accounting.view", "accounting.edit"], <ProjectFinancing />) },
       { path: "inventory", element: guard(["inventory.view", "inventory.edit"], <Inventory />) },

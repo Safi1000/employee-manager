@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router";
 import { Plus, Building2, Download, AlertCircle, X, Loader2, ArrowDownUp, History, Trash2, CheckCircle2, RotateCcw, FileText, Pencil, ArrowLeftRight, Search, Power } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -32,6 +33,8 @@ import {
   type ChequeDirection,
 } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
+import { CashCustodyPanel } from "./CashCustody";
+import { generateDepositSlipPdf } from "../../lib/depositSlip";
 
 type PayableRow = Expense & {
   vendor?: Vendor | null;
@@ -75,7 +78,11 @@ const payableDisplayStatus = (row: PayableRow): PayableDisplayStatus => {
 export default function Accounting() {
   const { profile, company } = useAuth();
   const isAdmin = profile?.role === "super_super_admin" || profile?.role === "super_admin";
-  const [activeTab, setActiveTab] = useState<"receivables" | "payables" | "banks">("receivables");
+  const [searchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState<"receivables" | "payables" | "banks" | "cash-custody">(() => {
+    const t = searchParams.get("tab");
+    return t === "cash-custody" || t === "banks" || t === "payables" ? t : "receivables";
+  });
 
   const [banks, setBanks] = useState<BankAccount[]>([]);
   const [cheques, setCheques] = useState<Cheque[]>([]);
@@ -236,6 +243,18 @@ export default function Accounting() {
   const [depositDate, setDepositDate] = useState(todayStr());
   const [depositDescription, setDepositDescription] = useState("");
   const [depositNotes, setDepositNotes] = useState("");
+  const [depositError, setDepositError] = useState<string | null>(null);
+  // Set after a successful deposit so the modal shows a "Download Slip" confirmation.
+  const [depositSuccess, setDepositSuccess] = useState<null | {
+    slip_number: number; bank_name: string; account_number: string;
+    amount: number; deposit_date: string; notes: string | null;
+  }>(null);
+  // Past deposit slips (by cash_deposits.id) for re-download from the history log.
+  const [depositsById, setDepositsById] = useState<Map<string, {
+    id: string; bank_account_id: string; amount: number; deposit_date: string;
+    slip_number: number; notes: string | null; deposited_by: string | null;
+  }>>(new Map());
+  const [profileNames, setProfileNames] = useState<Map<string, string>>(new Map());
   const [submitting, setSubmitting] = useState(false);
 
   const totalAccountBalance = useMemo(
@@ -502,6 +521,26 @@ export default function Accounting() {
         .order("is_head_office", { ascending: false })
         .order("name");
       setBranchesList((brData ?? []) as { id: string; name: string }[]);
+    }
+
+    // Past cash-deposit slips (for re-download) + user names for slip attribution.
+    {
+      const [{ data: depData }, { data: profData }] = await Promise.all([
+        supabase
+          .from("cash_deposits")
+          .select("id, bank_account_id, amount, deposit_date, slip_number, notes, deposited_by")
+          .order("slip_number", { ascending: false }),
+        supabase.from("profiles").select("id, full_name, email"),
+      ]);
+      const dMap = new Map<string, {
+        id: string; bank_account_id: string; amount: number; deposit_date: string;
+        slip_number: number; notes: string | null; deposited_by: string | null;
+      }>();
+      for (const d of (depData ?? []) as any[]) dMap.set(d.id, d);
+      setDepositsById(dMap);
+      const nMap = new Map<string, string>();
+      for (const p of (profData ?? []) as any[]) nMap.set(p.id, p.full_name || p.email || "—");
+      setProfileNames(nMap);
     }
 
     // Aggregate linked amounts per cheque (payment cheques use this for clearance).
@@ -989,43 +1028,104 @@ export default function Accounting() {
     setDepositDate(todayStr());
     setDepositDescription("");
     setDepositNotes("");
+    setDepositError(null);
+    setDepositSuccess(null);
     setIsDepositModalOpen(true);
   };
 
+  const depositErrorMessage = (raw: string): string => {
+    if (raw.includes("insufficient_cash"))
+      return `Deposit exceeds available Cash in Hand (PKR ${cashBalance.toLocaleString()}).`;
+    if (raw.includes("no_treasury"))
+      return "No Cash in Hand balance is set up yet. Set an opening cash balance first.";
+    if (raw.includes("amount_must_be_positive")) return "Enter a positive deposit amount.";
+    if (raw.includes("bank_not_found")) return "That bank account no longer exists.";
+    return raw;
+  };
+
+  // Cash deposit = pure location move (Cash in Hand → bank). Done atomically in a
+  // single RPC so it can't leave cash and bank out of balance; it must NOT create
+  // an expense / payroll / partner entry.
   const handleDeposit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedBank) return;
+    setDepositError(null);
     const amount = Number(depositAmount);
     if (!amount || amount <= 0) {
-      setError("Enter a positive deposit amount.");
+      setDepositError("Enter a positive deposit amount.");
       return;
     }
     if (!depositDate) {
-      setError("Select a deposit date.");
+      setDepositError("Select a deposit date.");
       return;
     }
+    if (amount > cashBalance) {
+      setDepositError(`Deposit exceeds available Cash in Hand (PKR ${cashBalance.toLocaleString()}).`);
+      return;
+    }
+    const notes = [depositDescription.trim(), depositNotes.trim()].filter(Boolean).join(" · ") || null;
     setSubmitting(true);
-    setError(null);
     try {
-      await applyBankDelta(selectedBank.id, amount);
-      await logTransaction({
-        bank_account_id: selectedBank.id,
-        kind: "deposit",
-        amount,
-        cash_delta: 0,
-        account_delta: amount,
-        description:
-          depositDescription.trim() ||
-          `Cash deposit PKR ${amount.toLocaleString()} to ${selectedBank.bank_name}`,
-        created_at: dateToTs(depositDate),
+      const { data, error: rpcErr } = await supabase.rpc("record_cash_deposit", {
+        p_bank_account_id: selectedBank.id,
+        p_amount: amount,
+        p_date: depositDate,
+        p_notes: notes,
       });
-      setIsDepositModalOpen(false);
+      if (rpcErr) throw rpcErr;
+      const dep = (Array.isArray(data) ? data[0] : data) as { slip_number: number };
+      setDepositSuccess({
+        slip_number: dep.slip_number,
+        bank_name: selectedBank.bank_name,
+        account_number: selectedBank.account_number,
+        amount,
+        deposit_date: depositDate,
+        notes,
+      });
       await loadAll();
     } catch (err: any) {
-      setError(err.message ?? String(err));
+      setDepositError(depositErrorMessage(err?.message ?? String(err)));
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const downloadDepositSlip = (d: {
+    slip_number: number; bank_name: string; account_number: string;
+    amount: number; deposit_date: string; notes: string | null; deposited_by?: string | null;
+  }) => {
+    const by = d.deposited_by
+      ? (profileNames.get(d.deposited_by) ?? "—")
+      : (profile?.full_name || profile?.email || "—");
+    generateDepositSlipPdf(
+      {
+        slipNumber: d.slip_number,
+        date: d.deposit_date,
+        bankName: d.bank_name,
+        accountNumber: d.account_number,
+        amount: d.amount,
+        depositedBy: by,
+        reference: d.notes,
+      },
+      company,
+    );
+  };
+
+  // Re-download a past deposit slip from the transaction log (reference_id ==
+  // cash_deposits.id). Bank name/number resolved from the loaded banks list.
+  const downloadSlipByRef = (referenceId: string) => {
+    const dep = depositsById.get(referenceId);
+    if (!dep) return;
+    const bank = banks.find((b) => b.id === dep.bank_account_id);
+    downloadDepositSlip({
+      slip_number: dep.slip_number,
+      bank_name: bank?.bank_name ?? "—",
+      account_number: bank?.account_number ?? "—",
+      amount: Number(dep.amount),
+      deposit_date: dep.deposit_date,
+      notes: dep.notes,
+      deposited_by: dep.deposited_by,
+    });
   };
 
   const openReconcile = (bank: BankAccount) => {
@@ -1771,7 +1871,7 @@ export default function Accounting() {
         <div className="bg-white rounded-lg border border-slate-200 mb-6">
           <div className="p-6 border-b border-slate-200 flex flex-wrap items-center gap-3">
             <div className="flex gap-2 flex-wrap">
-              {(["receivables", "payables", "banks"] as const).map((tab) => (
+              {(["receivables", "payables", "banks", "cash-custody"] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
@@ -1784,6 +1884,7 @@ export default function Accounting() {
                   {tab === "receivables" && "Client Receivables"}
                   {tab === "payables" && "Accounts Payable"}
                   {tab === "banks" && "Bank Accounts"}
+                  {tab === "cash-custody" && "Cash Custody"}
                 </button>
               ))}
             </div>
@@ -2459,6 +2560,12 @@ export default function Accounting() {
             </div>
             </>
           )}
+
+          {activeTab === "cash-custody" && (
+            <div className="p-6">
+              <CashCustodyPanel />
+            </div>
+          )}
         </div>
       </div>
 
@@ -3021,22 +3128,41 @@ export default function Accounting() {
       </Modal>
 
       <Modal isOpen={isDepositModalOpen} onClose={() => setIsDepositModalOpen(false)} title="Cash Deposit" size="md">
-        {selectedBank && (
+        {selectedBank && depositSuccess && (
+          <div className="space-y-4">
+            <div className="flex items-start gap-3 p-3 bg-success-50 border border-success-200 rounded-md">
+              <CheckCircle2 className="w-5 h-5 text-success-600 mt-0.5" strokeWidth={1.5} />
+              <div className="text-sm text-success-800">
+                Deposited <strong>PKR {depositSuccess.amount.toLocaleString()}</strong> to {depositSuccess.bank_name}.
+                Cash in Hand reduced; bank balance increased. Slip <strong>#{depositSuccess.slip_number}</strong>.
+              </div>
+            </div>
+            <div className="flex items-center gap-3 pt-2">
+              <Button variant="primary" size="md" className="flex-1" onClick={() => downloadDepositSlip(depositSuccess)}>
+                <Download className="w-4 h-4 mr-2" strokeWidth={1.5} /> Download Slip
+              </Button>
+              <Button variant="secondary" size="md" onClick={() => setIsDepositModalOpen(false)}>
+                Done
+              </Button>
+            </div>
+          </div>
+        )}
+        {selectedBank && !depositSuccess && (
           <form className="space-y-4" onSubmit={handleDeposit}>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Bank Account</label>
+              <label className="block text-sm text-slate-700 mb-1">Source</label>
               <input
                 type="text"
-                value={`${selectedBank.bank_name} · ${selectedBank.account_number}`}
+                value={`Cash in Hand · PKR ${cashBalance.toLocaleString()} available`}
                 disabled
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
               />
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Current Balance</label>
+              <label className="block text-sm text-slate-700 mb-1">Bank Account</label>
               <input
                 type="text"
-                value={`PKR ${Number(selectedBank.balance).toLocaleString()}`}
+                value={`${selectedBank.bank_name} · ${selectedBank.account_number}`}
                 disabled
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
               />
@@ -3067,27 +3193,24 @@ export default function Accounting() {
               </div>
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Description</label>
+              <label className="block text-sm text-slate-700 mb-1">Reference / Notes</label>
               <input
                 type="text"
-                value={depositDescription}
-                onChange={(e) => setDepositDescription(e.target.value)}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
-                placeholder="e.g. Client payment, proceeds from sale…"
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-slate-700 mb-1">Notes</label>
-              <textarea
                 value={depositNotes}
                 onChange={(e) => setDepositNotes(e.target.value)}
-                rows={2}
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
-                placeholder="Internal reference, source of funds…"
+                placeholder="e.g. Deposited by hand, source of funds…"
               />
             </div>
+            {depositError && (
+              <div className="flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
+                <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
+                <div className="flex-1">{depositError}</div>
+              </div>
+            )}
             <p className="text-xs text-slate-500">
-              Adds directly to the Account Balance and logs a Deposit entry in the transaction ledger.
+              Moves money from Cash in Hand into this bank account — a pure location transfer.
+              It does not create an expense, payroll, or partner entry.
             </p>
             <div className="flex items-center gap-3 pt-2">
               <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
@@ -3993,6 +4116,8 @@ export default function Accounting() {
           monthOptions={monthOptions}
           onClose={() => setIsLogModalOpen(false)}
           emptyText="No transactions yet."
+          depositRefs={new Set(depositsById.keys())}
+          onDownloadSlip={downloadSlipByRef}
         />
       </Modal>
 
@@ -4061,6 +4186,8 @@ function HistoryBody({
   monthOptions,
   onClose,
   emptyText,
+  depositRefs,
+  onDownloadSlip,
 }: {
   transactions: BankTransaction[];
   banks: BankAccount[];
@@ -4074,6 +4201,8 @@ function HistoryBody({
   monthOptions: { key: string; label: string }[];
   onClose: () => void;
   emptyText: string;
+  depositRefs?: Set<string>;
+  onDownloadSlip?: (referenceId: string) => void;
 }) {
   const filtered = transactions.filter((t) => {
     if (bankFilter !== "all") {
@@ -4214,7 +4343,21 @@ function HistoryBody({
                       )}
                       {!ledger.bank && !ledger.cash && <span className="text-slate-400">—</span>}
                     </td>
-                    <td className="px-3 py-2 text-xs text-slate-600">{t.description ?? "—"}</td>
+                    <td className="px-3 py-2 text-xs text-slate-600">
+                      <div className="flex items-center gap-2">
+                        <span className="flex-1">{t.description ?? "—"}</span>
+                        {t.kind === "deposit" && t.reference_id && onDownloadSlip && depositRefs?.has(t.reference_id) && (
+                          <button
+                            type="button"
+                            title="Download deposit slip"
+                            onClick={() => onDownloadSlip(t.reference_id as string)}
+                            className="p-1 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors"
+                          >
+                            <FileText className="w-3.5 h-3.5" strokeWidth={1.5} />
+                          </button>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 );
               })}

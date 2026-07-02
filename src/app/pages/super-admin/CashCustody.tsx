@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Pencil, AlertCircle, X, Loader2, ArrowRightLeft, Wallet, Building2 } from "lucide-react";
-import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
+
+// Rendered as the "Cash Custody" tab inside Banks & Ledgers (Accounting.tsx).
+// Self-contained: no page Header — the action buttons live in an inline toolbar.
 
 const fmt = (n: number) => `PKR ${Math.round(n).toLocaleString()}`;
 const today = () => new Date().toISOString().slice(0, 10);
@@ -18,6 +20,7 @@ type CashLocation = {
   opening_balance: number;
   branch_id: string | null;
   is_active: boolean;
+  bank_account_id: string | null;
 };
 
 type CustodyTransfer = {
@@ -30,25 +33,42 @@ type CustodyTransfer = {
   created_at: string;
 };
 
-type Partner = { id: string; name: string };
+type Partner = {
+  id: string;
+  name: string;
+  scope: "COMPANY" | "BRANCH";
+  branch_id: string | null;
+  opening_balance: number;
+  is_active: boolean;
+};
 type Branch = { id: string; name: string };
+type BankAccountLite = { id: string; balance: number; active: boolean };
+type PartnerStats = { allocated: number; drawn: number; contributed: number; balance: number };
 
 type LocationWithBalance = CashLocation & { balance: number };
 
-export default function CashCustody() {
+// Synthetic id for the "Cash in Hand" (company treasury) row shown alongside
+// the real cash_locations on the Cash Position tab.
+const CASH_IN_HAND_ID = "__cash_in_hand__";
+
+export function CashCustodyPanel() {
   const { profile } = useAuth();
   const companyId = profile?.view_as_company ?? profile?.company_id ?? null;
+  // Branch-scoped (regional partner) logins see only their own branch's partners;
+  // company-wide roles (no branch) see everyone. SSA viewing a company is company-wide.
+  const branchScope = profile?.role === "super_super_admin" ? null : (profile?.branch_id ?? null);
 
   const [tab, setTab] = useState<"locations" | "transfers" | "position" | "reconciliation">("position");
   const [locations, setLocations] = useState<CashLocation[]>([]);
   const [transfers, setTransfers] = useState<CustodyTransfer[]>([]);
   const [partners, setPartners] = useState<Partner[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
+  const [banks, setBanks] = useState<BankAccountLite[]>([]);
+  const [cashInHand, setCashInHand] = useState<number>(0);
+  const [partnerStats, setPartnerStats] = useState<Map<string, PartnerStats>>(new Map());
+  const [investorLiabilities, setInvestorLiabilities] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  // For partner balances in reconciliation view
-  const [partnerBalances, setPartnerBalances] = useState<Map<string, number>>(new Map());
 
   // Add/Edit Location modal
   const [isLocOpen, setIsLocOpen] = useState(false);
@@ -70,47 +90,77 @@ export default function CashCustody() {
     if (!companyId) return;
     setLoading(true);
     try {
-      const [{ data: locs }, { data: tx }, { data: pts }, { data: brs }] = await Promise.all([
+      const [
+        { data: locs }, { data: tx }, { data: pts }, { data: brs },
+        { data: bnks }, { data: treas }, { data: pEntries }, { data: iEntries },
+      ] = await Promise.all([
         supabase.from("cash_locations").select("*").eq("company_id", companyId).order("name"),
         supabase.from("custody_transfers").select("*").eq("company_id", companyId).order("date", { ascending: false }).limit(100),
-        supabase.from("partners").select("id, name").eq("company_id", companyId).eq("is_active", true).order("name"),
+        supabase.from("partners").select("id, name, scope, branch_id, opening_balance, is_active").eq("company_id", companyId).order("name"),
         supabase.from("branches").select("id, name").eq("company_id", companyId).order("name"),
+        supabase.from("bank_accounts").select("id, balance, active").eq("company_id", companyId),
+        supabase.from("treasury").select("cash_balance").eq("company_id", companyId).maybeSingle(),
+        supabase.from("partner_account_entries").select("partner_id, type, amount").eq("company_id", companyId),
+        supabase.from("investor_ledger_entries").select("investor_id, type, amount").eq("company_id", companyId),
       ]);
+      const partnerList = ((pts ?? []) as Partner[]).filter((p) => p.is_active);
       setLocations((locs ?? []) as CashLocation[]);
       setTransfers((tx ?? []) as CustodyTransfer[]);
-      setPartners((pts ?? []) as Partner[]);
+      setPartners(partnerList);
       setBranches((brs ?? []) as Branch[]);
+      setBanks((bnks ?? []) as BankAccountLite[]);
+      setCashInHand(Number(treas?.cash_balance ?? 0));
+
+      // Partner running balances: OPENING + PROFIT_ALLOCATION + CONTRIBUTION − DRAWING.
+      // (Same engine as Partners.tsx computeBalance.)
+      const stats = new Map<string, PartnerStats>();
+      for (const p of partnerList) {
+        stats.set(p.id, { allocated: 0, drawn: 0, contributed: 0, balance: Number(p.opening_balance ?? 0) });
+      }
+      for (const e of (pEntries ?? []) as any[]) {
+        const s = stats.get(e.partner_id);
+        if (!s) continue;
+        const amt = Number(e.amount ?? 0);
+        if (e.type === "PROFIT_ALLOCATION") { s.allocated += amt; s.balance += amt; }
+        else if (e.type === "DRAWING") { s.drawn += amt; s.balance -= amt; }
+        else if (e.type === "CONTRIBUTION") { s.contributed += amt; s.balance += amt; }
+      }
+      setPartnerStats(stats);
+
+      // Investor liabilities the company owes (spec §2.6): outstanding capital +
+      // unpaid return balance, per investor, positive amounts only.
+      const invAgg = new Map<string, { capital: number; ret: number }>();
+      for (const e of (iEntries ?? []) as any[]) {
+        const cur = invAgg.get(e.investor_id) ?? { capital: 0, ret: 0 };
+        const amt = Number(e.amount ?? 0);
+        if (e.type === "CAPITAL_IN") cur.capital += amt;
+        else if (e.type === "CAPITAL_REPAYMENT") cur.capital -= amt;
+        else if (e.type === "RETURN_ALLOCATION" || e.type === "FINANCE_COST_ACCRUAL") cur.ret += amt;
+        else if (e.type === "RETURN_PAYOUT" || e.type === "FINANCE_COST_PAYMENT") cur.ret -= amt;
+        invAgg.set(e.investor_id, cur);
+      }
+      let invLiab = 0;
+      for (const v of invAgg.values()) invLiab += Math.max(0, v.capital) + Math.max(0, v.ret);
+      setInvestorLiabilities(invLiab);
     } catch (e: any) { setError(e.message); }
     finally { setLoading(false); }
   };
 
-  const loadPartnerBalances = async () => {
-    if (!companyId || partners.length === 0) return;
-    const { data } = await supabase
-      .from("partner_account_entries")
-      .select("partner_id, type, amount")
-      .eq("company_id", companyId);
-    const { data: pData } = await supabase.from("partners").select("id, opening_balance").eq("company_id", companyId);
-    const openings = new Map<string, number>((pData ?? []).map((p: any) => [p.id, p.opening_balance]));
-    const map = new Map<string, number>();
-    for (const [pid, opening] of openings) {
-      const entries = (data ?? []).filter((e: any) => e.partner_id === pid);
-      let bal = opening;
-      for (const e of entries as any[]) {
-        if (e.type === "PROFIT_ALLOCATION") bal += e.amount;
-        else if (e.type === "DRAWING") bal -= e.amount;
-        else if (e.type === "CONTRIBUTION") bal += e.amount;
-      }
-      map.set(pid, bal);
-    }
-    setPartnerBalances(map);
-  };
-
   useEffect(() => { loadData(); }, [companyId]);
-  useEffect(() => { if (tab === "reconciliation" && partners.length > 0) loadPartnerBalances(); }, [tab, partners]);
 
+  const bankBalanceById = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const b of banks) m.set(b.id, Number(b.balance ?? 0));
+    return m;
+  }, [banks]);
+
+  // BANK locations mirror their live bank balance (single source of truth so the
+  // two never drift); custodian / petty-cash use opening + net custody transfers.
   const computeLocationBalance = (loc: CashLocation): number => {
-    let bal = loc.opening_balance;
+    if (loc.location_type === "BANK" && loc.bank_account_id) {
+      return bankBalanceById.get(loc.bank_account_id) ?? 0;
+    }
+    let bal = Number(loc.opening_balance ?? 0);
     for (const t of transfers) {
       if (t.to_location_id === loc.id) bal += t.amount;
       if (t.from_location_id === loc.id) bal -= t.amount;
@@ -120,12 +170,39 @@ export default function CashCustody() {
 
   const locationsWithBalance: LocationWithBalance[] = useMemo(
     () => locations.map((l) => ({ ...l, balance: computeLocationBalance(l) })),
-    [locations, transfers],
+    [locations, transfers, bankBalanceById],
   );
 
-  const totalCash = useMemo(() => locationsWithBalance.filter((l) => l.is_active).reduce((s, l) => s + l.balance, 0), [locationsWithBalance]);
-  const totalPartnerOwed = useMemo(() => Array.from(partnerBalances.values()).filter((b) => b > 0).reduce((s, b) => s + b, 0), [partnerBalances]);
-  const freeCash = totalCash - totalPartnerOwed;
+  // Cash in Hand (company treasury) as its own Position row alongside real locations.
+  const cashInHandRow: LocationWithBalance = {
+    id: CASH_IN_HAND_ID, name: "Cash in Hand", location_type: "PETTY_CASH",
+    custodian_partner_id: null, custodian_user_id: null, opening_balance: 0,
+    branch_id: null, is_active: true, bank_account_id: null, balance: cashInHand,
+  };
+  const positionRows = useMemo(
+    () => [cashInHandRow, ...locationsWithBalance.filter((l) => l.is_active)],
+    [locationsWithBalance, cashInHand],
+  );
+
+  const totalCash = useMemo(
+    () => cashInHand + locationsWithBalance.filter((l) => l.is_active).reduce((s, l) => s + l.balance, 0),
+    [locationsWithBalance, cashInHand],
+  );
+  const totalPartnerOwed = useMemo(
+    () => Array.from(partnerStats.values()).filter((s) => s.balance > 0).reduce((s, v) => s + v.balance, 0),
+    [partnerStats],
+  );
+  const freeCash = totalCash - totalPartnerOwed - investorLiabilities;
+
+  // Partners shown in the summary (branch-scoped logins see only their branch),
+  // owner (COMPANY) first then regional partners by name.
+  const summaryPartners = useMemo(() => {
+    const list = branchScope ? partners.filter((p) => p.branch_id === branchScope) : partners;
+    return [...list].sort((a, b) => {
+      if (a.scope !== b.scope) return a.scope === "COMPANY" ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [partners, branchScope]);
 
   const openAddLoc = () => {
     setEditLoc(null);
@@ -208,28 +285,25 @@ export default function CashCustody() {
 
   const locName = (id: string | null) => id ? (locations.find((l) => l.id === id)?.name ?? id) : "—";
 
-  if (loading) return <div className="flex-1 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>;
+  if (loading) return <div className="py-12 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>;
 
   return (
     <>
-      <Header
-        title="Cash Custody"
-        subtitle="Track who holds company cash — banks, petty cash, and custodians"
-        actions={
-          <div className="flex gap-2">
-            <Button variant="secondary" size="md" onClick={() => { setIsTransferOpen(true); }}>
-              <ArrowRightLeft className="w-4 h-4 mr-2" strokeWidth={1.5} />
-              Record Transfer
-            </Button>
-            <Button variant="primary" size="md" onClick={openAddLoc}>
-              <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
-              Add Location
-            </Button>
-          </div>
-        }
-      />
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
+        <p className="text-sm text-slate-500">Track who holds company cash — banks, petty cash, and custodians</p>
+        <div className="flex gap-2">
+          <Button variant="secondary" size="md" onClick={() => { setIsTransferOpen(true); }}>
+            <ArrowRightLeft className="w-4 h-4 mr-2" strokeWidth={1.5} />
+            Record Transfer
+          </Button>
+          <Button variant="primary" size="md" onClick={openAddLoc}>
+            <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
+            Add Location
+          </Button>
+        </div>
+      </div>
 
-      <div className="flex-1 overflow-y-auto p-8">
+      <div>
         {error && (
           <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
@@ -267,14 +341,14 @@ export default function CashCustody() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {locationsWithBalance.filter((l) => l.is_active).map((loc) => (
+              {positionRows.map((loc) => (
                 <div key={loc.id} className="bg-white rounded-lg border border-slate-200 p-4">
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-2">
                       {typeIcon(loc.location_type)}
                       <div>
                         <p className="text-sm font-medium text-slate-900">{loc.name}</p>
-                        <p className="text-xs text-slate-500">{typeLabel(loc.location_type)}</p>
+                        <p className="text-xs text-slate-500">{loc.id === CASH_IN_HAND_ID ? "Cash / Treasury" : typeLabel(loc.location_type)}</p>
                       </div>
                     </div>
                   </div>
@@ -284,11 +358,49 @@ export default function CashCustody() {
                   <p className={`text-xl font-mono ${loc.balance < 0 ? "text-danger-600" : "text-slate-900"}`}>{fmt(loc.balance)}</p>
                 </div>
               ))}
-              {locationsWithBalance.filter((l) => l.is_active).length === 0 && (
-                <div className="col-span-3 bg-white rounded-lg border border-slate-200 py-12 text-center text-slate-500 text-sm">
-                  No active cash locations. Add one to get started.
-                </div>
-              )}
+            </div>
+
+            {/* ── Partners Summary (Phase 3) ── */}
+            <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
+              <div className="p-4 border-b border-slate-200">
+                <h3 className="text-base text-slate-900">Partners Summary</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Running balance per partner. Positive = company owes the partner; negative (red) = overdrawn.
+                </p>
+              </div>
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-slate-200">
+                    <th className="text-left px-6 py-3 text-sm text-slate-500">Partner</th>
+                    <th className="text-right px-6 py-3 text-sm text-slate-500">Allocated</th>
+                    <th className="text-right px-6 py-3 text-sm text-slate-500">Contributed</th>
+                    <th className="text-right px-6 py-3 text-sm text-slate-500">Drawn</th>
+                    <th className="text-right px-6 py-3 text-sm text-slate-500">Net Balance</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {summaryPartners.length === 0 && (
+                    <tr><td colSpan={5} className="px-6 py-8 text-center text-slate-500 text-sm">No partners.</td></tr>
+                  )}
+                  {summaryPartners.map((p) => {
+                    const s = partnerStats.get(p.id) ?? { allocated: 0, drawn: 0, contributed: 0, balance: 0 };
+                    return (
+                      <tr key={p.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-6 py-4">
+                          <p className="text-sm text-slate-900 font-medium">{p.name}</p>
+                          <span className={`inline-flex mt-0.5 px-2 py-0.5 rounded text-xs ${p.scope === "COMPANY" ? "bg-brand-50 text-brand-700" : "bg-amber-50 text-amber-700"}`}>
+                            {p.scope === "COMPANY" ? "Owner" : (branches.find((b) => b.id === p.branch_id)?.name ?? "Branch")}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-right text-sm font-mono text-success-600">{fmt(s.allocated)}</td>
+                        <td className="px-6 py-4 text-right text-sm font-mono text-brand-600">{fmt(s.contributed)}</td>
+                        <td className="px-6 py-4 text-right text-sm font-mono text-danger-600">{fmt(s.drawn)}</td>
+                        <td className={`px-6 py-4 text-right text-sm font-mono font-semibold ${s.balance < 0 ? "text-danger-700" : "text-slate-900"}`}>{fmt(s.balance)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
@@ -307,6 +419,10 @@ export default function CashCustody() {
                 <div className="flex items-center justify-between py-2 border-b border-slate-100">
                   <span className="text-sm text-slate-500 ml-4">− Undrawn partner entitlements (positive balances)</span>
                   <span className="text-sm font-mono text-warning-700">({fmt(totalPartnerOwed)})</span>
+                </div>
+                <div className="flex items-center justify-between py-2 border-b border-slate-100">
+                  <span className="text-sm text-slate-500 ml-4">− Investor liabilities (capital outstanding + returns owed)</span>
+                  <span className="text-sm font-mono text-warning-700">({fmt(investorLiabilities)})</span>
                 </div>
                 <div className={`flex items-center justify-between py-3 rounded-md px-3 ${freeCash >= 0 ? "bg-success-50" : "bg-danger-50"}`}>
                   <span className={`text-sm font-medium ${freeCash >= 0 ? "text-success-700" : "text-danger-700"}`}>= Free Company Cash</span>
@@ -334,7 +450,7 @@ export default function CashCustody() {
                     <tr><td colSpan={3} className="px-6 py-8 text-center text-slate-500 text-sm">No partners.</td></tr>
                   )}
                   {partners.map((p) => {
-                    const bal = partnerBalances.get(p.id) ?? 0;
+                    const bal = partnerStats.get(p.id)?.balance ?? 0;
                     return (
                       <tr key={p.id} className="hover:bg-slate-50">
                         <td className="px-6 py-4 text-sm text-slate-900">{p.name}</td>
@@ -390,9 +506,13 @@ export default function CashCustody() {
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <button onClick={() => openEditLoc(loc)} className="p-1.5 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors">
-                        <Pencil className="w-4 h-4" strokeWidth={1.5} />
-                      </button>
+                      {loc.location_type === "BANK" ? (
+                        <span className="text-xs text-slate-400" title="Synced automatically from the Bank Accounts tab">Auto-synced</span>
+                      ) : (
+                        <button onClick={() => openEditLoc(loc)} className="p-1.5 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors">
+                          <Pencil className="w-4 h-4" strokeWidth={1.5} />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -448,9 +568,10 @@ export default function CashCustody() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Type</label>
+              {/* Bank accounts are auto-synced from the Bank Accounts tab — only
+                  petty cash / custodian locations are created here. */}
               <select value={locForm.location_type} onChange={(e) => setLocForm({ ...locForm, location_type: e.target.value as any })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
-                <option value="BANK">Bank Account</option>
                 <option value="PETTY_CASH">Petty Cash</option>
                 <option value="CUSTODIAN">Custodian (person)</option>
               </select>
@@ -495,7 +616,7 @@ export default function CashCustody() {
       {/* ── Custody Transfer Modal ── */}
       <Modal isOpen={isTransferOpen} onClose={() => setIsTransferOpen(false)} title="Record Custody Transfer" size="sm">
         <div className="space-y-4">
-          <p className="text-sm text-slate-500">Move company cash between locations. This does not change who owns the money.</p>
+          <p className="text-sm text-slate-500">Move company cash between custodian / petty-cash locations. This does not change who owns the money. (Bank ↔ cash moves happen via Deposit / Withdraw on the Bank Accounts tab.)</p>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Date *</label>
             <input type="date" value={transferForm.date} onChange={(e) => setTransferForm({ ...transferForm, date: e.target.value })}
@@ -507,7 +628,7 @@ export default function CashCustody() {
               <select value={transferForm.from_location_id} onChange={(e) => setTransferForm({ ...transferForm, from_location_id: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
                 <option value="">Select…</option>
-                {locations.filter((l) => l.is_active).map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                {locations.filter((l) => l.is_active && l.location_type !== "BANK").map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
               </select>
             </div>
             <div>
@@ -515,7 +636,7 @@ export default function CashCustody() {
               <select value={transferForm.to_location_id} onChange={(e) => setTransferForm({ ...transferForm, to_location_id: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
                 <option value="">Select…</option>
-                {locations.filter((l) => l.is_active).map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                {locations.filter((l) => l.is_active && l.location_type !== "BANK").map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
               </select>
             </div>
           </div>
