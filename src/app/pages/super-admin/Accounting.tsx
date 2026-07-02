@@ -1376,6 +1376,17 @@ export default function Accounting() {
     });
   }, [payables, payableStatusFilter, payablesMonth]);
 
+  // Cash Deposit History — reuses the Cheques toolbar filters (bank / status /
+  // month). Cash deposits are always completed, so the "pending" status filter
+  // hides them (nothing is ever pending). Newest slip first.
+  const filteredDeposits = useMemo(() => {
+    return Array.from(depositsById.values())
+      .filter((d) => chequeBankFilter === "all" || d.bank_account_id === chequeBankFilter)
+      .filter((d) => chequeMonthFilter === "all" || (d.deposit_date ?? "").slice(0, 7) === chequeMonthFilter)
+      .filter(() => chequeFilter !== "pending")
+      .sort((a, b) => b.slip_number - a.slip_number);
+  }, [depositsById, chequeBankFilter, chequeMonthFilter, chequeFilter]);
+
   const payablesSummary = useMemo(() => {
     let pendingTotal = 0;
     let paidTotal = 0;
@@ -2584,6 +2595,59 @@ export default function Accounting() {
                         </td>
                       </tr>
                     )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* ── Cash Deposit History ── */}
+            <div className="border-t border-slate-200 p-6">
+              <div className="mb-4">
+                <h3 className="text-base text-slate-900">Cash Deposits</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Cash moved from Cash in Hand into a bank account. Uses the same Bank / Status / Month filters as Cheques above.
+                </p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-slate-200">
+                      <th className="text-left px-4 py-2 text-sm text-slate-500">Slip #</th>
+                      <th className="text-left px-4 py-2 text-sm text-slate-500">Bank</th>
+                      <th className="text-left px-4 py-2 text-sm text-slate-500">Date</th>
+                      <th className="text-right px-4 py-2 text-sm text-slate-500">Amount</th>
+                      <th className="text-left px-4 py-2 text-sm text-slate-500">Deposited By</th>
+                      <th className="text-left px-4 py-2 text-sm text-slate-500">Reference / Notes</th>
+                      <th className="text-right px-4 py-2 text-sm text-slate-500">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {filteredDeposits.length === 0 && (
+                      <tr>
+                        <td colSpan={7} className="px-4 py-6 text-center text-sm text-slate-500">
+                          No cash deposits to show.
+                        </td>
+                      </tr>
+                    )}
+                    {filteredDeposits.map((d) => {
+                      const bank = banks.find((b) => b.id === d.bank_account_id);
+                      return (
+                        <tr key={d.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="px-4 py-2 text-sm text-slate-900 font-mono">#{d.slip_number}</td>
+                          <td className="px-4 py-2 text-sm text-slate-600">{bank ? `${bank.bank_name} · ${bank.account_number}` : "—"}</td>
+                          <td className="px-4 py-2 text-sm text-slate-600">{formatDate(d.deposit_date)}</td>
+                          <td className="px-4 py-2 text-sm text-slate-900 text-right font-mono">PKR {Number(d.amount).toLocaleString()}</td>
+                          <td className="px-4 py-2 text-sm text-slate-600">{d.deposited_by ? (profileNames.get(d.deposited_by) ?? "—") : "—"}</td>
+                          <td className="px-4 py-2 text-sm text-slate-500">{d.notes ?? "—"}</td>
+                          <td className="px-4 py-2 text-right">
+                            <Button variant="ghost" size="sm" onClick={() => downloadSlipByRef(d.id)}>
+                              <FileText className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
+                              Download Slip
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
