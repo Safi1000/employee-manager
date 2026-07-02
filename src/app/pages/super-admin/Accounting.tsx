@@ -119,6 +119,8 @@ export default function Accounting() {
   const [chequeViewAttachmentUrl, setChequeViewAttachmentUrl] = useState<string | null>(null);
   const [chequeSubmitting, setChequeSubmitting] = useState(false);
   const [chequeFilter, setChequeFilter] = useState<"all" | "pending" | "cleared">("all");
+  // Which record type the Cheques section shows: cheques or cash deposits.
+  const [chequeSectionView, setChequeSectionView] = useState<"cheques" | "deposits">("cheques");
   const [chequeBankFilter, setChequeBankFilter] = useState<string>("all");
   const [chequeMonthFilter, setChequeMonthFilter] = useState<string>("all");
   const [cashBalance, setCashBalance] = useState<number>(0);
@@ -2320,12 +2322,38 @@ export default function Accounting() {
             </div>
 
             <div className="border-t border-slate-200 p-6">
+              {/* Record-type toggle — mirrors the page-level tab bar style. */}
+              <div className="flex gap-2 flex-wrap mb-3">
+                {(["cheques", "deposits"] as const).map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setChequeSectionView(v)}
+                    className={`px-4 py-2 rounded-md text-sm transition-colors ${
+                      chequeSectionView === v ? "bg-brand-600 text-white" : "text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    {v === "cheques" ? "Cheques" : "Cash Deposits"}
+                  </button>
+                ))}
+              </div>
               <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                 <div>
-                  <h3 className="text-base text-slate-900">Cheques</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Outgoing cheques deduct the bank balance immediately. Deposit (incoming) cheques credit the bank only on clearance.
-                  </p>
+                  {chequeSectionView === "cheques" ? (
+                    <>
+                      <h3 className="text-base text-slate-900">Cheques</h3>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Outgoing cheques deduct the bank balance immediately. Deposit (incoming) cheques credit the bank only on clearance.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <h3 className="text-base text-slate-900">Cash Deposits</h3>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Cash moved from Cash in Hand into a bank account.
+                      </p>
+                    </>
+                  )}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <select
@@ -2338,15 +2366,19 @@ export default function Accounting() {
                       <option key={b.id} value={b.id}>{b.bank_name}</option>
                     ))}
                   </select>
-                  <select
-                    value={chequeFilter}
-                    onChange={(e) => setChequeFilter(e.target.value as "all" | "pending" | "cleared")}
-                    className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
-                  >
-                    <option value="all">All Status</option>
-                    <option value="pending">Pending</option>
-                    <option value="cleared">Cleared</option>
-                  </select>
+                  {/* Cash deposits are atomic/immediate — no status concept, so the
+                      Status filter only applies to cheques. */}
+                  {chequeSectionView === "cheques" && (
+                    <select
+                      value={chequeFilter}
+                      onChange={(e) => setChequeFilter(e.target.value as "all" | "pending" | "cleared")}
+                      className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
+                    >
+                      <option value="all">All Status</option>
+                      <option value="pending">Pending</option>
+                      <option value="cleared">Cleared</option>
+                    </select>
+                  )}
                   <select
                     value={chequeMonthFilter}
                     onChange={(e) => setChequeMonthFilter(e.target.value)}
@@ -2357,36 +2389,42 @@ export default function Accounting() {
                       <option key={m.key} value={m.key}>{m.label}</option>
                     ))}
                   </select>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => { setChequeForm((f) => ({ ...f, direction: "incoming", cheque_type: "cash" })); setIsChequeAddOpen(true); }}
-                    disabled={banks.length === 0}
-                  >
-                    <Plus className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
-                    Deposit Cheque
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={openCashDeposit}
-                    disabled={banks.length === 0}
-                  >
-                    <Plus className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
-                    Cash Deposit
-                  </Button>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => { setChequeForm((f) => ({ ...f, direction: "outgoing", cheque_type: "payment" })); setIsChequeAddOpen(true); }}
-                    disabled={banks.length === 0}
-                  >
-                    <Plus className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
-                    New Cheque
-                  </Button>
+                  {chequeSectionView === "cheques" ? (
+                    <>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => { setChequeForm((f) => ({ ...f, direction: "incoming", cheque_type: "cash" })); setIsChequeAddOpen(true); }}
+                        disabled={banks.length === 0}
+                      >
+                        <Plus className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
+                        Deposit Cheque
+                      </Button>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => { setChequeForm((f) => ({ ...f, direction: "outgoing", cheque_type: "payment" })); setIsChequeAddOpen(true); }}
+                        disabled={banks.length === 0}
+                      >
+                        <Plus className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
+                        New Cheque
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={openCashDeposit}
+                      disabled={banks.length === 0}
+                    >
+                      <Plus className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
+                      Cash Deposit
+                    </Button>
+                  )}
                 </div>
               </div>
 
+              {chequeSectionView === "cheques" && (
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
@@ -2598,16 +2636,9 @@ export default function Accounting() {
                   </tbody>
                 </table>
               </div>
-            </div>
+              )}
 
-            {/* ── Cash Deposit History ── */}
-            <div className="border-t border-slate-200 p-6">
-              <div className="mb-4">
-                <h3 className="text-base text-slate-900">Cash Deposits</h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Cash moved from Cash in Hand into a bank account. Uses the same Bank / Status / Month filters as Cheques above.
-                </p>
-              </div>
+              {chequeSectionView === "deposits" && (
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
@@ -2651,6 +2682,7 @@ export default function Accounting() {
                   </tbody>
                 </table>
               </div>
+              )}
             </div>
             </>
           )}
