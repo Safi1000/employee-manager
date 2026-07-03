@@ -39,7 +39,7 @@ type FormState = {
   additional_branch_ids: string[];
   category: EmployeeCategory;
   department: string;
-  shift: "day" | "night";
+  shift: "day" | "night" | "evening";
   base_salary: string;
   per_day_salary: string;
   allowance: string;
@@ -157,7 +157,7 @@ export default function EmployeeManagement() {
   const [clientFilter, setClientFilter] = useState("all");
   const [branchFilter, setBranchFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState<"all" | EmployeeCategory>("all");
-  const [shiftFilter, setShiftFilter] = useState<"all" | "day" | "night">("all");
+  const [shiftFilter, setShiftFilter] = useState<"all" | "day" | "night" | "evening">("all");
   const [statusFilter, setStatusFilter] = useState("all");
   // Quick Active / Inactive tab split (Inactive = anything not currently Active).
   const [empTab, setEmpTab] = useState<"all" | "active" | "inactive">("all");
@@ -448,12 +448,28 @@ export default function EmployeeManagement() {
     }
   };
 
+  const guardCapForClient = (clientId: string): number =>
+    contracts
+      .filter((c) => c.client_id === clientId && c.status === "active")
+      .reduce((s, c) => s + Number(c.number_of_guards ?? 0), 0);
+
+  const activeGuardsForClient = (clientId: string): number =>
+    employees.filter((e) => e.client_id === clientId && e.status === "Active").length;
+
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.full_name.trim()) return;
     if (form.category === "client" && !form.client_id) {
       setError("Select a client (or change category to Office Staff / Reliever).");
       return;
+    }
+    if (form.category === "client" && form.client_id) {
+      const cap = guardCapForClient(form.client_id);
+      if (cap > 0 && activeGuardsForClient(form.client_id) >= cap) {
+        const client = clients.find((c) => c.id === form.client_id);
+        setError(`${client?.name ?? "This client"} is already at the maximum guard count (${cap}) across all active contracts.`);
+        return;
+      }
     }
     setSubmitting(true);
     setError(null);
@@ -621,6 +637,14 @@ export default function EmployeeManagement() {
   const handleEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEmployee) return;
+    if (editForm.category === "client" && editForm.client_id && editForm.client_id !== selectedEmployee.client_id) {
+      const cap = guardCapForClient(editForm.client_id);
+      if (cap > 0 && activeGuardsForClient(editForm.client_id) >= cap) {
+        const client = clients.find((c) => c.id === editForm.client_id);
+        setError(`${client?.name ?? "This client"} is already at the maximum guard count (${cap}) across all active contracts.`);
+        return;
+      }
+    }
     setEditing(true);
     setError(null);
     try {
@@ -1635,7 +1659,7 @@ export default function EmployeeManagement() {
                   <select
                     value={editForm.shift}
                     onChange={(e) =>
-                      setEditForm({ ...editForm, shift: e.target.value as "day" | "night" })
+                      setEditForm({ ...editForm, shift: e.target.value as "day" | "night" | "evening" })
                     }
                     className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                   >

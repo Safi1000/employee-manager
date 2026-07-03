@@ -28,6 +28,134 @@ import {
 
 const PAGE_SIZE = 50;
 
+const FIELD_LABELS: Record<string, string> = {
+  // Common
+  branch_id: "Branch", created_at: "Created", updated_at: "Updated",
+  // Employees
+  full_name: "Full Name", employee_code: "Employee Code", phone: "Phone",
+  status: "Status", shift: "Shift", base_salary: "Base Salary",
+  per_day_salary: "Per Day Salary", allowance: "Allowance", join_date: "Join Date",
+  category: "Category", client_id: "Client", contract_id: "Contract",
+  location_id: "Location", department: "Department", cnic_number: "CNIC",
+  bank_name: "Bank Name", bank_account: "Bank Account", iban: "IBAN",
+  date_of_birth: "Date of Birth", blood_group: "Blood Group",
+  permanent_address: "Permanent Address", current_address: "Current Address",
+  emergency_contact_name: "Emergency Contact", emergency_contact_relation: "Emergency Relation",
+  emergency_contact_phone: "Emergency Phone", father_or_husband_name: "Father / Husband",
+  reporting_to_employee_id: "Reports To", employee_contract_type: "Employment Type",
+  probation_end_date: "Probation End", opening_leaves: "Opening Leave Balance",
+  weapon_licence_number: "Weapon Licence #", weapon_licence_expiry: "Weapon Licence Expiry",
+  guard_service_licence_number: "Guard Service Licence #", guard_service_licence_expiry: "Guard Service Licence Expiry",
+  medical_fitness_expiry: "Medical Fitness Expiry", eobi_registration_number: "EOBI Registration #",
+  // Clients
+  name: "Name", email: "Email", client_code: "Client Code", client_type: "Client Type",
+  allowed_leaves_per_month: "Allowed Leaves / Month", leave_carry_forward: "Leave Carry Forward",
+  eobi_enabled: "EOBI Enabled", eobi_amount: "EOBI Amount",
+  auto_invoice_enabled: "Auto Invoice", auto_invoice_amount: "Auto Invoice Amount",
+  auto_invoice_withholding: "Auto Withholding", contract_start: "Contract Start",
+  contract_end: "Contract End", advance_payment: "Advance Payment", opening_balance: "Opening Balance",
+  // Contracts
+  contract_code: "Contract Code", contract_type: "Contract Type",
+  start_date: "Start Date", end_date: "End Date",
+  number_of_guards: "Total Guards", day_guards: "Day Guards",
+  night_guards: "Night Guards", evening_guards: "Evening Guards",
+  rate_per_guard_per_month: "Rate / Guard / Month", eobi_deduction: "EOBI Deduction",
+  annual_escalation_pct: "Annual Escalation %", renewal_terms: "Renewal Terms",
+  guard_rates: "Guard Rates",
+  // Invoices
+  invoice_number: "Invoice #", invoice_date: "Invoice Date", due_date: "Due Date",
+  invoice_amount: "Invoice Amount", withholding_tax: "Withholding Tax",
+  amount_received: "Amount Received", period_from: "Period From", period_to: "Period To",
+  // Payments & Expenses
+  payment_date: "Payment Date", payment_mode: "Payment Mode", bank_account_id: "Bank Account",
+  description: "Description", expense_date: "Expense Date", category_id: "Category",
+  vendor_id: "Vendor", payable_status: "Payable Status",
+  // Payslips
+  period_month: "Payroll Month", present_days: "Days Present", absent_days: "Days Absent",
+  leave_days: "Leave Days", final_salary: "Final Salary", net_salary: "Net Salary",
+  bonus: "Bonus", deductions: "Deductions", income_tax: "Income Tax", eobi: "EOBI",
+  advance: "Advance", disbursed: "Disbursed", disbursed_at: "Disbursed At",
+  working_days: "Working Days", override_leaves: "Override Leaves",
+  effective_present_days: "Effective Present Days", effective_absent_days: "Effective Absent Days",
+  // Advances
+  advance_date: "Advance Date", repaid: "Repaid", employee_id: "Employee",
+  // Cheques
+  cheque_number: "Cheque #", cheque_type: "Cheque Type", cheque_date: "Cheque Date",
+  cleared_at: "Cleared At", recipient: "Recipient", direction: "Direction",
+  // Bank Accounts
+  account_number: "Account #", account_type: "Account Type", balance: "Balance",
+  owner_type: "Owner Type", active: "Active",
+  // Bank Transactions
+  kind: "Transaction Type", cash_delta: "Cash Change", account_delta: "Account Change",
+  reference_id: "Reference",
+  // Roster
+  assignment_date: "Assignment Date", is_present: "Present", is_late: "Late",
+  // General
+  amount: "Amount", invoice_id: "Invoice", notes: "Notes", title: "Title",
+  code: "Code", role: "Role", type: "Type", severity: "Severity",
+};
+
+const SKIP_FIELDS = new Set(["id", "company_id", "created_at", "updated_at", "drive_file_id", "drive_view_url", "attachment_path", "receipt_path", "storage_path"]);
+
+const CURRENCY_FIELDS = new Set([
+  "base_salary", "per_day_salary", "allowance", "amount", "net_salary", "final_salary",
+  "rate_per_guard_per_month", "invoice_amount", "withholding_tax", "amount_received",
+  "opening_balance", "advance", "bonus", "deductions", "eobi", "income_tax",
+  "eobi_amount", "auto_invoice_amount", "balance", "cash_delta", "account_delta",
+  "advance_payment",
+]);
+
+const ENUM_LABELS: Record<string, string> = {
+  services: "Services", guard_deployment: "Guard Deployment",
+  day: "Day", night: "Night", evening: "Evening",
+  Active: "Active", Inactive: "Inactive",
+  active: "Active", expired: "Expired", terminated: "Terminated", draft: "Draft",
+  pending: "Pending", cleared: "Cleared",
+  Paid: "Paid", Unpaid: "Unpaid",
+  Cash: "Cash", Bank: "Bank", Cheque: "Cheque",
+  client: "Client", branch: "Branch",
+  outgoing: "Outgoing", incoming: "Incoming",
+  payment: "Payment", cash: "Cash",
+  company: "Company", partner: "Partner",
+  Current: "Current", Savings: "Savings",
+  opening: "Opening Balance", deposit: "Deposit",
+  withdraw_to_cash: "Withdraw to Cash", payroll: "Payroll",
+  reconcile: "Reconcile", adjustment: "Adjustment", cash_adjustment: "Cash Adjustment",
+  expense: "Expense", receipt: "Receipt", transfer: "Transfer", cheque: "Cheque",
+};
+
+const isISODate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s);
+const isISODatetime = (s: string) => /^\d{4}-\d{2}-\d{2}T/.test(s);
+const isUUID = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+
+const fieldLabel = (field: string): string =>
+  FIELD_LABELS[field] ?? field.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+const formatFieldValue = (field: string, value: unknown): string => {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "string") {
+    if (isISODatetime(value)) {
+      try { return new Date(value).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }); } catch { return value; }
+    }
+    if (isISODate(value)) {
+      try { return new Date(value + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }); } catch { return value; }
+    }
+    if (isUUID(value)) return `(ID: ${value.slice(0, 8)}…)`;
+    if (ENUM_LABELS[value] !== undefined) return ENUM_LABELS[value];
+    return value;
+  }
+  if (typeof value === "number") {
+    if (CURRENCY_FIELDS.has(field)) return `PKR ${value.toLocaleString()}`;
+    return String(value);
+  }
+  if (typeof value === "object") {
+    const s = JSON.stringify(value, null, 2);
+    return s.length > 400 ? s.slice(0, 400) + "…" : s;
+  }
+  return String(value);
+};
+
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const daysAgoISO = (n: number): string => {
   const d = new Date();
@@ -177,10 +305,12 @@ export default function AuditLog() {
   }, [profiles]);
 
   const summary = (changes: AuditChanges): string => {
-    const fields = Object.keys(changes);
-    if (fields.length === 0) return "—";
-    if (fields.length <= 3) return fields.join(", ");
-    return `${fields.slice(0, 3).join(", ")} +${fields.length - 3} more`;
+    const displayFields = Object.keys(changes)
+      .filter((f) => !SKIP_FIELDS.has(f))
+      .map(fieldLabel);
+    if (displayFields.length === 0) return Object.keys(changes).map(fieldLabel).join(", ") || "—";
+    if (displayFields.length <= 3) return displayFields.join(", ");
+    return `${displayFields.slice(0, 3).join(", ")} +${displayFields.length - 3} more`;
   };
 
   if (!isAdmin) {
@@ -362,7 +492,6 @@ export default function AuditLog() {
                         </td>
                         <td className="px-4 py-3 text-sm text-slate-700">
                           {TABLE_LABEL[e.table_name] ?? e.table_name}
-                          <div className="text-[10px] text-slate-400 font-mono">{e.table_name}</div>
                         </td>
                         <td className="px-4 py-3 text-xs font-mono text-slate-500 max-w-[180px] truncate">
                           {e.record_id ?? "—"}
@@ -415,56 +544,69 @@ export default function AuditLog() {
 }
 
 function ChangesDiff({ changes, action }: { changes: AuditChanges; action: AuditAction }) {
-  const entries = Object.entries(changes);
+  const allEntries = Object.entries(changes);
+  const visibleEntries = allEntries.filter(([f]) => !SKIP_FIELDS.has(f));
+  const hiddenCount = allEntries.length - visibleEntries.length;
+  const entries = visibleEntries.length > 0 ? visibleEntries : allEntries;
+
   if (entries.length === 0) {
     return <div className="text-xs text-slate-500 italic">No field-level changes recorded.</div>;
   }
   return (
-    <div className="space-y-1">
-      <div className="grid grid-cols-12 gap-2 px-2 py-1 text-[10px] uppercase tracking-wide text-slate-400 border-b border-slate-200">
+    <div className="rounded-md border border-slate-200 overflow-hidden">
+      <div className="grid grid-cols-12 gap-2 px-3 py-1.5 text-[10px] uppercase tracking-wide text-slate-400 bg-slate-100 border-b border-slate-200">
         <div className="col-span-3">Field</div>
         {action !== "insert" && <div className="col-span-4">Before</div>}
-        {action !== "delete" && <div className="col-span-5">After</div>}
+        {action !== "delete" && <div className={action === "insert" ? "col-span-9" : "col-span-5"}>After</div>}
       </div>
       {entries.map(([field, v]) => (
-        <div key={field} className="grid grid-cols-12 gap-2 px-2 py-1.5 text-xs items-start hover:bg-white">
-          <div className="col-span-3 font-mono text-slate-700">{field}</div>
+        <div key={field} className="grid grid-cols-12 gap-2 px-3 py-2 text-xs items-start border-b border-slate-100 last:border-b-0 hover:bg-white">
+          <div className="col-span-3 text-slate-800 font-medium leading-5">
+            {fieldLabel(field)}
+            <div className="text-[10px] text-slate-400 font-mono font-normal">{field}</div>
+          </div>
           {action !== "insert" && (
             <div className="col-span-4">
-              {v.before === undefined ? (
-                <span className="text-slate-400">(unset)</span>
-              ) : (
-                <ValueCell value={v.before} variant="before" />
-              )}
+              <ValueCell value={v.before} field={field} variant="before" />
             </div>
           )}
           {action !== "delete" && (
-            <div className="col-span-5">
-              {v.after === undefined ? (
-                <span className="text-slate-400">(unset)</span>
-              ) : (
-                <ValueCell value={v.after} variant="after" />
-              )}
+            <div className={action === "insert" ? "col-span-9" : "col-span-5"}>
+              <ValueCell value={v.after} field={field} variant="after" />
             </div>
           )}
         </div>
       ))}
+      {hiddenCount > 0 && (
+        <div className="px-3 py-1.5 text-[10px] text-slate-400 bg-slate-50 border-t border-slate-100">
+          {hiddenCount} system field{hiddenCount > 1 ? "s" : ""} hidden (IDs, timestamps)
+        </div>
+      )}
     </div>
   );
 }
 
-function ValueCell({ value, variant }: { value: unknown; variant: "before" | "after" }) {
-  const styleBase = variant === "before" ? "text-danger-700 bg-danger-50" : "text-success-800 bg-success-50";
-  let display: string;
-  if (value === null) display = "null";
-  else if (typeof value === "object") display = JSON.stringify(value);
-  else display = String(value);
+function ValueCell({ value, field, variant }: { value: unknown; field: string; variant: "before" | "after" }) {
+  if (value === undefined || value === null) {
+    return <span className="text-slate-400 italic text-[11px]">—</span>;
+  }
+  const display = formatFieldValue(field, value);
+  const isLong = display.length > 120;
+  const isJson = typeof value === "object";
+  const styleBase = variant === "before"
+    ? "text-danger-700 bg-danger-50 border border-danger-100"
+    : "text-success-800 bg-success-50 border border-success-100";
 
-  // Truncate very long strings
-  const truncated = display.length > 200 ? display.slice(0, 200) + "…" : display;
+  if (isJson || isLong) {
+    return (
+      <pre className={`px-2 py-1 rounded text-[11px] break-all whitespace-pre-wrap max-h-32 overflow-y-auto ${styleBase}`}>
+        {display}
+      </pre>
+    );
+  }
   return (
-    <span className={`inline-block px-2 py-0.5 rounded font-mono text-[11px] break-all ${styleBase}`} title={display}>
-      {truncated}
+    <span className={`inline-block px-2 py-0.5 rounded text-[11px] break-all ${styleBase}`}>
+      {display}
     </span>
   );
 }

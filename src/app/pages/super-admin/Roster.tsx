@@ -12,6 +12,7 @@ import {
   Download,
   Sun,
   Moon,
+  Sunset,
   Pencil,
   Settings as SettingsIcon,
 } from "lucide-react";
@@ -28,7 +29,7 @@ import {
   type Employee,
   type Client,
   type Post,
-  type ContractShiftPattern,
+  type ContractShift,
 } from "../../lib/supabase";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -359,7 +360,7 @@ export default function Roster() {
                     : "border-slate-200 text-slate-600 hover:bg-slate-50"
                 }`}
               >
-                {s === "day" ? <Sun className="w-3 h-3" /> : <Moon className="w-3 h-3" />}
+                {s === "day" ? <Sun className="w-3 h-3" /> : s === "night" ? <Moon className="w-3 h-3" /> : <Sunset className="w-3 h-3" />}
                 {CONTRACT_SHIFT_LABEL[s]}
               </button>
             ))}
@@ -638,7 +639,7 @@ function PostsModal({
     name: "",
     address: "",
     required_guards: "1",
-    shift_pattern: "day" as ContractShiftPattern,
+    shift_pattern: "day" as ContractShift,
     active: true,
   });
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -769,13 +770,12 @@ function PostsModal({
             <label className="block text-xs text-slate-700 mb-1">Shift Pattern</label>
             <select
               value={form.shift_pattern}
-              onChange={(e) => setForm({ ...form, shift_pattern: e.target.value as ContractShiftPattern })}
+              onChange={(e) => setForm({ ...form, shift_pattern: e.target.value as ContractShift })}
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
             >
               <option value="day">Day</option>
               <option value="night">Night</option>
-              <option value="both">Both</option>
-              <option value="custom">Custom</option>
+              <option value="evening">Evening</option>
             </select>
           </div>
           <div className="col-span-2 flex items-center gap-2">

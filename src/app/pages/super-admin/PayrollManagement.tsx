@@ -535,6 +535,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       if (disbursedFilter !== "all" && (disbursedFilter === "yes" ? !r.disbursed : r.disbursed)) return false;
       if (empTab === "active" && e.status !== "Active") return false;
       if (empTab === "inactive" && e.status === "Active") return false;
+      if (empTab === "all" && e.status !== "Active" && r.present_days === 0 && r.advance === 0) return false;
       if (categoryFilter !== "all" && (e.category ?? "client") !== categoryFilter) return false;
       return true;
     });

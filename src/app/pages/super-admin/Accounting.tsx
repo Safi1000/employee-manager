@@ -164,7 +164,6 @@ export default function Accounting() {
   const [isStatementModalOpen, setIsStatementModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isOpeningBalanceOpen, setIsOpeningBalanceOpen] = useState(false);
-  const [isReconcileModalOpen, setIsReconcileModalOpen] = useState(false);
   const [isEditBankModalOpen, setIsEditBankModalOpen] = useState(false);
   const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
   const [isLogModalOpen, setIsLogModalOpen] = useState(false);
@@ -194,10 +193,12 @@ export default function Accounting() {
   const [allPaymentEvents, setAllPaymentEvents] = useState<
     { client_id: string | null; invoice_id: string | null; amount: number; payment_date: string }[]
   >([]);
-  const [paymentVia, setPaymentVia] = useState<"Cash" | "Bank">("Bank");
+  const [paymentVia, setPaymentVia] = useState<"Cash" | "Bank" | "Cheque">("Bank");
   const [paymentBankId, setPaymentBankId] = useState<string>("");
   const [paymentNotes, setPaymentNotes] = useState<string>("");
   const [paymentDate, setPaymentDate] = useState<string>(todayStr());
+  const [paymentChequeNumber, setPaymentChequeNumber] = useState<string>("");
+  const [paymentChequeDate, setPaymentChequeDate] = useState<string>(todayStr());
 
   const [newBank, setNewBank] = useState({
     bank_name: "",
@@ -235,15 +236,13 @@ export default function Accounting() {
   const [transferAmount, setTransferAmount] = useState<string>("");
   const [transferNotes, setTransferNotes] = useState<string>("");
   const [transferDate, setTransferDate] = useState<string>(todayStr());
-  const [reconcileTarget, setReconcileTarget] = useState<"account" | "cash" | "total">("account");
-  const [reconcileValue, setReconcileValue] = useState("");
-  const [reconcileNotes, setReconcileNotes] = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [withdrawNotes, setWithdrawNotes] = useState("");
   const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
   const [depositAmount, setDepositAmount] = useState("");
   const [depositDate, setDepositDate] = useState(todayStr());
   const [depositDescription, setDepositDescription] = useState("");
+  const [depositSlipFile, setDepositSlipFile] = useState<File | null>(null);
   const [depositNotes, setDepositNotes] = useState("");
   // Target bank when Cash Deposit is opened from the toolbar (no pre-selected row).
   const [depositBankId, setDepositBankId] = useState<string>("");
@@ -257,6 +256,7 @@ export default function Accounting() {
   const [depositsById, setDepositsById] = useState<Map<string, {
     id: string; bank_account_id: string; amount: number; deposit_date: string;
     slip_number: number; notes: string | null; deposited_by: string | null;
+    drive_view_url?: string | null;
   }>>(new Map());
   const [profileNames, setProfileNames] = useState<Map<string, string>>(new Map());
   const [submitting, setSubmitting] = useState(false);
@@ -532,7 +532,7 @@ export default function Accounting() {
       const [{ data: depData }, { data: profData }] = await Promise.all([
         supabase
           .from("cash_deposits")
-          .select("id, bank_account_id, amount, deposit_date, slip_number, notes, deposited_by")
+          .select("id, bank_account_id, amount, deposit_date, slip_number, notes, deposited_by, drive_view_url")
           .order("slip_number", { ascending: false }),
         supabase.from("profiles").select("id, full_name, email"),
       ]);
@@ -1031,19 +1031,12 @@ export default function Accounting() {
     setDepositDate(todayStr());
     setDepositDescription("");
     setDepositNotes("");
+    setDepositSlipFile(null);
     setDepositError(null);
     setDepositSuccess(null);
   };
 
   // Per-row entry point: bank is fixed to the row clicked.
-  const openDeposit = (bank: BankAccount) => {
-    setSelectedBank(bank);
-    setDepositBankId("");
-    resetDepositForm();
-    setIsDepositModalOpen(true);
-  };
-
-  // Toolbar entry point (Cheques section): user picks the destination bank.
   const openCashDeposit = () => {
     setSelectedBank(null);
     setDepositBankId(banks[0]?.id ?? "");
@@ -1096,7 +1089,24 @@ export default function Accounting() {
         p_notes: notes,
       });
       if (rpcErr) throw rpcErr;
-      const dep = (Array.isArray(data) ? data[0] : data) as { slip_number: number };
+      const dep = (Array.isArray(data) ? data[0] : data) as { id: string; slip_number: number };
+      if (depositSlipFile && dep.id) {
+        const effectiveCompanyId = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
+        if (effectiveCompanyId && company?.name) {
+          const fd = new FormData();
+          fd.append("file", depositSlipFile);
+          fd.append("category", "deposits");
+          fd.append("company_id", effectiveCompanyId);
+          fd.append("company_name", company.name);
+          const { data: uploaded, error: fnErr } = await supabase.functions.invoke("gdrive-upload", { body: fd });
+          if (!fnErr && uploaded?.drive_file_id) {
+            await supabase.from("cash_deposits").update({
+              drive_file_id: uploaded.drive_file_id,
+              drive_view_url: uploaded.drive_view_url,
+            }).eq("id", dep.id);
+          }
+        }
+      }
       setDepositSuccess({
         slip_number: dep.slip_number,
         bank_name: targetBank.bank_name,
@@ -1149,85 +1159,6 @@ export default function Accounting() {
       notes: dep.notes,
       deposited_by: dep.deposited_by,
     });
-  };
-
-  const openReconcile = (bank: BankAccount) => {
-    setSelectedBank(bank);
-    setReconcileTarget("account");
-    setReconcileValue("");
-    setReconcileNotes("");
-    setIsReconcileModalOpen(true);
-  };
-
-  const handleReconcile = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedBank) return;
-    const actual = Number(reconcileValue);
-    if (Number.isNaN(actual)) {
-      setError("Enter a numeric actual balance.");
-      return;
-    }
-    setSubmitting(true);
-    setError(null);
-    try {
-      if (reconcileTarget === "account") {
-        const delta = actual - Number(selectedBank.balance);
-        if (delta !== 0) {
-          const { error: upErr } = await supabase
-            .from("bank_accounts")
-            .update({ balance: actual, updated_at: new Date().toISOString() })
-            .eq("id", selectedBank.id);
-          if (upErr) throw upErr;
-          await logTransaction({
-            bank_account_id: selectedBank.id,
-            kind: "reconcile",
-            amount: Math.abs(delta),
-            cash_delta: 0,
-            account_delta: delta,
-            description:
-              reconcileNotes.trim() ||
-              `Reconcile ${selectedBank.bank_name} account balance → PKR ${actual.toLocaleString()}`,
-          });
-        }
-      } else if (reconcileTarget === "cash") {
-        const delta = actual - cashBalance;
-        if (delta !== 0) {
-          await applyCashDelta(delta);
-          await logTransaction({
-            bank_account_id: null,
-            kind: "cash_adjustment",
-            amount: Math.abs(delta),
-            cash_delta: delta,
-            account_delta: 0,
-            description:
-              reconcileNotes.trim() ||
-              `Reconcile cash balance → PKR ${actual.toLocaleString()}`,
-          });
-        }
-      } else {
-        // total = cash + sum(account balances). Apply delta to cash balance.
-        const delta = actual - grandTotal;
-        if (delta !== 0) {
-          await applyCashDelta(delta);
-          await logTransaction({
-            bank_account_id: null,
-            kind: "adjustment",
-            amount: Math.abs(delta),
-            cash_delta: delta,
-            account_delta: 0,
-            description:
-              reconcileNotes.trim() ||
-              `Reconcile total balance → PKR ${actual.toLocaleString()} (adjusted via cash)`,
-          });
-        }
-      }
-      setIsReconcileModalOpen(false);
-      await loadAll();
-    } catch (err: any) {
-      setError(err.message ?? String(err));
-    } finally {
-      setSubmitting(false);
-    }
   };
 
   const openMarkPaid = (row: PayableRow) => {
@@ -1426,6 +1357,8 @@ export default function Accounting() {
     setPaymentBankId(banks[0]?.id ?? "");
     setPaymentNotes("");
     setPaymentDate(todayStr());
+    setPaymentChequeNumber("");
+    setPaymentChequeDate(todayStr());
     setIsPaymentModalOpen(true);
   };
 
@@ -1468,8 +1401,52 @@ export default function Accounting() {
       setError("Enter a positive payment amount.");
       return;
     }
-    if (paymentVia === "Bank" && !paymentBankId) {
-      setError("Select the bank account that received the payment.");
+    if ((paymentVia === "Bank" || paymentVia === "Cheque") && !paymentBankId) {
+      setError("Select the bank account.");
+      return;
+    }
+
+    // Cheque payment: record incoming cheque, no immediate balance change.
+    // Outstanding and bank balance only update when the cheque is cleared.
+    if (paymentVia === "Cheque") {
+      if (!paymentChequeNumber.trim()) {
+        setError("Enter the cheque number.");
+        return;
+      }
+      if (!paymentChequeDate) {
+        setError("Enter the cheque date.");
+        return;
+      }
+      setSubmitting(true);
+      setError(null);
+      try {
+        const invoiceId = !paymentStandalone && paymentInvoiceId ? paymentInvoiceId : null;
+        if (!paymentStandalone && !invoiceId) {
+          setError("Select an invoice to apply this cheque to.");
+          setSubmitting(false);
+          return;
+        }
+        const { error: insErr } = await supabase.from("cheques").insert({
+          bank_account_id: paymentBankId,
+          cheque_number: paymentChequeNumber.trim(),
+          amount,
+          cheque_date: paymentChequeDate,
+          cheque_type: "payment",
+          direction: "incoming",
+          status: "pending",
+          recipient: selectedClient.name,
+          invoice_id: invoiceId,
+          client_id: selectedClient.id,
+          notes: paymentNotes.trim() || null,
+        });
+        if (insErr) throw insErr;
+        setIsPaymentModalOpen(false);
+        await loadAll();
+      } catch (e: any) {
+        setError(e.message ?? String(e));
+      } finally {
+        setSubmitting(false);
+      }
       return;
     }
 
@@ -2288,14 +2265,8 @@ export default function Accounting() {
                           </td>
                           <td className="px-6 py-4 text-sm text-slate-900">PKR {totalBal.toLocaleString()}</td>
                           <td className="px-6 py-4 flex gap-2 flex-wrap">
-                            <Button variant="ghost" size="sm" onClick={() => openDeposit(bank)} disabled={!bank.active}>
-                              Deposit
-                            </Button>
                             <Button variant="ghost" size="sm" onClick={() => openWithdraw(bank)} disabled={!bank.active}>
                               Withdraw
-                            </Button>
-                            <Button variant="ghost" size="sm" onClick={() => openReconcile(bank)}>
-                              Reconcile
                             </Button>
                             <Button variant="ghost" size="sm" onClick={() => openEditBank(bank)}>
                               Edit
@@ -2343,7 +2314,7 @@ export default function Accounting() {
                     <>
                       <h3 className="text-base text-slate-900">Cheques</h3>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        Outgoing cheques deduct the bank balance immediately. Deposit (incoming) cheques credit the bank only on clearance.
+                        Cheques deduct the bank balance immediately when issued.
                       </p>
                     </>
                   ) : (
@@ -2391,15 +2362,6 @@ export default function Accounting() {
                   </select>
                   {chequeSectionView === "cheques" ? (
                     <>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => { setChequeForm((f) => ({ ...f, direction: "incoming", cheque_type: "cash" })); setIsChequeAddOpen(true); }}
-                        disabled={banks.length === 0}
-                      >
-                        <Plus className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
-                        Deposit Cheque
-                      </Button>
                       <Button
                         variant="primary"
                         size="sm"
@@ -2450,6 +2412,7 @@ export default function Accounting() {
                         const linkedSum = chequeLinkedSums.get(c.id) ?? 0;
                         const isPayment = c.cheque_type === "payment";
                         const isIncoming = (c.direction ?? "outgoing") === "incoming";
+                        const isReceivables = isIncoming && (c.invoice_id != null || c.client_id != null);
                         const canClear = isIncoming
                           ? true
                           : isPayment
@@ -2459,7 +2422,9 @@ export default function Accounting() {
                           <tr key={c.id} className="hover:bg-slate-50">
                             <td className="px-4 py-2 text-sm text-slate-900 font-mono">{c.cheque_number}</td>
                             <td className="px-4 py-2 text-sm">
-                              {isIncoming ? (
+                              {isReceivables ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-violet-50 text-violet-700">Receivables</span>
+                              ) : isIncoming ? (
                                 <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-emerald-50 text-emerald-700">Deposit</span>
                               ) : isPayment ? (
                                 <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-indigo-50 text-indigo-700">Payment</span>
@@ -2576,19 +2541,23 @@ export default function Accounting() {
                                   disabled={!canClear}
                                   title={
                                     canClear
-                                      ? (isIncoming
-                                          ? `Mark cleared (PKR ${Number(c.amount).toLocaleString()} will be credited to bank balance)`
-                                          : isPayment
-                                            ? "Mark cleared (bank balance stays deducted)"
-                                            : "Mark cleared (cash balance increases by cheque amount)")
+                                      ? (isReceivables
+                                          ? `Mark cleared — PKR ${Number(c.amount).toLocaleString()} credited to bank, outstanding reduced`
+                                          : isIncoming
+                                            ? `Mark cleared (PKR ${Number(c.amount).toLocaleString()} will be credited to bank balance)`
+                                            : isPayment
+                                              ? "Mark cleared (bank balance stays deducted)"
+                                              : "Mark cleared (cash balance increases by cheque amount)")
                                       : `Linked items total PKR ${linkedSum.toLocaleString()} must equal cheque amount PKR ${Number(c.amount).toLocaleString()} before clearing.`
                                   }
                                   onClick={async () => {
-                                    const msg = isIncoming
-                                      ? `Mark this deposit cheque as cleared? PKR ${Number(c.amount).toLocaleString()} will be added to ${bank?.bank_name ?? "the bank"}'s balance.`
-                                      : isPayment
-                                        ? "Mark this payment cheque as cleared? Bank stays deducted; cashflow recognises linked expenses/salaries/advances now."
-                                        : "Mark this cash cheque as cleared? Bank stays deducted; PKR " + Number(c.amount).toLocaleString() + " will be added to the Cash (Treasury) balance.";
+                                    const msg = isReceivables
+                                      ? `Mark this receivables cheque as cleared?\n\nPKR ${Number(c.amount).toLocaleString()} will be credited to ${bank?.bank_name ?? "the bank"} and the client's outstanding balance will be reduced.`
+                                      : isIncoming
+                                        ? `Mark this deposit cheque as cleared? PKR ${Number(c.amount).toLocaleString()} will be added to ${bank?.bank_name ?? "the bank"}'s balance.`
+                                        : isPayment
+                                          ? "Mark this payment cheque as cleared? Bank stays deducted; cashflow recognises linked expenses/salaries/advances now."
+                                          : "Mark this cash cheque as cleared? Bank stays deducted; PKR " + Number(c.amount).toLocaleString() + " will be added to the Cash (Treasury) balance.";
                                     if (!window.confirm(msg)) return;
                                     const { error: e } = await supabase
                                       .from("cheques")
@@ -2606,11 +2575,13 @@ export default function Accounting() {
                                 <button
                                   type="button"
                                   className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-danger-700 hover:bg-danger-50"
-                                  title={isIncoming ? "Delete deposit cheque (no bank change)" : "Delete cheque (restores bank balance)"}
+                                  title={isReceivables ? "Delete receivables cheque (no balance change)" : isIncoming ? "Delete deposit cheque (no bank change)" : "Delete cheque (restores bank balance)"}
                                   onClick={async () => {
-                                    const msg = isIncoming
-                                      ? "Delete this pending deposit cheque? No balance change will occur (the bank was not debited)."
-                                      : "Delete this pending cheque? The reserved amount will be restored to the bank.";
+                                    const msg = isReceivables
+                                      ? "Delete this pending receivables cheque? No balance changes will occur — the outstanding balance was not yet reduced."
+                                      : isIncoming
+                                        ? "Delete this pending deposit cheque? No balance change will occur (the bank was not debited)."
+                                        : "Delete this pending cheque? The reserved amount will be restored to the bank.";
                                     if (!window.confirm(msg)) return;
                                     const { error: e } = await supabase.from("cheques").delete().eq("id", c.id);
                                     if (e) { setError(e.message); return; }
@@ -2670,11 +2641,21 @@ export default function Accounting() {
                           <td className="px-4 py-2 text-sm text-slate-900 text-right font-mono">PKR {Number(d.amount).toLocaleString()}</td>
                           <td className="px-4 py-2 text-sm text-slate-600">{d.deposited_by ? (profileNames.get(d.deposited_by) ?? "—") : "—"}</td>
                           <td className="px-4 py-2 text-sm text-slate-500">{d.notes ?? "—"}</td>
-                          <td className="px-4 py-2 text-right">
+                          <td className="px-4 py-2 text-right flex gap-2 justify-end">
                             <Button variant="ghost" size="sm" onClick={() => downloadSlipByRef(d.id)}>
                               <FileText className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
                               Download Slip
                             </Button>
+                            {d.drive_view_url && (
+                              <a
+                                href={d.drive_view_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs text-brand-700 hover:bg-brand-50"
+                              >
+                                View Upload
+                              </a>
+                            )}
                           </td>
                         </tr>
                       );
@@ -3342,6 +3323,18 @@ export default function Accounting() {
                 placeholder="e.g. Deposited by hand, source of funds…"
               />
             </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Deposit Slip (optional)</label>
+              <input
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={(e) => setDepositSlipFile(e.target.files?.[0] ?? null)}
+                className="w-full text-sm text-slate-700 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-sm file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"
+              />
+              {depositSlipFile && (
+                <p className="text-xs text-slate-500 mt-1">{depositSlipFile.name} will be uploaded to Google Drive.</p>
+              )}
+            </div>
             {depositError && (
               <div className="flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
                 <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
@@ -3651,8 +3644,8 @@ export default function Accounting() {
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-2">Received Via *</label>
-              <div className="grid grid-cols-2 gap-2">
-                {(["Cash", "Bank"] as const).map((v) => (
+              <div className="grid grid-cols-3 gap-2">
+                {(["Cash", "Bank", "Cheque"] as const).map((v) => (
                   <label
                     key={v}
                     className={`flex items-center justify-center gap-2 px-3 py-2 border rounded-md cursor-pointer text-sm ${
@@ -3671,8 +3664,13 @@ export default function Accounting() {
                   </label>
                 ))}
               </div>
+              {paymentVia === "Cheque" && (
+                <p className="text-[11px] text-warning-700 mt-1.5">
+                  Outstanding and bank balance will not change until the cheque is cleared in the Cheques section.
+                </p>
+              )}
             </div>
-            {paymentVia === "Bank" && (
+            {(paymentVia === "Bank" || paymentVia === "Cheque") && (
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Bank Account *</label>
                 <select
@@ -3690,6 +3688,31 @@ export default function Accounting() {
                 </select>
               </div>
             )}
+            {paymentVia === "Cheque" && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">Cheque Number *</label>
+                  <input
+                    required
+                    type="text"
+                    value={paymentChequeNumber}
+                    onChange={(e) => setPaymentChequeNumber(e.target.value)}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    placeholder="e.g. 001234"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">Cheque Date *</label>
+                  <input
+                    required
+                    type="date"
+                    value={paymentChequeDate}
+                    onChange={(e) => setPaymentChequeDate(e.target.value)}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  />
+                </div>
+              </div>
+            )}
             <div>
               <label className="block text-sm text-slate-700 mb-1">Notes</label>
               <textarea
@@ -3704,94 +3727,6 @@ export default function Accounting() {
                 {submitting ? "Recording…" : "Record Payment"}
               </Button>
               <Button variant="secondary" size="md" onClick={() => setIsPaymentModalOpen(false)}>
-                Cancel
-              </Button>
-            </div>
-          </form>
-        )}
-      </Modal>
-
-      <Modal isOpen={isReconcileModalOpen} onClose={() => setIsReconcileModalOpen(false)} title="Reconcile" size="md">
-        {selectedBank && (
-          <form className="space-y-4" onSubmit={handleReconcile}>
-            <div>
-              <label className="block text-sm text-slate-700 mb-1">Bank Account</label>
-              <input
-                type="text"
-                value={`${selectedBank.bank_name} · ${selectedBank.account_number}`}
-                disabled
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-slate-700 mb-2">Reconcile Against</label>
-              <div className="grid grid-cols-3 gap-2">
-                {(["account", "cash", "total"] as const).map((t) => (
-                  <label
-                    key={t}
-                    className={`flex items-center justify-center gap-2 px-3 py-2 border rounded-md cursor-pointer text-sm capitalize ${
-                      reconcileTarget === t
-                        ? "border-slate-900 bg-slate-50"
-                        : "border-slate-200 hover:border-slate-300"
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="rec-target"
-                      checked={reconcileTarget === t}
-                      onChange={() => setReconcileTarget(t)}
-                    />
-                    <span>{t === "account" ? "Account Balance" : t === "cash" ? "Cash Balance" : "Total Balance"}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm text-slate-700 mb-1">Current System Balance</label>
-              <input
-                type="text"
-                value={`PKR ${(reconcileTarget === "account"
-                  ? Number(selectedBank.balance)
-                  : reconcileTarget === "cash"
-                  ? cashBalance
-                  : grandTotal
-                ).toLocaleString()}`}
-                disabled
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-slate-700 mb-1">Actual Balance (PKR) *</label>
-              <input
-                required
-                type="number"
-                step="0.01"
-                value={reconcileValue}
-                onChange={(e) => setReconcileValue(e.target.value)}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
-                placeholder="e.g. -5000 if overdrawn"
-              />
-              <p className="text-xs text-slate-500 mt-1">
-                {reconcileTarget === "account" && "Updates this bank account's balance."}
-                {reconcileTarget === "cash" && "Updates the global cash balance."}
-                {reconcileTarget === "total" && "Adjusts the cash balance to match the desired total."}
-                {" "}A negative value is allowed (cash/accounts can be overdrawn).
-              </p>
-            </div>
-            <div>
-              <label className="block text-sm text-slate-700 mb-1">Notes</label>
-              <textarea
-                value={reconcileNotes}
-                onChange={(e) => setReconcileNotes(e.target.value)}
-                rows={2}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
-              />
-            </div>
-            <div className="flex items-center gap-3 pt-2">
-              <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
-                {submitting ? "Saving…" : "Complete Reconciliation"}
-              </Button>
-              <Button variant="secondary" size="md" onClick={() => setIsReconcileModalOpen(false)}>
                 Cancel
               </Button>
             </div>
@@ -3935,7 +3870,7 @@ export default function Accounting() {
               </div>
             )}
             <p className="text-xs text-slate-500">
-              Balance cannot be edited here — use Reconcile to adjust.
+              Balance reflects actual transactions recorded in the system.
             </p>
             <div className="flex items-center gap-3 pt-4">
               <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
@@ -3959,8 +3894,7 @@ export default function Accounting() {
           <div>
             <p className="text-sm text-slate-600 mb-3">
               Enter the cash on hand at the start of operations. This locks once saved —
-              you won&apos;t be able to change it later. Use <b>Reconcile</b> if you need
-              to correct the live balance afterwards.
+              you won&apos;t be able to change it later.
             </p>
             <label className="block text-sm text-slate-700 mb-1">Opening Cash (PKR) *</label>
             <input

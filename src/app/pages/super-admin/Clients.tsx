@@ -155,13 +155,11 @@ export default function Clients() {
   const [contractEditorOpen, setContractEditorOpen] = useState(false);
   const [editingContract, setEditingContract] = useState<Contract | null>(null);
 
-  // Item 9: in-form prompt for the leave carry-forward roll-over choice.
-  const [carryPromptOpen, setCarryPromptOpen] = useState(false);
 
   const loadAll = async () => {
     setLoading(true);
     setError(null);
-    const [clientsRes, branchesRes, contractsRes, invoicesRes, employeesRes, rosterRes] = await Promise.all([
+    const [clientsRes, branchesRes, contractsRes, invoicesRes, rosterRes] = await Promise.all([
       supabase.from("clients").select("*").order("name"),
       supabase
         .from("branches")
@@ -170,20 +168,18 @@ export default function Clients() {
         .order("name"),
       supabase.from("contracts").select("*").order("start_date", { ascending: false }),
       supabase.from("invoices").select("*").order("invoice_date", { ascending: false }),
-      supabase.from("employees").select("id, client_id, status"),
       supabase.from("roster_assignments").select("employee_id, client_id").eq("assignment_date", new Date().toISOString().slice(0, 10)),
     ]);
-    const emps = (employeesRes.data ?? []) as { id: string; client_id: string | null; status: string }[];
     const cs = (contractsRes.data ?? []) as Contract[];
-    const empByClient = new Map<string, number>();
-    for (const e of emps) {
-      if (!e.client_id) continue;
-      if (e.status !== "Active") continue;
-      empByClient.set(e.client_id, (empByClient.get(e.client_id) ?? 0) + 1);
+    // employees_count = total guards allotted across all active contracts for this client.
+    const guardsByClient = new Map<string, number>();
+    const conByClient = new Map<string, number>();
+    for (const c of cs) {
+      if (c.status !== "active") continue;
+      guardsByClient.set(c.client_id, (guardsByClient.get(c.client_id) ?? 0) + Number(c.number_of_guards ?? 0));
+      conByClient.set(c.client_id, (conByClient.get(c.client_id) ?? 0) + 1);
     }
-    // "Posted" guards per client = distinct employees rostered for the client TODAY
-    // (future-dated assignments don't count). Compared against assigned employees
-    // for the understaffed flag (item 17).
+    // "Posted" guards per client = distinct employees rostered for the client TODAY.
     const roster = (rosterRes.data ?? []) as { employee_id: string; client_id: string | null }[];
     const postedByClient = new Map<string, Set<string>>();
     for (const a of roster) {
@@ -194,14 +190,9 @@ export default function Clients() {
     const postedCount = new Map<string, number>();
     for (const [cid, set] of postedByClient) postedCount.set(cid, set.size);
     setPostedByClientId(postedCount);
-    const conByClient = new Map<string, number>();
-    for (const c of cs) {
-      if (c.status !== "active") continue;
-      conByClient.set(c.client_id, (conByClient.get(c.client_id) ?? 0) + 1);
-    }
     const list = ((clientsRes.data ?? []) as Client[]).map<ClientRow>((c) => ({
       ...c,
-      employees_count: empByClient.get(c.id) ?? 0,
+      employees_count: guardsByClient.get(c.id) ?? 0,
       contracts_count: conByClient.get(c.id) ?? 0,
     }));
     setRows(list);
@@ -249,30 +240,6 @@ export default function Clients() {
     setExpanded({ basic: true, tax: false, billing: false, contract: false });
   };
 
-  // Item 9: when carry-forward is switched on, let the user choose whether to
-  // roll over employees' existing reserve or start accruing fresh from this month.
-  const monthStart = (offsetMonths: number) => {
-    const d = new Date();
-    d.setMonth(d.getMonth() + offsetMonths, 1);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
-  };
-  const onToggleCarry = (checked: boolean) => {
-    if (!checked) {
-      setForm((f) => ({ ...f, leave_carry_forward: false, leave_carry_start: "" }));
-      return;
-    }
-    // Open the in-form prompt instead of a browser confirm; carry is only switched
-    // on once the user picks a roll-over option.
-    setCarryPromptOpen(true);
-  };
-  const applyCarryChoice = (rollover: boolean) => {
-    setForm((f) => ({
-      ...f,
-      leave_carry_forward: true,
-      leave_carry_start: rollover ? monthStart(-12) : monthStart(0),
-    }));
-    setCarryPromptOpen(false);
-  };
 
   const populateForm = (row: ClientRow) => {
     setForm({
@@ -366,8 +333,8 @@ export default function Clients() {
   };
 
   const handleDelete = async (row: ClientRow) => {
-    if (row.employees_count > 0) {
-      setError(`Cannot delete ${row.name}: ${row.employees_count} active employee(s) are assigned. Reassign them first.`);
+    if (row.contracts_count > 0) {
+      setError(`Cannot delete ${row.name}: they have ${row.contracts_count} active contract(s). Remove contracts first.`);
       return;
     }
     if (!window.confirm(`Delete client "${row.name}"? This cannot be undone.`)) return;
@@ -634,63 +601,6 @@ export default function Clients() {
         </div>
       </Section>
 
-      <Section isOpen={!!expanded.contract} onToggle={() => setExpanded((prev) => ({ ...prev, contract: !prev.contract }))} title="Contract Defaults">
-        <p className="text-xs text-slate-500">
-          These defaults are inherited by all employees of this client. Per-contract overrides go on the Contracts page.
-        </p>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Allowed Leaves / month</label>
-            <input
-              type="number"
-              min="0"
-              value={form.allowed_leaves_per_month}
-              onChange={(e) => setForm({ ...form, allowed_leaves_per_month: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-            />
-          </div>
-          <div className="flex items-end">
-            <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input
-                type="checkbox"
-                checked={form.leave_carry_forward}
-                onChange={(e) => onToggleCarry(e.target.checked)}
-              />
-              Carry forward unused leaves
-            </label>
-          </div>
-          <div>
-            <label className="flex items-center gap-2 text-sm text-slate-700 mb-1">
-              <input
-                type="checkbox"
-                checked={form.eobi_enabled}
-                onChange={(e) => setForm({ ...form, eobi_enabled: e.target.checked })}
-              />
-              EOBI deduction enabled
-            </label>
-            {form.eobi_enabled && (
-              <input
-                type="number"
-                min="0"
-                value={form.eobi_amount}
-                onChange={(e) => setForm({ ...form, eobi_amount: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-                placeholder="EOBI amount per employee"
-              />
-            )}
-          </div>
-          <div className="flex items-end">
-            <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input
-                type="checkbox"
-                checked={form.advance_payment}
-                onChange={(e) => setForm({ ...form, advance_payment: e.target.checked })}
-              />
-              Pays in advance
-            </label>
-          </div>
-        </div>
-      </Section>
 
       <Section
         isOpen={!!expanded.autoInvoice}
@@ -1180,42 +1090,6 @@ export default function Clients() {
         />
       )}
 
-      {/* Item 9: leave carry-forward roll-over choice (in-form, not a browser popup) */}
-      <Modal
-        isOpen={carryPromptOpen}
-        onClose={() => setCarryPromptOpen(false)}
-        title="Carry forward unused leaves"
-        size="sm"
-      >
-        <div className="space-y-4">
-          <p className="text-sm text-slate-600">
-            Roll over employees' existing leave reserve, or start accruing fresh from this month?
-          </p>
-          <div className="space-y-2">
-            <button
-              type="button"
-              onClick={() => applyCarryChoice(true)}
-              className="w-full text-left px-4 py-3 rounded-md border border-slate-200 hover:border-brand-400 hover:bg-brand-50/40"
-            >
-              <div className="text-sm text-slate-900">Roll over existing reserve</div>
-              <div className="text-xs text-slate-500">Include the reserve accrued over the last 12 months.</div>
-            </button>
-            <button
-              type="button"
-              onClick={() => applyCarryChoice(false)}
-              className="w-full text-left px-4 py-3 rounded-md border border-slate-200 hover:border-brand-400 hover:bg-brand-50/40"
-            >
-              <div className="text-sm text-slate-900">Start fresh from this month</div>
-              <div className="text-xs text-slate-500">No backlog — begin accruing carry from this month onward.</div>
-            </button>
-          </div>
-          <div className="flex justify-end">
-            <Button variant="secondary" size="sm" onClick={() => setCarryPromptOpen(false)}>
-              Cancel
-            </Button>
-          </div>
-        </div>
-      </Modal>
     </>
   );
 }

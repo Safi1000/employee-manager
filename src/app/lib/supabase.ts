@@ -338,9 +338,19 @@ export type Client = {
 };
 
 // Sprint 2: separate Contracts entity (spec section 3.2).
-export type ContractType = "static" | "mobile_patrol" | "event" | "reliever_pool";
-export type ContractShiftPattern = "day" | "night" | "both" | "custom";
+export type ContractType = "services" | "guard_deployment";
+export type ContractShift = "day" | "night" | "evening";
 export type ContractStatus = "active" | "expired" | "terminated" | "draft";
+
+export type GuardRates = {
+  senior_supervisor?: number;
+  assistant_supervisor?: number;
+  supervisor?: number;
+  ex_military?: number;
+  civ_guard?: number;
+  walkie_talkie?: number;
+  weapons_guard?: number;
+};
 
 export type Contract = {
   id: string;
@@ -351,7 +361,10 @@ export type Contract = {
   start_date: string;
   end_date: string | null;
   number_of_guards: number;
-  shift_pattern: ContractShiftPattern;
+  day_guards: number;
+  night_guards: number;
+  evening_guards: number;
+  guard_rates: GuardRates;
   rate_per_guard_per_month: number;
   allowed_leaves_per_month: number | null;
   eobi_deduction: boolean;
@@ -368,17 +381,24 @@ export type Contract = {
 };
 
 export const CONTRACT_TYPE_LABEL: Record<ContractType, string> = {
-  static: "Static",
-  mobile_patrol: "Mobile Patrol",
-  event: "Event-based",
-  reliever_pool: "Reliever Pool",
+  services: "Services",
+  guard_deployment: "Guard Deployment",
 };
 
-export const CONTRACT_SHIFT_LABEL: Record<ContractShiftPattern, string> = {
+export const CONTRACT_SHIFT_LABEL: Record<ContractShift, string> = {
   day: "Day",
   night: "Night",
-  both: "Both",
-  custom: "Custom",
+  evening: "Evening",
+};
+
+export const GUARD_RATE_LABELS: Record<keyof GuardRates, string> = {
+  senior_supervisor: "Senior Supervisor",
+  assistant_supervisor: "Assistant Supervisor",
+  supervisor: "Supervisor",
+  ex_military: "Ex-Military",
+  civ_guard: "Civ Guard",
+  walkie_talkie: "Walkie Talkie",
+  weapons_guard: "Weapons Guard",
 };
 
 export const CONTRACT_STATUS_LABEL: Record<ContractStatus, string> = {
@@ -472,6 +492,8 @@ export type Cheque = {
   notes: string | null;
   recipient: string | null;
   cleared_at: string | null;
+  invoice_id?: string | null;
+  client_id?: string | null;
   created_at?: string;
   updated_at?: string;
 };
@@ -503,7 +525,7 @@ export type Employee = {
   category: EmployeeCategory;
   branch_id: string | null;
   department: string | null;
-  shift: "day" | "night";
+  shift: "day" | "night" | "evening";
   status: "Active" | "On Leave" | "Inactive";
   base_salary: number | null;
   per_day_salary: number | null;
@@ -572,7 +594,7 @@ export type Post = {
   name: string;
   address: string | null;
   required_guards: number;
-  shift_pattern: ContractShiftPattern;
+  shift_pattern: ContractShift;
   active: boolean;
   notes: string | null;
   created_at?: string;
@@ -580,7 +602,7 @@ export type Post = {
 };
 
 // Sprint 3 — Deployment Roster (spec section 3.4 + 4.1)
-export type RosterShift = "day" | "night";
+export type RosterShift = "day" | "night" | "evening";
 export type RosterStatus =
   | "assigned"
   | "confirmed"

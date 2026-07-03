@@ -9,6 +9,8 @@ import {
   X,
   FileText,
   Upload,
+  ChevronDown,
+  ChevronRight as ChevronRightIcon,
 } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -17,13 +19,13 @@ import { formatDate } from "../../lib/date";
 import {
   supabase,
   CONTRACT_TYPE_LABEL,
-  CONTRACT_SHIFT_LABEL,
   CONTRACT_STATUS_LABEL,
+  GUARD_RATE_LABELS,
   type Client,
   type Contract,
-  type ContractShiftPattern,
   type ContractStatus,
   type ContractType,
+  type GuardRates,
 } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
 
@@ -34,9 +36,11 @@ type ContractForm = {
   contract_type: ContractType;
   start_date: string;
   end_date: string;
-  number_of_guards: string;
-  shift_pattern: ContractShiftPattern;
+  day_guards: string;
+  night_guards: string;
+  evening_guards: string;
   rate_per_guard_per_month: string;
+  guard_rates: GuardRates;
   allowed_leaves_per_month: string;
   eobi_deduction: boolean;
   eobi_amount: string;
@@ -47,12 +51,14 @@ type ContractForm = {
 
 const emptyForm: ContractForm = {
   client_id: "",
-  contract_type: "static",
+  contract_type: "services",
   start_date: new Date().toISOString().slice(0, 10),
   end_date: "",
-  number_of_guards: "0",
-  shift_pattern: "day",
+  day_guards: "0",
+  night_guards: "0",
+  evening_guards: "0",
   rate_per_guard_per_month: "0",
+  guard_rates: {},
   allowed_leaves_per_month: "",
   eobi_deduction: false,
   eobi_amount: "",
@@ -123,21 +129,29 @@ export default function Contracts() {
     });
   }, [rows, search, statusFilter, clientFilter]);
 
-  const buildPayload = () => ({
-    client_id: form.client_id,
-    contract_type: form.contract_type,
-    start_date: form.start_date,
-    end_date: form.end_date || null,
-    number_of_guards: Math.max(0, Math.floor(Number(form.number_of_guards) || 0)),
-    shift_pattern: form.shift_pattern,
-    rate_per_guard_per_month: Math.max(0, Number(form.rate_per_guard_per_month) || 0),
-    allowed_leaves_per_month: form.allowed_leaves_per_month === "" ? null : Math.max(0, Math.floor(Number(form.allowed_leaves_per_month) || 0)),
-    eobi_deduction: form.eobi_deduction,
-    eobi_amount: form.eobi_deduction && form.eobi_amount !== "" ? Number(form.eobi_amount) : null,
-    annual_escalation_pct: form.annual_escalation_pct === "" ? null : Number(form.annual_escalation_pct),
-    renewal_terms: form.renewal_terms.trim() || null,
-    status: form.status,
-  });
+  const buildPayload = () => {
+    const day = Math.max(0, Math.floor(Number(form.day_guards) || 0));
+    const night = Math.max(0, Math.floor(Number(form.night_guards) || 0));
+    const evening = Math.max(0, Math.floor(Number(form.evening_guards) || 0));
+    return {
+      client_id: form.client_id,
+      contract_type: form.contract_type,
+      start_date: form.start_date,
+      end_date: form.end_date || null,
+      day_guards: day,
+      night_guards: night,
+      evening_guards: evening,
+      number_of_guards: day + night + evening,
+      guard_rates: form.guard_rates,
+      rate_per_guard_per_month: Math.max(0, Number(form.rate_per_guard_per_month) || 0),
+      allowed_leaves_per_month: form.allowed_leaves_per_month === "" ? null : Math.max(0, Math.floor(Number(form.allowed_leaves_per_month) || 0)),
+      eobi_deduction: form.eobi_deduction,
+      eobi_amount: form.eobi_deduction && form.eobi_amount !== "" ? Number(form.eobi_amount) : null,
+      annual_escalation_pct: form.annual_escalation_pct === "" ? null : Number(form.annual_escalation_pct),
+      renewal_terms: form.renewal_terms.trim() || null,
+      status: form.status,
+    };
+  };
 
   const uploadDocument = async (
     contractId: string,
@@ -190,6 +204,40 @@ export default function Contracts() {
       .eq("id", contractId);
   };
 
+  const upsertIndefiniteAlerts = async (
+    contractCode: string,
+    clientName: string,
+    startDate: string,
+    endDate: string | null,
+    contractId: string,
+  ) => {
+    // Remove old auto-generated alerts for this contract (identified by notes tag).
+    await supabase
+      .from("important_dates")
+      .delete()
+      .ilike("notes", `%[contract:${contractId}]%`);
+
+    if (endDate) return; // Only create alerts for indefinite contracts.
+
+    // 1-year anniversary from start_date.
+    const reviewDate = new Date(startDate + "T00:00:00");
+    reviewDate.setFullYear(reviewDate.getFullYear() + 1);
+    const due = reviewDate.toISOString().slice(0, 10);
+    const title = `Contract Review — ${clientName} (${contractCode})`;
+    const tag = `[contract:${contractId}]`;
+
+    const alerts = [30, 15, 7, 1].map((days) => ({
+      title,
+      due_date: due,
+      category: "Client" as const,
+      priority: days <= 7 ? ("high" as const) : ("medium" as const),
+      advance_notice_days: days,
+      notes: `${days}-day notice: review or renew this indefinite contract. ${tag}`,
+    }));
+
+    await supabase.from("important_dates").insert(alerts);
+  };
+
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.client_id) {
@@ -209,6 +257,8 @@ export default function Contracts() {
       if (pendingFile) {
         await uploadDocument(inserted.id, inserted.contract_code, pendingFile, null);
       }
+      const clientName = clients.find((c) => c.id === form.client_id)?.name ?? form.client_id;
+      await upsertIndefiniteAlerts(inserted.contract_code, clientName, form.start_date, form.end_date || null, inserted.id);
       setAddOpen(false);
       setForm(emptyForm);
       setPendingFile(null);
@@ -227,8 +277,10 @@ export default function Contracts() {
       contract_type: row.contract_type,
       start_date: row.start_date,
       end_date: row.end_date ?? "",
-      number_of_guards: String(row.number_of_guards),
-      shift_pattern: row.shift_pattern,
+      day_guards: String(row.day_guards ?? 0),
+      night_guards: String(row.night_guards ?? 0),
+      evening_guards: String(row.evening_guards ?? 0),
+      guard_rates: (row.guard_rates as GuardRates) ?? {},
       rate_per_guard_per_month: String(row.rate_per_guard_per_month),
       allowed_leaves_per_month: row.allowed_leaves_per_month != null ? String(row.allowed_leaves_per_month) : "",
       eobi_deduction: row.eobi_deduction,
@@ -254,6 +306,8 @@ export default function Contracts() {
       if (pendingFile) {
         await uploadDocument(editingRow.id, editingRow.contract_code, pendingFile, editingRow.drive_file_id);
       }
+      const clientName = clients.find((c) => c.id === editingRow.client_id)?.name ?? "";
+      await upsertIndefiniteAlerts(editingRow.contract_code, clientName, form.start_date, form.end_date || null, editingRow.id);
       setEditingRow(null);
       setForm(emptyForm);
       setPendingFile(null);
@@ -279,6 +333,11 @@ export default function Contracts() {
         body: JSON.stringify({ drive_file_id: row.drive_file_id }),
       });
     }
+    // Remove auto-generated compliance alerts for this contract.
+    await supabase
+      .from("important_dates")
+      .delete()
+      .ilike("notes", `%[contract:${row.id}]%`);
     const { error: delErr } = await supabase.from("contracts").delete().eq("id", row.id);
     if (delErr) {
       setError(delErr.message);
@@ -306,6 +365,12 @@ export default function Contracts() {
     const b = new Date(today() + "T00:00:00").getTime();
     return Math.round((a - b) / 86400000);
   };
+
+  const [ratesOpen, setRatesOpen] = useState(false);
+
+  const totalGuards = Math.max(0, Number(form.day_guards) || 0)
+    + Math.max(0, Number(form.night_guards) || 0)
+    + Math.max(0, Number(form.evening_guards) || 0);
 
   const renderForm = (onSubmit: (e: React.FormEvent) => void, submitLabel: string) => (
     <form className="space-y-3" onSubmit={onSubmit}>
@@ -347,7 +412,7 @@ export default function Contracts() {
             onChange={(e) => setForm({ ...form, contract_type: e.target.value as ContractType })}
             className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
           >
-            {(["static", "mobile_patrol", "event", "reliever_pool"] as const).map((t) => (
+            {(["services", "guard_deployment"] as const).map((t) => (
               <option key={t} value={t}>{CONTRACT_TYPE_LABEL[t]}</option>
             ))}
           </select>
@@ -383,32 +448,34 @@ export default function Contracts() {
             onChange={(e) => setForm({ ...form, end_date: e.target.value })}
             className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
           />
-          <p className="text-[10px] text-slate-500 mt-1">Triggers 90/60/30-day renewal alerts.</p>
+          {form.end_date ? (
+            <p className="text-[10px] text-slate-500 mt-1">Triggers 90/60/30-day renewal alerts.</p>
+          ) : (
+            <p className="text-[10px] text-warning-600 mt-1">No end date — runs indefinitely. Review alerts will be set at 1-year mark.</p>
+          )}
         </div>
 
-        <div>
-          <label className="block text-sm text-slate-700 mb-1">Number of Guards *</label>
-          <input
-            required
-            type="number"
-            min="0"
-            value={form.number_of_guards}
-            onChange={(e) => setForm({ ...form, number_of_guards: e.target.value })}
-            className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-sm text-slate-700 mb-1">Shift Pattern *</label>
-          <select
-            required
-            value={form.shift_pattern}
-            onChange={(e) => setForm({ ...form, shift_pattern: e.target.value as ContractShiftPattern })}
-            className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-          >
-            {(["day", "night", "both", "custom"] as const).map((s) => (
-              <option key={s} value={s}>{CONTRACT_SHIFT_LABEL[s]}</option>
-            ))}
-          </select>
+        {/* Per-shift guard counts */}
+        <div className="col-span-2">
+          <label className="block text-sm text-slate-700 mb-2">Guards per Shift</label>
+          <div className="grid grid-cols-3 gap-2">
+            {(["day", "night", "evening"] as const).map((shift) => {
+              const key = `${shift}_guards` as "day_guards" | "night_guards" | "evening_guards";
+              return (
+                <div key={shift} className="border border-slate-200 rounded-md p-2">
+                  <label className="block text-xs text-slate-600 mb-1 capitalize">{shift}</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={form[key]}
+                    onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+                    className="w-full px-2 py-1 border border-slate-200 rounded text-sm"
+                  />
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-[10px] text-slate-500 mt-1">Total guards: <strong>{totalGuards}</strong></p>
         </div>
 
         <div>
@@ -477,6 +544,46 @@ export default function Contracts() {
             className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
             placeholder="Free text for special clauses"
           />
+        </div>
+
+        {/* Guard rates expandable section */}
+        <div className="col-span-2">
+          <div className="border border-slate-200 rounded-md">
+            <button
+              type="button"
+              onClick={() => setRatesOpen((o) => !o)}
+              className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-slate-900 hover:bg-slate-50"
+            >
+              {ratesOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />}
+              <span className="flex-1 text-left">Rates per Guard Type (PKR / month)</span>
+            </button>
+            {ratesOpen && (
+              <div className="p-4 border-t border-slate-200 grid grid-cols-2 gap-3">
+                {(Object.keys(GUARD_RATE_LABELS) as Array<keyof GuardRates>).map((key) => (
+                  <div key={key}>
+                    <label className="block text-xs text-slate-600 mb-1">{GUARD_RATE_LABELS[key]}</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={form.guard_rates[key] ?? ""}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          guard_rates: {
+                            ...form.guard_rates,
+                            [key]: e.target.value === "" ? undefined : Number(e.target.value),
+                          },
+                        })
+                      }
+                      className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                      placeholder="—"
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="col-span-2">
@@ -660,6 +767,11 @@ export default function Contracts() {
                         </span>
                         {overStaffed && (
                           <div className="text-[10px] text-danger-600">over by {activeGuards - row.number_of_guards}</div>
+                        )}
+                        {row.number_of_guards > 0 && (
+                          <div className="text-[10px] text-slate-400 mt-0.5">
+                            {[row.day_guards > 0 && `D:${row.day_guards}`, row.night_guards > 0 && `N:${row.night_guards}`, row.evening_guards > 0 && `E:${row.evening_guards}`].filter(Boolean).join(" · ")}
+                          </div>
                         )}
                       </td>
                       <td className="px-4 py-3 text-sm text-right text-slate-900">
