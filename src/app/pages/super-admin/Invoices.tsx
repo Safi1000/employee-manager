@@ -123,6 +123,9 @@ export default function Invoices() {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [form, setForm] = useState<InvoiceForm>(emptyForm());
   const [fieldErrors, setFieldErrors] = useState<Record<string, string | null>>({});
+  // Modal-scoped submit error, so create/edit failures show inside the dialog
+  // instead of the page banner hidden behind it.
+  const [modalError, setModalError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -371,11 +374,36 @@ export default function Invoices() {
     return null;
   };
 
+  // Surface a submit error inside the open modal. Invoice-number problems
+  // (format or duplicate) land inline under the field; anything else shows in
+  // the modal's own error banner.
+  const routeSubmitError = (msg: string) => {
+    if (/invoice number/i.test(msg)) {
+      setFieldErrors((p) => ({ ...p, invoice_number: msg }));
+    } else {
+      setModalError(msg);
+    }
+  };
+
+  // Map a DB write failure to a friendly modal message. A unique-constraint
+  // violation on (client_id, invoice_number) becomes the duplicate message.
+  const routeDbError = (e: any) => {
+    const isDup =
+      e?.code === "23505" ||
+      /duplicate key|already exists|unique/i.test(e?.message ?? "");
+    routeSubmitError(
+      isDup
+        ? "That invoice number already exists for this client."
+        : e?.message ?? String(e),
+    );
+  };
+
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
+    setModalError(null);
     const err = validateForm(form);
     if (err) {
-      setError(err);
+      routeSubmitError(err);
       return;
     }
     setSubmitting(true);
@@ -416,7 +444,7 @@ export default function Invoices() {
       setIsAddOpen(false);
       await loadAll();
     } catch (e: any) {
-      setError(e.message ?? String(e));
+      routeDbError(e);
     } finally {
       setSubmitting(false);
     }
@@ -440,6 +468,7 @@ export default function Invoices() {
     });
     setEditPayments([]);
     setFieldErrors({});
+    setModalError(null);
     setIsEditOpen(true);
     await loadPaymentsFor(row.id);
   };
@@ -447,9 +476,10 @@ export default function Invoices() {
   const handleEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingId) return;
+    setModalError(null);
     const err = validateForm(editForm, editingId);
     if (err) {
-      setError(err);
+      routeSubmitError(err);
       return;
     }
     setEditSubmitting(true);
@@ -498,7 +528,7 @@ export default function Invoices() {
       setEditForm(emptyForm());
       await loadAll();
     } catch (e: any) {
-      setError(e.message ?? String(e));
+      routeDbError(e);
     } finally {
       setEditSubmitting(false);
     }
@@ -840,6 +870,7 @@ export default function Invoices() {
                   invoice_number: `INV-${String(invoices.length + 1).padStart(3, "0")}`,
                 });
                 setFieldErrors({});
+                setModalError(null);
                 setIsAddOpen(true);
               }}
             >
@@ -1101,11 +1132,18 @@ export default function Invoices() {
         onClose={() => {
           setIsAddOpen(false);
           setForm(emptyForm());
+          setModalError(null);
         }}
         title="New Invoice"
         size="md"
       >
         <form className="space-y-4" onSubmit={handleAdd}>
+          {modalError && (
+            <div className="flex items-start gap-2 p-3 rounded-md border border-danger-200 bg-danger-50 text-sm text-danger-700">
+              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" strokeWidth={2} />
+              <span>{modalError}</span>
+            </div>
+          )}
           <InvoiceFields
             form={form}
             setForm={setForm}
@@ -1142,11 +1180,18 @@ export default function Invoices() {
           setEditInvoice(null);
           setEditPayments([]);
           setEditForm(emptyForm());
+          setModalError(null);
         }}
         title="Edit Invoice"
         size="md"
       >
         <form className="space-y-4" onSubmit={handleEdit}>
+          {modalError && (
+            <div className="flex items-start gap-2 p-3 rounded-md border border-danger-200 bg-danger-50 text-sm text-danger-700">
+              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" strokeWidth={2} />
+              <span>{modalError}</span>
+            </div>
+          )}
           <InvoiceFields
             form={editForm}
             setForm={setEditForm}
