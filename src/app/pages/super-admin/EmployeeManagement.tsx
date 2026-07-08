@@ -10,11 +10,17 @@ import {
   EMPLOYEE_DOCS_BUCKET,
   BLOOD_GROUPS,
   EMERGENCY_CONTACT_RELATIONS,
+  CONTRACT_LINE_CATEGORY_LABEL,
+  effectiveCommittedByCategory,
+  activeCountByCategory,
   type Employee,
   type EmployeeDocument,
   type Location,
   type Client,
   type Contract,
+  type ContractLine,
+  type ContractAddendum,
+  type ContractLineCategory,
   type Branch,
   type EmployeeCategory,
 } from "../../lib/supabase";
@@ -35,6 +41,9 @@ type FormState = {
   location_id: string;
   client_id: string;
   contract_id: string;
+  contract_line_id: string;
+  assignment_effective_from: string;
+  assignment_effective_to: string;
   branch_id: string;
   additional_branch_ids: string[];
   category: EmployeeCategory;
@@ -78,6 +87,9 @@ const emptyForm: FormState = {
   location_id: "",
   client_id: "",
   contract_id: "",
+  contract_line_id: "",
+  assignment_effective_from: "",
+  assignment_effective_to: "",
   branch_id: "",
   additional_branch_ids: [],
   category: "client",
@@ -148,6 +160,8 @@ export default function EmployeeManagement() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
+  const [contractLines, setContractLines] = useState<ContractLine[]>([]);
+  const [addendums, setAddendums] = useState<ContractAddendum[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -178,7 +192,7 @@ export default function EmployeeManagement() {
   const loadData = async () => {
     setLoading(true);
     setError(null);
-    const [locRes, cliRes, brRes, empRes, docRes, ebRes, conRes] = await Promise.all([
+    const [locRes, cliRes, brRes, empRes, docRes, ebRes, conRes, clRes, adRes] = await Promise.all([
       supabase.from("locations").select("*").order("name"),
       supabase.from("clients").select("*").order("name"),
       supabase.from("branches").select("*").order("is_head_office", { ascending: false }).order("name"),
@@ -189,6 +203,8 @@ export default function EmployeeManagement() {
       supabase.from("employee_documents").select("employee_id"),
       supabase.from("employee_branches").select("employee_id, branch_id"),
       supabase.from("contracts").select("*").order("start_date", { ascending: false }),
+      supabase.from("contract_lines").select("*"),
+      supabase.from("contract_addendums").select("*"),
     ]);
     if (locRes.error) setError(locRes.error.message);
     if (cliRes.error) setError(cliRes.error.message);
@@ -198,6 +214,8 @@ export default function EmployeeManagement() {
     setLocations(locRes.data ?? []);
     setClients(cliRes.data ?? []);
     setContracts((conRes.data ?? []) as Contract[]);
+    setContractLines((clRes.data ?? []) as ContractLine[]);
+    setAddendums((adRes.data ?? []) as ContractAddendum[]);
     setBranches(brRes.data ?? []);
     const docCount = new Map<string, number>();
     for (const d of (docRes.data ?? []) as { employee_id: string }[]) {
@@ -257,9 +275,151 @@ export default function EmployeeManagement() {
       ...f,
       client_id: clientId,
       contract_id: "", // contracts are per-client; clear stale selection
+      contract_line_id: "",
       branch_id: primary,
       additional_branch_ids: additional,
     });
+  };
+
+  const today = () => new Date().toISOString().slice(0, 10);
+
+  // Contracts / lines available for a client (cascading selectors).
+  const contractsForClient = (clientId: string): Contract[] =>
+    contracts.filter((c) => c.client_id === clientId);
+  const linesForContract = (contractId: string): ContractLine[] =>
+    contractLines.filter((l) => l.contract_id === contractId);
+
+  const lineCategoryById = useMemo(() => {
+    const m = new Map<string, ContractLineCategory>();
+    for (const l of contractLines) m.set(l.id, l.category);
+    return m;
+  }, [contractLines]);
+
+  // Per-category slot picture for a line on a contract, as of today. Excludes a
+  // given employee (so editing an employee already on the line doesn't count
+  // them against themselves).
+  const slotInfo = (contractId: string, lineId: string, excludeEmployeeId?: string) => {
+    const cat = lineCategoryById.get(lineId);
+    if (!cat) return null;
+    const lines = linesForContract(contractId);
+    const adds = addendums.filter((a) => a.contract_id === contractId);
+    const committed = effectiveCommittedByCategory(lines, adds, today()).get(cat) ?? 0;
+    const contractEmployees = employees.filter(
+      (e) => e.contract_id === contractId && e.id !== excludeEmployeeId,
+    );
+    const active = activeCountByCategory(contractEmployees, lineCategoryById, today()).get(cat) ?? 0;
+    return { category: cat, committed, active, available: Math.max(0, committed - active), full: active >= committed };
+  };
+
+  // Cascading Client → Contract → Contract Line selectors + assignment window.
+  // Shared by the Add and Edit forms; `excludeEmployeeId` keeps an employee from
+  // counting against their own slot when editing.
+  const renderAssignmentFields = (
+    f: FormState,
+    setF: (next: FormState) => void,
+    excludeEmployeeId?: string,
+  ) => {
+    const clientContracts = contractsForClient(f.client_id);
+    const lines = f.contract_id ? linesForContract(f.contract_id) : [];
+    const info = f.contract_line_id ? slotInfo(f.contract_id, f.contract_line_id, excludeEmployeeId) : null;
+    return (
+      <>
+        <div>
+          <label className="block text-sm text-slate-700 mb-1">Contract</label>
+          <select
+            value={f.contract_id}
+            onChange={(e) => setF({ ...f, contract_id: e.target.value, contract_line_id: "" })}
+            className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+          >
+            <option value="">— Unassigned —</option>
+            {clientContracts.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.contract_code} · {c.status}
+              </option>
+            ))}
+          </select>
+        </div>
+        {f.contract_id && (
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Contract Line (category slot)</label>
+            <select
+              value={f.contract_line_id}
+              onChange={(e) =>
+                setF({
+                  ...f,
+                  contract_line_id: e.target.value,
+                  assignment_effective_from: f.assignment_effective_from || f.join_date || today(),
+                })
+              }
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+            >
+              <option value="">— Select line —</option>
+              {lines.map((l) => {
+                const si = slotInfo(f.contract_id, l.id, excludeEmployeeId);
+                return (
+                  <option key={l.id} value={l.id}>
+                    {CONTRACT_LINE_CATEGORY_LABEL[l.category]}
+                    {l.location ? ` — ${l.location}` : ""}
+                    {si ? ` · ${si.active}/${si.committed} filled` : ""}
+                  </option>
+                );
+              })}
+            </select>
+            {lines.length === 0 && (
+              <p className="text-xs text-warning-700 mt-1">
+                This contract has no lines yet. Add category lines on the Contracts page first.
+              </p>
+            )}
+            {info && (
+              <p className={`text-xs mt-1 ${info.full ? "text-danger-600" : "text-slate-500"}`}>
+                {CONTRACT_LINE_CATEGORY_LABEL[info.category]} slots: {info.active} of {info.committed} active —{" "}
+                {info.available} available.
+              </p>
+            )}
+          </div>
+        )}
+        {f.contract_line_id && (
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Assignment effective from</label>
+              <input
+                type="date"
+                value={f.assignment_effective_from}
+                onChange={(e) => setF({ ...f, assignment_effective_from: e.target.value })}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+              />
+              <p className="text-[10px] text-slate-500 mt-1">When this employee starts filling the slot (may differ from join date).</p>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Effective to (optional)</label>
+              <input
+                type="date"
+                value={f.assignment_effective_to}
+                onChange={(e) => setF({ ...f, assignment_effective_to: e.target.value })}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+              />
+              <p className="text-[10px] text-slate-500 mt-1">Leave blank while ongoing; set to free the slot from that date.</p>
+            </div>
+          </div>
+        )}
+      </>
+    );
+  };
+
+  // Returns an error string if assigning to this line would exceed the
+  // category's committed count; null if OK.
+  const validateSlot = (f: FormState, excludeEmployeeId?: string): string | null => {
+    if (f.category !== "client" || !f.contract_line_id) return null;
+    const info = slotInfo(f.contract_id, f.contract_line_id, excludeEmployeeId);
+    if (!info) return null;
+    // Only blocks when the new assignment would be active now and the line is full.
+    const willBeActiveNow =
+      !f.assignment_effective_from || f.assignment_effective_from <= today();
+    const endedAlready = f.assignment_effective_to && f.assignment_effective_to < today();
+    if (willBeActiveNow && !endedAlready && info.full) {
+      return `${CONTRACT_LINE_CATEGORY_LABEL[info.category]} slots: ${info.active} of ${info.committed} active — 0 available. Free a slot (mark one Inactive / end its assignment) or raise the committed count via an addendum.`;
+    }
+    return null;
   };
 
   const filtered = useMemo(() => {
@@ -448,14 +608,6 @@ export default function EmployeeManagement() {
     }
   };
 
-  const guardCapForClient = (clientId: string): number =>
-    contracts
-      .filter((c) => c.client_id === clientId && c.status === "active")
-      .reduce((s, c) => s + Number(c.number_of_guards ?? 0), 0);
-
-  const activeGuardsForClient = (clientId: string): number =>
-    employees.filter((e) => e.client_id === clientId && e.status === "Active").length;
-
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.full_name.trim()) return;
@@ -463,13 +615,10 @@ export default function EmployeeManagement() {
       setError("Select a client (or change category to Office Staff / Reliever).");
       return;
     }
-    if (form.category === "client" && form.client_id) {
-      const cap = guardCapForClient(form.client_id);
-      if (cap > 0 && activeGuardsForClient(form.client_id) >= cap) {
-        const client = clients.find((c) => c.id === form.client_id);
-        setError(`${client?.name ?? "This client"} is already at the maximum guard count (${cap}) across all active contracts.`);
-        return;
-      }
+    const slotErr = validateSlot(form);
+    if (slotErr) {
+      setError(slotErr);
+      return;
     }
     setSubmitting(true);
     setError(null);
@@ -482,6 +631,13 @@ export default function EmployeeManagement() {
           location_id: form.location_id || null,
           client_id: form.category === "client" ? form.client_id : null,
           contract_id: form.category === "client" ? (form.contract_id || null) : null,
+          contract_line_id: form.category === "client" ? (form.contract_line_id || null) : null,
+          assignment_effective_from:
+            form.category === "client" && form.contract_line_id
+              ? (form.assignment_effective_from || form.join_date || today())
+              : null,
+          assignment_effective_to:
+            form.category === "client" && form.contract_line_id ? (form.assignment_effective_to || null) : null,
           branch_id: form.branch_id || null,
           category: form.category,
           department: form.department.trim() || null,
@@ -599,6 +755,9 @@ export default function EmployeeManagement() {
       location_id: emp.location_id ?? "",
       client_id: emp.client_id ?? "",
       contract_id: emp.contract_id ?? "",
+      contract_line_id: emp.contract_line_id ?? "",
+      assignment_effective_from: emp.assignment_effective_from ?? "",
+      assignment_effective_to: emp.assignment_effective_to ?? "",
       branch_id: emp.branch_id ?? "",
       additional_branch_ids: [...(emp.additional_branch_ids ?? [])],
       category: (emp.category ?? "client") as EmployeeCategory,
@@ -637,11 +796,13 @@ export default function EmployeeManagement() {
   const handleEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEmployee) return;
-    if (editForm.category === "client" && editForm.client_id && editForm.client_id !== selectedEmployee.client_id) {
-      const cap = guardCapForClient(editForm.client_id);
-      if (cap > 0 && activeGuardsForClient(editForm.client_id) >= cap) {
-        const client = clients.find((c) => c.id === editForm.client_id);
-        setError(`${client?.name ?? "This client"} is already at the maximum guard count (${cap}) across all active contracts.`);
+    // Slot check only blocks when this edit makes the employee newly active on a
+    // full line — a still-active employee already counted on the line, or one
+    // being marked Inactive, won't trip it.
+    if (editStatus === "Active") {
+      const slotErr = validateSlot(editForm, selectedEmployee.id);
+      if (slotErr) {
+        setError(slotErr);
         return;
       }
     }
@@ -656,6 +817,15 @@ export default function EmployeeManagement() {
           location_id: editForm.location_id || null,
           client_id: editForm.category === "client" ? (editForm.client_id || null) : null,
           contract_id: editForm.category === "client" ? (editForm.contract_id || null) : null,
+          contract_line_id: editForm.category === "client" ? (editForm.contract_line_id || null) : null,
+          assignment_effective_from:
+            editForm.category === "client" && editForm.contract_line_id
+              ? (editForm.assignment_effective_from || editForm.join_date || today())
+              : null,
+          assignment_effective_to:
+            editForm.category === "client" && editForm.contract_line_id
+              ? (editForm.assignment_effective_to || null)
+              : null,
           branch_id: editForm.branch_id || null,
           category: editForm.category,
           department: editForm.department.trim() || null,
@@ -793,12 +963,13 @@ export default function EmployeeManagement() {
               </select>
               <select
                 value={shiftFilter}
-                onChange={(e) => setShiftFilter(e.target.value as "all" | "day" | "night")}
+                onChange={(e) => setShiftFilter(e.target.value as "all" | "day" | "night" | "evening")}
                 className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
               >
                 <option value="all">All Shifts</option>
                 <option value="day">Day</option>
                 <option value="night">Night</option>
+                <option value="evening">Evening</option>
               </select>
               <select
                 value={statusFilter}
@@ -1109,26 +1280,7 @@ export default function EmployeeManagement() {
                 </div>
               )}
               {form.category === "client" && form.client_id && (
-                <div>
-                  <label className="block text-sm text-slate-700 mb-1">Contract</label>
-                  <select
-                    value={form.contract_id}
-                    onChange={(e) => setForm({ ...form, contract_id: e.target.value })}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                  >
-                    <option value="">— Unassigned —</option>
-                    {contracts
-                      .filter((c) => c.client_id === form.client_id)
-                      .map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.contract_code} · {c.number_of_guards} guards · {c.status}
-                        </option>
-                      ))}
-                  </select>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Tracks this guard against a contract's allotted headcount.
-                  </p>
-                </div>
+                <div className="space-y-3">{renderAssignmentFields(form, setForm)}</div>
               )}
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Department</label>
@@ -1143,7 +1295,7 @@ export default function EmployeeManagement() {
               <div className="col-span-2">
                 <label className="block text-sm text-slate-700 mb-2">Shift *</label>
                 <div className="flex gap-3">
-                  {(["day", "night"] as const).map((s) => (
+                  {(["day", "night", "evening"] as const).map((s) => (
                     <label
                       key={s}
                       className={`flex-1 flex items-center gap-2 px-4 py-2 border rounded-md cursor-pointer text-sm capitalize ${
@@ -1627,22 +1779,8 @@ export default function EmployeeManagement() {
                   </div>
                 )}
                 {editForm.category === "client" && editForm.client_id && (
-                  <div>
-                    <label className="block text-sm text-slate-700 mb-1">Contract</label>
-                    <select
-                      value={editForm.contract_id}
-                      onChange={(e) => setEditForm({ ...editForm, contract_id: e.target.value })}
-                      className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                    >
-                      <option value="">— Unassigned —</option>
-                      {contracts
-                        .filter((c) => c.client_id === editForm.client_id)
-                        .map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.contract_code} · {c.number_of_guards} guards · {c.status}
-                          </option>
-                        ))}
-                    </select>
+                  <div className="space-y-3">
+                    {renderAssignmentFields(editForm, setEditForm, selectedEmployee?.id)}
                   </div>
                 )}
                 <div>
@@ -1665,6 +1803,7 @@ export default function EmployeeManagement() {
                   >
                     <option value="day">Day</option>
                     <option value="night">Night</option>
+                    <option value="evening">Evening</option>
                   </select>
                 </div>
                 <div>

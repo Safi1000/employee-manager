@@ -302,6 +302,49 @@ export type Location = {
 export type ClientType = "security_services" | "guard_deployment";
 export type ClientFilerStatus = "filer" | "non_filer";
 
+// Phase 3: client billing/tax profile.
+export type ClientBillingType = "STANDARD" | "SLA";
+export type ClientInvoiceGroup = "FIXED" | "VARIABLE" | "SLA";
+export type TaxBase = "WHOLE_INVOICE" | "SPECIFIC_COMPONENT" | "COMPOUND";
+export type TaxDirection = "ADDED" | "WITHHELD";
+
+export type TaxLine = {
+  name: string;
+  rate: number; // percent
+  base: TaxBase;
+  direction: TaxDirection;
+  component?: string; // free-text placeholder until Phase 5 SLA components exist
+};
+
+export type RemitAccount = {
+  account_title: string;
+  account_number: string; // account no. / IBAN
+  bank_name: string;
+  is_default: boolean;
+};
+
+export const CLIENT_BILLING_TYPE_LABEL: Record<ClientBillingType, string> = {
+  STANDARD: "Standard",
+  SLA: "SLA",
+};
+
+export const CLIENT_INVOICE_GROUP_LABEL: Record<ClientInvoiceGroup, string> = {
+  FIXED: "Fixed",
+  VARIABLE: "Variable",
+  SLA: "SLA",
+};
+
+export const TAX_BASE_LABEL: Record<TaxBase, string> = {
+  WHOLE_INVOICE: "Whole invoice",
+  SPECIFIC_COMPONENT: "Specific component",
+  COMPOUND: "Compound",
+};
+
+export const TAX_DIRECTION_LABEL: Record<TaxDirection, string> = {
+  ADDED: "Added",
+  WITHHELD: "Withheld",
+};
+
 export type Client = {
   id: string;
   client_code: string;
@@ -334,6 +377,11 @@ export type Client = {
   authorised_signatory: string | null;
   signatory_cnic: string | null;
   industry: string | null;
+  // Phase 3 additions
+  tax_profile: TaxLine[];
+  remit_accounts: RemitAccount[];
+  billing_type: ClientBillingType;
+  invoice_group: ClientInvoiceGroup;
   created_at?: string;
 };
 
@@ -407,6 +455,144 @@ export const CONTRACT_STATUS_LABEL: Record<ContractStatus, string> = {
   terminated: "Terminated",
   draft: "Draft",
 };
+
+// Phase 1: per-category contract lines (committed headcount + rate per category).
+// Enum is extensible — add values in a migration and here. Supersedes main's
+// guard_rates JSONB (which stored a rate per type but no count).
+export type ContractLineCategory =
+  | "SR_SUPERVISOR"
+  | "SUPERVISOR"
+  | "ASST_SUPERVISOR"
+  | "GUARD"
+  | "RELIEVER"
+  | "WEAPON"
+  | "EQUIPMENT";
+
+export const CONTRACT_LINE_CATEGORY_LABEL: Record<ContractLineCategory, string> = {
+  SR_SUPERVISOR: "Senior Supervisor",
+  SUPERVISOR: "Supervisor",
+  ASST_SUPERVISOR: "Assistant Supervisor",
+  GUARD: "Guard",
+  RELIEVER: "Reliever",
+  WEAPON: "Weapon / Armed Guard",
+  EQUIPMENT: "Equipment",
+};
+
+// Order categories appear in the default Contract Lines table.
+export const CONTRACT_LINE_CATEGORY_ORDER: ContractLineCategory[] = [
+  "SR_SUPERVISOR",
+  "ASST_SUPERVISOR",
+  "SUPERVISOR",
+  "GUARD",
+  "RELIEVER",
+  "WEAPON",
+  "EQUIPMENT",
+];
+
+export type ContractLine = {
+  id: string;
+  company_id?: string;
+  contract_id: string;
+  category: ContractLineCategory;
+  label: string | null;
+  location: string | null;
+  committed_count: number;
+  unit_rate: number;
+  cost_components: Record<string, unknown> | null;
+  taxable: boolean;
+  created_at?: string;
+  updated_at?: string;
+};
+
+// Contract value from its lines = Σ(committed_count × unit_rate).
+export function contractLinesValue(lines: Pick<ContractLine, "committed_count" | "unit_rate">[]): number {
+  return lines.reduce((sum, l) => sum + (Number(l.committed_count) || 0) * (Number(l.unit_rate) || 0), 0);
+}
+
+// Total committed headcount across all lines of a contract.
+export function contractLinesCommitted(lines: Pick<ContractLine, "committed_count">[]): number {
+  return lines.reduce((sum, l) => sum + (Number(l.committed_count) || 0), 0);
+}
+
+// Phase 2: contract addendums — dated changes to committed headcount / rate.
+export type AddendumChangeType = "ADD_HEADCOUNT" | "REDUCE_HEADCOUNT" | "RATE_CHANGE";
+export type AddendumSource = "SIGNED_CONTRACT" | "EMAIL" | "VERBAL" | "OTHER";
+
+export const ADDENDUM_CHANGE_TYPE_LABEL: Record<AddendumChangeType, string> = {
+  ADD_HEADCOUNT: "Add headcount",
+  REDUCE_HEADCOUNT: "Reduce headcount",
+  RATE_CHANGE: "Rate change",
+};
+
+export const ADDENDUM_SOURCE_LABEL: Record<AddendumSource, string> = {
+  SIGNED_CONTRACT: "Signed contract",
+  EMAIL: "Email",
+  VERBAL: "Verbal",
+  OTHER: "Other",
+};
+
+export type ContractAddendum = {
+  id: string;
+  company_id?: string;
+  contract_id: string;
+  contract_line_id: string | null; // null = introduces a new line (see `category`)
+  category: ContractLineCategory | null;
+  change_type: AddendumChangeType;
+  count_delta: number; // magnitude; sign comes from change_type
+  new_rate: number | null;
+  effective_from: string;
+  source: AddendumSource;
+  reference: string | null;
+  drive_file_id: string | null;
+  drive_view_url: string | null;
+  reference_file_name: string | null;
+  created_by?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+// Signed headcount delta an addendum applies (0 for a pure rate change).
+export function addendumHeadcountDelta(a: Pick<ContractAddendum, "change_type" | "count_delta">): number {
+  const mag = Math.abs(Number(a.count_delta) || 0);
+  if (a.change_type === "ADD_HEADCOUNT") return mag;
+  if (a.change_type === "REDUCE_HEADCOUNT") return -mag;
+  return 0;
+}
+
+// The category an addendum affects: its line's category, or its own for new lines.
+function addendumCategory(
+  a: ContractAddendum,
+  lineCategoryById: Map<string, ContractLineCategory>,
+): ContractLineCategory | null {
+  if (a.contract_line_id) return lineCategoryById.get(a.contract_line_id) ?? a.category ?? null;
+  return a.category ?? null;
+}
+
+/**
+ * Effective committed count per category on a given date:
+ *   base committed_count (from lines) + Σ addendum deltas with effective_from <= date.
+ * Never negative.
+ */
+export function effectiveCommittedByCategory(
+  lines: ContractLine[],
+  addendums: ContractAddendum[],
+  onDate: string,
+): Map<ContractLineCategory, number> {
+  const result = new Map<ContractLineCategory, number>();
+  const lineCategoryById = new Map<string, ContractLineCategory>();
+  for (const l of lines) {
+    lineCategoryById.set(l.id, l.category);
+    result.set(l.category, (result.get(l.category) ?? 0) + (Number(l.committed_count) || 0));
+  }
+  for (const a of addendums) {
+    if (a.effective_from > onDate) continue;
+    const cat = addendumCategory(a, lineCategoryById);
+    if (!cat) continue;
+    result.set(cat, (result.get(cat) ?? 0) + addendumHeadcountDelta(a));
+  }
+  for (const [cat, n] of result) result.set(cat, Math.max(0, n));
+  return result;
+}
 
 export const PAKISTAN_INDUSTRIES = [
   "Banking",
@@ -562,9 +748,57 @@ export type Employee = {
   medical_fitness_expiry: string | null;
   eobi_registration_number: string | null;
   iban: string | null;
+  // Phase 4: contract-line assignment (which category slot this employee fills)
+  contract_line_id: string | null;
+  assignment_effective_from: string | null;
+  assignment_effective_to: string | null;
   created_at?: string;
   updated_at?: string;
 };
+
+// Phase 4: an employee consumes a slot on a line only while Active AND within
+// its assignment window. Inactive/On-Leave/ended assignments free the slot.
+export function assignmentActiveOn(
+  emp: Pick<Employee, "status" | "assignment_effective_from" | "assignment_effective_to">,
+  onDate: string,
+): boolean {
+  if (emp.status !== "Active") return false;
+  if (emp.assignment_effective_from && emp.assignment_effective_from > onDate) return false;
+  if (emp.assignment_effective_to && emp.assignment_effective_to < onDate) return false;
+  return true;
+}
+
+// Count active assignments per contract_line on a date.
+export function activeCountByLine(
+  employees: Pick<Employee, "status" | "contract_line_id" | "assignment_effective_from" | "assignment_effective_to">[],
+  onDate: string,
+): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const e of employees) {
+    if (!e.contract_line_id) continue;
+    if (!assignmentActiveOn(e, onDate)) continue;
+    m.set(e.contract_line_id, (m.get(e.contract_line_id) ?? 0) + 1);
+  }
+  return m;
+}
+
+// Active assignments tallied by CATEGORY, given a line→category lookup. Slot
+// validation is per-category (all lines of a category share the committed pool).
+export function activeCountByCategory(
+  employees: Pick<Employee, "status" | "contract_line_id" | "assignment_effective_from" | "assignment_effective_to">[],
+  lineCategoryById: Map<string, ContractLineCategory>,
+  onDate: string,
+): Map<ContractLineCategory, number> {
+  const m = new Map<ContractLineCategory, number>();
+  for (const e of employees) {
+    if (!e.contract_line_id) continue;
+    if (!assignmentActiveOn(e, onDate)) continue;
+    const cat = lineCategoryById.get(e.contract_line_id);
+    if (!cat) continue;
+    m.set(cat, (m.get(cat) ?? 0) + 1);
+  }
+  return m;
+}
 
 export type AttendanceStatus = "Present" | "Absent" | "Leave";
 
@@ -981,7 +1215,7 @@ export type Vendor = {
   created_at?: string;
 };
 
-export type InvoiceStatus = "Pending" | "Delivered";
+export type InvoiceStatus = "Pending" | "Delivered" | "Unpaid" | "Partly-Paid" | "Paid";
 
 export type Invoice = {
   id: string;
@@ -997,9 +1231,137 @@ export type Invoice = {
   attachment_file_name: string | null;
   notes: string | null;
   status: InvoiceStatus;
+  // Phase 6 generation fields (null on legacy ad-hoc invoices)
+  period_start?: string | null;
+  period_end?: string | null;
+  subtotal?: number;
+  tax_added_total?: number;
+  tax_withheld_total?: number;
+  previous_balance?: number;
+  total_due?: number;
+  amount_in_words?: string | null;
+  remit_account?: RemitAccount | null;
+  override_reason?: string | null;
+  financial_year?: string | null;
+  invoice_group?: ClientInvoiceGroup | null;
+  generated?: boolean;
   created_at?: string;
   updated_at?: string;
 };
+
+export type InvoiceLine = {
+  id?: string;
+  company_id?: string;
+  invoice_id?: string;
+  category: ContractLineCategory | null;
+  label: string;
+  quantity: number;
+  unit_rate: number;
+  amount: number;
+  taxable: boolean;
+  sort_order?: number;
+};
+
+export type InvoiceTax = {
+  id?: string;
+  company_id?: string;
+  invoice_id?: string;
+  name: string;
+  rate: number;
+  base: TaxBase;
+  direction: TaxDirection;
+  component?: string | null;
+  amount: number;
+  sort_order?: number;
+};
+
+// Compute each tax's amount from a subtotal per its base/direction, in order.
+//  - WHOLE_INVOICE / SPECIFIC_COMPONENT: rate% of the subtotal.
+//  - COMPOUND: rate% of (subtotal + running total of ADDED taxes so far).
+// ADDED taxes increase the total; WITHHELD taxes reduce Total Due.
+export function computeInvoiceTaxes(
+  subtotal: number,
+  taxes: Omit<InvoiceTax, "amount">[],
+): { computed: InvoiceTax[]; addedTotal: number; withheldTotal: number } {
+  let addedSoFar = 0;
+  let addedTotal = 0;
+  let withheldTotal = 0;
+  const computed: InvoiceTax[] = taxes.map((t) => {
+    const base = t.base === "COMPOUND" ? subtotal + addedSoFar : subtotal;
+    const amount = Math.round(base * (Number(t.rate) || 0)) / 100;
+    if (t.direction === "ADDED") {
+      addedSoFar += amount;
+      addedTotal += amount;
+    } else {
+      withheldTotal += amount;
+    }
+    return { ...t, amount };
+  });
+  return { computed, addedTotal, withheldTotal };
+}
+
+// Outstanding on a posted invoice = current-period net still owed.
+export function invoiceOutstanding(inv: Pick<Invoice, "invoice_amount" | "withholding_tax" | "amount_received">): number {
+  return Number(inv.invoice_amount ?? 0) - Number(inv.withholding_tax ?? 0) - Number(inv.amount_received ?? 0);
+}
+
+// A client's carried previous balance = Σ outstanding of prior Unpaid/Partly-Paid invoices.
+export function clientPreviousBalance(invoices: Invoice[], clientId: string, beforeDate: string): number {
+  return invoices
+    .filter(
+      (i) =>
+        i.client_id === clientId &&
+        (i.status === "Unpaid" || i.status === "Partly-Paid") &&
+        i.invoice_date < beforeDate,
+    )
+    .reduce((sum, i) => sum + invoiceOutstanding(i), 0);
+}
+
+// Pakistani financial year label (Jul–Jun): "FY 2025-26" for a July 2025 date.
+export function financialYearLabel(dateStr: string): string {
+  const d = new Date(dateStr + "T00:00:00");
+  const y = d.getFullYear();
+  const m = d.getMonth(); // 0-based; FY starts July (month 6)
+  const startYear = m >= 6 ? y : y - 1;
+  const endYear = (startYear + 1) % 100;
+  return `FY ${startYear}-${String(endYear).padStart(2, "0")}`;
+}
+
+// Amount in words, Pakistani numbering (crore/lakh/thousand), Rupees + Paisa.
+export function amountInWords(amount: number): string {
+  const n = Math.floor(Math.abs(amount));
+  const paisa = Math.round((Math.abs(amount) - n) * 100);
+  const ones = [
+    "", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten",
+    "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen",
+  ];
+  const tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
+  const twoDigits = (x: number): string => {
+    if (x < 20) return ones[x];
+    return `${tens[Math.floor(x / 10)]}${x % 10 ? " " + ones[x % 10] : ""}`;
+  };
+  const threeDigits = (x: number): string => {
+    const h = Math.floor(x / 100);
+    const r = x % 100;
+    return `${h ? ones[h] + " Hundred" + (r ? " " : "") : ""}${r ? twoDigits(r) : ""}`;
+  };
+  const words = (x: number): string => {
+    if (x === 0) return "Zero";
+    const crore = Math.floor(x / 10000000);
+    const lakh = Math.floor((x % 10000000) / 100000);
+    const thousand = Math.floor((x % 100000) / 1000);
+    const rest = x % 1000;
+    const parts: string[] = [];
+    if (crore) parts.push(`${words(crore)} Crore`);
+    if (lakh) parts.push(`${twoDigits(lakh)} Lakh`);
+    if (thousand) parts.push(`${twoDigits(thousand)} Thousand`);
+    if (rest) parts.push(threeDigits(rest));
+    return parts.join(" ").trim();
+  };
+  const rupeeWords = words(n);
+  const paisaWords = paisa > 0 ? ` and ${twoDigits(paisa)} Paisa` : "";
+  return `Rupees ${rupeeWords}${paisaWords} Only`;
+}
 
 export type Advance = {
   id: string;

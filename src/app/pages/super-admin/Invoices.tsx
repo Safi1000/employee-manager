@@ -31,6 +31,7 @@ import {
 } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
 import { generateInvoicePdf } from "../../lib/invoicePdf";
+import InvoiceGenerate from "../../components/InvoiceGenerate";
 import { formatDate } from "../../lib/date";
 
 type InvoiceRow = Invoice & { client?: { name: string; client_code: string } | null };
@@ -113,6 +114,7 @@ export default function Invoices() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [tab, setTab] = useState<"ledger" | "generate">("ledger");
   const [clientFilter, setClientFilter] = useState<string>("");
   const [branchFilter, setBranchFilter] = useState<string>("all");
   const [monthFilter, setMonthFilter] = useState<string>("all");
@@ -844,6 +846,27 @@ export default function Invoices() {
           </div>
         )}
 
+        <div className="flex gap-1 mb-6 border-b border-slate-200">
+          {(["ledger", "generate"] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTab(t)}
+              className={`px-4 py-2 text-sm -mb-px border-b-2 ${
+                tab === t
+                  ? "border-brand-500 text-brand-700 font-medium"
+                  : "border-transparent text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              {t === "ledger" ? "Invoices" : "Generate"}
+            </button>
+          ))}
+        </div>
+
+        {tab === "generate" && <InvoiceGenerate onPosted={loadAll} />}
+
+        {tab === "ledger" && (
+        <>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-brand-500">
             <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Invoiced</p>
@@ -972,13 +995,18 @@ export default function Invoices() {
                               handleStatusChange(inv, e.target.value as InvoiceStatus)
                             }
                             className={`text-xs rounded-md px-2 py-1 border focus:outline-none focus:ring-2 focus:ring-slate-900 ${
-                              inv.status === "Delivered"
+                              inv.status === "Delivered" || inv.status === "Paid"
                                 ? "bg-success-50 text-success-700 border-success-200"
+                                : inv.status === "Partly-Paid"
+                                ? "bg-brand-50 text-brand-700 border-brand-200"
                                 : "bg-warning-50 text-warning-700 border-warning-200"
                             }`}
                           >
                             <option value="Pending">Pending</option>
                             <option value="Delivered">Delivered</option>
+                            <option value="Unpaid">Unpaid</option>
+                            <option value="Partly-Paid">Partly-Paid</option>
+                            <option value="Paid">Paid</option>
                           </select>
                         </td>
                         <td className="px-6 py-4 text-sm">
@@ -1049,6 +1077,8 @@ export default function Invoices() {
             </table>
           </div>
         </div>
+        </>
+        )}
       </div>
 
       <Modal

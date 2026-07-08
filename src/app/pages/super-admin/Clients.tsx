@@ -21,9 +21,24 @@ import { formatDate } from "../../lib/date";
 import {
   supabase,
   PAKISTAN_INDUSTRIES,
+  TAX_BASE_LABEL,
+  TAX_DIRECTION_LABEL,
+  CLIENT_BILLING_TYPE_LABEL,
+  CLIENT_INVOICE_GROUP_LABEL,
+  effectiveCommittedByCategory,
+  assignmentActiveOn,
   type Client,
+  type ContractLine,
+  type ContractAddendum,
+  type Employee,
   type ClientType,
   type ClientFilerStatus,
+  type ClientBillingType,
+  type ClientInvoiceGroup,
+  type TaxLine,
+  type TaxBase,
+  type TaxDirection,
+  type RemitAccount,
   type Branch,
   type Contract,
   type Invoice,
@@ -31,6 +46,10 @@ import {
 import { useAuth } from "../../lib/auth";
 
 type ClientRow = Client & { employees_count: number; contracts_count: number };
+type EmployeeAssignmentRow = Pick<
+  Employee,
+  "id" | "client_id" | "status" | "contract_id" | "contract_line_id" | "assignment_effective_from" | "assignment_effective_to"
+>;
 
 type ClientForm = {
   name: string;
@@ -40,7 +59,10 @@ type ClientForm = {
   ntn: string;
   strn: string;
   filer_status: ClientFilerStatus | "";
-  withholding_tax_rate: string;
+  tax_profile: TaxLine[];
+  billing_type: ClientBillingType;
+  invoice_group: ClientInvoiceGroup;
+  remit_accounts: RemitAccount[];
   client_type: ClientType;
   branch_id: string;
   billing_address: string;
@@ -64,7 +86,10 @@ const emptyForm: ClientForm = {
   ntn: "",
   strn: "",
   filer_status: "",
-  withholding_tax_rate: "",
+  tax_profile: [],
+  billing_type: "STANDARD",
+  invoice_group: "FIXED",
+  remit_accounts: [],
   client_type: "security_services",
   branch_id: "",
   billing_address: "",
@@ -85,6 +110,43 @@ const formatCnic = (raw: string): string => {
   if (digits.length <= 5) return digits;
   if (digits.length <= 12) return `${digits.slice(0, 5)}-${digits.slice(5)}`;
   return `${digits.slice(0, 5)}-${digits.slice(5, 12)}-${digits.slice(12)}`;
+};
+
+// Drop empty tax rows and coerce rate to a number.
+const sanitizeTaxProfile = (rows: TaxLine[]): TaxLine[] =>
+  rows
+    .filter((t) => t.name.trim() !== "")
+    .map((t) => ({
+      name: t.name.trim(),
+      rate: Math.max(0, Number(t.rate) || 0),
+      base: t.base,
+      direction: t.direction,
+      ...(t.component ? { component: t.component.trim() } : {}),
+    }));
+
+// Drop empty remit rows; guarantee exactly one default when any exist.
+const sanitizeRemitAccounts = (rows: RemitAccount[]): RemitAccount[] => {
+  const cleaned = rows
+    .filter((r) => r.account_title.trim() !== "" || r.account_number.trim() !== "")
+    .map((r) => ({
+      account_title: r.account_title.trim(),
+      account_number: r.account_number.trim(),
+      bank_name: r.bank_name.trim(),
+      is_default: !!r.is_default,
+    }));
+  if (cleaned.length && !cleaned.some((r) => r.is_default)) cleaned[0].is_default = true;
+  // Collapse to a single default (first wins) if the UI ever produced more.
+  let seen = false;
+  for (const r of cleaned) {
+    if (r.is_default && !seen) seen = true;
+    else r.is_default = false;
+  }
+  return cleaned;
+};
+
+const firstWithheldRate = (rows: TaxLine[]): number | null => {
+  const w = rows.find((t) => t.direction === "WITHHELD" && Number(t.rate) > 0);
+  return w ? Number(w.rate) : null;
 };
 
 /**
@@ -125,6 +187,9 @@ export default function Clients() {
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [postedByClientId, setPostedByClientId] = useState<Map<string, number>>(new Map());
+  // Phase 4: per-client committed slots vs active line assignments.
+  const [committedByClientId, setCommittedByClientId] = useState<Map<string, number>>(new Map());
+  const [activeAssignedByClientId, setActiveAssignedByClientId] = useState<Map<string, number>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -155,11 +220,13 @@ export default function Clients() {
   const [contractEditorOpen, setContractEditorOpen] = useState(false);
   const [editingContract, setEditingContract] = useState<Contract | null>(null);
 
+  // Item 9: in-form prompt for the leave carry-forward roll-over choice.
+  const [carryPromptOpen, setCarryPromptOpen] = useState(false);
 
   const loadAll = async () => {
     setLoading(true);
     setError(null);
-    const [clientsRes, branchesRes, contractsRes, invoicesRes, rosterRes] = await Promise.all([
+    const [clientsRes, branchesRes, contractsRes, invoicesRes, employeesRes, rosterRes, linesRes, addendumsRes] = await Promise.all([
       supabase.from("clients").select("*").order("name"),
       supabase
         .from("branches")
@@ -168,18 +235,26 @@ export default function Clients() {
         .order("name"),
       supabase.from("contracts").select("*").order("start_date", { ascending: false }),
       supabase.from("invoices").select("*").order("invoice_date", { ascending: false }),
+      supabase
+        .from("employees")
+        .select("id, client_id, status, contract_id, contract_line_id, assignment_effective_from, assignment_effective_to"),
       supabase.from("roster_assignments").select("employee_id, client_id").eq("assignment_date", new Date().toISOString().slice(0, 10)),
+      supabase.from("contract_lines").select("*"),
+      supabase.from("contract_addendums").select("*"),
     ]);
+    const emps = (employeesRes.data ?? []) as EmployeeAssignmentRow[];
     const cs = (contractsRes.data ?? []) as Contract[];
-    // employees_count = total guards allotted across all active contracts for this client.
-    const guardsByClient = new Map<string, number>();
-    const conByClient = new Map<string, number>();
-    for (const c of cs) {
-      if (c.status !== "active") continue;
-      guardsByClient.set(c.client_id, (guardsByClient.get(c.client_id) ?? 0) + Number(c.number_of_guards ?? 0));
-      conByClient.set(c.client_id, (conByClient.get(c.client_id) ?? 0) + 1);
+    const allLines = (linesRes.data ?? []) as ContractLine[];
+    const allAddendums = (addendumsRes.data ?? []) as ContractAddendum[];
+    const empByClient = new Map<string, number>();
+    for (const e of emps) {
+      if (!e.client_id) continue;
+      if (e.status !== "Active") continue;
+      empByClient.set(e.client_id, (empByClient.get(e.client_id) ?? 0) + 1);
     }
-    // "Posted" guards per client = distinct employees rostered for the client TODAY.
+    // "Posted" guards per client = distinct employees rostered for the client TODAY
+    // (future-dated assignments don't count). Compared against assigned employees
+    // for the understaffed flag (item 17).
     const roster = (rosterRes.data ?? []) as { employee_id: string; client_id: string | null }[];
     const postedByClient = new Map<string, Set<string>>();
     for (const a of roster) {
@@ -190,9 +265,48 @@ export default function Clients() {
     const postedCount = new Map<string, number>();
     for (const [cid, set] of postedByClient) postedCount.set(cid, set.size);
     setPostedByClientId(postedCount);
+    const conByClient = new Map<string, number>();
+    for (const c of cs) {
+      if (c.status !== "active") continue;
+      conByClient.set(c.client_id, (conByClient.get(c.client_id) ?? 0) + 1);
+    }
+
+    // Per-client committed slots (effective, as of today) across ACTIVE contracts,
+    // and active line assignments — the per-category logic behind "Understaffed".
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const linesByContract = new Map<string, ContractLine[]>();
+    for (const l of allLines) {
+      if (!linesByContract.has(l.contract_id)) linesByContract.set(l.contract_id, []);
+      linesByContract.get(l.contract_id)!.push(l);
+    }
+    const addsByContract = new Map<string, ContractAddendum[]>();
+    for (const a of allAddendums) {
+      if (!addsByContract.has(a.contract_id)) addsByContract.set(a.contract_id, []);
+      addsByContract.get(a.contract_id)!.push(a);
+    }
+    const committedByClient = new Map<string, number>();
+    for (const c of cs) {
+      if (c.status !== "active") continue;
+      const committed = effectiveCommittedByCategory(
+        linesByContract.get(c.id) ?? [],
+        addsByContract.get(c.id) ?? [],
+        todayStr,
+      );
+      let total = 0;
+      for (const n of committed.values()) total += n;
+      committedByClient.set(c.client_id, (committedByClient.get(c.client_id) ?? 0) + total);
+    }
+    setCommittedByClientId(committedByClient);
+    const activeAssignedByClient = new Map<string, number>();
+    for (const e of emps) {
+      if (!e.client_id || !e.contract_line_id) continue;
+      if (!assignmentActiveOn(e, todayStr)) continue;
+      activeAssignedByClient.set(e.client_id, (activeAssignedByClient.get(e.client_id) ?? 0) + 1);
+    }
+    setActiveAssignedByClientId(activeAssignedByClient);
     const list = ((clientsRes.data ?? []) as Client[]).map<ClientRow>((c) => ({
       ...c,
-      employees_count: guardsByClient.get(c.id) ?? 0,
+      employees_count: empByClient.get(c.id) ?? 0,
       contracts_count: conByClient.get(c.id) ?? 0,
     }));
     setRows(list);
@@ -240,6 +354,30 @@ export default function Clients() {
     setExpanded({ basic: true, tax: false, billing: false, contract: false });
   };
 
+  // Item 9: when carry-forward is switched on, let the user choose whether to
+  // roll over employees' existing reserve or start accruing fresh from this month.
+  const monthStart = (offsetMonths: number) => {
+    const d = new Date();
+    d.setMonth(d.getMonth() + offsetMonths, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+  };
+  const onToggleCarry = (checked: boolean) => {
+    if (!checked) {
+      setForm((f) => ({ ...f, leave_carry_forward: false, leave_carry_start: "" }));
+      return;
+    }
+    // Open the in-form prompt instead of a browser confirm; carry is only switched
+    // on once the user picks a roll-over option.
+    setCarryPromptOpen(true);
+  };
+  const applyCarryChoice = (rollover: boolean) => {
+    setForm((f) => ({
+      ...f,
+      leave_carry_forward: true,
+      leave_carry_start: rollover ? monthStart(-12) : monthStart(0),
+    }));
+    setCarryPromptOpen(false);
+  };
 
   const populateForm = (row: ClientRow) => {
     setForm({
@@ -250,7 +388,10 @@ export default function Clients() {
       ntn: row.ntn ?? "",
       strn: row.strn ?? "",
       filer_status: row.filer_status ?? "",
-      withholding_tax_rate: row.withholding_tax_rate != null ? String(row.withholding_tax_rate) : "",
+      tax_profile: Array.isArray(row.tax_profile) ? row.tax_profile : [],
+      billing_type: row.billing_type ?? "STANDARD",
+      invoice_group: row.invoice_group ?? "FIXED",
+      remit_accounts: Array.isArray(row.remit_accounts) ? row.remit_accounts : [],
       client_type: row.client_type,
       branch_id: row.branch_id ?? "",
       billing_address: row.billing_address ?? "",
@@ -275,7 +416,12 @@ export default function Clients() {
     ntn: form.ntn.trim() || null,
     strn: form.strn.trim() || null,
     filer_status: form.filer_status || null,
-    withholding_tax_rate: form.withholding_tax_rate === "" ? null : Number(form.withholding_tax_rate),
+    tax_profile: sanitizeTaxProfile(form.tax_profile),
+    remit_accounts: sanitizeRemitAccounts(form.remit_accounts),
+    billing_type: form.billing_type,
+    invoice_group: form.invoice_group,
+    // Keep the legacy single rate in sync = first WITHHELD tax (or null).
+    withholding_tax_rate: firstWithheldRate(form.tax_profile),
     client_type: form.client_type,
     branch_id: form.branch_id || null,
     billing_address: form.billing_address.trim() || null,
@@ -291,10 +437,9 @@ export default function Clients() {
     auto_invoice_amount: form.auto_invoice_enabled
       ? Math.max(0, Number(form.auto_invoice_amount) || 0)
       : 0,
-    // Mirror the new withholding_tax_rate into the legacy column so existing
+    // Mirror the first WITHHELD tax into the legacy column so existing
     // auto-invoice logic on the clients table keeps producing the same WHT.
-    auto_invoice_withholding:
-      form.withholding_tax_rate === "" ? 0 : Math.max(0, Number(form.withholding_tax_rate) || 0),
+    auto_invoice_withholding: firstWithheldRate(form.tax_profile) ?? 0,
   });
 
   const handleAdd = async (e: React.FormEvent) => {
@@ -333,8 +478,8 @@ export default function Clients() {
   };
 
   const handleDelete = async (row: ClientRow) => {
-    if (row.contracts_count > 0) {
-      setError(`Cannot delete ${row.name}: they have ${row.contracts_count} active contract(s). Remove contracts first.`);
+    if (row.employees_count > 0) {
+      setError(`Cannot delete ${row.name}: ${row.employees_count} active employee(s) are assigned. Reassign them first.`);
       return;
     }
     if (!window.confirm(`Delete client "${row.name}"? This cannot be undone.`)) return;
@@ -548,20 +693,104 @@ export default function Clients() {
               <option value="non_filer">Non-filer</option>
             </select>
           </div>
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Withholding Tax Rate (%)</label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              max="100"
-              value={form.withholding_tax_rate}
-              onChange={(e) => setForm({ ...form, withholding_tax_rate: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-              placeholder="e.g. 8"
-            />
-            <p className="text-[10px] text-slate-500 mt-1">Applied to every invoice for this client.</p>
+        </div>
+
+        {/* Repeatable tax profile — replaces the single withholding rate */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="block text-sm text-slate-700">Taxes</label>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() =>
+                setForm((f) => ({
+                  ...f,
+                  tax_profile: [
+                    ...f.tax_profile,
+                    { name: "", rate: 0, base: "WHOLE_INVOICE", direction: "WITHHELD" },
+                  ],
+                }))
+              }
+            >
+              <Plus className="w-3.5 h-3.5 mr-1" /> Add Tax
+            </Button>
           </div>
+          {form.tax_profile.length === 0 ? (
+            <p className="text-[11px] text-slate-500">
+              No taxes configured. Add withholding and/or sales taxes — each applies to every invoice per its base and direction.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {form.tax_profile.map((t, idx) => {
+                const patch = (p: Partial<TaxLine>) =>
+                  setForm((f) => ({
+                    ...f,
+                    tax_profile: f.tax_profile.map((x, i) => (i === idx ? { ...x, ...p } : x)),
+                  }));
+                return (
+                  <div key={idx} className="grid grid-cols-12 gap-2 items-center">
+                    <input
+                      type="text"
+                      value={t.name}
+                      onChange={(e) => patch({ name: e.target.value })}
+                      placeholder="Tax name (e.g. Sales Tax)"
+                      className="col-span-4 px-2 py-1.5 border border-slate-200 rounded text-sm"
+                    />
+                    <div className="col-span-2 relative">
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={t.rate}
+                        onChange={(e) => patch({ rate: Number(e.target.value) })}
+                        className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm text-right pr-5"
+                      />
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-slate-400">%</span>
+                    </div>
+                    <select
+                      value={t.base}
+                      onChange={(e) => patch({ base: e.target.value as TaxBase })}
+                      className="col-span-3 px-2 py-1.5 border border-slate-200 rounded text-sm"
+                    >
+                      {(["WHOLE_INVOICE", "SPECIFIC_COMPONENT", "COMPOUND"] as const).map((b) => (
+                        <option key={b} value={b}>{TAX_BASE_LABEL[b]}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={t.direction}
+                      onChange={(e) => patch({ direction: e.target.value as TaxDirection })}
+                      className="col-span-2 px-2 py-1.5 border border-slate-200 rounded text-sm"
+                    >
+                      {(["ADDED", "WITHHELD"] as const).map((d) => (
+                        <option key={d} value={d}>{TAX_DIRECTION_LABEL[d]}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => setForm((f) => ({ ...f, tax_profile: f.tax_profile.filter((_, i) => i !== idx) }))}
+                      className="col-span-1 p-1 rounded text-danger-600 hover:bg-danger-50 justify-self-center"
+                      title="Remove tax"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                    {t.base === "SPECIFIC_COMPONENT" && (
+                      <input
+                        type="text"
+                        value={t.component ?? ""}
+                        onChange={(e) => patch({ component: e.target.value })}
+                        placeholder="Component (placeholder until SLA components exist)"
+                        className="col-span-12 px-2 py-1.5 border border-slate-200 rounded text-sm"
+                      />
+                    )}
+                  </div>
+                );
+              })}
+              <p className="text-[10px] text-slate-500">
+                Added taxes increase the invoice total; withheld taxes reduce Total Due (shown net of withholding).
+              </p>
+            </div>
+          )}
         </div>
       </Section>
 
@@ -598,9 +827,169 @@ export default function Clients() {
               maxLength={15}
             />
           </div>
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Billing Type</label>
+            <select
+              value={form.billing_type}
+              onChange={(e) => setForm({ ...form, billing_type: e.target.value as ClientBillingType })}
+              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+            >
+              {(["STANDARD", "SLA"] as const).map((b) => (
+                <option key={b} value={b}>{CLIENT_BILLING_TYPE_LABEL[b]}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Invoice Group</label>
+            <select
+              value={form.invoice_group}
+              onChange={(e) => setForm({ ...form, invoice_group: e.target.value as ClientInvoiceGroup })}
+              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+            >
+              {(["FIXED", "VARIABLE", "SLA"] as const).map((g) => (
+                <option key={g} value={g}>{CLIENT_INVOICE_GROUP_LABEL[g]}</option>
+              ))}
+            </select>
+            <p className="text-[10px] text-slate-500 mt-1">Buckets this client on the Invoices → Generate tab.</p>
+          </div>
+        </div>
+
+        {/* Remit accounts — one marked default */}
+        <div className="space-y-2 pt-1">
+          <div className="flex items-center justify-between">
+            <label className="block text-sm text-slate-700">Remit Accounts</label>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() =>
+                setForm((f) => ({
+                  ...f,
+                  remit_accounts: [
+                    ...f.remit_accounts,
+                    { account_title: "", account_number: "", bank_name: "", is_default: f.remit_accounts.length === 0 },
+                  ],
+                }))
+              }
+            >
+              <Plus className="w-3.5 h-3.5 mr-1" /> Add Account
+            </Button>
+          </div>
+          {form.remit_accounts.length === 0 ? (
+            <p className="text-[11px] text-slate-500">No remit accounts yet. Invoices select which account to show from this list.</p>
+          ) : (
+            <div className="space-y-2">
+              {form.remit_accounts.map((r, idx) => {
+                const patch = (p: Partial<RemitAccount>) =>
+                  setForm((f) => ({
+                    ...f,
+                    remit_accounts: f.remit_accounts.map((x, i) => (i === idx ? { ...x, ...p } : x)),
+                  }));
+                const makeDefault = () =>
+                  setForm((f) => ({
+                    ...f,
+                    remit_accounts: f.remit_accounts.map((x, i) => ({ ...x, is_default: i === idx })),
+                  }));
+                return (
+                  <div key={idx} className="grid grid-cols-12 gap-2 items-center">
+                    <input
+                      type="text"
+                      value={r.account_title}
+                      onChange={(e) => patch({ account_title: e.target.value })}
+                      placeholder="Account title"
+                      className="col-span-3 px-2 py-1.5 border border-slate-200 rounded text-sm"
+                    />
+                    <input
+                      type="text"
+                      value={r.account_number}
+                      onChange={(e) => patch({ account_number: e.target.value })}
+                      placeholder="Account no. / IBAN"
+                      className="col-span-4 px-2 py-1.5 border border-slate-200 rounded text-sm font-mono"
+                    />
+                    <input
+                      type="text"
+                      value={r.bank_name}
+                      onChange={(e) => patch({ bank_name: e.target.value })}
+                      placeholder="Bank"
+                      className="col-span-3 px-2 py-1.5 border border-slate-200 rounded text-sm"
+                    />
+                    <label className="col-span-1 flex items-center justify-center" title="Default account">
+                      <input type="radio" name="remit_default" checked={r.is_default} onChange={makeDefault} />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setForm((f) => ({ ...f, remit_accounts: f.remit_accounts.filter((_, i) => i !== idx) }))}
+                      className="col-span-1 p-1 rounded text-danger-600 hover:bg-danger-50 justify-self-center"
+                      title="Remove account"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                );
+              })}
+              <p className="text-[10px] text-slate-500">The selected radio marks the default remit account.</p>
+            </div>
+          )}
         </div>
       </Section>
 
+      <Section isOpen={!!expanded.contract} onToggle={() => setExpanded((prev) => ({ ...prev, contract: !prev.contract }))} title="Contract Defaults">
+        <p className="text-xs text-slate-500">
+          These defaults are inherited by all employees of this client. Per-contract overrides go on the Contracts page.
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Allowed Leaves / month</label>
+            <input
+              type="number"
+              min="0"
+              value={form.allowed_leaves_per_month}
+              onChange={(e) => setForm({ ...form, allowed_leaves_per_month: e.target.value })}
+              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+            />
+          </div>
+          <div className="flex items-end">
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={form.leave_carry_forward}
+                onChange={(e) => onToggleCarry(e.target.checked)}
+              />
+              Carry forward unused leaves
+            </label>
+          </div>
+          <div>
+            <label className="flex items-center gap-2 text-sm text-slate-700 mb-1">
+              <input
+                type="checkbox"
+                checked={form.eobi_enabled}
+                onChange={(e) => setForm({ ...form, eobi_enabled: e.target.checked })}
+              />
+              EOBI deduction enabled
+            </label>
+            {form.eobi_enabled && (
+              <input
+                type="number"
+                min="0"
+                value={form.eobi_amount}
+                onChange={(e) => setForm({ ...form, eobi_amount: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                placeholder="EOBI amount per employee"
+              />
+            )}
+          </div>
+          <div className="flex items-end">
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={form.advance_payment}
+                onChange={(e) => setForm({ ...form, advance_payment: e.target.checked })}
+              />
+              Pays in advance
+            </label>
+          </div>
+        </div>
+      </Section>
 
       <Section
         isOpen={!!expanded.autoInvoice}
@@ -771,8 +1160,11 @@ export default function Clients() {
                 {!loading && filteredRows.map((row) => {
                   const branchName = branches.find((b) => b.id === row.branch_id)?.name ?? "—";
                   const isActive = activeClientIds.has(row.id);
-                  const posted = postedByClientId.get(row.id) ?? 0;
-                  const understaffed = row.employees_count > 0 && posted < row.employees_count;
+                  // Per-category slot logic (Phase 4): committed slots vs active
+                  // line assignments across the client's active contracts.
+                  const committed = committedByClientId.get(row.id) ?? 0;
+                  const activeAssigned = activeAssignedByClientId.get(row.id) ?? 0;
+                  const understaffed = committed > 0 && activeAssigned < committed;
                   return (
                     <tr key={row.id} className={`hover:bg-slate-50 transition-colors ${understaffed ? "bg-warning-50/40" : ""}`}>
                       <td className="px-4 py-3 text-sm">
@@ -797,9 +1189,9 @@ export default function Clients() {
                           {understaffed && (
                             <span
                               className="inline-block px-2 py-0.5 rounded-full text-xs bg-warning-50 text-warning-700 border border-warning-200"
-                              title={`${posted} guard(s) posted today vs ${row.employees_count} assigned`}
+                              title={`${activeAssigned} active line assignment(s) vs ${committed} committed slot(s)`}
                             >
-                              Understaffed {posted}/{row.employees_count}
+                              Understaffed {activeAssigned}/{committed}
                             </span>
                           )}
                         </div>
@@ -1090,6 +1482,42 @@ export default function Clients() {
         />
       )}
 
+      {/* Item 9: leave carry-forward roll-over choice (in-form, not a browser popup) */}
+      <Modal
+        isOpen={carryPromptOpen}
+        onClose={() => setCarryPromptOpen(false)}
+        title="Carry forward unused leaves"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">
+            Roll over employees' existing leave reserve, or start accruing fresh from this month?
+          </p>
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={() => applyCarryChoice(true)}
+              className="w-full text-left px-4 py-3 rounded-md border border-slate-200 hover:border-brand-400 hover:bg-brand-50/40"
+            >
+              <div className="text-sm text-slate-900">Roll over existing reserve</div>
+              <div className="text-xs text-slate-500">Include the reserve accrued over the last 12 months.</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => applyCarryChoice(false)}
+              className="w-full text-left px-4 py-3 rounded-md border border-slate-200 hover:border-brand-400 hover:bg-brand-50/40"
+            >
+              <div className="text-sm text-slate-900">Start fresh from this month</div>
+              <div className="text-xs text-slate-500">No backlog — begin accruing carry from this month onward.</div>
+            </button>
+          </div>
+          <div className="flex justify-end">
+            <Button variant="secondary" size="sm" onClick={() => setCarryPromptOpen(false)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </>
   );
 }

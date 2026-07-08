@@ -3,6 +3,8 @@ import type {
   Client,
   Company,
   Invoice,
+  InvoiceLine,
+  InvoiceTax,
   InvoiceTemplateField,
   InvoiceTemplateItem,
 } from "./supabase";
@@ -79,6 +81,10 @@ export function generateInvoicePdf(
   client: Client | null,
   company: Company | null,
   template: InvoiceTemplateItem[],
+  // Phase 6: when provided, a richer itemized body (lines + taxes + previous
+  // balance + total due + amount in words + remit account) is rendered in place
+  // of the plain template body.
+  detail?: { lines?: InvoiceLine[]; taxes?: InvoiceTax[] },
 ) {
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -140,7 +146,90 @@ export function generateInvoicePdf(
     writeKv(item.title, valueFor(item.field as InvoiceTemplateField, inv, client));
   }
 
-  if (bodyItems.length > 0) {
+  const hasDetail = !!detail?.lines && detail.lines.length > 0;
+  if (hasDetail) {
+    const lines = detail!.lines!;
+    const taxes = detail!.taxes ?? [];
+    y += 8;
+    doc.setDrawColor(220);
+    doc.line(margin, y, pageWidth - margin, y);
+    y += 16;
+    // Line-item table header
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(110);
+    doc.text("DESCRIPTION", margin, y);
+    doc.text("QTY", pageWidth - margin - 180, y);
+    doc.text("RATE", pageWidth - margin - 110, y);
+    doc.text("AMOUNT", pageWidth - margin - 10 - doc.getTextWidth("AMOUNT"), y);
+    y += 6;
+    doc.setDrawColor(230);
+    doc.line(margin, y, pageWidth - margin, y);
+    y += 14;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(0);
+    for (const l of lines) {
+      doc.text(String(l.label ?? ""), margin, y);
+      doc.text(String(l.quantity ?? 0), pageWidth - margin - 180, y);
+      doc.text(fmtPkr(l.unit_rate).replace("PKR ", ""), pageWidth - margin - 110, y);
+      const amt = fmtPkr(l.amount);
+      doc.text(amt, pageWidth - margin - 10 - doc.getTextWidth(amt), y);
+      y += 16;
+    }
+    const rightLabel = (label: string, value: string, bold = false) => {
+      doc.setFont("helvetica", bold ? "bold" : "normal");
+      doc.setFontSize(bold ? 12 : 10);
+      doc.setTextColor(bold ? 0 : 80);
+      doc.text(label, pageWidth - margin - 200, y);
+      doc.text(value, pageWidth - margin - 10 - doc.getTextWidth(value), y);
+      y += bold ? 20 : 16;
+    };
+    y += 4;
+    doc.setDrawColor(230);
+    doc.line(pageWidth - margin - 220, y - 8, pageWidth - margin, y - 8);
+    rightLabel("Subtotal", fmtPkr(inv.subtotal ?? 0));
+    for (const t of taxes) {
+      const sign = t.direction === "WITHHELD" ? "−" : "+";
+      rightLabel(`${t.name} (${t.rate}%)`, `${sign}${fmtPkr(t.amount)}`);
+    }
+    if ((inv.previous_balance ?? 0) !== 0) rightLabel("Previous Balance", fmtPkr(inv.previous_balance ?? 0));
+    rightLabel("Total Due", fmtPkr(inv.total_due ?? 0), true);
+    if ((inv.tax_withheld_total ?? 0) > 0) {
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(9);
+      doc.setTextColor(120);
+      doc.text("(net of withholding)", pageWidth - margin - 10 - doc.getTextWidth("(net of withholding)"), y);
+      y += 14;
+    }
+    // Amount in words
+    if (inv.amount_in_words) {
+      y += 4;
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(10);
+      doc.setTextColor(0);
+      const wl = doc.splitTextToSize(inv.amount_in_words, pageWidth - margin * 2);
+      doc.text(wl, margin, y);
+      y += 14 * wl.length + 4;
+    }
+    // Remit account
+    if (inv.remit_account) {
+      const r = inv.remit_account;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(110);
+      doc.text("REMIT TO", margin, y);
+      y += 13;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.setTextColor(0);
+      doc.text([r.account_title, r.account_number, r.bank_name].filter(Boolean).join("  ·  "), margin, y);
+      y += 16;
+    }
+    if (inv.notes) writeKv("Notes", inv.notes);
+  }
+
+  if (!hasDetail && bodyItems.length > 0) {
     y += 6;
     doc.setDrawColor(220);
     doc.line(margin, y, pageWidth - margin, y);
@@ -150,7 +239,7 @@ export function generateInvoicePdf(
     }
   }
 
-  if (totalItems.length > 0) {
+  if (!hasDetail && totalItems.length > 0) {
     y += 8;
     doc.setDrawColor(220);
     doc.line(margin, y, pageWidth - margin, y);
