@@ -32,6 +32,7 @@ import {
   type ChequeType,
   type ChequeDirection,
 } from "../../lib/supabase";
+import { validateBankAccount, validateIban } from "../../lib/validation";
 import { useAuth } from "../../lib/auth";
 import { CashCustodyPanel } from "./CashCustody";
 import { generateDepositSlipPdf } from "../../lib/depositSlip";
@@ -721,6 +722,11 @@ export default function Accounting() {
   const handleAddBank = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newBank.bank_name.trim() || !newBank.account_number.trim()) return;
+    const bankFmtErr = validateBankAccount(newBank.account_number) ?? validateIban(newBank.iban);
+    if (bankFmtErr) {
+      setError(bankFmtErr);
+      return;
+    }
     if (newBank.owner_type === "partner" && !newBank.owner_partner_id) {
       setError("Select which partner owns this account.");
       return;
@@ -928,6 +934,11 @@ export default function Accounting() {
   const handleEditBank = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedBank) return;
+    const bankFmtErr = validateBankAccount(editBankForm.account_number) ?? validateIban(editBankForm.iban);
+    if (bankFmtErr) {
+      setError(bankFmtErr);
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {

@@ -43,6 +43,16 @@ import {
   type Contract,
   type Invoice,
 } from "../../lib/supabase";
+import {
+  validateNtn,
+  validateStrn,
+  validateCnic,
+  validatePhone,
+  validateEmail,
+  validateFreeText,
+  validateBankAccount,
+  validateIban,
+} from "../../lib/validation";
 import { useAuth } from "../../lib/auth";
 
 type ClientRow = Client & { employees_count: number; contracts_count: number };
@@ -205,6 +215,8 @@ export default function Clients() {
 
   const [form, setForm] = useState<ClientForm>(emptyForm);
   const [submitting, setSubmitting] = useState(false);
+  // Per-field inline validation errors (keyed by field name / `remit-<idx>`).
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string | null>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
     basic: true,
     tax: false,
@@ -351,6 +363,7 @@ export default function Clients() {
 
   const resetForm = () => {
     setForm(emptyForm);
+    setFieldErrors({});
     setExpanded({ basic: true, tax: false, billing: false, contract: false });
   };
 
@@ -442,9 +455,46 @@ export default function Clients() {
     auto_invoice_withholding: firstWithheldRate(form.tax_profile) ?? 0,
   });
 
+  // Compute all inline field errors for the current form (null = OK).
+  const computeClientErrors = (f: ClientForm): Record<string, string | null> => {
+    const errs: Record<string, string | null> = {
+      name: validateFreeText(f.name),
+      email: validateEmail(f.email),
+      phone: validatePhone(f.phone),
+      ntn: validateNtn(f.ntn),
+      strn: validateStrn(f.strn),
+      signatory_cnic: validateCnic(f.signatory_cnic),
+      billing_address: validateFreeText(f.billing_address),
+      authorised_signatory: validateFreeText(f.authorised_signatory),
+    };
+    // Remit field accepts EITHER a bank account number OR an IBAN — only error
+    // when the value fails both (and isn't blank).
+    f.remit_accounts.forEach((r, i) => {
+      errs[`remit-${i}`] = remitAccountError(r.account_number);
+    });
+    return errs;
+  };
+
+  // Validate a single field on blur without disturbing the others.
+  const validateField = (key: string, err: string | null) =>
+    setFieldErrors((prev) => ({ ...prev, [key]: err }));
+
+  // Remit "Account no. / IBAN" accepts either format.
+  const remitAccountError = (v: string): string | null => {
+    if (!v || v.trim() === "") return null;
+    if (validateBankAccount(v) === null || validateIban(v) === null) return null;
+    return "Enter a valid account number or IBAN";
+  };
+
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim()) return;
+    const errs = computeClientErrors(form);
+    if (Object.values(errs).some(Boolean)) {
+      setFieldErrors(errs);
+      setError("Please fix the highlighted fields before saving.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     const { error: insErr } = await supabase.from("clients").insert(buildPayload());
@@ -461,6 +511,12 @@ export default function Clients() {
   const handleEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingId) return;
+    const errs = computeClientErrors(form);
+    if (Object.values(errs).some(Boolean)) {
+      setFieldErrors(errs);
+      setError("Please fix the highlighted fields before saving.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     const { error: upErr } = await supabase
@@ -593,9 +649,11 @@ export default function Clients() {
               type="text"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
+              onBlur={(e) => validateField("name", validateFreeText(e.target.value))}
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
               placeholder="Registered business name"
             />
+            {fieldErrors.name && <p className="text-xs text-danger-600 mt-1">{fieldErrors.name}</p>}
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Email</label>
@@ -603,9 +661,11 @@ export default function Clients() {
               type="email"
               value={form.email}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
+              onBlur={(e) => validateField("email", validateEmail(e.target.value))}
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
               placeholder="billing@client.com"
             />
+            {fieldErrors.email && <p className="text-xs text-danger-600 mt-1">{fieldErrors.email}</p>}
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Phone</label>
@@ -613,9 +673,11 @@ export default function Clients() {
               type="tel"
               value={form.phone}
               onChange={(e) => setForm({ ...form, phone: e.target.value })}
+              onBlur={(e) => validateField("phone", validatePhone(e.target.value))}
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
               placeholder="+92 21 …"
             />
+            {fieldErrors.phone && <p className="text-xs text-danger-600 mt-1">{fieldErrors.phone}</p>}
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Industry</label>
@@ -667,9 +729,11 @@ export default function Clients() {
               type="text"
               value={form.ntn}
               onChange={(e) => setForm({ ...form, ntn: e.target.value })}
+              onBlur={(e) => validateField("ntn", validateNtn(e.target.value))}
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm font-mono"
               placeholder="National Tax Number"
             />
+            {fieldErrors.ntn && <p className="text-xs text-danger-600 mt-1">{fieldErrors.ntn}</p>}
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">STRN</label>
@@ -677,9 +741,11 @@ export default function Clients() {
               type="text"
               value={form.strn}
               onChange={(e) => setForm({ ...form, strn: e.target.value })}
+              onBlur={(e) => validateField("strn", validateStrn(e.target.value))}
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm font-mono"
               placeholder="Sales Tax Registration"
             />
+            {fieldErrors.strn && <p className="text-xs text-danger-600 mt-1">{fieldErrors.strn}</p>}
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Filer Status</label>
@@ -800,10 +866,12 @@ export default function Clients() {
           <textarea
             value={form.billing_address}
             onChange={(e) => setForm({ ...form, billing_address: e.target.value })}
+            onBlur={(e) => validateField("billing_address", validateFreeText(e.target.value))}
             className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
             rows={2}
             placeholder="Full billing address (used on invoices)"
           />
+          {fieldErrors.billing_address && <p className="text-xs text-danger-600 mt-1">{fieldErrors.billing_address}</p>}
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -812,9 +880,11 @@ export default function Clients() {
               type="text"
               value={form.authorised_signatory}
               onChange={(e) => setForm({ ...form, authorised_signatory: e.target.value })}
+              onBlur={(e) => validateField("authorised_signatory", validateFreeText(e.target.value))}
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
               placeholder="Person who signs contracts"
             />
+            {fieldErrors.authorised_signatory && <p className="text-xs text-danger-600 mt-1">{fieldErrors.authorised_signatory}</p>}
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Signatory CNIC</label>
@@ -822,10 +892,12 @@ export default function Clients() {
               type="text"
               value={form.signatory_cnic}
               onChange={(e) => setForm({ ...form, signatory_cnic: formatCnic(e.target.value) })}
+              onBlur={(e) => validateField("signatory_cnic", validateCnic(e.target.value))}
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm font-mono"
               placeholder="XXXXX-XXXXXXX-X"
               maxLength={15}
             />
+            {fieldErrors.signatory_cnic && <p className="text-xs text-danger-600 mt-1">{fieldErrors.signatory_cnic}</p>}
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Billing Type</label>
@@ -903,6 +975,7 @@ export default function Clients() {
                       type="text"
                       value={r.account_number}
                       onChange={(e) => patch({ account_number: e.target.value })}
+                      onBlur={(e) => validateField(`remit-${idx}`, remitAccountError(e.target.value))}
                       placeholder="Account no. / IBAN"
                       className="col-span-4 px-2 py-1.5 border border-slate-200 rounded text-sm font-mono"
                     />
@@ -924,6 +997,9 @@ export default function Clients() {
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
+                    {fieldErrors[`remit-${idx}`] && (
+                      <p className="col-span-12 text-xs text-danger-600">{fieldErrors[`remit-${idx}`]}</p>
+                    )}
                   </div>
                 );
               })}

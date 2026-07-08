@@ -4,6 +4,7 @@ import Button from "./Button";
 import Modal from "./Modal";
 import { useAuth } from "../lib/auth";
 import { formatDate } from "../lib/date";
+import { hasInjectionPattern } from "../lib/validation";
 import {
   supabase,
   CONTRACT_TYPE_LABEL,
@@ -370,6 +371,10 @@ export default function ContractEditorModal({
 
   const handleAddAddendum = async () => {
     if (!contract) return;
+    if (hasInjectionPattern(addForm.reference)) {
+      setError("Special characters are not allowed in the addendum reference.");
+      return;
+    }
     setAddSubmitting(true);
     setError(null);
     try {
@@ -417,6 +422,17 @@ export default function ContractEditorModal({
     const effClientId = clientId ?? form.client_id;
     if (!effClientId) {
       setError("Select a client.");
+      return;
+    }
+    // Reject injection-shaped input in the free-text fields (renewal terms +
+    // each contract line's label/location).
+    if (hasInjectionPattern(form.renewal_terms)) {
+      setError("Special characters are not allowed in Renewal Terms.");
+      return;
+    }
+    const badLine = lines.find((l) => hasInjectionPattern(l.label) || hasInjectionPattern(l.location));
+    if (badLine) {
+      setError("Special characters are not allowed in contract line label/location.");
       return;
     }
     setSubmitting(true);

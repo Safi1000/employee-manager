@@ -32,6 +32,7 @@ import {
 import { useAuth } from "../../lib/auth";
 import { generateInvoicePdf } from "../../lib/invoicePdf";
 import InvoiceGenerate from "../../components/InvoiceGenerate";
+import { validateInvoiceNumber, validateAmount, validateFreeText } from "../../lib/validation";
 import { formatDate } from "../../lib/date";
 
 type InvoiceRow = Invoice & { client?: { name: string; client_code: string } | null };
@@ -121,6 +122,7 @@ export default function Invoices() {
 
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [form, setForm] = useState<InvoiceForm>(emptyForm());
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string | null>>({});
   const [submitting, setSubmitting] = useState(false);
 
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -349,12 +351,23 @@ export default function Invoices() {
     if (logErr) throw logErr;
   };
 
-  const validateForm = (f: InvoiceForm): string | null => {
+  const validateForm = (f: InvoiceForm, excludeId?: string): string | null => {
     if (!f.client_id) return "Select a client.";
-    if (!f.invoice_number.trim()) return "Enter an invoice number.";
+    const numErr = validateInvoiceNumber(f.invoice_number);
+    if (numErr) return numErr;
+    // Reject duplicate invoice numbers for the same client (mirrors the DB's
+    // (client_id, invoice_number) unique constraint, with a friendly message).
+    const dup = invoices.some(
+      (i) =>
+        i.client_id === f.client_id &&
+        i.id !== excludeId &&
+        i.invoice_number.trim().toLowerCase() === f.invoice_number.trim().toLowerCase(),
+    );
+    if (dup) return "That invoice number already exists for this client.";
     if (!f.invoice_date) return "Select an invoice date.";
     const amt = Number(f.invoice_amount);
     if (!amt || amt <= 0) return "Enter a positive invoice amount.";
+    if (validateFreeText(f.notes)) return "Special characters are not allowed in Notes.";
     return null;
   };
 
@@ -426,6 +439,7 @@ export default function Invoices() {
       existing_attachment_file_name: row.attachment_file_name ?? null,
     });
     setEditPayments([]);
+    setFieldErrors({});
     setIsEditOpen(true);
     await loadPaymentsFor(row.id);
   };
@@ -433,7 +447,7 @@ export default function Invoices() {
   const handleEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingId) return;
-    const err = validateForm(editForm);
+    const err = validateForm(editForm, editingId);
     if (err) {
       setError(err);
       return;
@@ -825,6 +839,7 @@ export default function Invoices() {
                   ...emptyForm(),
                   invoice_number: `INV-${String(invoices.length + 1).padStart(3, "0")}`,
                 });
+                setFieldErrors({});
                 setIsAddOpen(true);
               }}
             >
@@ -1097,6 +1112,9 @@ export default function Invoices() {
             clients={clients}
             allowClearAttachment={false}
             onClearAttachment={() => {}}
+            errors={fieldErrors}
+            onFieldBlur={(k, err) => setFieldErrors((p) => ({ ...p, [k]: err }))}
+            invoices={invoices}
           />
           <div className="flex items-center gap-3 pt-4">
             <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
@@ -1135,6 +1153,10 @@ export default function Invoices() {
             clients={clients}
             allowClearAttachment
             onClearAttachment={clearEditAttachment}
+            errors={fieldErrors}
+            onFieldBlur={(k, err) => setFieldErrors((p) => ({ ...p, [k]: err }))}
+            invoices={invoices}
+            excludeId={editingId ?? undefined}
           />
 
           <div className="grid grid-cols-3 gap-2">
@@ -1554,12 +1576,20 @@ function InvoiceFields({
   clients,
   allowClearAttachment,
   onClearAttachment,
+  errors,
+  onFieldBlur,
+  invoices,
+  excludeId,
 }: {
   form: InvoiceForm;
   setForm: (f: InvoiceForm) => void;
   clients: Client[];
   allowClearAttachment: boolean;
   onClearAttachment: () => void;
+  errors: Record<string, string | null>;
+  onFieldBlur: (key: string, err: string | null) => void;
+  invoices: InvoiceRow[];
+  excludeId?: string;
 }) {
   return (
     <>
@@ -1587,9 +1617,24 @@ function InvoiceFields({
             type="text"
             value={form.invoice_number}
             onChange={(e) => setForm({ ...form, invoice_number: e.target.value })}
+            onBlur={(e) => {
+              const dup =
+                !!form.client_id &&
+                invoices.some(
+                  (i) =>
+                    i.client_id === form.client_id &&
+                    i.id !== excludeId &&
+                    i.invoice_number.trim().toLowerCase() === e.target.value.trim().toLowerCase(),
+                );
+              onFieldBlur(
+                "invoice_number",
+                validateInvoiceNumber(e.target.value) ?? (dup ? "That invoice number already exists for this client." : null),
+              );
+            }}
             className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
             placeholder="INV-001"
           />
+          {errors.invoice_number && <p className="text-xs text-danger-600 mt-1">{errors.invoice_number}</p>}
         </div>
         <div>
           <label className="block text-sm text-slate-700 mb-1">Invoice Month *</label>
@@ -1611,8 +1656,10 @@ function InvoiceFields({
           step="0.01"
           value={form.invoice_amount}
           onChange={(e) => setForm({ ...form, invoice_amount: e.target.value })}
+          onBlur={(e) => onFieldBlur("invoice_amount", validateAmount(e.target.value))}
           className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
         />
+        {errors.invoice_amount && <p className="text-xs text-danger-600 mt-1">{errors.invoice_amount}</p>}
       </div>
       <div>
         <label className="block text-sm text-slate-700 mb-1">Withholding Tax (PKR)</label>

@@ -24,6 +24,13 @@ import {
   type Branch,
   type EmployeeCategory,
 } from "../../lib/supabase";
+import {
+  validateCnic,
+  validatePhone,
+  validateIban,
+  validateBankAccount,
+  validateFreeText,
+} from "../../lib/validation";
 import { useAuth } from "../../lib/auth";
 
 type EmployeeRow = Employee & {
@@ -183,6 +190,8 @@ export default function EmployeeManagement() {
   const [selectedDocs, setSelectedDocs] = useState<DocumentWithUrl[]>([]);
 
   const [form, setForm] = useState<FormState>(emptyForm);
+  const [formErrors, setFormErrors] = useState<Record<string, string | null>>({});
+  const [editFormErrors, setEditFormErrors] = useState<Record<string, string | null>>({});
   const [submitting, setSubmitting] = useState(false);
 
   const [editForm, setEditForm] = useState<FormState>(emptyForm);
@@ -608,11 +617,37 @@ export default function EmployeeManagement() {
     }
   };
 
+  // "Bank Account Number" here accepts either a plain account number OR an IBAN
+  // (its placeholder shows an IBAN), so only error when it fails both.
+  const accountOrIbanError = (v: string): string | null => {
+    if (!v || v.trim() === "") return null;
+    if (validateBankAccount(v) === null || validateIban(v) === null) return null;
+    return "Enter a valid account number or IBAN";
+  };
+
+  // Inline field errors for an employee form (null = OK).
+  const computeEmployeeErrors = (f: FormState): Record<string, string | null> => ({
+    full_name: validateFreeText(f.full_name),
+    phone: validatePhone(f.phone),
+    cnic_number: validateCnic(f.cnic_number),
+    iban: validateIban(f.iban),
+    bank_account: accountOrIbanError(f.bank_account),
+    emergency_contact_phone: validatePhone(f.emergency_contact_phone),
+    permanent_address: validateFreeText(f.permanent_address),
+    current_address: validateFreeText(f.current_address),
+  });
+
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.full_name.trim()) return;
     if (form.category === "client" && !form.client_id) {
       setError("Select a client (or change category to Office Staff / Reliever).");
+      return;
+    }
+    const errs = computeEmployeeErrors(form);
+    if (Object.values(errs).some(Boolean)) {
+      setFormErrors(errs);
+      setError("Please fix the highlighted fields before saving.");
       return;
     }
     const slotErr = validateSlot(form);
@@ -679,6 +714,7 @@ export default function EmployeeManagement() {
       );
       await syncAdditionalBranches(newEmp.id, form.additional_branch_ids, form.branch_id);
       setForm(emptyForm);
+      setFormErrors({});
       setIsModalOpen(false);
       await loadData();
     } catch (err: any) {
@@ -790,12 +826,21 @@ export default function EmployeeManagement() {
       eobi_registration_number: emp.eobi_registration_number ?? "",
       iban: emp.iban ?? "",
     });
+    setEditFormErrors({});
     setIsEditModalOpen(true);
   };
 
   const handleEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEmployee) return;
+    // The edit modal exposes the same structured fields (incl. the HR section's
+    // CNIC/addresses/emergency phone), so validate the full set on save.
+    const errs = computeEmployeeErrors(editForm);
+    if (Object.values(errs).some(Boolean)) {
+      setEditFormErrors(errs);
+      setError("Please fix the highlighted fields before saving.");
+      return;
+    }
     // Slot check only blocks when this edit makes the employee newly active on a
     // full line — a still-active employee already counted on the line, or one
     // being marked Inactive, won't trip it.
@@ -1134,9 +1179,11 @@ export default function EmployeeManagement() {
                   type="text"
                   value={form.full_name}
                   onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+                  onBlur={(e) => setFormErrors((p) => ({ ...p, full_name: validateFreeText(e.target.value) }))}
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                   placeholder="Enter full name"
                 />
+                {formErrors.full_name && <p className="text-xs text-danger-600 mt-1">{formErrors.full_name}</p>}
               </div>
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Phone Number</label>
@@ -1144,9 +1191,11 @@ export default function EmployeeManagement() {
                   type="tel"
                   value={form.phone}
                   onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                  onBlur={(e) => setFormErrors((p) => ({ ...p, phone: validatePhone(e.target.value) }))}
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                   placeholder="+92 300 1234567"
                 />
+                {formErrors.phone && <p className="text-xs text-danger-600 mt-1">{formErrors.phone}</p>}
               </div>
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Location</label>
@@ -1406,9 +1455,11 @@ export default function EmployeeManagement() {
                   type="text"
                   value={form.bank_account}
                   onChange={(e) => setForm({ ...form, bank_account: e.target.value })}
+                  onBlur={(e) => setFormErrors((p) => ({ ...p, bank_account: accountOrIbanError(e.target.value) }))}
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                   placeholder="e.g., PK36SCBL0000001123456702"
                 />
+                {formErrors.bank_account && <p className="text-xs text-danger-600 mt-1">{formErrors.bank_account}</p>}
               </div>
               <div className="col-span-2">
                 <label className="block text-sm text-slate-700 mb-1">IBAN (24 chars)</label>
@@ -1417,9 +1468,11 @@ export default function EmployeeManagement() {
                   maxLength={24}
                   value={form.iban}
                   onChange={(e) => setForm({ ...form, iban: e.target.value.toUpperCase().replace(/\s+/g, "") })}
+                  onBlur={(e) => setFormErrors((p) => ({ ...p, iban: validateIban(e.target.value) }))}
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm font-mono"
                   placeholder="PKxx XXXX XXXX XXXX XXXX XXXX"
                 />
+                {formErrors.iban && <p className="text-xs text-danger-600 mt-1">{formErrors.iban}</p>}
                 {form.iban && form.iban.length !== 24 && (
                   <p className="text-xs text-warning-700 mt-1">
                     Pakistani IBANs are 24 characters (currently {form.iban.length}).
@@ -1429,7 +1482,13 @@ export default function EmployeeManagement() {
             </div>
           </div>
 
-          <EmployeeHrSection form={form} setForm={setForm} employees={employees} />
+          <EmployeeHrSection
+            form={form}
+            setForm={setForm}
+            employees={employees}
+            errors={formErrors}
+            onFieldBlur={(k, err) => setFormErrors((p) => ({ ...p, [k]: err }))}
+          />
 
           <div className="pt-4 border-t border-slate-200">
             <h4 className="text-sm text-slate-900 mb-4">Documents</h4>
@@ -1652,8 +1711,10 @@ export default function EmployeeManagement() {
                     type="text"
                     value={editForm.full_name}
                     onChange={(e) => setEditForm({ ...editForm, full_name: e.target.value })}
+                    onBlur={(e) => setEditFormErrors((p) => ({ ...p, full_name: validateFreeText(e.target.value) }))}
                     className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                   />
+                  {editFormErrors.full_name && <p className="text-xs text-danger-600 mt-1">{editFormErrors.full_name}</p>}
                 </div>
                 <div>
                   <label className="block text-sm text-slate-700 mb-1">Phone Number</label>
@@ -1661,8 +1722,10 @@ export default function EmployeeManagement() {
                     type="tel"
                     value={editForm.phone}
                     onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                    onBlur={(e) => setEditFormErrors((p) => ({ ...p, phone: validatePhone(e.target.value) }))}
                     className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                   />
+                  {editFormErrors.phone && <p className="text-xs text-danger-600 mt-1">{editFormErrors.phone}</p>}
                 </div>
                 <div>
                   <label className="block text-sm text-slate-700 mb-1">Location</label>
@@ -1899,9 +1962,11 @@ export default function EmployeeManagement() {
                     type="text"
                     value={editForm.bank_account}
                     onChange={(e) => setEditForm({ ...editForm, bank_account: e.target.value })}
+                    onBlur={(e) => setEditFormErrors((p) => ({ ...p, bank_account: accountOrIbanError(e.target.value) }))}
                     className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                     placeholder="e.g., PK36SCBL0000001123456702"
                   />
+                  {editFormErrors.bank_account && <p className="text-xs text-danger-600 mt-1">{editFormErrors.bank_account}</p>}
                 </div>
                 <div>
                   <label className="block text-sm text-slate-700 mb-1">Status</label>
@@ -1922,14 +1987,23 @@ export default function EmployeeManagement() {
                     maxLength={24}
                     value={editForm.iban}
                     onChange={(e) => setEditForm({ ...editForm, iban: e.target.value.toUpperCase().replace(/\s+/g, "") })}
+                    onBlur={(e) => setEditFormErrors((p) => ({ ...p, iban: validateIban(e.target.value) }))}
                     className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm font-mono"
                     placeholder="PKxx XXXX XXXX XXXX XXXX XXXX"
                   />
+                  {editFormErrors.iban && <p className="text-xs text-danger-600 mt-1">{editFormErrors.iban}</p>}
                 </div>
               </div>
             </div>
 
-            <EmployeeHrSection form={editForm} setForm={setEditForm} employees={employees} excludeEmployeeId={selectedEmployee?.id} />
+            <EmployeeHrSection
+              form={editForm}
+              setForm={setEditForm}
+              employees={employees}
+              excludeEmployeeId={selectedEmployee?.id}
+              errors={editFormErrors}
+              onFieldBlur={(k, err) => setEditFormErrors((p) => ({ ...p, [k]: err }))}
+            />
 
             <div className="pt-4 border-t border-slate-200">
               <h4 className="text-sm text-slate-900 mb-4">Add Documents</h4>
@@ -2066,11 +2140,16 @@ function EmployeeHrSection({
   setForm,
   employees,
   excludeEmployeeId,
+  errors,
+  onFieldBlur,
 }: {
   form: FormState;
   setForm: (f: FormState) => void;
   employees: EmployeeRow[];
   excludeEmployeeId?: string;
+  // Inline validation wiring (shared by the add + edit forms).
+  errors: Record<string, string | null>;
+  onFieldBlur: (key: string, err: string | null) => void;
 }) {
   const [openPersonal, setOpenPersonal] = useState(false);
   const [openEmergency, setOpenEmergency] = useState(false);
@@ -2101,9 +2180,11 @@ function EmployeeHrSection({
                 maxLength={15}
                 value={form.cnic_number}
                 onChange={(e) => setForm({ ...form, cnic_number: formatCnicInline(e.target.value) })}
+                onBlur={(e) => onFieldBlur("cnic_number", validateCnic(e.target.value))}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm font-mono"
                 placeholder="XXXXX-XXXXXXX-X"
               />
+              {errors.cnic_number && <p className="text-xs text-danger-600 mt-1">{errors.cnic_number}</p>}
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Date of Birth</label>
@@ -2143,8 +2224,10 @@ function EmployeeHrSection({
                 rows={2}
                 value={form.permanent_address}
                 onChange={(e) => setForm({ ...form, permanent_address: e.target.value })}
+                onBlur={(e) => onFieldBlur("permanent_address", validateFreeText(e.target.value))}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
               />
+              {errors.permanent_address && <p className="text-xs text-danger-600 mt-1">{errors.permanent_address}</p>}
             </div>
             <div className="col-span-2">
               <label className="block text-sm text-slate-700 mb-1">Current Address</label>
@@ -2152,9 +2235,11 @@ function EmployeeHrSection({
                 rows={2}
                 value={form.current_address}
                 onChange={(e) => setForm({ ...form, current_address: e.target.value })}
+                onBlur={(e) => onFieldBlur("current_address", validateFreeText(e.target.value))}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
                 placeholder="Leave blank to default to permanent address"
               />
+              {errors.current_address && <p className="text-xs text-danger-600 mt-1">{errors.current_address}</p>}
             </div>
           </div>
         )}
@@ -2198,9 +2283,11 @@ function EmployeeHrSection({
                 type="tel"
                 value={form.emergency_contact_phone}
                 onChange={(e) => setForm({ ...form, emergency_contact_phone: e.target.value })}
+                onBlur={(e) => onFieldBlur("emergency_contact_phone", validatePhone(e.target.value))}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
                 placeholder="+92 …"
               />
+              {errors.emergency_contact_phone && <p className="text-xs text-danger-600 mt-1">{errors.emergency_contact_phone}</p>}
             </div>
           </div>
         )}
