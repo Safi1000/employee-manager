@@ -358,15 +358,15 @@ export default function Invoices() {
     if (!f.client_id) return "Select a client.";
     const numErr = validateInvoiceNumber(f.invoice_number);
     if (numErr) return numErr;
-    // Reject duplicate invoice numbers for the same client (mirrors the DB's
-    // (client_id, invoice_number) unique constraint, with a friendly message).
+    // Reject duplicate invoice numbers anywhere in the company. `invoices` is
+    // already company-scoped (RLS + single-company view), so a match on the
+    // number alone means the number is taken. Blocks saving a duplicate.
     const dup = invoices.some(
       (i) =>
-        i.client_id === f.client_id &&
         i.id !== excludeId &&
         i.invoice_number.trim().toLowerCase() === f.invoice_number.trim().toLowerCase(),
     );
-    if (dup) return "That invoice number already exists for this client.";
+    if (dup) return "That invoice number already exists.";
     if (!f.invoice_date) return "Select an invoice date.";
     const amt = Number(f.invoice_amount);
     if (!amt || amt <= 0) return "Enter a positive invoice amount.";
@@ -393,7 +393,7 @@ export default function Invoices() {
       /duplicate key|already exists|unique/i.test(e?.message ?? "");
     routeSubmitError(
       isDup
-        ? "That invoice number already exists for this client."
+        ? "That invoice number already exists."
         : e?.message ?? String(e),
     );
   };
@@ -1663,17 +1663,14 @@ function InvoiceFields({
             value={form.invoice_number}
             onChange={(e) => setForm({ ...form, invoice_number: e.target.value })}
             onBlur={(e) => {
-              const dup =
-                !!form.client_id &&
-                invoices.some(
-                  (i) =>
-                    i.client_id === form.client_id &&
-                    i.id !== excludeId &&
-                    i.invoice_number.trim().toLowerCase() === e.target.value.trim().toLowerCase(),
-                );
+              const dup = invoices.some(
+                (i) =>
+                  i.id !== excludeId &&
+                  i.invoice_number.trim().toLowerCase() === e.target.value.trim().toLowerCase(),
+              );
               onFieldBlur(
                 "invoice_number",
-                validateInvoiceNumber(e.target.value) ?? (dup ? "That invoice number already exists for this client." : null),
+                validateInvoiceNumber(e.target.value) ?? (dup ? "That invoice number already exists." : null),
               );
             }}
             className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"

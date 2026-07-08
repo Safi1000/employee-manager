@@ -101,8 +101,8 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
     const fy = financialYearLabel(`${period}-01`).replace("FY ", "");
     const ym = period.replace("-", "");
     let base = `INV-${fy}-${client.client_code}-${ym}`;
-    // Keep unique against existing invoices for this client.
-    const existing = new Set(invoices.filter((i) => i.client_id === client.id).map((i) => i.invoice_number));
+    // Keep unique against every existing invoice in the company.
+    const existing = new Set(invoices.map((i) => i.invoice_number));
     if (!existing.has(base)) return base;
     let n = 2;
     while (existing.has(`${base}-${n}`)) n++;
@@ -194,6 +194,24 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
         setError(`${d.client.name}: an override total needs a reason.`);
         return;
       }
+    }
+    // Guard: invoice number must be unique company-wide — block before any DB
+    // write. Check against existing invoices AND other drafts in this batch.
+    const existingNumbers = new Set(
+      invoices.map((i) => i.invoice_number.trim().toLowerCase()),
+    );
+    const seenInBatch = new Set<string>();
+    for (const d of cleared) {
+      const key = d.invoiceNumber.trim().toLowerCase();
+      if (existingNumbers.has(key)) {
+        setError(`${d.client.name} (${d.invoiceNumber}): that invoice number already exists.`);
+        return;
+      }
+      if (seenInBatch.has(key)) {
+        setError(`Invoice number ${d.invoiceNumber} is used by more than one draft in this batch.`);
+        return;
+      }
+      seenInBatch.add(key);
     }
     setGenerating(true);
     setError(null);
