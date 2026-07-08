@@ -29,6 +29,7 @@ type EmployeeLite = {
   additional_branch_ids: string[];
   shift: "day" | "night";
   category: "client" | "office_staff" | "reliever";
+  assignment_effective_from: string | null;
 };
 
 type HistoryRow = {
@@ -71,6 +72,14 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState<Record<string, boolean>>({});
+  // Snapshot of the prior state before a "Mark All Present" bulk action, so it
+  // can be undone. `prev` maps employee_id → their status before the action
+  // (null = they were unmarked). Cleared once undone or when the date changes.
+  const [lastBulk, setLastBulk] = useState<{
+    date: string;
+    prev: Record<string, AttendanceStatus | null>;
+  } | null>(null);
+  const [undoing, setUndoing] = useState(false);
 
   const [date, setDate] = useState<string>(today());
   const [clientFilter, setClientFilter] = useState("all");
@@ -439,7 +448,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       supabase
         .from("employees")
         .select(
-          "id, employee_code, full_name, location_id, client_id, branch_id, shift, category, location:location_id(name), client:client_id(name)"
+          "id, employee_code, full_name, location_id, client_id, branch_id, shift, category, assignment_effective_from, location:location_id(name), client:client_id(name)"
         )
         .order("full_name"),
       supabase.from("employee_branches").select("employee_id, branch_id"),
@@ -471,6 +480,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         additional_branch_ids: addlMap.get(e.id) ?? [],
         shift: e.shift,
         category: e.category,
+        assignment_effective_from: e.assignment_effective_from ?? null,
       }))
     );
   };
@@ -698,6 +708,11 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     const skipped: string[] = [];
     const payload = filteredEmployees
       .filter((e) => {
+        // Don't mark before the assignment's effective_from (same gate as the
+        // per-row buttons). Null effective_from is left ungated.
+        if (e.assignment_effective_from && date < e.assignment_effective_from) {
+          return false;
+        }
         if (e.category === "reliever" && !todayWorkedFor[e.id]) {
           skipped.push(e.full_name);
           return false;
@@ -717,6 +732,12 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       );
       return;
     }
+    // Capture the prior status of every affected row so the action can be
+    // undone (null = the employee was unmarked before this action).
+    const snapshot: Record<string, AttendanceStatus | null> = {};
+    payload.forEach((r) => {
+      snapshot[r.employee_id] = todayRecords[r.employee_id] ?? null;
+    });
     const optimistic: Record<string, AttendanceStatus> = { ...todayRecords };
     payload.forEach((r) => {
       optimistic[r.employee_id] = "Present";
@@ -730,11 +751,73 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       await loadRecordsForDate(date);
       return;
     }
+    setLastBulk({ date, prev: snapshot });
+    // One audit entry for the bulk action (attendance_bulk_events, 0069).
+    // Best-effort: a logging failure must not break the mark itself.
+    await supabase.from("attendance_bulk_events").insert({
+      action: "mark_all_present",
+      attendance_date: date,
+      affected_count: payload.length,
+    });
     if (skipped.length > 0) {
       setError(
         `Skipped ${skipped.length} reliever${skipped.length === 1 ? "" : "s"} without a picked client: ${skipped.slice(0, 3).join(", ")}${skipped.length > 3 ? "…" : ""}.`,
       );
     }
+    loadHistory();
+  };
+
+  const undoMarkAll = async () => {
+    if (!lastBulk || lastBulk.date !== date) return;
+    setUndoing(true);
+    setError(null);
+    const entries = Object.entries(lastBulk.prev);
+    // Rows that had a prior status get that status written back; rows that were
+    // previously unmarked get their record for this date removed.
+    const toRestore = entries
+      .filter(([, prev]) => prev !== null)
+      .map(([employee_id, prev]) => ({
+        employee_id,
+        attendance_date: lastBulk.date,
+        status: prev as AttendanceStatus,
+      }));
+    const toDelete = entries
+      .filter(([, prev]) => prev === null)
+      .map(([employee_id]) => employee_id);
+
+    if (toRestore.length > 0) {
+      const { error: rErr } = await supabase
+        .from("attendance_records")
+        .upsert(toRestore, { onConflict: "employee_id,attendance_date" });
+      if (rErr) {
+        setError(rErr.message);
+        setUndoing(false);
+        await loadRecordsForDate(date);
+        return;
+      }
+    }
+    if (toDelete.length > 0) {
+      const { error: dErr } = await supabase
+        .from("attendance_records")
+        .delete()
+        .eq("attendance_date", lastBulk.date)
+        .in("employee_id", toDelete);
+      if (dErr) {
+        setError(dErr.message);
+        setUndoing(false);
+        await loadRecordsForDate(date);
+        return;
+      }
+    }
+    // One audit entry for the undo (attendance_bulk_events, 0069). Best-effort.
+    await supabase.from("attendance_bulk_events").insert({
+      action: "undo_mark_all_present",
+      attendance_date: lastBulk.date,
+      affected_count: entries.length,
+    });
+    setLastBulk(null);
+    setUndoing(false);
+    await loadRecordsForDate(date);
     loadHistory();
   };
 
@@ -1146,15 +1229,32 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                 <span className="text-slate-500">{stats.unm} unmarked</span>
               </p>
             </div>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={markAllPresent}
-              disabled={filteredEmployees.length === 0}
-              className="self-stretch md:self-auto whitespace-nowrap"
-            >
-              Mark All Present
-            </Button>
+            <div className="flex items-center gap-2 self-stretch md:self-auto">
+              {lastBulk && lastBulk.date === date && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={undoMarkAll}
+                  disabled={undoing}
+                  className="whitespace-nowrap"
+                >
+                  {undoing ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    "Undo Mark All"
+                  )}
+                </Button>
+              )}
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={markAllPresent}
+                disabled={filteredEmployees.length === 0}
+                className="whitespace-nowrap"
+              >
+                Mark All Present
+              </Button>
+            </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -1191,6 +1291,12 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                   filteredEmployees.map((employee) => {
                     const current = todayRecords[employee.id];
                     const isSaving = !!saving[employee.id];
+                    // Gate marking before the assignment takes effect. Only
+                    // employees with a real effective_from are gated; a null
+                    // (most existing employees) is left ungated.
+                    const beforeEffective =
+                      !!employee.assignment_effective_from &&
+                      date < employee.assignment_effective_from;
                     return (
                       <tr key={employee.id} className="hover:bg-slate-50 transition-colors">
                         <td className="px-6 py-4 text-sm font-mono">
@@ -1266,9 +1372,15 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                                 }
                                 disabled={
                                   isSaving ||
+                                  beforeEffective ||
                                   (employee.category === "reliever" &&
                                     status === "Present" &&
                                     !todayWorkedFor[employee.id])
+                                }
+                                title={
+                                  beforeEffective
+                                    ? `Assignment starts ${employee.assignment_effective_from}. Attendance can't be marked before this date.`
+                                    : undefined
                                 }
                                 className={`px-3 py-1.5 rounded text-xs transition-colors ${
                                   current === status

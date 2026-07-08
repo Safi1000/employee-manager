@@ -25,9 +25,9 @@ update public.employees e
        assignment_effective_from = coalesce(e.join_date, single.start_date)
   from (
     select cl.contract_id,
-           min(cl.id)        as line_id,
-           count(*)          as n,
-           min(c.start_date) as start_date
+           min(cl.id::text)::uuid as line_id,
+           count(*)               as n,
+           min(c.start_date)      as start_date
       from public.contract_lines cl
       join public.contracts c on c.id = cl.contract_id
      group by cl.contract_id
