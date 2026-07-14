@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Plus, Loader2, AlertCircle, X, Trash2, FileText, Upload } from "lucide-react";
 import Button from "./Button";
 import Modal from "./Modal";
+import AddendumTable from "./AddendumTable";
 import { useAuth } from "../lib/auth";
 import { formatDate } from "../lib/date";
 import { hasInjectionPattern } from "../lib/validation";
@@ -10,7 +11,7 @@ import {
   CONTRACT_TYPE_LABEL,
   CONTRACT_STATUS_LABEL,
   CONTRACT_LINE_CATEGORY_LABEL,
-  CONTRACT_LINE_CATEGORY_ORDER,
+  CONTRACT_TYPE_LINE_CATEGORIES,
   ADDENDUM_CHANGE_TYPE_LABEL,
   ADDENDUM_SOURCE_LABEL,
   contractLinesValue,
@@ -31,6 +32,8 @@ type ContractFormState = {
   contract_type: ContractType;
   start_date: string;
   end_date: string;
+  is_infinite: boolean;
+  notice_period_days: string;
   // Main's per-shift guard counts — kept as informational SHIFT DETAIL only
   // (the guard count/rate now lives in Contract Lines below).
   day_guards: string;
@@ -57,9 +60,11 @@ type LineDraft = {
 
 const blankForm = (clientId: string): ContractFormState => ({
   client_id: clientId,
-  contract_type: "services",
+  contract_type: "guard_deployment",
   start_date: new Date().toISOString().slice(0, 10),
   end_date: "",
+  is_infinite: false,
+  notice_period_days: "",
   day_guards: "0",
   night_guards: "0",
   evening_guards: "0",
@@ -76,6 +81,8 @@ const fromContract = (c: Contract): ContractFormState => ({
   contract_type: c.contract_type,
   start_date: c.start_date,
   end_date: c.end_date ?? "",
+  is_infinite: !!c.is_infinite,
+  notice_period_days: c.notice_period_days != null ? String(c.notice_period_days) : "",
   day_guards: String(c.day_guards ?? 0),
   night_guards: String(c.night_guards ?? 0),
   evening_guards: String(c.evening_guards ?? 0),
@@ -87,6 +94,10 @@ const fromContract = (c: Contract): ContractFormState => ({
   status: c.status,
 });
 
+// The category a fresh line starts on, given the contract's type.
+const defaultCategoryFor = (type: ContractType): ContractLineCategory =>
+  CONTRACT_TYPE_LINE_CATEGORIES[type][0];
+
 // A blank draft row for a category.
 const blankLine = (category: ContractLineCategory): LineDraft => ({
   category,
@@ -97,42 +108,20 @@ const blankLine = (category: ContractLineCategory): LineDraft => ({
   taxable: true,
 });
 
-// Seed the standard category rows, overlaying any existing lines for that
-// category. Extra existing lines (duplicate categories, custom rows) are
-// appended after the defaults so nothing is lost on edit.
-const seedLines = (existing: ContractLine[]): LineDraft[] => {
-  const rows: LineDraft[] = [];
-  const usedIds = new Set<string>();
-  for (const cat of CONTRACT_LINE_CATEGORY_ORDER) {
-    const match = existing.find((l) => l.category === cat && !usedIds.has(l.id));
-    if (match) {
-      usedIds.add(match.id);
-      rows.push({
-        id: match.id,
-        category: match.category,
-        label: match.label ?? CONTRACT_LINE_CATEGORY_LABEL[match.category],
-        location: match.location ?? "",
-        committed_count: String(match.committed_count),
-        unit_rate: String(match.unit_rate),
-        taxable: match.taxable,
-      });
-    } else {
-      rows.push(blankLine(cat));
-    }
-  }
-  for (const l of existing) {
-    if (usedIds.has(l.id)) continue;
-    rows.push({
-      id: l.id,
-      category: l.category,
-      label: l.label ?? CONTRACT_LINE_CATEGORY_LABEL[l.category],
-      location: l.location ?? "",
-      committed_count: String(l.committed_count),
-      unit_rate: String(l.unit_rate),
-      taxable: l.taxable,
-    });
-  }
-  return rows;
+// Show exactly the lines the contract actually has. A new contract starts with a
+// single blank row — pre-seeding all seven categories with zeros only produced
+// clutter that the user had to clear out. Further rows come from "+ Add Line".
+const seedLines = (existing: ContractLine[], type: ContractType): LineDraft[] => {
+  if (!existing.length) return [blankLine(defaultCategoryFor(type))];
+  return existing.map((l) => ({
+    id: l.id,
+    category: l.category,
+    label: l.label ?? CONTRACT_LINE_CATEGORY_LABEL[l.category],
+    location: l.location ?? "",
+    committed_count: String(l.committed_count),
+    unit_rate: String(l.unit_rate),
+    taxable: l.taxable,
+  }));
 };
 
 const num = (s: string) => Number(s) || 0;
@@ -192,11 +181,14 @@ export default function ContractEditorModal({
 }) {
   const { profile, company } = useAuth();
   const [form, setForm] = useState<ContractFormState>(blankForm(clientId ?? ""));
-  const [lines, setLines] = useState<LineDraft[]>(seedLines([]));
+  const [lines, setLines] = useState<LineDraft[]>(seedLines([], "guard_deployment"));
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [loadingLines, setLoadingLines] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Item 2f: how many contracts the chosen client already has. Non-null means the
+  // duplicate-contract confirmation is showing and submission is paused.
+  const [duplicateCount, setDuplicateCount] = useState<number | null>(null);
 
   // Phase 2 — addendums (Edit Contract only).
   const [addendums, setAddendums] = useState<ContractAddendum[]>([]);
@@ -214,13 +206,15 @@ export default function ContractEditorModal({
 
   useEffect(() => {
     if (!isOpen) return;
-    setForm(contract ? fromContract(contract) : blankForm(clientId ?? ""));
+    const initial = contract ? fromContract(contract) : blankForm(clientId ?? "");
+    setForm(initial);
     setPendingFile(null);
     setError(null);
     setAddForm(blankAddendum());
     setAddFile(null);
     setAddendums([]);
-    // Load existing lines for edit; seed defaults for add.
+    setDuplicateCount(null);
+    // Load existing lines for edit; a single blank row for add.
     if (contract) {
       setLoadingLines(true);
       supabase
@@ -230,14 +224,48 @@ export default function ContractEditorModal({
         .order("created_at", { ascending: true })
         .then(({ data, error: err }) => {
           if (err) setError(err.message);
-          setLines(seedLines((data ?? []) as ContractLine[]));
+          setLines(seedLines((data ?? []) as ContractLine[], initial.contract_type));
           setLoadingLines(false);
         });
       loadAddendums(contract.id);
     } else {
-      setLines(seedLines([]));
+      setLines(seedLines([], initial.contract_type));
     }
   }, [isOpen, contract, clientId]);
+
+  // Categories valid for the current contract type (2d). Weapon/Equipment for
+  // Services, personnel categories for Guard Deployment — never both.
+  const allowedCategories = CONTRACT_TYPE_LINE_CATEGORIES[form.contract_type];
+
+  // Addendums resolve their category through the saved lines, so build the lookup from
+  // the drafts that carry an id (unsaved rows can't be an addendum target yet).
+  const categoryByLineId = new Map(
+    lines.filter((l) => l.id).map((l) => [l.id!, l.category] as const),
+  );
+
+  // Switching contract type invalidates any line whose category belongs to the other
+  // type, so move those lines onto the new type's default category rather than leaving
+  // a select showing a value it no longer offers.
+  const onContractTypeChange = (next: ContractType) => {
+    const valid = CONTRACT_TYPE_LINE_CATEGORIES[next];
+    setForm((f) => ({ ...f, contract_type: next }));
+    setLines((prev) =>
+      prev.map((l) => {
+        if (valid.includes(l.category)) return l;
+        const cat = valid[0];
+        return {
+          ...l,
+          category: cat,
+          // Preserve a hand-written label; replace an auto-generated one.
+          label:
+            l.label === CONTRACT_LINE_CATEGORY_LABEL[l.category]
+              ? CONTRACT_LINE_CATEGORY_LABEL[cat]
+              : l.label,
+        };
+      }),
+    );
+    setAddForm((a) => (valid.includes(a.category) ? a : { ...a, category: valid[0] }));
+  };
 
   const totalCommitted = contractLinesCommitted(
     lines.map((l) => ({ committed_count: num(l.committed_count) })),
@@ -249,7 +277,7 @@ export default function ContractEditorModal({
   const updateLine = (idx: number, patch: Partial<LineDraft>) =>
     setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
 
-  const addLine = () => setLines((prev) => [...prev, blankLine("GUARD")]);
+  const addLine = () => setLines((prev) => [...prev, blankLine(defaultCategoryFor(form.contract_type))]);
   const removeLine = (idx: number) => setLines((prev) => prev.filter((_, i) => i !== idx));
 
   // Legacy scalar columns are still read by a few display spots; keep them in
@@ -264,7 +292,14 @@ export default function ContractEditorModal({
     client_id: effClientId,
     contract_type: form.contract_type,
     start_date: form.start_date,
-    end_date: form.end_date || null,
+    // An infinite contract has no end date, and only an infinite contract carries a
+    // notice period — the DB check constraint enforces the same pairing.
+    end_date: form.is_infinite ? null : form.end_date || null,
+    is_infinite: form.is_infinite,
+    notice_period_days:
+      form.is_infinite && form.notice_period_days !== ""
+        ? Math.max(1, Math.floor(num(form.notice_period_days)))
+        : null,
     // number_of_guards/rate_per_guard_per_month kept in sync for legacy readers;
     // the source of truth is contract_lines. guard_rates is deprecated (0065) and
     // deliberately NOT written here.
@@ -425,16 +460,36 @@ export default function ContractEditorModal({
       return;
     }
     // Reject injection-shaped input in the free-text fields (renewal terms +
-    // each contract line's label/location).
+    // each contract line's label/notes).
     if (hasInjectionPattern(form.renewal_terms)) {
       setError("Special characters are not allowed in Renewal Terms.");
       return;
     }
     const badLine = lines.find((l) => hasInjectionPattern(l.label) || hasInjectionPattern(l.location));
     if (badLine) {
-      setError("Special characters are not allowed in contract line label/location.");
+      setError("Special characters are not allowed in contract line label/notes.");
       return;
     }
+    // 2f: adding a second contract for a client is legitimate but rarely intended,
+    // so make it explicit. Only ask once — a confirmed submit comes straight here.
+    if (!contract && duplicateCount === null) {
+      const { count, error: cntErr } = await supabase
+        .from("contracts")
+        .select("id", { count: "exact", head: true })
+        .eq("client_id", effClientId);
+      if (cntErr) {
+        setError(cntErr.message);
+        return;
+      }
+      if ((count ?? 0) > 0) {
+        setDuplicateCount(count ?? 0);
+        return;
+      }
+    }
+    await persistContract(effClientId);
+  };
+
+  const persistContract = async (effClientId: string) => {
     setSubmitting(true);
     setError(null);
     try {
@@ -505,10 +560,10 @@ export default function ContractEditorModal({
             <select
               required
               value={form.contract_type}
-              onChange={(e) => setForm({ ...form, contract_type: e.target.value as ContractType })}
+              onChange={(e) => onContractTypeChange(e.target.value as ContractType)}
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
             >
-              {(["services", "guard_deployment"] as const).map((t) => (
+              {(["guard_deployment", "services"] as const).map((t) => (
                 <option key={t} value={t}>{CONTRACT_TYPE_LABEL[t]}</option>
               ))}
             </select>
@@ -537,58 +592,59 @@ export default function ContractEditorModal({
             />
           </div>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">End Date</label>
-            <input
-              type="date"
-              value={form.end_date}
-              onChange={(e) => setForm({ ...form, end_date: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Allowed Leaves / month</label>
-            <input
-              type="number"
-              min="0"
-              value={form.allowed_leaves_per_month}
-              onChange={(e) => setForm({ ...form, allowed_leaves_per_month: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-              placeholder="Inherits client default if blank"
-            />
-          </div>
-
-          <div>
-            <label className="flex items-center gap-2 text-sm text-slate-700 mb-1">
-              <input
-                type="checkbox"
-                checked={form.eobi_deduction}
-                onChange={(e) => setForm({ ...form, eobi_deduction: e.target.checked })}
-              />
-              EOBI deduction
-            </label>
-            {form.eobi_deduction && (
-              <input
-                type="number"
-                min="0"
-                value={form.eobi_amount}
-                onChange={(e) => setForm({ ...form, eobi_amount: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-                placeholder="Per-employee EOBI"
-              />
+            {form.is_infinite ? (
+              <>
+                <label className="block text-sm text-slate-700 mb-1">Notice Period (days) *</label>
+                <input
+                  required
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={form.notice_period_days}
+                  onChange={(e) => setForm({ ...form, notice_period_days: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  placeholder="e.g. 30"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Advance notice the client must give to end this contract.
+                </p>
+              </>
+            ) : (
+              <>
+                <label className="block text-sm text-slate-700 mb-1">End Date</label>
+                <input
+                  type="date"
+                  value={form.end_date}
+                  onChange={(e) => setForm({ ...form, end_date: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                />
+              </>
             )}
           </div>
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Annual Escalation %</label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.annual_escalation_pct}
-              onChange={(e) => setForm({ ...form, annual_escalation_pct: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-              placeholder="e.g. 10"
-            />
+
+          <div className="col-span-2 -mt-1">
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={form.is_infinite}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    is_infinite: e.target.checked,
+                    // Entering infinite mode clears the end date; leaving it clears the
+                    // notice period. Keeping either would let a stale value be saved.
+                    end_date: e.target.checked ? "" : form.end_date,
+                    notice_period_days: e.target.checked ? form.notice_period_days : "",
+                  })
+                }
+              />
+              No end date / Infinite
+            </label>
+            <p className="text-[11px] text-slate-500 mt-1 ml-6">
+              {form.is_infinite
+                ? "Runs indefinitely — still worth reviewing at the 1-year mark, but it will not expire on its own."
+                : "Contracts are typically reviewed at the 1-year mark."}
+            </p>
           </div>
         </div>
 
@@ -639,7 +695,7 @@ export default function ContractEditorModal({
                 <thead>
                   <tr className="text-xs text-slate-500 uppercase border-b border-slate-200">
                     <th className="text-left px-3 py-2">Category</th>
-                    <th className="text-left px-3 py-2">Location</th>
+                    <th className="text-left px-3 py-2">Notes</th>
                     <th className="text-right px-3 py-2 w-28">Committed</th>
                     <th className="text-right px-3 py-2 w-36">Rate / month</th>
                     <th className="text-right px-3 py-2 w-32">Line value</th>
@@ -665,7 +721,7 @@ export default function ContractEditorModal({
                           }}
                           className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
                         >
-                          {CONTRACT_LINE_CATEGORY_ORDER.map((cat) => (
+                          {allowedCategories.map((cat) => (
                             <option key={cat} value={cat}>{CONTRACT_LINE_CATEGORY_LABEL[cat]}</option>
                           ))}
                         </select>
@@ -675,7 +731,6 @@ export default function ContractEditorModal({
                           type="text"
                           value={l.location}
                           onChange={(e) => updateLine(idx, { location: e.target.value })}
-                          placeholder="Optional"
                           className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
                         />
                       </td>
@@ -742,57 +797,7 @@ export default function ContractEditorModal({
             </div>
 
             {addendums.length > 0 && (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-xs text-slate-500 uppercase border-b border-slate-200">
-                      <th className="text-left px-3 py-2">Effective</th>
-                      <th className="text-left px-3 py-2">Change</th>
-                      <th className="text-left px-3 py-2">Category / Line</th>
-                      <th className="text-left px-3 py-2">Source</th>
-                      <th className="text-left px-3 py-2">Reference</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {addendums.map((a) => {
-                      const lineCat = a.contract_line_id
-                        ? lines.find((l) => l.id === a.contract_line_id)?.category
-                        : a.category;
-                      return (
-                        <tr key={a.id}>
-                          <td className="px-3 py-1.5 text-slate-700">{formatDate(a.effective_from)}</td>
-                          <td className="px-3 py-1.5 text-slate-700">
-                            {ADDENDUM_CHANGE_TYPE_LABEL[a.change_type]}
-                            {a.change_type === "RATE_CHANGE"
-                              ? a.new_rate != null && ` → PKR ${Number(a.new_rate).toLocaleString()}`
-                              : ` (${a.change_type === "REDUCE_HEADCOUNT" ? "−" : "+"}${a.count_delta})`}
-                          </td>
-                          <td className="px-3 py-1.5 text-slate-600">
-                            {lineCat ? CONTRACT_LINE_CATEGORY_LABEL[lineCat] : "—"}
-                            {!a.contract_line_id && <span className="text-[10px] text-slate-400 ml-1">(new line)</span>}
-                          </td>
-                          <td className="px-3 py-1.5 text-slate-600">{ADDENDUM_SOURCE_LABEL[a.source]}</td>
-                          <td className="px-3 py-1.5">
-                            {a.drive_view_url ? (
-                              <a
-                                href={a.drive_view_url}
-                                target="_blank"
-                                rel="noopener"
-                                className="inline-flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700"
-                              >
-                                <FileText className="w-3 h-3" />
-                                {a.reference_file_name ?? "Document"}
-                              </a>
-                            ) : (
-                              <span className="text-xs text-slate-500">{a.reference ?? "—"}</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <AddendumTable addendums={addendums} categoryByLineId={categoryByLineId} />
             )}
 
             {/* Add-addendum form */}
@@ -823,7 +828,7 @@ export default function ContractEditorModal({
                     onChange={(e) => setAddForm({ ...addForm, category: e.target.value as ContractLineCategory })}
                     className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
                   >
-                    {CONTRACT_LINE_CATEGORY_ORDER.map((cat) => (
+                    {allowedCategories.map((cat) => (
                       <option key={cat} value={cat}>{CONTRACT_LINE_CATEGORY_LABEL[cat]}</option>
                     ))}
                   </select>
@@ -919,15 +924,65 @@ export default function ContractEditorModal({
           </div>
         )}
 
-        <div>
-          <label className="block text-sm text-slate-700 mb-1">Renewal Terms</label>
-          <textarea
-            value={form.renewal_terms}
-            onChange={(e) => setForm({ ...form, renewal_terms: e.target.value })}
-            rows={2}
-            className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-            placeholder="Free text for special clauses"
-          />
+        {/* Contract terms — leave allowance and EOBI are the values payroll and
+            attendance read for every employee on this contract. */}
+        <div className="border border-slate-200 rounded-md p-3">
+          <div className="text-sm font-medium text-slate-700 mb-2">Contract terms</div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">Allowed Leaves / month</label>
+              <input
+                type="number"
+                min="0"
+                value={form.allowed_leaves_per_month}
+                onChange={(e) => setForm({ ...form, allowed_leaves_per_month: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                placeholder="Inherits client default if blank"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">Annual Escalation %</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.annual_escalation_pct}
+                onChange={(e) => setForm({ ...form, annual_escalation_pct: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                placeholder="e.g. 10"
+              />
+            </div>
+            <div>
+              <label className="flex items-center gap-2 text-sm text-slate-700 mb-1">
+                <input
+                  type="checkbox"
+                  checked={form.eobi_deduction}
+                  onChange={(e) => setForm({ ...form, eobi_deduction: e.target.checked })}
+                />
+                EOBI deduction
+              </label>
+              {form.eobi_deduction && (
+                <input
+                  type="number"
+                  min="0"
+                  value={form.eobi_amount}
+                  onChange={(e) => setForm({ ...form, eobi_amount: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  placeholder="Per-employee EOBI"
+                />
+              )}
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs text-slate-500 mb-1">Renewal Terms</label>
+              <textarea
+                value={form.renewal_terms}
+                onChange={(e) => setForm({ ...form, renewal_terms: e.target.value })}
+                rows={2}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                placeholder="Free text for special clauses"
+              />
+            </div>
+          </div>
         </div>
 
         {enableDocument && (
@@ -975,7 +1030,9 @@ export default function ContractEditorModal({
           </div>
         )}
 
-        <div className="sticky bottom-0 -mx-6 -mb-6 px-6 py-3 bg-white border-t border-slate-200 flex items-center gap-2">
+        {/* Offsets must track the modal body's own p-4 md:p-6 padding, or the bar
+            bleeds past the container edges at the smaller breakpoint. */}
+        <div className="sticky bottom-0 -mx-4 md:-mx-6 -mb-4 md:-mb-6 px-4 md:px-6 py-3 bg-white border-t border-slate-200 flex items-center gap-2">
           <Button variant="primary" size="md" disabled={submitting} className="flex-1">
             {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
             {submitting ? "Saving…" : contract ? "Save Changes" : "Add Contract"}
@@ -985,6 +1042,36 @@ export default function ContractEditorModal({
           </Button>
         </div>
       </form>
+
+      {/* 2f: this client already has a contract — confirm before adding another. */}
+      <Modal
+        isOpen={duplicateCount !== null}
+        onClose={() => setDuplicateCount(null)}
+        title="This client already has a contract"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">
+            {clientName ?? "This client"} already has {duplicateCount}{" "}
+            {duplicateCount === 1 ? "contract" : "contracts"}. Adding another is allowed —
+            confirm that this is a genuinely separate contract and not a duplicate.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" size="md" onClick={() => setDuplicateCount(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              size="md"
+              disabled={submitting}
+              onClick={() => persistContract(clientId ?? form.client_id)}
+            >
+              {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+              Add anyway
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </Modal>
   );
 }

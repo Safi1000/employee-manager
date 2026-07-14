@@ -16,6 +16,7 @@ import {
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
+import Field from "../../components/Field";
 import ContractEditorModal from "../../components/ContractEditorModal";
 import { formatDate } from "../../lib/date";
 import {
@@ -31,7 +32,6 @@ import {
   type ContractLine,
   type ContractAddendum,
   type Employee,
-  type ClientType,
   type ClientFilerStatus,
   type ClientBillingType,
   type ClientInvoiceGroup,
@@ -73,19 +73,10 @@ type ClientForm = {
   billing_type: ClientBillingType;
   invoice_group: ClientInvoiceGroup;
   remit_accounts: RemitAccount[];
-  client_type: ClientType;
   branch_id: string;
   billing_address: string;
   authorised_signatory: string;
   signatory_cnic: string;
-  allowed_leaves_per_month: string;
-  leave_carry_forward: boolean;
-  leave_carry_start: string;
-  eobi_enabled: boolean;
-  eobi_amount: string;
-  advance_payment: boolean;
-  auto_invoice_enabled: boolean;
-  auto_invoice_amount: string;
 };
 
 const emptyForm: ClientForm = {
@@ -100,19 +91,10 @@ const emptyForm: ClientForm = {
   billing_type: "STANDARD",
   invoice_group: "FIXED",
   remit_accounts: [],
-  client_type: "security_services",
   branch_id: "",
   billing_address: "",
   authorised_signatory: "",
   signatory_cnic: "",
-  allowed_leaves_per_month: "0",
-  leave_carry_forward: false,
-  leave_carry_start: "",
-  eobi_enabled: false,
-  eobi_amount: "0",
-  advance_payment: false,
-  auto_invoice_enabled: false,
-  auto_invoice_amount: "0",
 };
 
 const formatCnic = (raw: string): string => {
@@ -205,7 +187,7 @@ export default function Clients() {
 
   const [search, setSearch] = useState("");
   const [branchFilter, setBranchFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("active");
   const [industryFilter, setIndustryFilter] = useState("all");
 
   const [addOpen, setAddOpen] = useState(false);
@@ -221,7 +203,6 @@ export default function Clients() {
     basic: true,
     tax: false,
     billing: false,
-    contract: false,
   });
 
   // Contract document upload state per row.
@@ -231,9 +212,6 @@ export default function Clients() {
   // Item 1: add/edit contracts directly from the Clients page.
   const [contractEditorOpen, setContractEditorOpen] = useState(false);
   const [editingContract, setEditingContract] = useState<Contract | null>(null);
-
-  // Item 9: in-form prompt for the leave carry-forward roll-over choice.
-  const [carryPromptOpen, setCarryPromptOpen] = useState(false);
 
   const loadAll = async () => {
     setLoading(true);
@@ -364,32 +342,7 @@ export default function Clients() {
   const resetForm = () => {
     setForm(emptyForm);
     setFieldErrors({});
-    setExpanded({ basic: true, tax: false, billing: false, contract: false });
-  };
-
-  // Item 9: when carry-forward is switched on, let the user choose whether to
-  // roll over employees' existing reserve or start accruing fresh from this month.
-  const monthStart = (offsetMonths: number) => {
-    const d = new Date();
-    d.setMonth(d.getMonth() + offsetMonths, 1);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
-  };
-  const onToggleCarry = (checked: boolean) => {
-    if (!checked) {
-      setForm((f) => ({ ...f, leave_carry_forward: false, leave_carry_start: "" }));
-      return;
-    }
-    // Open the in-form prompt instead of a browser confirm; carry is only switched
-    // on once the user picks a roll-over option.
-    setCarryPromptOpen(true);
-  };
-  const applyCarryChoice = (rollover: boolean) => {
-    setForm((f) => ({
-      ...f,
-      leave_carry_forward: true,
-      leave_carry_start: rollover ? monthStart(-12) : monthStart(0),
-    }));
-    setCarryPromptOpen(false);
+    setExpanded({ basic: true, tax: false, billing: false });
   };
 
   const populateForm = (row: ClientRow) => {
@@ -405,19 +358,10 @@ export default function Clients() {
       billing_type: row.billing_type ?? "STANDARD",
       invoice_group: row.invoice_group ?? "FIXED",
       remit_accounts: Array.isArray(row.remit_accounts) ? row.remit_accounts : [],
-      client_type: row.client_type,
       branch_id: row.branch_id ?? "",
       billing_address: row.billing_address ?? "",
       authorised_signatory: row.authorised_signatory ?? "",
       signatory_cnic: row.signatory_cnic ?? "",
-      allowed_leaves_per_month: String(row.allowed_leaves_per_month ?? 0),
-      leave_carry_forward: !!row.leave_carry_forward,
-      leave_carry_start: row.leave_carry_start ?? "",
-      eobi_enabled: !!row.eobi_enabled,
-      eobi_amount: String(row.eobi_amount ?? 0),
-      advance_payment: !!row.advance_payment,
-      auto_invoice_enabled: !!row.auto_invoice_enabled,
-      auto_invoice_amount: String(row.auto_invoice_amount ?? 0),
     });
   };
 
@@ -433,26 +377,17 @@ export default function Clients() {
     remit_accounts: sanitizeRemitAccounts(form.remit_accounts),
     billing_type: form.billing_type,
     invoice_group: form.invoice_group,
-    // Keep the legacy single rate in sync = first WITHHELD tax (or null).
+    // Keep the legacy single rate in sync = first WITHHELD tax (or null). Still read by
+    // the run_auto_invoices job to price auto-issued invoices.
     withholding_tax_rate: firstWithheldRate(form.tax_profile),
-    client_type: form.client_type,
     branch_id: form.branch_id || null,
     billing_address: form.billing_address.trim() || null,
     authorised_signatory: form.authorised_signatory.trim() || null,
     signatory_cnic: form.signatory_cnic.trim() || null,
-    allowed_leaves_per_month: Math.max(0, Math.floor(Number(form.allowed_leaves_per_month) || 0)),
-    leave_carry_forward: form.leave_carry_forward,
-    leave_carry_start: form.leave_carry_forward ? (form.leave_carry_start || null) : null,
-    eobi_enabled: form.eobi_enabled,
-    eobi_amount: form.eobi_enabled ? Math.max(0, Number(form.eobi_amount) || 0) : 0,
-    advance_payment: form.advance_payment,
-    auto_invoice_enabled: form.auto_invoice_enabled,
-    auto_invoice_amount: form.auto_invoice_enabled
-      ? Math.max(0, Number(form.auto_invoice_amount) || 0)
-      : 0,
-    // Mirror the first WITHHELD tax into the legacy column so existing
-    // auto-invoice logic on the clients table keeps producing the same WHT.
-    auto_invoice_withholding: firstWithheldRate(form.tax_profile) ?? 0,
+    // Leave allowance, carry-forward, EOBI, advance payment, auto-invoicing and client
+    // type are deliberately absent: those columns are no longer edited from this modal.
+    // Omitting them leaves existing rows untouched and lets new rows take their DB
+    // defaults. Leave/EOBI now come from the contract (see resolveAllowedLeaves).
   });
 
   // Compute all inline field errors for the current form (null = OK).
@@ -690,17 +625,6 @@ export default function Clients() {
               {PAKISTAN_INDUSTRIES.map((s) => (
                 <option key={s} value={s}>{s}</option>
               ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Client Type</label>
-            <select
-              value={form.client_type}
-              onChange={(e) => setForm({ ...form, client_type: e.target.value as ClientType })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-            >
-              <option value="security_services">Security Services</option>
-              <option value="guard_deployment">Guard Deployment</option>
             </select>
           </div>
           <div className="col-span-2">
@@ -1009,103 +933,10 @@ export default function Clients() {
         </div>
       </Section>
 
-      <Section isOpen={!!expanded.contract} onToggle={() => setExpanded((prev) => ({ ...prev, contract: !prev.contract }))} title="Contract Defaults">
-        <p className="text-xs text-slate-500">
-          These defaults are inherited by all employees of this client. Per-contract overrides go on the Contracts page.
-        </p>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Allowed Leaves / month</label>
-            <input
-              type="number"
-              min="0"
-              value={form.allowed_leaves_per_month}
-              onChange={(e) => setForm({ ...form, allowed_leaves_per_month: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-            />
-          </div>
-          <div className="flex items-end">
-            <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input
-                type="checkbox"
-                checked={form.leave_carry_forward}
-                onChange={(e) => onToggleCarry(e.target.checked)}
-              />
-              Carry forward unused leaves
-            </label>
-          </div>
-          <div>
-            <label className="flex items-center gap-2 text-sm text-slate-700 mb-1">
-              <input
-                type="checkbox"
-                checked={form.eobi_enabled}
-                onChange={(e) => setForm({ ...form, eobi_enabled: e.target.checked })}
-              />
-              EOBI deduction enabled
-            </label>
-            {form.eobi_enabled && (
-              <input
-                type="number"
-                min="0"
-                value={form.eobi_amount}
-                onChange={(e) => setForm({ ...form, eobi_amount: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-                placeholder="EOBI amount per employee"
-              />
-            )}
-          </div>
-          <div className="flex items-end">
-            <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input
-                type="checkbox"
-                checked={form.advance_payment}
-                onChange={(e) => setForm({ ...form, advance_payment: e.target.checked })}
-              />
-              Pays in advance
-            </label>
-          </div>
-        </div>
-      </Section>
 
-      <Section
-        isOpen={!!expanded.autoInvoice}
-        onToggle={() => setExpanded((prev) => ({ ...prev, autoInvoice: !prev.autoInvoice }))}
-        title="Auto-Invoicing"
-      >
-        <p className="text-xs text-slate-500">
-          When enabled, a monthly invoice is auto-issued on the 1st for the fixed amount below —
-          but only while this client has an <span className="text-slate-700">active contract</span> covering
-          that month. Timing follows the "Pays in advance" setting above (advance = current month, otherwise
-          previous month in arrears). The client's withholding tax rate is applied automatically.
-        </p>
-        <label className="flex items-center gap-2 text-sm text-slate-700">
-          <input
-            type="checkbox"
-            checked={form.auto_invoice_enabled}
-            onChange={(e) => setForm({ ...form, auto_invoice_enabled: e.target.checked })}
-          />
-          Enable monthly auto-invoicing
-        </label>
-        {form.auto_invoice_enabled && (
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Monthly Invoice Amount (PKR)</label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.auto_invoice_amount}
-              onChange={(e) => setForm({ ...form, auto_invoice_amount: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-              placeholder="e.g. 250000"
-            />
-            <p className="text-[10px] text-slate-500 mt-1">
-              Flat amount billed each month. Withholding tax is added from the Tax Information section.
-            </p>
-          </div>
-        )}
-      </Section>
-
-      <div className="sticky bottom-0 -mx-6 -mb-6 px-6 py-3 bg-white border-t border-slate-200 flex items-center gap-2">
+      {/* Offsets must track the modal body's own p-4 md:p-6 padding, otherwise the bar
+          bleeds past the container edges at the smaller breakpoint. */}
+      <div className="sticky bottom-0 -mx-4 md:-mx-6 -mb-4 md:-mb-6 px-4 md:px-6 py-3 bg-white border-t border-slate-200 flex items-center gap-2">
         <Button variant="primary" size="md" disabled={submitting} className="flex-1">
           {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
           {submitting ? "Saving…" : submitLabel}
@@ -1290,7 +1121,7 @@ export default function Clients() {
                             onClick={() => {
                               populateForm(row);
                               setEditingId(row.id);
-                              setExpanded({ basic: true, tax: false, billing: false, contract: false });
+                              setExpanded({ basic: true, tax: false, billing: false });
                             }}
                             className="p-1.5 rounded text-slate-600 hover:bg-slate-100"
                             title="Edit"
@@ -1558,51 +1389,7 @@ export default function Clients() {
         />
       )}
 
-      {/* Item 9: leave carry-forward roll-over choice (in-form, not a browser popup) */}
-      <Modal
-        isOpen={carryPromptOpen}
-        onClose={() => setCarryPromptOpen(false)}
-        title="Carry forward unused leaves"
-        size="sm"
-      >
-        <div className="space-y-4">
-          <p className="text-sm text-slate-600">
-            Roll over employees' existing leave reserve, or start accruing fresh from this month?
-          </p>
-          <div className="space-y-2">
-            <button
-              type="button"
-              onClick={() => applyCarryChoice(true)}
-              className="w-full text-left px-4 py-3 rounded-md border border-slate-200 hover:border-brand-400 hover:bg-brand-50/40"
-            >
-              <div className="text-sm text-slate-900">Roll over existing reserve</div>
-              <div className="text-xs text-slate-500">Include the reserve accrued over the last 12 months.</div>
-            </button>
-            <button
-              type="button"
-              onClick={() => applyCarryChoice(false)}
-              className="w-full text-left px-4 py-3 rounded-md border border-slate-200 hover:border-brand-400 hover:bg-brand-50/40"
-            >
-              <div className="text-sm text-slate-900">Start fresh from this month</div>
-              <div className="text-xs text-slate-500">No backlog — begin accruing carry from this month onward.</div>
-            </button>
-          </div>
-          <div className="flex justify-end">
-            <Button variant="secondary" size="sm" onClick={() => setCarryPromptOpen(false)}>
-              Cancel
-            </Button>
-          </div>
-        </div>
-      </Modal>
     </>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <div className="text-xs text-slate-500 uppercase tracking-wide">{label}</div>
-      <div className="text-slate-900">{children}</div>
-    </div>
-  );
-}

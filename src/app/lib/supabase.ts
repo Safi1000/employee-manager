@@ -408,6 +408,10 @@ export type Contract = {
   contract_type: ContractType;
   start_date: string;
   end_date: string | null;
+  // Open-ended contract: end_date is ignored and termination is governed by
+  // notice_period_days instead (0072).
+  is_infinite: boolean;
+  notice_period_days: number | null;
   number_of_guards: number;
   day_guards: number;
   night_guards: number;
@@ -474,8 +478,19 @@ export const CONTRACT_LINE_CATEGORY_LABEL: Record<ContractLineCategory, string> 
   ASST_SUPERVISOR: "Assistant Supervisor",
   GUARD: "Guard",
   RELIEVER: "Reliever",
-  WEAPON: "Weapon / Armed Guard",
+  WEAPON: "Weapon",
   EQUIPMENT: "Equipment",
+};
+
+/**
+ * Which line categories a contract may use, by contract type. A Services contract
+ * bills for hardware (weapons/equipment); a Guard Deployment contract bills for
+ * people. The two sets are disjoint, so the category dropdown offers only the ones
+ * valid for the contract's type.
+ */
+export const CONTRACT_TYPE_LINE_CATEGORIES: Record<ContractType, ContractLineCategory[]> = {
+  services: ["WEAPON", "EQUIPMENT"],
+  guard_deployment: ["SR_SUPERVISOR", "ASST_SUPERVISOR", "SUPERVISOR", "GUARD", "RELIEVER"],
 };
 
 // Order categories appear in the default Contract Lines table.
@@ -798,6 +813,31 @@ export function activeCountByCategory(
     m.set(cat, (m.get(cat) ?? 0) + 1);
   }
   return m;
+}
+
+/**
+ * Leave allowance and EOBI now live on the CONTRACT. The matching client columns are
+ * no longer editable (the Contract Defaults section was removed from the Client modal)
+ * and survive only as a fallback for records predating the move — which is what the
+ * contract form's "Inherits client default if blank" placeholder has always promised.
+ * A contract value of null therefore means "inherit", not "zero".
+ */
+export function resolveAllowedLeaves(
+  contract: Pick<Contract, "allowed_leaves_per_month"> | null | undefined,
+  client: Pick<Client, "allowed_leaves_per_month"> | null | undefined,
+): number {
+  if (contract?.allowed_leaves_per_month != null) return Number(contract.allowed_leaves_per_month);
+  return Number(client?.allowed_leaves_per_month ?? 0);
+}
+
+// EOBI withheld per employee per month. A contract only overrides when it both enables
+// the deduction and names an amount; otherwise the client fallback stands.
+export function resolveEobiAmount(
+  contract: Pick<Contract, "eobi_deduction" | "eobi_amount"> | null | undefined,
+  client: Pick<Client, "eobi_enabled" | "eobi_amount"> | null | undefined,
+): number {
+  if (contract?.eobi_deduction && contract.eobi_amount != null) return Number(contract.eobi_amount);
+  return client?.eobi_enabled ? Number(client.eobi_amount ?? 0) : 0;
 }
 
 export type AttendanceStatus = "Present" | "Absent" | "Leave";

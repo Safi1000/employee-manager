@@ -8,6 +8,8 @@ import BusyOverlay from "../../components/BusyOverlay";
 import ClientFilterSelect from "../../components/ClientFilterSelect";
 import {
   supabase,
+  resolveAllowedLeaves,
+  resolveEobiAmount,
   type Employee,
   type Location,
   type Client,
@@ -17,6 +19,7 @@ import {
   type PayslipStatus,
   type Cheque,
   type Branch,
+  type Contract,
 } from "../../lib/supabase";
 
 type EmployeeRow = Employee & { location_name: string | null; client_name: string | null };
@@ -98,6 +101,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [contracts, setContracts] = useState<Contract[]>([]);
   const [banks, setBanks] = useState<BankAccount[]>([]);
   const [cheques, setCheques] = useState<Cheque[]>([]);
   const [chequeLinkedSums, setChequeLinkedSums] = useState<Map<string, number>>(new Map());
@@ -256,13 +260,14 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     const cutoff = firstOfMonth(sixAgo);
     await supabase.from("payslips").delete().lt("period_month", cutoff);
 
-    const [empRes, locRes, cliRes, bankRes, treaRes, chqRes, brRes] = await Promise.all([
+    const [empRes, locRes, cliRes, conRes, bankRes, treaRes, chqRes, brRes] = await Promise.all([
       supabase
         .from("employees")
         .select("*, location:location_id(name), client:client_id(name)")
         .order("employee_code"),
       supabase.from("locations").select("*").order("name"),
       supabase.from("clients").select("*").order("name"),
+      supabase.from("contracts").select("*"),
       supabase.from("bank_accounts").select("*").order("bank_name"),
       supabase.from("treasury").select("*").limit(1).maybeSingle(),
       supabase.from("cheques").select("*").order("cheque_date", { ascending: false }),
@@ -279,6 +284,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     );
     setLocations(locRes.data ?? []);
     setClients(cliRes.data ?? []);
+    setContracts((conRes.data ?? []) as Contract[]);
     setBanks((bankRes.data ?? []) as BankAccount[]);
     setCheques((chqRes.data ?? []) as Cheque[]);
     setBranches((brRes.data ?? []) as Branch[]);
@@ -335,28 +341,46 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     }
   }, [selStoreKey, selectedPeriod, selectedId]);
 
-  const clientAllowedLeaves = useMemo(() => {
+  const clientById = useMemo(() => new Map(clients.map((c) => [c.id, c])), [clients]);
+  const contractById = useMemo(() => new Map(contracts.map((c) => [c.id, c])), [contracts]);
+
+  // Leave allowance and EOBI are resolved per EMPLOYEE, from the contract they're
+  // assigned to, falling back to their client for records that predate the move of
+  // these settings onto contracts.
+  const allowedLeavesByEmployee = useMemo(() => {
     const m = new Map<string, number>();
-    for (const c of clients) {
-      m.set(c.id, Number(c.allowed_leaves_per_month ?? 0));
+    for (const e of employees) {
+      m.set(
+        e.id,
+        resolveAllowedLeaves(
+          e.contract_id ? contractById.get(e.contract_id) : null,
+          e.client_id ? clientById.get(e.client_id) : null,
+        ),
+      );
     }
     return m;
-  }, [clients]);
+  }, [employees, contractById, clientById]);
 
+  // EOBI: flat PKR amount withheld per employee per month. 0 = no EOBI.
+  const eobiByEmployee = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const e of employees) {
+      m.set(
+        e.id,
+        resolveEobiAmount(
+          e.contract_id ? contractById.get(e.contract_id) : null,
+          e.client_id ? clientById.get(e.client_id) : null,
+        ),
+      );
+    }
+    return m;
+  }, [employees, contractById, clientById]);
+
+  // Carry-forward has no contract-level equivalent, so it stays anchored to the client.
   const clientCarryEnabled = useMemo(() => {
     const m = new Map<string, boolean>();
     for (const c of clients) {
       m.set(c.id, !!(c as any).leave_carry_forward);
-    }
-    return m;
-  }, [clients]);
-
-  // Per-client EOBI: amount (PKR) the client wants withheld per employee.
-  // 0 (or disabled) means no EOBI for that client.
-  const clientEobiAmount = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const c of clients as Array<{ id: string; eobi_enabled?: boolean; eobi_amount?: number }>) {
-      m.set(c.id, c.eobi_enabled ? Number(c.eobi_amount ?? 0) : 0);
     }
     return m;
   }, [clients]);
@@ -380,7 +404,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     for (const emp of employees) {
       if (!emp.client_id) continue;
       if (!clientCarryEnabled.get(emp.client_id)) continue;
-      const base = clientAllowedLeaves.get(emp.client_id) ?? 0;
+      const base = allowedLeavesByEmployee.get(emp.id) ?? 0;
       // Opening leaves OVERRIDE the accumulated balance from their effective
       // month forward: once active, the accrual restarts at `base + opening` and
       // anchors at opening_leaves_month instead of the client's carry start, so
@@ -416,7 +440,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       out.set(emp.id, allowed);
     }
     return out;
-  }, [employees, clientCarryEnabled, clientAllowedLeaves, clientCarryStart, priorLeavesByMonth, selectedPeriod]);
+  }, [employees, clientCarryEnabled, allowedLeavesByEmployee, clientCarryStart, priorLeavesByMonth, selectedPeriod]);
 
   const rows = useMemo<RowState[]>(() => {
     const daysThisPeriod = daysInMonth(selectedPeriod);
@@ -425,7 +449,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       const att = attendanceAgg.get(emp.id) ?? { present: 0, absent: 0, leave: 0 };
       const baseSal = Number(existing?.base_salary ?? emp.base_salary ?? 0);
       const computedAdvance = advancesByEmployee.get(emp.id) ?? 0;
-      const baseAllowed = emp.client_id ? clientAllowedLeaves.get(emp.client_id) ?? 0 : 0;
+      const baseAllowed = allowedLeavesByEmployee.get(emp.id) ?? 0;
       const carryAllowed = carriedAllowance.get(emp.id);
       const allowed = carryAllowed ?? baseAllowed;
       const defaults: RowState = {
@@ -490,9 +514,8 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       merged.income_tax = merged.final_salary > 50000
         ? Math.round((merged.final_salary - 50000) * 0.01)
         : 0;
-      // EOBI: per-client flat amount, applied when employee has a client and
-      // that client has eobi_enabled.
-      merged.eobi = emp.client_id ? clientEobiAmount.get(emp.client_id) ?? 0 : 0;
+      // EOBI: flat amount from the employee's contract, falling back to their client.
+      merged.eobi = eobiByEmployee.get(emp.id) ?? 0;
       // Allowance is always disbursed alongside salary, untaxed, regardless of
       // attendance — so it's added flat on top of the (clamped) net.
       merged.net_salary =
@@ -502,7 +525,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
         ) + Math.round(merged.allowance);
       return merged;
     });
-  }, [employees, payslipsMap, attendanceAgg, advancesByEmployee, clientAllowedLeaves, clientEobiAmount, carriedAllowance, selectedPeriod, rowEdits]);
+  }, [employees, payslipsMap, attendanceAgg, advancesByEmployee, allowedLeavesByEmployee, eobiByEmployee, carriedAllowance, selectedPeriod, rowEdits]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

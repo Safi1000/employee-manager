@@ -9,11 +9,13 @@ import { exportAttendance, type AttendanceEmployeeRow } from "../../lib/excel";
 import {
   supabase,
   fetchAllRows,
+  resolveAllowedLeaves,
   type AttendanceStatus,
   type AttendanceRecord,
   type Client,
   type Location,
   type Branch,
+  type Contract,
 } from "../../lib/supabase";
 import { hasPermission, useAuth } from "../../lib/auth";
 
@@ -25,12 +27,15 @@ type EmployeeLite = {
   location_name: string | null;
   client_id: string | null;
   client_name: string | null;
+  contract_id: string | null;
   branch_id: string | null;
   additional_branch_ids: string[];
   shift: "day" | "night";
   category: "client" | "office_staff" | "reliever";
   assignment_effective_from: string | null;
 };
+
+type ContractLeaveRow = Pick<Contract, "id" | "allowed_leaves_per_month">;
 
 type HistoryRow = {
   date: string;
@@ -62,6 +67,7 @@ type AttendanceManagementProps = { relieversOnly?: boolean };
 export default function AttendanceManagement({ relieversOnly = false }: AttendanceManagementProps = {}) {
   const [locations, setLocations] = useState<Location[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [contracts, setContracts] = useState<ContractLeaveRow[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [employees, setEmployees] = useState<EmployeeLite[]>([]);
   const [todayRecords, setTodayRecords] = useState<Record<string, AttendanceStatus>>({});
@@ -441,26 +447,29 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   const toInputRef = useRef<HTMLInputElement>(null);
 
   const loadStaticData = async () => {
-    const [locRes, cliRes, brRes, empRes, ebRes] = await Promise.all([
+    const [locRes, cliRes, brRes, empRes, ebRes, conRes] = await Promise.all([
       supabase.from("locations").select("*").order("name"),
       supabase.from("clients").select("*").order("name"),
       supabase.from("branches").select("*").order("is_head_office", { ascending: false }).order("name"),
       supabase
         .from("employees")
         .select(
-          "id, employee_code, full_name, location_id, client_id, branch_id, shift, category, assignment_effective_from, location:location_id(name), client:client_id(name)"
+          "id, employee_code, full_name, location_id, client_id, contract_id, branch_id, shift, category, assignment_effective_from, location:location_id(name), client:client_id(name)"
         )
         .order("full_name"),
       supabase.from("employee_branches").select("employee_id, branch_id"),
+      supabase.from("contracts").select("id, allowed_leaves_per_month"),
     ]);
     if (locRes.error) setError(locRes.error.message);
     if (cliRes.error) setError(cliRes.error.message);
     if (brRes.error) setError(brRes.error.message);
     if (empRes.error) setError(empRes.error.message);
     if (ebRes.error) setError(ebRes.error.message);
+    if (conRes.error) setError(conRes.error.message);
     setLocations(locRes.data ?? []);
     setClients(cliRes.data ?? []);
     setBranches((brRes.data ?? []) as Branch[]);
+    setContracts((conRes.data ?? []) as ContractLeaveRow[]);
     const addlMap = new Map<string, string[]>();
     for (const r of (ebRes.data ?? []) as { employee_id: string; branch_id: string }[]) {
       const arr = addlMap.get(r.employee_id) ?? [];
@@ -476,6 +485,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         location_name: e.location?.name ?? null,
         client_id: e.client_id,
         client_name: e.client?.name ?? null,
+        contract_id: e.contract_id ?? null,
         branch_id: e.branch_id ?? null,
         additional_branch_ids: addlMap.get(e.id) ?? [],
         shift: e.shift,
@@ -876,10 +886,10 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       byEmp.get(r.employee_id)!.set(day, (r as any).status as AttendanceStatus);
     }
 
-    const allowedByClient = new Map<string, number>();
-    for (const c of clients) {
-      allowedByClient.set(c.id, Number((c as any).allowed_leaves_per_month ?? 0));
-    }
+    // Leave allowance comes from the employee's contract, falling back to their client
+    // for records predating the move of this setting onto contracts.
+    const clientById = new Map(clients.map((c) => [c.id, c]));
+    const contractById = new Map(contracts.map((c) => [c.id, c]));
 
     const rows: AttendanceEmployeeRow[] = filteredEmployees.map((emp, idx) => {
       const dayMap = byEmp.get(emp.id) ?? new Map<number, AttendanceStatus>();
@@ -902,7 +912,10 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
           statusByDay.push("");
         }
       }
-      const allowed = emp.client_id ? allowedByClient.get(emp.client_id) ?? 0 : 0;
+      const allowed = resolveAllowedLeaves(
+        emp.contract_id ? contractById.get(emp.contract_id) : null,
+        emp.client_id ? clientById.get(emp.client_id) : null,
+      );
       const countableLeaves = Math.min(l, allowed);
       const payDays = p + countableLeaves;
       return {

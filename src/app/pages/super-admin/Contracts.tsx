@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Plus,
   Search,
+  Eye,
   Pencil,
   Trash2,
   Loader2,
@@ -12,6 +13,8 @@ import {
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import ContractEditorModal from "../../components/ContractEditorModal";
+import ContractViewModal from "../../components/ContractViewModal";
+import ContractStatusBadge from "../../components/ContractStatusBadge";
 import { formatDate } from "../../lib/date";
 import {
   supabase,
@@ -22,6 +25,7 @@ import {
   contractLinesValue,
   effectiveCommittedByCategory,
   activeCountByCategory,
+  type Branch,
   type Client,
   type Contract,
   type ContractLine,
@@ -44,6 +48,7 @@ export default function Contracts() {
   const { profile, company } = useAuth();
   const [rows, setRows] = useState<ContractRow[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
   const [linesByContract, setLinesByContract] = useState<Map<string, ContractLine[]>>(new Map());
   const [addendumsByContract, setAddendumsByContract] = useState<Map<string, ContractAddendum[]>>(new Map());
   const [employeesByContract, setEmployeesByContract] = useState<Map<string, EmployeeAssignment[]>>(new Map());
@@ -57,12 +62,13 @@ export default function Contracts() {
 
   const [addOpen, setAddOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<ContractRow | null>(null);
+  const [viewingRow, setViewingRow] = useState<ContractRow | null>(null);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
 
   const loadAll = async () => {
     setLoading(true);
     setError(null);
-    const [contractsRes, clientsRes, empRes, linesRes, addendumsRes] = await Promise.all([
+    const [contractsRes, clientsRes, empRes, linesRes, addendumsRes, branchesRes] = await Promise.all([
       supabase.from("contracts").select("*").order("start_date", { ascending: false }),
       supabase.from("clients").select("*").order("name"),
       supabase
@@ -70,7 +76,9 @@ export default function Contracts() {
         .select("status, contract_id, contract_line_id, assignment_effective_from, assignment_effective_to"),
       supabase.from("contract_lines").select("*"),
       supabase.from("contract_addendums").select("*"),
+      supabase.from("branches").select("*"),
     ]);
+    setBranches((branchesRes.data ?? []) as Branch[]);
     const cs = (clientsRes.data ?? []) as Client[];
     const byId = new Map(cs.map((c) => [c.id, c]));
     const list = ((contractsRes.data ?? []) as Contract[]).map<ContractRow>((c) => ({
@@ -328,11 +336,19 @@ export default function Contracts() {
                       <td className="px-4 py-3 text-sm text-slate-600">{CONTRACT_TYPE_LABEL[row.contract_type]}</td>
                       <td className="px-4 py-3 text-sm text-slate-600">
                         <div>{formatDate(row.start_date)}</div>
-                        {row.end_date && (
-                          <div className={endingSoon ? "text-warning-700 text-xs" : "text-xs text-slate-500"}>
-                            → {formatDate(row.end_date)}
-                            {endingSoon && ` (${dleft}d)`}
+                        {row.is_infinite ? (
+                          // No end_date, so it can never read as "ending soon" — say why.
+                          <div className="text-xs text-slate-500">
+                            → No end date
+                            {row.notice_period_days != null && ` (${row.notice_period_days}d notice)`}
                           </div>
+                        ) : (
+                          row.end_date && (
+                            <div className={endingSoon ? "text-warning-700 text-xs" : "text-xs text-slate-500"}>
+                              → {formatDate(row.end_date)}
+                              {endingSoon && ` (${dleft}d)`}
+                            </div>
+                          )
                         )}
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-600">
@@ -369,7 +385,7 @@ export default function Contracts() {
                       </td>
                       <td className="px-4 py-3 text-sm">
                         <div className="flex flex-col items-start gap-1">
-                          <StatusBadge status={row.status} />
+                          <ContractStatusBadge status={row.status} />
                           {overStaffed && (
                             <span className="inline-block px-2 py-0.5 rounded-full text-xs bg-danger-50 text-danger-700 border border-danger-200">
                               Guards exceeded
@@ -405,6 +421,14 @@ export default function Contracts() {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex gap-1 justify-end">
+                          <button
+                            type="button"
+                            onClick={() => setViewingRow(row)}
+                            className="p-1.5 rounded text-slate-600 hover:bg-slate-100"
+                            title="View"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
                           <button
                             type="button"
                             onClick={() => setEditingRow(row)}
@@ -452,20 +476,21 @@ export default function Contracts() {
           onSaved={() => { setEditingRow(null); loadAll(); }}
         />
       )}
+
+      {/* View — read-only overview */}
+      {viewingRow && (
+        <ContractViewModal
+          isOpen={viewingRow !== null}
+          contract={viewingRow}
+          client={clients.find((c) => c.id === viewingRow.client_id) ?? null}
+          branch={branches.find((b) => b.id === clients.find((c) => c.id === viewingRow.client_id)?.branch_id) ?? null}
+          lines={linesByContract.get(viewingRow.id) ?? []}
+          addendums={addendumsByContract.get(viewingRow.id) ?? []}
+          employees={employeesByContract.get(viewingRow.id) ?? []}
+          onClose={() => setViewingRow(null)}
+        />
+      )}
     </>
   );
 }
 
-function StatusBadge({ status }: { status: ContractStatus }) {
-  const style: Record<ContractStatus, string> = {
-    active: "bg-success-50 text-success-700 border-success-200",
-    expired: "bg-slate-100 text-slate-600 border-slate-200",
-    terminated: "bg-danger-50 text-danger-700 border-danger-200",
-    draft: "bg-warning-50 text-warning-700 border-warning-200",
-  };
-  return (
-    <span className={`inline-block px-2 py-0.5 rounded-full text-xs border ${style[status]}`}>
-      {CONTRACT_STATUS_LABEL[status]}
-    </span>
-  );
-}

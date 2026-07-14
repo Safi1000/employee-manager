@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Plus, Loader2, AlertCircle, X, Trash2, Mail, Send, LayoutDashboard, FileText, ArrowUp, ArrowDown, Building2, Palette, Check } from "lucide-react";
+import { Plus, Loader2, AlertCircle, X, Trash2, Mail, Send, LayoutDashboard, Building2, Palette, Check } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -7,12 +7,8 @@ import {
   supabase,
   DASHBOARD_WIDGET_KEYS,
   DASHBOARD_WIDGET_LABELS,
-  INVOICE_TEMPLATE_FIELDS,
-  INVOICE_TEMPLATE_FIELD_LABELS,
   type ClientType,
   type DashboardWidgetKey,
-  type InvoiceTemplateField,
-  type InvoiceTemplateItem,
 } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
 import { THEME_OPTIONS, DEFAULT_THEME, applyTheme, type ThemeKey } from "../../lib/theme";
@@ -106,62 +102,9 @@ export default function Settings() {
     setDashboardSavedAt(null);
   };
 
-  // Invoice template — ordered list of { field, title }.
-  const initialInvoiceTemplate = useMemo<InvoiceTemplateItem[]>(
-    () => (company?.invoice_template as InvoiceTemplateItem[] | null) ?? [],
-    [company?.invoice_template],
-  );
-  const [invoiceTemplate, setInvoiceTemplate] = useState<InvoiceTemplateItem[]>(initialInvoiceTemplate);
-  const [invoiceTplSaving, setInvoiceTplSaving] = useState(false);
-  const [invoiceTplSavedAt, setInvoiceTplSavedAt] = useState<string | null>(null);
-  useEffect(() => {
-    setInvoiceTemplate(initialInvoiceTemplate);
-  }, [initialInvoiceTemplate]);
-
-  const moveTplRow = (idx: number, dir: -1 | 1) => {
-    setInvoiceTemplate((prev) => {
-      const target = idx + dir;
-      if (target < 0 || target >= prev.length) return prev;
-      const copy = [...prev];
-      [copy[idx], copy[target]] = [copy[target], copy[idx]];
-      return copy;
-    });
-    setInvoiceTplSavedAt(null);
-  };
-  const removeTplRow = (idx: number) => {
-    setInvoiceTemplate((prev) => prev.filter((_, i) => i !== idx));
-    setInvoiceTplSavedAt(null);
-  };
-  const setTplTitle = (idx: number, title: string) => {
-    setInvoiceTemplate((prev) => prev.map((item, i) => (i === idx ? { ...item, title } : item)));
-    setInvoiceTplSavedAt(null);
-  };
-  const addTplRow = (field: InvoiceTemplateField) => {
-    if (invoiceTemplate.some((t) => t.field === field)) return;
-    setInvoiceTemplate((prev) => [
-      ...prev,
-      { field, title: INVOICE_TEMPLATE_FIELD_LABELS[field] },
-    ]);
-    setInvoiceTplSavedAt(null);
-  };
-  const saveInvoiceTemplate = async () => {
-    if (!company?.id) return;
-    setInvoiceTplSaving(true);
-    setError(null);
-    try {
-      const { error: upErr } = await supabase
-        .from("companies")
-        .update({ invoice_template: invoiceTemplate })
-        .eq("id", company.id);
-      if (upErr) throw upErr;
-      setInvoiceTplSavedAt(new Date().toLocaleTimeString());
-      await refreshProfile();
-    } catch (e: any) {
-      setError(e?.message ?? String(e));
-    } finally {
-      setInvoiceTplSaving(false);
-    }
-  };
+  // The invoice template is no longer editable here. `companies.invoice_template` is
+  // NOT NULL with a full 12-field default, so every company (existing and future) keeps
+  // a working template and invoice PDFs render unchanged — see generateInvoicePdf.
 
   const saveDashboardWidgets = async () => {
     if (!company?.id) return;
@@ -187,6 +130,8 @@ export default function Settings() {
   const [branchAddOpen, setBranchAddOpen] = useState(false);
   const [newBranchName, setNewBranchName] = useState("");
   const [branchSubmitting, setBranchSubmitting] = useState(false);
+  const [branchEditingId, setBranchEditingId] = useState<string | null>(null);
+  const [branchEditingName, setBranchEditingName] = useState("");
   const [clients, setClients] = useState<ClientRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -734,7 +679,9 @@ export default function Settings() {
           Add Location
         </Button>
       </div>
-      <div className="space-y-3">
+      {/* Same scroll behaviour as Regional Management, so a long list can't push the
+          rest of the page down. */}
+      <div className="space-y-3 max-h-[40vh] overflow-y-auto pr-1">
         {loading && (
           <div className="text-sm text-slate-500 flex items-center gap-2">
             <Loader2 className="w-4 h-4 animate-spin" /> Loading…
@@ -823,6 +770,22 @@ export default function Settings() {
     await loadAll();
   };
 
+  // Rename a region. Head Office is renameable too — only its deletion is blocked.
+  const handleSaveBranchEdit = async (id: string) => {
+    if (!branchEditingName.trim()) return;
+    const { error: upErr } = await supabase
+      .from("branches")
+      .update({ name: branchEditingName.trim() })
+      .eq("id", id);
+    if (upErr) {
+      setError(upErr.message);
+      return;
+    }
+    setBranchEditingId(null);
+    setBranchEditingName("");
+    await loadAll();
+  };
+
   const handleDeleteBranch = async (b: BranchRow) => {
     if (b.is_head_office) {
       setError("Head Office cannot be deleted.");
@@ -851,7 +814,7 @@ export default function Settings() {
   const renderBranches = () => (
     <div className="bg-white rounded-lg border border-slate-200 p-4 md:p-6">
       <div className="flex items-center justify-between gap-3 mb-6">
-        <h3 className="text-base text-slate-900">Branch Management</h3>
+        <h3 className="text-base text-slate-900">Regional Management</h3>
         <Button
           variant="primary"
           size="sm"
@@ -859,7 +822,7 @@ export default function Settings() {
           className="whitespace-nowrap flex-shrink-0"
         >
           <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
-          Add Branch
+          Add Region
         </Button>
       </div>
       <div className="space-y-3 max-h-[40vh] overflow-y-auto pr-1">
@@ -873,26 +836,66 @@ export default function Settings() {
             key={b.id}
             className="p-4 border border-slate-200 rounded-lg flex items-center justify-between gap-3"
           >
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-slate-900">{b.name}</span>
-                {b.is_head_office && (
-                  <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-brand-50 text-brand-700 text-[11px]">
-                    Default
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-slate-500 mt-1">{b.employees} employees</p>
-            </div>
-            {!b.is_head_office && (
-              <button
-                type="button"
-                onClick={() => handleDeleteBranch(b)}
-                className="p-1.5 rounded text-danger-600 hover:bg-danger-50"
-                title="Delete branch"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
+            {branchEditingId === b.id ? (
+              <>
+                <input
+                  autoFocus
+                  value={branchEditingName}
+                  onChange={(e) => setBranchEditingName(e.target.value)}
+                  className="flex-1 mr-3 px-3 py-1.5 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                />
+                <div className="flex gap-2">
+                  <Button variant="primary" size="sm" onClick={() => handleSaveBranchEdit(b.id)}>
+                    Save
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setBranchEditingId(null);
+                      setBranchEditingName("");
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-slate-900">{b.name}</span>
+                    {b.is_head_office && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-brand-50 text-brand-700 text-[11px]">
+                        Default
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">{b.employees} employees</p>
+                </div>
+                <div className="flex gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setBranchEditingId(b.id);
+                      setBranchEditingName(b.name);
+                    }}
+                  >
+                    Edit
+                  </Button>
+                  {!b.is_head_office && (
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteBranch(b)}
+                      className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-danger-700 hover:bg-danger-50"
+                      title="Delete region"
+                    >
+                      <Trash2 className="w-4 h-4" strokeWidth={1.5} />
+                    </button>
+                  )}
+                </div>
+              </>
             )}
           </div>
         ))}
@@ -904,7 +907,7 @@ export default function Settings() {
     <>
       <Header
         title="Settings"
-        subtitle="Locations, branches, dashboard widgets and invoice template"
+        subtitle="Locations, regions and dashboard widgets"
       />
 
       <div className="flex-1 overflow-y-auto p-8">
@@ -1035,108 +1038,6 @@ export default function Settings() {
           </div>
         </div>
 
-        <div className="bg-white rounded-lg border border-slate-200 mt-6">
-          <div className="p-6 border-b border-slate-200 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <FileText className="w-4 h-4 text-slate-600" strokeWidth={1.5} />
-              <h2 className="text-base text-slate-900">Invoice Template</h2>
-            </div>
-            <div className="flex items-center gap-3">
-              {invoiceTplSavedAt && (
-                <span className="text-xs text-success-600">Saved at {invoiceTplSavedAt}</span>
-              )}
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={saveInvoiceTemplate}
-                disabled={invoiceTplSaving}
-              >
-                {invoiceTplSaving && <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />}
-                Save
-              </Button>
-            </div>
-          </div>
-          <div className="p-6">
-            <p className="text-xs text-slate-500 mb-4">
-              Pick the fields to show on exported invoices, customize each title, and reorder them. The PDF layout is auto-arranged: header fields up top, body fields in the middle, totals (subtotal/WHT/total/received/balance) at the bottom.
-            </p>
-
-            <div className="space-y-2 mb-4">
-              {invoiceTemplate.length === 0 && (
-                <div className="text-sm text-slate-500 text-center py-6 border border-dashed border-slate-200 rounded">
-                  No fields yet. Add some below.
-                </div>
-              )}
-              {invoiceTemplate.map((row, idx) => (
-                <div key={row.field} className="flex items-center gap-2 border border-slate-200 rounded-md p-2">
-                  <div className="flex flex-col gap-0.5">
-                    <button
-                      type="button"
-                      onClick={() => moveTplRow(idx, -1)}
-                      disabled={idx === 0}
-                      className="p-0.5 text-slate-500 hover:text-slate-900 disabled:opacity-30"
-                      title="Move up"
-                    >
-                      <ArrowUp className="w-3.5 h-3.5" strokeWidth={1.5} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => moveTplRow(idx, 1)}
-                      disabled={idx === invoiceTemplate.length - 1}
-                      className="p-0.5 text-slate-500 hover:text-slate-900 disabled:opacity-30"
-                      title="Move down"
-                    >
-                      <ArrowDown className="w-3.5 h-3.5" strokeWidth={1.5} />
-                    </button>
-                  </div>
-                  <div className="w-44 text-xs text-slate-500 font-mono">
-                    {INVOICE_TEMPLATE_FIELD_LABELS[row.field as InvoiceTemplateField] ?? row.field}
-                  </div>
-                  <input
-                    type="text"
-                    value={row.title}
-                    onChange={(e) => setTplTitle(idx, e.target.value)}
-                    className="flex-1 px-2 py-1.5 border border-slate-200 rounded text-sm"
-                    placeholder="Display title"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removeTplRow(idx)}
-                    className="p-1.5 text-danger-600 hover:bg-danger-50 rounded"
-                    title="Remove field"
-                  >
-                    <Trash2 className="w-4 h-4" strokeWidth={1.5} />
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            <div className="border-t border-slate-200 pt-4">
-              <div className="text-xs text-slate-500 mb-2">Add a field</div>
-              <div className="flex flex-wrap gap-2">
-                {INVOICE_TEMPLATE_FIELDS.filter(
-                  (f) => !invoiceTemplate.some((t) => t.field === f),
-                ).map((field) => (
-                  <button
-                    key={field}
-                    type="button"
-                    onClick={() => addTplRow(field)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border border-slate-200 text-xs text-slate-700 hover:bg-slate-50"
-                  >
-                    <Plus className="w-3 h-3" strokeWidth={1.5} />
-                    {INVOICE_TEMPLATE_FIELD_LABELS[field]}
-                  </button>
-                ))}
-                {INVOICE_TEMPLATE_FIELDS.every((f) =>
-                  invoiceTemplate.some((t) => t.field === f),
-                ) && (
-                    <span className="text-xs text-slate-400">All available fields are already in the template.</span>
-                  )}
-              </div>
-            </div>
-          </div>
-        </div>
-
         {canManageNotifications && (
           <div className="bg-white rounded-lg border border-slate-200 mt-6">
             <div className="p-6 border-b border-slate-200 flex items-center justify-between">
@@ -1178,14 +1079,20 @@ export default function Settings() {
                 </div>
                 <div>
                   <label className="block text-xs text-slate-500 mb-1">Sender email</label>
+                  {/* Locked: the sending address is tied to the verified mail domain, so it
+                      is shown for reference but never edited from the UI. Saving still
+                      round-trips the stored value, leaving it unchanged. */}
                   <input
                     type="email"
                     value={notificationSenderEmail}
-                    onChange={(e) => setNotificationSenderEmail(e.target.value)}
-                    disabled={notificationLoading}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent disabled:bg-slate-50"
-                    placeholder="info@yourdomain.com"
+                    readOnly
+                    aria-readonly="true"
+                    tabIndex={-1}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm bg-slate-50 text-slate-600 cursor-not-allowed focus:outline-none"
                   />
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Managed by your administrator — contact support to change the sending address.
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-3 pt-2">
@@ -1260,19 +1167,19 @@ export default function Settings() {
           setBranchAddOpen(false);
           setNewBranchName("");
         }}
-        title="Add Branch"
+        title="Add Region"
         size="sm"
       >
         <form className="space-y-4" onSubmit={handleAddBranch}>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Branch Name *</label>
+            <label className="block text-sm text-slate-700 mb-1">Region Name *</label>
             <input
               required
               autoFocus
               type="text"
               value={newBranchName}
               onChange={(e) => setNewBranchName(e.target.value)}
-              placeholder="e.g. Lahore Branch"
+              placeholder="e.g. Lahore HQ"
               className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
             />
             <p className="text-xs text-slate-500 mt-1">
