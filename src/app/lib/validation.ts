@@ -121,6 +121,19 @@ export function validateInvoiceNumber(value: string | null | undefined): string 
   return null;
 }
 
+// --- Employee ID prefix: 2–6 uppercase letters/digits ------------------------
+// Drives client-scoped employee codes ({prefix}-NNN). Empty is VALID here
+// (the field is optional on the client form); required-ness at assignment time
+// is enforced where an employee is actually assigned to the client.
+export function validateEmployeeIdPrefix(value: string | null | undefined): string | null {
+  if (isBlank(value)) return null;
+  const clean = (value as string).trim();
+  if (!/^[A-Z0-9]{2,6}$/.test(clean)) {
+    return "2–6 uppercase letters or digits, no spaces or symbols";
+  }
+  return null;
+}
+
 // --- Non-negative amount -----------------------------------------------------
 export function validateAmount(value: string | null | undefined): string | null {
   if (isBlank(value)) return null;

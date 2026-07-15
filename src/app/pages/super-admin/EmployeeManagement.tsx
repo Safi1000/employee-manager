@@ -23,6 +23,7 @@ import {
   type ContractLineCategory,
   type Branch,
   type EmployeeCategory,
+  type EmployeeCodeHistory,
 } from "../../lib/supabase";
 import {
   validateCnic,
@@ -41,6 +42,31 @@ type EmployeeRow = Employee & {
   doc_count: number;
 };
 type DocumentWithUrl = EmployeeDocument & { publicUrl: string | null };
+
+const CODE_HISTORY_REASON: Record<EmployeeCodeHistory["reason"], string> = {
+  assigned: "assigned",
+  reassigned: "reassigned",
+  prefix_changed: "prefix changed",
+};
+
+// One "OLD → NEW, reason · date" line. Shared by the inline latest-only view and
+// the full "View All Logs" modal.
+function CodeHistoryRow({ h }: { h: EmployeeCodeHistory }) {
+  return (
+    <div className="flex items-center gap-2 flex-wrap text-sm text-slate-700">
+      {h.old_code ? (
+        <>
+          <span className="font-mono text-slate-500 line-through">{h.old_code}</span>
+          <span className="text-slate-400">→</span>
+        </>
+      ) : null}
+      <span className="font-mono text-slate-900">{h.new_code}</span>
+      <span className="text-xs text-slate-400">
+        {CODE_HISTORY_REASON[h.reason]} · {formatDate(h.changed_at.slice(0, 10))}
+      </span>
+    </div>
+  );
+}
 
 type FormState = {
   full_name: string;
@@ -188,6 +214,8 @@ export default function EmployeeManagement() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeRow | null>(null);
   const [selectedDocs, setSelectedDocs] = useState<DocumentWithUrl[]>([]);
+  const [codeHistory, setCodeHistory] = useState<EmployeeCodeHistory[]>([]);
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
 
   const [form, setForm] = useState<FormState>(emptyForm);
   const [formErrors, setFormErrors] = useState<Record<string, string | null>>({});
@@ -644,6 +672,16 @@ export default function EmployeeManagement() {
       setError("Select a client (or change category to Office Staff / Reliever).");
       return;
     }
+    if (form.category === "client") {
+      const sel = clients.find((c) => c.id === form.client_id);
+      if (sel && !sel.employee_id_prefix) {
+        setError(
+          `Set an Employee ID Prefix for ${sel.name} before assigning employees. ` +
+            `Edit the client to add one.`,
+        );
+        return;
+      }
+    }
     const errs = computeEmployeeErrors(form);
     if (Object.values(errs).some(Boolean)) {
       setFormErrors(errs);
@@ -708,6 +746,19 @@ export default function EmployeeManagement() {
         .single();
       if (insErr) throw insErr;
       const newEmp = data as Employee;
+      // Overwrite the throwaway EMP-XXXX the insert trigger minted with a
+      // client-prefixed code ({prefix}-NNN), recording the first assignment in
+      // history (old_code null so the temp EMP never shows there).
+      if (form.category === "client" && form.client_id) {
+        const { data: code, error: codeErr } = await supabase.rpc("assign_employee_code", {
+          p_employee_id: newEmp.id,
+          p_client_id: form.client_id,
+          p_reason: "assigned",
+          p_old_code: null,
+        });
+        if (codeErr) throw codeErr;
+        if (code) newEmp.employee_code = code as string;
+      }
       await uploadDocs(
         { id: newEmp.id, employee_code: newEmp.employee_code, full_name: newEmp.full_name },
         form,
@@ -758,7 +809,14 @@ export default function EmployeeManagement() {
   const openView = async (emp: EmployeeRow) => {
     setSelectedEmployee(emp);
     setSelectedDocs([]);
+    setCodeHistory([]);
     setIsViewModalOpen(true);
+    supabase
+      .from("employee_code_history")
+      .select("*")
+      .eq("employee_id", emp.id)
+      .order("changed_at", { ascending: false })
+      .then(({ data: hist }) => setCodeHistory((hist ?? []) as EmployeeCodeHistory[]));
     const { data } = await supabase
       .from("employee_documents")
       .select("*")
@@ -851,6 +909,18 @@ export default function EmployeeManagement() {
         return;
       }
     }
+    // Reassigning to a client with no prefix set can't produce an ID — block it
+    // with the same message the create flow uses.
+    if (editForm.category === "client" && editForm.client_id) {
+      const sel = clients.find((c) => c.id === editForm.client_id);
+      if (sel && !sel.employee_id_prefix) {
+        setError(
+          `Set an Employee ID Prefix for ${sel.name} before assigning employees. ` +
+            `Edit the client to add one.`,
+        );
+        return;
+      }
+    }
     setEditing(true);
     setError(null);
     try {
@@ -909,6 +979,22 @@ export default function EmployeeManagement() {
         })
         .eq("id", selectedEmployee.id);
       if (upErr) throw upErr;
+      // Moving to a different client regenerates the Employee ID from the new
+      // client's prefix, preserving the old code in history. Same-client edits and
+      // moves to a non-client category leave the code untouched.
+      const reassigned =
+        editForm.category === "client" &&
+        !!editForm.client_id &&
+        editForm.client_id !== selectedEmployee.client_id;
+      if (reassigned) {
+        const { error: codeErr } = await supabase.rpc("assign_employee_code", {
+          p_employee_id: selectedEmployee.id,
+          p_client_id: editForm.client_id,
+          p_reason: "reassigned",
+          p_old_code: selectedEmployee.employee_code,
+        });
+        if (codeErr) throw codeErr;
+      }
       await uploadDocs(
         {
           id: selectedEmployee.id,
@@ -1650,6 +1736,24 @@ export default function EmployeeManagement() {
               </div>
             </div>
 
+            {codeHistory.length > 0 && (
+              <div>
+                <h4 className="text-sm text-slate-900 mb-2">Employee ID History</h4>
+                {/* Only the most recent change is shown inline; older entries live
+                    behind "View All Logs" so the panel doesn't grow unbounded. */}
+                <CodeHistoryRow h={codeHistory[0]} />
+                {codeHistory.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setHistoryModalOpen(true)}
+                    className="mt-2 text-xs text-brand-600 hover:text-brand-700 underline"
+                  >
+                    View All Logs ({codeHistory.length})
+                  </button>
+                )}
+              </div>
+            )}
+
             <div className="pt-4 border-t border-slate-200">
               <h4 className="text-sm text-slate-900 mb-4">Documents</h4>
               {selectedDocs.length === 0 ? (
@@ -1682,6 +1786,21 @@ export default function EmployeeManagement() {
             </div>
           </div>
         )}
+      </Modal>
+
+      <Modal
+        isOpen={historyModalOpen}
+        onClose={() => setHistoryModalOpen(false)}
+        title="Employee ID History"
+        size="sm"
+      >
+        <ul className="space-y-3">
+          {codeHistory.map((h) => (
+            <li key={h.id} className="pb-3 border-b border-slate-100 last:border-0 last:pb-0">
+              <CodeHistoryRow h={h} />
+            </li>
+          ))}
+        </ul>
       </Modal>
 
       <Modal

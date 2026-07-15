@@ -525,8 +525,31 @@ export default function ContractEditorModal({
     : `Add Contract${clientName ? ` — ${clientName}` : ""}`;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={title} size="lg">
-      <form className="space-y-3" onSubmit={handleSubmit}>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={title}
+      size="lg"
+      footer={
+        <div className="flex items-center gap-2">
+          <Button
+            type="submit"
+            form="contract-editor-form"
+            variant="primary"
+            size="md"
+            disabled={submitting}
+            className="flex-1"
+          >
+            {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
+            {submitting ? "Saving…" : contract ? "Save Changes" : "Add Contract"}
+          </Button>
+          <Button type="button" variant="secondary" size="md" onClick={onClose}>
+            Cancel
+          </Button>
+        </div>
+      }
+    >
+      <form id="contract-editor-form" className="space-y-3" onSubmit={handleSubmit}>
         {error && (
           <div className="flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" />
@@ -1030,17 +1053,6 @@ export default function ContractEditorModal({
           </div>
         )}
 
-        {/* Offsets must track the modal body's own p-4 md:p-6 padding, or the bar
-            bleeds past the container edges at the smaller breakpoint. */}
-        <div className="sticky bottom-0 -mx-4 md:-mx-6 -mb-4 md:-mb-6 px-4 md:px-6 py-3 bg-white border-t border-slate-200 flex items-center gap-2">
-          <Button variant="primary" size="md" disabled={submitting} className="flex-1">
-            {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
-            {submitting ? "Saving…" : contract ? "Save Changes" : "Add Contract"}
-          </Button>
-          <Button type="button" variant="secondary" size="md" onClick={onClose}>
-            Cancel
-          </Button>
-        </div>
       </form>
 
       {/* 2f: this client already has a contract — confirm before adding another. */}

@@ -52,6 +52,7 @@ import {
   validateFreeText,
   validateBankAccount,
   validateIban,
+  validateEmployeeIdPrefix,
 } from "../../lib/validation";
 import { useAuth } from "../../lib/auth";
 
@@ -77,6 +78,7 @@ type ClientForm = {
   billing_address: string;
   authorised_signatory: string;
   signatory_cnic: string;
+  employee_id_prefix: string;
 };
 
 const emptyForm: ClientForm = {
@@ -95,6 +97,7 @@ const emptyForm: ClientForm = {
   billing_address: "",
   authorised_signatory: "",
   signatory_cnic: "",
+  employee_id_prefix: "",
 };
 
 const formatCnic = (raw: string): string => {
@@ -362,6 +365,7 @@ export default function Clients() {
       billing_address: row.billing_address ?? "",
       authorised_signatory: row.authorised_signatory ?? "",
       signatory_cnic: row.signatory_cnic ?? "",
+      employee_id_prefix: row.employee_id_prefix ?? "",
     });
   };
 
@@ -384,6 +388,7 @@ export default function Clients() {
     billing_address: form.billing_address.trim() || null,
     authorised_signatory: form.authorised_signatory.trim() || null,
     signatory_cnic: form.signatory_cnic.trim() || null,
+    employee_id_prefix: form.employee_id_prefix.trim().toUpperCase() || null,
     // Leave allowance, carry-forward, EOBI, advance payment, auto-invoicing and client
     // type are deliberately absent: those columns are no longer edited from this modal.
     // Omitting them leaves existing rows untouched and lets new rows take their DB
@@ -401,6 +406,7 @@ export default function Clients() {
       signatory_cnic: validateCnic(f.signatory_cnic),
       billing_address: validateFreeText(f.billing_address),
       authorised_signatory: validateFreeText(f.authorised_signatory),
+      employee_id_prefix: validateEmployeeIdPrefix(f.employee_id_prefix),
     };
     // Remit field accepts EITHER a bank account number OR an IBAN — only error
     // when the value fails both (and isn't blank).
@@ -413,6 +419,15 @@ export default function Clients() {
   // Validate a single field on blur without disturbing the others.
   const validateField = (key: string, err: string | null) =>
     setFieldErrors((prev) => ({ ...prev, [key]: err }));
+
+  // Prefix must be unique per company. The DB has a partial-unique index as the
+  // backstop; this gives a friendly inline error naming the clashing client.
+  const prefixClash = (prefix: string, excludeId: string | null): ClientRow | undefined => {
+    if (!prefix) return undefined;
+    return rows.find(
+      (r) => r.id !== excludeId && (r.employee_id_prefix ?? "").toUpperCase() === prefix,
+    );
+  };
 
   // Remit "Account no. / IBAN" accepts either format.
   const remitAccountError = (v: string): string | null => {
@@ -427,6 +442,16 @@ export default function Clients() {
     const errs = computeClientErrors(form);
     if (Object.values(errs).some(Boolean)) {
       setFieldErrors(errs);
+      setError("Please fix the highlighted fields before saving.");
+      return;
+    }
+    const newPrefix = form.employee_id_prefix.trim().toUpperCase() || null;
+    const clash = newPrefix ? prefixClash(newPrefix, null) : undefined;
+    if (clash) {
+      setFieldErrors((prev) => ({
+        ...prev,
+        employee_id_prefix: `Prefix "${newPrefix}" is already used by ${clash.name}`,
+      }));
       setError("Please fix the highlighted fields before saving.");
       return;
     }
@@ -452,17 +477,60 @@ export default function Clients() {
       setError("Please fix the highlighted fields before saving.");
       return;
     }
+    const original = rows.find((r) => r.id === editingId);
+    const newPrefix = form.employee_id_prefix.trim().toUpperCase() || null;
+    const oldPrefix = original?.employee_id_prefix ?? null;
+
+    const clash = newPrefix ? prefixClash(newPrefix, editingId) : undefined;
+    if (clash) {
+      setFieldErrors((prev) => ({
+        ...prev,
+        employee_id_prefix: `Prefix "${newPrefix}" is already used by ${clash.name}`,
+      }));
+      setError("Please fix the highlighted fields before saving.");
+      return;
+    }
+
+    // Step 5: setting or changing a prefix regenerates the Employee ID of every
+    // currently-assigned employee. Flag it explicitly before it happens; the old
+    // IDs are preserved in history by the RPC. Cancelling aborts the whole save so
+    // the prefix and the employee codes never drift apart.
+    const affected = original?.employees_count ?? 0;
+    const cascade = newPrefix !== null && newPrefix !== oldPrefix && affected > 0;
+    if (cascade) {
+      const ok = window.confirm(
+        `This will update the Employee ID for ${affected} currently assigned ` +
+          `employee(s) to use the "${newPrefix}" prefix. Each old ID is kept in ` +
+          `their history. Continue?`,
+      );
+      if (!ok) return;
+    }
+
     setSubmitting(true);
     setError(null);
     const { error: upErr } = await supabase
       .from("clients")
       .update(buildPayload())
       .eq("id", editingId);
-    setSubmitting(false);
     if (upErr) {
+      setSubmitting(false);
       setError(upErr.message);
       return;
     }
+    if (cascade) {
+      const { error: rpcErr } = await supabase.rpc("reassign_client_employee_codes", {
+        p_client_id: editingId,
+      });
+      if (rpcErr) {
+        setSubmitting(false);
+        setError(
+          `Client saved, but regenerating employee IDs failed: ${rpcErr.message}. ` +
+            `Re-save the client to retry.`,
+        );
+        return;
+      }
+    }
+    setSubmitting(false);
     setEditingId(null);
     resetForm();
     await loadAll();
@@ -563,8 +631,38 @@ export default function Clients() {
     await loadAll();
   };
 
-  const renderForm = (onSubmit: (e: React.FormEvent) => void, submitLabel: string) => (
-    <form className="space-y-3" onSubmit={onSubmit}>
+  // Footer lives in the Modal's fixed footer region (outside the scroll area);
+  // the submit button reaches back into this form via the HTML5 `form` attribute.
+  const renderFormFooter = (submitLabel: string) => (
+    <div className="flex items-center gap-2">
+      <Button
+        type="submit"
+        form="client-form"
+        variant="primary"
+        size="md"
+        disabled={submitting}
+        className="flex-1"
+      >
+        {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
+        {submitting ? "Saving…" : submitLabel}
+      </Button>
+      <Button
+        type="button"
+        variant="secondary"
+        size="md"
+        onClick={() => {
+          setAddOpen(false);
+          setEditingId(null);
+          resetForm();
+        }}
+      >
+        Cancel
+      </Button>
+    </div>
+  );
+
+  const renderForm = (onSubmit: (e: React.FormEvent) => void) => (
+    <form id="client-form" className="space-y-3" onSubmit={onSubmit}>
       {error && (
         <div className="flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
           <AlertCircle className="w-4 h-4 mt-0.5" />
@@ -626,6 +724,29 @@ export default function Clients() {
                 <option key={s} value={s}>{s}</option>
               ))}
             </select>
+          </div>
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Employee ID Prefix</label>
+            <input
+              type="text"
+              value={form.employee_id_prefix}
+              onChange={(e) =>
+                setForm({ ...form, employee_id_prefix: e.target.value.toUpperCase() })
+              }
+              onBlur={(e) =>
+                validateField("employee_id_prefix", validateEmployeeIdPrefix(e.target.value))
+              }
+              maxLength={6}
+              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm font-mono uppercase"
+              placeholder="e.g. EMR"
+            />
+            {fieldErrors.employee_id_prefix ? (
+              <p className="text-xs text-danger-600 mt-1">{fieldErrors.employee_id_prefix}</p>
+            ) : (
+              <p className="text-xs text-slate-500 mt-1">
+                Employees assigned to this client get IDs like {form.employee_id_prefix || "EMR"}-001.
+              </p>
+            )}
           </div>
           <div className="col-span-2">
             <label className="block text-sm text-slate-700 mb-1">Default Branch *</label>
@@ -932,27 +1053,6 @@ export default function Clients() {
           )}
         </div>
       </Section>
-
-
-      {/* Offsets must track the modal body's own p-4 md:p-6 padding, otherwise the bar
-          bleeds past the container edges at the smaller breakpoint. */}
-      <div className="sticky bottom-0 -mx-4 md:-mx-6 -mb-4 md:-mb-6 px-4 md:px-6 py-3 bg-white border-t border-slate-200 flex items-center gap-2">
-        <Button variant="primary" size="md" disabled={submitting} className="flex-1">
-          {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
-          {submitting ? "Saving…" : submitLabel}
-        </Button>
-        <Button
-          variant="secondary"
-          size="md"
-          onClick={() => {
-            setAddOpen(false);
-            setEditingId(null);
-            resetForm();
-          }}
-        >
-          Cancel
-        </Button>
-      </div>
     </form>
   );
 
@@ -1153,8 +1253,9 @@ export default function Clients() {
         onClose={() => { setAddOpen(false); resetForm(); }}
         title="Add Client"
         size="lg"
+        footer={renderFormFooter("Add Client")}
       >
-        {renderForm(handleAdd, "Add Client")}
+        {renderForm(handleAdd)}
       </Modal>
 
       {/* Edit modal */}
@@ -1163,8 +1264,9 @@ export default function Clients() {
         onClose={() => { setEditingId(null); resetForm(); }}
         title="Edit Client"
         size="lg"
+        footer={renderFormFooter("Save Changes")}
       >
-        {renderForm(handleEdit, "Save Changes")}
+        {renderForm(handleEdit)}
       </Modal>
 
       {/* Detail modal with tabs */}

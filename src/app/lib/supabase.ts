@@ -382,7 +382,25 @@ export type Client = {
   remit_accounts: RemitAccount[];
   billing_type: ClientBillingType;
   invoice_group: ClientInvoiceGroup;
+  // Manual prefix that drives client-scoped employee codes ({prefix}-NNN).
+  // null on clients that haven't set one yet (existing clients stay EMP-XXXX
+  // until a prefix is set). Unique per company where not null.
+  employee_id_prefix: string | null;
   created_at?: string;
+};
+
+// One row per employee-code change (0073). Surfaced on the Employee View modal
+// as an ID history trail. reason: 'assigned' (first) | 'reassigned' | 'prefix_changed'.
+export type EmployeeCodeHistory = {
+  id: string;
+  company_id?: string;
+  employee_id: string;
+  old_code: string | null;
+  new_code: string;
+  client_id: string | null;
+  reason: "assigned" | "reassigned" | "prefix_changed";
+  changed_by: string | null;
+  changed_at: string;
 };
 
 // Sprint 2: separate Contracts entity (spec section 3.2).
