@@ -31,6 +31,7 @@ import {
   type Cheque,
   type Branch,
 } from "../../lib/supabase";
+import { useRegion, withRegion } from "../../lib/region";
 import { useAuth } from "../../lib/auth";
 
 const PIE_COLORS = [
@@ -119,6 +120,7 @@ const emptyForm: ExpenseForm = {
 
 export default function Expenses() {
   const { profile, company } = useAuth();
+  const { regionId } = useRegion();
   const [activeTab, setActiveTab] = useState<"expenses" | "advances">("expenses");
   const [expenses, setExpenses] = useState<ExpenseRow[]>([]);
   const [advances, setAdvances] = useState<AdvanceRow[]>([]);
@@ -213,20 +215,26 @@ export default function Expenses() {
     try {
       [expData, advData] = await Promise.all([
         fetchAllRows<any>(() =>
-          supabase
-            .from("expenses")
-            .select("*, category:category_id(name), client:client_id(name), vendor:vendor_id(name), bank:bank_account_id(bank_name)")
-            .order("expense_date", { ascending: false })
-            .order("created_at", { ascending: false }) as unknown as {
+          withRegion(
+            supabase
+              .from("expenses")
+              .select("*, category:category_id(name), client:client_id(name), vendor:vendor_id(name), bank:bank_account_id(bank_name)")
+              .order("expense_date", { ascending: false })
+              .order("created_at", { ascending: false }),
+            regionId,
+          ) as unknown as {
             range: (from: number, to: number) => Promise<{ data: unknown; error: { message: string } | null }>;
           },
         ),
         fetchAllRows<any>(() =>
-          supabase
-            .from("advances")
-            .select("*, employee:employee_id(full_name, employee_code), client:client_id(name), bank:bank_account_id(bank_name)")
-            .order("advance_date", { ascending: false })
-            .order("created_at", { ascending: false }) as unknown as {
+          withRegion(
+            supabase
+              .from("advances")
+              .select("*, employee:employee_id(full_name, employee_code), client:client_id(name), bank:bank_account_id(bank_name)")
+              .order("advance_date", { ascending: false })
+              .order("created_at", { ascending: false }),
+            regionId,
+          ) as unknown as {
             range: (from: number, to: number) => Promise<{ data: unknown; error: { message: string } | null }>;
           },
         ),
@@ -287,7 +295,8 @@ export default function Expenses() {
 
   useEffect(() => {
     loadAll();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [regionId]);
 
   const clientBranchMap = useMemo(() => {
     const m = new Map<string, string | null>();

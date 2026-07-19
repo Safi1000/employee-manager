@@ -5,6 +5,7 @@ import { formatDate } from "../../lib/date";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import ClientFilterSelect from "../../components/ClientFilterSelect";
+import { useRegion, withRegion } from "../../lib/region";
 import {
   supabase,
   EMPLOYEE_DOCS_BUCKET,
@@ -189,6 +190,7 @@ const computePerDay = (baseStr: string): string => {
 
 export default function EmployeeManagement() {
   const { profile, company } = useAuth();
+  const { regionId } = useRegion();
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -233,10 +235,13 @@ export default function EmployeeManagement() {
       supabase.from("locations").select("*").order("name"),
       supabase.from("clients").select("*").order("name"),
       supabase.from("branches").select("*").order("is_head_office", { ascending: false }).order("name"),
-      supabase
-        .from("employees")
-        .select("*, location:location_id(name), client:client_id(name), branch:branch_id(name)")
-        .order("created_at", { ascending: false }),
+      withRegion(
+        supabase
+          .from("employees")
+          .select("*, location:location_id(name), client:client_id(name), branch:branch_id(name)")
+          .order("created_at", { ascending: false }),
+        regionId,
+      ),
       supabase.from("employee_documents").select("employee_id"),
       supabase.from("employee_branches").select("employee_id, branch_id"),
       supabase.from("contracts").select("*").order("start_date", { ascending: false }),
@@ -277,9 +282,12 @@ export default function EmployeeManagement() {
     setLoading(false);
   };
 
+  // Reloads when the global region changes: the region selector scopes the
+  // whole screen, not just the client-side branch filter below it.
   useEffect(() => {
     loadData();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [regionId]);
 
   // Branches first by Head Office then alpha — used in selects with placeholder.
   const branchOptions = useMemo(() => branches.slice(), [branches]);

@@ -1,11 +1,16 @@
 import { RouterProvider } from "react-router";
 import { router } from "./routes";
 import { AuthProvider } from "./lib/auth";
+import { RegionProvider } from "./lib/region";
 
 export default function App() {
   return (
     <AuthProvider>
-      <RouterProvider router={router} />
+      {/* Inside AuthProvider: the region list is per-company and the region
+          lock comes from the profile. */}
+      <RegionProvider>
+        <RouterProvider router={router} />
+      </RegionProvider>
     </AuthProvider>
   );
 }

@@ -17,6 +17,7 @@ import {
   type Branch,
   type Contract,
 } from "../../lib/supabase";
+import { useRegion, withRegion } from "../../lib/region";
 import { hasPermission, useAuth } from "../../lib/auth";
 
 type EmployeeLite = {
@@ -102,6 +103,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   const [detailRecord, setDetailRecord] = useState<HistoryRow | null>(null);
 
   const { profile } = useAuth();
+  const { regionId } = useRegion();
   const canBulk = hasPermission(profile, "attendance.bulk_mark");
 
   // ---- Bulk-mark calendar modal ----
@@ -451,12 +453,17 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       supabase.from("locations").select("*").order("name"),
       supabase.from("clients").select("*").order("name"),
       supabase.from("branches").select("*").order("is_head_office", { ascending: false }).order("name"),
-      supabase
-        .from("employees")
-        .select(
-          "id, employee_code, full_name, location_id, client_id, contract_id, branch_id, shift, category, assignment_effective_from, location:location_id(name), client:client_id(name)"
-        )
-        .order("full_name"),
+      // The employee roster drives the whole attendance grid, so scoping it to
+      // the selected region scopes the screen.
+      withRegion(
+        supabase
+          .from("employees")
+          .select(
+            "id, employee_code, full_name, location_id, client_id, contract_id, branch_id, shift, category, assignment_effective_from, location:location_id(name), client:client_id(name)"
+          )
+          .order("full_name"),
+        regionId,
+      ),
       supabase.from("employee_branches").select("employee_id, branch_id"),
       supabase.from("contracts").select("id, allowed_leaves_per_month"),
     ]);
@@ -584,7 +591,8 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       await loadStaticData();
       setLoading(false);
     })();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [regionId]);
 
   useEffect(() => {
     loadRecordsForDate(date);

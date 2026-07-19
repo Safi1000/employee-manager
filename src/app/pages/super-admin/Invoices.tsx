@@ -29,6 +29,7 @@ import {
   type Branch,
   type InvoiceTemplateItem,
 } from "../../lib/supabase";
+import { useRegion, withRegion } from "../../lib/region";
 import { useAuth } from "../../lib/auth";
 import { generateInvoicePdf } from "../../lib/invoicePdf";
 import InvoiceGenerate from "../../components/InvoiceGenerate";
@@ -108,6 +109,7 @@ const emptyPaymentForm = (): PaymentForm => ({
 
 export default function Invoices() {
   const { profile, company } = useAuth();
+  const { regionId } = useRegion();
   const [clients, setClients] = useState<Client[]>([]);
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [banks, setBanks] = useState<BankAccount[]>([]);
@@ -161,10 +163,13 @@ export default function Invoices() {
     setBranches((brRes.data ?? []) as Branch[]);
     try {
       const invRows = await fetchAllRows<InvoiceRow>(() =>
-        supabase
-          .from("invoices")
-          .select("*, client:client_id(name, client_code)")
-          .order("invoice_date", { ascending: false }) as unknown as {
+        withRegion(
+          supabase
+            .from("invoices")
+            .select("*, client:client_id(name, client_code)")
+            .order("invoice_date", { ascending: false }),
+          regionId,
+        ) as unknown as {
           range: (from: number, to: number) => Promise<{ data: unknown; error: { message: string } | null }>;
         },
       );
@@ -177,7 +182,8 @@ export default function Invoices() {
 
   useEffect(() => {
     loadAll();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [regionId]);
 
   const loadPaymentsFor = async (invoiceId: string) => {
     const { data, error: pErr } = await supabase

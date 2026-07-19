@@ -664,14 +664,26 @@ export const PAKISTAN_BANKS = [
   "Other",
 ] as const;
 
+export type RegionKind = "regional" | "head_office";
+
 export type Branch = {
   id: string;
   company_id?: string;
   name: string;
   is_head_office: boolean;
+  /** Stable handle for the region (HO, ISB-RWP, LHR). Unique per company. */
+  code: string | null;
+  /** Generated from is_head_office in the DB — never write it. */
+  kind: RegionKind;
+  active: boolean;
   created_at?: string;
   updated_at?: string;
 };
+
+// A branch IS a region (migration 0074 promoted the table in place rather than
+// adding a second concept to keep in sync). `Region` is the name the region
+// model uses; both refer to the same rows.
+export type Region = Branch;
 
 export type EmployeeCategory = "client" | "office_staff" | "reliever";
 

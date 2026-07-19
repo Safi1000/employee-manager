@@ -16,6 +16,7 @@ import {
   type ReturnCondition,
   type Branch,
 } from "../../lib/supabase";
+import { useRegion, withRegion } from "../../lib/region";
 
 type ItemRow = InventoryItem & {
   location_name: string | null;
@@ -120,6 +121,7 @@ const emptyFilters: FilterState = {
 };
 
 export default function Inventory() {
+  const { regionId } = useRegion();
   const [activeTab, setActiveTab] = useState<"weapons" | "uniforms" | "issuance">("weapons");
 
   const [locations, setLocations] = useState<Location[]>([]);
@@ -158,10 +160,13 @@ export default function Inventory() {
       supabase.from("employees").select("id, full_name, employee_code, shift, branch_id, client_id").order("full_name"),
       supabase.from("clients").select("*").order("name"),
       supabase.from("branches").select("*").order("is_head_office", { ascending: false }).order("name"),
-      supabase
-        .from("inventory_items")
-        .select("*, location:location_id(name)")
-        .order("created_at", { ascending: false }),
+      withRegion(
+        supabase
+          .from("inventory_items")
+          .select("*, location:location_id(name)")
+          .order("created_at", { ascending: false }),
+        regionId,
+      ),
       supabase
         .from("issuances")
         .select(
@@ -232,7 +237,8 @@ export default function Inventory() {
 
   useEffect(() => {
     loadAll();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [regionId]);
 
   const matchesFilters = (iss: IssuanceRow): boolean => {
     if (filters.location_id && iss.location_id !== filters.location_id) return false;

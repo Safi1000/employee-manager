@@ -1,7 +1,9 @@
 import { Outlet, useNavigate } from "react-router";
 import Sidebar, { type SidebarItem } from "../components/Sidebar";
 import AiChatWidget from "../components/AiChatWidget";
+import RegionSelector from "../components/RegionSelector";
 import { hasAnyPermission, useAuth } from "../lib/auth";
+import { useRegion } from "../lib/region";
 import { Eye, X } from "lucide-react";
 import {
   LayoutDashboard,
@@ -59,7 +61,12 @@ const linkOrNull = (
 
 export default function SuperAdminLayout() {
   const { profile, company, setViewAsCompany } = useAuth();
+  const { regions, locked, region } = useRegion();
   const navigate = useNavigate();
+
+  // Companies with a single region have nothing to switch between, so the bar
+  // stays out of their way entirely.
+  const showRegionBar = locked || regions.length > 1;
 
   const isSsaViewing =
     profile?.role === "super_super_admin" && !!profile.view_as_company;
@@ -231,6 +238,18 @@ export default function SuperAdminLayout() {
             >
               <X className="w-4 h-4" strokeWidth={1.5} /> Exit view
             </button>
+          </div>
+        )}
+        {showRegionBar && (
+          <div className="bg-white border-b border-slate-200 px-4 md:px-8 py-2 flex items-center gap-3">
+            <RegionSelector />
+            <span className="text-xs text-slate-500 truncate">
+              {locked
+                ? "You see only your region."
+                : region
+                  ? `Showing ${region.name} only.`
+                  : "Showing all regions (consolidated)."}
+            </span>
           </div>
         )}
         <Outlet />

@@ -12,6 +12,7 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import Header from "../../components/Header";
+import { useRegion, withRegion } from "../../lib/region";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import { formatDateTime } from "../../lib/date";
@@ -79,6 +80,7 @@ const STATUS_COLOUR: Record<IncidentStatus, string> = {
 
 export default function Incidents() {
   const { profile, company } = useAuth();
+  const { regionId } = useRegion();
   const [rows, setRows] = useState<IncidentRow[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
@@ -101,7 +103,10 @@ export default function Incidents() {
     setLoading(true);
     setError(null);
     const [incRes, cliRes, postRes, empRes, guardRes] = await Promise.all([
-      supabase.from("incidents").select("*").order("occurred_at", { ascending: false }),
+      withRegion(
+        supabase.from("incidents").select("*").order("occurred_at", { ascending: false }),
+        regionId,
+      ),
       supabase.from("clients").select("*").order("name"),
       supabase.from("posts").select("*").order("name"),
       supabase.from("employees").select("id, full_name, employee_code, status, client_id").order("full_name"),
@@ -135,7 +140,8 @@ export default function Incidents() {
 
   useEffect(() => {
     loadAll();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [regionId]);
 
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
