@@ -208,6 +208,11 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
     items: [
       { key: "payroll.view", label: "View payroll" },
       { key: "payroll.edit", label: "Edit / disburse payroll" },
+      // Sign-off gate on a payroll run (spec §13): only holders (plus
+      // super_admin/SSA) may move a run from Review to Approved, which locks it.
+      { key: "payroll.approve", label: "Approve payroll runs (COO/Finance sign-off)" },
+      // Part IV §14/§16: COO gate on enrollment, appraisal approval, bonus pools.
+      { key: "performance.approve", label: "Approve performance (enrollment, appraisals, bonus pools)" },
     ],
   },
   {
