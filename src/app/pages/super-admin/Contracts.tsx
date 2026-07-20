@@ -35,6 +35,7 @@ import {
   type Employee,
 } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
+import { useRegion } from "../../lib/region";
 
 type ContractRow = Contract & { client_name: string; client_code: string };
 type EmployeeAssignment = Pick<
@@ -46,6 +47,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 export default function Contracts() {
   const { profile, company } = useAuth();
+  const { regionId } = useRegion();
   const [rows, setRows] = useState<ContractRow[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -119,15 +121,24 @@ export default function Contracts() {
     loadAll();
   }, []);
 
+  // Contracts carry no branch_id of their own; a contract's home region is its
+  // client's region (spec §1 inheritance). Filter by the parent client's
+  // branch_id so the global region selector scopes this page too.
+  const clientBranchById = useMemo(
+    () => new Map(clients.map((c) => [c.id, c.branch_id ?? null])),
+    [clients],
+  );
+
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
+      if (regionId && clientBranchById.get(r.client_id) !== regionId) return false;
       if (statusFilter !== "all" && r.status !== statusFilter) return false;
       if (clientFilter !== "all" && r.client_id !== clientFilter) return false;
       if (q && !r.client_name.toLowerCase().includes(q) && !r.contract_code.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [rows, search, statusFilter, clientFilter]);
+  }, [rows, search, statusFilter, clientFilter, regionId, clientBranchById]);
 
   const uploadDocument = async (
     contractId: string,

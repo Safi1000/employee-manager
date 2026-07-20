@@ -15,6 +15,7 @@ import {
 } from "recharts";
 import { supabase } from "../../lib/supabase";
 import type { Advance, Expense, InvoicePayment, Payslip, Cheque } from "../../lib/supabase";
+import { useRegion, withRegion } from "../../lib/region";
 import { TrendingUp, TrendingDown, Wallet, ChevronDown, ChevronRight } from "lucide-react";
 
 // One cash event, already resolved to a cash-basis effective date.
@@ -53,6 +54,7 @@ const currency = (n: number) => `PKR ${Math.round(n).toLocaleString("en-PK")}`;
 type PeriodMode = "month" | "range" | "all";
 
 export default function Cashflow() {
+  const { regionId } = useRegion();
   const [invoicePayments, setInvoicePayments] = useState<InvoicePayment[]>([]);
   const [payslips, setPayslips] = useState<Payslip[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -80,13 +82,19 @@ export default function Cashflow() {
       setError(null);
       try {
         const [payRes, psRes, exRes, advRes, chqRes, cliRes, empRes] = await Promise.all([
-          supabase.from("invoice_payments").select("amount, payment_date, client_id"),
-          supabase.from("payslips").select("*").eq("disbursed", true),
-          supabase.from("expenses").select("*"),
-          supabase
-            .from("advances")
-            .select("amount, advance_date, payment_mode, cheque_id, employee_id"),
-          supabase.from("cheques").select("id, status, cleared_at"),
+          // Flow sources all carry branch_id, so the global region selector scopes
+          // this projection to the region's own inflows/outflows. Client/employee
+          // name lookups stay unfiltered — they're just label maps.
+          withRegion(supabase.from("invoice_payments").select("amount, payment_date, client_id"), regionId),
+          withRegion(supabase.from("payslips").select("*").eq("disbursed", true), regionId),
+          withRegion(supabase.from("expenses").select("*"), regionId),
+          withRegion(
+            supabase
+              .from("advances")
+              .select("amount, advance_date, payment_mode, cheque_id, employee_id"),
+            regionId,
+          ),
+          withRegion(supabase.from("cheques").select("id, status, cleared_at"), regionId),
           supabase.from("clients").select("id, name"),
           supabase.from("employees").select("id, full_name"),
         ]);
@@ -111,7 +119,9 @@ export default function Cashflow() {
     return () => {
       cancelled = true;
     };
-  }, []);
+    // Re-fetch when the global region selector changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [regionId]);
 
   // Normalize every cash event to { effective date, amount, group, detail },
   // using the same cash-basis rules as before (cheque items only count once

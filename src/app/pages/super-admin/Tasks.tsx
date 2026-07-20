@@ -7,8 +7,11 @@ import { formatDate } from "../../lib/date";
 import {
   supabase,
   TASK_STATUS_LABEL,
+  TASK_PRIORITY_LABEL,
+  TASK_PRIORITY_BADGE,
   type Task,
   type TaskStatus,
+  type TaskPriority,
   type Profile,
 } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
@@ -61,6 +64,7 @@ export default function Tasks() {
   const [formAssignee, setFormAssignee] = useState<string>("");
   const [formDueDate, setFormDueDate] = useState<string>("");
   const [formStatus, setFormStatus] = useState<TaskStatus>("todo");
+  const [formPriority, setFormPriority] = useState<TaskPriority>("medium");
   const [submitting, setSubmitting] = useState(false);
 
   const loadAll = async () => {
@@ -114,6 +118,7 @@ export default function Tasks() {
     setFormAssignee("");
     setFormDueDate("");
     setFormStatus("todo");
+    setFormPriority("medium");
   };
 
   const openCreate = () => {
@@ -128,6 +133,7 @@ export default function Tasks() {
     setFormAssignee(t.assignee_id ?? "");
     setFormDueDate(t.due_date ?? "");
     setFormStatus(t.status);
+    setFormPriority(t.priority ?? "medium");
   };
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -143,6 +149,7 @@ export default function Tasks() {
         title: formTitle.trim(),
         description: formDescription.trim() || null,
         status: formStatus,
+        priority: formPriority,
         assignee_id: formAssignee || null,
         due_date: formDueDate || null,
       });
@@ -171,6 +178,7 @@ export default function Tasks() {
         title: formTitle.trim(),
         description: formDescription.trim() || null,
         status: formStatus,
+        priority: formPriority,
       };
       if (isAdmin) {
         patch.assignee_id = formAssignee || null;
@@ -322,6 +330,14 @@ export default function Tasks() {
                           <p className="text-xs text-slate-600 line-clamp-3 mb-2">{t.description}</p>
                         )}
                         <div className="flex flex-wrap items-center gap-2 text-xs">
+                          <span className={`inline-flex items-center px-1.5 py-0.5 rounded border ${TASK_PRIORITY_BADGE[t.priority ?? "medium"]}`}>
+                            {TASK_PRIORITY_LABEL[t.priority ?? "medium"]}
+                          </span>
+                          {t.status === "done" && t.completed_at && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-success-50 text-success-700">
+                              ✓ {formatDate(t.completed_at.slice(0, 10))}
+                            </span>
+                          )}
                           {assignee && (
                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
                               <UserIcon className="w-3 h-3" strokeWidth={1.5} />
@@ -387,6 +403,8 @@ export default function Tasks() {
             setDueDate={setFormDueDate}
             status={formStatus}
             setStatus={setFormStatus}
+            priority={formPriority}
+            setPriority={setFormPriority}
             users={users}
             isAdmin={isAdmin}
           />
@@ -431,6 +449,8 @@ export default function Tasks() {
               setDueDate={setFormDueDate}
               status={formStatus}
               setStatus={setFormStatus}
+              priority={formPriority}
+              setPriority={setFormPriority}
               users={users}
               isAdmin={isAdmin}
             />
@@ -468,6 +488,8 @@ function TaskFields({
   setDueDate,
   status,
   setStatus,
+  priority,
+  setPriority,
   users,
   isAdmin,
 }: {
@@ -481,6 +503,8 @@ function TaskFields({
   setDueDate: (v: string) => void;
   status: TaskStatus;
   setStatus: (v: TaskStatus) => void;
+  priority: TaskPriority;
+  setPriority: (v: TaskPriority) => void;
   users: Profile[];
   isAdmin: boolean;
 }) {
@@ -518,6 +542,16 @@ function TaskFields({
             <option value="todo">To Do</option>
             <option value="in_progress">In Progress</option>
             <option value="done">Done</option>
+          </select>
+          <label className="block text-sm text-slate-700 mb-1 mt-3">Priority</label>
+          <select
+            value={priority}
+            onChange={(e) => setPriority(e.target.value as TaskPriority)}
+            className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+          >
+            {(["low", "medium", "high", "urgent"] as TaskPriority[]).map((p) => (
+              <option key={p} value={p}>{TASK_PRIORITY_LABEL[p]}</option>
+            ))}
           </select>
         </div>
         <div>

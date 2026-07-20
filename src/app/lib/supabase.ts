@@ -138,6 +138,22 @@ export type InvoiceTemplateItem = { field: InvoiceTemplateField; title: string }
 
 export type TaskStatus = "todo" | "in_progress" | "done";
 
+export type TaskPriority = "low" | "medium" | "high" | "urgent";
+
+export const TASK_PRIORITY_LABEL: Record<TaskPriority, string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  urgent: "Urgent",
+};
+
+export const TASK_PRIORITY_BADGE: Record<TaskPriority, string> = {
+  low: "bg-slate-100 text-slate-600 border-slate-200",
+  medium: "bg-brand-50 text-brand-700 border-brand-200",
+  high: "bg-warning-50 text-warning-700 border-warning-200",
+  urgent: "bg-danger-50 text-danger-700 border-danger-200",
+};
+
 export type Task = {
   id: string;
   company_id: string;
@@ -148,6 +164,10 @@ export type Task = {
   created_by: string | null;
   due_date: string | null;
   position: number;
+  // §17 tasking upgrade (migration 0093): priority + completion timestamp
+  // (completed_at is stamped by a DB trigger when status becomes 'done').
+  priority: TaskPriority;
+  completed_at: string | null;
   created_at?: string;
   updated_at?: string;
 };
@@ -802,8 +822,270 @@ export type Employee = {
   contract_line_id: string | null;
   assignment_effective_from: string | null;
   assignment_effective_to: string | null;
+  // §11 Employee Data Form — full paper-form capture (migration 0088).
+  // Header
+  interview_date: string | null;
+  form_serial_no: string | null;
+  photo_url: string | null;
+  // Personal (extended)
+  cnic_expiry: string | null;
+  education: string | null;
+  marital_status: MaritalStatus | null;
+  height_cm: number | null;
+  weight_kg: number | null;
+  build: string | null;
+  uniform_size: string | null;
+  shoe_size: string | null;
+  special_skills: string | null;
+  // Second emergency contact (the first lives in emergency_contact_*)
+  emergency_contact2_name: string | null;
+  emergency_contact2_relation: string | null;
+  emergency_contact2_phone: string | null;
+  // Political / locality
+  post_office: string | null;
+  police_station: string | null;
+  area_nazim: string | null;
+  union_council: string | null;
+  // Family
+  spouse_name: string | null;
+  next_of_kin_name: string | null;
+  next_of_kin_relation: string | null;
+  next_of_kin_cnic: string | null;
+  next_of_kin_contact: string | null;
+  // Ex-service
+  is_ex_serviceman: boolean;
+  army_number: string | null;
+  service_unit: string | null;
+  service_rank: string | null;
+  service_trade: string | null;
+  service_join_date: string | null;
+  service_discharge_date: string | null;
+  discharging_officer: string | null;
+  // Experience
+  weapons_trained: string | null;
+  // Internal office data
+  designation: string | null;
+  project: string | null;
+  company_id_card_number: string | null;
+  social_security_status: SocialSecurityStatus | null;
+  social_security_number: string | null;
+  insurance_provider: string | null;
+  insurance_number: string | null;
+  remarks: string | null;
+  form_signed_on: string | null;
+  // §11 identity lock (migration 0089)
+  identity_verified: boolean;
+  identity_verified_at: string | null;
+  identity_verified_by: string | null;
+  // §12 lifecycle state machine (migration 0082)
+  lifecycle_state: EmployeeLifecycleState;
+  rehire_count: number;
+  eligible_for_rehire: boolean | null;
+  exit_reason: string | null;
+  exit_date: string | null;
+  blacklisted: boolean;
+  blacklist_reason: string | null;
+  referral_source: string | null;
+  referred_by_employee_id: string | null;
+  referred_by_name: string | null;
+  pending_termination_review: boolean;
+  // §12 vetting + competence (migration 0083)
+  police_verification_status: VettingStatus;
+  police_verification_date: string | null;
+  nadra_verisys_status: VettingStatus;
+  nadra_verisys_date: string | null;
+  orientation_done: boolean;
+  orientation_date: string | null;
+  weapons_certified: boolean;
+  weapons_cert_expiry: string | null;
+  refresher_due_date: string | null;
   created_at?: string;
   updated_at?: string;
+};
+
+export type EmployeeLifecycleState =
+  | "applicant"
+  | "waitlisted"
+  | "active"
+  | "on_leave"
+  | "left"
+  | "terminated";
+
+export const LIFECYCLE_STATE_LABEL: Record<EmployeeLifecycleState, string> = {
+  applicant: "Applicant",
+  waitlisted: "Waiting list",
+  active: "Active",
+  on_leave: "On leave",
+  left: "Left",
+  terminated: "Terminated",
+};
+
+// Allowed transitions, mirrored from lifecycle_transition_allowed (migration 0082).
+export const LIFECYCLE_TRANSITIONS: Record<EmployeeLifecycleState, EmployeeLifecycleState[]> = {
+  applicant: ["waitlisted", "active", "left"],
+  waitlisted: ["active", "left"],
+  active: ["on_leave", "left", "terminated"],
+  on_leave: ["active", "left", "terminated"],
+  left: ["active"],
+  terminated: ["active"],
+};
+
+export type VettingStatus = "pending" | "cleared" | "adverse";
+export type TrainingKind =
+  | "orientation"
+  | "weapons_certification"
+  | "weapons_refresher"
+  | "refresher"
+  | "other";
+
+export const TRAINING_KIND_LABEL: Record<TrainingKind, string> = {
+  orientation: "Orientation",
+  weapons_certification: "Weapons certification",
+  weapons_refresher: "Weapons refresher",
+  refresher: "Refresher",
+  other: "Other",
+};
+
+export type EmployeeTrainingRecord = {
+  id: string;
+  company_id?: string;
+  employee_id: string;
+  kind: TrainingKind;
+  completed_on: string;
+  expires_on: string | null;
+  provider: string | null;
+  notes: string | null;
+  created_at?: string;
+};
+
+export type DisciplinaryWarning = {
+  id: string;
+  company_id?: string;
+  employee_id: string;
+  warning_number: number;
+  issued_on: string;
+  reason: string;
+  issued_by: string | null;
+  rescinded: boolean;
+  rescinded_reason: string | null;
+  created_at?: string;
+};
+
+export type ClearanceCertificate = {
+  id: string;
+  company_id?: string;
+  employee_id: string;
+  initiated_on: string;
+  status: "pending" | "cleared" | "blocked";
+  kit_returned: boolean | null;
+  outstanding_kit_count: number | null;
+  advance_settled: boolean | null;
+  outstanding_advance: number | null;
+  incidents_reviewed: boolean | null;
+  open_incident_count: number | null;
+  dues_released: boolean;
+  dues_released_on: string | null;
+  notes: string | null;
+};
+
+export type ServiceHistoryRow = {
+  employee_id: string;
+  company_id: string;
+  kind: string;
+  event_at: string;
+  title: string;
+  detail: string | null;
+};
+
+export type MaritalStatus = "single" | "married" | "divorced" | "widowed";
+export type SocialSecurityStatus = "registered" | "not_registered" | "exempt";
+export type ReferenceType = "uc_gazetted" | "blood_relation";
+export type ChecklistDocType =
+  | "police_verification"
+  | "medical_certificate"
+  | "halaf_nama"
+  | "photographs"
+  | "education_certificate"
+  | "discharge_certificate"
+  | "pension_book"
+  | "id_copies"
+  | "biometrics"
+  | "utility_bill";
+
+export const CHECKLIST_DOC_LABEL: Record<ChecklistDocType, string> = {
+  police_verification: "Police verification",
+  medical_certificate: "Medical certificate",
+  halaf_nama: "Halaf nama (affidavit)",
+  photographs: "Photographs",
+  education_certificate: "Education certificate",
+  discharge_certificate: "Discharge certificate",
+  pension_book: "Pension book",
+  id_copies: "ID copies",
+  biometrics: "Biometrics",
+  utility_bill: "Utility bill",
+};
+
+// §11 repeating sections (migration 0088)
+export type EmployeeChild = {
+  id: string;
+  company_id?: string;
+  employee_id: string;
+  name: string;
+  date_of_birth: string | null;
+  gender: string | null;
+  notes: string | null;
+  created_at?: string;
+};
+
+export type EmployeeReference = {
+  id: string;
+  company_id?: string;
+  employee_id: string;
+  reference_type: ReferenceType;
+  name: string;
+  cnic: string | null;
+  address: string | null;
+  contact: string | null;
+  id_copy_document_id: string | null;
+  notes: string | null;
+  created_at?: string;
+};
+
+export type EmployeePreviousJob = {
+  id: string;
+  company_id?: string;
+  employee_id: string;
+  seq: number;
+  employer: string | null;
+  designation: string | null;
+  from_date: string | null;
+  to_date: string | null;
+  reason_for_leaving: string | null;
+  created_at?: string;
+};
+
+export type EmployeeDocumentChecklistItem = {
+  id: string;
+  company_id?: string;
+  employee_id: string;
+  doc_type: ChecklistDocType;
+  received: boolean;
+  document_id: string | null;
+  verified_by: string | null;
+  verified_at: string | null;
+  notes: string | null;
+};
+
+// §11 identity amendment log row (view employee_identity_amendments)
+export type EmployeeIdentityAmendment = {
+  employee_id: string;
+  company_id: string;
+  changed_at: string;
+  changed_by: string | null;
+  field: string;
+  old_value: string | null;
+  new_value: string | null;
+  reason: string | null;
 };
 
 // Phase 4: an employee consumes a slot on a line only while Active AND within

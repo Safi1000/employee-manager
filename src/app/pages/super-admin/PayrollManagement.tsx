@@ -21,6 +21,7 @@ import {
   type Branch,
   type Contract,
 } from "../../lib/supabase";
+import { useRegion, withRegion } from "../../lib/region";
 
 type EmployeeRow = Employee & { location_name: string | null; client_name: string | null };
 
@@ -81,6 +82,7 @@ const daysInMonth = (periodMonth: string) => {
 type PayrollManagementProps = { relieversOnly?: boolean };
 
 export default function PayrollManagement({ relieversOnly = false }: PayrollManagementProps = {}) {
+  const { regionId } = useRegion();
   const today = new Date();
   const currentPeriod = firstOfMonth(today);
   // Default the filter to the previous month — payroll is typically processed
@@ -261,10 +263,15 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     await supabase.from("payslips").delete().lt("period_month", cutoff);
 
     const [empRes, locRes, cliRes, conRes, bankRes, treaRes, chqRes, brRes] = await Promise.all([
-      supabase
-        .from("employees")
-        .select("*, location:location_id(name), client:client_id(name)")
-        .order("employee_code"),
+      // Region scopes the payroll roster (each row = an employee). Bank/treasury/
+      // cheque reads below stay company-wide — the cash pool isn't region-split.
+      withRegion(
+        supabase
+          .from("employees")
+          .select("*, location:location_id(name), client:client_id(name)")
+          .order("employee_code"),
+        regionId,
+      ),
       supabase.from("locations").select("*").order("name"),
       supabase.from("clients").select("*").order("name"),
       supabase.from("contracts").select("*"),
@@ -326,7 +333,9 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
 
   useEffect(() => {
     loadAll();
-  }, []);
+    // Reload the roster when the global region selector changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [regionId]);
 
   useEffect(() => {
     if (!loading) loadPeriodData(selectedPeriod);

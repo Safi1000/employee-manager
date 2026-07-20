@@ -55,6 +55,7 @@ import {
   validateEmployeeIdPrefix,
 } from "../../lib/validation";
 import { useAuth } from "../../lib/auth";
+import { useRegion, withRegion } from "../../lib/region";
 
 type ClientRow = Client & { employees_count: number; contracts_count: number };
 type EmployeeAssignmentRow = Pick<
@@ -177,6 +178,7 @@ function Section({
 
 export default function Clients() {
   const { profile, company } = useAuth();
+  const { regionId } = useRegion();
   const [rows, setRows] = useState<ClientRow[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
@@ -220,7 +222,7 @@ export default function Clients() {
     setLoading(true);
     setError(null);
     const [clientsRes, branchesRes, contractsRes, invoicesRes, employeesRes, rosterRes, linesRes, addendumsRes] = await Promise.all([
-      supabase.from("clients").select("*").order("name"),
+      withRegion(supabase.from("clients").select("*").order("name"), regionId),
       supabase
         .from("branches")
         .select("*")
@@ -311,7 +313,9 @@ export default function Clients() {
 
   useEffect(() => {
     loadAll();
-  }, []);
+    // Reload when the global region selector changes; loadAll closes over regionId.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [regionId]);
 
   // A client is Active when it has at least one contract that is currently valid:
   // status = active AND today within [start_date, end_date] (open-ended if no end).

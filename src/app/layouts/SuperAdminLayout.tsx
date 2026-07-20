@@ -80,6 +80,7 @@ export default function SuperAdminLayout() {
   const EMPLOYEES: LinkDef = { to: "/super-admin/employees", label: "Employees", icon: UserCircle, perms: ["employees.view", "employees.edit"] };
   const ATTENDANCE: LinkDef = { to: "/super-admin/attendance", label: "Attendance", icon: Calendar, perms: ["attendance.view", "attendance.edit"] };
   const PAYROLL: LinkDef = { to: "/super-admin/payroll", label: "Payroll", icon: DollarSign, perms: ["payroll.view", "payroll.edit"] };
+  const PERFORMANCE: LinkDef = { to: "/super-admin/performance", label: "Performance", icon: TrendingUp, perms: ["payroll.view", "performance.approve"] };
   const RELIEVER_ATT: LinkDef = { to: "/super-admin/relievers/attendance", label: "Attendance", icon: Calendar, perms: ["attendance.view", "attendance.edit"] };
   const RELIEVER_PAY: LinkDef = { to: "/super-admin/relievers/payroll", label: "Payroll", icon: DollarSign, perms: ["payroll.view", "payroll.edit"] };
   const INVENTORY: LinkDef = { to: "/super-admin/inventory", label: "Inventory", icon: Package, perms: ["inventory.view", "inventory.edit"] };
@@ -157,6 +158,7 @@ export default function SuperAdminLayout() {
     EMPLOYEES,
     ATTENDANCE,
     PAYROLL,
+    PERFORMANCE,
     {
       _group: true,
       label: "Relievers",

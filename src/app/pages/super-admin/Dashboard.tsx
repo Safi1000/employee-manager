@@ -36,6 +36,7 @@ import {
 } from "recharts";
 import { hasPermission, useAuth } from "../../lib/auth";
 import { supabase, fetchAllRows } from "../../lib/supabase";
+import { useRegion, withRegion } from "../../lib/region";
 
 type BankRow = { id: string; bank_name: string; balance: number };
 type TopClientRow = { id: string; name: string; revenue: number };
@@ -108,6 +109,7 @@ const SEVERITY_COLOR: Record<string, string> = {
 
 export default function SuperAdminDashboard() {
   const { profile, company } = useAuth();
+  const { regionId } = useRegion();
   const hiddenWidgets = useMemo(
     () => new Set<string>((company?.dashboard_hidden_widgets ?? []) as string[]),
     [company?.dashboard_hidden_widgets],
@@ -206,33 +208,40 @@ export default function SuperAdminDashboard() {
           periodRes,
           periodLastRes,
         ] = await Promise.all([
-          supabase.from("employees").select("id", { count: "exact", head: true }).eq("status", "Active"),
-          supabase.from("attendance_records").select("status").eq("attendance_date", today),
-          supabase.from("attendance_records").select("status").eq("attendance_date", yesterday),
-          supabase.from("attendance_records").select("attendance_date, status").gte("attendance_date", sevenDaysAgo).lte("attendance_date", today),
-          supabase.from("expenses").select("amount, expense_date, category_id").gte("expense_date", mStart).lte("expense_date", mEnd),
-          supabase.from("expenses").select("amount, expense_date").gte("expense_date", pStart).lte("expense_date", pEnd),
-          supabase.from("payslips").select("net_salary, disbursed").eq("period_month", periodMonthKey).eq("disbursed", true),
-          supabase.from("payslips").select("net_salary, disbursed").eq("period_month", `${pStart.slice(0, 7)}-01`).eq("disbursed", true),
+          // Region-aware widgets filter on branch_id via the global selector.
+          withRegion(supabase.from("employees").select("id", { count: "exact", head: true }).eq("status", "Active"), regionId),
+          withRegion(supabase.from("attendance_records").select("status").eq("attendance_date", today), regionId),
+          withRegion(supabase.from("attendance_records").select("status").eq("attendance_date", yesterday), regionId),
+          withRegion(supabase.from("attendance_records").select("attendance_date, status").gte("attendance_date", sevenDaysAgo).lte("attendance_date", today), regionId),
+          withRegion(supabase.from("expenses").select("amount, expense_date, category_id").gte("expense_date", mStart).lte("expense_date", mEnd), regionId),
+          withRegion(supabase.from("expenses").select("amount, expense_date").gte("expense_date", pStart).lte("expense_date", pEnd), regionId),
+          withRegion(supabase.from("payslips").select("net_salary, disbursed").eq("period_month", periodMonthKey).eq("disbursed", true), regionId),
+          withRegion(supabase.from("payslips").select("net_salary, disbursed").eq("period_month", `${pStart.slice(0, 7)}-01`).eq("disbursed", true), regionId),
+          // Bank pool is shared across regions (spec §8) — stays company-wide.
           supabase.from("bank_accounts").select("id, bank_name, balance").order("bank_name"),
           fetchAllRows<{ client_id: string | null; invoice_id: string | null; amount: number; payment_date: string }>(() =>
-            supabase
-              .from("invoice_payments")
-              .select("client_id, invoice_id, amount, payment_date")
-              .gte("payment_date", mStart)
-              .lte("payment_date", mEnd) as unknown as {
+            withRegion(
+              supabase
+                .from("invoice_payments")
+                .select("client_id, invoice_id, amount, payment_date")
+                .gte("payment_date", mStart)
+                .lte("payment_date", mEnd),
+              regionId,
+            ) as unknown as {
                 range: (from: number, to: number) => Promise<{ data: unknown; error: { message: string } | null }>;
               },
           ),
           supabase.from("important_dates").select("id, title, due_date, category, priority").gte("due_date", today).lte("due_date", in30).order("due_date"),
-          supabase.from("clients").select("id, name, contract_end").not("contract_end", "is", null).gte("contract_end", today).lte("contract_end", in60).order("contract_end"),
-          // active contracts count
+          withRegion(supabase.from("clients").select("id, name, contract_end").not("contract_end", "is", null).gte("contract_end", today).lte("contract_end", in60).order("contract_end"), regionId),
+          // active contracts count — contracts carry no branch_id (region is via
+          // client); left company-wide rather than restructure this count query.
           supabase.from("contracts").select("id", { count: "exact", head: true }).eq("status", "active"),
           // open incidents count (open + under_investigation)
-          supabase.from("incidents").select("id", { count: "exact", head: true }).in("status", ["open", "under_investigation"]),
+          withRegion(supabase.from("incidents").select("id", { count: "exact", head: true }).in("status", ["open", "under_investigation"]), regionId),
           // expense categories for pie chart
           supabase.from("expense_categories").select("id, name"),
-          // contracts ending in next 60 days
+          // contracts ending in next 60 days — no branch_id on contracts; left
+          // company-wide (region for contracts is derivable only via client).
           supabase
             .from("contracts")
             .select("id, contract_code, client_id, end_date")
@@ -243,28 +252,40 @@ export default function SuperAdminDashboard() {
             .order("end_date")
             .limit(10),
           // recent incidents (last 30 days)
-          supabase
-            .from("incidents")
-            .select("id, incident_code, severity, category, occurred_at, status")
-            .gte("occurred_at", daysAgoIso(30) + "T00:00:00Z")
-            .order("occurred_at", { ascending: false })
-            .limit(8),
+          withRegion(
+            supabase
+              .from("incidents")
+              .select("id, incident_code, severity, category, occurred_at, status")
+              .gte("occurred_at", daysAgoIso(30) + "T00:00:00Z")
+              .order("occurred_at", { ascending: false })
+              .limit(8),
+            regionId,
+          ),
           // roster gaps: scheduled assignments for next 7 days
-          supabase
-            .from("roster_assignments")
-            .select("employee_id, assignment_date")
-            .gte("assignment_date", today)
-            .lte("assignment_date", next7),
+          withRegion(
+            supabase
+              .from("roster_assignments")
+              .select("employee_id, assignment_date")
+              .gte("assignment_date", today)
+              .lte("assignment_date", next7),
+            regionId,
+          ),
           // employees who should be on roster (active client/reliever)
-          supabase
-            .from("employees")
-            .select("id")
-            .eq("status", "Active")
-            .in("category", ["client", "reliever"]),
+          withRegion(
+            supabase
+              .from("employees")
+              .select("id")
+              .eq("status", "Active")
+              .in("category", ["client", "reliever"]),
+            regionId,
+          ),
           // employee licence expiries
-          supabase
-            .from("employees")
-            .select("weapon_licence_expiry, guard_service_licence_expiry, medical_fitness_expiry, probation_end_date, status"),
+          withRegion(
+            supabase
+              .from("employees")
+              .select("weapon_licence_expiry, guard_service_licence_expiry, medical_fitness_expiry, probation_end_date, status"),
+            regionId,
+          ),
           // current month period closed?
           supabase
             .from("accounting_periods")
@@ -480,7 +501,9 @@ export default function SuperAdminDashboard() {
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+    // Re-fetch region-aware widgets when the global region selector changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [regionId]);
 
   const totalBankBalance = useMemo(() => banks.reduce((s, b) => s + b.balance, 0), [banks]);
   const maxBank = useMemo(() => Math.max(1, ...banks.map((b) => b.balance)), [banks]);
