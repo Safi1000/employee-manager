@@ -15,6 +15,7 @@ import {
   ResponsiveContainer,
   Legend,
 } from "recharts";
+import { CHART_TT, CHART_GRID, CHART_LEGEND, CHART_ANIM, CHART_COLORS } from "../../lib/chart";
 import {
   supabase,
   fetchAllRows,
@@ -34,20 +35,7 @@ import {
 import { useRegion, withRegion } from "../../lib/region";
 import { useAuth } from "../../lib/auth";
 
-const PIE_COLORS = [
-  "#3b82f6",
-  "#10b981",
-  "#f59e0b",
-  "#ef4444",
-  "#8b5cf6",
-  "#ec4899",
-  "#14b8a6",
-  "#f97316",
-  "#06b6d4",
-  "#84cc16",
-  "#a855f7",
-  "#64748b",
-];
+const PIE_COLORS = CHART_COLORS;
 
 type ExpenseRow = Expense & {
   category_name: string | null;
@@ -1508,7 +1496,7 @@ export default function Expenses() {
                     <RTooltip
                       formatter={(v: number) => `PKR ${Number(v).toLocaleString()}`}
                     />
-                    <Legend />
+                    <Legend {...CHART_LEGEND} />
                   </PieChart>
                 </ResponsiveContainer>
               )}

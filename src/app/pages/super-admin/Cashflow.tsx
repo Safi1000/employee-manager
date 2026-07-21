@@ -13,6 +13,7 @@ import {
   ResponsiveContainer,
   Legend,
 } from "recharts";
+import { CHART_TT, CHART_GRID, CHART_LEGEND, CHART_ANIM, CHART_COLORS } from "../../lib/chart";
 import { supabase } from "../../lib/supabase";
 import type { Advance, Expense, InvoicePayment, Payslip, Cheque } from "../../lib/supabase";
 import { useRegion, withRegion } from "../../lib/region";
@@ -493,14 +494,14 @@ export default function Cashflow() {
             ) : (
               <ResponsiveContainer width="100%" height={350}>
                 <LineChart data={rows}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="label" tick={{ fill: "#64748b", fontSize: 12 }} />
-                  <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
-                  <Tooltip formatter={(v: number) => currency(Number(v))} />
-                  <Legend />
-                  <Line type="monotone" dataKey="revenue" stroke="var(--color-success-500)" strokeWidth={2} name="Revenue" />
-                  <Line type="monotone" dataKey="expenses" stroke="var(--color-danger-500)" strokeWidth={2} name="Expenses" />
-                  <Line type="monotone" dataKey="payroll" stroke="#0f172a" strokeWidth={2} name="Payroll" />
+                  <CartesianGrid {...CHART_GRID} />
+                  <XAxis dataKey="label" tick={{ fill: "var(--color-slate-500)", fontSize: 12 }} axisLine={{ stroke: "var(--border)" }} tickLine={{ stroke: "var(--border)" }} />
+                  <YAxis tick={{ fill: "var(--color-slate-500)", fontSize: 12 }} axisLine={{ stroke: "var(--border)" }} tickLine={{ stroke: "var(--border)" }} />
+                  <Tooltip {...CHART_TT} formatter={(v: number) => currency(Number(v))} />
+                  <Legend {...CHART_LEGEND} />
+                  <Line {...CHART_ANIM} type="monotone" dataKey="revenue" stroke="var(--color-success-500)" strokeWidth={2} name="Revenue" />
+                  <Line {...CHART_ANIM} type="monotone" dataKey="expenses" stroke="var(--color-danger-500)" strokeWidth={2} name="Expenses" />
+                  <Line {...CHART_ANIM} type="monotone" dataKey="payroll" stroke="var(--color-info-600)" strokeWidth={2} name="Payroll" />
                 </LineChart>
               </ResponsiveContainer>
             )}
@@ -515,13 +516,13 @@ export default function Cashflow() {
             ) : (
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={rows}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="label" tick={{ fill: "#64748b", fontSize: 12 }} />
-                  <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
-                  <Tooltip formatter={(v: number) => currency(Number(v))} />
-                  <Legend />
-                  <Bar dataKey="revenue" fill="var(--color-success-500)" radius={[4, 4, 0, 0]} name="Revenue" />
-                  <Bar dataKey="expenses" fill="var(--color-danger-500)" radius={[4, 4, 0, 0]} name="Expenses" />
+                  <CartesianGrid {...CHART_GRID} />
+                  <XAxis dataKey="label" tick={{ fill: "var(--color-slate-500)", fontSize: 12 }} axisLine={{ stroke: "var(--border)" }} tickLine={{ stroke: "var(--border)" }} />
+                  <YAxis tick={{ fill: "var(--color-slate-500)", fontSize: 12 }} axisLine={{ stroke: "var(--border)" }} tickLine={{ stroke: "var(--border)" }} />
+                  <Tooltip {...CHART_TT} formatter={(v: number) => currency(Number(v))} />
+                  <Legend {...CHART_LEGEND} />
+                  <Bar {...CHART_ANIM} dataKey="revenue" fill="var(--color-success-500)" radius={[6, 6, 0, 0]} name="Revenue" />
+                  <Bar {...CHART_ANIM} dataKey="expenses" fill="var(--color-danger-500)" radius={[6, 6, 0, 0]} name="Expenses" />
                 </BarChart>
               </ResponsiveContainer>
             )}
@@ -534,11 +535,11 @@ export default function Cashflow() {
             ) : (
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={rows}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="label" tick={{ fill: "#64748b", fontSize: 12 }} />
-                  <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
-                  <Tooltip formatter={(v: number) => currency(Number(v))} />
-                  <Bar dataKey="payroll" fill="#0f172a" radius={[4, 4, 0, 0]} name="Payroll Cost" />
+                  <CartesianGrid {...CHART_GRID} />
+                  <XAxis dataKey="label" tick={{ fill: "var(--color-slate-500)", fontSize: 12 }} axisLine={{ stroke: "var(--border)" }} tickLine={{ stroke: "var(--border)" }} />
+                  <YAxis tick={{ fill: "var(--color-slate-500)", fontSize: 12 }} axisLine={{ stroke: "var(--border)" }} tickLine={{ stroke: "var(--border)" }} />
+                  <Tooltip {...CHART_TT} formatter={(v: number) => currency(Number(v))} />
+                  <Bar {...CHART_ANIM} dataKey="payroll" fill="var(--color-info-600)" radius={[6, 6, 0, 0]} name="Payroll Cost" />
                 </BarChart>
               </ResponsiveContainer>
             )}

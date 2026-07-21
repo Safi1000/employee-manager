@@ -34,6 +34,7 @@ import {
   Pie,
   Cell,
 } from "recharts";
+import { CHART_TT, CHART_GRID, CHART_LEGEND, CHART_ANIM, CHART_COLORS } from "../../lib/chart";
 import { hasPermission, useAuth } from "../../lib/auth";
 import { supabase, fetchAllRows } from "../../lib/supabase";
 import { useRegion, withRegion } from "../../lib/region";
@@ -46,11 +47,7 @@ type ExpensePieRow = { name: string; value: number };
 type ContractEndingRow = { id: string; code: string; client_name: string; end_date: string; days_left: number };
 type IncidentRow = { id: string; code: string; severity: string; category: string; occurred_at: string; status: string };
 
-const PIE_COLORS = [
-  "#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6",
-  "#ec4899", "#14b8a6", "#f97316", "#06b6d4", "#84cc16",
-  "#a855f7", "#64748b",
-];
+const PIE_COLORS = CHART_COLORS;
 
 const currency = (n: number) => `PKR ${Math.round(n).toLocaleString("en-PK")}`;
 const compact = (n: number) => {
@@ -677,12 +674,12 @@ export default function SuperAdminDashboard() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
                     <ResponsiveContainer width="100%" height={260}>
                       <PieChart>
-                        <Pie data={expensesPie} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} innerRadius={45} paddingAngle={2}>
+                        <Pie {...CHART_ANIM} cornerRadius={5} stroke="var(--card)" strokeWidth={2} data={expensesPie} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} innerRadius={45} paddingAngle={2}>
                           {expensesPie.map((_, i) => (
                             <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
                           ))}
                         </Pie>
-                        <Tooltip formatter={(value: number) => currency(value)} />
+                        <Tooltip {...CHART_TT} formatter={(value: number) => currency(value)} />
                       </PieChart>
                     </ResponsiveContainer>
                     <div className="space-y-2">
@@ -714,14 +711,14 @@ export default function SuperAdminDashboard() {
                   ) : (
                     <ResponsiveContainer width="100%" height={250}>
                       <LineChart data={attendanceTrend}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                        <XAxis dataKey="label" tick={{ fill: "#64748b", fontSize: 12 }} />
-                        <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
-                        <Tooltip />
-                        <Legend />
-                        <Line type="monotone" dataKey="present" stroke="var(--color-success-500)" strokeWidth={2} dot={{ fill: "var(--color-success-500)" }} name="Present" />
-                        <Line type="monotone" dataKey="absent" stroke="var(--color-danger-500)" strokeWidth={2} dot={{ fill: "var(--color-danger-500)" }} name="Absent" />
-                        <Line type="monotone" dataKey="leave" stroke="var(--color-warning-500)" strokeWidth={2} dot={{ fill: "var(--color-warning-500)" }} name="Leave" />
+                        <CartesianGrid {...CHART_GRID} />
+                        <XAxis dataKey="label" tick={{ fill: "var(--color-slate-500)", fontSize: 12 }} axisLine={{ stroke: "var(--border)" }} tickLine={{ stroke: "var(--border)" }} />
+                        <YAxis tick={{ fill: "var(--color-slate-500)", fontSize: 12 }} axisLine={{ stroke: "var(--border)" }} tickLine={{ stroke: "var(--border)" }} />
+                        <Tooltip {...CHART_TT} />
+                        <Legend {...CHART_LEGEND} />
+                        <Line {...CHART_ANIM} type="monotone" dataKey="present" stroke="var(--color-success-500)" strokeWidth={2} dot={{ fill: "var(--color-success-500)" }} name="Present" />
+                        <Line {...CHART_ANIM} type="monotone" dataKey="absent" stroke="var(--color-danger-500)" strokeWidth={2} dot={{ fill: "var(--color-danger-500)" }} name="Absent" />
+                        <Line {...CHART_ANIM} type="monotone" dataKey="leave" stroke="var(--color-warning-500)" strokeWidth={2} dot={{ fill: "var(--color-warning-500)" }} name="Leave" />
                       </LineChart>
                     </ResponsiveContainer>
                   )}
