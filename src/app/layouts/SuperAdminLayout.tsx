@@ -80,6 +80,7 @@ export default function SuperAdminLayout() {
   const EMPLOYEES: LinkDef = { to: "/super-admin/employees", label: "Employees", icon: UserCircle, perms: ["employees.view", "employees.edit"] };
   const ATTENDANCE: LinkDef = { to: "/super-admin/attendance", label: "Attendance", icon: Calendar, perms: ["attendance.view", "attendance.edit"] };
   const PAYROLL: LinkDef = { to: "/super-admin/payroll", label: "Payroll", icon: DollarSign, perms: ["payroll.view", "payroll.edit"] };
+  const PAYROLL_RUNS: LinkDef = { to: "/super-admin/payroll-runs", label: "Payroll Runs", icon: DollarSign, perms: ["payroll.view", "payroll.edit", "payroll.approve"] };
   const PERFORMANCE: LinkDef = { to: "/super-admin/performance", label: "Performance", icon: TrendingUp, perms: ["payroll.view", "performance.approve"] };
   const RELIEVER_ATT: LinkDef = { to: "/super-admin/relievers/attendance", label: "Attendance", icon: Calendar, perms: ["attendance.view", "attendance.edit"] };
   const RELIEVER_PAY: LinkDef = { to: "/super-admin/relievers/payroll", label: "Payroll", icon: DollarSign, perms: ["payroll.view", "payroll.edit"] };
@@ -101,6 +102,17 @@ export default function SuperAdminLayout() {
   const TASKS: LinkDef = { to: "/super-admin/tasks", label: "Tasks", icon: Trello };
   const USERS: LinkDef = { to: "/super-admin/users", label: "Users & Permissions", icon: Users, perms: ["users.manage"] };
   const SETTINGS: LinkDef = { to: "/super-admin/settings", label: "Settings", icon: SettingsIcon, perms: ["settings.view", "settings.edit"] };
+  // New back-office surfaces (Parts II–VII).
+  const TREASURY: LinkDef = { to: "/super-admin/treasury", label: "Treasury & Regional", icon: Landmark, perms: ["accounting.view", "reports.view", "cashflow.view"] };
+  const ASSETS: LinkDef = { to: "/super-admin/assets", label: "Assets & Vehicles", icon: Package, perms: ["inventory.view", "inventory.edit", "accounting.view"] };
+  const FIELD_OPS: LinkDef = { to: "/super-admin/field-ops", label: "Field Operations", icon: Siren, perms: ["roster.view", "roster.edit", "incidents.view", "attendance.view"] };
+  const COMPLIANCE_CASES: LinkDef = { to: "/super-admin/compliance-cases", label: "Compliance Cases", icon: ShieldAlert, perms: ["compliance.view", "compliance.edit"] };
+  const ALERTS: LinkDef = { to: "/super-admin/alerts", label: "Alerts", icon: Bell };
+  const GOVERNANCE: LinkDef = { to: "/super-admin/governance", label: "Governance", icon: Users2, perms: ["users.manage", "payroll.approve", "performance.approve", "accounting.edit"] };
+  const RECEIVABLES: LinkDef = { to: "/super-admin/receivables", label: "Receivables", icon: ReceiptText, perms: ["invoices.view", "invoices.edit", "accounting.view"] };
+  const OPENING_BAL: LinkDef = { to: "/super-admin/opening-balances", label: "Opening Balances", icon: BookOpen, perms: ["accounting.edit", "coa.view"] };
+  const REGIONAL_SCORECARD: LinkDef = { to: "/super-admin/regional-scorecard", label: "Regional Scorecard", icon: PieChart, perms: ["reports.view", "accounting.view"] };
+  const CLIENT_REL: LinkDef = { to: "/super-admin/client-relationships", label: "Client Relationships", icon: Users2, perms: ["clients.view", "clients.edit"] };
 
   // Build groups, dropping any link the user lacks permission for. Drop the
   // group entirely if it ends up with no visible children.
@@ -150,6 +162,8 @@ export default function SuperAdminLayout() {
     CLIENTS,
     CONTRACTS,
     INVOICES,
+    RECEIVABLES,
+    CLIENT_REL,
   ]);
   if (contractsClients) links.push(contractsClients);
 
@@ -158,6 +172,7 @@ export default function SuperAdminLayout() {
     EMPLOYEES,
     ATTENDANCE,
     PAYROLL,
+    PAYROLL_RUNS,
     PERFORMANCE,
     {
       _group: true,
@@ -172,17 +187,22 @@ export default function SuperAdminLayout() {
   // OPERATIONS
   const operations = buildGroup("Operations", "/super-admin/operations", [
     ROSTER,
+    FIELD_OPS,
     INCIDENTS,
     INVENTORY,
+    ASSETS,
   ]);
   if (operations) links.push(operations);
 
   // FINANCE
   const finance = buildGroup("Finance", "/super-admin/finance", [
     BANKS,
+    TREASURY,
+    OPENING_BAL,
     EXPENSES,
     CASHFLOW,
     REPORTS,
+    REGIONAL_SCORECARD,
     CHART_OF_ACCOUNTS,
     PERIOD_CLOSE,
   ]);
@@ -201,14 +221,17 @@ export default function SuperAdminLayout() {
   const compliance = buildGroup("Compliance", "/super-admin/comply", [
     LICENCES,
     COMPLIANCE,
+    COMPLIANCE_CASES,
     DOCUMENTS,
   ]);
   if (compliance) links.push(compliance);
 
   // ADMIN
   const admin = buildGroup("Admin", "/super-admin/admin", [
+    ALERTS,
     TASKS,
     USERS,
+    GOVERNANCE,
     AUDIT_LOG,
     SETTINGS,
   ]);

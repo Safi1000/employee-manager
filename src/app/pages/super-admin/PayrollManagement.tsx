@@ -1149,8 +1149,25 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
 
   const isCurrent = selectedPeriod === currentPeriod;
 
+  // §28.1: unmarked attendance-days silently earn zero. Surface them loudly and
+  // steer disbursement through the run pipeline (approve-then-disburse, gated on
+  // exceptions) rather than the one-click bulk buttons.
+  const totalUnmarkedDays = filtered.reduce(
+    (s, r) => s + Math.max(0, r.working_days - r.present_days - r.absent_days - r.leave_days),
+    0,
+  );
+
   return (
     <>
+      {totalUnmarkedDays > 0 && (
+        <div className="bg-danger-50 border-b border-danger-200 px-4 md:px-8 py-2 text-sm text-danger-800 flex items-center justify-between gap-3">
+          <span>
+            <strong>{totalUnmarkedDays.toLocaleString()}</strong> unmarked attendance-day
+            {totalUnmarkedDays === 1 ? "" : "s"} in this period — these silently earn zero. Do not bulk-disburse blind.
+          </span>
+          <a href="/super-admin/payroll-runs" className="underline whitespace-nowrap">Use the run pipeline →</a>
+        </div>
+      )}
       <BusyOverlay
         show={bulkSubmitting || bulkClearing}
         message={bulkSubmitting ? "Disbursing payslips…" : "Clearing payslips…"}
@@ -1375,7 +1392,6 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                       <th className="text-left px-4 py-3 text-xs text-slate-500">Base</th>
                       <th className="text-left px-4 py-3 text-xs text-slate-500">Net Salary</th>
                       <th className="text-left px-4 py-3 text-xs text-slate-500">Status</th>
-                      <th className="text-left px-4 py-3 text-xs text-slate-500">Disbursed</th>
                       <th className="text-left px-4 py-3 text-xs text-slate-500">Actions</th>
                     </tr>
                   </thead>
@@ -1453,14 +1469,30 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                               )}
                             </td>
                             <td className="px-4 py-3 text-xs text-slate-600">
-                              <div>
-                                <span className="text-success-700">P {row.present_days}</span>
-                                {" / "}
-                                <span className="text-danger-700">A {row.absent_days}</span>
-                                {" / "}
-                                <span className="text-warning-700">L {row.leave_days}</span>
-                              </div>
-                              <div className="text-slate-400">of {row.working_days} wd</div>
+                              {(() => {
+                                const unmarked = Math.max(
+                                  row.working_days - row.present_days - row.absent_days - row.leave_days,
+                                  0,
+                                );
+                                return (
+                                  <>
+                                    <div>
+                                      <span className="text-success-700">P {row.present_days}</span>
+                                      {" / "}
+                                      <span className="text-danger-700">A {row.absent_days}</span>
+                                      {" / "}
+                                      <span className="text-warning-700">L {row.leave_days}</span>
+                                      {unmarked > 0 && (
+                                        <>
+                                          {" / "}
+                                          <span className="text-danger-700 font-medium">{unmarked} unmarked</span>
+                                        </>
+                                      )}
+                                    </div>
+                                    <div className="text-slate-400">of {row.working_days} wd</div>
+                                  </>
+                                );
+                              })()}
                             </td>
                             <td className="px-4 py-3 text-sm text-slate-700">
                               PKR {row.base_salary.toLocaleString()}
@@ -1469,6 +1501,8 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                               PKR {row.net_salary.toLocaleString()}
                             </td>
                             <td className="px-4 py-3">
+                              {/* §28.1: Status + Disbursed merged into a single chip. The
+                                  status toggle stays interactive; a disbursed dot rides on it. */}
                               <button
                                 type="button"
                                 disabled={savingId === e.id}
@@ -1476,26 +1510,20 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                                   ev.stopPropagation();
                                   toggleStatus(row);
                                 }}
-                                className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-xs ${
                                   row.status === "Cleared"
                                     ? "bg-success-50 text-success-700 hover:bg-success-100"
                                     : "bg-warning-50 text-warning-700 hover:bg-warning-100"
                                 }`}
+                                title={row.disbursed ? "Disbursed" : "Not disbursed"}
                               >
-                                {row.status}
+                                <span
+                                  className={`w-1.5 h-1.5 rounded-full ${
+                                    row.disbursed ? "bg-success-600" : "bg-slate-300"
+                                  }`}
+                                />
+                                {row.status}{row.disbursed ? " · Disbursed" : ""}
                               </button>
-                            </td>
-                            <td className="px-4 py-3">
-                              {/* Status only — disbursing is done from the side panel (item 2). */}
-                              <span
-                                className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
-                                  row.disbursed
-                                    ? "bg-success-50 text-success-700"
-                                    : "bg-slate-100 text-slate-600"
-                                }`}
-                              >
-                                {row.disbursed ? "Disbursed" : "Not Disbursed"}
-                              </span>
                             </td>
                             <td className="px-4 py-3">
                               <Button

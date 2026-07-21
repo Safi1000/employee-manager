@@ -164,6 +164,8 @@ type FormState = {
   insurance_provider: string;
   insurance_number: string;
   remarks: string;
+  // Physical document copies on file → complete profile.
+  physical_copy_present: boolean;
   // §12 recruitment pipeline
   referral_source: string;
   referred_by_name: string;
@@ -217,6 +219,7 @@ const emptyPaperFormFields = {
   insurance_provider: "",
   insurance_number: "",
   remarks: "",
+  physical_copy_present: false,
   referral_source: "",
   referred_by_name: "",
   lifecycle_intake: "" as "" | "applicant" | "waitlisted",
@@ -434,6 +437,31 @@ function renderPaperFormSections(f: FormState, setF: (f: FormState) => void) {
           {txt("referred_by_name", "Referred By")}
         </div>
       </div>
+
+      <div className="pt-4 border-t border-slate-200">
+        <h4 className="text-sm text-slate-900 mb-4">Documents</h4>
+        <label
+          className={`flex items-center gap-2 text-sm rounded-md border p-3 cursor-pointer ${
+            f.physical_copy_present
+              ? "bg-success-50 border-success-200 text-success-800"
+              : "bg-danger-50 border-danger-200 text-danger-800"
+          }`}
+        >
+          <input
+            type="checkbox"
+            checked={f.physical_copy_present}
+            onChange={(e) => setF({ ...f, physical_copy_present: e.target.checked })}
+          />
+          <span>
+            Physical Copy Present
+            <span className="block text-xs opacity-80">
+              {f.physical_copy_present
+                ? "Profile marked complete."
+                : "Profile is incomplete until the physical copies are on file."}
+            </span>
+          </span>
+        </label>
+      </div>
     </>
   );
 }
@@ -468,6 +496,7 @@ const paperFormPayload = (f: FormState) => ({
   next_of_kin_cnic: f.next_of_kin_cnic.trim() || null,
   next_of_kin_contact: f.next_of_kin_contact.trim() || null,
   is_ex_serviceman: f.is_ex_serviceman,
+  physical_copy_present: f.physical_copy_present,
   army_number: f.army_number.trim() || null,
   service_unit: f.service_unit.trim() || null,
   service_rank: f.service_rank.trim() || null,
@@ -533,6 +562,8 @@ export default function EmployeeManagement() {
   const [categoryFilter, setCategoryFilter] = useState<"all" | EmployeeCategory>("all");
   const [shiftFilter, setShiftFilter] = useState<"all" | "day" | "night" | "evening">("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  // Profile completeness (physical copies on file) filter.
+  const [completenessFilter, setCompletenessFilter] = useState<"all" | "complete" | "incomplete">("all");
   // §12 recruitment pipeline / lifecycle-state filter.
   const [lifecycleFilter, setLifecycleFilter] = useState<"all" | EmployeeLifecycleState>("all");
   // Quick Active / Inactive tab split (Inactive = anything not currently Active).
@@ -818,12 +849,14 @@ export default function EmployeeManagement() {
       if (categoryFilter !== "all" && (e.category ?? "client") !== categoryFilter) return false;
       if (shiftFilter !== "all" && e.shift !== shiftFilter) return false;
       if (statusFilter !== "all" && e.status !== statusFilter) return false;
+      if (completenessFilter === "complete" && !e.physical_copy_present) return false;
+      if (completenessFilter === "incomplete" && e.physical_copy_present) return false;
       if (lifecycleFilter !== "all" && e.lifecycle_state !== lifecycleFilter) return false;
       if (empTab === "active" && e.status !== "Active") return false;
       if (empTab === "inactive" && e.status === "Active") return false;
       return true;
     });
-  }, [employees, search, locationFilter, clientFilter, branchFilter, categoryFilter, shiftFilter, statusFilter, lifecycleFilter, empTab, branches]);
+  }, [employees, search, locationFilter, clientFilter, branchFilter, categoryFilter, shiftFilter, statusFilter, completenessFilter, lifecycleFilter, empTab, branches]);
 
   type EmpRef = { id: string; employee_code: string; full_name: string };
 
@@ -1266,6 +1299,7 @@ export default function EmployeeManagement() {
       next_of_kin_cnic: emp.next_of_kin_cnic ?? "",
       next_of_kin_contact: emp.next_of_kin_contact ?? "",
       is_ex_serviceman: emp.is_ex_serviceman ?? false,
+      physical_copy_present: emp.physical_copy_present ?? false,
       army_number: emp.army_number ?? "",
       service_unit: emp.service_unit ?? "",
       service_rank: emp.service_rank ?? "",
@@ -1516,6 +1550,16 @@ export default function EmployeeManagement() {
                 <option value="Inactive">Inactive</option>
               </select>
               <select
+                value={completenessFilter}
+                onChange={(e) => setCompletenessFilter(e.target.value as "all" | "complete" | "incomplete")}
+                className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                title="Profile completeness"
+              >
+                <option value="all">All Profiles</option>
+                <option value="complete">Complete</option>
+                <option value="incomplete">Incomplete</option>
+              </select>
+              <select
                 value={lifecycleFilter}
                 onChange={(e) => setLifecycleFilter(e.target.value as "all" | EmployeeLifecycleState)}
                 className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -1583,23 +1627,31 @@ export default function EmployeeManagement() {
                 )}
                 {!loading &&
                   filtered.map((employee) => {
-                    const noDocs = (employee.doc_count ?? 0) === 0;
+                    // Profile completeness is driven by the "Physical Copy Present"
+                    // flag: incomplete → red row, complete → green row.
+                    const incomplete = !employee.physical_copy_present;
                     return (
                     <tr
                       key={employee.id}
-                      className={`group transition-colors ${noDocs ? "bg-danger-50 hover:bg-danger-100" : "hover:bg-slate-50"}`}
-                      title={noDocs ? "No documents uploaded for this employee" : undefined}
+                      className={`group transition-colors ${
+                        incomplete ? "bg-danger-50 hover:bg-danger-100" : "bg-success-50 hover:bg-success-100"
+                      }`}
+                      title={incomplete ? "Incomplete profile — physical document copies not on file" : "Complete profile"}
                     >
                       <td className="px-6 py-4 text-sm font-mono">
-                        <span className={noDocs ? "text-danger-700" : "text-slate-600"}>{employee.employee_code}</span>
+                        <span className={incomplete ? "text-danger-700" : "text-slate-600"}>{employee.employee_code}</span>
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-900">
                         <div className="flex items-center gap-2">
                           {employee.full_name}
-                          {noDocs && (
+                          {incomplete ? (
                             <span className="inline-flex items-center text-[10px] uppercase tracking-wider text-danger-700 bg-danger-100 px-1.5 py-0.5 rounded">
                               <AlertCircle className="w-3 h-3 mr-0.5" strokeWidth={2} />
-                              No docs
+                              Incomplete
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center text-[10px] uppercase tracking-wider text-success-700 bg-success-100 px-1.5 py-0.5 rounded">
+                              Complete
                             </span>
                           )}
                         </div>
@@ -1646,9 +1698,9 @@ export default function EmployeeManagement() {
                       </td>
                       <td
                         className={`px-6 py-4 flex gap-2 sticky right-0 z-10 border-l border-slate-200 ${
-                          noDocs
+                          incomplete
                             ? "bg-danger-50 group-hover:bg-danger-100"
-                            : "bg-white group-hover:bg-slate-50"
+                            : "bg-success-50 group-hover:bg-success-100"
                         }`}
                       >
                         <Button variant="ghost" size="sm" onClick={() => openView(employee)}>

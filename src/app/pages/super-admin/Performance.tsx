@@ -234,8 +234,8 @@ export default function Performance() {
       {tab === "pools" && (
         <div className="space-y-4">
           <div className="p-3 bg-warning-50 border border-warning-200 rounded-md text-sm text-warning-800">
-            Provisional: regional profit is computed from region-tagged ledger lines <strong>before</strong> head-office cost
-            allocation (§6 not yet built), so pool sizes may be overstated.
+            Regional profit is stated <strong>after</strong> head-office cost allocation. Run HO cost allocation for the period
+            (Treasury → Regional P&L) before sizing pools so profit isn't overstated.
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <label className="text-sm text-slate-600">Year</label>

@@ -1021,11 +1021,22 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
               <p className="text-2xl text-warning-700">{stats.l}</p>
               <p className="text-[11px] text-slate-400 mt-1">on {date}</p>
             </div>
-            <div className="bg-white rounded-lg border border-slate-200 border-l-4 border-l-slate-400 p-4">
+            {/* §28.2: unmarked is the figure that silently underpays — make it
+                dominant (red) the moment any post is still unmarked for the day. */}
+            <button
+              type="button"
+              onClick={() => setUnmarkedOnly((v) => !v)}
+              title="Show only unmarked"
+              className={`text-left rounded-lg border p-4 transition-colors ${
+                stats.unm > 0
+                  ? "bg-danger-50 border-danger-200 border-l-4 border-l-danger-500 hover:bg-danger-100"
+                  : "bg-white border-slate-200 border-l-4 border-l-success-500"
+              } ${unmarkedOnly ? "ring-2 ring-danger-400" : ""}`}
+            >
               <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Unmarked</p>
-              <p className="text-2xl text-slate-700">{stats.unm}</p>
-              <p className="text-[11px] text-slate-400 mt-1">{filteredEmployees.length} in filter</p>
-            </div>
+              <p className={`text-2xl ${stats.unm > 0 ? "text-danger-700 font-semibold" : "text-success-700"}`}>{stats.unm}</p>
+              <p className="text-[11px] text-slate-400 mt-1">{filteredEmployees.length} in filter · click to filter</p>
+            </button>
           </div>
         ) : (
           <div className="bg-white rounded-lg border border-slate-200 mb-6 p-4 md:p-6">

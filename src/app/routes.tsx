@@ -33,6 +33,17 @@ import AuditLog from "./pages/super-admin/AuditLog";
 import Partners from "./pages/super-admin/Partners";
 import ProfitDistribution from "./pages/super-admin/ProfitDistribution";
 import ProjectFinancing from "./pages/super-admin/ProjectFinancing";
+import Treasury from "./pages/super-admin/Treasury";
+import PayrollRuns from "./pages/super-admin/PayrollRuns";
+import FieldOps from "./pages/super-admin/FieldOps";
+import ComplianceCases from "./pages/super-admin/ComplianceCases";
+import Assets from "./pages/super-admin/Assets";
+import Alerts from "./pages/super-admin/Alerts";
+import Governance from "./pages/super-admin/Governance";
+import Receivables from "./pages/super-admin/Receivables";
+import OpeningBalances from "./pages/super-admin/OpeningBalances";
+import RegionalScorecard from "./pages/super-admin/RegionalScorecard";
+import ClientRelationships from "./pages/super-admin/ClientRelationships";
 
 import Companies from "./pages/super-super-admin/Companies";
 import CompanyDetail from "./pages/super-super-admin/CompanyDetail";
@@ -77,6 +88,7 @@ export const router = createBrowserRouter([
       { path: "employees", element: guard(["employees.view", "employees.edit"], <EmployeeManagement />) },
       { path: "attendance", element: guard(["attendance.view", "attendance.edit"], <AttendanceManagement />) },
       { path: "payroll", element: guard(["payroll.view", "payroll.edit"], <PayrollManagement />) },
+      { path: "payroll-runs", element: guard(["payroll.view", "payroll.edit", "payroll.approve"], <PayrollRuns />) },
       { path: "performance", element: guard(["payroll.view", "performance.approve"], <Performance />) },
       { path: "relievers/attendance", element: guard(["attendance.view", "attendance.edit"], <AttendanceManagement relieversOnly />) },
       { path: "relievers/payroll", element: guard(["payroll.view", "payroll.edit"], <PayrollManagement relieversOnly />) },
@@ -85,6 +97,16 @@ export const router = createBrowserRouter([
       { path: "expenses", element: guard(["expenses.view", "expenses.edit"], <Expenses />) },
       { path: "invoices", element: guard(["invoices.view", "invoices.edit"], <Invoices />) },
       { path: "cashflow", element: guard(["cashflow.view"], <Cashflow />) },
+      { path: "treasury", element: guard(["accounting.view", "reports.view", "cashflow.view"], <Treasury />) },
+      { path: "receivables", element: guard(["invoices.view", "invoices.edit", "accounting.view"], <Receivables />) },
+      { path: "opening-balances", element: guard(["accounting.edit", "coa.view"], <OpeningBalances />) },
+      { path: "regional-scorecard", element: guard(["reports.view", "accounting.view"], <RegionalScorecard />) },
+      { path: "client-relationships", element: guard(["clients.view", "clients.edit"], <ClientRelationships />) },
+      { path: "field-ops", element: guard(["roster.view", "roster.edit", "incidents.view", "attendance.view"], <FieldOps />) },
+      { path: "compliance-cases", element: guard(["compliance.view", "compliance.edit"], <ComplianceCases />) },
+      { path: "assets", element: guard(["inventory.view", "inventory.edit", "accounting.view"], <Assets />) },
+      { path: "alerts", element: <Alerts /> },
+      { path: "governance", element: guard(["users.manage", "payroll.approve", "performance.approve", "accounting.edit"], <Governance />) },
       { path: "partners", element: guard(["accounting.view", "accounting.edit"], <Partners />) },
       // Cash Custody moved into Banks & Ledgers as a 4th tab; redirect the old route.
       { path: "cash-custody", element: <Navigate to="/super-admin/accounting?tab=cash-custody" replace /> },

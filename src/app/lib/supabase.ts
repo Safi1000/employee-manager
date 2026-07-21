@@ -885,6 +885,7 @@ export type Employee = {
   exit_date: string | null;
   blacklisted: boolean;
   blacklist_reason: string | null;
+  physical_copy_present: boolean;
   referral_source: string | null;
   referred_by_employee_id: string | null;
   referred_by_name: string | null;

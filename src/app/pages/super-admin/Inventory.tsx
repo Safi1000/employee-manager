@@ -547,6 +547,7 @@ export default function Inventory() {
       />
 
       <div className="flex-1 overflow-y-auto p-8">
+        <LowStockBanner />
         {error && (
           <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
@@ -1542,6 +1543,37 @@ function SummaryCell({
         {label}
       </p>
       <p className={`text-2xl ${colour}`}>{value}</p>
+    </div>
+  );
+}
+
+// §20 reorder signal: items at or below their reorder level. Self-contained so
+// it doesn't disturb the main typed item mapping.
+function LowStockBanner() {
+  const [low, setLow] = useState<Array<{ id: string; item_type: string; quantity: number; reorder_level: number }>>([]);
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from("inventory_items")
+        .select("id, item_type, quantity, reorder_level")
+        .not("reorder_level", "is", null);
+      const rows = ((data ?? []) as any[]).filter(
+        (r) => r.reorder_level != null && Number(r.quantity ?? 0) <= Number(r.reorder_level),
+      );
+      setLow(rows as any);
+    })();
+  }, []);
+  if (low.length === 0) return null;
+  return (
+    <div className="mb-4 p-3 bg-warning-50 text-warning-800 border border-warning-200 rounded-md text-sm">
+      <div className="font-medium mb-1">{low.length} item type(s) at or below reorder level</div>
+      <div className="flex flex-wrap gap-2">
+        {low.map((r) => (
+          <span key={r.id} className="px-2 py-0.5 rounded-full bg-white border border-warning-200 text-xs">
+            {r.item_type}: {r.quantity} ≤ {r.reorder_level}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
