@@ -1090,40 +1090,40 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
               </div>
             </div>
 
-            <div className="grid grid-cols-7 gap-1 text-[10px] uppercase tracking-wider text-slate-500 mb-1">
+            <div className="grid grid-cols-7 gap-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground mb-1.5">
               {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
                 <div key={d} className="text-center py-1">{d}</div>
               ))}
             </div>
 
             {viewLoading ? (
-              <div className="flex items-center gap-2 text-slate-500 py-6">
+              <div className="flex items-center gap-2 text-muted-foreground py-6">
                 <Loader2 className="w-4 h-4 animate-spin" /> Loading…
               </div>
             ) : (
-              <div className="grid grid-cols-7 gap-1">
+              <div className="grid grid-cols-7 gap-1.5">
                 {viewCalendarCells.map((c, i) => {
                   if (!c.date) {
-                    return <div key={i} className="h-12 rounded bg-slate-50/50" />;
+                    return <div key={i} className="h-14 rounded-lg bg-muted/40" />;
                   }
                   const status = viewRecords.get(c.date);
                   const tone =
                     status === "Present"
-                      ? "bg-success-100 text-success-900 border-success-300"
+                      ? "bg-success-50 text-success-700 dark:text-success-500 border-success-200"
                       : status === "Absent"
-                        ? "bg-danger-100 text-danger-900 border-danger-300"
+                        ? "bg-danger-50 text-danger-700 dark:text-danger-500 border-danger-200"
                         : status === "Leave"
-                          ? "bg-warning-100 text-warning-900 border-warning-300"
-                          : "bg-white text-slate-500 border-slate-200";
+                          ? "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200"
+                          : "bg-card text-muted-foreground border-border";
                   return (
                     <div
                       key={c.date}
-                      className={`h-12 rounded border text-left p-1.5 ${tone}`}
+                      className={`h-14 rounded-lg border p-1.5 flex flex-col justify-between transition-colors ${tone}`}
                       title={status ? `${c.date}: ${status}` : `${c.date}: Unmarked`}
                     >
-                      <div className="text-xs">{c.day}</div>
+                      <div className="text-xs font-medium tabular-nums">{c.day}</div>
                       {status && (
-                        <div className="text-[9px] uppercase tracking-wider opacity-80">
+                        <div className="text-[9px] font-bold uppercase tracking-wider self-end">
                           {status[0]}
                         </div>
                       )}
@@ -1132,8 +1132,8 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                 })}
               </div>
             )}
-            <p className="text-[11px] text-slate-500 mt-2">
-              View-only. P = Present, A = Absent, L = Leave. White = unmarked.
+            <p className="text-[11px] text-muted-foreground mt-2.5">
+              View-only. P = Present, A = Absent, L = Leave.
             </p>
           </div>
         )}
@@ -1917,32 +1917,32 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                 onMouseUp={endBulkDrag}
                 onMouseLeave={endBulkDrag}
               >
-                <div className="grid grid-cols-7 gap-1 text-[10px] uppercase tracking-wider text-slate-500 mb-1">
+                <div className="grid grid-cols-7 gap-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground mb-1.5">
                   {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
                     <div key={d} className="text-center py-1">{d}</div>
                   ))}
                 </div>
                 {bulkLoading ? (
-                  <div className="flex items-center gap-2 text-slate-500 py-6">
+                  <div className="flex items-center gap-2 text-muted-foreground py-6">
                     <Loader2 className="w-4 h-4 animate-spin" /> Loading…
                   </div>
                 ) : (
-                  <div className="grid grid-cols-7 gap-1">
+                  <div className="grid grid-cols-7 gap-1.5">
                     {bulkCalendarCells.map((c, i) => {
                       if (!c.date) {
-                        return <div key={i} className="h-12 rounded bg-slate-50/50" />;
+                        return <div key={i} className="h-14 rounded-lg bg-muted/40" />;
                       }
                       const status = bulkExisting.get(c.date);
                       const selected = bulkSelected.has(c.date);
                       const statusClass =
                         status === "Present"
-                          ? "bg-success-50 text-success-800 border-success-200"
+                          ? "bg-success-50 text-success-700 dark:text-success-500 border-success-200"
                           : status === "Absent"
-                            ? "bg-danger-50 text-danger-800 border-danger-200"
+                            ? "bg-danger-50 text-danger-700 dark:text-danger-500 border-danger-200"
                             : status === "Leave"
-                              ? "bg-warning-50 text-warning-800 border-warning-200"
-                              : "bg-white text-slate-700 border-slate-200";
-                      const ring = selected ? "ring-2 ring-slate-900 ring-offset-1" : "";
+                              ? "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200"
+                              : "bg-card text-foreground border-border hover:border-brand-500/50";
+                      const ring = selected ? "ring-2 ring-brand-500 ring-offset-2 ring-offset-card border-brand-500" : "";
                       return (
                         <button
                           key={c.date}
@@ -1952,12 +1952,12 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                             startBulkDrag(c.date!);
                           }}
                           onMouseEnter={() => extendBulkDrag(c.date!)}
-                          className={`h-12 rounded border text-left p-1.5 transition-colors ${statusClass} ${ring}`}
+                          className={`h-14 rounded-lg border p-1.5 flex flex-col justify-between text-left transition-all ${statusClass} ${ring}`}
                           title={status ? `Currently: ${status}` : "Unmarked"}
                         >
-                          <div className="text-xs">{c.day}</div>
+                          <div className="text-xs font-medium tabular-nums">{c.day}</div>
                           {status && (
-                            <div className="text-[9px] uppercase tracking-wider opacity-70">
+                            <div className="text-[9px] font-bold uppercase tracking-wider self-end">
                               {status[0]}
                             </div>
                           )}
@@ -1966,7 +1966,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                     })}
                   </div>
                 )}
-                <p className="text-[11px] text-slate-500 mt-2">
+                <p className="text-[11px] text-muted-foreground mt-2.5">
                   Tap a date to toggle, or press and drag to select a whole range (everything between the
                   start and where you drag fills in automatically). P = Present, A = Absent, L = Leave.
                 </p>

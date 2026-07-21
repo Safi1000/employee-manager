@@ -230,50 +230,51 @@ export default function Companies() {
             <p className="text-slate-500">No companies yet. Create your first tenant above.</p>
           </div>
         ) : (
-          <div className="bg-white border border-slate-200 rounded-lg overflow-x-auto">
+          <div className="bg-card border border-border rounded-xl overflow-x-auto shadow-sm">
             <table className="w-full min-w-[720px]">
-              <thead className="bg-slate-50 border-b border-slate-200">
+              <thead className="bg-slate-50 border-b border-border">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs uppercase tracking-wider text-slate-500">Company</th>
-                  <th className="px-6 py-3 text-left text-xs uppercase tracking-wider text-slate-500">Contact</th>
-                  <th className="px-6 py-3 text-left text-xs uppercase tracking-wider text-slate-500">Users</th>
-                  <th className="px-6 py-3 text-left text-xs uppercase tracking-wider text-slate-500">Employees</th>
-                  <th className="px-6 py-3 text-left text-xs uppercase tracking-wider text-slate-500">Subscription</th>
-                  <th className="px-6 py-3 text-left text-xs uppercase tracking-wider text-slate-500">Status</th>
-                  <th className="px-6 py-3 text-right text-xs uppercase tracking-wider text-slate-500">Actions</th>
+                  <th className="px-6 py-3.5 text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Company</th>
+                  <th className="px-6 py-3.5 text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Contact</th>
+                  <th className="px-6 py-3.5 text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Users</th>
+                  <th className="px-6 py-3.5 text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Employees</th>
+                  <th className="px-6 py-3.5 text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Subscription</th>
+                  <th className="px-6 py-3.5 text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Status</th>
+                  <th className="px-6 py-3.5 text-right text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody className="divide-y divide-border">
                 {companies.map((c) => (
-                  <tr key={c.id} className="hover:bg-slate-50">
+                  <tr key={c.id} className="hover:bg-accent/60 transition-colors">
                     <td className="px-6 py-4">
-                      <div className="text-sm text-slate-900">{c.name}</div>
-                      <div className="text-xs text-slate-500 font-mono">{c.id.slice(0, 8)}</div>
+                      <div className="text-sm font-medium text-foreground">{c.name}</div>
+                      <div className="text-xs text-muted-foreground font-mono">{c.id.slice(0, 8)}</div>
                     </td>
-                    <td className="px-6 py-4 text-sm text-slate-600">
+                    <td className="px-6 py-4 text-sm text-muted-foreground">
                       {c.contact_email ?? "—"}
-                      {c.contact_phone && <div className="text-xs text-slate-500">{c.contact_phone}</div>}
+                      {c.contact_phone && <div className="text-xs text-muted-foreground">{c.contact_phone}</div>}
                     </td>
-                    <td className="px-6 py-4 text-sm text-slate-600">{c.user_count}</td>
-                    <td className="px-6 py-4 text-sm text-slate-600">{c.employee_count}</td>
+                    <td className="px-6 py-4 text-sm tabular-nums text-foreground">{c.user_count}</td>
+                    <td className="px-6 py-4 text-sm tabular-nums text-foreground">{c.employee_count}</td>
                     <td className="px-6 py-4 text-sm">
                       {c.subscription_expires_at == null ? (
-                        <span className="text-xs text-slate-500">Not set</span>
+                        <span className="text-xs text-muted-foreground">Not set</span>
                       ) : (() => {
                         const remaining = daysBetween(todayStr(), c.subscription_expires_at);
                         const tone =
-                          remaining < 0 ? "bg-danger-50 text-danger-700"
-                          : remaining <= 7 ? "bg-warning-50 text-warning-700"
-                          : "bg-success-50 text-success-700";
+                          remaining < 0 ? "bg-danger-50 text-danger-700 dark:text-danger-500 border-danger-200"
+                          : remaining <= 7 ? "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200"
+                          : "bg-success-50 text-success-700 dark:text-success-500 border-success-200";
                         return (
-                          <span className={`text-xs px-2 py-1 rounded ${tone}`}>
+                          <span className={`inline-flex text-xs font-medium px-2 py-1 rounded-md border ${tone}`}>
                             {remaining < 0 ? `Expired ${-remaining}d ago` : `${remaining} day${remaining === 1 ? "" : "s"} left`}
                           </span>
                         );
                       })()}
                     </td>
                     <td className="px-6 py-4">
-                      <span className={`text-xs px-2 py-1 rounded ${c.active ? "bg-success-50 text-success-700" : "bg-danger-50 text-danger-700"}`}>
+                      <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md border ${c.active ? "bg-success-50 text-success-700 dark:text-success-500 border-success-200" : "bg-danger-50 text-danger-700 dark:text-danger-500 border-danger-200"}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${c.active ? "bg-success-500" : "bg-danger-500"}`} />
                         {c.active ? "Active" : "Suspended"}
                       </span>
                     </td>
