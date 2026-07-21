@@ -339,7 +339,7 @@ export default function PeriodClose() {
                         ) : (
                           <button
                             onClick={() => askClose(row)}
-                            className="text-xs px-2 py-1 rounded bg-brand-600 text-white hover:bg-brand-700"
+                            className="text-xs px-2 py-1 rounded bg-brand-600 text-[#fff] hover:bg-brand-700"
                           >
                             Close Month
                           </button>

@@ -1,136 +1,216 @@
 @custom-variant dark (&:is(.dark *));
 
 /* =========================================================================
- * Semantic palette (Tailwind v4 tokens — usable as bg-success-50, etc.).
- * Declared inside @theme so they become real utility classes (not just CSS
- * vars). These map to Tailwind's stock palettes so existing screenshots /
- * mocks keep the same look while the codebase moves to domain-meaningful
- * names.
- *   success → emerald   (cleared, disbursed, paid, received)
- *   danger  → red       (overdue, failed, destructive, deletes)
- *   warning → amber     (pending, due soon, attention)
- *   info    → sky       (informational badges, neutral status)
- *   brand   → blue      (brand, sidebar active, primary buttons)
- * Use 50/200 for tints + borders, 600/700 for text + icons.
+ * BASTION theme — "command-center ledger"
+ * Warm obsidian + engraved-currency palette. Amber-gold primary, emerald
+ * (money-in / cleared), rust (money-out / overdue), steel (info).
+ *
+ * How dark mode works here without touching 40+ pages:
+ *   The app was written almost entirely with `slate-*` neutrals and `white`
+ *   surfaces. We remap those palettes to CSS variables and INVERT the neutral
+ *   ramp under `.dark` (slate-900 text becomes near-white, slate-50 fills
+ *   become near-black, borders stay subtle). Semantic tints (`*-50/100/200`)
+ *   are derived from the 500 shade mixed into the current surface via
+ *   color-mix, so they auto-darken in dark mode too.
+ *
+ * Semantic palettes:
+ *   brand   → amber   (identity, primary, sidebar active, focus ring)
+ *   success → emerald (cleared, disbursed, paid, received, present)
+ *   danger  → rust    (overdue, failed, absent, destructive)
+ *   warning → amber   (pending, due soon, attention)
+ *   info    → steel   (draft, scheduled, neutral status)
  * ========================================================================= */
+
 @theme {
-  --color-success-50:  #ecfdf5;
-  --color-success-100: #d1fae5;
-  --color-success-200: #a7f3d0;
-  --color-success-500: #10b981;
-  --color-success-600: #059669;
-  --color-success-700: #047857;
+  /* fonts */
+  --font-sans: "Hanken Grotesk", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+  --font-display: "Bricolage Grotesque", "Hanken Grotesk", sans-serif;
+  --default-font-family: var(--font-sans);
 
-  --color-danger-50:  #fef2f2;
-  --color-danger-100: #fee2e2;
-  --color-danger-200: #fecaca;
-  --color-danger-500: #ef4444;
-  --color-danger-600: #dc2626;
-  --color-danger-700: #b91c1c;
+  /* accent shades (500 = base, 600 = hover/icon, 700 = deep text). The
+   * 50/100/200 tints are generated below via color-mix so they follow the
+   * surface into dark mode. */
+  --color-brand-500: #e9a73c;
+  --color-brand-600: #cf8f28;
+  --color-brand-700: #9a6414;
 
-  --color-warning-50:  #fffbeb;
-  --color-warning-100: #fef3c7;
-  --color-warning-200: #fde68a;
-  --color-warning-500: #f59e0b;
-  --color-warning-600: #d97706;
-  --color-warning-700: #b45309;
+  --color-success-500: #4faa84;
+  --color-success-600: #3f8e6d;
+  --color-success-700: #2f6f55;
 
-  --color-info-50:  #f0f9ff;
-  --color-info-100: #e0f2fe;
-  --color-info-200: #bae6fd;
-  --color-info-500: #0ea5e9;
-  --color-info-600: #0284c7;
-  --color-info-700: #0369a1;
+  --color-danger-500: #d4674a;
+  --color-danger-600: #bb5238;
+  --color-danger-700: #97402b;
 
-  /* Brand = emerald green, matching the reference NPO Finance / FAASINOVA
-   * design where the sidebar active state, primary buttons, and section
-   * accents are green. Visually overlaps with `success` by design — they're
-   * semantically distinct (brand = identity, success = positive status) but
-   * use the same palette so the UI reads as a single coherent green system. */
-  --color-brand-50:  #ecfdf5;
-  --color-brand-100: #d1fae5;
-  --color-brand-200: #a7f3d0;
-  --color-brand-500: #10b981;
-  --color-brand-600: #059669;
-  --color-brand-700: #047857;
+  --color-warning-500: #e9a73c;
+  --color-warning-600: #cf8f28;
+  --color-warning-700: #9a6414;
+
+  --color-info-500: #5f86a8;
+  --color-info-600: #4d6f8d;
+  --color-info-700: #3c5670;
 }
 
+/* Neutral ramp + surface + tint generation. `inline` so utilities resolve to
+ * these vars directly, letting `.dark` overrides cascade at use-time. */
+@theme inline {
+  /* surfaces (map `white` → card surface so `bg-white` follows the theme) */
+  --color-white: var(--surface-1);
+
+  /* warm neutral ramp (replaces stock slate everywhere) */
+  --color-slate-50:  var(--n-50);
+  --color-slate-100: var(--n-100);
+  --color-slate-200: var(--n-200);
+  --color-slate-300: var(--n-300);
+  --color-slate-400: var(--n-400);
+  --color-slate-500: var(--n-500);
+  --color-slate-600: var(--n-600);
+  --color-slate-700: var(--n-700);
+  --color-slate-800: var(--n-800);
+  --color-slate-900: var(--n-900);
+  --color-slate-950: var(--n-950);
+  /* a few pages reach for gray-*; keep it aligned */
+  --color-gray-50:  var(--n-50);
+  --color-gray-100: var(--n-100);
+  --color-gray-200: var(--n-200);
+  --color-gray-300: var(--n-300);
+  --color-gray-400: var(--n-400);
+  --color-gray-500: var(--n-500);
+  --color-gray-600: var(--n-600);
+  --color-gray-700: var(--n-700);
+  --color-gray-800: var(--n-800);
+  --color-gray-900: var(--n-900);
+
+  /* tints derived from the accent into the current surface → auto dark-aware */
+  --color-brand-50:   color-mix(in srgb, var(--color-brand-500) 14%, var(--surface-1));
+  --color-brand-100:  color-mix(in srgb, var(--color-brand-500) 26%, var(--surface-1));
+  --color-brand-200:  color-mix(in srgb, var(--color-brand-500) 42%, var(--surface-1));
+  --color-success-50: color-mix(in srgb, var(--color-success-500) 14%, var(--surface-1));
+  --color-success-100:color-mix(in srgb, var(--color-success-500) 26%, var(--surface-1));
+  --color-success-200:color-mix(in srgb, var(--color-success-500) 42%, var(--surface-1));
+  --color-danger-50:  color-mix(in srgb, var(--color-danger-500) 14%, var(--surface-1));
+  --color-danger-100: color-mix(in srgb, var(--color-danger-500) 26%, var(--surface-1));
+  --color-danger-200: color-mix(in srgb, var(--color-danger-500) 42%, var(--surface-1));
+  --color-warning-50: color-mix(in srgb, var(--color-warning-500) 14%, var(--surface-1));
+  --color-warning-100:color-mix(in srgb, var(--color-warning-500) 26%, var(--surface-1));
+  --color-warning-200:color-mix(in srgb, var(--color-warning-500) 42%, var(--surface-1));
+  --color-info-50:    color-mix(in srgb, var(--color-info-500) 14%, var(--surface-1));
+  --color-info-100:   color-mix(in srgb, var(--color-info-500) 26%, var(--surface-1));
+  --color-info-200:   color-mix(in srgb, var(--color-info-500) 42%, var(--surface-1));
+}
+
+/* ---- LIGHT (default): warm paper ---- */
 :root {
   --font-size: 16px;
-  --background: #ffffff;
-  --foreground: oklch(0.145 0 0);
-  --card: #ffffff;
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: #030213;
-  --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.95 0.0058 264.53);
-  --secondary-foreground: #030213;
-  --muted: #ececf0;
-  --muted-foreground: #717182;
-  --accent: #e9ebef;
-  --accent-foreground: #030213;
-  --destructive: #d4183d;
-  --destructive-foreground: #ffffff;
-  --border: rgba(0, 0, 0, 0.1);
-  --input: transparent;
-  --input-background: #f3f3f5;
-  --switch-background: #cbced4;
-  --font-weight-medium: 500;
+  --font-weight-medium: 600;
   --font-weight-normal: 400;
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: #030213;
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+
+  /* warm neutral ramp: light → dark */
+  --n-50:  #f6f2e9;
+  --n-100: #efe8d9;
+  --n-200: #e3dcc9;
+  --n-300: #d2c9b2;
+  --n-400: #ada584;
+  --n-500: #837c67;
+  --n-600: #605a49;
+  --n-700: #46423a;
+  --n-800: #2b2920;
+  --n-900: #191a10;
+  --n-950: #0e0f08;
+  --surface-1: #fdfaf3;
+
+  --background: #f3eee2;
+  --foreground: #191a10;
+  --card: #fdfaf3;
+  --card-foreground: #191a10;
+  --popover: #fdfaf3;
+  --popover-foreground: #191a10;
+  --primary: #e9a73c;
+  --primary-foreground: #241a06;
+  --secondary: #efe8d9;
+  --secondary-foreground: #191a10;
+  --muted: #efe8d9;
+  --muted-foreground: #837c67;
+  --accent: #efe8d9;
+  --accent-foreground: #191a10;
+  --destructive: #d4674a;
+  --destructive-foreground: #ffffff;
+  --border: #e3dcc9;
+  --input: #e3dcc9;
+  --input-background: #fbf7ec;
+  --switch-background: #d2c9b2;
+  --ring: #e9a73c;
+
+  --chart-1: #e9a73c;
+  --chart-2: #4faa84;
+  --chart-3: #5f86a8;
+  --chart-4: #d4674a;
+  --chart-5: #a98b45;
+
+  --radius: 0.75rem;
+
+  --sidebar: #fbf6ea;
+  --sidebar-foreground: #191a10;
+  --sidebar-primary: #e9a73c;
+  --sidebar-primary-foreground: #241a06;
+  --sidebar-accent: #efe8d9;
+  --sidebar-accent-foreground: #191a10;
+  --sidebar-border: #e3dcc9;
+  --sidebar-ring: #e9a73c;
 }
 
+/* ---- DARK: warm obsidian. Neutral ramp INVERTED (50 darkest → 900 lightest). ---- */
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.145 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.145 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.985 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.396 0.141 25.723);
-  --destructive-foreground: oklch(0.637 0.237 25.331);
-  --border: oklch(0.269 0 0);
-  --input: oklch(0.269 0 0);
-  --ring: oklch(0.439 0 0);
-  --font-weight-medium: 500;
-  --font-weight-normal: 400;
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(0.269 0 0);
-  --sidebar-ring: oklch(0.439 0 0);
+  --n-50:  #17190f;
+  --n-100: #1d2016;
+  --n-200: #2e3125;
+  --n-300: #3d4031;
+  --n-400: #5d5f4d;
+  --n-500: #8a8b76;
+  --n-600: #a9a893;
+  --n-700: #c6c1af;
+  --n-800: #ded9c8;
+  --n-900: #ece6d6;
+  --n-950: #f5f0e3;
+  --surface-1: #1b1e17;
+
+  --background: #0e100b;
+  --foreground: #ece6d6;
+  --card: #1b1e17;
+  --card-foreground: #ece6d6;
+  --popover: #1b1e17;
+  --popover-foreground: #ece6d6;
+  --primary: #e9a73c;
+  --primary-foreground: #241a06;
+  --secondary: #23261d;
+  --secondary-foreground: #ece6d6;
+  --muted: #23261d;
+  --muted-foreground: #8a8b76;
+  --accent: #23261d;
+  --accent-foreground: #ece6d6;
+  --destructive: #d4674a;
+  --destructive-foreground: #ffffff;
+  --border: #2e3125;
+  --input: #2e3125;
+  --input-background: #14160f;
+  --switch-background: #3d4031;
+  --ring: #e9a73c;
+
+  --chart-1: #f0b455;
+  --chart-2: #5cbf95;
+  --chart-3: #7ba0c2;
+  --chart-4: #e0805f;
+  --chart-5: #c2a25a;
+
+  --sidebar: #14160f;
+  --sidebar-foreground: #ece6d6;
+  --sidebar-primary: #e9a73c;
+  --sidebar-primary-foreground: #241a06;
+  --sidebar-accent: #23261d;
+  --sidebar-accent-foreground: #ece6d6;
+  --sidebar-border: #2e3125;
+  --sidebar-ring: #e9a73c;
 }
 
 @theme inline {
@@ -179,42 +259,28 @@
     @apply border-border outline-ring/50;
   }
 
-  body {
-    @apply bg-background text-foreground;
-  }
-
-  /**
-  * Default typography styles for HTML elements (h1-h4, p, label, button, input).
-  * These are in @layer base, so Tailwind utility classes (like text-sm, text-lg) automatically override them.
-  */
-
   html {
     font-size: var(--font-size);
   }
 
-  h1 {
-    font-size: var(--text-2xl);
-    font-weight: var(--font-weight-medium);
-    line-height: 1.5;
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
   }
 
-  h2 {
-    font-size: var(--text-xl);
-    font-weight: var(--font-weight-medium);
-    line-height: 1.5;
+  /* Display face + tighter tracking for headings; utilities still override. */
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
   }
 
-  h3 {
-    font-size: var(--text-lg);
-    font-weight: var(--font-weight-medium);
-    line-height: 1.5;
-  }
-
-  h4 {
-    font-size: var(--text-base);
-    font-weight: var(--font-weight-medium);
-    line-height: 1.5;
-  }
+  h1 { font-size: var(--text-2xl); }
+  h2 { font-size: var(--text-xl); }
+  h3 { font-size: var(--text-lg); }
+  h4 { font-size: var(--text-base); }
 
   label {
     font-size: var(--text-base);
@@ -223,9 +289,7 @@
   }
 
   button {
-    font-size: var(--text-base);
     font-weight: var(--font-weight-medium);
-    line-height: 1.5;
   }
 
   input {
@@ -233,4 +297,22 @@
     font-weight: var(--font-weight-normal);
     line-height: 1.5;
   }
+
+  /* Tabular figures where numbers matter reads more "ledger". */
+  td, th {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Themed scrollbars. */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 6px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: var(--n-300); background-clip: content-box; }
 }
+
+/* Utility: monospace ledger figures. */
+.font-ledger { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }

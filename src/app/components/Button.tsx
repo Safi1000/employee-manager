@@ -14,14 +14,14 @@ export default function Button({
   ...props
 }: ButtonProps) {
   const baseStyles =
-    "inline-flex items-center justify-center rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
+    "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-1 focus-visible:ring-offset-background";
 
   const variantStyles = {
-    primary: "bg-brand-600 text-white hover:bg-brand-700",
-    secondary: "bg-white text-slate-900 border border-slate-200 hover:bg-slate-50",
-    ghost: "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
-    danger: "bg-danger-600 text-white hover:bg-danger-700",
-    success: "bg-success-600 text-white hover:bg-success-700",
+    primary: "bg-brand-500 text-[#241a06] hover:bg-brand-600 shadow-sm",
+    secondary: "bg-card text-foreground border border-border hover:border-brand-500/50 hover:bg-accent",
+    ghost: "text-muted-foreground hover:bg-accent hover:text-foreground",
+    danger: "bg-danger-600 text-[#fff] hover:bg-danger-700",
+    success: "bg-success-600 text-[#fff] hover:bg-success-700",
   };
 
   const sizeStyles = {

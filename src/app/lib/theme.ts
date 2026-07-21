@@ -3,21 +3,22 @@
 // The whole app's primary accent (sidebar active state, primary buttons,
 // badges, focus rings drawn with `brand-*`) is driven by the Tailwind v4
 // `--color-brand-*` theme variables. Tailwind compiles e.g. `bg-brand-600`
-// to `background-color: var(--color-brand-600)`, so overriding those six
-// shades on <html> at runtime re-themes every `brand-*` utility at once —
-// no rebuild, no per-component changes.
+// to `background-color: var(--color-brand-600)`, so overriding those shades
+// on <html> at runtime re-themes every `brand-*` utility at once — no
+// rebuild, no per-component changes.
 //
-// A company picks one of the palettes below (Settings → Appearance, SA/SSA
-// only). The choice is stored on companies.theme and applied whenever the
-// active company loads (including SSA "view as").
+// We only override the accent shades (500/600/700). The soft tints
+// (50/100/200) are generated in theme.css via color-mix off the 500 shade
+// and the current surface, so they stay correct in both light and dark mode
+// no matter which accent a company picks.
+//
+// Default = Amber (the Bastion identity). A company can pick another from
+// Settings → Appearance (SA/SSA only); the choice is stored on
+// companies.theme and applied whenever the active company loads.
 
-export type ThemeKey = "emerald" | "ocean" | "indigo";
+export type ThemeKey = "amber" | "emerald" | "steel";
 
-// The exact shades each `brand-*` utility used in the app maps to.
 type BrandScale = {
-  50: string;
-  100: string;
-  200: string;
   500: string;
   600: string;
   700: string;
@@ -30,50 +31,29 @@ export type ThemeOption = {
   scale: BrandScale;
 };
 
-// Order here is the order shown in the picker. Emerald first = default.
+// Order here is the order shown in the picker. Amber first = default.
 export const THEME_OPTIONS: ThemeOption[] = [
+  {
+    key: "amber",
+    label: "Amber",
+    description: "Warm gold — the Bastion signature.",
+    scale: { 500: "#e9a73c", 600: "#cf8f28", 700: "#9a6414" },
+  },
   {
     key: "emerald",
     label: "Emerald",
-    description: "Fresh green — the classic look.",
-    scale: {
-      50: "#ecfdf5",
-      100: "#d1fae5",
-      200: "#a7f3d0",
-      500: "#10b981",
-      600: "#059669",
-      700: "#047857",
-    },
+    description: "Fresh green, calm and positive.",
+    scale: { 500: "#4faa84", 600: "#3f8e6d", 700: "#2f6f55" },
   },
   {
-    key: "ocean",
-    label: "Ocean Blue",
-    description: "Corporate, calm and trustworthy.",
-    scale: {
-      50: "#eff6ff",
-      100: "#dbeafe",
-      200: "#bfdbfe",
-      500: "#3b82f6",
-      600: "#2563eb",
-      700: "#1d4ed8",
-    },
-  },
-  {
-    key: "indigo",
-    label: "Royal Indigo",
-    description: "Modern and authoritative.",
-    scale: {
-      50: "#eef2ff",
-      100: "#e0e7ff",
-      200: "#c7d2fe",
-      500: "#6366f1",
-      600: "#4f46e5",
-      700: "#4338ca",
-    },
+    key: "steel",
+    label: "Steel Blue",
+    description: "Corporate, quiet and trustworthy.",
+    scale: { 500: "#5f86a8", 600: "#4d6f8d", 700: "#3c5670" },
   },
 ];
 
-export const DEFAULT_THEME: ThemeKey = "emerald";
+export const DEFAULT_THEME: ThemeKey = "amber";
 
 const BY_KEY = new Map(THEME_OPTIONS.map((o) => [o.key, o]));
 
@@ -85,10 +65,10 @@ export function resolveTheme(v: string | null | undefined): ThemeOption {
   return (v && BY_KEY.get(v as ThemeKey)) || BY_KEY.get(DEFAULT_THEME)!;
 }
 
-// Override the six brand shades on <html>. Inline style on the root element
-// beats the stylesheet's :root rule by cascade, so this wins over the
-// compiled defaults. Passing null/unknown resets to the default palette.
-const BRAND_SHADES = [50, 100, 200, 500, 600, 700] as const;
+// Override the accent shades on <html>. Inline style on the root element beats
+// the stylesheet's rule by cascade, so this wins over the compiled defaults.
+// Passing null/unknown resets to the default (amber) palette.
+const BRAND_SHADES = [500, 600, 700] as const;
 
 export function applyTheme(theme: string | null | undefined): void {
   const { scale } = resolveTheme(theme);

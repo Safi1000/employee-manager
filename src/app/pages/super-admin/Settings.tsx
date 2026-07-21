@@ -967,15 +967,19 @@ export default function Settings() {
                         ) : null}
                       </div>
                       <div className="flex gap-1.5 mb-2">
-                        {[opt.scale[600], opt.scale[500], opt.scale[200], opt.scale[100]].map(
-                          (c, i) => (
-                            <span
-                              key={i}
-                              className="h-6 flex-1 rounded"
-                              style={{ backgroundColor: c }}
-                            />
-                          ),
-                        )}
+                        {[
+                          opt.scale[700],
+                          opt.scale[600],
+                          opt.scale[500],
+                          `color-mix(in srgb, ${opt.scale[500]} 42%, var(--surface-1))`,
+                          `color-mix(in srgb, ${opt.scale[500]} 14%, var(--surface-1))`,
+                        ].map((c, i) => (
+                          <span
+                            key={i}
+                            className="h-6 flex-1 rounded"
+                            style={{ backgroundColor: c }}
+                          />
+                        ))}
                       </div>
                       <p className="text-xs text-slate-500">{opt.description}</p>
                     </button>

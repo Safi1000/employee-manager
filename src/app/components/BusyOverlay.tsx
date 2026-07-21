@@ -10,7 +10,7 @@ export default function BusyOverlay({ show, message = "Working…", detail }: Pr
   if (!show) return null;
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-[1px]"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-[1px]"
       aria-busy="true"
       role="alert"
     >

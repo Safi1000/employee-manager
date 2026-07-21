@@ -1819,9 +1819,9 @@ export default function Accounting() {
               <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Cheques in Transit</p>
               <p className="text-2xl text-warning-900">PKR {totalPendingCheques.toLocaleString()}</p>
             </div>
-            <div className="bg-slate-900 p-4 rounded-lg">
+            <div className="bg-[#14160f] text-[#fff] p-4 rounded-lg">
               <p className="text-xs text-slate-300 mb-1">Net Available Cash</p>
-              <p className="text-2xl text-white">PKR {grandTotal.toLocaleString()}</p>
+              <p className="text-2xl text-[#fff]">PKR {grandTotal.toLocaleString()}</p>
             </div>
           </div>
         )}
@@ -1863,9 +1863,9 @@ export default function Accounting() {
 
         {activeTab === "payables" && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            <div className="bg-slate-900 p-4 rounded-lg">
+            <div className="bg-[#14160f] text-[#fff] p-4 rounded-lg">
               <p className="text-xs text-slate-300 mb-1">Total Payable</p>
-              <p className="text-xl text-white">
+              <p className="text-xl text-[#fff]">
                 PKR {payableTotals.total.toLocaleString()}
               </p>
             </div>
@@ -1899,7 +1899,7 @@ export default function Accounting() {
                   onClick={() => setActiveTab(tab)}
                   className={`px-4 py-2 rounded-md text-sm transition-colors ${
                     activeTab === tab
-                      ? "bg-brand-600 text-white"
+                      ? "bg-brand-600 text-[#fff]"
                       : "text-slate-600 hover:bg-slate-100"
                   }`}
                 >
@@ -2099,7 +2099,7 @@ export default function Accounting() {
                       onClick={() => setPayableStatusFilter(s)}
                       className={`px-3 py-1 rounded-md text-xs capitalize transition-colors ${
                         payableStatusFilter === s
-                          ? "bg-slate-900 text-white"
+                          ? "bg-brand-600 text-[#fff]"
                           : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                       }`}
                     >
@@ -2312,7 +2312,7 @@ export default function Accounting() {
                     type="button"
                     onClick={() => setChequeSectionView(v)}
                     className={`px-4 py-2 rounded-md text-sm transition-colors ${
-                      chequeSectionView === v ? "bg-brand-600 text-white" : "text-slate-600 hover:bg-slate-100"
+                      chequeSectionView === v ? "bg-brand-600 text-[#fff]" : "text-slate-600 hover:bg-slate-100"
                     }`}
                   >
                     {v === "cheques" ? "Cheques" : "Cash Deposits"}
@@ -4346,7 +4346,7 @@ function HistoryBody({
               onClick={() => setScope(s)}
               className={`px-3 py-1.5 rounded-md text-xs ${
                 scope === s
-                  ? "bg-slate-900 text-white"
+                  ? "bg-brand-600 text-[#fff]"
                   : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
               }`}
             >

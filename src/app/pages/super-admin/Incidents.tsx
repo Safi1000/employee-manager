@@ -68,7 +68,7 @@ const SEVERITY_COLOUR: Record<IncidentSeverity, string> = {
   low: "bg-slate-100 text-slate-700 border-slate-200",
   medium: "bg-warning-50 text-warning-700 border-warning-200",
   high: "bg-danger-50 text-danger-700 border-danger-200",
-  critical: "bg-danger-600 text-white border-danger-700",
+  critical: "bg-danger-600 text-[#fff] border-danger-700",
 };
 
 const STATUS_COLOUR: Record<IncidentStatus, string> = {

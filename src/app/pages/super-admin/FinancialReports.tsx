@@ -757,7 +757,7 @@ export default function FinancialReports() {
                   key={tab.key}
                   onClick={() => setActiveTab(tab.key)}
                   className={`px-4 py-2 rounded-md text-sm whitespace-nowrap transition-colors ${activeTab === tab.key
-                      ? "bg-brand-600 text-white"
+                      ? "bg-brand-600 text-[#fff]"
                       : "text-slate-600 hover:bg-slate-100"
                     }`}
                 >

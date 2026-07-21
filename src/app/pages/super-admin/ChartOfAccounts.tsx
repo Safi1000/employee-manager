@@ -393,7 +393,7 @@ export default function ChartOfAccounts() {
                 <button
                   key={t.v}
                   onClick={() => setTab(t.v)}
-                  className={`px-4 py-2 rounded-md text-sm transition-colors ${tab === t.v ? "bg-brand-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}
+                  className={`px-4 py-2 rounded-md text-sm transition-colors ${tab === t.v ? "bg-brand-600 text-[#fff]" : "text-slate-600 hover:bg-slate-100"}`}
                 >
                   {t.label}
                 </button>

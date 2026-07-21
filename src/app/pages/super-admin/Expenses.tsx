@@ -1432,7 +1432,7 @@ export default function Expenses() {
               onClick={() => setActiveTab(t)}
               className={`px-4 py-2 rounded-md text-sm transition-colors ${
                 activeTab === t
-                  ? "bg-slate-900 text-white"
+                  ? "bg-brand-600 text-[#fff]"
                   : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
               }`}
             >
@@ -1444,9 +1444,9 @@ export default function Expenses() {
         {activeTab === "expenses" && (
           <div className="mb-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
             <div className="lg:col-span-1 flex flex-col gap-4">
-              <div className="bg-slate-900 p-4 rounded-lg">
+              <div className="bg-[#14160f] text-[#fff] p-4 rounded-lg">
                 <p className="text-xs text-slate-300 mb-1">Total Expenses</p>
-                <p className="text-2xl text-white">
+                <p className="text-2xl text-[#fff]">
                   PKR {expenseMetrics.total.toLocaleString()}
                 </p>
                 <p className="text-[11px] text-slate-400 mt-1">
