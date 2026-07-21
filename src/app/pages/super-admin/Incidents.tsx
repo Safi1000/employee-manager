@@ -717,7 +717,7 @@ export default function Incidents() {
                         {postName && <div className="text-xs text-slate-500">{postName}</div>}
                       </td>
                       <td className="px-4 py-3 text-sm">
-                        <span className={`inline-block px-2 py-0.5 rounded-full text-xs border ${SEVERITY_COLOUR[row.severity]}`}>
+                        <span className={`inline-block px-2 py-0.5 rounded-md text-xs border ${SEVERITY_COLOUR[row.severity]}`}>
                           {INCIDENT_SEVERITY_LABEL[row.severity]}
                         </span>
                       </td>
@@ -733,7 +733,7 @@ export default function Incidents() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-sm">
-                        <span className={`inline-block px-2 py-0.5 rounded-full text-xs border ${STATUS_COLOUR[row.status]}`}>
+                        <span className={`inline-block px-2 py-0.5 rounded-md text-xs border ${STATUS_COLOUR[row.status]}`}>
                           {INCIDENT_STATUS_LABEL[row.status]}
                         </span>
                       </td>

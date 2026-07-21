@@ -287,7 +287,7 @@ function StageBar({ status }: { status: string }) {
     <span className="flex items-center gap-1">
       {STAGES.map((s, i) => (
         <span key={s} className="flex items-center gap-1">
-          <span className={`text-xs px-2 py-0.5 rounded-full border ${
+          <span className={`text-xs px-2 py-0.5 rounded-md border ${
             i < idx ? "bg-success-50 text-success-700 border-success-200"
               : i === idx ? "bg-brand-50 text-brand-700 border-brand-300"
               : "bg-slate-50 text-slate-400 border-slate-200"}`}>

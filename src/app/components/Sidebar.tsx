@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { NavLink, useLocation } from "react-router";
-import { LucideIcon, LogOut, Menu, X, KeyRound, ChevronRight, ChevronDown } from "lucide-react";
+import { LucideIcon, LogOut, Menu, X, KeyRound, ChevronRight, ChevronDown, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import ForcePasswordChange from "./ForcePasswordChange";
 import ChangePasswordModal from "./ChangePasswordModal";
@@ -71,6 +71,15 @@ export default function Sidebar({ title, links }: SidebarProps) {
   const [pwModalOpen, setPwModalOpen] = useState(false);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => loadExpanded());
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem("sidebar.collapsed.v1") === "1"; } catch { return false; }
+  });
+  const toggleCollapsed = () =>
+    setCollapsed((c) => {
+      const next = !c;
+      try { localStorage.setItem("sidebar.collapsed.v1", next ? "1" : "0"); } catch { /* ignore */ }
+      return next;
+    });
   // Per-user company-name override (Settings → Company Profile). Falls back to the
   // real company name passed in. Only affects this user's view.
   const displayTitle = profile?.display_company_name || title;
@@ -202,6 +211,62 @@ export default function Sidebar({ title, links }: SidebarProps) {
     </div>
   );
 
+  // Collapsed desktop rail: flat list of leaf links as icons only.
+  const flatLinks = flattenLinks(links);
+  const collapsedNav = (
+    <nav className="flex-1 py-3 px-2 space-y-1 overflow-y-auto flex flex-col items-center">
+      <button
+        onClick={toggleCollapsed}
+        title="Expand sidebar"
+        className="w-11 h-10 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-accent hover:text-foreground transition-colors mb-1"
+      >
+        <PanelLeftOpen className="w-4 h-4" strokeWidth={1.5} />
+      </button>
+      {flatLinks.map((link) => (
+        <NavLink
+          key={link.to}
+          to={link.to}
+          end={link.to.split("/").length === 2}
+          title={link.label}
+          className={({ isActive }) =>
+            `w-11 h-10 rounded-lg flex items-center justify-center transition-colors ${
+              isActive
+                ? "bg-brand-500/15 text-brand-700 dark:text-brand-500"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+            }`
+          }
+        >
+          <link.icon className="w-[18px] h-[18px]" strokeWidth={1.5} />
+        </NavLink>
+      ))}
+    </nav>
+  );
+  const collapsedFooter = (
+    <div className="p-2 border-t border-sidebar-border flex flex-col items-center gap-1">
+      {profile && (
+        <button
+          onClick={() => setProfileModalOpen(true)}
+          title={profile.full_name ?? "Profile"}
+          className="w-11 h-10 rounded-lg flex items-center justify-center hover:bg-accent transition-colors"
+        >
+          <span className="h-7 w-7 rounded-full overflow-hidden bg-muted border border-border flex items-center justify-center">
+            {profile.avatar_url ? (
+              <img src={profile.avatar_url} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <span className="text-xs text-muted-foreground">{initials}</span>
+            )}
+          </span>
+        </button>
+      )}
+      <button onClick={() => setPwModalOpen(true)} title="Change password" className="w-11 h-10 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-accent hover:text-foreground transition-colors">
+        <KeyRound className="w-4 h-4" strokeWidth={1.5} />
+      </button>
+      <button onClick={handleSignOut} title="Sign out" className="w-11 h-10 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-accent hover:text-foreground transition-colors">
+        <LogOut className="w-4 h-4" strokeWidth={1.5} />
+      </button>
+    </div>
+  );
+
   return (
     <>
       {/* Mobile hamburger (top-left, fixed) */}
@@ -247,13 +312,24 @@ export default function Sidebar({ title, links }: SidebarProps) {
       </aside>
 
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex w-64 bg-sidebar border-r border-sidebar-border flex-col">
-        <div className="h-16 px-4 flex items-center gap-2.5 border-b border-sidebar-border">
+      <aside className={`hidden md:flex ${collapsed ? "w-16" : "w-64"} bg-sidebar border-r border-sidebar-border flex-col transition-[width] duration-200 ease-out`}>
+        <div className={`h-16 border-b border-sidebar-border flex items-center ${collapsed ? "justify-center" : "px-4 gap-2.5"}`}>
           <BrandMark />
-          <h1 className="text-base font-bold tracking-tight text-foreground truncate leading-tight">{displayTitle}</h1>
+          {!collapsed && (
+            <>
+              <h1 className="text-base font-bold tracking-tight text-foreground truncate leading-tight flex-1">{displayTitle}</h1>
+              <button
+                onClick={toggleCollapsed}
+                title="Collapse sidebar"
+                className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex-shrink-0"
+              >
+                <PanelLeftClose className="w-4 h-4" strokeWidth={1.5} />
+              </button>
+            </>
+          )}
         </div>
-        {navItems}
-        {footer}
+        {collapsed ? collapsedNav : navItems}
+        {collapsed ? collapsedFooter : footer}
       </aside>
 
       <ForcePasswordChange />
@@ -261,6 +337,15 @@ export default function Sidebar({ title, links }: SidebarProps) {
       <ProfileModal isOpen={profileModalOpen} onClose={() => setProfileModalOpen(false)} />
     </>
   );
+}
+
+function flattenLinks(items: SidebarItem[]): SidebarLink[] {
+  const out: SidebarLink[] = [];
+  for (const it of items) {
+    if ("type" in it && it.type === "group") out.push(...flattenLinks(it.children));
+    else out.push(it as SidebarLink);
+  }
+  return out;
 }
 
 function anyChildActive(group: SidebarGroup, activePath: string): boolean {

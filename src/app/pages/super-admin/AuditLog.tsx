@@ -485,7 +485,7 @@ export default function AuditLog() {
                           {userName(e.changed_by)}
                         </td>
                         <td className="px-4 py-3 text-sm">
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border ${ACTION_COLOUR[e.action]}`}>
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs border ${ACTION_COLOUR[e.action]}`}>
                             <ActionIcon className="w-3 h-3" />
                             {e.action}
                           </span>

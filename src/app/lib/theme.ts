@@ -16,7 +16,12 @@
 // Settings → Appearance (SA/SSA only); the choice is stored on
 // companies.theme and applied whenever the active company loads.
 
-export type ThemeKey = "amber" | "emerald" | "steel";
+// Note on "emerald": the DB column defaults every company to the legacy value
+// 'emerald'. That value is intentionally NOT a key below, so resolveTheme()
+// falls back to the Amber default — i.e. the whole app is amber (like the
+// login page) unless a company explicitly picks a palette in Settings. Green
+// is still offered, under the "green" key.
+export type ThemeKey = "amber" | "green" | "steel";
 
 type BrandScale = {
   500: string;
@@ -40,7 +45,7 @@ export const THEME_OPTIONS: ThemeOption[] = [
     scale: { 500: "#e9a73c", 600: "#cf8f28", 700: "#9a6414" },
   },
   {
-    key: "emerald",
+    key: "green",
     label: "Emerald",
     description: "Fresh green, calm and positive.",
     scale: { 500: "#4faa84", 600: "#3f8e6d", 700: "#2f6f55" },

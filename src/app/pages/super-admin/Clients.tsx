@@ -1126,7 +1126,7 @@ export default function Clients() {
                 key={s.v}
                 type="button"
                 onClick={() => setStatusFilter(s.v)}
-                className={`px-3 py-1 rounded-full text-xs border transition-colors ${
+                className={`px-3 py-1 rounded-md text-xs border transition-colors ${
                   statusFilter === s.v
                     ? "border-brand-600 bg-brand-50 text-brand-700"
                     : "border-slate-200 text-slate-600 hover:bg-slate-50"
@@ -1189,17 +1189,17 @@ export default function Clients() {
                       <td className="px-4 py-3 text-sm">
                         <div className="flex flex-col items-start gap-1">
                           {isActive ? (
-                            <span className="inline-block px-2 py-0.5 rounded-full text-xs bg-success-50 text-success-700 border border-success-200">
+                            <span className="inline-block px-2 py-0.5 rounded-md text-xs bg-success-50 text-success-700 border border-success-200">
                               Active
                             </span>
                           ) : (
-                            <span className="inline-block px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-600 border border-slate-200">
+                            <span className="inline-block px-2 py-0.5 rounded-md text-xs bg-slate-100 text-slate-600 border border-slate-200">
                               Inactive
                             </span>
                           )}
                           {understaffed && (
                             <span
-                              className="inline-block px-2 py-0.5 rounded-full text-xs bg-warning-50 text-warning-700 border border-warning-200"
+                              className="inline-block px-2 py-0.5 rounded-md text-xs bg-warning-50 text-warning-700 border border-warning-200"
                               title={`${activeAssigned} active line assignment(s) vs ${committed} committed slot(s)`}
                             >
                               Understaffed {activeAssigned}/{committed}

@@ -193,14 +193,14 @@ export default function EmployeeLifecyclePanel({
       <div>
         <div className="flex items-center gap-2 mb-2">
           <span className="text-sm text-slate-500">State:</span>
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs bg-slate-100 text-slate-700 border border-slate-200">
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs bg-slate-100 text-slate-700 border border-slate-200">
             {LIFECYCLE_STATE_LABEL[employee.lifecycle_state]}
           </span>
           {employee.rehire_count > 0 && (
             <span className="text-xs text-slate-400">rehired ×{employee.rehire_count}</span>
           )}
           {employee.pending_termination_review && (
-            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-danger-50 text-danger-700 border border-danger-200">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs bg-danger-50 text-danger-700 border border-danger-200">
               Termination review
             </span>
           )}
@@ -242,7 +242,7 @@ export default function EmployeeLifecyclePanel({
             <div key={field} className="flex items-center justify-between gap-2 mb-2">
               <span className="text-sm text-slate-600">{label}</span>
               <div className="flex items-center gap-2">
-                <span className={`inline-flex px-2 py-0.5 rounded-full text-xs border ${VETTING_BADGE[val]}`}>{val}</span>
+                <span className={`inline-flex px-2 py-0.5 rounded-md text-xs border ${VETTING_BADGE[val]}`}>{val}</span>
                 <select
                   className={FIELD + " w-32"}
                   value={val}
@@ -295,10 +295,10 @@ export default function EmployeeLifecyclePanel({
       <div>
         <p className="text-sm text-slate-700 mb-2">Training &amp; Competence</p>
         <div className="flex flex-wrap gap-2 text-xs mb-2">
-          <span className={`px-2 py-0.5 rounded-full border ${employee.orientation_done ? "bg-success-50 text-success-700 border-success-200" : "bg-slate-100 text-slate-500 border-slate-200"}`}>
+          <span className={`px-2 py-0.5 rounded-md border ${employee.orientation_done ? "bg-success-50 text-success-700 border-success-200" : "bg-slate-100 text-slate-500 border-slate-200"}`}>
             Orientation {employee.orientation_done ? "✓" : "—"}
           </span>
-          <span className={`px-2 py-0.5 rounded-full border ${employee.weapons_certified ? "bg-success-50 text-success-700 border-success-200" : "bg-slate-100 text-slate-500 border-slate-200"}`}>
+          <span className={`px-2 py-0.5 rounded-md border ${employee.weapons_certified ? "bg-success-50 text-success-700 border-success-200" : "bg-slate-100 text-slate-500 border-slate-200"}`}>
             Weapons cert {employee.weapons_certified ? (employee.weapons_cert_expiry ? `→ ${formatDate(employee.weapons_cert_expiry)}` : "✓") : "—"}
           </span>
         </div>

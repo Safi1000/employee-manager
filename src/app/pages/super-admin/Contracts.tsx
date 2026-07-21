@@ -398,7 +398,7 @@ export default function Contracts() {
                         <div className="flex flex-col items-start gap-1">
                           <ContractStatusBadge status={row.status} />
                           {overStaffed && (
-                            <span className="inline-block px-2 py-0.5 rounded-full text-xs bg-danger-50 text-danger-700 border border-danger-200">
+                            <span className="inline-block px-2 py-0.5 rounded-md text-xs bg-danger-50 text-danger-700 border border-danger-200">
                               Guards exceeded
                             </span>
                           )}

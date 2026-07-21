@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Search, Download, AlertCircle, X, Loader2 } from "lucide-react";
+import { Search, Download, AlertCircle, X, Loader2, SlidersHorizontal, ChevronDown } from "lucide-react";
 import jsPDF from "jspdf";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -148,6 +148,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
   const [disbursedFilter, setDisbursedFilter] = useState<"all" | "yes" | "no">("all");
   // Active / Inactive employee tab split (Inactive = anything not currently Active).
   const [empTab, setEmpTab] = useState<"all" | "active" | "inactive">("all");
+  const [filtersOpen, setFiltersOpen] = useState(false);
   // Employee category filter (same set as the Employees tab) — e.g. Office Staff only.
   const [categoryFilter, setCategoryFilter] = useState<"all" | "client" | "office_staff" | "reliever">("all");
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -1149,6 +1150,15 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
 
   const isCurrent = selectedPeriod === currentPeriod;
 
+  const activeFilterCount =
+    (shiftFilter !== "all" ? 1 : 0) +
+    (statusFilter !== "all" ? 1 : 0) +
+    (disbursedFilter !== "all" ? 1 : 0) +
+    (locationFilter !== "all" ? 1 : 0) +
+    (clientFilter !== "all" ? 1 : 0) +
+    (branchFilter !== "all" ? 1 : 0) +
+    (categoryFilter !== "all" ? 1 : 0);
+
   // §28.1: unmarked attendance-days silently earn zero. Surface them loudly and
   // steer disbursement through the run pipeline (approve-then-disburse, gated on
   // exceptions) rather than the one-click bulk buttons.
@@ -1223,32 +1233,32 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-success-500">
-            <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Disbursed</p>
-            <p className="text-2xl text-success-900">
+          <div className="bg-card p-5 rounded-xl border border-border border-l-4 border-l-success-500">
+            <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Total Disbursed</p>
+            <p className="text-2xl font-semibold tabular-nums text-success-700 dark:text-success-500" style={{ fontFamily: "var(--font-display)" }}>
               PKR {payrollTotals.disbursed.toLocaleString()}
             </p>
-            <p className="text-xs text-success-700/70 mt-0.5">
+            <p className="text-xs text-muted-foreground mt-1">
               {filtered.filter((r) => r.disbursed).length} payslip
               {filtered.filter((r) => r.disbursed).length === 1 ? "" : "s"}
             </p>
           </div>
-          <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-warning-500">
-            <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Not Disbursed</p>
-            <p className="text-2xl text-warning-900">
+          <div className="bg-card p-5 rounded-xl border border-border border-l-4 border-l-warning-500">
+            <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Total Not Disbursed</p>
+            <p className="text-2xl font-semibold tabular-nums text-warning-700 dark:text-warning-500" style={{ fontFamily: "var(--font-display)" }}>
               PKR {payrollTotals.notDisbursed.toLocaleString()}
             </p>
-            <p className="text-xs text-warning-700/70 mt-0.5">
+            <p className="text-xs text-muted-foreground mt-1">
               {filtered.filter((r) => !r.disbursed).length} payslip
               {filtered.filter((r) => !r.disbursed).length === 1 ? "" : "s"}
             </p>
           </div>
-          <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-danger-500">
-            <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Advance</p>
-            <p className="text-2xl text-danger-900">
+          <div className="bg-card p-5 rounded-xl border border-border border-l-4 border-l-danger-500">
+            <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Total Advance</p>
+            <p className="text-2xl font-semibold tabular-nums text-danger-700 dark:text-danger-500" style={{ fontFamily: "var(--font-display)" }}>
               PKR {payrollTotals.advance.toLocaleString()}
             </p>
-            <p className="text-xs text-danger-700/70 mt-0.5">
+            <p className="text-xs text-muted-foreground mt-1">
               for {formatPeriod(selectedPeriod)}
             </p>
           </div>
@@ -1256,11 +1266,11 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
         </div>
 
         <div className="flex-1 overflow-hidden px-8 pb-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
-          <div className="lg:col-span-2 overflow-y-auto">
-            <div className="bg-white rounded-lg border border-slate-200">
-              <div className="p-6 border-b border-slate-200 space-y-3">
-                <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex flex-col lg:flex-row gap-6 h-full">
+          <div className="flex-1 min-w-0 overflow-y-auto">
+            <div className="bg-card rounded-xl border border-border">
+              <div className="p-4 border-b border-border">
+                <div className="flex items-center gap-2 flex-wrap">
                   <div className="w-[220px] min-w-[180px] relative">
                     <Search
                       className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
@@ -1274,10 +1284,45 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                       className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                     />
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setFiltersOpen((v) => !v)}
+                    className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-md border border-border text-foreground hover:bg-accent transition-colors"
+                  >
+                    <SlidersHorizontal className="w-4 h-4" strokeWidth={1.5} />
+                    Filters
+                    {activeFilterCount > 0 && (
+                      <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-semibold rounded-full bg-brand-500 text-[#241a06]">{activeFilterCount}</span>
+                    )}
+                    <ChevronDown className={`w-4 h-4 transition-transform ${filtersOpen ? "rotate-180" : ""}`} strokeWidth={1.5} />
+                  </button>
+                  <div className="flex gap-2 ml-auto">
+                    {([
+                      { v: "all", label: "All" },
+                      { v: "active", label: "Active" },
+                      { v: "inactive", label: "Inactive" },
+                    ] as const).map((t) => (
+                      <button
+                        key={t.v}
+                        type="button"
+                        onClick={() => setEmpTab(t.v)}
+                        className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${
+                          empTab === t.v
+                            ? "border-brand-500 bg-brand-500/15 text-brand-700 dark:text-brand-500 font-medium"
+                            : "border-border text-muted-foreground hover:bg-accent"
+                        }`}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {filtersOpen && (
+                  <div className="mt-3 pt-3 border-t border-border flex flex-wrap gap-2">
                   <select
                     value={selectedPeriod}
                     onChange={(e) => { setSelectedId(null); setSelectedPeriod(e.target.value); }}
-                    className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                    className="px-3 py-2 border border-border rounded-md text-sm"
                   >
                     {periodOptions.map((p) => (
                       <option key={p} value={p}>
@@ -1313,12 +1358,10 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                     <option value="yes">Disbursed</option>
                     <option value="no">Not Disbursed</option>
                   </select>
-                </div>
-                <div className="flex items-center gap-3 flex-wrap">
                   <select
                     value={locationFilter}
                     onChange={(e) => setLocationFilter(e.target.value)}
-                    className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                    className="px-3 py-2 border border-border rounded-md text-sm"
                   >
                     <option value="all">All Locations</option>
                     {locations.map((l) => (
@@ -1356,28 +1399,8 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                       <option value="reliever">Reliever</option>
                     </select>
                   )}
-                </div>
-              </div>
-
-              <div className="px-2 pb-3 flex gap-2">
-                {([
-                  { v: "all", label: "All" },
-                  { v: "active", label: "Active" },
-                  { v: "inactive", label: "Inactive" },
-                ] as const).map((t) => (
-                  <button
-                    key={t.v}
-                    type="button"
-                    onClick={() => setEmpTab(t.v)}
-                    className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${
-                      empTab === t.v
-                        ? "border-brand-600 bg-brand-50 text-brand-700"
-                        : "border-slate-200 text-slate-600 hover:bg-slate-50"
-                    }`}
-                  >
-                    {t.label}
-                  </button>
-                ))}
+                  </div>
+                )}
               </div>
 
               <div className="overflow-x-auto">
@@ -1395,7 +1418,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                       <th className="text-left px-4 py-3 text-xs text-slate-500">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-200">
+                  <tbody>
                     {loading && (
                       <tr>
                         <td colSpan={8} className="px-6 py-10 text-center text-slate-500">
@@ -1417,8 +1440,8 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                         return (
                           <tr
                             key={e.id}
-                            className={`hover:bg-slate-50 transition-colors cursor-pointer ${
-                              selectedId === e.id ? "bg-slate-50" : ""
+                            className={`transition-colors cursor-pointer border-b border-border ${
+                              selectedId === e.id ? "bg-brand-500/10" : "hover:bg-accent/50"
                             }`}
                             onClick={() => { setSelectedId(e.id); setRowError(null); }}
                           >
@@ -1546,16 +1569,27 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
             </div>
           </div>
 
-          <div className="lg:col-span-1 overflow-y-auto">
-            <div className="bg-white rounded-lg border border-slate-200 p-6">
-              <h3 className="text-base mb-4 text-slate-900">
-                Salary Calculation
-                {!isCurrent && (
-                  <span className="ml-2 text-xs text-warning-700 bg-warning-50 px-2 py-0.5 rounded">
-                    History
-                  </span>
-                )}
-              </h3>
+          {selectedRow && (
+          <div className="w-full lg:w-[400px] flex-shrink-0 overflow-y-auto">
+            <div className="bg-card rounded-xl border border-border p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-base font-bold text-foreground flex items-center gap-2">
+                  Salary Calculation
+                  {!isCurrent && (
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-warning-700 dark:text-warning-500 bg-warning-50 border border-warning-200 px-1.5 py-0.5 rounded-md">
+                      History
+                    </span>
+                  )}
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setSelectedId(null)}
+                  title="Close"
+                  className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                >
+                  <X className="w-4 h-4" strokeWidth={1.75} />
+                </button>
+              </div>
 
               {selectedRow ? (
                 <div className="space-y-2.5 text-sm">
@@ -1849,13 +1883,10 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                     </Button>
                   </div>
                 </div>
-              ) : (
-                <p className="text-sm text-slate-500 text-center py-8">
-                  Select an employee row to view &amp; edit their payslip for {formatPeriod(selectedPeriod)}.
-                </p>
-              )}
+              ) : null}
             </div>
           </div>
+          )}
         </div>
         </div>
       </div>

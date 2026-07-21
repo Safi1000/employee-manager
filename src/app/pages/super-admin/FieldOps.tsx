@@ -114,9 +114,9 @@ export default function FieldOps() {
                   <td className="px-3 py-1.5 text-right tabular-nums">{r.strength_present ?? "—"} / {r.strength_required ?? "—"}</td>
                   <td className="px-3 py-1.5 text-center">
                     {r.is_silent
-                      ? <span className="px-2 py-0.5 rounded-full text-xs border bg-danger-50 text-danger-700 border-danger-200">SILENT</span>
+                      ? <span className="px-2 py-0.5 rounded-md text-xs border bg-danger-50 text-danger-700 border-danger-200">SILENT</span>
                       : r.reported_today
-                        ? <span className="px-2 py-0.5 rounded-full text-xs border bg-success-50 text-success-700 border-success-200">{r.all_ok ? "All OK" : "Exception"}</span>
+                        ? <span className="px-2 py-0.5 rounded-md text-xs border bg-success-50 text-success-700 border-success-200">{r.all_ok ? "All OK" : "Exception"}</span>
                         : <span className="text-slate-400 text-xs">awaiting</span>}
                   </td>
                 </tr>
@@ -136,7 +136,7 @@ export default function FieldOps() {
           {visits.map((v) => (
             <div key={v.id} className="flex items-center justify-between px-3 py-2 text-sm">
               <span className="text-slate-700">{v.scheduled_date ?? "—"} · {v.findings ? v.findings.slice(0, 60) : "no findings"}</span>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 border border-slate-200">{v.status}</span>
+              <span className="text-xs px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200">{v.status}</span>
             </div>
           ))}
           {visits.length === 0 && <p className="px-3 py-3 text-sm text-slate-500">No visits logged.</p>}

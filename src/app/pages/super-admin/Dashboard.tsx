@@ -21,6 +21,7 @@ import { Link } from "react-router";
 import Header from "../../components/Header";
 import { formatDate } from "../../lib/date";
 import StatCard from "../../components/StatCard";
+import ActivityFeed, { type FeedItem } from "../../components/ActivityFeed";
 import {
   LineChart,
   Line,
@@ -508,6 +509,22 @@ export default function SuperAdminDashboard() {
 
   const branchScopeNote = profile?.branch_id ? "Scoped to your branch." : null;
 
+  // Live activity feed — assembled from real recent data (payments in,
+  // incidents logged, compliance items due) and animated like the landing page.
+  const feedItems = useMemo<FeedItem[]>(() => {
+    const out: FeedItem[] = [];
+    topClients.forEach((c) =>
+      out.push({ id: `pay-${c.id}`, tone: "in", text: `Payment received · ${c.name}`, amount: `+${compact(c.revenue)}` }),
+    );
+    recentIncidents.forEach((i) =>
+      out.push({ id: `inc-${i.id}`, tone: "out", text: `Incident ${i.code} · ${i.category} · ${i.status.replace(/_/g, " ")}` }),
+    );
+    alerts.forEach((a) =>
+      out.push({ id: `al-${a.id}`, tone: "evt", text: `${a.title} · due ${a.due_date}` }),
+    );
+    return out;
+  }, [topClients, recentIncidents, alerts]);
+
   return (
     <>
       <Header
@@ -523,7 +540,7 @@ export default function SuperAdminDashboard() {
         )}
 
         {branchScopeNote && (
-          <div className="mb-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-brand-50 text-brand-700 text-xs">
+          <div className="mb-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-brand-50 text-brand-700 text-xs">
             <Building2 className="w-3.5 h-3.5" strokeWidth={1.5} />
             {branchScopeNote}
           </div>
@@ -655,6 +672,14 @@ export default function SuperAdminDashboard() {
                 </div>
               )}
             </div>
+
+            {/* Live activity feed (landing-page style) */}
+            {feedItems.length > 0 && (
+              <div className="mb-6 md:mb-8">
+                <h3 className="text-base font-bold text-foreground mb-3">Live activity</h3>
+                <ActivityFeed items={feedItems} />
+              </div>
+            )}
 
             {/* Expenses pie chart */}
             {can.expenses && show("expenses_pie") && (
@@ -807,7 +832,7 @@ export default function SuperAdminDashboard() {
                     <div className="divide-y divide-slate-200">
                       {recentIncidents.map((i) => (
                         <div key={i.id} className="p-4 flex items-center gap-3 hover:bg-slate-50 transition-colors">
-                          <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] uppercase border ${SEVERITY_COLOR[i.severity] ?? SEVERITY_COLOR.low}`}>
+                          <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] uppercase border ${SEVERITY_COLOR[i.severity] ?? SEVERITY_COLOR.low}`}>
                             {i.severity}
                           </span>
                           <div className="flex-1 min-w-0">

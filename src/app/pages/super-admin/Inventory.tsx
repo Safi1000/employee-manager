@@ -1569,7 +1569,7 @@ function LowStockBanner() {
       <div className="font-medium mb-1">{low.length} item type(s) at or below reorder level</div>
       <div className="flex flex-wrap gap-2">
         {low.map((r) => (
-          <span key={r.id} className="px-2 py-0.5 rounded-full bg-white border border-warning-200 text-xs">
+          <span key={r.id} className="px-2 py-0.5 rounded-md bg-white border border-warning-200 text-xs">
             {r.item_type}: {r.quantity} ≤ {r.reorder_level}
           </span>
         ))}

@@ -1597,19 +1597,19 @@ export default function EmployeeManagement() {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-slate-200">
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Employee ID</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Name</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Phone</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Location</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Branch</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Client / Category</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Shift</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Status</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500 sticky right-0 z-10 bg-white border-l border-slate-200">Actions</th>
+                <tr className="border-b border-border bg-slate-50">
+                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground border-l-2 border-l-transparent">Employee ID</th>
+                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Name</th>
+                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Phone</th>
+                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Location</th>
+                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Branch</th>
+                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Client / Category</th>
+                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Shift</th>
+                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Status</th>
+                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground sticky right-0 z-10 bg-slate-50 border-l border-border">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody>
                 {loading && (
                   <tr>
                     <td colSpan={9} className="px-6 py-10 text-center text-slate-500">
@@ -1633,82 +1633,73 @@ export default function EmployeeManagement() {
                     return (
                     <tr
                       key={employee.id}
-                      className={`group transition-colors ${
-                        incomplete ? "bg-danger-50 hover:bg-danger-100" : "bg-success-50 hover:bg-success-100"
-                      }`}
+                      className="group border-b border-border transition-colors hover:bg-accent/50"
                       title={incomplete ? "Incomplete profile — physical document copies not on file" : "Complete profile"}
                     >
-                      <td className="px-6 py-4 text-sm font-mono">
-                        <span className={incomplete ? "text-danger-700" : "text-slate-600"}>{employee.employee_code}</span>
+                      <td className={`px-6 py-3.5 text-sm font-mono border-l-2 ${incomplete ? "border-l-danger-500" : "border-l-transparent"}`}>
+                        <span className={incomplete ? "text-danger-600 dark:text-danger-500" : "text-muted-foreground"}>{employee.employee_code}</span>
                       </td>
-                      <td className="px-6 py-4 text-sm text-slate-900">
+                      <td className="px-6 py-3.5 text-sm text-foreground">
                         <div className="flex items-center gap-2">
-                          {employee.full_name}
-                          {incomplete ? (
-                            <span className="inline-flex items-center text-[10px] uppercase tracking-wider text-danger-700 bg-danger-100 px-1.5 py-0.5 rounded">
-                              <AlertCircle className="w-3 h-3 mr-0.5" strokeWidth={2} />
+                          <span className="font-medium">{employee.full_name}</span>
+                          {incomplete && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-danger-700 dark:text-danger-500 bg-danger-50 border border-danger-200 px-1.5 py-0.5 rounded-md">
+                              <AlertCircle className="w-3 h-3" strokeWidth={2} />
                               Incomplete
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center text-[10px] uppercase tracking-wider text-success-700 bg-success-100 px-1.5 py-0.5 rounded">
-                              Complete
                             </span>
                           )}
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{employee.phone ?? "—"}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{employee.location_name ?? "—"}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{employee.branch_name ?? "—"}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600">
+                      <td className="px-6 py-3.5 text-sm text-muted-foreground tabular-nums">{employee.phone ?? "—"}</td>
+                      <td className="px-6 py-3.5 text-sm text-muted-foreground">{employee.location_name ?? "—"}</td>
+                      <td className="px-6 py-3.5 text-sm text-muted-foreground">{employee.branch_name ?? "—"}</td>
+                      <td className="px-6 py-3.5 text-sm text-muted-foreground">
                         {(employee.category ?? "client") === "client" ? (
                           employee.client_name ?? "—"
                         ) : (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-700 capitalize">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs bg-secondary text-secondary-foreground border border-border capitalize">
                             {(employee.category ?? "client").replace("_", " ")}
                           </span>
                         )}
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-6 py-3.5">
                         <span
-                          className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs capitalize ${
+                          className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border capitalize ${
                             employee.shift === "day"
-                              ? "bg-warning-50 text-warning-700"
-                              : "bg-indigo-50 text-indigo-700"
+                              ? "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200"
+                              : "bg-info-50 text-info-700 dark:text-info-500 border-info-200"
                           }`}
                         >
                           {employee.shift}
                         </span>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-6 py-3.5">
                         <button
                           type="button"
                           disabled={statusTogglingId === employee.id}
                           onClick={() => requestStatusToggle(employee)}
                           title={employee.status === "Active" ? "Click to mark Inactive" : "Click to mark Active"}
-                          className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs transition-colors disabled:opacity-50 ${
+                          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium border transition-colors disabled:opacity-50 ${
                             employee.status === "Active"
-                              ? "bg-success-50 text-success-700 hover:bg-success-100"
+                              ? "bg-success-50 text-success-700 dark:text-success-500 border-success-200 hover:bg-success-100"
                               : employee.status === "On Leave"
-                              ? "bg-warning-50 text-warning-700 hover:bg-warning-100"
-                              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                              ? "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200 hover:bg-warning-100"
+                              : "bg-secondary text-muted-foreground border-border hover:bg-accent"
                           }`}
                         >
+                          <span className={`w-1.5 h-1.5 rounded-full ${employee.status === "Active" ? "bg-success-500" : employee.status === "On Leave" ? "bg-warning-500" : "bg-slate-400"}`} />
                           {employee.status}
                         </button>
                       </td>
-                      <td
-                        className={`px-6 py-4 flex gap-2 sticky right-0 z-10 border-l border-slate-200 ${
-                          incomplete
-                            ? "bg-danger-50 group-hover:bg-danger-100"
-                            : "bg-success-50 group-hover:bg-success-100"
-                        }`}
-                      >
-                        <Button variant="ghost" size="sm" onClick={() => openView(employee)}>
-                          View
-                        </Button>
-                        <Button variant="ghost" size="sm" onClick={() => openEdit(employee)}>
-                          Edit
-                        </Button>
+                      <td className="px-6 py-3.5 sticky right-0 z-10 border-l border-border bg-card group-hover:bg-accent/50 transition-colors">
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="sm" onClick={() => openView(employee)}>
+                            View
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => openEdit(employee)}>
+                            Edit
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                     );
@@ -2914,11 +2905,11 @@ function IdentityVerificationPanel({
           </p>
         </div>
         {verified ? (
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs bg-success-50 text-success-700 border border-success-200">
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs bg-success-50 text-success-700 border border-success-200">
             Verified{employee.identity_verified_at ? ` · ${formatDate(employee.identity_verified_at.slice(0, 10))}` : ""}
           </span>
         ) : (
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs bg-warning-50 text-warning-700 border border-warning-200">
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs bg-warning-50 text-warning-700 border border-warning-200">
             Not verified
           </span>
         )}

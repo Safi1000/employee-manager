@@ -2249,7 +2249,7 @@ export default function Accounting() {
                               <Building2 className="w-4 h-4 text-brand-600" strokeWidth={1.5} />
                               <span className="text-sm text-slate-900">{bank.bank_name}</span>
                               {!bank.active && (
-                                <span className="inline-block px-2 py-0.5 rounded-full text-[11px] bg-slate-100 text-slate-600 border border-slate-200">
+                                <span className="inline-block px-2 py-0.5 rounded-md text-[11px] bg-slate-100 text-slate-600 border border-slate-200">
                                   Inactive
                                 </span>
                               )}

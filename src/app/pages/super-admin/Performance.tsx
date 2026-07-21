@@ -199,7 +199,7 @@ export default function Performance() {
                       <td className="px-3 py-1.5 text-right tabular-nums">{r.value ?? "—"}</td>
                       <td className="px-3 py-1.5 text-center">
                         {r.rag ? (
-                          <span className={`inline-block px-2 py-0.5 rounded-full text-xs border ${RAG[r.rag]}`}>{r.rag}</span>
+                          <span className={`inline-block px-2 py-0.5 rounded-md text-xs border ${RAG[r.rag]}`}>{r.rag}</span>
                         ) : (
                           <span className="text-slate-300">—</span>
                         )}
@@ -276,7 +276,7 @@ export default function Performance() {
                   <span className="text-xs text-slate-500">
                     growth {Number(p.growth ?? 0).toLocaleString()} → pool {Number(p.pool_amount ?? 0).toLocaleString()}
                   </span>
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 border border-slate-200">{p.status}</span>
+                  <span className="text-xs px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200">{p.status}</span>
                   {p.status === "draft" && (
                     <Button variant="primary" size="sm" disabled={busy} onClick={() => run(supabase.rpc("approve_bonus_pool", { p_pool_id: p.id }))}>
                       Approve
@@ -396,7 +396,7 @@ function AppraisalsTab({
                 {a.weighted_score ? ` (${Number(a.weighted_score).toFixed(2)})` : ""}
               </span>
               <div className="flex items-center gap-2">
-                <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 border border-slate-200">{a.status}</span>
+                <span className="text-xs px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200">{a.status}</span>
                 {NEXT[a.status] && (
                   <Button
                     variant="secondary"
@@ -497,7 +497,7 @@ function GuardBonusTab({
                 {g.period_month ? ` · ${formatDate(g.period_month)}` : ""} · {Number(g.amount ?? 0).toLocaleString()}
               </span>
               <div className="flex items-center gap-2">
-                <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 border border-slate-200">{g.status}</span>
+                <span className="text-xs px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200">{g.status}</span>
                 {g.status === "accrued" && (
                   <Button
                     variant="primary"

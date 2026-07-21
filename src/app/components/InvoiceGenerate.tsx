@@ -384,7 +384,7 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
                 <div className="text-xs text-slate-500 font-mono">{d.client.client_code}</div>
               </div>
               <div className="flex items-center gap-2">
-                <span className={`text-xs px-2 py-0.5 rounded-full border ${d.status === "Cleared" ? "bg-success-50 text-success-700 border-success-200" : "bg-warning-50 text-warning-700 border-warning-200"}`}>
+                <span className={`text-xs px-2 py-0.5 rounded-md border ${d.status === "Cleared" ? "bg-success-50 text-success-700 border-success-200" : "bg-warning-50 text-warning-700 border-warning-200"}`}>
                   {d.status}
                 </span>
                 <Button

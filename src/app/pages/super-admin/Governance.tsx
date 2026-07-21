@@ -105,7 +105,7 @@ export default function Governance() {
               {requests.filter((r) => r.status !== "pending").map((r) => (
                 <div key={r.id} className="flex items-center justify-between px-3 py-1.5 text-sm">
                   <span className="text-slate-600">{String(r.action_key).replace(/_/g, " ")}{r.amount != null && ` · ${Number(r.amount).toLocaleString()}`}</span>
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 border border-slate-200">{r.status}</span>
+                  <span className="text-xs px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200">{r.status}</span>
                 </div>
               ))}
             </div>

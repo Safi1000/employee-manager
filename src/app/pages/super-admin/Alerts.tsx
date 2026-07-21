@@ -67,7 +67,7 @@ export default function Alerts() {
             {alerts.map((a) => (
               <div key={a.id} className="flex items-center justify-between px-3 py-2 text-sm">
                 <div className="flex items-center gap-2">
-                  <span className={`px-2 py-0.5 rounded-full text-xs border ${TIER[a.tier] ?? ""}`}>{a.tier}</span>
+                  <span className={`px-2 py-0.5 rounded-md text-xs border ${TIER[a.tier] ?? ""}`}>{a.tier}</span>
                   <span className="text-slate-700">{a.message}</span>
                 </div>
                 <Button variant="secondary" size="sm" disabled={busy} onClick={() => ack(a.id, a.tier === "blocking")}>
@@ -84,7 +84,7 @@ export default function Alerts() {
           <div className="border border-slate-200 rounded-md divide-y divide-slate-100">
             {warnings.map((w, i) => (
               <div key={i} className="px-3 py-2 text-sm text-slate-700 flex items-center gap-2">
-                <span className={`px-2 py-0.5 rounded-full text-xs border ${TIER.warning}`}>{String(w.category).replace(/_/g, " ")}</span>
+                <span className={`px-2 py-0.5 rounded-md text-xs border ${TIER.warning}`}>{String(w.category).replace(/_/g, " ")}</span>
                 {w.message}
               </div>
             ))}
@@ -97,7 +97,7 @@ export default function Alerts() {
           <div className="border border-slate-200 rounded-md divide-y divide-slate-100">
             {dashboard.map((d, i) => (
               <div key={i} className="px-3 py-2 text-sm text-slate-600 flex items-center gap-2">
-                <span className={`px-2 py-0.5 rounded-full text-xs border ${TIER.dashboard}`}>{String(d.category).replace(/_/g, " ")}</span>
+                <span className={`px-2 py-0.5 rounded-md text-xs border ${TIER.dashboard}`}>{String(d.category).replace(/_/g, " ")}</span>
                 {d.message}
               </div>
             ))}

@@ -307,7 +307,7 @@ export default function PeriodClose() {
                       <td className="px-4 py-3 text-sm">
                         {closed ? (
                           <div>
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-success-50 text-success-700 border border-success-200">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs bg-success-50 text-success-700 border border-success-200">
                               <Lock className="w-3 h-3" />
                               Closed
                             </span>
@@ -317,7 +317,7 @@ export default function PeriodClose() {
                             </div>
                           </div>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-warning-50 text-warning-700 border border-warning-200">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs bg-warning-50 text-warning-700 border border-warning-200">
                             <Unlock className="w-3 h-3" />
                             Open
                           </span>
