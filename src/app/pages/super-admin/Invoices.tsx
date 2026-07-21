@@ -1388,7 +1388,7 @@ export default function Invoices() {
                   key={mode}
                   className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm border cursor-pointer ${
                     paymentForm.payment_mode === mode
-                      ? "bg-slate-900 text-white border-slate-900"
+                      ? "bg-brand-600 text-[#fff] border-brand-600"
                       : "bg-white text-slate-700 border-slate-200 hover:border-slate-300"
                   }`}
                 >
@@ -1536,7 +1536,7 @@ export default function Invoices() {
                   key={mode}
                   className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm border cursor-pointer ${
                     editPaymentForm.payment_mode === mode
-                      ? "bg-slate-900 text-white border-slate-900"
+                      ? "bg-brand-600 text-[#fff] border-brand-600"
                       : "bg-white text-slate-700 border-slate-200 hover:border-slate-300"
                   }`}
                 >

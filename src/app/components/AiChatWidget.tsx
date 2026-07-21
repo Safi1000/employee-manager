@@ -134,7 +134,7 @@ export default function AiChatWidget() {
         onClick={() => setOpen(true)}
         title="Open assistant"
         aria-label="Open assistant"
-        className={`fixed bottom-6 right-6 z-40 flex items-center justify-center w-14 h-14 rounded-full bg-brand-600 text-white shadow-lg hover:bg-brand-700 transition-all duration-200 ease-out ${
+        className={`fixed bottom-6 right-6 z-40 flex items-center justify-center w-14 h-14 rounded-full bg-brand-600 text-[#fff] shadow-lg hover:bg-brand-700 transition-all duration-200 ease-out ${
           open
             ? "opacity-0 scale-90 pointer-events-none"
             : "opacity-100 scale-100"
@@ -155,7 +155,7 @@ export default function AiChatWidget() {
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-slate-50">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-full bg-brand-600 flex items-center justify-center">
-              <Bot className="w-4 h-4 text-white" strokeWidth={1.5} />
+              <Bot className="w-4 h-4 text-[#fff]" strokeWidth={1.5} />
             </div>
             <p className="text-sm font-medium text-slate-900">Assistant</p>
           </div>
@@ -224,7 +224,7 @@ export default function AiChatWidget() {
             <button
               type="submit"
               disabled={sending || !input.trim()}
-              className="flex items-center justify-center w-10 h-10 rounded-md bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center justify-center w-10 h-10 rounded-md bg-brand-600 text-[#fff] hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed"
               title="Send"
             >
               {sending ? (
@@ -247,7 +247,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
     // pipe characters they typed survive verbatim.
     return (
       <div className="flex justify-end">
-        <div className="max-w-[85%] px-3 py-2 rounded-lg bg-brand-600 text-white text-sm whitespace-pre-wrap break-words">
+        <div className="max-w-[85%] px-3 py-2 rounded-lg bg-brand-600 text-[#fff] text-sm whitespace-pre-wrap break-words">
           {message.content}
         </div>
       </div>

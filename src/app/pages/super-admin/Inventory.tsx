@@ -683,7 +683,7 @@ export default function Inventory() {
                   onClick={() => setActiveTab(tab.key)}
                   className={`px-4 py-2 rounded-md text-sm transition-colors ${
                     activeTab === tab.key
-                      ? "bg-brand-600 text-white"
+                      ? "bg-brand-600 text-[#fff]"
                       : "text-slate-600 hover:bg-slate-100"
                   }`}
                 >

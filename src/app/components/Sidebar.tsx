@@ -28,6 +28,18 @@ type SidebarGroup = {
 
 export type SidebarItem = SidebarLink | SidebarGroup;
 
+/** Bastion shield mark — amber, matches the landing brand. */
+function BrandMark() {
+  return (
+    <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-brand-500/15 text-brand-600 dark:text-brand-500">
+      <svg viewBox="0 0 32 32" fill="none" className="h-5 w-5">
+        <path d="M16 2.5 4.5 7v8.5c0 6.6 4.7 10.5 11.5 13.3C22.8 25.9 27.5 22 27.5 15.5V7z" stroke="currentColor" strokeWidth="1.8" />
+        <path d="M13 15.5a3 3 0 0 1 3-3 3 3 0 0 1 3 3 3 3 0 0 1-3 3M19 16.5a3 3 0 0 1-3 3 3 3 0 0 1-3-3 3 3 0 0 1 3-3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      </svg>
+    </span>
+  );
+}
+
 interface SidebarProps {
   title: string;
   links: SidebarItem[];
@@ -132,10 +144,10 @@ export default function Sidebar({ title, links }: SidebarProps) {
         to={link.to}
         end={link.to.split("/").length === 2}
         className={({ isActive }) =>
-          `flex items-center gap-3 px-4 py-2.5 rounded-md text-sm transition-colors ${
+          `flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm transition-colors ${
             isActive
-              ? "bg-brand-50 text-brand-700 border-l-2 border-brand-600"
-              : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              ? "bg-brand-500/15 text-brand-700 dark:text-brand-500 font-medium border-l-2 border-brand-500"
+              : "text-muted-foreground hover:bg-accent hover:text-foreground"
           }`
         }
       >
@@ -212,16 +224,19 @@ export default function Sidebar({ title, links }: SidebarProps) {
 
       {/* Mobile drawer */}
       <aside
-        className={`md:hidden fixed inset-y-0 left-0 z-50 w-72 bg-white border-r border-slate-200 flex flex-col transform transition-transform duration-200 ${
+        className={`md:hidden fixed inset-y-0 left-0 z-50 w-72 bg-sidebar border-r border-sidebar-border flex flex-col transform transition-transform duration-200 ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="h-16 px-6 flex items-center justify-between border-b border-slate-200">
-          <h1 className="text-lg text-slate-900 truncate">{displayTitle}</h1>
+        <div className="h-16 px-4 flex items-center justify-between border-b border-sidebar-border">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <BrandMark />
+            <h1 className="text-base font-bold tracking-tight text-foreground truncate">{displayTitle}</h1>
+          </div>
           <button
             type="button"
             onClick={() => setOpen(false)}
-            className="p-1 text-slate-500 hover:text-slate-900"
+            className="p-1 text-muted-foreground hover:text-foreground"
             aria-label="Close menu"
           >
             <X className="w-5 h-5" strokeWidth={1.5} />
@@ -232,9 +247,10 @@ export default function Sidebar({ title, links }: SidebarProps) {
       </aside>
 
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex w-64 bg-white border-r border-slate-200 flex-col">
-        <div className="h-16 px-6 flex items-center border-b border-slate-200">
-          <h1 className="text-lg text-slate-900 truncate">{displayTitle}</h1>
+      <aside className="hidden md:flex w-64 bg-sidebar border-r border-sidebar-border flex-col">
+        <div className="h-16 px-4 flex items-center gap-2.5 border-b border-sidebar-border">
+          <BrandMark />
+          <h1 className="text-base font-bold tracking-tight text-foreground truncate leading-tight">{displayTitle}</h1>
         </div>
         {navItems}
         {footer}

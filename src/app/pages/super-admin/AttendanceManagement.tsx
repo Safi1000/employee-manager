@@ -1984,7 +1984,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                   type="button"
                   onClick={() => applyBulkStatus("Present")}
                   disabled={bulkSubmitting || bulkSelected.size === 0}
-                  className="flex-1 min-w-[120px] px-3 py-2 rounded-md text-sm bg-success-600 text-white hover:bg-success-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 min-w-[120px] px-3 py-2 rounded-md text-sm bg-success-600 text-[#fff] hover:bg-success-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Mark Present
                 </button>
@@ -1992,7 +1992,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                   type="button"
                   onClick={() => applyBulkStatus("Absent")}
                   disabled={bulkSubmitting || bulkSelected.size === 0}
-                  className="flex-1 min-w-[120px] px-3 py-2 rounded-md text-sm bg-danger-600 text-white hover:bg-danger-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 min-w-[120px] px-3 py-2 rounded-md text-sm bg-danger-600 text-[#fff] hover:bg-danger-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Mark Absent
                 </button>
@@ -2000,7 +2000,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                   type="button"
                   onClick={() => applyBulkStatus("Leave")}
                   disabled={bulkSubmitting || bulkSelected.size === 0}
-                  className="flex-1 min-w-[120px] px-3 py-2 rounded-md text-sm bg-warning-500 text-white hover:bg-warning-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 min-w-[120px] px-3 py-2 rounded-md text-sm bg-warning-500 text-[#fff] hover:bg-warning-600 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Mark Leave
                 </button>

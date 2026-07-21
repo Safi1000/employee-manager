@@ -42,7 +42,7 @@ export default function ForcePasswordChange() {
   };
 
   return (
-    <div className="fixed inset-0 z-[100] bg-slate-900/60 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-white rounded-lg shadow-xl p-6 md:p-8">
         <div className="text-center mb-6">
           <div className="w-12 h-12 bg-brand-50 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -94,7 +94,7 @@ export default function ForcePasswordChange() {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full py-2.5 px-4 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2"
+            className="w-full py-2.5 px-4 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-[#fff] rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2"
           >
             {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
             Set Password & Continue

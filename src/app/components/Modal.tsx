@@ -24,7 +24,7 @@ export default function Modal({ isOpen, onClose, title, children, size = "md", f
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="fixed inset-0 bg-black/20" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
       {/* Three regions in a bounded flex column: header (fixed), body (the only
           scroller), footer (fixed). min-h-0 lets the body actually shrink and
           scroll instead of pushing the footer off-screen. */}

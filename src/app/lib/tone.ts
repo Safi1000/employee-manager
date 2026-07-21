@@ -11,6 +11,11 @@
  * Each tone maps to a single semantic palette (success, danger, warning,
  * info, brand, neutral). Pick the tone that matches *meaning*, not visual
  * color preference — that's the whole point.
+ *
+ * Dark mode: the `-50/100/200` tints are generated (see theme.css) by mixing
+ * the accent into the current surface, so they darken automatically. Text on
+ * a tint switches from the deep `-700` shade (light) to the brighter `-500`
+ * shade (dark) via `dark:` so it stays legible.
  */
 
 export type Tone = "success" | "danger" | "warning" | "info" | "brand" | "neutral";
@@ -30,7 +35,7 @@ type ToneSet = {
   badge: string;
   /** Composed card: tint + thin border + left accent border. */
   card: string;
-  /** Composed stat-card surface: white bg + left accent border + accent text. */
+  /** Composed stat-card surface: card bg + left accent border + accent text. */
   statCard: string;
   /** Solid button (filled with tone). */
   solidButton: string;
@@ -41,34 +46,44 @@ type ToneSet = {
   chartFill: string;
 };
 
-const make = (key: Exclude<Tone, "neutral">): ToneSet => ({
-  softBg: `bg-${key}-50`,
-  text: `text-${key}-700`,
-  icon: `text-${key}-600`,
-  border: `border-${key}-200`,
-  borderStrong: `border-${key}-500`,
-  badge: `inline-flex items-center px-2 py-0.5 rounded text-xs bg-${key}-50 text-${key}-700 border border-${key}-200`,
-  card: `bg-${key}-50 border border-${key}-200 border-l-4 border-l-${key}-500 rounded-lg`,
-  statCard: `bg-white border border-slate-200 border-l-4 border-l-${key}-500 rounded-lg`,
-  solidButton: `bg-${key}-600 hover:bg-${key}-700 text-white`,
-  subtleButton: `bg-${key}-50 hover:bg-${key}-100 text-${key}-700`,
-  chartStroke: `var(--color-${key}-600)`,
-  chartFill: `var(--color-${key}-500)`,
-});
+// Amber/warning read best with dark text on the fill; the rest take white.
+const SOLID_TEXT: Record<string, string> = {
+  brand: "text-[#241a06]",
+  warning: "text-[#241a06]",
+};
+
+const make = (key: Exclude<Tone, "neutral">): ToneSet => {
+  const onSolid = SOLID_TEXT[key] ?? "text-[#fff]";
+  return {
+    softBg: `bg-${key}-50`,
+    text: `text-${key}-700 dark:text-${key}-500`,
+    icon: `text-${key}-600 dark:text-${key}-500`,
+    border: `border-${key}-200`,
+    borderStrong: `border-${key}-500`,
+    badge: `inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-${key}-50 text-${key}-700 dark:text-${key}-500 border border-${key}-200`,
+    card: `bg-${key}-50 border border-${key}-200 border-l-4 border-l-${key}-500 rounded-lg`,
+    statCard: `bg-card border border-border border-l-4 border-l-${key}-500 rounded-xl`,
+    solidButton: `bg-${key}-600 hover:bg-${key}-700 ${onSolid}`,
+    subtleButton: `bg-${key}-50 hover:bg-${key}-100 text-${key}-700 dark:text-${key}-500`,
+    chartStroke: `var(--color-${key}-600)`,
+    chartFill: `var(--color-${key}-500)`,
+  };
+};
 
 const neutral: ToneSet = {
   softBg: "bg-slate-50",
   text: "text-slate-700",
   icon: "text-slate-600",
   border: "border-slate-200",
-  borderStrong: "border-slate-500",
-  badge: "inline-flex items-center px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-700 border border-slate-200",
+  borderStrong: "border-slate-400",
+  badge: "inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200",
   card: "bg-slate-50 border border-slate-200 border-l-4 border-l-slate-400 rounded-lg",
-  statCard: "bg-white border border-slate-200 border-l-4 border-l-slate-400 rounded-lg",
-  solidButton: "bg-slate-900 hover:bg-slate-800 text-white",
+  statCard: "bg-card border border-border border-l-4 border-l-slate-400 rounded-xl",
+  // Inverted neutral button: dark in light mode, light in dark mode.
+  solidButton: "bg-foreground text-background hover:opacity-90",
   subtleButton: "bg-slate-100 hover:bg-slate-200 text-slate-700",
-  chartStroke: "#64748b",
-  chartFill: "#94a3b8",
+  chartStroke: "var(--color-slate-600)",
+  chartFill: "var(--color-slate-400)",
 };
 
 export const tone: Record<Tone, ToneSet> = {
