@@ -1652,7 +1652,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       >
         {detailRecord && (
           <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-4 pb-4 border-b border-slate-200 text-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pb-4 border-b border-slate-200 text-sm">
               <div>
                 <p className="text-slate-500 mb-1">Date</p>
                 <p className="text-slate-900">{detailRecord.date}</p>
@@ -1667,7 +1667,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-success-500">
                 <p className="text-sm text-success-700 mb-1">Present</p>
                 <p className="text-2xl text-success-900">{detailRecord.present}</p>

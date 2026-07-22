@@ -1638,7 +1638,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                     <p className="text-xs text-muted-foreground font-mono">{selectedRow.employee.employee_code}</p>
                   </div>
 
-                  <div className="grid grid-cols-4 gap-1.5 text-center">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-center">
                     <div className="rounded-md border border-border py-1.5">
                       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Working</div>
                       <div className="text-base font-semibold tabular-nums text-foreground">{selectedRow.working_days}</div>
@@ -1966,7 +1966,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
 
             <div className="pt-4 border-t border-slate-200">
               <h4 className="text-sm text-slate-900 mb-3">Attendance</h4>
-              <div className="grid grid-cols-4 gap-2 text-sm">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
                 <div className="bg-slate-50 p-2 rounded">
                   <p className="text-xs text-slate-500">Working</p>
                   <p className="text-slate-900">{payslipData.working_days}</p>
