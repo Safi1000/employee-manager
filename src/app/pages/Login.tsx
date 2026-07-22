@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router";
-import { Lock, Mail, Loader2, ArrowRight, Check } from "lucide-react";
+import { Lock, Mail, Loader2, ArrowRight, Check, Eye, EyeOff, Clock } from "lucide-react";
 import { ROLE_HOMES, useAuth } from "../lib/auth";
 import ThemeToggle from "../components/ThemeToggle";
 
@@ -28,8 +28,22 @@ export default function Login() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [idleLogout, setIdleLogout] = useState(false);
+
+  // Show a one-time notice if we landed here from an inactivity auto-logout.
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("txs.logout_reason") === "inactivity") {
+        setIdleLogout(true);
+        localStorage.removeItem("txs.logout_reason");
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   useEffect(() => {
     if (!loading && session && profile) {
@@ -127,6 +141,12 @@ export default function Login() {
             </div>
 
             <form onSubmit={handleLogin} className="space-y-5 px-8 py-7">
+              {idleLogout && (
+                <div className="flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2.5 text-sm text-warning-700 dark:text-warning-500">
+                  <Clock className="mt-0.5 h-4 w-4 flex-shrink-0" strokeWidth={1.5} />
+                  <span>You were logged out due to inactivity. Please sign in again.</span>
+                </div>
+              )}
               <div>
                 <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Email address
@@ -151,13 +171,27 @@ export default function Login() {
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
                   <input
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
                     placeholder="••••••••"
-                    className={inputClass}
+                    className={inputClass.replace("pr-4", "pr-10")}
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    aria-pressed={showPassword}
+                    tabIndex={-1}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-4 w-4" strokeWidth={1.5} />
+                    ) : (
+                      <Eye className="h-4 w-4" strokeWidth={1.5} />
+                    )}
+                  </button>
                 </div>
               </div>
 

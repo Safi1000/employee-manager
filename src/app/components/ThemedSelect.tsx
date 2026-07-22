@@ -49,6 +49,8 @@ type Props = {
   onChange?: (e: { target: { value: string } }) => void;
   className?: string;
   disabled?: boolean;
+  required?: boolean;
+  name?: string;
   title?: string;
   children?: ReactNode;
   "aria-label"?: string;
@@ -59,6 +61,8 @@ export default function ThemedSelect({
   onChange,
   className = "",
   disabled,
+  required,
+  name,
   title,
   children,
   "aria-label": ariaLabel,
@@ -120,8 +124,19 @@ export default function ThemedSelect({
     if (v !== currentValue) onChange?.({ target: { value: v } });
   };
 
+  // Native-validation mirror. The visible control is a <button>, which the
+  // browser excludes from constraint validation, so a required ThemedSelect
+  // would silently pass an empty submit. This hidden <input required> carries
+  // the current value and participates in the form's native validation exactly
+  // like any required text input — blocking submit and showing the browser's
+  // "Please fill out this field" bubble when empty. It must NOT be display:none,
+  // readonly, or disabled (all barred from validation), so it's positioned
+  // off-view with opacity 0 instead. The `relative` wrapper anchors the bubble
+  // to the control; width is forwarded so `w-full` selects still stretch.
+  const stretch = className.split(/\s+/).includes("w-full");
+
   return (
-    <>
+    <span className={`relative ${stretch ? "block w-full" : "inline-block"}`}>
       <button
         ref={btnRef}
         type="button"
@@ -141,6 +156,35 @@ export default function ThemedSelect({
           strokeWidth={1.75}
         />
       </button>
+
+      {required && !disabled && (
+        <input
+          tabIndex={-1}
+          aria-hidden="true"
+          name={name}
+          required
+          value={currentValue}
+          onChange={() => {}}
+          onFocus={(e) => {
+            // If validation focuses the mirror, open the real control instead.
+            e.currentTarget.blur();
+            btnRef.current?.focus();
+            setOpen(true);
+          }}
+          style={{
+            position: "absolute",
+            left: 12,
+            bottom: 0,
+            height: 1,
+            width: 1,
+            opacity: 0,
+            padding: 0,
+            margin: 0,
+            border: 0,
+            pointerEvents: "none",
+          }}
+        />
+      )}
 
       {open &&
         pos &&
@@ -183,6 +227,6 @@ export default function ThemedSelect({
           </div>,
           document.body,
         )}
-    </>
+    </span>
   );
 }

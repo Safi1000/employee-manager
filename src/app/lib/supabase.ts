@@ -50,8 +50,35 @@ export type Company = {
   fiscal_year_start?: string | null;
   logo_url?: string | null;
   theme?: string | null;
+  // Invoice Structure branding (0114). Logo/stamp are base64 data URLs.
+  legal_name?: string | null;
+  registration_line?: string | null;
+  website?: string | null;
+  signature_label?: string | null;
+  stamp_url?: string | null;
+  contact_phones?: string[] | null;
+  invoice_settings?: InvoiceStructureSettings | null;
   created_at?: string;
   updated_at?: string;
+};
+
+// Per-company, per-template toggles stored in companies.invoice_settings (0114).
+export type InvoiceStructureSettings = {
+  fixed_show_previous_balance?: boolean;
+  variable_show_previous_balance?: boolean;
+  general_show_stamp?: boolean;
+  // When true (default) the SLA template derives its tax columns from the
+  // client's tax_profile; otherwise it uses sla_tax_columns.
+  sla_taxes_dynamic?: boolean;
+  sla_tax_columns?: string[];
+};
+
+export const DEFAULT_INVOICE_SETTINGS: InvoiceStructureSettings = {
+  fixed_show_previous_balance: true,
+  variable_show_previous_balance: true,
+  general_show_stamp: true,
+  sla_taxes_dynamic: true,
+  sla_tax_columns: [],
 };
 
 export const DASHBOARD_WIDGET_KEYS = [
@@ -1578,6 +1605,10 @@ export type InvoiceStatus = "Pending" | "Delivered" | "Unpaid" | "Partly-Paid" |
 export type Invoice = {
   id: string;
   client_id: string;
+  // Which contract this invoice bills (0109). Null on legacy/unlinked invoices
+  // and on multi-contract clients that weren't auto-backfilled. Enforces the
+  // "one invoice per contract per month" rule together with period_start.
+  contract_id?: string | null;
   invoice_number: string;
   invoice_date: string;
   invoice_amount: number;

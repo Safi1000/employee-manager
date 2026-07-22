@@ -1,6 +1,7 @@
 import { Outlet, useNavigate } from "react-router";
 import Sidebar, { type SidebarItem } from "../components/Sidebar";
 import AiChatWidget from "../components/AiChatWidget";
+import InactivityLogout from "../components/InactivityLogout";
 import RegionSelector from "../components/RegionSelector";
 import { hasAnyPermission, useAuth } from "../lib/auth";
 import { useRegion } from "../lib/region";
@@ -280,6 +281,7 @@ export default function SuperAdminLayout() {
         <Outlet />
       </div>
       <AiChatWidget />
+      <InactivityLogout />
     </div>
   );
 }

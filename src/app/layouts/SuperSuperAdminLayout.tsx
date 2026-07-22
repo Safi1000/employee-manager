@@ -1,5 +1,6 @@
 import { Outlet } from "react-router";
 import Sidebar from "../components/Sidebar";
+import InactivityLogout from "../components/InactivityLogout";
 import { Building2 } from "lucide-react";
 
 export default function SuperSuperAdminLayout() {
@@ -12,6 +13,7 @@ export default function SuperSuperAdminLayout() {
       <div className="flex-1 flex flex-col overflow-hidden pt-12 md:pt-0">
         <Outlet />
       </div>
+      <InactivityLogout />
     </div>
   );
 }

@@ -12,6 +12,7 @@ import {
   Upload,
   Building2,
   Wallet,
+  Settings2,
 } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -21,19 +22,24 @@ import {
   supabase,
   fetchAllRows,
   INVOICE_ATTACHMENTS_BUCKET,
+  CONTRACT_TYPE_LABEL,
   type Client,
+  type Contract,
+  type ContractLine,
   type Invoice,
+  type InvoiceLine,
+  type InvoiceTax,
   type InvoiceStatus,
   type BankAccount,
   type BankTransactionKind,
   type InvoicePayment,
   type Branch,
-  type InvoiceTemplateItem,
 } from "../../lib/supabase";
 import { useRegion, withRegion } from "../../lib/region";
 import { useAuth } from "../../lib/auth";
-import { generateInvoicePdf } from "../../lib/invoicePdf";
+import { generateInvoiceDocument } from "../../lib/invoiceTemplates";
 import InvoiceGenerate from "../../components/InvoiceGenerate";
+import InvoiceStructureModal from "../../components/InvoiceStructureModal";
 import { validateInvoiceNumber, validateAmount, validateFreeText } from "../../lib/validation";
 import { formatDate } from "../../lib/date";
 
@@ -45,6 +51,7 @@ type PaymentRow = InvoicePayment & {
 
 type InvoiceForm = {
   client_id: string;
+  contract_id: string;
   invoice_number: string;
   invoice_date: string;
   invoice_amount: string;
@@ -88,6 +95,7 @@ const monthLabel = (iso: string | null | undefined) => {
 
 const emptyForm = (): InvoiceForm => ({
   client_id: "",
+  contract_id: "",
   invoice_number: "",
   invoice_date: currentMonthStr(),
   invoice_amount: "",
@@ -112,6 +120,7 @@ export default function Invoices() {
   const { profile, company } = useAuth();
   const { regionId } = useRegion();
   const [clients, setClients] = useState<Client[]>([]);
+  const [contracts, setContracts] = useState<Contract[]>([]);
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [banks, setBanks] = useState<BankAccount[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -124,6 +133,7 @@ export default function Invoices() {
   const [monthFilter, setMonthFilter] = useState<string>("all");
 
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [structureOpen, setStructureOpen] = useState(false);
   const [form, setForm] = useState<InvoiceForm>(emptyForm());
   const [fieldErrors, setFieldErrors] = useState<Record<string, string | null>>({});
   // Modal-scoped submit error, so create/edit failures show inside the dialog
@@ -151,8 +161,9 @@ export default function Invoices() {
   const loadAll = async () => {
     setLoading(true);
     setError(null);
-    const [cliRes, bankRes, brRes] = await Promise.all([
+    const [cliRes, conRes, bankRes, brRes] = await Promise.all([
       supabase.from("clients").select("*").order("name"),
+      supabase.from("contracts").select("*"),
       supabase.from("bank_accounts").select("*").order("bank_name"),
       supabase.from("branches").select("*").order("is_head_office", { ascending: false }).order("name"),
     ]);
@@ -160,6 +171,7 @@ export default function Invoices() {
     if (bankRes.error) setError(bankRes.error.message);
     if (brRes.error) setError(brRes.error.message);
     setClients((cliRes.data ?? []) as Client[]);
+    setContracts((conRes.data ?? []) as Contract[]);
     setBanks((bankRes.data ?? []) as BankAccount[]);
     setBranches((brRes.data ?? []) as Branch[]);
     try {
@@ -375,6 +387,22 @@ export default function Invoices() {
     );
     if (dup) return "That invoice number already exists.";
     if (!f.invoice_date) return "Select an invoice date.";
+    // One invoice per contract per month (mirrors the DB uq_invoice_contract_month
+    // index). Enforced only when a contract is linked; if the client has active
+    // contracts a selection is required (see InvoiceFields), so ad-hoc invoices
+    // without a contract only remain for clients that have none.
+    if (f.contract_id) {
+      const month = f.invoice_date.slice(0, 7);
+      const clash = invoices.some(
+        (i) =>
+          i.id !== excludeId &&
+          i.contract_id === f.contract_id &&
+          ((i.period_start ?? i.invoice_date) ?? "").slice(0, 7) === month,
+      );
+      if (clash) return "This contract already has an invoice for that month.";
+    } else if (f.client_id && contracts.some((c) => c.client_id === f.client_id && c.status === "active")) {
+      return "Select the contract this invoice bills.";
+    }
     const amt = Number(f.invoice_amount);
     if (!amt || amt <= 0) return "Enter a positive invoice amount.";
     if (validateFreeText(f.notes)) return "Special characters are not allowed in Notes.";
@@ -395,14 +423,15 @@ export default function Invoices() {
   // Map a DB write failure to a friendly modal message. A unique-constraint
   // violation on (client_id, invoice_number) becomes the duplicate message.
   const routeDbError = (e: any) => {
-    const isDup =
-      e?.code === "23505" ||
-      /duplicate key|already exists|unique/i.test(e?.message ?? "");
-    routeSubmitError(
-      isDup
-        ? "That invoice number already exists."
-        : e?.message ?? String(e),
-    );
+    const msg = e?.message ?? "";
+    // A contract-month clash and an invoice-number clash are both 23505; tell
+    // them apart by the index/constraint name so the message is actionable.
+    if (/uq_invoice_contract_month/i.test(msg)) {
+      setModalError("This contract already has an invoice for that month.");
+      return;
+    }
+    const isDup = e?.code === "23505" || /duplicate key|already exists|unique/i.test(msg);
+    routeSubmitError(isDup ? "That invoice number already exists." : msg || String(e));
   };
 
   const handleAdd = async (e: React.FormEvent) => {
@@ -422,6 +451,7 @@ export default function Invoices() {
         .from("invoices")
         .insert({
           client_id: form.client_id,
+          contract_id: form.contract_id || null,
           invoice_number: form.invoice_number.trim(),
           invoice_date: `${form.invoice_date.slice(0, 7)}-01`,
           invoice_amount: invAmt,
@@ -462,6 +492,7 @@ export default function Invoices() {
     setEditInvoice(row);
     setEditForm({
       client_id: row.client_id,
+      contract_id: row.contract_id ?? "",
       invoice_number: row.invoice_number,
       invoice_date: row.invoice_date.slice(0, 7),
       invoice_amount: String(row.invoice_amount),
@@ -515,6 +546,7 @@ export default function Invoices() {
         .from("invoices")
         .update({
           client_id: editForm.client_id,
+          contract_id: editForm.contract_id || null,
           invoice_number: editForm.invoice_number.trim(),
           invoice_date: `${editForm.invoice_date.slice(0, 7)}-01`,
           invoice_amount: invAmt,
@@ -866,6 +898,10 @@ export default function Invoices() {
             >
               Run Auto-Invoices
             </Button>
+            <Button variant="secondary" size="md" onClick={() => setStructureOpen(true)}>
+              <Settings2 className="w-4 h-4 mr-2" strokeWidth={1.5} />
+              Invoice Structure
+            </Button>
             <Button
               variant="primary"
               size="md"
@@ -887,6 +923,8 @@ export default function Invoices() {
           </div>
         }
       />
+
+      <InvoiceStructureModal isOpen={structureOpen} onClose={() => setStructureOpen(false)} />
 
       <div className="flex-1 overflow-y-auto p-8">
         {error && (
@@ -1090,10 +1128,25 @@ export default function Invoices() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => {
+                            onClick={async () => {
                               const cli = clients.find((c) => c.id === inv.client_id) ?? null;
-                              const tpl = ((company?.invoice_template ?? []) as InvoiceTemplateItem[]) || [];
-                              generateInvoicePdf(inv, cli, company ?? null, tpl);
+                              const contract = contracts.find((c) => c.id === inv.contract_id) ?? null;
+                              const [lineRes, taxRes, clRes] = await Promise.all([
+                                supabase.from("invoice_lines").select("*").eq("invoice_id", inv.id).order("sort_order"),
+                                supabase.from("invoice_taxes").select("*").eq("invoice_id", inv.id).order("sort_order"),
+                                inv.contract_id
+                                  ? supabase.from("contract_lines").select("*").eq("contract_id", inv.contract_id)
+                                  : Promise.resolve({ data: [] as ContractLine[] }),
+                              ]);
+                              generateInvoiceDocument({
+                                invoice: inv,
+                                client: cli,
+                                company: company ?? null,
+                                contract,
+                                contractLines: (clRes.data ?? []) as ContractLine[],
+                                invoiceLines: (lineRes.data ?? []) as InvoiceLine[],
+                                taxes: (taxRes.data ?? []) as InvoiceTax[],
+                              });
                             }}
                             title="Download PDF using your company invoice template"
                           >
@@ -1155,6 +1208,7 @@ export default function Invoices() {
             form={form}
             setForm={setForm}
             clients={clients}
+            contracts={contracts}
             allowClearAttachment={false}
             onClearAttachment={() => {}}
             errors={fieldErrors}
@@ -1203,6 +1257,7 @@ export default function Invoices() {
             form={editForm}
             setForm={setEditForm}
             clients={clients}
+            contracts={contracts}
             allowClearAttachment
             onClearAttachment={clearEditAttachment}
             errors={fieldErrors}
@@ -1626,6 +1681,7 @@ function InvoiceFields({
   form,
   setForm,
   clients,
+  contracts,
   allowClearAttachment,
   onClearAttachment,
   errors,
@@ -1636,6 +1692,7 @@ function InvoiceFields({
   form: InvoiceForm;
   setForm: (f: InvoiceForm) => void;
   clients: Client[];
+  contracts: Contract[];
   allowClearAttachment: boolean;
   onClearAttachment: () => void;
   errors: Record<string, string | null>;
@@ -1643,6 +1700,9 @@ function InvoiceFields({
   invoices: InvoiceRow[];
   excludeId?: string;
 }) {
+  // Active contracts for the chosen client. When any exist, a selection is
+  // required so the one-invoice-per-contract-per-month rule can apply.
+  const clientContracts = contracts.filter((c) => c.client_id === form.client_id && c.status === "active");
   return (
     <>
       <div>
@@ -1650,7 +1710,7 @@ function InvoiceFields({
         <ThemedSelect
           required
           value={form.client_id}
-          onChange={(e) => setForm({ ...form, client_id: e.target.value })}
+          onChange={(e) => setForm({ ...form, client_id: e.target.value, contract_id: "" })}
           className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
         >
           <option value="">Select client</option>
@@ -1661,6 +1721,35 @@ function InvoiceFields({
           ))}
         </ThemedSelect>
       </div>
+      {form.client_id && (
+        <div>
+          <label className="block text-sm text-slate-700 mb-1">
+            Contract {clientContracts.length > 0 ? "*" : ""}
+          </label>
+          {clientContracts.length === 0 ? (
+            <p className="text-xs text-slate-500 py-2">
+              This client has no active contracts — the invoice will be recorded without a contract link.
+            </p>
+          ) : (
+            <ThemedSelect
+              required
+              value={form.contract_id}
+              onChange={(e) => setForm({ ...form, contract_id: e.target.value })}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+            >
+              <option value="">Select contract</option>
+              {clientContracts.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.contract_code} ({CONTRACT_TYPE_LABEL[c.contract_type]})
+                </option>
+              ))}
+            </ThemedSelect>
+          )}
+          <p className="text-[10px] text-slate-500 mt-1">
+            One invoice per contract per month is enforced.
+          </p>
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-sm text-slate-700 mb-1">Invoice # *</label>
