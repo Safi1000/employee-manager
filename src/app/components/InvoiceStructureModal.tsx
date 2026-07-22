@@ -87,6 +87,8 @@ export default function InvoiceStructureModal({ isOpen, onClose }: Props) {
   const setToggle = (key: keyof InvoiceStructureSettings, val: boolean) =>
     setSettings((s) => ({ ...s, [key]: val }));
 
+  const setWatermark = (v: string | null) => setSettings((s) => ({ ...s, watermark_url: v ?? "" }));
+
   const label = "block text-sm text-slate-700 mb-1";
   const input = "w-full px-3 py-2 border border-slate-200 rounded-md text-sm";
 
@@ -207,6 +209,61 @@ export default function InvoiceStructureModal({ isOpen, onClose }: Props) {
             <div>
               <label className={label}>Signature Block Label</label>
               <input className={input} value={signatureLabel} onChange={(e) => setSignatureLabel(e.target.value)} placeholder="Accounts Manager" />
+            </div>
+            <div>
+              <label className={label}>Company Prefix (Ref number)</label>
+              <input
+                className={input}
+                value={settings.company_prefix ?? ""}
+                onChange={(e) => setSettings((s) => ({ ...s, company_prefix: e.target.value.toUpperCase() }))}
+                placeholder="e.g. GGS"
+              />
+              <p className="text-[10px] text-slate-500 mt-1">Used as the first block of the invoice Ref: {"{Prefix}-{YY}-{ClientPrefix}-{MM}"}.</p>
+            </div>
+            <div>
+              <label className={label}>Brand Accent Colour</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={settings.brand_color || "#1e40af"}
+                  onChange={(e) => setSettings((s) => ({ ...s, brand_color: e.target.value }))}
+                  className="h-9 w-12 rounded border border-slate-200 p-0.5 shrink-0"
+                />
+                <input
+                  className={input}
+                  value={settings.brand_color ?? ""}
+                  onChange={(e) => setSettings((s) => ({ ...s, brand_color: e.target.value }))}
+                  placeholder="#1e40af (blank = no accent)"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* ── Watermark ── */}
+          <div className="border-t border-slate-100 pt-4 space-y-3">
+            <ImageField
+              title="Watermark Mark (optional — faded, behind the invoice text)"
+              value={settings.watermark_url || null}
+              onPick={(f) => pickImage(f, setWatermark)}
+              onClear={() => setWatermark(null)}
+            />
+            <Toggle
+              k="show_watermark"
+              title="Show watermark on invoices"
+              hint="Prints the mark large, centered and faint behind the content. Off (or no image) = no watermark at all."
+            />
+            <div>
+              <label className={label}>
+                Watermark opacity ({Math.round((settings.watermark_opacity ?? 0.1) * 100)}%)
+              </label>
+              <input
+                type="range"
+                min={5}
+                max={30}
+                value={Math.round((settings.watermark_opacity ?? 0.1) * 100)}
+                onChange={(e) => setSettings((s) => ({ ...s, watermark_opacity: Number(e.target.value) / 100 }))}
+                className="w-full accent-brand-500"
+              />
             </div>
           </div>
           <div>

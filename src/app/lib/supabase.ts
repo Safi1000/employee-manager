@@ -71,6 +71,14 @@ export type InvoiceStructureSettings = {
   // client's tax_profile; otherwise it uses sla_tax_columns.
   sla_taxes_dynamic?: boolean;
   sla_tax_columns?: string[];
+  // Short company prefix for the invoice Ref number ({CompanyPrefix}-{YY}-{ClientPrefix}-{MM}).
+  company_prefix?: string;
+  // Brand accent colour (hex) for header/footer rules on the PDF.
+  brand_color?: string;
+  // Watermark: a separate faded mark (base64 data URL), a toggle, and opacity.
+  watermark_url?: string;
+  show_watermark?: boolean;
+  watermark_opacity?: number; // 0..1
 };
 
 export const DEFAULT_INVOICE_SETTINGS: InvoiceStructureSettings = {
@@ -79,6 +87,11 @@ export const DEFAULT_INVOICE_SETTINGS: InvoiceStructureSettings = {
   general_show_stamp: true,
   sla_taxes_dynamic: true,
   sla_tax_columns: [],
+  company_prefix: "",
+  brand_color: "",
+  watermark_url: "",
+  show_watermark: false,
+  watermark_opacity: 0.1,
 };
 
 export const DASHBOARD_WIDGET_KEYS = [

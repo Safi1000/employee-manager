@@ -5,7 +5,6 @@ import {
   Search,
   Eye,
   Pencil,
-  Trash2,
   Loader2,
   AlertCircle,
   X,
@@ -188,27 +187,8 @@ export default function Contracts() {
       .eq("id", contractId);
   };
 
-  const handleDelete = async (row: ContractRow) => {
-    if (!window.confirm(`Delete contract ${row.contract_code} for ${row.client_name}?`)) return;
-    if (row.drive_file_id) {
-      const { data: sess } = await supabase.auth.getSession();
-      const token = sess.session?.access_token;
-      await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gdrive-delete`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ drive_file_id: row.drive_file_id }),
-      });
-    }
-    const { error: delErr } = await supabase.from("contracts").delete().eq("id", row.id);
-    if (delErr) {
-      setError(delErr.message);
-      return;
-    }
-    await loadAll();
-  };
+  // §23 contract lock: contracts can never be deleted once created. Changes go
+  // through addendums (Edit modal). The Delete action was removed from the list.
 
   const uploadFromRow = async (row: ContractRow, file: File) => {
     setUploadingId(row.id);
@@ -448,14 +428,6 @@ export default function Contracts() {
                             title="Edit"
                           >
                             <Pencil className="w-4 h-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(row)}
-                            className="p-1.5 rounded text-danger-600 hover:bg-danger-50"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
                       </td>

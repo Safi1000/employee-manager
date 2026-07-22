@@ -23,6 +23,7 @@ import {
   fetchAllRows,
   INVOICE_ATTACHMENTS_BUCKET,
   CONTRACT_TYPE_LABEL,
+  DEFAULT_INVOICE_SETTINGS,
   type Client,
   type Contract,
   type ContractLine,
@@ -371,6 +372,23 @@ export default function Invoices() {
   }) => {
     const { error: logErr } = await supabase.from("bank_transactions").insert(row);
     if (logErr) throw logErr;
+  };
+
+  // Build the invoice Ref in the {CompanyPrefix}-{YY}-{ClientPrefix}-{MM} format
+  // (same as the Generate tab) for the manual New Invoice form. monthStr is YYYY-MM.
+  const makeRef = (clientId: string, monthStr: string): string => {
+    const cli = clients.find((c) => c.id === clientId);
+    const settings = { ...DEFAULT_INVOICE_SETTINGS, ...(company?.invoice_settings ?? {}) };
+    const initials = (name?: string | null) =>
+      (name ?? "").split(/\s+/).filter((w) => /^[A-Za-z]/.test(w)).slice(0, 3).map((w) => w[0].toUpperCase()).join("");
+    const cp = (settings.company_prefix?.trim() || initials(company?.legal_name || company?.name) || "INV").toUpperCase();
+    const clp = (cli?.employee_id_prefix?.trim() || cli?.client_code || "CLT").toUpperCase();
+    const base = `${cp}-${(monthStr || "").slice(2, 4)}-${clp}-${(monthStr || "").slice(5, 7)}`;
+    const taken = new Set(invoices.map((i) => i.invoice_number.trim().toLowerCase()));
+    if (!taken.has(base.toLowerCase())) return base;
+    let n = 2;
+    while (taken.has(`${base}-${n}`.toLowerCase())) n++;
+    return `${base}-${n}`;
   };
 
   const validateForm = (f: InvoiceForm, excludeId?: string): string | null => {
@@ -906,12 +924,9 @@ export default function Invoices() {
               variant="primary"
               size="md"
               onClick={() => {
-                // Prefill the next invoice number as INV-0NN (total invoices + 1,
-                // zero-padded to at least 3 digits) — e.g. 56 invoices → INV-057.
-                setForm({
-                  ...emptyForm(),
-                  invoice_number: `INV-${String(invoices.length + 1).padStart(3, "0")}`,
-                });
+                // Ref auto-fills to {CompanyPrefix}-{YY}-{ClientPrefix}-{MM} once a
+                // client is selected (see makeRef); leave it blank until then.
+                setForm({ ...emptyForm() });
                 setFieldErrors({});
                 setModalError(null);
                 setIsAddOpen(true);
@@ -1214,6 +1229,7 @@ export default function Invoices() {
             errors={fieldErrors}
             onFieldBlur={(k, err) => setFieldErrors((p) => ({ ...p, [k]: err }))}
             invoices={invoices}
+            makeRef={makeRef}
           />
           <div className="flex items-center gap-3 pt-4">
             <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
@@ -1688,6 +1704,7 @@ function InvoiceFields({
   onFieldBlur,
   invoices,
   excludeId,
+  makeRef,
 }: {
   form: InvoiceForm;
   setForm: (f: InvoiceForm) => void;
@@ -1699,6 +1716,8 @@ function InvoiceFields({
   onFieldBlur: (key: string, err: string | null) => void;
   invoices: InvoiceRow[];
   excludeId?: string;
+  // When provided (Add form only), selecting a client / month auto-fills the Ref.
+  makeRef?: (clientId: string, monthStr: string) => string;
 }) {
   // Active contracts for the chosen client. When any exist, a selection is
   // required so the one-invoice-per-contract-per-month rule can apply.
@@ -1710,7 +1729,15 @@ function InvoiceFields({
         <ThemedSelect
           required
           value={form.client_id}
-          onChange={(e) => setForm({ ...form, client_id: e.target.value, contract_id: "" })}
+          onChange={(e) => {
+            const cid = e.target.value;
+            setForm({
+              ...form,
+              client_id: cid,
+              contract_id: "",
+              ...(makeRef && cid ? { invoice_number: makeRef(cid, form.invoice_date) } : {}),
+            });
+          }}
           className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
         >
           <option value="">Select client</option>
@@ -1780,7 +1807,14 @@ function InvoiceFields({
             required
             type="month"
             value={form.invoice_date}
-            onChange={(e) => setForm({ ...form, invoice_date: e.target.value })}
+            onChange={(e) => {
+              const md = e.target.value;
+              setForm({
+                ...form,
+                invoice_date: md,
+                ...(makeRef && form.client_id ? { invoice_number: makeRef(form.client_id, md) } : {}),
+              });
+            }}
             className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
           />
         </div>

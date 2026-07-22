@@ -134,6 +134,8 @@ export default function Compliance() {
     const d = new Date();
     return { y: d.getFullYear(), m: d.getMonth() };
   });
+  // The date the user picked from the Upcoming sidebar — highlighted in the grid.
+  const [highlightedDateId, setHighlightedDateId] = useState<string | null>(null);
 
   const loadAll = async () => {
     setLoading(true);
@@ -506,6 +508,24 @@ export default function Compliance() {
     { month: "long", year: "numeric" }
   );
 
+  // Upcoming important dates for the sidebar — same `dates` source as the list
+  // above, filtered to today-or-future and sorted soonest-first.
+  const upcomingItems = useMemo(
+    () =>
+      dates
+        .map((d) => ({ ...d, daysRemaining: dayDiff(d.due_date) }))
+        .filter((d) => d.daysRemaining >= 0)
+        .sort((a, b) => a.daysRemaining - b.daysRemaining),
+    [dates],
+  );
+
+  // Navigate the grid to a sidebar item's month and highlight that date.
+  const goToUpcoming = (d: ImportantDate) => {
+    const [y, m] = d.due_date.split("-").map(Number);
+    setCalendarMonth({ y, m: m - 1 });
+    setHighlightedDateId(d.id);
+  };
+
   const headerActions = (
     <div className="flex items-center gap-2">
       {activeTab === "recurring" ? (
@@ -544,6 +564,16 @@ export default function Compliance() {
       : p === "medium"
       ? "bg-brand-100 text-brand-700"
       : "bg-slate-100 text-slate-700";
+
+  // Solid dot in the same semantic colour as each priority's badge above.
+  const priorityDot = (p: CompliancePriority) =>
+    p === "critical"
+      ? "bg-danger-500"
+      : p === "high"
+      ? "bg-warning-500"
+      : p === "medium"
+      ? "bg-brand-500"
+      : "bg-slate-400";
 
   return (
     <>
@@ -599,7 +629,7 @@ export default function Compliance() {
           </div>
         </div>
 
-        <div className="bg-white rounded-lg border border-slate-200">
+        <div id="compliance-dates-card" className="bg-white rounded-lg border border-slate-200 scroll-mt-4">
           <div className="p-6 border-b border-slate-200">
             <div className="flex gap-2">
               {([
@@ -912,42 +942,96 @@ export default function Compliance() {
             </div>
           </div>
 
-          <div className="grid grid-cols-7 gap-2 max-w-2xl">
-            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
-              <div key={day} className="text-center text-xs text-slate-500 py-1">
-                {day}
-              </div>
-            ))}
-            {calendarCells.map((cell, idx) => {
-              if (cell.day === null) {
-                return <div key={idx} className="h-14" />;
-              }
-              const hasEvents = cell.events.length > 0;
-              const hasCritical = cell.events.some((e) => e.priority === "critical");
-              const hasHigh = cell.events.some((e) => e.priority === "high");
-              return (
-                <div
-                  key={idx}
-                  className={`h-14 flex flex-col items-center justify-center rounded-md text-sm gap-1 ${
-                    hasCritical
-                      ? "bg-danger-100 text-danger-900 border border-danger-300"
-                      : hasHigh
-                      ? "bg-warning-100 text-warning-900 border border-warning-300"
-                      : hasEvents
-                      ? "bg-brand-50 text-brand-900 border border-brand-200"
-                      : "text-slate-700 hover:bg-slate-50"
-                  }`}
-                  title={cell.events.map((e) => `${e.title} (${e.priority})`).join("\n") || ""}
-                >
-                  <span>{cell.day}</span>
-                  {hasEvents && (
-                    <span className="text-[10px] leading-none">
-                      {cell.events.length} item{cell.events.length === 1 ? "" : "s"}
-                    </span>
+          <div className="flex flex-col lg:flex-row gap-6 items-start">
+            {/* Month grid */}
+            <div className="grid grid-cols-7 gap-2 w-full max-w-2xl">
+              {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+                <div key={day} className="text-center text-xs text-slate-500 py-1">
+                  {day}
+                </div>
+              ))}
+              {calendarCells.map((cell, idx) => {
+                if (cell.day === null) {
+                  return <div key={idx} className="h-14" />;
+                }
+                const hasEvents = cell.events.length > 0;
+                const hasCritical = cell.events.some((e) => e.priority === "critical");
+                const hasHigh = cell.events.some((e) => e.priority === "high");
+                const isHighlighted =
+                  highlightedDateId != null && cell.events.some((e) => e.id === highlightedDateId);
+                return (
+                  <div
+                    key={idx}
+                    className={`h-14 flex flex-col items-center justify-center rounded-md text-sm gap-1 ${
+                      hasCritical
+                        ? "bg-danger-100 text-danger-900 border border-danger-300"
+                        : hasHigh
+                        ? "bg-warning-100 text-warning-900 border border-warning-300"
+                        : hasEvents
+                        ? "bg-brand-50 text-brand-900 border border-brand-200"
+                        : "text-slate-700 hover:bg-slate-50"
+                    } ${isHighlighted ? "ring-2 ring-brand-500 ring-offset-1" : ""}`}
+                    title={cell.events.map((e) => `${e.title} (${e.priority})`).join("\n") || ""}
+                  >
+                    <span>{cell.day}</span>
+                    {hasEvents && (
+                      <span className="text-[10px] leading-none">
+                        {cell.events.length} item{cell.events.length === 1 ? "" : "s"}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Upcoming sidebar — fills the space to the right of the grid; stacks
+                below on narrow (<lg) screens. Same `dates` source as the list above. */}
+            <div className="w-full lg:flex-1 lg:min-w-[220px]">
+              <h4 className="text-sm font-medium text-slate-900 mb-3">Upcoming</h4>
+              {upcomingItems.length === 0 ? (
+                <div className="text-sm text-slate-500 py-8 text-center border border-dashed border-slate-200 rounded-md">
+                  No upcoming items
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {upcomingItems.slice(0, 5).map((d) => (
+                    <button
+                      key={d.id}
+                      type="button"
+                      onClick={() => goToUpcoming(d)}
+                      className={`w-full flex items-start gap-2.5 text-left px-3 py-2 rounded-md border transition-colors ${
+                        highlightedDateId === d.id
+                          ? "border-brand-300 bg-brand-50"
+                          : "border-slate-200 hover:bg-slate-50"
+                      }`}
+                    >
+                      <span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${priorityDot(d.priority)}`} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm text-slate-800 truncate">{d.title}</span>
+                        <span className="block text-xs text-slate-500">
+                          {formatDate(d.due_date)} ·{" "}
+                          {d.daysRemaining === 0 ? "Today" : `${d.daysRemaining} day${d.daysRemaining === 1 ? "" : "s"}`}
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+                  {upcomingItems.length > 5 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveTab("dates");
+                        document
+                          .getElementById("compliance-dates-card")
+                          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                      }}
+                      className="w-full text-center text-xs text-brand-600 hover:text-brand-700 py-2"
+                    >
+                      View all ({upcomingItems.length})
+                    </button>
                   )}
                 </div>
-              );
-            })}
+              )}
+            </div>
           </div>
         </div>
       </div>

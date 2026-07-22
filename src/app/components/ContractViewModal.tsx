@@ -1,13 +1,9 @@
-import ThemedSelect from "./ThemedSelect";
-import { useCallback, useEffect, useState } from "react";
 import { FileText } from "lucide-react";
 import Modal from "./Modal";
 import Field from "./Field";
-import Button from "./Button";
 import AddendumTable from "./AddendumTable";
 import ContractStatusBadge from "./ContractStatusBadge";
 import { formatDate } from "../lib/date";
-import { supabase } from "../lib/supabase";
 import {
   CONTRACT_TYPE_LABEL,
   CONTRACT_LINE_CATEGORY_LABEL,
@@ -231,9 +227,6 @@ export default function ContractViewModal({
           )}
         </div>
 
-        {/* Amendment history + amend (§23 contract lock) */}
-        <AmendmentSection contractId={contract.id} />
-
         {/* Client context */}
         <div className="border border-slate-200 rounded-md p-3">
           <div className="text-sm font-medium text-slate-700 mb-2">Client</div>
@@ -249,79 +242,3 @@ export default function ContractViewModal({
   );
 }
 
-const FIELD =
-  "px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent";
-
-// Locked fields whose change is a formal, reason-logged amendment (§23).
-const AMENDABLE_FIELDS: [string, string][] = [
-  ["rate_per_guard_per_month", "Rate / guard / month"],
-  ["number_of_guards", "Number of guards"],
-  ["end_date", "End date"],
-  ["renewal_terms", "Renewal terms"],
-  ["notice_period_days", "Notice period (days)"],
-];
-
-function AmendmentSection({ contractId }: { contractId: string }) {
-  const [history, setHistory] = useState<any[]>([]);
-  const [field, setField] = useState(AMENDABLE_FIELDS[0][0]);
-  const [value, setValue] = useState("");
-  const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    const { data } = await supabase
-      .from("contract_amendment_history")
-      .select("*")
-      .eq("contract_id", contractId)
-      .order("event_date", { ascending: false });
-    setHistory(data ?? []);
-  }, [contractId]);
-  useEffect(() => { load(); }, [load]);
-
-  const amend = async () => {
-    if (!value.trim() || !reason.trim()) return;
-    setBusy(true); setErr(null);
-    const { error } = await supabase.rpc("amend_contract", {
-      p_contract_id: contractId, p_field: field, p_new_value: value, p_reason: reason,
-    });
-    setBusy(false);
-    if (error) { setErr(error.message); return; }
-    setValue(""); setReason("");
-    await load();
-  };
-
-  return (
-    <div className="border border-slate-200 rounded-md overflow-hidden">
-      <div className="px-3 py-2 bg-slate-50 border-b border-slate-200">
-        <span className="text-sm font-medium text-slate-700">Amendment history</span>
-        <span className="text-[11px] text-slate-500 ml-2">Locked-field changes are logged with a reason.</span>
-      </div>
-      <div className="divide-y divide-slate-100 max-h-40 overflow-y-auto">
-        {history.map((h, i) => (
-          <div key={i} className="px-3 py-2 text-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-slate-700">{h.kind}</span>
-              <span className="text-xs text-slate-400">{h.event_date}</span>
-            </div>
-            {h.detail && <div className="text-xs text-slate-500">{h.detail}</div>}
-          </div>
-        ))}
-        {history.length === 0 && <p className="px-3 py-2 text-sm text-slate-500">No amendments yet.</p>}
-      </div>
-      <div className="p-3 border-t border-slate-200 space-y-2 bg-slate-50/50">
-        <div className="grid grid-cols-2 gap-2">
-          <ThemedSelect className={FIELD} value={field} onChange={(e) => setField(e.target.value)}>
-            {AMENDABLE_FIELDS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-          </ThemedSelect>
-          <input className={FIELD} placeholder="New value" value={value} onChange={(e) => setValue(e.target.value)} />
-        </div>
-        <input className={FIELD + " w-full"} placeholder="Reason for amendment" value={reason} onChange={(e) => setReason(e.target.value)} />
-        {err && <p className="text-xs text-danger-600">{err}</p>}
-        <Button variant="primary" size="sm" disabled={busy || !value.trim() || !reason.trim()} onClick={amend}>
-          Record amendment
-        </Button>
-      </div>
-    </div>
-  );
-}

@@ -158,6 +158,15 @@ const blankAddendum = (): AddendumForm => ({
  * by a single unified Contract Lines table: one row per category with a
  * committed count and a monthly rate. Contract value = Σ(count × rate).
  */
+// §23 lock styling: greys out every disabled control inside a locked fieldset so
+// it's clear at a glance the field is locked (not just empty). Reset fieldset
+// chrome + keep the form's vertical rhythm inside.
+const LOCK_CLS =
+  "min-w-0 border-0 p-0 m-0 space-y-3 " +
+  "[&_input:disabled]:bg-slate-100 [&_input:disabled]:text-slate-500 [&_input:disabled]:cursor-not-allowed " +
+  "[&_textarea:disabled]:bg-slate-100 [&_textarea:disabled]:text-slate-500 [&_textarea:disabled]:cursor-not-allowed " +
+  "[&_button:disabled]:bg-slate-100 [&_button:disabled]:text-slate-500 [&_button:disabled]:cursor-not-allowed [&_button:disabled]:opacity-100";
+
 export default function ContractEditorModal({
   isOpen,
   clientId,
@@ -196,6 +205,10 @@ export default function ContractEditorModal({
   const [addForm, setAddForm] = useState<AddendumForm>(blankAddendum());
   const [addFile, setAddFile] = useState<File | null>(null);
   const [addSubmitting, setAddSubmitting] = useState(false);
+
+  // §23 contract lock: an existing contract is locked — every field except the
+  // Addendums section is read-only. Creating a new contract stays fully editable.
+  const locked = !!contract;
 
   const loadAddendums = (contractId: string) =>
     supabase
@@ -455,6 +468,14 @@ export default function ContractEditorModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Locked contract: the terms & lines are read-only and the only write path is
+    // the Addendum form's own "Add Addendum" button. "Save Changes" must never
+    // re-write the locked fields — just refresh the parent and close.
+    if (locked) {
+      onSaved();
+      onClose();
+      return;
+    }
     const effClientId = clientId ?? form.client_id;
     if (!effClientId) {
       setError("Select a client.");
@@ -561,6 +582,7 @@ export default function ContractEditorModal({
           </div>
         )}
 
+        <fieldset disabled={locked} className={LOCK_CLS}>
         <div className="grid grid-cols-2 gap-3">
           {showClientPicker && (
             <div className="col-span-2">
@@ -809,6 +831,7 @@ export default function ContractEditorModal({
             Contract value = Σ (committed count × rate). Only rows with a count or rate are saved.
           </p>
         </div>
+        </fieldset>
 
         {/* Addendums — only for existing contracts (can't addend what isn't created) */}
         {contract && (
@@ -948,6 +971,7 @@ export default function ContractEditorModal({
           </div>
         )}
 
+        <fieldset disabled={locked} className={LOCK_CLS}>
         {/* Contract terms — leave allowance and EOBI are the values payroll and
             attendance read for every employee on this contract. */}
         <div className="border border-slate-200 rounded-md p-3">
@@ -1053,6 +1077,7 @@ export default function ContractEditorModal({
             )}
           </div>
         )}
+        </fieldset>
 
       </form>
 

@@ -118,17 +118,25 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
     [clients, group],
   );
 
+  // Ref number: {CompanyPrefix}-{YY}-{ClientPrefix}-{MM}, e.g. GGS-26-HMT-06.
+  // CompanyPrefix from Invoice Structure settings (falls back to company-name
+  // initials); ClientPrefix reuses the client's Employee-ID prefix.
   const suggestNumber = useCallback(
-    (client: Client, contract: Contract, taken: Set<string>): string => {
-      const fy = financialYearLabel(`${period}-01`).replace("FY ", "");
-      const ym = period.replace("-", "");
-      const base = `INV-${fy}-${client.client_code}-${contract.contract_code}-${ym}`;
+    (client: Client, taken: Set<string>): string => {
+      const settings = { ...DEFAULT_INVOICE_SETTINGS, ...(company?.invoice_settings ?? {}) };
+      const initials = (name?: string | null) =>
+        (name ?? "").split(/\s+/).filter((w) => /^[A-Za-z]/.test(w)).slice(0, 3).map((w) => w[0].toUpperCase()).join("");
+      const companyPrefix = (settings.company_prefix?.trim() || initials(company?.legal_name || company?.name) || "INV").toUpperCase();
+      const clientPrefix = (client.employee_id_prefix?.trim() || client.client_code || "CLT").toUpperCase();
+      const yy = period.slice(2, 4);
+      const mm = period.slice(5, 7);
+      const base = `${companyPrefix}-${yy}-${clientPrefix}-${mm}`;
       if (!taken.has(base)) return base;
       let n = 2;
       while (taken.has(`${base}-${n}`)) n++;
       return `${base}-${n}`;
     },
-    [period],
+    [period, company],
   );
 
   // Previous Balance is scoped PER CONTRACT, never per client: only THIS
@@ -185,7 +193,7 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
         component: t.component,
       }));
       const remitIndex = Math.max(0, (client.remit_accounts ?? []).findIndex((r) => r.is_default));
-      const number = suggestNumber(client, con, taken);
+      const number = suggestNumber(client, taken);
       taken.add(number);
       return {
         contractId: con.id,

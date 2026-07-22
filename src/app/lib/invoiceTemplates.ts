@@ -84,13 +84,13 @@ function periodRange(inv: Invoice): string {
   const e = inv.period_end ?? inv.period_start ?? inv.invoice_date;
   return `${ordinalDate(s)} to ${ordinalDate(e)}`;
 }
-function initialsOf(name: string): string {
-  return name
-    .split(/\s+/)
-    .filter((w) => /^[A-Za-z]/.test(w))
-    .slice(0, 3)
-    .map((w) => w[0].toUpperCase())
-    .join("");
+// Parse a #rrggbb (or #rgb) brand colour into an [r,g,b] tuple; null if unset/invalid.
+function hexToRgb(hex: string | null | undefined): [number, number, number] | null {
+  if (!hex) return null;
+  let h = hex.trim().replace(/^#/, "");
+  if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+  if (!/^[0-9a-fA-F]{6}$/.test(h)) return null;
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
 }
 function imageFormat(dataUrl: string): "PNG" | "JPEG" | "WEBP" | null {
   const m = /^data:image\/(png|jpe?g|webp)/i.exec(dataUrl);
@@ -117,75 +117,160 @@ const mergeSettings = (company: Company | null) => ({
 
 const legalNameOf = (c: Company | null) => c?.legal_name || c?.name || "Company";
 
-// ── Faint centered watermark (company initials) ──
+// ── Faint centered watermark (uploaded mark, behind all content) ──
+// Renders ONLY when the company enabled it and uploaded a watermark image — no
+// default/placeholder. Large, centered, aspect-preserved, at a low opacity via
+// the graphics state so it never obscures the invoice text drawn on top.
 function drawWatermark(ctx: Ctx): void {
-  const { doc, pageW, pageH, company } = ctx;
-  const initials = initialsOf(legalNameOf(company));
-  if (!initials) return;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(150);
-  doc.setTextColor(238, 236, 231);
-  doc.text(initials, pageW / 2, pageH / 2, { align: "center", baseline: "middle" });
-  doc.setTextColor(0);
+  const { doc, pageW, pageH, settings } = ctx;
+  const url = settings.watermark_url;
+  if (!settings.show_watermark || !url) return;
+  const fmt = imageFormat(url);
+  if (!fmt) return;
+  const opacity = Math.min(0.35, Math.max(0.03, settings.watermark_opacity ?? 0.1));
+  try {
+    const gd = doc as unknown as {
+      getImageProperties: (d: string) => { width: number; height: number };
+      GState: new (o: { opacity: number }) => unknown;
+      setGState: (g: unknown) => void;
+    };
+    const props = gd.getImageProperties(url);
+    const natW = props.width || 1;
+    const natH = props.height || 1;
+    const targetW = pageW * 0.55; // large, centered
+    const targetH = targetW * (natH / natW);
+    const x = (pageW - targetW) / 2;
+    const yy = (pageH - targetH) / 2;
+    doc.saveGraphicsState();
+    gd.setGState(new gd.GState({ opacity }));
+    doc.addImage(url, fmt, x, yy, targetW, targetH, undefined, "FAST");
+    doc.restoreGraphicsState();
+  } catch {
+    /* bad image data — skip silently, never block the invoice */
+  }
 }
 
-// ── Header: logo + legal name (bold, underlined) + registration line ──
+// Resolve the accent colour: the explicit brand_color, else the company's chosen
+// app theme, else a sensible default navy — so an accent always renders (and is
+// still fully overridable from the brand_color field).
+const THEME_HEX: Record<string, string> = { amber: "#e9a73c", green: "#4faa84", steel: "#5f86a8" };
+function resolveBrand(ctx: Ctx): [number, number, number] {
+  return (
+    hexToRgb(ctx.settings.brand_color) ??
+    hexToRgb(ctx.company?.theme ? THEME_HEX[ctx.company.theme] : null) ??
+    [31, 58, 95]
+  );
+}
+
+// ── Header: brand accent bar + logo (aspect-preserved) + legal name + reg line ──
 function drawHeader(ctx: Ctx, yStart: number): number {
   const { doc, pageW, margin, company } = ctx;
   let y = yStart;
+
+  // Subtle brand accent bar across the very top.
+  const brand = resolveBrand(ctx);
+  doc.setFillColor(brand[0], brand[1], brand[2]);
+  doc.rect(0, 0, pageW, 4, "F");
+
+  const boxH = 46;
+  let logoZoneW = 0; // horizontal space the logo occupies; reserved so text never overlaps it
   const logo = company?.logo_url ?? null;
   const logoFmt = logo ? imageFormat(logo) : null;
   if (logo && logoFmt) {
     try {
-      doc.addImage(logo, logoFmt, margin, y, 60, 60);
+      // Preserve aspect ratio: fit inside a fixed-height box, capped width, so no
+      // company's logo is stretched (multi-tenant safe). object-fit: contain.
+      const gd = doc as unknown as { getImageProperties: (d: string) => { width: number; height: number } };
+      const props = gd.getImageProperties(logo);
+      const natW = props.width || 1;
+      const natH = props.height || 1;
+      const maxW = 96;
+      let drawH = boxH;
+      let drawW = boxH * (natW / natH);
+      if (drawW > maxW) {
+        drawW = maxW;
+        drawH = maxW * (natH / natW);
+      }
+      doc.addImage(logo, logoFmt, margin, y + (boxH - drawH) / 2, drawW, drawH, undefined, "FAST");
+      logoZoneW = drawW;
     } catch {
       /* skip bad image */
     }
   }
+
+  // Centre the legal name in the space to the RIGHT of the logo (symmetric right
+  // margin), and shrink the font until it fits — so a long name can never run
+  // under the logo or off the page.
   const legal = legalNameOf(company);
+  const nameLeft = margin + (logoZoneW > 0 ? logoZoneW + 14 : 0);
+  const nameRight = pageW - margin;
+  const nameCenter = (nameLeft + nameRight) / 2;
+  const nameMaxW = nameRight - nameLeft;
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(17);
   doc.setTextColor(0);
-  const nameY = y + 22;
-  doc.text(legal, pageW / 2, nameY, { align: "center" });
-  // underline
-  const nw = doc.getTextWidth(legal);
+  let fs = 16;
+  doc.setFontSize(fs);
+  while (doc.getTextWidth(legal) > nameMaxW && fs > 9) {
+    fs -= 0.5;
+    doc.setFontSize(fs);
+  }
+  const nameY = y + 20;
+  doc.text(legal, nameCenter, nameY, { align: "center" });
+  const nw = Math.min(doc.getTextWidth(legal), nameMaxW);
   doc.setDrawColor(0);
   doc.setLineWidth(0.8);
-  doc.line(pageW / 2 - nw / 2, nameY + 3, pageW / 2 + nw / 2, nameY + 3);
+  doc.line(nameCenter - nw / 2, nameY + 3, nameCenter + nw / 2, nameY + 3);
   doc.setLineWidth(0.2);
 
   if (company?.registration_line) {
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
+    doc.setFontSize(8.5);
     doc.setTextColor(60);
-    doc.text(company.registration_line, pageW / 2, nameY + 18, { align: "center" });
-    y = nameY + 30;
+    const reg = doc.splitTextToSize(company.registration_line, nameMaxW);
+    doc.text(reg, nameCenter, nameY + 16, { align: "center" });
+    y = nameY + 16 + reg.length * 10;
   } else {
     y = nameY + 16;
   }
-  return Math.max(y, yStart + 66);
+  return Math.max(y, yStart + boxH + 8);
 }
 
 // ── Ref (left) | INVOICE {MONTH YEAR} (centre, bold, underlined) | Date (right) ──
+// The row is split into three fixed zones so a long Ref can never overlap the
+// centred title or the right-aligned date — each is clipped to its own zone.
 function drawRefTitleDate(ctx: Ctx, yStart: number): number {
   const { doc, pageW, margin, invoice } = ctx;
   const y = yStart + 16;
+  const usable = pageW - margin * 2;
+  const zoneW = usable / 3;
+  const leftEnd = margin + zoneW;
+  const rightStart = pageW - margin - zoneW;
+
+  // Ref — left zone, clipped so it stays inside its third.
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
   doc.setTextColor(0);
-  doc.text(`Ref: ${invoice.invoice_number ?? ""}`, margin, y);
+  const refText = doc.splitTextToSize(`Ref: ${invoice.invoice_number ?? ""}`, zoneW - 6)[0] ?? "";
+  doc.text(refText, margin, y);
 
+  // Title — centred in the middle zone, with a brand-coloured underline.
   const title = `INVOICE ${titleMonthYear(invoice)}`;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
-  doc.text(title, pageW / 2, y, { align: "center" });
-  const tw = doc.getTextWidth(title);
-  doc.line(pageW / 2 - tw / 2, y + 3, pageW / 2 + tw / 2, y + 3);
+  const centre = (leftEnd + rightStart) / 2;
+  doc.text(title, centre, y, { align: "center" });
+  const tw = Math.min(doc.getTextWidth(title), zoneW);
+  const brand = resolveBrand(ctx);
+  doc.setDrawColor(brand[0], brand[1], brand[2]);
+  doc.setLineWidth(1);
+  doc.line(centre - tw / 2, y + 3, centre + tw / 2, y + 3);
+  doc.setLineWidth(0.2);
+  doc.setDrawColor(0);
 
+  // Date — right zone, right-aligned.
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
-  const dateStr = `Date: ${longDate(invoice.invoice_date)}`;
+  const dateStr = doc.splitTextToSize(`Date: ${longDate(invoice.invoice_date)}`, zoneW - 6)[0] ?? "";
   doc.text(dateStr, pageW - margin - doc.getTextWidth(dateStr), y);
   return y + 16;
 }
@@ -328,8 +413,13 @@ function drawSignatureAndFooter(ctx: Ctx, yStart: number): void {
   const phones = company?.contact_phones?.length
     ? company.contact_phones.join(", ")
     : company?.contact_phone ?? "";
-  doc.setDrawColor(180);
+  // Footer rule in the brand accent colour.
+  const brand = resolveBrand(ctx);
+  doc.setDrawColor(brand[0], brand[1], brand[2]);
+  doc.setLineWidth(1);
   doc.line(margin, pageH - 62, pageW - margin, pageH - 62);
+  doc.setLineWidth(0.2);
+  doc.setDrawColor(0);
   doc.setFontSize(8.5);
   doc.setTextColor(30);
   if (company?.legal_address) {
@@ -461,7 +551,13 @@ function renderFixedFamily(input: InvoiceDocInput, useAttendance: boolean): jsPD
   const svc = ctx.company?.name || legalNameOf(ctx.company);
   const intro = `The monthly remuneration for the ${svc}, who are operating under your esteemed supervision, is as follows: -`;
   y = drawSalutationIntro(ctx, y, intro);
-  const rows = fixedLineRows(input, useAttendance);
+  let rows = fixedLineRows(input, useAttendance);
+  // Manual invoices carry no line rows — fall back to the invoice's own amount so
+  // the table and Total aren't blank/zero (was showing "Total 0/-").
+  if (rows.length === 0) {
+    const amt = Number(input.invoice.total_due ?? input.invoice.invoice_amount ?? 0);
+    rows = [{ label: input.invoice.notes?.trim() || "Services rendered", category: null, qty: 1, rate: amt, amount: amt }];
+  }
   const showPB = useAttendance ? !!ctx.settings.variable_show_previous_balance : !!ctx.settings.fixed_show_previous_balance;
   y = drawFixedTable(ctx, y, rows, useAttendance ? "Days" : "Qty", showPB);
   y = drawWordsLine(ctx, y, "Amount in words is");
