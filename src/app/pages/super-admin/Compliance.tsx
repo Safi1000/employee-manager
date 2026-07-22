@@ -912,15 +912,15 @@ export default function Compliance() {
             </div>
           </div>
 
-          <div className="grid grid-cols-7 gap-2">
+          <div className="grid grid-cols-7 gap-2 max-w-2xl">
             {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
-              <div key={day} className="text-center text-xs text-slate-500 py-2">
+              <div key={day} className="text-center text-xs text-slate-500 py-1">
                 {day}
               </div>
             ))}
             {calendarCells.map((cell, idx) => {
               if (cell.day === null) {
-                return <div key={idx} className="aspect-square" />;
+                return <div key={idx} className="h-14" />;
               }
               const hasEvents = cell.events.length > 0;
               const hasCritical = cell.events.some((e) => e.priority === "critical");
@@ -928,7 +928,7 @@ export default function Compliance() {
               return (
                 <div
                   key={idx}
-                  className={`aspect-square flex flex-col items-center justify-center rounded-md text-sm gap-1 ${
+                  className={`h-14 flex flex-col items-center justify-center rounded-md text-sm gap-1 ${
                     hasCritical
                       ? "bg-danger-100 text-danger-900 border border-danger-300"
                       : hasHigh

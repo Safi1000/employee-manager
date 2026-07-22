@@ -163,7 +163,6 @@ export default function SuperAdminLayout() {
     CLIENTS,
     CONTRACTS,
     INVOICES,
-    RECEIVABLES,
     CLIENT_REL,
   ]);
   if (contractsClients) links.push(contractsClients);
@@ -201,6 +200,7 @@ export default function SuperAdminLayout() {
     TREASURY,
     OPENING_BAL,
     EXPENSES,
+    RECEIVABLES,
     CASHFLOW,
     REPORTS,
     REGIONAL_SCORECARD,

@@ -1,6 +1,6 @@
 import ThemedSelect from "../../components/ThemedSelect";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Search, Upload, AlertCircle, Loader2, X, Trash2, ChevronDown, ChevronRight as ChevronRightIcon, FileText } from "lucide-react";
+import { Plus, Search, Upload, AlertCircle, Loader2, X, Trash2, ChevronDown, ChevronRight as ChevronRightIcon, FileText, SlidersHorizontal } from "lucide-react";
 import { generateEmployeeFormPdf } from "../../lib/employeeFormPdf";
 import EmployeeLifecyclePanel from "../../components/EmployeeLifecyclePanel";
 import Header from "../../components/Header";
@@ -569,6 +569,8 @@ export default function EmployeeManagement() {
   const [lifecycleFilter, setLifecycleFilter] = useState<"all" | EmployeeLifecycleState>("all");
   // Quick Active / Inactive tab split (Inactive = anything not currently Active).
   const [empTab, setEmpTab] = useState<"all" | "active" | "inactive">("all");
+  // Collapse every dropdown filter under one "Filters" toggle, like the Payroll page.
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
@@ -858,6 +860,17 @@ export default function EmployeeManagement() {
       return true;
     });
   }, [employees, search, locationFilter, clientFilter, branchFilter, categoryFilter, shiftFilter, statusFilter, completenessFilter, lifecycleFilter, empTab, branches]);
+
+  // Count of active dropdown filters (search + tab excluded), shown on the Filters button.
+  const activeFilterCount =
+    (locationFilter !== "all" ? 1 : 0) +
+    (clientFilter !== "all" ? 1 : 0) +
+    (branchFilter !== "all" ? 1 : 0) +
+    (categoryFilter !== "all" ? 1 : 0) +
+    (shiftFilter !== "all" ? 1 : 0) +
+    (statusFilter !== "all" ? 1 : 0) +
+    (completenessFilter !== "all" ? 1 : 0) +
+    (lifecycleFilter !== "all" ? 1 : 0);
 
   type EmpRef = { id: string; employee_code: string; full_name: string };
 
@@ -1478,9 +1491,9 @@ export default function EmployeeManagement() {
         )}
 
         <div className="bg-white rounded-lg border border-slate-200">
-          <div className="p-6 border-b border-slate-200">
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex-1 min-w-[200px] relative">
+          <div className="p-4 border-b border-slate-200">
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="w-[240px] min-w-[200px] relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />
                 <input
                   type="text"
@@ -1490,6 +1503,41 @@ export default function EmployeeManagement() {
                   className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                 />
               </div>
+              <button
+                type="button"
+                onClick={() => setFiltersOpen((v) => !v)}
+                className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-md border border-border text-foreground hover:bg-accent transition-colors"
+              >
+                <SlidersHorizontal className="w-4 h-4" strokeWidth={1.5} />
+                Filters
+                {activeFilterCount > 0 && (
+                  <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-semibold rounded-full bg-brand-500 text-[#241a06]">{activeFilterCount}</span>
+                )}
+                <ChevronDown className={`w-4 h-4 transition-transform ${filtersOpen ? "rotate-180" : ""}`} strokeWidth={1.5} />
+              </button>
+              <div className="flex gap-2 ml-auto">
+                {([
+                  { v: "all", label: "All" },
+                  { v: "active", label: "Active" },
+                  { v: "inactive", label: "Inactive" },
+                ] as const).map((t) => (
+                  <button
+                    key={t.v}
+                    type="button"
+                    onClick={() => setEmpTab(t.v)}
+                    className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${
+                      empTab === t.v
+                        ? "border-brand-500 bg-brand-500/15 text-brand-700 dark:text-brand-500 font-medium"
+                        : "border-border text-muted-foreground hover:bg-accent"
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {filtersOpen && (
+              <div className="mt-3 pt-3 border-t border-border flex flex-wrap gap-2">
               <ThemedSelect
                 value={locationFilter}
                 onChange={(e) => setLocationFilter(e.target.value)}
@@ -1571,28 +1619,8 @@ export default function EmployeeManagement() {
                   <option key={s} value={s}>{LIFECYCLE_STATE_LABEL[s]}</option>
                 ))}
               </ThemedSelect>
-            </div>
-          </div>
-
-          <div className="px-6 pt-4 flex gap-2">
-            {([
-              { v: "all", label: "All" },
-              { v: "active", label: "Active" },
-              { v: "inactive", label: "Inactive" },
-            ] as const).map((t) => (
-              <button
-                key={t.v}
-                type="button"
-                onClick={() => setEmpTab(t.v)}
-                className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${
-                  empTab === t.v
-                    ? "border-brand-600 bg-brand-50 text-brand-700"
-                    : "border-slate-200 text-slate-600 hover:bg-slate-50"
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
+              </div>
+            )}
           </div>
 
           <div className="overflow-x-auto">
