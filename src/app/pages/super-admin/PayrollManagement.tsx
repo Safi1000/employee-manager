@@ -151,6 +151,11 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
   const [empTab, setEmpTab] = useState<"all" | "active" | "inactive">("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [warningDismissed, setWarningDismissed] = useState(false);
+  // The sticky salary drawer must fit the visible scroll area exactly (the
+  // chrome above it varies: SSA "viewing" banner, region bar, dismissable
+  // warning). Measure it instead of guessing a vh offset.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [drawerMaxH, setDrawerMaxH] = useState<number | undefined>(undefined);
   // Employee category filter (same set as the Employees tab) — e.g. Office Staff only.
   const [categoryFilter, setCategoryFilter] = useState<"all" | "client" | "office_staff" | "reliever">("all");
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -1152,6 +1157,25 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
 
   const isCurrent = selectedPeriod === currentPeriod;
 
+  useEffect(() => {
+    const compute = () => {
+      const el = scrollRef.current;
+      if (!el || window.innerWidth < 1024) {
+        setDrawerMaxH(undefined);
+        return;
+      }
+      const top = el.getBoundingClientRect().top;
+      setDrawerMaxH(Math.max(240, window.innerHeight - top - 32));
+    };
+    compute();
+    const t = setTimeout(compute, 120);
+    window.addEventListener("resize", compute);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener("resize", compute);
+    };
+  }, [selectedId, warningDismissed]);
+
   const activeFilterCount =
     (shiftFilter !== "all" ? 1 : 0) +
     (statusFilter !== "all" ? 1 : 0) +
@@ -1232,7 +1256,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
         }
       />
 
-      <div className="flex-1 overflow-y-auto">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto">
         <div className="px-8 pt-8 pb-0">
         {error && (
           <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
@@ -1582,7 +1606,10 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
           </div>
 
           {selectedRow && (
-          <div className="w-full lg:w-[400px] flex-shrink-0 lg:sticky lg:top-4 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto">
+          <div
+            className="w-full lg:w-[400px] flex-shrink-0 lg:sticky lg:top-4 lg:overflow-y-auto"
+            style={{ maxHeight: drawerMaxH }}
+          >
             <div className="bg-card rounded-xl border border-border p-4">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-base font-bold text-foreground flex items-center gap-2">
