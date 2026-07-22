@@ -1582,7 +1582,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
           </div>
 
           {selectedRow && (
-          <div className="w-full lg:w-[400px] flex-shrink-0">
+          <div className="w-full lg:w-[400px] flex-shrink-0 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
             <div className="bg-card rounded-xl border border-border p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-base font-bold text-foreground flex items-center gap-2">
