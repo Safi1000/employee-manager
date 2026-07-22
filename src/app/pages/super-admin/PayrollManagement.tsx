@@ -1582,8 +1582,8 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
           </div>
 
           {selectedRow && (
-          <div className="w-full lg:w-[400px] flex-shrink-0 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
-            <div className="bg-card rounded-xl border border-border p-6">
+          <div className="w-full lg:w-[400px] flex-shrink-0 lg:sticky lg:top-4 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto">
+            <div className="bg-card rounded-xl border border-border p-4">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-base font-bold text-foreground flex items-center gap-2">
                   Salary Calculation
@@ -1604,29 +1604,29 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
               </div>
 
               {selectedRow ? (
-                <div className="space-y-2.5 text-sm">
-                  <div className="pb-2.5 border-b border-slate-200">
-                    <p className="text-xs text-slate-500">Employee</p>
-                    <p className="text-slate-900">{selectedRow.employee.full_name}</p>
-                    <p className="text-xs text-slate-500 font-mono">{selectedRow.employee.employee_code}</p>
+                <div className="space-y-2 text-sm">
+                  <div className="pb-2 border-b border-border">
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Employee</p>
+                    <p className="text-foreground font-medium">{selectedRow.employee.full_name}</p>
+                    <p className="text-xs text-muted-foreground font-mono">{selectedRow.employee.employee_code}</p>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Working</span>
-                      <span>{selectedRow.working_days}</span>
+                  <div className="grid grid-cols-4 gap-1.5 text-center">
+                    <div className="rounded-md border border-border py-1.5">
+                      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Working</div>
+                      <div className="text-base font-semibold tabular-nums text-foreground">{selectedRow.working_days}</div>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Present</span>
-                      <span className="text-success-600">{selectedRow.present_days}</span>
+                    <div className="rounded-md border border-border py-1.5">
+                      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Present</div>
+                      <div className="text-base font-semibold tabular-nums text-success-600 dark:text-success-500">{selectedRow.present_days}</div>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Absent</span>
-                      <span className="text-danger-600">{selectedRow.absent_days}</span>
+                    <div className="rounded-md border border-border py-1.5">
+                      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Absent</div>
+                      <div className="text-base font-semibold tabular-nums text-danger-600 dark:text-danger-500">{selectedRow.absent_days}</div>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Leave</span>
-                      <span className="text-warning-600">{selectedRow.leave_days}</span>
+                    <div className="rounded-md border border-border py-1.5">
+                      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Leave</div>
+                      <div className="text-base font-semibold tabular-nums text-warning-600 dark:text-warning-500">{selectedRow.leave_days}</div>
                     </div>
                   </div>
 
