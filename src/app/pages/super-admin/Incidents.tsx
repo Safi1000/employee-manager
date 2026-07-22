@@ -431,7 +431,7 @@ export default function Incidents() {
 
         <div>
           <label className="block text-sm text-slate-700 mb-1">Severity *</label>
-          <div className="grid grid-cols-4 gap-1">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1">
             {(Object.keys(INCIDENT_SEVERITY_LABEL) as IncidentSeverity[]).map((s) => (
               <button
                 key={s}

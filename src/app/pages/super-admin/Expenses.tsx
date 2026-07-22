@@ -2323,7 +2323,7 @@ export default function Expenses() {
         </div>
         <div>
           <label className="block text-sm text-slate-700 mb-1">Payment Mode *</label>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             {(["Cash", "Bank", "Cheque"] as const).map((m) => (
               <label
                 key={m}
@@ -2563,7 +2563,7 @@ export default function Expenses() {
           </div>
           <div className="col-span-2">
             <label className="block text-sm text-slate-700 mb-1">Payment Mode *</label>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {(["Cash", "Bank", "Cheque", "Payable"] as const).map((m) => (
                 <label
                   key={m}

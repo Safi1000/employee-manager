@@ -861,7 +861,7 @@ export default function SuperAdminDashboard() {
                   </h3>
                   <Link to="/super-admin/roster" className="text-xs text-brand-600 hover:text-brand-700">Open roster →</Link>
                 </div>
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="rounded-lg border border-slate-200 p-4">
                     <div className="text-xs uppercase tracking-wide text-slate-500">Slots filled</div>
                     <div className="text-2xl text-success-700">{rosterFilled}</div>

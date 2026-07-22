@@ -569,8 +569,16 @@ export default function EmployeeManagement() {
   const [lifecycleFilter, setLifecycleFilter] = useState<"all" | EmployeeLifecycleState>("all");
   // Quick Active / Inactive tab split (Inactive = anything not currently Active).
   const [empTab, setEmpTab] = useState<"all" | "active" | "inactive">("all");
-  // Collapse every dropdown filter under one "Filters" toggle, like the Payroll page.
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const activeFilterCount =
+    (locationFilter !== "all" ? 1 : 0) +
+    (clientFilter !== "all" ? 1 : 0) +
+    (branchFilter !== "all" ? 1 : 0) +
+    (categoryFilter !== "all" ? 1 : 0) +
+    (shiftFilter !== "all" ? 1 : 0) +
+    (statusFilter !== "all" ? 1 : 0) +
+    (completenessFilter !== "all" ? 1 : 0) +
+    (lifecycleFilter !== "all" ? 1 : 0);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
@@ -860,17 +868,6 @@ export default function EmployeeManagement() {
       return true;
     });
   }, [employees, search, locationFilter, clientFilter, branchFilter, categoryFilter, shiftFilter, statusFilter, completenessFilter, lifecycleFilter, empTab, branches]);
-
-  // Count of active dropdown filters (search + tab excluded), shown on the Filters button.
-  const activeFilterCount =
-    (locationFilter !== "all" ? 1 : 0) +
-    (clientFilter !== "all" ? 1 : 0) +
-    (branchFilter !== "all" ? 1 : 0) +
-    (categoryFilter !== "all" ? 1 : 0) +
-    (shiftFilter !== "all" ? 1 : 0) +
-    (statusFilter !== "all" ? 1 : 0) +
-    (completenessFilter !== "all" ? 1 : 0) +
-    (lifecycleFilter !== "all" ? 1 : 0);
 
   type EmpRef = { id: string; employee_code: string; full_name: string };
 
@@ -1490,17 +1487,17 @@ export default function EmployeeManagement() {
           </div>
         )}
 
-        <div className="bg-white rounded-lg border border-slate-200">
-          <div className="p-4 border-b border-slate-200">
+        <div className="bg-card rounded-xl border border-border">
+          <div className="p-4 border-b border-border">
             <div className="flex items-center gap-2 flex-wrap">
-              <div className="w-[240px] min-w-[200px] relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />
+              <div className="flex-1 min-w-[200px] relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" strokeWidth={1.5} />
                 <input
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search by name, phone, or employee ID..."
-                  className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  className="w-full pl-10 pr-4 py-2 border border-border rounded-md text-sm bg-input-background focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
                 />
               </div>
               <button
@@ -3460,7 +3457,7 @@ function EmployeeHrSection({
           hint="Required by labour regulations"
         />
         {openEmergency && (
-          <div className="grid grid-cols-3 gap-3 pb-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pb-3">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Name</label>
               <input

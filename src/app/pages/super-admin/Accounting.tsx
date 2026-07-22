@@ -3445,7 +3445,7 @@ export default function Accounting() {
               <p className="text-xs text-slate-500 font-mono">{selectedClient.client_code}</p>
             </div>
 
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-slate-400">
                 <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Opening Balance</p>
                 <p className="text-lg text-slate-900">PKR {Number(selectedClient.opening_balance ?? 0).toLocaleString()}</p>
@@ -3656,7 +3656,7 @@ export default function Accounting() {
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-2">Received Via *</label>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 {(["Cash", "Bank", "Cheque"] as const).map((v) => (
                   <label
                     key={v}

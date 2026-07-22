@@ -1294,7 +1294,7 @@ export default function FinancialReports() {
               <p className="text-xs text-slate-500 mt-1">Month: {formatPeriod(statementPeriod)}</p>
             </div>
 
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-brand-500">
                 <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Invoiced</p>
                 <p className="text-lg text-brand-900">PKR {selectedClient.total_invoiced.toLocaleString()}</p>

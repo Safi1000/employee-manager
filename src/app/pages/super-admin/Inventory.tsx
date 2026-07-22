@@ -565,7 +565,7 @@ export default function Inventory() {
               <Shield className="w-4 h-4 text-danger-600" strokeWidth={1.5} />
               <h3 className="text-sm text-slate-900">Weapons</h3>
             </div>
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <SummaryCell label="Total" value={weaponsSummary.total} />
               <SummaryCell label="To Employees" value={weaponsSummary.issuedEmp} accent="blue" />
               <SummaryCell label="To Clients" value={weaponsSummary.issuedClient} accent="purple" />
@@ -577,7 +577,7 @@ export default function Inventory() {
               <Package className="w-4 h-4 text-brand-600" strokeWidth={1.5} />
               <h3 className="text-sm text-slate-900">Uniforms &amp; Gear</h3>
             </div>
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <SummaryCell label="Total" value={uniformsSummary.total} />
               <SummaryCell label="To Employees" value={uniformsSummary.issuedEmp} accent="blue" />
               <SummaryCell label="To Clients" value={uniformsSummary.issuedClient} accent="purple" />

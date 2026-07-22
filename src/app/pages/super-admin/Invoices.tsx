@@ -1266,7 +1266,7 @@ export default function Invoices() {
             excludeId={editingId ?? undefined}
           />
 
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <div className="p-2 rounded-md border border-brand-200 bg-brand-50">
               <p className="text-[11px] text-brand-700">Invoice Amount</p>
               <p className="text-sm text-brand-900">
@@ -1387,7 +1387,7 @@ export default function Invoices() {
       >
         <form className="space-y-4" onSubmit={handleRecordPayment}>
           {paymentInvoice && (
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <div className="p-2 rounded-md border border-brand-200 bg-brand-50">
                 <p className="text-[11px] text-brand-700">Invoice Amount</p>
                 <p className="text-sm text-brand-900">
