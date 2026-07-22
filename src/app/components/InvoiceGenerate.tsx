@@ -1,3 +1,4 @@
+import ThemedSelect from "./ThemedSelect";
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, AlertCircle, X, RefreshCw, CheckCircle2, FileDown, Plus, Trash2 } from "lucide-react";
 import Button from "./Button";
@@ -334,7 +335,7 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
         </div>
         <div>
           <label className="block text-xs text-slate-500 mb-1">Client group</label>
-          <select
+          <ThemedSelect
             value={group}
             onChange={(e) => setGroup(e.target.value as ClientInvoiceGroup)}
             className="px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -342,7 +343,7 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
             {(["FIXED", "VARIABLE", "SLA"] as const).map((g) => (
               <option key={g} value={g}>{CLIENT_INVOICE_GROUP_LABEL[g]}</option>
             ))}
-          </select>
+          </ThemedSelect>
         </div>
         <Button variant="secondary" size="md" onClick={buildDrafts} disabled={loading}>
           <RefreshCw className="w-4 h-4 mr-2" /> Build drafts
@@ -472,7 +473,7 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <label className="block text-xs text-slate-500">Remit account</label>
-                <select
+                <ThemedSelect
                   value={d.remitIndex}
                   onChange={(e) => patchDraft(idx, { remitIndex: Number(e.target.value) })}
                   className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
@@ -483,7 +484,7 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
                       {r.account_title} — {r.account_number} ({r.bank_name}){r.is_default ? " ★" : ""}
                     </option>
                   ))}
-                </select>
+                </ThemedSelect>
                 <label className="block text-xs text-slate-500 mt-2">Notes</label>
                 <textarea value={d.notes} onChange={(e) => patchDraft(idx, { notes: e.target.value })} rows={2} className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm" />
               </div>

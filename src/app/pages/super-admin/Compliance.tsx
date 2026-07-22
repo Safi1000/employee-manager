@@ -1,3 +1,4 @@
+import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useState } from "react";
 import {
   Plus,
@@ -1110,7 +1111,7 @@ function renderDateFields(form: DateForm, setForm: (f: DateForm) => void) {
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-sm text-slate-700 mb-1">Category *</label>
-          <select
+          <ThemedSelect
             value={form.category}
             onChange={(e) => setForm({ ...form, category: e.target.value as ComplianceCategory })}
             className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
@@ -1120,11 +1121,11 @@ function renderDateFields(form: DateForm, setForm: (f: DateForm) => void) {
                 {c}
               </option>
             ))}
-          </select>
+          </ThemedSelect>
         </div>
         <div>
           <label className="block text-sm text-slate-700 mb-1">Priority *</label>
-          <select
+          <ThemedSelect
             value={form.priority}
             onChange={(e) =>
               setForm({ ...form, priority: e.target.value as CompliancePriority })
@@ -1135,7 +1136,7 @@ function renderDateFields(form: DateForm, setForm: (f: DateForm) => void) {
             <option value="high">High</option>
             <option value="medium">Medium</option>
             <option value="low">Low</option>
-          </select>
+          </ThemedSelect>
         </div>
       </div>
       <div>
@@ -1169,7 +1170,7 @@ function renderRecFields(form: RecurringForm, setForm: (f: RecurringForm) => voi
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-sm text-slate-700 mb-1">Category *</label>
-          <select
+          <ThemedSelect
             value={form.category}
             onChange={(e) =>
               setForm({ ...form, category: e.target.value as ComplianceCategory })
@@ -1181,11 +1182,11 @@ function renderRecFields(form: RecurringForm, setForm: (f: RecurringForm) => voi
                 {c}
               </option>
             ))}
-          </select>
+          </ThemedSelect>
         </div>
         <div>
           <label className="block text-sm text-slate-700 mb-1">Frequency *</label>
-          <select
+          <ThemedSelect
             value={form.frequency}
             onChange={(e) =>
               setForm({ ...form, frequency: e.target.value as RecurringFrequency })
@@ -1196,7 +1197,7 @@ function renderRecFields(form: RecurringForm, setForm: (f: RecurringForm) => voi
             <option value="Weekly">Weekly</option>
             <option value="Monthly">Monthly</option>
             <option value="Yearly">Yearly</option>
-          </select>
+          </ThemedSelect>
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3">

@@ -1,3 +1,4 @@
+import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Calendar as CalendarIcon, AlertCircle, Loader2, X, CalendarRange, ChevronLeft, ChevronRight, Search, Clock, MoreHorizontal } from "lucide-react";
 import Header from "../../components/Header";
@@ -1181,7 +1182,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-2">Location</label>
-              <select
+              <ThemedSelect
                 value={locationFilter}
                 onChange={(e) => setLocationFilter(e.target.value)}
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -1192,11 +1193,11 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                     {l.name}
                   </option>
                 ))}
-              </select>
+              </ThemedSelect>
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-2">Branch</label>
-              <select
+              <ThemedSelect
                 value={branchFilter}
                 onChange={(e) => setBranchFilter(e.target.value)}
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -1205,12 +1206,12 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                 {branches.map((b) => (
                   <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
-              </select>
+              </ThemedSelect>
             </div>
             {!relieversOnly && (
               <div>
                 <label className="block text-sm text-slate-700 mb-2">Category</label>
-                <select
+                <ThemedSelect
                   value={categoryFilter}
                   onChange={(e) => setCategoryFilter(e.target.value as typeof categoryFilter)}
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -1219,12 +1220,12 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                   <option value="client">Client</option>
                   <option value="office_staff">Office Staff</option>
                   <option value="reliever">Reliever</option>
-                </select>
+                </ThemedSelect>
               </div>
             )}
             <div>
               <label className="block text-sm text-slate-700 mb-2">Shift</label>
-              <select
+              <ThemedSelect
                 value={shiftFilter}
                 onChange={(e) => setShiftFilter(e.target.value as "all" | "day" | "night")}
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -1232,7 +1233,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                 <option value="all">All Shifts</option>
                 <option value="day">Day</option>
                 <option value="night">Night</option>
-              </select>
+              </ThemedSelect>
             </div>
           </div>
           <label className="mt-4 inline-flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
@@ -1353,7 +1354,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                         </td>
                         <td className="px-6 py-4 text-sm text-slate-600">
                           {employee.category === "reliever" ? (
-                            <select
+                            <ThemedSelect
                               value={todayWorkedFor[employee.id] ?? ""}
                               onChange={(e) => {
                                 const newClient = e.target.value || null;
@@ -1369,7 +1370,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                               {clients.map((c) => (
                                 <option key={c.id} value={c.id}>{c.name}</option>
                               ))}
-                            </select>
+                            </ThemedSelect>
                           ) : (
                             employee.client_name ?? "—"
                           )}
@@ -1545,7 +1546,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
               </div>
               <div>
                 <label className="block text-sm text-slate-700 mb-2">Base Shift</label>
-                <select
+                <ThemedSelect
                   value={overrideShiftFilter}
                   onChange={(e) => setOverrideShiftFilter(e.target.value as typeof overrideShiftFilter)}
                   className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -1553,7 +1554,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                   <option value="all">All Shifts</option>
                   <option value="day">Day</option>
                   <option value="night">Night</option>
-                </select>
+                </ThemedSelect>
               </div>
               <div className="flex-1 min-w-[180px]">
                 <label className="block text-sm text-slate-700 mb-2">Search Employee</label>
@@ -1734,7 +1735,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
           {!bulkEmployee && (
             <div className="grid grid-cols-2 gap-2">
               {!relieversOnly && (
-                <select
+                <ThemedSelect
                   value={bulkCategoryFilter}
                   onChange={(e) => { setBulkCategoryFilter(e.target.value as typeof bulkCategoryFilter); setBulkEmployeeId(""); }}
                   className="px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -1743,9 +1744,9 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                   <option value="client">Client Guards</option>
                   <option value="office_staff">Office Staff</option>
                   <option value="reliever">Relievers</option>
-                </select>
+                </ThemedSelect>
               )}
-              <select
+              <ThemedSelect
                 value={bulkShiftFilter}
                 onChange={(e) => { setBulkShiftFilter(e.target.value as typeof bulkShiftFilter); setBulkEmployeeId(""); }}
                 className="px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -1753,31 +1754,31 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                 <option value="all">All Shifts</option>
                 <option value="day">Day</option>
                 <option value="night">Night</option>
-              </select>
-              <select
+              </ThemedSelect>
+              <ThemedSelect
                 value={bulkClientFilter}
                 onChange={(e) => { setBulkClientFilter(e.target.value); setBulkEmployeeId(""); }}
                 className="px-3 py-2 border border-slate-200 rounded-md text-sm"
               >
                 <option value="all">All Clients</option>
                 {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-              <select
+              </ThemedSelect>
+              <ThemedSelect
                 value={bulkLocationFilter}
                 onChange={(e) => { setBulkLocationFilter(e.target.value); setBulkEmployeeId(""); }}
                 className="px-3 py-2 border border-slate-200 rounded-md text-sm"
               >
                 <option value="all">All Locations</option>
                 {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-              </select>
-              <select
+              </ThemedSelect>
+              <ThemedSelect
                 value={bulkBranchFilter}
                 onChange={(e) => { setBulkBranchFilter(e.target.value); setBulkEmployeeId(""); }}
                 className="px-3 py-2 border border-slate-200 rounded-md text-sm col-span-2"
               >
                 <option value="all">All Branches</option>
                 {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </select>
+              </ThemedSelect>
             </div>
           )}
 

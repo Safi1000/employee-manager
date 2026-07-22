@@ -1,3 +1,4 @@
+import ThemedSelect from "./ThemedSelect";
 import { useEffect, useState } from "react";
 import { Plus, Loader2, AlertCircle, X, Trash2, FileText, Upload } from "lucide-react";
 import Button from "./Button";
@@ -564,7 +565,7 @@ export default function ContractEditorModal({
           {showClientPicker && (
             <div className="col-span-2">
               <label className="block text-sm text-slate-700 mb-1">Client *</label>
-              <select
+              <ThemedSelect
                 required
                 value={form.client_id}
                 onChange={(e) => setForm({ ...form, client_id: e.target.value })}
@@ -574,13 +575,13 @@ export default function ContractEditorModal({
                 {clients!.map((c) => (
                   <option key={c.id} value={c.id}>{c.name} ({c.client_code})</option>
                 ))}
-              </select>
+              </ThemedSelect>
             </div>
           )}
 
           <div>
             <label className="block text-sm text-slate-700 mb-1">Contract Type *</label>
-            <select
+            <ThemedSelect
               required
               value={form.contract_type}
               onChange={(e) => onContractTypeChange(e.target.value as ContractType)}
@@ -589,11 +590,11 @@ export default function ContractEditorModal({
               {(["guard_deployment", "services"] as const).map((t) => (
                 <option key={t} value={t}>{CONTRACT_TYPE_LABEL[t]}</option>
               ))}
-            </select>
+            </ThemedSelect>
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Status</label>
-            <select
+            <ThemedSelect
               value={form.status}
               onChange={(e) => setForm({ ...form, status: e.target.value as ContractStatus })}
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -601,7 +602,7 @@ export default function ContractEditorModal({
               {(["active", "expired", "terminated", "draft"] as const).map((s) => (
                 <option key={s} value={s}>{CONTRACT_STATUS_LABEL[s]}</option>
               ))}
-            </select>
+            </ThemedSelect>
           </div>
 
           <div>
@@ -729,7 +730,7 @@ export default function ContractEditorModal({
                   {lines.map((l, idx) => (
                     <tr key={l.id ?? `new-${idx}`}>
                       <td className="px-3 py-1.5">
-                        <select
+                        <ThemedSelect
                           value={l.category}
                           onChange={(e) => {
                             const cat = e.target.value as ContractLineCategory;
@@ -747,7 +748,7 @@ export default function ContractEditorModal({
                           {allowedCategories.map((cat) => (
                             <option key={cat} value={cat}>{CONTRACT_LINE_CATEGORY_LABEL[cat]}</option>
                           ))}
-                        </select>
+                        </ThemedSelect>
                       </td>
                       <td className="px-3 py-1.5">
                         <input
@@ -827,7 +828,7 @@ export default function ContractEditorModal({
             <div className="p-3 border-t border-slate-200 bg-slate-50/50 grid grid-cols-2 gap-2">
               <div>
                 <label className="block text-[11px] text-slate-600 mb-1">Applies to</label>
-                <select
+                <ThemedSelect
                   value={addForm.target}
                   onChange={(e) => setAddForm({ ...addForm, target: e.target.value })}
                   className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
@@ -841,12 +842,12 @@ export default function ContractEditorModal({
                         {l.location ? ` — ${l.location}` : ""}
                       </option>
                     ))}
-                </select>
+                </ThemedSelect>
               </div>
               {addForm.target === "__new__" && (
                 <div>
                   <label className="block text-[11px] text-slate-600 mb-1">New line category</label>
-                  <select
+                  <ThemedSelect
                     value={addForm.category}
                     onChange={(e) => setAddForm({ ...addForm, category: e.target.value as ContractLineCategory })}
                     className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
@@ -854,12 +855,12 @@ export default function ContractEditorModal({
                     {allowedCategories.map((cat) => (
                       <option key={cat} value={cat}>{CONTRACT_LINE_CATEGORY_LABEL[cat]}</option>
                     ))}
-                  </select>
+                  </ThemedSelect>
                 </div>
               )}
               <div>
                 <label className="block text-[11px] text-slate-600 mb-1">Change type</label>
-                <select
+                <ThemedSelect
                   value={addForm.change_type}
                   onChange={(e) => setAddForm({ ...addForm, change_type: e.target.value as AddendumChangeType })}
                   className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
@@ -867,7 +868,7 @@ export default function ContractEditorModal({
                   {(["ADD_HEADCOUNT", "REDUCE_HEADCOUNT", "RATE_CHANGE"] as const).map((t) => (
                     <option key={t} value={t}>{ADDENDUM_CHANGE_TYPE_LABEL[t]}</option>
                   ))}
-                </select>
+                </ThemedSelect>
               </div>
               {addForm.change_type === "RATE_CHANGE" ? (
                 <div>
@@ -904,7 +905,7 @@ export default function ContractEditorModal({
               </div>
               <div>
                 <label className="block text-[11px] text-slate-600 mb-1">Source</label>
-                <select
+                <ThemedSelect
                   value={addForm.source}
                   onChange={(e) => setAddForm({ ...addForm, source: e.target.value as AddendumSource })}
                   className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
@@ -912,7 +913,7 @@ export default function ContractEditorModal({
                   {(["SIGNED_CONTRACT", "EMAIL", "VERBAL", "OTHER"] as const).map((s) => (
                     <option key={s} value={s}>{ADDENDUM_SOURCE_LABEL[s]}</option>
                   ))}
-                </select>
+                </ThemedSelect>
               </div>
               <div className="col-span-2">
                 <label className="block text-[11px] text-slate-600 mb-1">Reference (text)</label>

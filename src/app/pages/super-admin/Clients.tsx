@@ -1,3 +1,4 @@
+import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Plus,
@@ -718,7 +719,7 @@ export default function Clients() {
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Industry</label>
-            <select
+            <ThemedSelect
               value={form.industry}
               onChange={(e) => setForm({ ...form, industry: e.target.value })}
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -727,7 +728,7 @@ export default function Clients() {
               {PAKISTAN_INDUSTRIES.map((s) => (
                 <option key={s} value={s}>{s}</option>
               ))}
-            </select>
+            </ThemedSelect>
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Employee ID Prefix</label>
@@ -754,7 +755,7 @@ export default function Clients() {
           </div>
           <div className="col-span-2">
             <label className="block text-sm text-slate-700 mb-1">Default Branch *</label>
-            <select
+            <ThemedSelect
               required
               value={form.branch_id}
               onChange={(e) => setForm({ ...form, branch_id: e.target.value })}
@@ -764,7 +765,7 @@ export default function Clients() {
               {branches.map((b) => (
                 <option key={b.id} value={b.id}>{b.name}{b.is_head_office ? " (HO)" : ""}</option>
               ))}
-            </select>
+            </ThemedSelect>
             <p className="text-xs text-slate-500 mt-1">Inherited by employees of this client.</p>
           </div>
         </div>
@@ -798,7 +799,7 @@ export default function Clients() {
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Filer Status</label>
-            <select
+            <ThemedSelect
               value={form.filer_status}
               onChange={(e) => setForm({ ...form, filer_status: e.target.value as ClientFilerStatus | "" })}
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -806,7 +807,7 @@ export default function Clients() {
               <option value="">— Select —</option>
               <option value="filer">Filer</option>
               <option value="non_filer">Non-filer</option>
-            </select>
+            </ThemedSelect>
           </div>
         </div>
 
@@ -863,7 +864,7 @@ export default function Clients() {
                       />
                       <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-slate-400">%</span>
                     </div>
-                    <select
+                    <ThemedSelect
                       value={t.base}
                       onChange={(e) => patch({ base: e.target.value as TaxBase })}
                       className="col-span-3 px-2 py-1.5 border border-slate-200 rounded text-sm"
@@ -871,8 +872,8 @@ export default function Clients() {
                       {(["WHOLE_INVOICE", "SPECIFIC_COMPONENT", "COMPOUND"] as const).map((b) => (
                         <option key={b} value={b}>{TAX_BASE_LABEL[b]}</option>
                       ))}
-                    </select>
-                    <select
+                    </ThemedSelect>
+                    <ThemedSelect
                       value={t.direction}
                       onChange={(e) => patch({ direction: e.target.value as TaxDirection })}
                       className="col-span-2 px-2 py-1.5 border border-slate-200 rounded text-sm"
@@ -880,7 +881,7 @@ export default function Clients() {
                       {(["ADDED", "WITHHELD"] as const).map((d) => (
                         <option key={d} value={d}>{TAX_DIRECTION_LABEL[d]}</option>
                       ))}
-                    </select>
+                    </ThemedSelect>
                     <button
                       type="button"
                       onClick={() => setForm((f) => ({ ...f, tax_profile: f.tax_profile.filter((_, i) => i !== idx) }))}
@@ -950,7 +951,7 @@ export default function Clients() {
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Billing Type</label>
-            <select
+            <ThemedSelect
               value={form.billing_type}
               onChange={(e) => setForm({ ...form, billing_type: e.target.value as ClientBillingType })}
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -958,11 +959,11 @@ export default function Clients() {
               {(["STANDARD", "SLA"] as const).map((b) => (
                 <option key={b} value={b}>{CLIENT_BILLING_TYPE_LABEL[b]}</option>
               ))}
-            </select>
+            </ThemedSelect>
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Invoice Group</label>
-            <select
+            <ThemedSelect
               value={form.invoice_group}
               onChange={(e) => setForm({ ...form, invoice_group: e.target.value as ClientInvoiceGroup })}
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -970,7 +971,7 @@ export default function Clients() {
               {(["FIXED", "VARIABLE", "SLA"] as const).map((g) => (
                 <option key={g} value={g}>{CLIENT_INVOICE_GROUP_LABEL[g]}</option>
               ))}
-            </select>
+            </ThemedSelect>
             <p className="text-[10px] text-slate-500 mt-1">Buckets this client on the Invoices → Generate tab.</p>
           </div>
         </div>
@@ -1096,7 +1097,7 @@ export default function Clients() {
               className="w-full pl-10 pr-3 py-2 border border-slate-200 rounded-md text-sm"
             />
           </div>
-          <select
+          <ThemedSelect
             value={branchFilter}
             onChange={(e) => setBranchFilter(e.target.value)}
             className="px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -1105,8 +1106,8 @@ export default function Clients() {
             {branches.map((b) => (
               <option key={b.id} value={b.id}>{b.name}</option>
             ))}
-          </select>
-          <select
+          </ThemedSelect>
+          <ThemedSelect
             value={industryFilter}
             onChange={(e) => setIndustryFilter(e.target.value)}
             className="px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -1115,7 +1116,7 @@ export default function Clients() {
             {PAKISTAN_INDUSTRIES.map((s) => (
               <option key={s} value={s}>{s}</option>
             ))}
-          </select>
+          </ThemedSelect>
           <div className="md:col-span-4 flex flex-wrap gap-2">
             {([
               { v: "all", label: "All" },

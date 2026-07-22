@@ -1,3 +1,4 @@
+import ThemedSelect from "../../components/ThemedSelect";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -135,7 +136,7 @@ export default function Performance() {
                 <div key={e.id} className="flex items-center justify-between px-3 py-2 text-sm">
                   <span className="text-slate-800">{e.full_name}</span>
                   <div className="flex items-center gap-2">
-                    <select
+                    <ThemedSelect
                       className={FIELD}
                       value={e.kpi_seat ?? ""}
                       onChange={(ev) =>
@@ -152,7 +153,7 @@ export default function Performance() {
                       {KPI_SEATS.map((s) => (
                         <option key={s} value={s}>{s.replace("_", " ")}</option>
                       ))}
-                    </select>
+                    </ThemedSelect>
                     <Button
                       variant={e.performance_enrolled ? "secondary" : "primary"}
                       size="sm"
@@ -367,12 +368,12 @@ function AppraisalsTab({
       <section className="border border-slate-200 rounded-md p-3">
         <h3 className="text-sm text-slate-900 mb-2">New appraisal</h3>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-          <select className={FIELD} value={empId} onChange={(e) => setEmpId(e.target.value)}>
+          <ThemedSelect className={FIELD} value={empId} onChange={(e) => setEmpId(e.target.value)}>
             <option value="">— employee —</option>
             {enrolled.map((e) => (
               <option key={e.id} value={e.id}>{e.full_name}</option>
             ))}
-          </select>
+          </ThemedSelect>
           <input className={FIELD} placeholder="Job & KPI 1-5" value={scores.job} onChange={(e) => setScores({ ...scores, job: e.target.value })} />
           <input className={FIELD} placeholder="Ownership 1-5" value={scores.own} onChange={(e) => setScores({ ...scores, own: e.target.value })} />
           <input className={FIELD} placeholder="Quality 1-5" value={scores.qual} onChange={(e) => setScores({ ...scores, qual: e.target.value })} />

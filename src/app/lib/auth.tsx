@@ -77,6 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true;
 
+
     // Hard timeout: if init isn't done in 4s, give up, wipe storage, fall through
     // to an unauthenticated state. Avoids the "spinner forever" trap.
     const failsafe = setTimeout(() => {

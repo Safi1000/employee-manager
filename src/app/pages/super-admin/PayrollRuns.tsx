@@ -1,3 +1,4 @@
+import ThemedSelect from "../../components/ThemedSelect";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -140,14 +141,14 @@ export default function PayrollRuns() {
       <section className="border border-slate-200 rounded-md p-3 mb-4">
         <div className="flex items-center gap-2 flex-wrap">
           <input type="date" className={FIELD} value={period} onChange={(e) => setPeriod(e.target.value)} />
-          <select className={FIELD} value={stream} onChange={(e) => setStream(e.target.value as any)}>
+          <ThemedSelect className={FIELD} value={stream} onChange={(e) => setStream(e.target.value as any)}>
             <option value="guard_field">Guards &amp; Field</option>
             <option value="salaried">Salaried Staff</option>
-          </select>
-          <select className={FIELD} value={regionId} onChange={(e) => setRegionId(e.target.value)}>
+          </ThemedSelect>
+          <ThemedSelect className={FIELD} value={regionId} onChange={(e) => setRegionId(e.target.value)}>
             <option value="">All regions</option>
             {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
+          </ThemedSelect>
           <Button variant="primary" size="sm" disabled={busy} onClick={createRun}>Create run &amp; attach payslips</Button>
         </div>
         <p className="text-xs text-slate-400 mt-1">Generate payslips on the Payroll screen first; a run attaches the matching payslips for its period, stream and region.</p>

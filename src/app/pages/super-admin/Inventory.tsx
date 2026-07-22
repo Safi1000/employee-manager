@@ -1,3 +1,4 @@
+import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Shield, Users as UsersIcon, MapPin, AlertCircle, Loader2, X, Trash2, Package, Building2 } from "lucide-react";
 import Header from "../../components/Header";
@@ -589,7 +590,7 @@ export default function Inventory() {
           <div className="grid grid-cols-1 md:grid-cols-7 gap-3 items-end">
             <div>
               <label className="block text-xs text-slate-500 mb-1">Location</label>
-              <select
+              <ThemedSelect
                 value={filters.location_id}
                 onChange={(e) => setFilters({ ...filters, location_id: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -600,11 +601,11 @@ export default function Inventory() {
                     {l.name}
                   </option>
                 ))}
-              </select>
+              </ThemedSelect>
             </div>
             <div>
               <label className="block text-xs text-slate-500 mb-1">Branch</label>
-              <select
+              <ThemedSelect
                 value={filters.branch_id}
                 onChange={(e) => setFilters({ ...filters, branch_id: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -613,7 +614,7 @@ export default function Inventory() {
                 {branches.map((b) => (
                   <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
-              </select>
+              </ThemedSelect>
             </div>
             <div>
               <label className="block text-xs text-slate-500 mb-1">From</label>
@@ -645,7 +646,7 @@ export default function Inventory() {
             </div>
             <div>
               <label className="block text-xs text-slate-500 mb-1">Shift</label>
-              <select
+              <ThemedSelect
                 value={filters.shift}
                 onChange={(e) => setFilters({ ...filters, shift: e.target.value as FilterState["shift"] })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -653,7 +654,7 @@ export default function Inventory() {
                 <option value="">All</option>
                 <option value="day">Day</option>
                 <option value="night">Night</option>
-              </select>
+              </ThemedSelect>
             </div>
             <div>
               <Button variant="secondary" size="md" className="w-full" onClick={resetFilters}>
@@ -1066,7 +1067,7 @@ export default function Inventory() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Location</label>
-              <select
+              <ThemedSelect
                 value={addForm.location_id}
                 onChange={(e) => setAddForm({ ...addForm, location_id: e.target.value })}
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -1077,7 +1078,7 @@ export default function Inventory() {
                     {l.name}
                   </option>
                 ))}
-              </select>
+              </ThemedSelect>
               {locations.length === 0 && (
                 <p className="text-xs text-slate-500 mt-1">
                   No locations yet. Add them from Settings → Location Management.
@@ -1086,7 +1087,7 @@ export default function Inventory() {
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Branch</label>
-              <select
+              <ThemedSelect
                 value={addForm.branch_id}
                 onChange={(e) => setAddForm({ ...addForm, branch_id: e.target.value })}
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -1095,7 +1096,7 @@ export default function Inventory() {
                 {branches.map((b) => (
                   <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
-              </select>
+              </ThemedSelect>
             </div>
           </div>
 
@@ -1165,7 +1166,7 @@ export default function Inventory() {
 
           <div>
             <label className="block text-sm text-slate-700 mb-1">Select Item *</label>
-            <select
+            <ThemedSelect
               required
               value={issueForm.item_id}
               onChange={(e) => setIssueForm({ ...issueForm, item_id: e.target.value })}
@@ -1185,7 +1186,7 @@ export default function Inventory() {
                   </option>
                 );
               })}
-            </select>
+            </ThemedSelect>
             {issuableItems.length === 0 && (
               <p className="text-xs text-slate-500 mt-1">
                 No {issueForm.kind === "weapon" ? "issuable weapons" : "uniforms in stock"}.
@@ -1228,7 +1229,7 @@ export default function Inventory() {
           {issueForm.target === "employee" ? (
             <div>
               <label className="block text-sm text-slate-700 mb-1">Employee *</label>
-              <select
+              <ThemedSelect
                 required
                 value={issueForm.employee_id}
                 onChange={(e) => {
@@ -1248,7 +1249,7 @@ export default function Inventory() {
                     {e.full_name} ({e.employee_code}) · {e.shift}
                   </option>
                 ))}
-              </select>
+              </ThemedSelect>
               {employees.length === 0 && (
                 <p className="text-xs text-slate-500 mt-1">
                   No employees yet. Add them from Employees.
@@ -1258,7 +1259,7 @@ export default function Inventory() {
           ) : (
             <div>
               <label className="block text-sm text-slate-700 mb-1">Client *</label>
-              <select
+              <ThemedSelect
                 required
                 value={issueForm.client_id}
                 onChange={(e) => {
@@ -1280,7 +1281,7 @@ export default function Inventory() {
                       {c.name} ({c.client_code})
                     </option>
                   ))}
-              </select>
+              </ThemedSelect>
               {clients.filter((c) => c.client_type === "security_services").length === 0 && (
                 <p className="text-xs text-slate-500 mt-1">
                   No Security Services clients yet. Add them from Settings.
@@ -1291,7 +1292,7 @@ export default function Inventory() {
 
           <div>
             <label className="block text-sm text-slate-700 mb-1">Branch</label>
-            <select
+            <ThemedSelect
               value={issueForm.branch_id}
               onChange={(e) => setIssueForm({ ...issueForm, branch_id: e.target.value })}
               className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -1300,7 +1301,7 @@ export default function Inventory() {
               {branches.map((b) => (
                 <option key={b.id} value={b.id}>{b.name}</option>
               ))}
-            </select>
+            </ThemedSelect>
             <p className="text-xs text-slate-500 mt-1">
               Defaults to the {issueForm.target}'s branch. Override here if needed.
             </p>
@@ -1483,7 +1484,7 @@ export default function Inventory() {
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Condition *</label>
-              <select
+              <ThemedSelect
                 value={returnForm.condition}
                 onChange={(e) =>
                   setReturnForm({ ...returnForm, condition: e.target.value as ReturnCondition })
@@ -1493,7 +1494,7 @@ export default function Inventory() {
                 <option value="Good">Good</option>
                 <option value="Fair">Fair</option>
                 <option value="Damaged">Damaged</option>
-              </select>
+              </ThemedSelect>
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Notes</label>

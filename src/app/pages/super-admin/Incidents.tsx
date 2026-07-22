@@ -1,3 +1,4 @@
+import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useState } from "react";
 import {
   Plus,
@@ -390,7 +391,7 @@ export default function Incidents() {
         </div>
         <div>
           <label className="block text-sm text-slate-700 mb-1">Status</label>
-          <select
+          <ThemedSelect
             value={form.status}
             onChange={(e) => setForm({ ...form, status: e.target.value as IncidentStatus })}
             className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -398,23 +399,23 @@ export default function Incidents() {
             {(Object.keys(INCIDENT_STATUS_LABEL) as IncidentStatus[]).map((s) => (
               <option key={s} value={s}>{INCIDENT_STATUS_LABEL[s]}</option>
             ))}
-          </select>
+          </ThemedSelect>
         </div>
 
         <div>
           <label className="block text-sm text-slate-700 mb-1">Client</label>
-          <select
+          <ThemedSelect
             value={form.client_id}
             onChange={(e) => setForm({ ...form, client_id: e.target.value, post_id: "", guard_ids: [] })}
             className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
           >
             <option value="">— Unspecified —</option>
             {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          </ThemedSelect>
         </div>
         <div>
           <label className="block text-sm text-slate-700 mb-1">Post / Location</label>
-          <select
+          <ThemedSelect
             value={form.post_id}
             onChange={(e) => setForm({ ...form, post_id: e.target.value })}
             className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -422,7 +423,7 @@ export default function Incidents() {
           >
             <option value="">— Unspecified —</option>
             {filteredPosts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
+          </ThemedSelect>
           {!form.client_id && (
             <p className="text-[10px] text-slate-500 mt-1">Pick a client first.</p>
           )}
@@ -447,7 +448,7 @@ export default function Incidents() {
         </div>
         <div>
           <label className="block text-sm text-slate-700 mb-1">Category *</label>
-          <select
+          <ThemedSelect
             required
             value={form.category}
             onChange={(e) => setForm({ ...form, category: e.target.value as IncidentCategory })}
@@ -456,7 +457,7 @@ export default function Incidents() {
             {(Object.keys(INCIDENT_CATEGORY_LABEL) as IncidentCategory[]).map((c) => (
               <option key={c} value={c}>{INCIDENT_CATEGORY_LABEL[c]}</option>
             ))}
-          </select>
+          </ThemedSelect>
         </div>
 
         <div className="col-span-2">
@@ -662,14 +663,14 @@ export default function Incidents() {
               className="w-full pl-10 pr-3 py-2 border border-slate-200 rounded-md text-sm"
             />
           </div>
-          <select
+          <ThemedSelect
             value={clientFilter}
             onChange={(e) => setClientFilter(e.target.value)}
             className="px-3 py-2 border border-slate-200 rounded-md text-sm"
           >
             <option value="all">All clients</option>
             {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          </ThemedSelect>
         </div>
 
         {/* Table */}

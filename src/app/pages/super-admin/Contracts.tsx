@@ -1,3 +1,4 @@
+import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useState } from "react";
 import {
   Plus,
@@ -264,7 +265,7 @@ export default function Contracts() {
               className="w-full pl-10 pr-3 py-2 border border-slate-200 rounded-md text-sm"
             />
           </div>
-          <select
+          <ThemedSelect
             value={clientFilter}
             onChange={(e) => setClientFilter(e.target.value)}
             className="px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -273,8 +274,8 @@ export default function Contracts() {
             {clients.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
-          </select>
-          <select
+          </ThemedSelect>
+          <ThemedSelect
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as "all" | ContractStatus)}
             className="px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -283,7 +284,7 @@ export default function Contracts() {
             {(["active", "expired", "terminated", "draft"] as const).map((s) => (
               <option key={s} value={s}>{CONTRACT_STATUS_LABEL[s]}</option>
             ))}
-          </select>
+          </ThemedSelect>
         </div>
 
         <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">

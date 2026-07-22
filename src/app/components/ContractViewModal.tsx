@@ -1,3 +1,4 @@
+import ThemedSelect from "./ThemedSelect";
 import { useCallback, useEffect, useState } from "react";
 import { FileText } from "lucide-react";
 import Modal from "./Modal";
@@ -310,9 +311,9 @@ function AmendmentSection({ contractId }: { contractId: string }) {
       </div>
       <div className="p-3 border-t border-slate-200 space-y-2 bg-slate-50/50">
         <div className="grid grid-cols-2 gap-2">
-          <select className={FIELD} value={field} onChange={(e) => setField(e.target.value)}>
+          <ThemedSelect className={FIELD} value={field} onChange={(e) => setField(e.target.value)}>
             {AMENDABLE_FIELDS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-          </select>
+          </ThemedSelect>
           <input className={FIELD} placeholder="New value" value={value} onChange={(e) => setValue(e.target.value)} />
         </div>
         <input className={FIELD + " w-full"} placeholder="Reason for amendment" value={reason} onChange={(e) => setReason(e.target.value)} />

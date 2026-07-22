@@ -1,3 +1,4 @@
+import ThemedSelect from "../../components/ThemedSelect";
 import { useCallback, useEffect, useState } from "react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -131,11 +132,11 @@ export default function Governance() {
             <div key={s.id} className="flex items-center justify-between px-3 py-2 text-sm">
               <span className="text-slate-700">{s.full_name ?? s.email}</span>
               <div className="flex items-center gap-2">
-                <select className={FIELD} value={s.department ?? ""}
+                <ThemedSelect className={FIELD} value={s.department ?? ""}
                   onChange={(e) => run(supabase.from("profiles").update({ department: e.target.value || null }).eq("id", s.id))}>
                   <option value="">— department —</option>
                   {DEPARTMENTS.map((d) => <option key={d} value={d}>{d.replace(/_/g, " ")}</option>)}
-                </select>
+                </ThemedSelect>
                 <label className="flex items-center gap-1 text-xs text-slate-500">
                   <input type="checkbox" checked={!!s.is_rmd}
                     onChange={() => run(supabase.from("profiles").update({ is_rmd: !s.is_rmd }).eq("id", s.id))} />

@@ -1,3 +1,4 @@
+import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Pencil, AlertCircle, X, Loader2, Trash2, ChevronDown, ChevronRight } from "lucide-react";
 import Header from "../../components/Header";
@@ -407,12 +408,12 @@ export default function ProfitDistribution() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Level</label>
-              <select value={ruleForm.level} onChange={(e) => setRuleForm({ ...ruleForm, level: e.target.value as any, target_id: "" })}
+              <ThemedSelect value={ruleForm.level} onChange={(e) => setRuleForm({ ...ruleForm, level: e.target.value as any, target_id: "" })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
                 <option value="COMPANY">Company (all branches)</option>
                 <option value="BRANCH">Branch-specific</option>
                 <option value="CLIENT">Client-specific</option>
-              </select>
+              </ThemedSelect>
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Effective From</label>
@@ -423,21 +424,21 @@ export default function ProfitDistribution() {
           {ruleForm.level === "BRANCH" && (
             <div>
               <label className="block text-sm text-slate-700 mb-1">Branch</label>
-              <select value={ruleForm.target_id} onChange={(e) => setRuleForm({ ...ruleForm, target_id: e.target.value })}
+              <ThemedSelect value={ruleForm.target_id} onChange={(e) => setRuleForm({ ...ruleForm, target_id: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
                 <option value="">Select branch…</option>
                 {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </select>
+              </ThemedSelect>
             </div>
           )}
           {ruleForm.level === "CLIENT" && (
             <div>
               <label className="block text-sm text-slate-700 mb-1">Client</label>
-              <select value={ruleForm.target_id} onChange={(e) => setRuleForm({ ...ruleForm, target_id: e.target.value })}
+              <ThemedSelect value={ruleForm.target_id} onChange={(e) => setRuleForm({ ...ruleForm, target_id: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
                 <option value="">Select client…</option>
                 {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              </ThemedSelect>
             </div>
           )}
 
@@ -449,17 +450,17 @@ export default function ProfitDistribution() {
             <div className="space-y-2">
               {ruleLinesFrm.map((l, i) => (
                 <div key={i} className="flex items-center gap-2">
-                  <select value={l.beneficiary} onChange={(e) => setRuleLinesFrm((prev) => prev.map((x, j) => j === i ? { ...x, beneficiary: e.target.value as any, partner_id: "" } : x))}
+                  <ThemedSelect value={l.beneficiary} onChange={(e) => setRuleLinesFrm((prev) => prev.map((x, j) => j === i ? { ...x, beneficiary: e.target.value as any, partner_id: "" } : x))}
                     className="flex-1 px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
                     <option value="PARTNER">Partner</option>
                     <option value="RETAINED">Company Retained</option>
-                  </select>
+                  </ThemedSelect>
                   {l.beneficiary === "PARTNER" && (
-                    <select value={l.partner_id} onChange={(e) => setRuleLinesFrm((prev) => prev.map((x, j) => j === i ? { ...x, partner_id: e.target.value } : x))}
+                    <ThemedSelect value={l.partner_id} onChange={(e) => setRuleLinesFrm((prev) => prev.map((x, j) => j === i ? { ...x, partner_id: e.target.value } : x))}
                       className="flex-1 px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
                       <option value="">Select partner…</option>
                       {partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </select>
+                    </ThemedSelect>
                   )}
                   <input type="number" min="0" max="100" step="0.01" placeholder="%" value={l.percentage}
                     onChange={(e) => setRuleLinesFrm((prev) => prev.map((x, j) => j === i ? { ...x, percentage: e.target.value } : x))}
@@ -491,29 +492,29 @@ export default function ProfitDistribution() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Referring Partner *</label>
-              <select value={refForm.referring_partner_id} onChange={(e) => setRefForm({ ...refForm, referring_partner_id: e.target.value })}
+              <ThemedSelect value={refForm.referring_partner_id} onChange={(e) => setRefForm({ ...refForm, referring_partner_id: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
                 <option value="">Select partner…</option>
                 {partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
+              </ThemedSelect>
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Source Branch *</label>
-              <select value={refForm.source_branch_id} onChange={(e) => setRefForm({ ...refForm, source_branch_id: e.target.value })}
+              <ThemedSelect value={refForm.source_branch_id} onChange={(e) => setRefForm({ ...refForm, source_branch_id: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
                 <option value="">Select branch…</option>
                 {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </select>
+              </ThemedSelect>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Basis</label>
-              <select value={refForm.basis} onChange={(e) => setRefForm({ ...refForm, basis: e.target.value as any, client_id: "" })}
+              <ThemedSelect value={refForm.basis} onChange={(e) => setRefForm({ ...refForm, basis: e.target.value as any, client_id: "" })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
                 <option value="BRANCH_PROFIT">Branch Profit</option>
                 <option value="CLIENT_PROFIT">Client Profit</option>
-              </select>
+              </ThemedSelect>
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Cut % *</label>
@@ -524,20 +525,20 @@ export default function ProfitDistribution() {
           {refForm.basis === "CLIENT_PROFIT" && (
             <div>
               <label className="block text-sm text-slate-700 mb-1">Client</label>
-              <select value={refForm.client_id} onChange={(e) => setRefForm({ ...refForm, client_id: e.target.value })}
+              <ThemedSelect value={refForm.client_id} onChange={(e) => setRefForm({ ...refForm, client_id: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
                 <option value="">Select client…</option>
                 {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              </ThemedSelect>
             </div>
           )}
           <div>
             <label className="block text-sm text-slate-700 mb-1">Funding Method</label>
-            <select value={refForm.funding_method} onChange={(e) => setRefForm({ ...refForm, funding_method: e.target.value as any })}
+            <ThemedSelect value={refForm.funding_method} onChange={(e) => setRefForm({ ...refForm, funding_method: e.target.value as any })}
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
               <option value="OFF_THE_TOP">Off the Top (everyone bears it pro-rata)</option>
               <option value="PARTNERS_ONLY">Partners Only (company retained slice excluded)</option>
-            </select>
+            </ThemedSelect>
           </div>
           <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
             <input type="checkbox" checked={refForm.is_active} onChange={(e) => setRefForm({ ...refForm, is_active: e.target.checked })} className="rounded border-slate-300" />

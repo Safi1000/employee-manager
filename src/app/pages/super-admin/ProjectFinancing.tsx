@@ -1,3 +1,4 @@
+import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Pencil, AlertCircle, X, Loader2, Trash2, ChevronDown, ChevronRight, TrendingUp, DollarSign } from "lucide-react";
 import Header from "../../components/Header";
@@ -472,19 +473,19 @@ export default function ProjectFinancing() {
             <div className="bg-white rounded-lg border border-slate-200 p-4 flex flex-wrap gap-4">
               <div className="flex-1 min-w-[180px]">
                 <label className="block text-sm text-slate-700 mb-1">Project</label>
-                <select value={ledgerProjectId} onChange={(e) => setLedgerProjectId(e.target.value)}
+                <ThemedSelect value={ledgerProjectId} onChange={(e) => setLedgerProjectId(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
                   <option value="">All Projects</option>
                   {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
+                </ThemedSelect>
               </div>
               <div className="flex-1 min-w-[180px]">
                 <label className="block text-sm text-slate-700 mb-1">Investor</label>
-                <select value={ledgerInvestorId} onChange={(e) => setLedgerInvestorId(e.target.value)}
+                <ThemedSelect value={ledgerInvestorId} onChange={(e) => setLedgerInvestorId(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
                   <option value="">All Investors</option>
                   {investors.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
-                </select>
+                </ThemedSelect>
               </div>
             </div>
 
@@ -535,11 +536,11 @@ export default function ProjectFinancing() {
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Client</label>
-            <select value={projForm.client_id} onChange={(e) => setProjForm({ ...projForm, client_id: e.target.value })}
+            <ThemedSelect value={projForm.client_id} onChange={(e) => setProjForm({ ...projForm, client_id: e.target.value })}
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
               <option value="">No client linked</option>
               {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+            </ThemedSelect>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -556,20 +557,20 @@ export default function ProjectFinancing() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Status</label>
-              <select value={projForm.status} onChange={(e) => setProjForm({ ...projForm, status: e.target.value as any })}
+              <ThemedSelect value={projForm.status} onChange={(e) => setProjForm({ ...projForm, status: e.target.value as any })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
                 <option>Raising</option>
                 <option>Active</option>
                 <option>Completed</option>
-              </select>
+              </ThemedSelect>
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Payout Gate</label>
-              <select value={projForm.payout_gate} onChange={(e) => setProjForm({ ...projForm, payout_gate: e.target.value as any })}
+              <ThemedSelect value={projForm.payout_gate} onChange={(e) => setProjForm({ ...projForm, payout_gate: e.target.value as any })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
                 <option value="COMPANY_CASHFLOW">Company Cashflow</option>
                 <option value="PROJECT_CASHFLOW">Project Cashflow</option>
-              </select>
+              </ThemedSelect>
             </div>
           </div>
           <div>
@@ -596,20 +597,20 @@ export default function ProjectFinancing() {
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Type</label>
-            <select value={invForm.type} onChange={(e) => setInvForm({ ...invForm, type: e.target.value as any, linked_partner_id: "" })}
+            <ThemedSelect value={invForm.type} onChange={(e) => setInvForm({ ...invForm, type: e.target.value as any, linked_partner_id: "" })}
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
               <option value="THIRD_PARTY">Third Party (arms-length)</option>
               <option value="PARTNER">Partner (linked to partner account)</option>
-            </select>
+            </ThemedSelect>
           </div>
           {invForm.type === "PARTNER" && (
             <div>
               <label className="block text-sm text-slate-700 mb-1">Linked Partner</label>
-              <select value={invForm.linked_partner_id} onChange={(e) => setInvForm({ ...invForm, linked_partner_id: e.target.value })}
+              <ThemedSelect value={invForm.linked_partner_id} onChange={(e) => setInvForm({ ...invForm, linked_partner_id: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
                 <option value="">None</option>
                 {partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
+              </ThemedSelect>
             </div>
           )}
           <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
@@ -631,20 +632,20 @@ export default function ProjectFinancing() {
           <p className="text-sm text-slate-500">Project: <strong>{projName(investmentProjectId)}</strong></p>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Investor *</label>
-            <select value={invmtForm.investor_id} onChange={(e) => setInvmtForm({ ...invmtForm, investor_id: e.target.value })}
+            <ThemedSelect value={invmtForm.investor_id} onChange={(e) => setInvmtForm({ ...invmtForm, investor_id: e.target.value })}
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
               <option value="">Select investor…</option>
               {investors.filter((i) => i.is_active).map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
-            </select>
+            </ThemedSelect>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Return Type</label>
-              <select value={invmtForm.return_type} onChange={(e) => setInvmtForm({ ...invmtForm, return_type: e.target.value as any })}
+              <ThemedSelect value={invmtForm.return_type} onChange={(e) => setInvmtForm({ ...invmtForm, return_type: e.target.value as any })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
                 <option value="PROFIT_SHARE">Profit Share</option>
                 <option value="FIXED_FINANCE">Fixed Finance Cost</option>
-              </select>
+              </ThemedSelect>
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Committed Amount (PKR) *</label>
@@ -674,19 +675,19 @@ export default function ProjectFinancing() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Project *</label>
-              <select value={ledgerForm.project_id} onChange={(e) => setLedgerForm({ ...ledgerForm, project_id: e.target.value })}
+              <ThemedSelect value={ledgerForm.project_id} onChange={(e) => setLedgerForm({ ...ledgerForm, project_id: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
                 <option value="">Select project…</option>
                 {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
+              </ThemedSelect>
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Investor *</label>
-              <select value={ledgerForm.investor_id} onChange={(e) => setLedgerForm({ ...ledgerForm, investor_id: e.target.value })}
+              <ThemedSelect value={ledgerForm.investor_id} onChange={(e) => setLedgerForm({ ...ledgerForm, investor_id: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
                 <option value="">Select investor…</option>
                 {investors.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
-              </select>
+              </ThemedSelect>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -703,18 +704,18 @@ export default function ProjectFinancing() {
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Entry Type *</label>
-            <select value={ledgerForm.type} onChange={(e) => setLedgerForm({ ...ledgerForm, type: e.target.value as any })}
+            <ThemedSelect value={ledgerForm.type} onChange={(e) => setLedgerForm({ ...ledgerForm, type: e.target.value as any })}
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
               {ENTRY_TYPES.map((t) => <option key={t} value={t}>{t.replace(/_/g, " ")}</option>)}
-            </select>
+            </ThemedSelect>
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Cash Location (if money moved)</label>
-            <select value={ledgerForm.cash_location_id} onChange={(e) => setLedgerForm({ ...ledgerForm, cash_location_id: e.target.value })}
+            <ThemedSelect value={ledgerForm.cash_location_id} onChange={(e) => setLedgerForm({ ...ledgerForm, cash_location_id: e.target.value })}
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
               <option value="">None / journal only</option>
               {cashLocs.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-            </select>
+            </ThemedSelect>
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Description</label>

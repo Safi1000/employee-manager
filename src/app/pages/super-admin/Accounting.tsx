@@ -1,3 +1,4 @@
+import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { Plus, Building2, Download, AlertCircle, X, Loader2, ArrowDownUp, History, Trash2, CheckCircle2, RotateCcw, FileText, Pencil, ArrowLeftRight, Search, Power } from "lucide-react";
@@ -1923,7 +1924,7 @@ export default function Accounting() {
                   />
                 </div>
                 <label className="text-xs text-slate-500">Client:</label>
-                <select
+                <ThemedSelect
                   value={receivablesClientFilter}
                   onChange={(e) => setReceivablesClientFilter(e.target.value)}
                   className="px-3 py-1.5 border border-slate-200 rounded-md text-sm max-w-[14rem]"
@@ -1934,9 +1935,9 @@ export default function Accounting() {
                     .map((c) => (
                       <option key={c.id} value={c.id}>{c.name}</option>
                     ))}
-                </select>
+                </ThemedSelect>
                 <label className="text-xs text-slate-500">Branch:</label>
-                <select
+                <ThemedSelect
                   value={receivablesBranchFilter}
                   onChange={(e) => setReceivablesBranchFilter(e.target.value)}
                   className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
@@ -1945,9 +1946,9 @@ export default function Accounting() {
                   {branchesList.map((b) => (
                     <option key={b.id} value={b.id}>{b.name}</option>
                   ))}
-                </select>
+                </ThemedSelect>
                 <label className="text-xs text-slate-500">Month:</label>
-                <select
+                <ThemedSelect
                   value={receivablesMonth}
                   onChange={(e) => setReceivablesMonth(e.target.value)}
                   className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
@@ -1956,13 +1957,13 @@ export default function Accounting() {
                   {monthOptions.map((m) => (
                     <option key={m.key} value={m.key}>{m.label}</option>
                   ))}
-                </select>
+                </ThemedSelect>
               </div>
             )}
             {activeTab === "payables" && (
               <div className="ml-auto flex items-center gap-2">
                 <label className="text-xs text-slate-500">Month:</label>
-                <select
+                <ThemedSelect
                   value={payablesMonth}
                   onChange={(e) => setPayablesMonth(e.target.value)}
                   className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
@@ -1971,7 +1972,7 @@ export default function Accounting() {
                   {monthOptions.map((m) => (
                     <option key={m.key} value={m.key}>{m.label}</option>
                   ))}
-                </select>
+                </ThemedSelect>
               </div>
             )}
           </div>
@@ -2338,7 +2339,7 @@ export default function Accounting() {
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <select
+                  <ThemedSelect
                     value={chequeBankFilter}
                     onChange={(e) => setChequeBankFilter(e.target.value)}
                     className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
@@ -2347,11 +2348,11 @@ export default function Accounting() {
                     {banks.map((b) => (
                       <option key={b.id} value={b.id}>{b.bank_name}</option>
                     ))}
-                  </select>
+                  </ThemedSelect>
                   {/* Cash deposits are atomic/immediate — no status concept, so the
                       Status filter only applies to cheques. */}
                   {chequeSectionView === "cheques" && (
-                    <select
+                    <ThemedSelect
                       value={chequeFilter}
                       onChange={(e) => setChequeFilter(e.target.value as "all" | "pending" | "cleared")}
                       className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
@@ -2359,9 +2360,9 @@ export default function Accounting() {
                       <option value="all">All Status</option>
                       <option value="pending">Pending</option>
                       <option value="cleared">Cleared</option>
-                    </select>
+                    </ThemedSelect>
                   )}
-                  <select
+                  <ThemedSelect
                     value={chequeMonthFilter}
                     onChange={(e) => setChequeMonthFilter(e.target.value)}
                     className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
@@ -2370,7 +2371,7 @@ export default function Accounting() {
                     {monthOptions.map((m) => (
                       <option key={m.key} value={m.key}>{m.label}</option>
                     ))}
-                  </select>
+                  </ThemedSelect>
                   {chequeSectionView === "cheques" ? (
                     <>
                       <Button
@@ -2837,7 +2838,7 @@ export default function Accounting() {
           )}
           <div>
             <label className="block text-sm text-slate-700 mb-1">Bank Account *</label>
-            <select
+            <ThemedSelect
               required
               value={chequeForm.bank_account_id}
               onChange={(e) => setChequeForm({ ...chequeForm, bank_account_id: e.target.value })}
@@ -2849,7 +2850,7 @@ export default function Accounting() {
                   {b.bank_name} · {b.account_number} (PKR {Number(b.balance).toLocaleString()})
                 </option>
               ))}
-            </select>
+            </ThemedSelect>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -3137,7 +3138,7 @@ export default function Accounting() {
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Currency</label>
-              <select
+              <ThemedSelect
                 value={newBank.currency_code}
                 onChange={(e) => setNewBank({ ...newBank, currency_code: e.target.value })}
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
@@ -3147,23 +3148,23 @@ export default function Accounting() {
                 <option value="AED">AED — UAE Dirham</option>
                 <option value="GBP">GBP — British Pound</option>
                 <option value="EUR">EUR — Euro</option>
-              </select>
+              </ThemedSelect>
             </div>
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Account Type</label>
-            <select
+            <ThemedSelect
               value={newBank.account_type}
               onChange={(e) => setNewBank({ ...newBank, account_type: e.target.value as "Current" | "Savings" })}
               className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
             >
               <option value="Current">Current</option>
               <option value="Savings">Savings</option>
-            </select>
+            </ThemedSelect>
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Account For *</label>
-            <select
+            <ThemedSelect
               value={newBank.owner_type}
               onChange={(e) => setNewBank({ ...newBank, owner_type: e.target.value as BankAccountOwnerType, owner_partner_id: "", owner_client_id: "" })}
               className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
@@ -3171,12 +3172,12 @@ export default function Accounting() {
               <option value="company">Company</option>
               <option value="partner">Partner</option>
               <option value="client">Client</option>
-            </select>
+            </ThemedSelect>
           </div>
           {newBank.owner_type === "partner" && (
             <div>
               <label className="block text-sm text-slate-700 mb-1">Partner *</label>
-              <select
+              <ThemedSelect
                 required
                 value={newBank.owner_partner_id}
                 onChange={(e) => setNewBank({ ...newBank, owner_partner_id: e.target.value })}
@@ -3184,7 +3185,7 @@ export default function Accounting() {
               >
                 <option value="">Select partner…</option>
                 {partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
+              </ThemedSelect>
               {partners.length === 0 && (
                 <p className="text-xs text-warning-700 mt-1">No partners yet. Add partners in the Partnership Report first.</p>
               )}
@@ -3193,7 +3194,7 @@ export default function Accounting() {
           {newBank.owner_type === "client" && (
             <div>
               <label className="block text-sm text-slate-700 mb-1">Client *</label>
-              <select
+              <ThemedSelect
                 required
                 value={newBank.owner_client_id}
                 onChange={(e) => setNewBank({ ...newBank, owner_client_id: e.target.value })}
@@ -3201,7 +3202,7 @@ export default function Accounting() {
               >
                 <option value="">Select client…</option>
                 {receivables.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              </ThemedSelect>
             </div>
           )}
           <div>
@@ -3286,7 +3287,7 @@ export default function Accounting() {
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
                 />
               ) : (
-                <select
+                <ThemedSelect
                   required
                   value={depositBankId}
                   onChange={(e) => setDepositBankId(e.target.value)}
@@ -3296,7 +3297,7 @@ export default function Accounting() {
                   {banks.filter((b) => b.active).map((b) => (
                     <option key={b.id} value={b.id}>{b.bank_name} · {b.account_number}</option>
                   ))}
-                </select>
+                </ThemedSelect>
               )}
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -3602,7 +3603,7 @@ export default function Accounting() {
             {!paymentStandalone && (
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Apply to Invoice *</label>
-                <select
+                <ThemedSelect
                   required
                   value={paymentInvoiceId}
                   onChange={(e) => setPaymentInvoiceId(e.target.value)}
@@ -3628,7 +3629,7 @@ export default function Accounting() {
                         </option>
                       );
                     })}
-                </select>
+                </ThemedSelect>
               </div>
             )}
             <div>
@@ -3684,7 +3685,7 @@ export default function Accounting() {
             {(paymentVia === "Bank" || paymentVia === "Cheque") && (
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Bank Account *</label>
-                <select
+                <ThemedSelect
                   required
                   value={paymentBankId}
                   onChange={(e) => setPaymentBankId(e.target.value)}
@@ -3696,7 +3697,7 @@ export default function Accounting() {
                       {b.bank_name} · {b.account_number}
                     </option>
                   ))}
-                </select>
+                </ThemedSelect>
               </div>
             )}
             {paymentVia === "Cheque" && (
@@ -3816,7 +3817,7 @@ export default function Accounting() {
               </div>
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Currency</label>
-                <select
+                <ThemedSelect
                   value={editBankForm.currency_code}
                   onChange={(e) => setEditBankForm({ ...editBankForm, currency_code: e.target.value })}
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
@@ -3826,23 +3827,23 @@ export default function Accounting() {
                   <option value="AED">AED</option>
                   <option value="GBP">GBP</option>
                   <option value="EUR">EUR</option>
-                </select>
+                </ThemedSelect>
               </div>
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Account Type</label>
-              <select
+              <ThemedSelect
                 value={editBankForm.account_type}
                 onChange={(e) => setEditBankForm({ ...editBankForm, account_type: e.target.value as "Current" | "Savings" })}
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               >
                 <option value="Current">Current</option>
                 <option value="Savings">Savings</option>
-              </select>
+              </ThemedSelect>
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Account For</label>
-              <select
+              <ThemedSelect
                 value={editBankForm.owner_type}
                 onChange={(e) => setEditBankForm({ ...editBankForm, owner_type: e.target.value as BankAccountOwnerType, owner_partner_id: "", owner_client_id: "" })}
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
@@ -3850,12 +3851,12 @@ export default function Accounting() {
                 <option value="company">Company</option>
                 <option value="partner">Partner</option>
                 <option value="client">Client</option>
-              </select>
+              </ThemedSelect>
             </div>
             {editBankForm.owner_type === "partner" && (
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Partner *</label>
-                <select
+                <ThemedSelect
                   required
                   value={editBankForm.owner_partner_id}
                   onChange={(e) => setEditBankForm({ ...editBankForm, owner_partner_id: e.target.value })}
@@ -3863,13 +3864,13 @@ export default function Accounting() {
                 >
                   <option value="">Select partner…</option>
                   {partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
+                </ThemedSelect>
               </div>
             )}
             {editBankForm.owner_type === "client" && (
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Client *</label>
-                <select
+                <ThemedSelect
                   required
                   value={editBankForm.owner_client_id}
                   onChange={(e) => setEditBankForm({ ...editBankForm, owner_client_id: e.target.value })}
@@ -3877,7 +3878,7 @@ export default function Accounting() {
                 >
                   <option value="">Select client…</option>
                   {receivables.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+                </ThemedSelect>
               </div>
             )}
             <p className="text-xs text-slate-500">
@@ -3935,7 +3936,7 @@ export default function Accounting() {
         <form className="space-y-4" onSubmit={handleTransfer}>
           <div>
             <label className="block text-sm text-slate-700 mb-1">From Account *</label>
-            <select
+            <ThemedSelect
               required
               value={transferFromId}
               onChange={(e) => setTransferFromId(e.target.value)}
@@ -3952,11 +3953,11 @@ export default function Accounting() {
                   </option>
                 );
               })}
-            </select>
+            </ThemedSelect>
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">To Account *</label>
-            <select
+            <ThemedSelect
               required
               value={transferToId}
               onChange={(e) => setTransferToId(e.target.value)}
@@ -3973,7 +3974,7 @@ export default function Accounting() {
                   </option>
                 );
               })}
-            </select>
+            </ThemedSelect>
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Amount (PKR) *</label>
@@ -4079,7 +4080,7 @@ export default function Accounting() {
             {markPaidVia === "Bank" && (
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Bank Account *</label>
-                <select
+                <ThemedSelect
                   required
                   value={markPaidBankId}
                   onChange={(e) => setMarkPaidBankId(e.target.value)}
@@ -4091,7 +4092,7 @@ export default function Accounting() {
                       {b.bank_name} · {b.account_number} (PKR {Number(b.balance).toLocaleString()})
                     </option>
                   ))}
-                </select>
+                </ThemedSelect>
               </div>
             )}
             <div className="flex items-center gap-3 pt-2">
@@ -4111,7 +4112,7 @@ export default function Accounting() {
         <div className="space-y-4">
           <div>
             <label className="block text-sm text-slate-700 mb-1">Bank Account</label>
-            <select
+            <ThemedSelect
               value={bankExportBankId}
               onChange={(e) => setBankExportBankId(e.target.value)}
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -4120,7 +4121,7 @@ export default function Accounting() {
               {banks.map((b) => (
                 <option key={b.id} value={b.id}>{b.bank_name} — {b.account_number}</option>
               ))}
-            </select>
+            </ThemedSelect>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -4311,7 +4312,7 @@ function HistoryBody({
       <div className="flex flex-wrap gap-3 items-center pb-3 border-b border-slate-200">
         <div className="flex items-center gap-2">
           <label className="text-xs text-slate-500">Account</label>
-          <select
+          <ThemedSelect
             value={bankFilter}
             onChange={(e) => setBankFilter(e.target.value)}
             className="px-3 py-1.5 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
@@ -4323,11 +4324,11 @@ function HistoryBody({
                 {b.bank_name} · {b.account_number}
               </option>
             ))}
-          </select>
+          </ThemedSelect>
         </div>
         <div className="flex items-center gap-2">
           <label className="text-xs text-slate-500">Month</label>
-          <select
+          <ThemedSelect
             value={monthFilter}
             onChange={(e) => setMonthFilter(e.target.value)}
             className="px-3 py-1.5 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
@@ -4336,7 +4337,7 @@ function HistoryBody({
             {monthOptions.map((m) => (
               <option key={m.key} value={m.key}>{m.label}</option>
             ))}
-          </select>
+          </ThemedSelect>
         </div>
         <div className="flex items-center gap-1">
           {(["all", "cash", "account"] as const).map((s) => (

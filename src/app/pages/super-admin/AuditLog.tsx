@@ -1,3 +1,4 @@
+import ThemedSelect from "../../components/ThemedSelect";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   Loader2,
@@ -370,7 +371,7 @@ export default function AuditLog() {
             </div>
             <div>
               <label className="block text-xs text-slate-600 mb-1">Table</label>
-              <select
+              <ThemedSelect
                 value={tableFilter}
                 onChange={(e) => setTableFilter(e.target.value as "all" | AuditedTable)}
                 className="w-full px-3 py-2 border border-slate-200 rounded text-sm"
@@ -379,11 +380,11 @@ export default function AuditLog() {
                 {AUDITED_TABLES.map((t) => (
                   <option key={t} value={t}>{TABLE_LABEL[t] ?? t}</option>
                 ))}
-              </select>
+              </ThemedSelect>
             </div>
             <div>
               <label className="block text-xs text-slate-600 mb-1">Action</label>
-              <select
+              <ThemedSelect
                 value={actionFilter}
                 onChange={(e) => setActionFilter(e.target.value as "all" | AuditAction)}
                 className="w-full px-3 py-2 border border-slate-200 rounded text-sm"
@@ -392,11 +393,11 @@ export default function AuditLog() {
                 <option value="insert">Insert</option>
                 <option value="update">Update</option>
                 <option value="delete">Delete</option>
-              </select>
+              </ThemedSelect>
             </div>
             <div>
               <label className="block text-xs text-slate-600 mb-1">User</label>
-              <select
+              <ThemedSelect
                 value={userFilter}
                 onChange={(e) => setUserFilter(e.target.value)}
                 className="w-full px-3 py-2 border border-slate-200 rounded text-sm"
@@ -407,7 +408,7 @@ export default function AuditLog() {
                     {p.full_name ?? p.email}
                   </option>
                 ))}
-              </select>
+              </ThemedSelect>
             </div>
             <div className="md:col-span-2">
               <label className="block text-xs text-slate-600 mb-1">Record ID</label>

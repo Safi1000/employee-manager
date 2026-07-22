@@ -1,3 +1,4 @@
+import ThemedSelect from "../../components/ThemedSelect";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -141,17 +142,17 @@ export default function OpeningBalances() {
                 <section className="border border-slate-200 rounded-md p-3 grid grid-cols-2 md:grid-cols-6 gap-2 items-end">
                   <div className="col-span-2">
                     <label className="text-xs text-slate-500 block mb-1">Account</label>
-                    <select className={FIELD + " w-full"} value={accId} onChange={(e) => setAccId(e.target.value)}>
+                    <ThemedSelect className={FIELD + " w-full"} value={accId} onChange={(e) => setAccId(e.target.value)}>
                       <option value="">— account —</option>
                       {accounts.map((a) => <option key={a.id} value={a.id}>{a.account_code} {a.account_name}</option>)}
-                    </select>
+                    </ThemedSelect>
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Region</label>
-                    <select className={FIELD + " w-full"} value={brId} onChange={(e) => setBrId(e.target.value)}>
+                    <ThemedSelect className={FIELD + " w-full"} value={brId} onChange={(e) => setBrId(e.target.value)}>
                       <option value="">—</option>
                       {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-                    </select>
+                    </ThemedSelect>
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Debit</label>

@@ -1,3 +1,4 @@
+import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, AlertCircle, X, ArrowUpDown, Search, Calendar } from "lucide-react";
 import { Link } from "react-router";
@@ -271,7 +272,7 @@ export default function Licences() {
               className="w-full pl-10 pr-3 py-2 border border-slate-200 rounded-md text-sm"
             />
           </div>
-          <select
+          <ThemedSelect
             value={kindFilter}
             onChange={(e) => setKindFilter(e.target.value as "all" | RowKind)}
             className="px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -280,7 +281,7 @@ export default function Licences() {
             {(Object.keys(KIND_LABEL) as RowKind[]).map((k) => (
               <option key={k} value={k}>{KIND_LABEL[k]}</option>
             ))}
-          </select>
+          </ThemedSelect>
         </div>
 
         {/* Table */}

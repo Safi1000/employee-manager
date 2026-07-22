@@ -1,3 +1,4 @@
+import ThemedSelect from "../../components/ThemedSelect";
 import { useCallback, useEffect, useState } from "react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -243,10 +244,10 @@ function DailyReportForm({ companyId, posts, run, busy }: { companyId: string; p
     <div className={box}>
       <div className="col-span-2">
         <label className="text-xs text-slate-500 block mb-1">Post</label>
-        <select className={FIELD + " w-full"} value={postId} onChange={(e) => setPostId(e.target.value)}>
+        <ThemedSelect className={FIELD + " w-full"} value={postId} onChange={(e) => setPostId(e.target.value)}>
           <option value="">— post —</option>
           {posts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
+        </ThemedSelect>
       </div>
       <div><label className="text-xs text-slate-500 block mb-1">Required</label>
         <input className={FIELD + " w-full"} value={required} onChange={(e) => setRequired(e.target.value)} placeholder={post?.required_guards ?? "0"} /></div>
@@ -277,19 +278,19 @@ function VisitForm({ companyId, posts, employees, run, busy }: { companyId: stri
   return (
     <div className={box}>
       <div className="col-span-2"><label className="text-xs text-slate-500 block mb-1">Post</label>
-        <select className={FIELD + " w-full"} value={postId} onChange={(e) => setPostId(e.target.value)}>
+        <ThemedSelect className={FIELD + " w-full"} value={postId} onChange={(e) => setPostId(e.target.value)}>
           <option value="">— post —</option>{posts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select></div>
+        </ThemedSelect></div>
       <div><label className="text-xs text-slate-500 block mb-1">Supervisor</label>
-        <select className={FIELD + " w-full"} value={supId} onChange={(e) => setSupId(e.target.value)}>
+        <ThemedSelect className={FIELD + " w-full"} value={supId} onChange={(e) => setSupId(e.target.value)}>
           <option value="">—</option>{employees.map((e) => <option key={e.id} value={e.id}>{e.full_name}</option>)}
-        </select></div>
+        </ThemedSelect></div>
       <div><label className="text-xs text-slate-500 block mb-1">Date</label>
         <input type="date" className={FIELD + " w-full"} value={date} onChange={(e) => setDate(e.target.value)} /></div>
       <div><label className="text-xs text-slate-500 block mb-1">Status</label>
-        <select className={FIELD + " w-full"} value={status} onChange={(e) => setStatus(e.target.value)}>
+        <ThemedSelect className={FIELD + " w-full"} value={status} onChange={(e) => setStatus(e.target.value)}>
           {["scheduled", "completed", "missed", "cancelled"].map((s) => <option key={s} value={s}>{s}</option>)}
-        </select></div>
+        </ThemedSelect></div>
       <input className={FIELD + " col-span-2 md:col-span-6"} placeholder="Findings / corrective actions" value={findings} onChange={(e) => setFindings(e.target.value)} />
       <Button variant="primary" size="sm" disabled={busy || !postId} onClick={submit}>Log visit</Button>
     </div>
@@ -312,17 +313,17 @@ function NoShowForm({ companyId, posts, employees, run, busy }: { companyId: str
   return (
     <div className={box}>
       <div className="col-span-2"><label className="text-xs text-slate-500 block mb-1">Post</label>
-        <select className={FIELD + " w-full"} value={postId} onChange={(e) => setPostId(e.target.value)}>
+        <ThemedSelect className={FIELD + " w-full"} value={postId} onChange={(e) => setPostId(e.target.value)}>
           <option value="">— post —</option>{posts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select></div>
+        </ThemedSelect></div>
       <div className="col-span-2"><label className="text-xs text-slate-500 block mb-1">Guard (no-show)</label>
-        <select className={FIELD + " w-full"} value={empId} onChange={(e) => setEmpId(e.target.value)}>
+        <ThemedSelect className={FIELD + " w-full"} value={empId} onChange={(e) => setEmpId(e.target.value)}>
           <option value="">—</option>{employees.map((e) => <option key={e.id} value={e.id}>{e.full_name}</option>)}
-        </select></div>
+        </ThemedSelect></div>
       <div><label className="text-xs text-slate-500 block mb-1">Shift</label>
-        <select className={FIELD + " w-full"} value={shift} onChange={(e) => setShift(e.target.value)}>
+        <ThemedSelect className={FIELD + " w-full"} value={shift} onChange={(e) => setShift(e.target.value)}>
           {["day", "evening", "night"].map((s) => <option key={s} value={s}>{s}</option>)}
-        </select></div>
+        </ThemedSelect></div>
       <div><label className="text-xs text-slate-500 block mb-1">Date</label>
         <input type="date" className={FIELD + " w-full"} value={date} onChange={(e) => setDate(e.target.value)} /></div>
       <Button variant="primary" size="sm" disabled={busy || !postId || !empId} onClick={submit}>Record no-show</Button>
@@ -343,13 +344,13 @@ function MobilisationForm({ companyId, posts, contracts, run, busy }: { companyI
   return (
     <div className="border border-slate-200 rounded-md p-3 flex items-end gap-2 flex-wrap bg-slate-50/50">
       <div><label className="text-xs text-slate-500 block mb-1">Contract</label>
-        <select className={FIELD} value={contractId} onChange={(e) => setContractId(e.target.value)}>
+        <ThemedSelect className={FIELD} value={contractId} onChange={(e) => setContractId(e.target.value)}>
           <option value="">— contract —</option>{contracts.map((c) => <option key={c.id} value={c.id}>{c.contract_code}</option>)}
-        </select></div>
+        </ThemedSelect></div>
       <div><label className="text-xs text-slate-500 block mb-1">Post</label>
-        <select className={FIELD} value={postId} onChange={(e) => setPostId(e.target.value)}>
+        <ThemedSelect className={FIELD} value={postId} onChange={(e) => setPostId(e.target.value)}>
           <option value="">— post —</option>{posts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select></div>
+        </ThemedSelect></div>
       <Button variant="primary" size="sm" disabled={busy || !contractId || !postId} onClick={submit}>Start mobilisation</Button>
       <span className="text-xs text-slate-400">Checklist steps are seeded automatically.</span>
     </div>
@@ -374,9 +375,9 @@ function PostOrderForm({ companyId, posts, run, busy }: { companyId: string; pos
     <div className="border border-slate-200 rounded-md p-3 space-y-2 bg-slate-50/50">
       <div className="flex items-end gap-2 flex-wrap">
         <div><label className="text-xs text-slate-500 block mb-1">Post</label>
-          <select className={FIELD} value={postId} onChange={(e) => setPostId(e.target.value)}>
+          <ThemedSelect className={FIELD} value={postId} onChange={(e) => setPostId(e.target.value)}>
             <option value="">— post —</option>{posts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select></div>
+          </ThemedSelect></div>
         <input className={FIELD + " flex-1"} placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
         <div><label className="text-xs text-slate-500 block mb-1">Effective from</label>
           <input type="date" className={FIELD} value={from} onChange={(e) => setFrom(e.target.value)} /></div>

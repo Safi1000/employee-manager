@@ -1,3 +1,4 @@
+import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, Download, AlertCircle, X, Loader2, SlidersHorizontal, ChevronDown } from "lucide-react";
 import jsPDF from "jspdf";
@@ -149,6 +150,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
   // Active / Inactive employee tab split (Inactive = anything not currently Active).
   const [empTab, setEmpTab] = useState<"all" | "active" | "inactive">("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [warningDismissed, setWarningDismissed] = useState(false);
   // Employee category filter (same set as the Employees tab) — e.g. Office Staff only.
   const [categoryFilter, setCategoryFilter] = useState<"all" | "client" | "office_staff" | "reliever">("all");
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -156,7 +158,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
   const [periodOptions, setPeriodOptions] = useState<string[]>([currentPeriod, previousPeriod]);
   const [selectedPeriod, setSelectedPeriod] = useState(() => readSel().period ?? previousPeriod);
 
-  const [selectedId, setSelectedId] = useState<string | null>(() => readSel().id ?? null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [rowEdits, setRowEdits] = useState<Map<string, Partial<RowState>>>(new Map());
   const [savingId, setSavingId] = useState<string | null>(null);
 
@@ -1169,13 +1171,23 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
 
   return (
     <>
-      {totalUnmarkedDays > 0 && (
-        <div className="bg-danger-50 border-b border-danger-200 px-4 md:px-8 py-2 text-sm text-danger-800 flex items-center justify-between gap-3">
+      {totalUnmarkedDays > 0 && !warningDismissed && (
+        <div className="bg-danger-50 border-b border-danger-200 px-4 md:px-8 py-2 text-sm text-danger-700 dark:text-danger-500 flex items-center justify-between gap-3">
           <span>
             <strong>{totalUnmarkedDays.toLocaleString()}</strong> unmarked attendance-day
             {totalUnmarkedDays === 1 ? "" : "s"} in this period — these silently earn zero. Do not bulk-disburse blind.
           </span>
-          <a href="/super-admin/payroll-runs" className="underline whitespace-nowrap">Use the run pipeline →</a>
+          <div className="flex items-center gap-3 flex-shrink-0">
+            <a href="/super-admin/payroll-runs" className="underline whitespace-nowrap">Use the run pipeline →</a>
+            <button
+              type="button"
+              onClick={() => setWarningDismissed(true)}
+              title="Dismiss"
+              className="p-1 rounded-md hover:bg-danger-500/15 transition-colors"
+            >
+              <X className="w-4 h-4" strokeWidth={2} />
+            </button>
+          </div>
         </div>
       )}
       <BusyOverlay
@@ -1220,8 +1232,8 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
         }
       />
 
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="px-8 pt-8 pb-0 flex-shrink-0">
+      <div className="flex-1 overflow-y-auto">
+        <div className="px-8 pt-8 pb-0">
         {error && (
           <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
@@ -1265,9 +1277,9 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
         </div>
         </div>
 
-        <div className="flex-1 overflow-hidden px-8 pb-8">
-        <div className="flex flex-col lg:flex-row gap-6 h-full">
-          <div className="flex-1 min-w-0 overflow-y-auto">
+        <div className="px-8 pb-8">
+        <div className="flex flex-col lg:flex-row gap-6 items-start">
+          <div className="flex-1 min-w-0 w-full">
             <div className="bg-card rounded-xl border border-border">
               <div className="p-4 border-b border-border">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -1319,7 +1331,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                 </div>
                 {filtersOpen && (
                   <div className="mt-3 pt-3 border-t border-border flex flex-wrap gap-2">
-                  <select
+                  <ThemedSelect
                     value={selectedPeriod}
                     onChange={(e) => { setSelectedId(null); setSelectedPeriod(e.target.value); }}
                     className="px-3 py-2 border border-border rounded-md text-sm"
@@ -1330,8 +1342,8 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                         {p === currentPeriod ? " (Current)" : ""}
                       </option>
                     ))}
-                  </select>
-                  <select
+                  </ThemedSelect>
+                  <ThemedSelect
                     value={shiftFilter}
                     onChange={(e) => setShiftFilter(e.target.value as "all" | "day" | "night")}
                     className="px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -1339,8 +1351,8 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                     <option value="all">All Shifts</option>
                     <option value="day">Day</option>
                     <option value="night">Night</option>
-                  </select>
-                  <select
+                  </ThemedSelect>
+                  <ThemedSelect
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value as "all" | "Cleared" | "Pending")}
                     className="px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -1348,8 +1360,8 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                     <option value="all">All Status</option>
                     <option value="Pending">Pending</option>
                     <option value="Cleared">Cleared</option>
-                  </select>
-                  <select
+                  </ThemedSelect>
+                  <ThemedSelect
                     value={disbursedFilter}
                     onChange={(e) => setDisbursedFilter(e.target.value as "all" | "yes" | "no")}
                     className="px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -1357,8 +1369,8 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                     <option value="all">All Disbursed</option>
                     <option value="yes">Disbursed</option>
                     <option value="no">Not Disbursed</option>
-                  </select>
-                  <select
+                  </ThemedSelect>
+                  <ThemedSelect
                     value={locationFilter}
                     onChange={(e) => setLocationFilter(e.target.value)}
                     className="px-3 py-2 border border-border rounded-md text-sm"
@@ -1369,14 +1381,14 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                         {l.name}
                       </option>
                     ))}
-                  </select>
+                  </ThemedSelect>
                   <ClientFilterSelect
                     clients={clients}
                     value={clientFilter}
                     onChange={setClientFilter}
                     allValue="all"
                   />
-                  <select
+                  <ThemedSelect
                     value={branchFilter}
                     onChange={(e) => setBranchFilter(e.target.value)}
                     className="px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -1385,9 +1397,9 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                     {branches.map((b) => (
                       <option key={b.id} value={b.id}>{b.name}</option>
                     ))}
-                  </select>
+                  </ThemedSelect>
                   {!relieversOnly && (
-                    <select
+                    <ThemedSelect
                       value={categoryFilter}
                       onChange={(e) => setCategoryFilter(e.target.value as typeof categoryFilter)}
                       className="px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -1397,7 +1409,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                       <option value="client">Client</option>
                       <option value="office_staff">Office Staff</option>
                       <option value="reliever">Reliever</option>
-                    </select>
+                    </ThemedSelect>
                   )}
                   </div>
                 )}
@@ -1570,7 +1582,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
           </div>
 
           {selectedRow && (
-          <div className="w-full lg:w-[400px] flex-shrink-0 overflow-y-auto">
+          <div className="w-full lg:w-[400px] flex-shrink-0">
             <div className="bg-card rounded-xl border border-border p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-base font-bold text-foreground flex items-center gap-2">
@@ -1763,7 +1775,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
 
                   <div className="pt-3 border-t border-slate-200 space-y-2">
                     <label className="block text-xs text-slate-500">Payment Mode</label>
-                    <select
+                    <ThemedSelect
                       value={selectedRow.payment_mode}
                       onChange={(e) =>
                         updateEdit(selectedRow.employee.id, {
@@ -1776,9 +1788,9 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                       <option value="Cash">Cash</option>
                       <option value="Bank">Bank</option>
                       <option value="Cheque">Cheque</option>
-                    </select>
+                    </ThemedSelect>
                     {selectedRow.payment_mode === "Bank" && (
-                      <select
+                      <ThemedSelect
                         value={selectedRow.bank_account_id ?? ""}
                         onChange={(e) =>
                           updateEdit(selectedRow.employee.id, {
@@ -1793,11 +1805,11 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                             {b.bank_name} · {b.account_number} (PKR {Number(b.balance).toLocaleString()})
                           </option>
                         ))}
-                      </select>
+                      </ThemedSelect>
                     )}
                     {selectedRow.payment_mode === "Cheque" && (
                       <>
-                        <select
+                        <ThemedSelect
                           value={selectedRow.cheque_id ?? ""}
                           onChange={(e) => {
                             const id = e.target.value || null;
@@ -1822,7 +1834,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                                 </option>
                               );
                             })}
-                        </select>
+                        </ThemedSelect>
                         <p className="text-[11px] text-slate-500">
                           Cashflow recognises this salary only after the cheque is marked Cleared in Bank Accounts → Cheques.
                         </p>
@@ -2108,7 +2120,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
               {bulkMode === "Bank" && (
                 <div>
                   <label className="block text-sm text-slate-700 mb-1">Bank Account</label>
-                  <select
+                  <ThemedSelect
                     value={bulkBankId}
                     onChange={(e) => setBulkBankId(e.target.value)}
                     className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -2119,7 +2131,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                         {b.bank_name} · {b.account_number} (PKR {Number(b.balance).toLocaleString()})
                       </option>
                     ))}
-                  </select>
+                  </ThemedSelect>
                 </div>
               )}
 

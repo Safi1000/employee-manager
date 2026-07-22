@@ -1,3 +1,4 @@
+import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useState } from "react";
 import { Plus, Search, Loader2, UserPlus, Pencil, Trash2, KeyRound } from "lucide-react";
 import Header from "../../components/Header";
@@ -406,7 +407,7 @@ export default function UserManagement() {
             </div>
             <div className="md:col-span-2">
               <label className="block text-sm text-slate-700 mb-1">Branch</label>
-              <select
+              <ThemedSelect
                 value={createBranchId}
                 onChange={(e) => setCreateBranchId(e.target.value)}
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
@@ -415,7 +416,7 @@ export default function UserManagement() {
                 {branches.filter((b) => !b.is_head_office).map((b) => (
                   <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
-              </select>
+              </ThemedSelect>
               <p className="text-xs text-slate-500 mt-1">
                 If set, this user can only see and act on data inside the chosen branch. Leave empty for company-wide access.
               </p>
@@ -490,7 +491,7 @@ export default function UserManagement() {
               </div>
               <div className="md:col-span-2">
                 <label className="block text-sm text-slate-700 mb-1">Branch</label>
-                <select
+                <ThemedSelect
                   value={editBranchId}
                   onChange={(e) => setEditBranchId(e.target.value)}
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
@@ -499,7 +500,7 @@ export default function UserManagement() {
                   {branches.map((b) => (
                     <option key={b.id} value={b.id}>{b.name}</option>
                   ))}
-                </select>
+                </ThemedSelect>
                 <p className="text-xs text-slate-500 mt-1">
                   Empty = company-wide access. Set a branch to scope this user's view to that branch only.
                 </p>

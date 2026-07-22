@@ -1,3 +1,4 @@
+import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useState } from "react";
 import {
   Plus,
@@ -946,7 +947,7 @@ export default function Invoices() {
             </div>
             <div className="flex items-center gap-2">
               <label className="text-sm text-slate-600">Branch:</label>
-              <select
+              <ThemedSelect
                 value={branchFilter}
                 onChange={(e) => setBranchFilter(e.target.value)}
                 className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
@@ -955,11 +956,11 @@ export default function Invoices() {
                 {branches.map((b) => (
                   <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
-              </select>
+              </ThemedSelect>
             </div>
             <div className="flex items-center gap-2">
               <label className="text-sm text-slate-600">Month:</label>
-              <select
+              <ThemedSelect
                 value={monthFilter}
                 onChange={(e) => setMonthFilter(e.target.value)}
                 className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
@@ -968,7 +969,7 @@ export default function Invoices() {
                 {monthOptions.map((m) => (
                   <option key={m} value={m}>{monthLabel(m)}</option>
                 ))}
-              </select>
+              </ThemedSelect>
             </div>
             <div className="ml-auto text-sm text-slate-500">
               {filteredInvoices.length} invoice{filteredInvoices.length === 1 ? "" : "s"}
@@ -1041,7 +1042,7 @@ export default function Invoices() {
                           </span>
                         </td>
                         <td className="px-6 py-4 text-sm">
-                          <select
+                          <ThemedSelect
                             value={inv.status}
                             onChange={(e) =>
                               handleStatusChange(inv, e.target.value as InvoiceStatus)
@@ -1059,7 +1060,7 @@ export default function Invoices() {
                             <option value="Unpaid">Unpaid</option>
                             <option value="Partly-Paid">Partly-Paid</option>
                             <option value="Paid">Paid</option>
-                          </select>
+                          </ThemedSelect>
                         </td>
                         <td className="px-6 py-4 text-sm">
                           {(inv.drive_view_url || inv.attachment_path) ? (
@@ -1414,7 +1415,7 @@ export default function Invoices() {
           {paymentForm.payment_mode === "Bank" && (
             <div>
               <label className="block text-sm text-slate-700 mb-1">Bank Account *</label>
-              <select
+              <ThemedSelect
                 required
                 value={paymentForm.bank_account_id}
                 onChange={(e) =>
@@ -1428,7 +1429,7 @@ export default function Invoices() {
                     {b.bank_name} — {b.account_number}
                   </option>
                 ))}
-              </select>
+              </ThemedSelect>
             </div>
           )}
 
@@ -1563,7 +1564,7 @@ export default function Invoices() {
           {editPaymentForm.payment_mode === "Bank" && (
             <div>
               <label className="block text-sm text-slate-700 mb-1">Bank Account *</label>
-              <select
+              <ThemedSelect
                 required
                 value={editPaymentForm.bank_account_id}
                 onChange={(e) =>
@@ -1577,7 +1578,7 @@ export default function Invoices() {
                     {b.bank_name} — {b.account_number}
                   </option>
                 ))}
-              </select>
+              </ThemedSelect>
             </div>
           )}
 
@@ -1646,7 +1647,7 @@ function InvoiceFields({
     <>
       <div>
         <label className="block text-sm text-slate-700 mb-1">Client *</label>
-        <select
+        <ThemedSelect
           required
           value={form.client_id}
           onChange={(e) => setForm({ ...form, client_id: e.target.value })}
@@ -1658,7 +1659,7 @@ function InvoiceFields({
               {c.name} ({c.client_code})
             </option>
           ))}
-        </select>
+        </ThemedSelect>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>

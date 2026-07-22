@@ -1,3 +1,4 @@
+import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Calendar,
@@ -373,7 +374,7 @@ export default function Roster() {
             placeholder="Search employee…"
             className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
           />
-          <select
+          <ThemedSelect
             value={clientFilter}
             onChange={(e) => setClientFilter(e.target.value)}
             className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
@@ -382,7 +383,7 @@ export default function Roster() {
             {clients.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
-          </select>
+          </ThemedSelect>
         </div>
 
         {/* Stats */}
@@ -506,7 +507,7 @@ export default function Roster() {
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Post</label>
-              <select
+              <ThemedSelect
                 value={cellForm.post_id}
                 onChange={(e) => setCellForm({ ...cellForm, post_id: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -520,11 +521,11 @@ export default function Roster() {
                     </option>
                   );
                 })}
-              </select>
+              </ThemedSelect>
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Client (override)</label>
-              <select
+              <ThemedSelect
                 value={cellForm.client_id}
                 onChange={(e) => setCellForm({ ...cellForm, client_id: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -533,7 +534,7 @@ export default function Roster() {
                 {clients.map((c) => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
-              </select>
+              </ThemedSelect>
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Status</label>
@@ -725,7 +726,7 @@ function PostsModal({
         <form onSubmit={save} className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-md border border-slate-200">
           <div>
             <label className="block text-xs text-slate-700 mb-1">Client *</label>
-            <select
+            <ThemedSelect
               required
               value={form.client_id}
               onChange={(e) => setForm({ ...form, client_id: e.target.value })}
@@ -733,7 +734,7 @@ function PostsModal({
             >
               <option value="">— Select client —</option>
               {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+            </ThemedSelect>
           </div>
           <div>
             <label className="block text-xs text-slate-700 mb-1">Post Name *</label>
@@ -768,7 +769,7 @@ function PostsModal({
           </div>
           <div>
             <label className="block text-xs text-slate-700 mb-1">Shift Pattern</label>
-            <select
+            <ThemedSelect
               value={form.shift_pattern}
               onChange={(e) => setForm({ ...form, shift_pattern: e.target.value as ContractShift })}
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -776,7 +777,7 @@ function PostsModal({
               <option value="day">Day</option>
               <option value="night">Night</option>
               <option value="evening">Evening</option>
-            </select>
+            </ThemedSelect>
           </div>
           <div className="col-span-2 flex items-center gap-2">
             <Button variant="primary" size="sm">

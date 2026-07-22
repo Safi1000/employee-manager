@@ -1,3 +1,4 @@
+import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Pencil, AlertCircle, X, Loader2, ArrowRightLeft, Wallet, Building2 } from "lucide-react";
 import Button from "../../components/Button";
@@ -570,11 +571,11 @@ export function CashCustodyPanel() {
               <label className="block text-sm text-slate-700 mb-1">Type</label>
               {/* Bank accounts are auto-synced from the Bank Accounts tab — only
                   petty cash / custodian locations are created here. */}
-              <select value={locForm.location_type} onChange={(e) => setLocForm({ ...locForm, location_type: e.target.value as any })}
+              <ThemedSelect value={locForm.location_type} onChange={(e) => setLocForm({ ...locForm, location_type: e.target.value as any })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
                 <option value="PETTY_CASH">Petty Cash</option>
                 <option value="CUSTODIAN">Custodian (person)</option>
-              </select>
+              </ThemedSelect>
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Opening Balance (PKR)</label>
@@ -585,20 +586,20 @@ export function CashCustodyPanel() {
           {(locForm.location_type === "CUSTODIAN" || locForm.location_type === "PETTY_CASH") && (
             <div>
               <label className="block text-sm text-slate-700 mb-1">Holder (Partner)</label>
-              <select value={locForm.custodian_partner_id} onChange={(e) => setLocForm({ ...locForm, custodian_partner_id: e.target.value })}
+              <ThemedSelect value={locForm.custodian_partner_id} onChange={(e) => setLocForm({ ...locForm, custodian_partner_id: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
                 <option value="">None</option>
                 {partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
+              </ThemedSelect>
             </div>
           )}
           <div>
             <label className="block text-sm text-slate-700 mb-1">Branch (optional)</label>
-            <select value={locForm.branch_id} onChange={(e) => setLocForm({ ...locForm, branch_id: e.target.value })}
+            <ThemedSelect value={locForm.branch_id} onChange={(e) => setLocForm({ ...locForm, branch_id: e.target.value })}
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
               <option value="">All / Company-wide</option>
               {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
+            </ThemedSelect>
           </div>
           <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
             <input type="checkbox" checked={locForm.is_active} onChange={(e) => setLocForm({ ...locForm, is_active: e.target.checked })} className="rounded border-slate-300" />
@@ -625,19 +626,19 @@ export function CashCustodyPanel() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-slate-700 mb-1">From *</label>
-              <select value={transferForm.from_location_id} onChange={(e) => setTransferForm({ ...transferForm, from_location_id: e.target.value })}
+              <ThemedSelect value={transferForm.from_location_id} onChange={(e) => setTransferForm({ ...transferForm, from_location_id: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
                 <option value="">Select…</option>
                 {locations.filter((l) => l.is_active && l.location_type !== "BANK").map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-              </select>
+              </ThemedSelect>
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">To *</label>
-              <select value={transferForm.to_location_id} onChange={(e) => setTransferForm({ ...transferForm, to_location_id: e.target.value })}
+              <ThemedSelect value={transferForm.to_location_id} onChange={(e) => setTransferForm({ ...transferForm, to_location_id: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
                 <option value="">Select…</option>
                 {locations.filter((l) => l.is_active && l.location_type !== "BANK").map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-              </select>
+              </ThemedSelect>
             </div>
           </div>
           <div>

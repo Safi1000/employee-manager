@@ -1,3 +1,4 @@
+import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useState } from "react";
 import { Search, FileText, Download, AlertCircle, Loader2, X, Upload } from "lucide-react";
 import Header from "../../components/Header";
@@ -347,7 +348,7 @@ export default function Documents() {
                   className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                 />
               </div>
-              <select
+              <ThemedSelect
                 value={locationFilter}
                 onChange={(e) => setLocationFilter(e.target.value)}
                 className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -358,14 +359,14 @@ export default function Documents() {
                     {l.name}
                   </option>
                 ))}
-              </select>
+              </ThemedSelect>
               <ClientFilterSelect
                 clients={clients}
                 value={clientFilter}
                 onChange={setClientFilter}
                 allValue="all"
               />
-              <select
+              <ThemedSelect
                 value={shiftFilter}
                 onChange={(e) => setShiftFilter(e.target.value as "all" | "day" | "night")}
                 className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -373,7 +374,7 @@ export default function Documents() {
                 <option value="all">All Shifts</option>
                 <option value="day">Day</option>
                 <option value="night">Night</option>
-              </select>
+              </ThemedSelect>
             </div>
           </div>
 

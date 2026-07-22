@@ -1,3 +1,4 @@
+import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useState } from "react";
 import {
   Plus,
@@ -517,10 +518,10 @@ export default function ChartOfAccounts() {
                 <button type="button" onClick={() => setTab("tb")} className="text-sm text-brand-600 hover:text-brand-700 inline-flex items-center gap-1">
                   <ChevronLeft className="w-4 h-4" /> Back to Trial Balance
                 </button>
-                <select value={glAccountId ?? ""} onChange={(e) => setGlAccountId(e.target.value || null)} className="px-3 py-2 border border-slate-200 rounded-md text-sm min-w-[280px]">
+                <ThemedSelect value={glAccountId ?? ""} onChange={(e) => setGlAccountId(e.target.value || null)} className="px-3 py-2 border border-slate-200 rounded-md text-sm min-w-[280px]">
                   <option value="">— Select an account —</option>
                   {accounts.map((a) => <option key={a.id} value={a.id}>{a.account_code} — {a.account_name}</option>)}
-                </select>
+                </ThemedSelect>
               </div>
               {!glAccountId ? (
                 <p className="text-sm text-slate-500">Pick an account above (or click "View ledger" from the Trial Balance).</p>
@@ -577,7 +578,7 @@ export default function ChartOfAccounts() {
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Account Type *</label>
-              <select
+              <ThemedSelect
                 value={form.account_type}
                 onChange={(e) => {
                   const t = e.target.value as AccountType;
@@ -586,7 +587,7 @@ export default function ChartOfAccounts() {
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
               >
                 {ACCOUNT_TYPE_ORDER.map((t) => <option key={t} value={t}>{ACCOUNT_TYPE_LABEL[t]}</option>)}
-              </select>
+              </ThemedSelect>
             </div>
             <div className="col-span-2">
               <label className="block text-sm text-slate-700 mb-1">Account Name *</label>
@@ -594,10 +595,10 @@ export default function ChartOfAccounts() {
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Normal Side</label>
-              <select value={form.normal_side} onChange={(e) => setForm({ ...form, normal_side: e.target.value as AccountNormalSide })} className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm">
+              <ThemedSelect value={form.normal_side} onChange={(e) => setForm({ ...form, normal_side: e.target.value as AccountNormalSide })} className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm">
                 <option value="debit">Debit</option>
                 <option value="credit">Credit</option>
-              </select>
+              </ThemedSelect>
             </div>
             <div className="flex items-end">
               <label className="flex items-center gap-2 text-sm text-slate-700">
@@ -633,17 +634,17 @@ export default function ChartOfAccounts() {
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Debit Account *</label>
-              <select required value={manualForm.debit_account_id} onChange={(e) => setManualForm({ ...manualForm, debit_account_id: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm">
+              <ThemedSelect required value={manualForm.debit_account_id} onChange={(e) => setManualForm({ ...manualForm, debit_account_id: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm">
                 <option value="">— Select —</option>
                 {accounts.filter((a) => a.active).map((a) => <option key={a.id} value={a.id}>{a.account_code} — {a.account_name}</option>)}
-              </select>
+              </ThemedSelect>
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Credit Account *</label>
-              <select required value={manualForm.credit_account_id} onChange={(e) => setManualForm({ ...manualForm, credit_account_id: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm">
+              <ThemedSelect required value={manualForm.credit_account_id} onChange={(e) => setManualForm({ ...manualForm, credit_account_id: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm">
                 <option value="">— Select —</option>
                 {accounts.filter((a) => a.active).map((a) => <option key={a.id} value={a.id}>{a.account_code} — {a.account_name}</option>)}
-              </select>
+              </ThemedSelect>
             </div>
             <div className="col-span-2">
               <label className="block text-sm text-slate-700 mb-1">Description</label>

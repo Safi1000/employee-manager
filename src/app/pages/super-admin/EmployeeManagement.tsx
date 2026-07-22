@@ -1,3 +1,4 @@
+import ThemedSelect from "../../components/ThemedSelect";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, Search, Upload, AlertCircle, Loader2, X, Trash2, ChevronDown, ChevronRight as ChevronRightIcon, FileText } from "lucide-react";
 import { generateEmployeeFormPdf } from "../../lib/employeeFormPdf";
@@ -319,7 +320,7 @@ function renderPaperFormSections(f: FormState, setF: (f: FormState) => void) {
           {txt("education", "Education")}
           <div>
             <label className="block text-sm text-slate-700 mb-1">Marital Status</label>
-            <select
+            <ThemedSelect
               value={f.marital_status}
               onChange={(e) => setF({ ...f, marital_status: e.target.value as "" | MaritalStatus })}
               className={FIELD_CLS}
@@ -329,7 +330,7 @@ function renderPaperFormSections(f: FormState, setF: (f: FormState) => void) {
               <option value="married">Married</option>
               <option value="divorced">Divorced</option>
               <option value="widowed">Widowed</option>
-            </select>
+            </ThemedSelect>
           </div>
           {txt("height_cm", "Height (cm)", { type: "number" })}
           {txt("weight_kg", "Weight (kg)", { type: "number" })}
@@ -410,7 +411,7 @@ function renderPaperFormSections(f: FormState, setF: (f: FormState) => void) {
           {txt("company_id_card_number", "Company ID Card No.")}
           <div>
             <label className="block text-sm text-slate-700 mb-1">Social Security Status</label>
-            <select
+            <ThemedSelect
               value={f.social_security_status}
               onChange={(e) =>
                 setF({ ...f, social_security_status: e.target.value as "" | SocialSecurityStatus })
@@ -421,7 +422,7 @@ function renderPaperFormSections(f: FormState, setF: (f: FormState) => void) {
               <option value="registered">Registered</option>
               <option value="not_registered">Not registered</option>
               <option value="exempt">Exempt</option>
-            </select>
+            </ThemedSelect>
           </div>
           {txt("social_security_number", "Social Security No.")}
           {txt("insurance_provider", "Insurance Provider")}
@@ -729,7 +730,7 @@ export default function EmployeeManagement() {
       <>
         <div>
           <label className="block text-sm text-slate-700 mb-1">Contract</label>
-          <select
+          <ThemedSelect
             value={f.contract_id}
             onChange={(e) => setF({ ...f, contract_id: e.target.value, contract_line_id: "" })}
             className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -740,12 +741,12 @@ export default function EmployeeManagement() {
                 {c.contract_code} · {c.status}
               </option>
             ))}
-          </select>
+          </ThemedSelect>
         </div>
         {f.contract_id && (
           <div>
             <label className="block text-sm text-slate-700 mb-1">Contract Line (category slot)</label>
-            <select
+            <ThemedSelect
               value={f.contract_line_id}
               onChange={(e) =>
                 setF({
@@ -767,7 +768,7 @@ export default function EmployeeManagement() {
                   </option>
                 );
               })}
-            </select>
+            </ThemedSelect>
             {lines.length === 0 && (
               <p className="text-xs text-warning-700 mt-1">
                 This contract has no lines yet. Add category lines on the Contracts page first.
@@ -1489,7 +1490,7 @@ export default function EmployeeManagement() {
                   className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                 />
               </div>
-              <select
+              <ThemedSelect
                 value={locationFilter}
                 onChange={(e) => setLocationFilter(e.target.value)}
                 className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -1500,14 +1501,14 @@ export default function EmployeeManagement() {
                     {l.name}
                   </option>
                 ))}
-              </select>
+              </ThemedSelect>
               <ClientFilterSelect
                 clients={clients}
                 value={clientFilter}
                 onChange={setClientFilter}
                 allValue="all"
               />
-              <select
+              <ThemedSelect
                 value={branchFilter}
                 onChange={(e) => setBranchFilter(e.target.value)}
                 className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -1518,8 +1519,8 @@ export default function EmployeeManagement() {
                     {b.name}
                   </option>
                 ))}
-              </select>
-              <select
+              </ThemedSelect>
+              <ThemedSelect
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value as "all" | EmployeeCategory)}
                 className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -1528,8 +1529,8 @@ export default function EmployeeManagement() {
                 <option value="client">Client</option>
                 <option value="office_staff">Office Staff</option>
                 <option value="reliever">Reliever</option>
-              </select>
-              <select
+              </ThemedSelect>
+              <ThemedSelect
                 value={shiftFilter}
                 onChange={(e) => setShiftFilter(e.target.value as "all" | "day" | "night" | "evening")}
                 className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -1538,8 +1539,8 @@ export default function EmployeeManagement() {
                 <option value="day">Day</option>
                 <option value="night">Night</option>
                 <option value="evening">Evening</option>
-              </select>
-              <select
+              </ThemedSelect>
+              <ThemedSelect
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
                 className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -1548,8 +1549,8 @@ export default function EmployeeManagement() {
                 <option value="Active">Active</option>
                 <option value="On Leave">On Leave</option>
                 <option value="Inactive">Inactive</option>
-              </select>
-              <select
+              </ThemedSelect>
+              <ThemedSelect
                 value={completenessFilter}
                 onChange={(e) => setCompletenessFilter(e.target.value as "all" | "complete" | "incomplete")}
                 className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -1558,8 +1559,8 @@ export default function EmployeeManagement() {
                 <option value="all">All Profiles</option>
                 <option value="complete">Complete</option>
                 <option value="incomplete">Incomplete</option>
-              </select>
-              <select
+              </ThemedSelect>
+              <ThemedSelect
                 value={lifecycleFilter}
                 onChange={(e) => setLifecycleFilter(e.target.value as "all" | EmployeeLifecycleState)}
                 className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -1569,7 +1570,7 @@ export default function EmployeeManagement() {
                 {(Object.keys(LIFECYCLE_STATE_LABEL) as EmployeeLifecycleState[]).map((s) => (
                   <option key={s} value={s}>{LIFECYCLE_STATE_LABEL[s]}</option>
                 ))}
-              </select>
+              </ThemedSelect>
             </div>
           </div>
 
@@ -1742,7 +1743,7 @@ export default function EmployeeManagement() {
               </div>
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Location</label>
-                <select
+                <ThemedSelect
                   value={form.location_id}
                   onChange={(e) => setForm({ ...form, location_id: e.target.value })}
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -1753,7 +1754,7 @@ export default function EmployeeManagement() {
                       {l.name}
                     </option>
                   ))}
-                </select>
+                </ThemedSelect>
                 {locations.length === 0 && (
                   <p className="text-xs text-slate-500 mt-1">
                     No locations yet. Add them from Settings → Location Management.
@@ -1762,7 +1763,7 @@ export default function EmployeeManagement() {
               </div>
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Primary Branch</label>
-                <select
+                <ThemedSelect
                   value={form.branch_id}
                   onChange={(e) => {
                     const newBranch = e.target.value;
@@ -1785,7 +1786,7 @@ export default function EmployeeManagement() {
                       {b.name}
                     </option>
                   ))}
-                </select>
+                </ThemedSelect>
                 <p className="text-xs text-slate-500 mt-1">
                   Used for payroll routing, P&L attribution and cost ownership.
                 </p>
@@ -1833,7 +1834,7 @@ export default function EmployeeManagement() {
               </div>
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Category *</label>
-                <select
+                <ThemedSelect
                   value={form.category}
                   onChange={(e) => {
                     const cat = e.target.value as EmployeeCategory;
@@ -1844,12 +1845,12 @@ export default function EmployeeManagement() {
                   <option value="client">Client</option>
                   <option value="office_staff">Office Staff</option>
                   <option value="reliever">Reliever</option>
-                </select>
+                </ThemedSelect>
               </div>
               {form.category === "client" && (
                 <div>
                   <label className="block text-sm text-slate-700 mb-1">Client *</label>
-                  <select
+                  <ThemedSelect
                     required
                     value={form.client_id}
                     onChange={(e) => onPickClient(form, setForm, e.target.value)}
@@ -1861,7 +1862,7 @@ export default function EmployeeManagement() {
                         {c.name}
                       </option>
                     ))}
-                  </select>
+                  </ThemedSelect>
                   {clientsForBranch(form.branch_id).length === 0 && (
                     <p className="text-xs text-slate-500 mt-1">
                       {form.branch_id
@@ -2035,7 +2036,7 @@ export default function EmployeeManagement() {
 
           <div className="pt-4 border-t border-slate-200">
             <h4 className="text-sm text-slate-900 mb-2">Recruitment Intake</h4>
-            <select
+            <ThemedSelect
               value={form.lifecycle_intake}
               onChange={(e) =>
                 setForm({ ...form, lifecycle_intake: e.target.value as "" | "applicant" | "waitlisted" })
@@ -2045,7 +2046,7 @@ export default function EmployeeManagement() {
               <option value="">Active hire (default)</option>
               <option value="applicant">Applicant</option>
               <option value="waitlisted">Waiting list</option>
-            </select>
+            </ThemedSelect>
             <p className="text-xs text-slate-500 mt-1">
               Create as an applicant / waiting-list entry; promote later from the employee's Lifecycle panel.
             </p>
@@ -2364,7 +2365,7 @@ export default function EmployeeManagement() {
                 </div>
                 <div>
                   <label className="block text-sm text-slate-700 mb-1">Location</label>
-                  <select
+                  <ThemedSelect
                     value={editForm.location_id}
                     onChange={(e) => setEditForm({ ...editForm, location_id: e.target.value })}
                     className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -2375,11 +2376,11 @@ export default function EmployeeManagement() {
                         {l.name}
                       </option>
                     ))}
-                  </select>
+                  </ThemedSelect>
                 </div>
                 <div>
                   <label className="block text-sm text-slate-700 mb-1">Primary Branch</label>
-                  <select
+                  <ThemedSelect
                     value={editForm.branch_id}
                     onChange={(e) => {
                       const newBranch = e.target.value;
@@ -2401,7 +2402,7 @@ export default function EmployeeManagement() {
                         {b.name}
                       </option>
                     ))}
-                  </select>
+                  </ThemedSelect>
                   <p className="text-xs text-slate-500 mt-1">
                     Used for payroll routing and P&L attribution.
                   </p>
@@ -2446,7 +2447,7 @@ export default function EmployeeManagement() {
                 </div>
                 <div>
                   <label className="block text-sm text-slate-700 mb-1">Category</label>
-                  <select
+                  <ThemedSelect
                     value={editForm.category}
                     onChange={(e) => {
                       const cat = e.target.value as EmployeeCategory;
@@ -2457,12 +2458,12 @@ export default function EmployeeManagement() {
                     <option value="client">Client</option>
                     <option value="office_staff">Office Staff</option>
                     <option value="reliever">Reliever</option>
-                  </select>
+                  </ThemedSelect>
                 </div>
                 {editForm.category === "client" && (
                   <div>
                     <label className="block text-sm text-slate-700 mb-1">Client</label>
-                    <select
+                    <ThemedSelect
                       value={editForm.client_id}
                       onChange={(e) => onPickClient(editForm, setEditForm, e.target.value)}
                       className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -2473,7 +2474,7 @@ export default function EmployeeManagement() {
                           {c.name}
                         </option>
                       ))}
-                    </select>
+                    </ThemedSelect>
                   </div>
                 )}
                 {editForm.category === "client" && editForm.client_id && (
@@ -2492,7 +2493,7 @@ export default function EmployeeManagement() {
                 </div>
                 <div>
                   <label className="block text-sm text-slate-700 mb-1">Shift</label>
-                  <select
+                  <ThemedSelect
                     value={editForm.shift}
                     onChange={(e) =>
                       setEditForm({ ...editForm, shift: e.target.value as "day" | "night" | "evening" })
@@ -2502,7 +2503,7 @@ export default function EmployeeManagement() {
                     <option value="day">Day</option>
                     <option value="night">Night</option>
                     <option value="evening">Evening</option>
-                  </select>
+                  </ThemedSelect>
                 </div>
                 <div>
                   <label className="block text-sm text-slate-700 mb-1">Base Salary (PKR)</label>
@@ -2605,7 +2606,7 @@ export default function EmployeeManagement() {
                 </div>
                 <div>
                   <label className="block text-sm text-slate-700 mb-1">Status</label>
-                  <select
+                  <ThemedSelect
                     value={editStatus}
                     onChange={(e) => setEditStatus(e.target.value as EmployeeRow["status"])}
                     className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -2613,7 +2614,7 @@ export default function EmployeeManagement() {
                     <option value="Active">Active</option>
                     <option value="On Leave">On Leave</option>
                     <option value="Inactive">Inactive</option>
-                  </select>
+                  </ThemedSelect>
                 </div>
                 <div className="col-span-2">
                   <label className="block text-sm text-slate-700 mb-1">IBAN (24 chars)</label>
@@ -3384,7 +3385,7 @@ function EmployeeHrSection({
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Blood Group</label>
-              <select
+              <ThemedSelect
                 value={form.blood_group}
                 onChange={(e) => setForm({ ...form, blood_group: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -3393,7 +3394,7 @@ function EmployeeHrSection({
                 {BLOOD_GROUPS.map((bg) => (
                   <option key={bg} value={bg}>{bg}</option>
                 ))}
-              </select>
+              </ThemedSelect>
             </div>
             <div className="col-span-2">
               <label className="block text-sm text-slate-700 mb-1">Permanent Address</label>
@@ -3443,7 +3444,7 @@ function EmployeeHrSection({
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Relation</label>
-              <select
+              <ThemedSelect
                 value={form.emergency_contact_relation}
                 onChange={(e) => setForm({ ...form, emergency_contact_relation: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -3452,7 +3453,7 @@ function EmployeeHrSection({
                 {EMERGENCY_CONTACT_RELATIONS.map((r) => (
                   <option key={r} value={r}>{r}</option>
                 ))}
-              </select>
+              </ThemedSelect>
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Phone</label>
@@ -3477,7 +3478,7 @@ function EmployeeHrSection({
           <div className="grid grid-cols-2 gap-3 pb-3">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Contract Type</label>
-              <select
+              <ThemedSelect
                 value={form.employee_contract_type}
                 onChange={(e) =>
                   setForm({ ...form, employee_contract_type: e.target.value as FormState["employee_contract_type"] })
@@ -3489,7 +3490,7 @@ function EmployeeHrSection({
                 <option value="contract">Contract</option>
                 <option value="probation">Probation</option>
                 <option value="daily_wages">Daily Wages</option>
-              </select>
+              </ThemedSelect>
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Probation End Date</label>
@@ -3503,7 +3504,7 @@ function EmployeeHrSection({
             </div>
             <div className="col-span-2">
               <label className="block text-sm text-slate-700 mb-1">Reporting To (supervisor)</label>
-              <select
+              <ThemedSelect
                 value={form.reporting_to_employee_id}
                 onChange={(e) => setForm({ ...form, reporting_to_employee_id: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -3514,7 +3515,7 @@ function EmployeeHrSection({
                     {e.full_name} ({e.employee_code})
                   </option>
                 ))}
-              </select>
+              </ThemedSelect>
             </div>
           </div>
         )}

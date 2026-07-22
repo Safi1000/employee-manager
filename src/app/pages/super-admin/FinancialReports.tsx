@@ -1,3 +1,4 @@
+import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useState } from "react";
 import { Download, Loader2, FileText, Plus, Lock, Trash2, Pencil } from "lucide-react";
 import Header from "../../components/Header";
@@ -778,7 +779,7 @@ export default function FinancialReports() {
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <label className="text-sm text-slate-600">Branch:</label>
-                  <select
+                  <ThemedSelect
                     value={plBranchFilter}
                     onChange={(e) => setPlBranchFilter(e.target.value)}
                     className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
@@ -787,9 +788,9 @@ export default function FinancialReports() {
                     {branches.map((b) => (
                       <option key={b.id} value={b.id}>{b.name}</option>
                     ))}
-                  </select>
+                  </ThemedSelect>
                   <label className="text-sm text-slate-600">Month:</label>
-                  <select
+                  <ThemedSelect
                     value={plPeriod}
                     onChange={(e) => setPlPeriod(e.target.value)}
                     className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
@@ -799,7 +800,7 @@ export default function FinancialReports() {
                         {formatPeriod(p)}
                       </option>
                     ))}
-                  </select>
+                  </ThemedSelect>
                 </div>
               </div>
 
@@ -948,7 +949,7 @@ export default function FinancialReports() {
               <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-2 flex-wrap">
                   <label className="text-sm text-slate-600">Branch:</label>
-                  <select
+                  <ThemedSelect
                     value={statementBranchFilter}
                     onChange={(e) => setStatementBranchFilter(e.target.value)}
                     className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
@@ -957,9 +958,9 @@ export default function FinancialReports() {
                     {branches.map((b) => (
                       <option key={b.id} value={b.id}>{b.name}</option>
                     ))}
-                  </select>
+                  </ThemedSelect>
                   <label className="text-sm text-slate-600">Month:</label>
-                  <select
+                  <ThemedSelect
                     value={statementPeriod}
                     onChange={(e) => setStatementPeriod(e.target.value)}
                     className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
@@ -969,7 +970,7 @@ export default function FinancialReports() {
                         {formatPeriod(p)}
                       </option>
                     ))}
-                  </select>
+                  </ThemedSelect>
                 </div>
                 <span className="text-xs text-slate-500">
                   Total Income = Total Invoiced − (Payroll + Expenses)
@@ -1096,7 +1097,7 @@ export default function FinancialReports() {
                 </div>
                 <div className="flex items-center gap-2">
                   <label className="text-sm text-slate-600">Month:</label>
-                  <select
+                  <ThemedSelect
                     value={partnershipPeriod}
                     onChange={(e) => setPartnershipPeriod(e.target.value)}
                     className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
@@ -1104,7 +1105,7 @@ export default function FinancialReports() {
                     {chartPeriodOptions.map((p) => (
                       <option key={p} value={p}>{formatPeriod(p)}</option>
                     ))}
-                  </select>
+                  </ThemedSelect>
                 </div>
               </div>
 

@@ -1,3 +1,4 @@
+import ThemedSelect from "../../components/ThemedSelect";
 import { useCallback, useEffect, useState } from "react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -92,9 +93,9 @@ export default function Assets() {
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
               <input className={FIELD} placeholder="Name" value={na.name} onChange={(e) => setNa({ ...na, name: e.target.value })} />
-              <select className={FIELD} value={na.category} onChange={(e) => setNa({ ...na, category: e.target.value })}>
+              <ThemedSelect className={FIELD} value={na.category} onChange={(e) => setNa({ ...na, category: e.target.value })}>
                 {CATEGORIES.map((c) => <option key={c} value={c}>{c.replace(/_/g, " ")}</option>)}
-              </select>
+              </ThemedSelect>
               <input type="date" className={FIELD} value={na.acquisition_date} onChange={(e) => setNa({ ...na, acquisition_date: e.target.value })} />
               <input className={FIELD} placeholder="Cost" value={na.cost} onChange={(e) => setNa({ ...na, cost: e.target.value })} />
               <input className={FIELD} placeholder="Salvage value" value={na.salvage_value} onChange={(e) => setNa({ ...na, salvage_value: e.target.value })} />
@@ -251,14 +252,14 @@ function VehicleLogForm({ companyId, vehicles, run, busy }: { companyId: string;
       <h3 className="text-sm text-slate-900 mb-2">Log trip / fuel / maintenance</h3>
       <div className="grid grid-cols-2 md:grid-cols-7 gap-2 items-end">
         <div className="col-span-2"><label className="text-xs text-slate-500 block mb-1">Vehicle</label>
-          <select className={FIELD + " w-full"} value={vid} onChange={(e) => setVid(e.target.value)}>
+          <ThemedSelect className={FIELD + " w-full"} value={vid} onChange={(e) => setVid(e.target.value)}>
             <option value="">— vehicle —</option>
             {vehicles.map((v) => <option key={v.id} value={v.id}>{v.registration_no}</option>)}
-          </select></div>
+          </ThemedSelect></div>
         <div><label className="text-xs text-slate-500 block mb-1">Type</label>
-          <select className={FIELD + " w-full"} value={logType} onChange={(e) => setLogType(e.target.value)}>
+          <ThemedSelect className={FIELD + " w-full"} value={logType} onChange={(e) => setLogType(e.target.value)}>
             {["fuel", "trip", "maintenance"].map((t) => <option key={t} value={t}>{t}</option>)}
-          </select></div>
+          </ThemedSelect></div>
         <div><label className="text-xs text-slate-500 block mb-1">Date</label>
           <input type="date" className={FIELD + " w-full"} value={date} onChange={(e) => setDate(e.target.value)} /></div>
         <div><label className="text-xs text-slate-500 block mb-1">Odometer</label>
@@ -284,10 +285,10 @@ function AmmoAdd({ companyId, weapons, run, busy }: { companyId: string; weapons
     <section className="border border-slate-200 rounded-md p-3">
       <h3 className="text-sm text-slate-900 mb-2">Record ammunition count</h3>
       <div className="flex items-center gap-2 flex-wrap">
-        <select className={FIELD} value={wid} onChange={(e) => setWid(e.target.value)}>
+        <ThemedSelect className={FIELD} value={wid} onChange={(e) => setWid(e.target.value)}>
           <option value="">— weapon —</option>
           {weapons.map((w) => <option key={w.id} value={w.id}>{w.item_type}{w.serial_number ? ` #${w.serial_number}` : ""}</option>)}
-        </select>
+        </ThemedSelect>
         <input className={FIELD + " w-28"} placeholder="Issued" value={issued} onChange={(e) => setIssued(e.target.value)} />
         <input className={FIELD + " w-28"} placeholder="Accounted" value={accounted} onChange={(e) => setAccounted(e.target.value)} />
         <Button variant="primary" size="sm" disabled={busy || !wid || !issued}

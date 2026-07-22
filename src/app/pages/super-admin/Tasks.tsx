@@ -1,3 +1,4 @@
+import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Loader2, AlertCircle, X, Trash2, Pencil, Calendar as CalendarIcon, User as UserIcon } from "lucide-react";
 import Header from "../../components/Header";
@@ -254,7 +255,7 @@ export default function Tasks() {
         {isAdmin && (
           <div className="flex items-center gap-3 mb-6">
             <label className="text-xs text-slate-500">Filter by assignee:</label>
-            <select
+            <ThemedSelect
               value={assigneeFilter}
               onChange={(e) => setAssigneeFilter(e.target.value)}
               className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
@@ -266,7 +267,7 @@ export default function Tasks() {
                   {u.full_name ?? u.email}
                 </option>
               ))}
-            </select>
+            </ThemedSelect>
           </div>
         )}
 
@@ -534,7 +535,7 @@ function TaskFields({
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-sm text-slate-700 mb-1">Status</label>
-          <select
+          <ThemedSelect
             value={status}
             onChange={(e) => setStatus(e.target.value as TaskStatus)}
             className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -542,9 +543,9 @@ function TaskFields({
             <option value="todo">To Do</option>
             <option value="in_progress">In Progress</option>
             <option value="done">Done</option>
-          </select>
+          </ThemedSelect>
           <label className="block text-sm text-slate-700 mb-1 mt-3">Priority</label>
-          <select
+          <ThemedSelect
             value={priority}
             onChange={(e) => setPriority(e.target.value as TaskPriority)}
             className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -552,7 +553,7 @@ function TaskFields({
             {(["low", "medium", "high", "urgent"] as TaskPriority[]).map((p) => (
               <option key={p} value={p}>{TASK_PRIORITY_LABEL[p]}</option>
             ))}
-          </select>
+          </ThemedSelect>
         </div>
         <div>
           <label className="block text-sm text-slate-700 mb-1">Due date</label>
@@ -568,7 +569,7 @@ function TaskFields({
       </div>
       <div>
         <label className="block text-sm text-slate-700 mb-1">Assignee</label>
-        <select
+        <ThemedSelect
           value={assignee}
           onChange={(e) => setAssignee(e.target.value)}
           disabled={!isAdmin}
@@ -580,7 +581,7 @@ function TaskFields({
               {u.full_name ?? u.email}
             </option>
           ))}
-        </select>
+        </ThemedSelect>
         {!isAdmin && (
           <p className="text-[11px] text-slate-500 mt-1">
             Only admins can reassign tasks.

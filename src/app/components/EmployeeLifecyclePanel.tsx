@@ -1,3 +1,4 @@
+import ThemedSelect from "./ThemedSelect";
 import { useCallback, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import Button from "./Button";
@@ -243,7 +244,7 @@ export default function EmployeeLifecyclePanel({
               <span className="text-sm text-slate-600">{label}</span>
               <div className="flex items-center gap-2">
                 <span className={`inline-flex px-2 py-0.5 rounded-md text-xs border ${VETTING_BADGE[val]}`}>{val}</span>
-                <select
+                <ThemedSelect
                   className={FIELD + " w-32"}
                   value={val}
                   disabled={busy}
@@ -252,7 +253,7 @@ export default function EmployeeLifecyclePanel({
                   <option value="pending">pending</option>
                   <option value="cleared">cleared</option>
                   <option value="adverse">adverse</option>
-                </select>
+                </ThemedSelect>
               </div>
             </div>
           );
@@ -314,7 +315,7 @@ export default function EmployeeLifecyclePanel({
           </ul>
         )}
         <div className="grid grid-cols-[1fr_auto_auto_auto] gap-2">
-          <select
+          <ThemedSelect
             className={FIELD}
             value={newTraining.kind}
             onChange={(e) => setNewTraining({ ...newTraining, kind: e.target.value as TrainingKind })}
@@ -322,7 +323,7 @@ export default function EmployeeLifecyclePanel({
             {Object.entries(TRAINING_KIND_LABEL).map(([k, v]) => (
               <option key={k} value={k}>{v}</option>
             ))}
-          </select>
+          </ThemedSelect>
           <input type="date" className={FIELD} value={newTraining.completed_on} onChange={(e) => setNewTraining({ ...newTraining, completed_on: e.target.value })} title="Completed on" />
           <input type="date" className={FIELD} value={newTraining.expires_on} onChange={(e) => setNewTraining({ ...newTraining, expires_on: e.target.value })} title="Expires on" />
           <Button type="button" variant="secondary" size="sm" disabled={busy} onClick={addTraining}>

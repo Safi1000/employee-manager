@@ -1,3 +1,4 @@
+import ThemedSelect from "../../components/ThemedSelect";
 import { useCallback, useEffect, useState } from "react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -237,10 +238,10 @@ function BillingTab({ companyId: _companyId, clients }: { companyId: string; cli
       <div className="flex items-end gap-2 flex-wrap">
         <div>
           <label className="text-xs text-slate-500 block mb-1">Client</label>
-          <select className={FIELD} value={clientId} onChange={(e) => setClientId(e.target.value)}>
+          <ThemedSelect className={FIELD} value={clientId} onChange={(e) => setClientId(e.target.value)}>
             <option value="">— client —</option>
             {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          </ThemedSelect>
         </div>
         <div>
           <label className="text-xs text-slate-500 block mb-1">From</label>
@@ -288,10 +289,10 @@ function PolicyTab({ settings, run, busy, companyId, clients }: {
         <h3 className="text-sm text-slate-900">Bad-debt bearer (D1) & reminder cadence</h3>
         <div className="flex items-center gap-2">
           <label className="text-sm text-slate-600 w-40">Bad debt borne by</label>
-          <select className={FIELD} value={bearer} onChange={(e) => setBearer(e.target.value)}>
+          <ThemedSelect className={FIELD} value={bearer} onChange={(e) => setBearer(e.target.value)}>
             <option value="region">Operating region</option>
             <option value="head_office">Head office</option>
-          </select>
+          </ThemedSelect>
         </div>
         <div className="flex items-center gap-2">
           <label className="text-sm text-slate-600 w-40">Reminder cadence (days)</label>

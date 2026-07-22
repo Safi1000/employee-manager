@@ -1,3 +1,4 @@
+import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Search, Upload, AlertCircle, X, Loader2, Trash2, Download, Pencil } from "lucide-react";
 import Header from "../../components/Header";
@@ -1521,7 +1522,7 @@ export default function Expenses() {
                   className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                 />
               </div>
-              <select
+              <ThemedSelect
                 value={monthFilter}
                 onChange={(e) => setMonthFilter(e.target.value)}
                 className="px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -1531,8 +1532,8 @@ export default function Expenses() {
                 {monthOptions.map((m) => (
                   <option key={m.key} value={m.key}>{m.label}</option>
                 ))}
-              </select>
-              <select
+              </ThemedSelect>
+              <ThemedSelect
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value)}
                 className="px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -1543,7 +1544,7 @@ export default function Expenses() {
                     {c.name}
                   </option>
                 ))}
-              </select>
+              </ThemedSelect>
               <ClientFilterSelect
                 clients={clients}
                 value={clientFilter}
@@ -1551,7 +1552,7 @@ export default function Expenses() {
                 allValue="all"
                 extraOption={{ value: "office", label: "Office (no client)" }}
               />
-              <select
+              <ThemedSelect
                 value={branchFilter}
                 onChange={(e) => setBranchFilter(e.target.value)}
                 className="px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -1560,8 +1561,8 @@ export default function Expenses() {
                 {branches.map((b) => (
                   <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
-              </select>
-              <select
+              </ThemedSelect>
+              <ThemedSelect
                 value={modeFilter}
                 onChange={(e) => setModeFilter(e.target.value as "all" | ExpensePaymentMode)}
                 className="px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -1571,7 +1572,7 @@ export default function Expenses() {
                 <option value="Bank">Bank</option>
                 <option value="Cheque">Cheque</option>
                 <option value="Payable">Payable</option>
-              </select>
+              </ThemedSelect>
             </div>
           </div>
 
@@ -1728,7 +1729,7 @@ export default function Expenses() {
                     className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                   />
                 </div>
-                <select
+                <ThemedSelect
                   value={advMonthFilter}
                   onChange={(e) => setAdvMonthFilter(e.target.value)}
                   className="px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -1738,8 +1739,8 @@ export default function Expenses() {
                   {monthOptions.map((m) => (
                     <option key={m.key} value={m.key}>{m.label}</option>
                   ))}
-                </select>
-                <select
+                </ThemedSelect>
+                <ThemedSelect
                   value={advClientFilter}
                   onChange={(e) => setAdvClientFilter(e.target.value)}
                   className="px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -1751,8 +1752,8 @@ export default function Expenses() {
                       {c.name}
                     </option>
                   ))}
-                </select>
-                <select
+                </ThemedSelect>
+                <ThemedSelect
                   value={advBranchFilter}
                   onChange={(e) => setAdvBranchFilter(e.target.value)}
                   className="px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -1761,8 +1762,8 @@ export default function Expenses() {
                   {branches.map((b) => (
                     <option key={b.id} value={b.id}>{b.name}</option>
                   ))}
-                </select>
-                <select
+                </ThemedSelect>
+                <ThemedSelect
                   value={advModeFilter}
                   onChange={(e) => setAdvModeFilter(e.target.value as "all" | "Cash" | "Bank" | "Cheque")}
                   className="px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -1771,7 +1772,7 @@ export default function Expenses() {
                   <option value="Cash">Cash</option>
                   <option value="Bank">Bank</option>
                   <option value="Cheque">Cheque</option>
-                </select>
+                </ThemedSelect>
                 <div className="ml-auto text-xs text-slate-500">
                   {advTotals.count} advance{advTotals.count === 1 ? "" : "s"} · PKR {advTotals.total.toLocaleString()}
                 </div>
@@ -2213,7 +2214,7 @@ export default function Expenses() {
         )}
         <div>
           <label className="block text-sm text-slate-700 mb-1">Client (optional)</label>
-          <select
+          <ThemedSelect
             value={state.client_id}
             onChange={(e) => {
               const newClientId = e.target.value;
@@ -2234,7 +2235,7 @@ export default function Expenses() {
                 {c.name}
               </option>
             ))}
-          </select>
+          </ThemedSelect>
           <p className="text-xs text-slate-500 mt-1">
             When set, the employee list below is filtered to that client's employees.
           </p>
@@ -2353,7 +2354,7 @@ export default function Expenses() {
         {state.payment_mode === "Bank" && (
           <div>
             <label className="block text-sm text-slate-700 mb-1">Bank Account *</label>
-            <select
+            <ThemedSelect
               required
               value={state.bank_account_id}
               onChange={(e) => setState({ ...state, bank_account_id: e.target.value })}
@@ -2365,13 +2366,13 @@ export default function Expenses() {
                   {b.bank_name} · {b.account_number} (PKR {Number(b.balance).toLocaleString()})
                 </option>
               ))}
-            </select>
+            </ThemedSelect>
           </div>
         )}
         {state.payment_mode === "Cheque" && (
           <div>
             <label className="block text-sm text-slate-700 mb-1">Cheque *</label>
-            <select
+            <ThemedSelect
               required
               value={state.cheque_id}
               onChange={(e) => setState({ ...state, cheque_id: e.target.value })}
@@ -2389,7 +2390,7 @@ export default function Expenses() {
                     </option>
                   );
                 })}
-            </select>
+            </ThemedSelect>
             <p className="text-xs text-slate-500 mt-1">
               Cashflow recognises this advance only when the cheque is marked Cleared.
             </p>
@@ -2435,7 +2436,7 @@ export default function Expenses() {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm text-slate-700 mb-1">Category *</label>
-            <select
+            <ThemedSelect
               required
               value={state.category_id}
               onChange={(e) => setState({ ...state, category_id: e.target.value })}
@@ -2447,11 +2448,11 @@ export default function Expenses() {
                   {c.name}
                 </option>
               ))}
-            </select>
+            </ThemedSelect>
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Branch (optional)</label>
-            <select
+            <ThemedSelect
               value={state.branch_id}
               onChange={(e) => {
                 const newBranch = e.target.value;
@@ -2466,11 +2467,11 @@ export default function Expenses() {
               {branches.map((b) => (
                 <option key={b.id} value={b.id}>{b.name}</option>
               ))}
-            </select>
+            </ThemedSelect>
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Client (optional)</label>
-            <select
+            <ThemedSelect
               value={state.client_id}
               onChange={(e) => {
                 const id = e.target.value;
@@ -2496,7 +2497,7 @@ export default function Expenses() {
                   {c.name}
                 </option>
               ))}
-            </select>
+            </ThemedSelect>
             <p className="text-xs text-slate-500 mt-1">
               {state.branch_id
                 ? "Showing clients in the selected branch only."
@@ -2586,7 +2587,7 @@ export default function Expenses() {
           {state.payment_mode === "Bank" && (
             <div className="col-span-2">
               <label className="block text-sm text-slate-700 mb-1">Bank Account *</label>
-              <select
+              <ThemedSelect
                 required
                 value={state.bank_account_id}
                 onChange={(e) => setState({ ...state, bank_account_id: e.target.value })}
@@ -2598,13 +2599,13 @@ export default function Expenses() {
                     {b.bank_name} · {b.account_number} (PKR {Number(b.balance).toLocaleString()})
                   </option>
                 ))}
-              </select>
+              </ThemedSelect>
             </div>
           )}
           {state.payment_mode === "Cheque" && (
             <div className="col-span-2">
               <label className="block text-sm text-slate-700 mb-1">Cheque *</label>
-              <select
+              <ThemedSelect
                 required
                 value={state.cheque_id}
                 onChange={(e) => setState({ ...state, cheque_id: e.target.value })}
@@ -2621,7 +2622,7 @@ export default function Expenses() {
                       </option>
                     );
                   })}
-              </select>
+              </ThemedSelect>
               <p className="text-xs text-slate-500 mt-1">
                 Cashflow recognises this expense only when the cheque is marked Cleared in Bank Accounts → Cheques.
               </p>
@@ -2631,7 +2632,7 @@ export default function Expenses() {
             <>
               <div className="col-span-2">
                 <label className="block text-sm text-slate-700 mb-1">Vendor *</label>
-                <select
+                <ThemedSelect
                   required
                   value={state.vendor_id}
                   onChange={(e) => setState({ ...state, vendor_id: e.target.value })}
@@ -2643,7 +2644,7 @@ export default function Expenses() {
                       {v.name}{v.account_number ? ` · ${v.account_number}` : ""}
                     </option>
                   ))}
-                </select>
+                </ThemedSelect>
                 {vendors.length === 0 && (
                   <p className="text-xs text-slate-500 mt-1">
                     No vendors yet. Add one via the <span className="font-medium">Manage Vendors</span> button.

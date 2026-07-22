@@ -1,3 +1,4 @@
+import ThemedSelect from "../../components/ThemedSelect";
 import { useCallback, useEffect, useState } from "react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -92,12 +93,12 @@ export default function ComplianceCases() {
             <h3 className="text-sm text-slate-900 mb-2">New case</h3>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
               <input className={FIELD} placeholder="Title" value={nc.title} onChange={(e) => setNc({ ...nc, title: e.target.value })} />
-              <select className={FIELD} value={nc.case_type} onChange={(e) => setNc({ ...nc, case_type: e.target.value })}>
+              <ThemedSelect className={FIELD} value={nc.case_type} onChange={(e) => setNc({ ...nc, case_type: e.target.value })}>
                 {CASE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
-              <select className={FIELD} value={nc.jurisdiction} onChange={(e) => setNc({ ...nc, jurisdiction: e.target.value })}>
+              </ThemedSelect>
+              <ThemedSelect className={FIELD} value={nc.jurisdiction} onChange={(e) => setNc({ ...nc, jurisdiction: e.target.value })}>
                 {JURISDICTIONS.map((j) => <option key={j} value={j}>{j.toUpperCase()}</option>)}
-              </select>
+              </ThemedSelect>
               <input className={FIELD} placeholder="Authority" value={nc.authority} onChange={(e) => setNc({ ...nc, authority: e.target.value })} />
               <input type="date" className={FIELD} value={nc.target_date} onChange={(e) => setNc({ ...nc, target_date: e.target.value })} />
               <Button variant="primary" size="sm" disabled={busy || !nc.title}
@@ -162,9 +163,9 @@ export default function ComplianceCases() {
           <section className="border border-slate-200 rounded-md p-3">
             <h3 className="text-sm text-slate-900 mb-2">New filing</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-              <select className={FIELD} value={nf.filing_type} onChange={(e) => setNf({ ...nf, filing_type: e.target.value })}>
+              <ThemedSelect className={FIELD} value={nf.filing_type} onChange={(e) => setNf({ ...nf, filing_type: e.target.value })}>
                 {FILING_TYPES.map((t) => <option key={t} value={t}>{t.replace(/_/g, " ")}</option>)}
-              </select>
+              </ThemedSelect>
               <input type="date" className={FIELD} title="Period month" value={nf.period_month} onChange={(e) => setNf({ ...nf, period_month: e.target.value })} />
               <input type="date" className={FIELD} title="Due date" value={nf.due_date} onChange={(e) => setNf({ ...nf, due_date: e.target.value })} />
               <input className={FIELD} placeholder="Amount" value={nf.amount} onChange={(e) => setNf({ ...nf, amount: e.target.value })} />

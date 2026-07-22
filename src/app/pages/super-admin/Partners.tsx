@@ -1,3 +1,4 @@
+import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Search, Pencil, AlertCircle, X, ChevronDown, Loader2, Download, ArrowDownLeft, ArrowUpRight, Landmark } from "lucide-react";
 import Header from "../../components/Header";
@@ -428,13 +429,13 @@ export default function Partners() {
             <div className="bg-white rounded-lg border border-slate-200 p-4 flex flex-wrap gap-4 items-end">
               <div className="flex-1 min-w-[180px]">
                 <label className="block text-sm text-slate-700 mb-2">Partner</label>
-                <select value={stmtPartner} onChange={(e) => setStmtPartner(e.target.value)}
+                <ThemedSelect value={stmtPartner} onChange={(e) => setStmtPartner(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
                   <option value="">Select partner…</option>
                   {partners.filter((p) => p.is_active).map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
-                </select>
+                </ThemedSelect>
               </div>
               <div>
                 <label className="block text-sm text-slate-700 mb-2">From</label>
@@ -634,29 +635,29 @@ export default function Partners() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Scope</label>
-              <select value={partnerForm.scope} onChange={(e) => setPartnerForm({ ...partnerForm, scope: e.target.value as any })}
+              <ThemedSelect value={partnerForm.scope} onChange={(e) => setPartnerForm({ ...partnerForm, scope: e.target.value as any })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
                 <option value="COMPANY">Company (owner)</option>
                 <option value="BRANCH">Branch (regional partner)</option>
-              </select>
+              </ThemedSelect>
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Allocation Method</label>
-              <select value={partnerForm.allocation_method} onChange={(e) => setPartnerForm({ ...partnerForm, allocation_method: e.target.value as any })}
+              <ThemedSelect value={partnerForm.allocation_method} onChange={(e) => setPartnerForm({ ...partnerForm, allocation_method: e.target.value as any })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
                 <option value="MANUAL">Manual (typed each period)</option>
                 <option value="FIXED_PCT">Fixed % (auto-computed)</option>
-              </select>
+              </ThemedSelect>
             </div>
           </div>
           {partnerForm.scope === "BRANCH" && (
             <div>
               <label className="block text-sm text-slate-700 mb-1">Branch</label>
-              <select value={partnerForm.branch_id} onChange={(e) => setPartnerForm({ ...partnerForm, branch_id: e.target.value })}
+              <ThemedSelect value={partnerForm.branch_id} onChange={(e) => setPartnerForm({ ...partnerForm, branch_id: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
                 <option value="">Select branch…</option>
                 {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </select>
+              </ThemedSelect>
             </div>
           )}
           <div className="grid grid-cols-2 gap-4">
@@ -713,10 +714,10 @@ export default function Partners() {
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Payment Method</label>
-            <select value={drawingForm.payment_method} onChange={(e) => setDrawingForm({ ...drawingForm, payment_method: e.target.value as any })}
+            <ThemedSelect value={drawingForm.payment_method} onChange={(e) => setDrawingForm({ ...drawingForm, payment_method: e.target.value as any })}
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
               {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{m.replace("_", " ")}</option>)}
-            </select>
+            </ThemedSelect>
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Description</label>
@@ -750,10 +751,10 @@ export default function Partners() {
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Payment Method</label>
-            <select value={contribForm.payment_method} onChange={(e) => setContribForm({ ...contribForm, payment_method: e.target.value as any })}
+            <ThemedSelect value={contribForm.payment_method} onChange={(e) => setContribForm({ ...contribForm, payment_method: e.target.value as any })}
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
               {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{m.replace("_", " ")}</option>)}
-            </select>
+            </ThemedSelect>
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Description</label>

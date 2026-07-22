@@ -1,3 +1,4 @@
+import ThemedSelect from "../../components/ThemedSelect";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -125,10 +126,10 @@ export default function ClientRelationships() {
           <section className="border border-slate-200 rounded-md p-3 grid grid-cols-2 md:grid-cols-6 gap-2 items-end">
             <div className="col-span-2">
               <label className="text-xs text-slate-500 block mb-1">Client</label>
-              <select className={FIELD + " w-full"} value={rvClient} onChange={(e) => setRvClient(e.target.value)}>
+              <ThemedSelect className={FIELD + " w-full"} value={rvClient} onChange={(e) => setRvClient(e.target.value)}>
                 <option value="">— client —</option>
                 {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              </ThemedSelect>
             </div>
             <div>
               <label className="text-xs text-slate-500 block mb-1">Date</label>
@@ -136,9 +137,9 @@ export default function ClientRelationships() {
             </div>
             <div>
               <label className="text-xs text-slate-500 block mb-1">Rating</label>
-              <select className={FIELD + " w-full"} value={rvRating} onChange={(e) => setRvRating(e.target.value)}>
+              <ThemedSelect className={FIELD + " w-full"} value={rvRating} onChange={(e) => setRvRating(e.target.value)}>
                 {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
-              </select>
+              </ThemedSelect>
             </div>
             <input className={FIELD + " col-span-2"} placeholder="Summary" value={rvSummary} onChange={(e) => setRvSummary(e.target.value)} />
             <input className={FIELD + " col-span-2 md:col-span-4"} placeholder="Action items" value={rvActions} onChange={(e) => setRvActions(e.target.value)} />
@@ -165,16 +166,16 @@ export default function ClientRelationships() {
           <section className="border border-slate-200 rounded-md p-3 grid grid-cols-2 md:grid-cols-6 gap-2 items-end">
             <div className="col-span-2">
               <label className="text-xs text-slate-500 block mb-1">Client</label>
-              <select className={FIELD + " w-full"} value={cpClient} onChange={(e) => setCpClient(e.target.value)}>
+              <ThemedSelect className={FIELD + " w-full"} value={cpClient} onChange={(e) => setCpClient(e.target.value)}>
                 <option value="">— client —</option>
                 {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              </ThemedSelect>
             </div>
             <div>
               <label className="text-xs text-slate-500 block mb-1">Channel</label>
-              <select className={FIELD + " w-full"} value={cpChannel} onChange={(e) => setCpChannel(e.target.value)}>
+              <ThemedSelect className={FIELD + " w-full"} value={cpChannel} onChange={(e) => setCpChannel(e.target.value)}>
                 {["phone", "email", "in_person", "letter"].map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
+              </ThemedSelect>
             </div>
             <input className={FIELD + " col-span-2 md:col-span-2"} placeholder="Description" value={cpDesc} onChange={(e) => setCpDesc(e.target.value)} />
             <Button variant="primary" size="sm" disabled={busy || !cpClient || !cpDesc.trim()} onClick={addComplaint}>Log complaint</Button>
@@ -196,10 +197,10 @@ export default function ClientRelationships() {
                     <td className="px-3 py-1.5 text-slate-500">{c.raised_on}</td>
                     <td className="px-3 py-1.5 text-slate-600">{c.description}</td>
                     <td className="px-3 py-1.5">
-                      <select className={FIELD + " py-1"} value={c.status}
+                      <ThemedSelect className={FIELD + " py-1"} value={c.status}
                         onChange={(e) => run(supabase.from("client_complaints").update({ status: e.target.value, resolved_on: (e.target.value === "resolved" || e.target.value === "closed") ? new Date().toISOString().slice(0, 10) : null }).eq("id", c.id))}>
                         {COMPLAINT_STATUS.map((s) => <option key={s} value={s}>{s}</option>)}
-                      </select>
+                      </ThemedSelect>
                     </td>
                   </tr>
                 ))}
@@ -215,10 +216,10 @@ export default function ClientRelationships() {
           <section className="border border-slate-200 rounded-md p-3 flex items-end gap-2 flex-wrap">
             <div>
               <label className="text-xs text-slate-500 block mb-1">Client</label>
-              <select className={FIELD} value={rnClient} onChange={(e) => setRnClient(e.target.value)}>
+              <ThemedSelect className={FIELD} value={rnClient} onChange={(e) => setRnClient(e.target.value)}>
                 <option value="">— client —</option>
                 {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              </ThemedSelect>
             </div>
             <div>
               <label className="text-xs text-slate-500 block mb-1">Expected close</label>
@@ -241,10 +242,10 @@ export default function ClientRelationships() {
                     <td className="px-3 py-1.5 text-slate-700">{clientName.get(r.client_id)}</td>
                     <td className="px-3 py-1.5 text-slate-500">{r.expected_close_date ?? "—"}</td>
                     <td className="px-3 py-1.5">
-                      <select className={FIELD + " py-1"} value={r.stage}
+                      <ThemedSelect className={FIELD + " py-1"} value={r.stage}
                         onChange={(e) => run(supabase.from("renewal_pipeline").update({ stage: e.target.value }).eq("id", r.id))}>
                         {RENEWAL_STAGES.map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
-                      </select>
+                      </ThemedSelect>
                     </td>
                   </tr>
                 ))}

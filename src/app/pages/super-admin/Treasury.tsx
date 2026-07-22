@@ -1,3 +1,4 @@
+import ThemedSelect from "../../components/ThemedSelect";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -379,15 +380,15 @@ function InterRegionTab({
       <section className="border border-slate-200 rounded-md p-3 space-y-2">
         <h3 className="text-sm text-slate-900">Request inter-region funding</h3>
         <div className="flex items-center gap-2 flex-wrap">
-          <select className={FIELD} value={lender} onChange={(e) => setLender(e.target.value)}>
+          <ThemedSelect className={FIELD} value={lender} onChange={(e) => setLender(e.target.value)}>
             <option value="">— lender region —</option>
             {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
+          </ThemedSelect>
           <span className="text-slate-400">→</span>
-          <select className={FIELD} value={borrower} onChange={(e) => setBorrower(e.target.value)}>
+          <ThemedSelect className={FIELD} value={borrower} onChange={(e) => setBorrower(e.target.value)}>
             <option value="">— borrower region —</option>
             {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
+          </ThemedSelect>
           <input className={FIELD + " w-32"} placeholder="Amount" value={amount} onChange={(e) => setAmount(e.target.value)} />
           <Button variant="primary" size="sm" disabled={busy || !lender || !borrower || !amount} onClick={requestFunding}>
             Request approval
