@@ -261,6 +261,7 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
       { key: "attendance.view", label: "View attendance" },
       { key: "attendance.edit", label: "Mark / edit attendance" },
       { key: "attendance.bulk_mark", label: "Bulk-mark attendance per employee (calendar)" },
+      { key: "attendance.backdate", label: "Backdate attendance past the marking cutoff" },
     ],
   },
   {
@@ -958,7 +959,7 @@ export const LIFECYCLE_STATE_LABEL: Record<EmployeeLifecycleState, string> = {
   active: "Active",
   on_leave: "On leave",
   left: "Left",
-  terminated: "Terminated",
+  terminated: "Fired",
 };
 
 // Allowed transitions, mirrored from lifecycle_transition_allowed (migration 0082).
@@ -1024,6 +1025,7 @@ export type ClearanceCertificate = {
   outstanding_advance: number | null;
   incidents_reviewed: boolean | null;
   open_incident_count: number | null;
+  undisbursed_salary: number | null;
   dues_released: boolean;
   dues_released_on: string | null;
   notes: string | null;

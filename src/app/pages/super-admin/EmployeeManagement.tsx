@@ -970,29 +970,112 @@ export default function EmployeeManagement() {
     }
   };
 
-  // Toggle Active ↔ Inactive straight from the status badge (no Edit needed).
-  // "On Leave" toggles to Active. Use the Edit form to set On Leave specifically.
+  // Fire / Reactivate straight from the status badge (no Edit needed). Both
+  // routes go through the lifecycle state machine (transition_employee_lifecycle)
+  // so the Employees table, the Lifecycle & Compliance panel, and Exit Clearance
+  // always agree — a change in one is immediately reflected in the others.
   const [statusTogglingId, setStatusTogglingId] = useState<string | null>(null);
-  const [statusConfirmTarget, setStatusConfirmTarget] = useState<EmployeeRow | null>(null);
+
+  // Reactivate (rehire) confirm target — a currently-fired/left guard.
+  const [reactivateTarget, setReactivateTarget] = useState<EmployeeRow | null>(null);
+
+  // Fire flow: outstanding-dues popup + required reason + rehire decision.
+  type ExitGates = {
+    outstanding_kit_count: number;
+    outstanding_advance: number;
+    open_incident_count: number;
+    undisbursed_salary: number;
+  };
+  const [fireTarget, setFireTarget] = useState<EmployeeRow | null>(null);
+  const [fireGates, setFireGates] = useState<ExitGates | null>(null);
+  const [fireGatesLoading, setFireGatesLoading] = useState(false);
+  const [fireReason, setFireReason] = useState("");
+  const [fireEligible, setFireEligible] = useState(true);
+  const [fireSubmitting, setFireSubmitting] = useState(false);
+  const [fireError, setFireError] = useState<string | null>(null);
+
+  const isFired = (emp: EmployeeRow) =>
+    emp.lifecycle_state === "terminated" || emp.lifecycle_state === "left";
 
   const requestStatusToggle = (emp: EmployeeRow) => {
-    setStatusConfirmTarget(emp);
+    if (isFired(emp)) {
+      setReactivateTarget(emp);
+    } else if (emp.lifecycle_state === "active" || emp.lifecycle_state === "on_leave") {
+      openFireModal(emp);
+    }
+    // Applicants / waitlisted are driven from the Lifecycle & Compliance panel,
+    // not the fire toggle — so the badge is a no-op for them.
   };
 
-  const confirmStatusToggle = async () => {
-    if (!statusConfirmTarget) return;
-    const emp = statusConfirmTarget;
-    const next = emp.status === "Active" ? "Inactive" : "Active";
-    setStatusConfirmTarget(null);
+  const openFireModal = async (emp: EmployeeRow) => {
+    setFireTarget(emp);
+    setFireReason("");
+    setFireEligible(true);
+    setFireError(null);
+    setFireGates(null);
+    setFireGatesLoading(true);
+    const { data, error: gErr } = await supabase.rpc("employee_clearance_gates", {
+      p_employee_id: emp.id,
+    });
+    setFireGatesLoading(false);
+    if (gErr) {
+      setFireError(gErr.message);
+      return;
+    }
+    // A returns-table RPC comes back as an array of one row.
+    const row = Array.isArray(data) ? data[0] : data;
+    if (row) {
+      setFireGates({
+        outstanding_kit_count: Number(row.outstanding_kit_count ?? 0),
+        outstanding_advance: Number(row.outstanding_advance ?? 0),
+        open_incident_count: Number(row.open_incident_count ?? 0),
+        undisbursed_salary: Number(row.undisbursed_salary ?? 0),
+      });
+    }
+  };
+
+  const confirmFire = async () => {
+    if (!fireTarget) return;
+    if (!fireReason.trim()) {
+      setFireError("A reason is required to fire a guard.");
+      return;
+    }
+    setFireSubmitting(true);
+    setFireError(null);
+    const { error: tErr } = await supabase.rpc("transition_employee_lifecycle", {
+      p_employee_id: fireTarget.id,
+      p_to_state: "terminated",
+      p_reason: fireReason.trim(),
+      p_eligible_for_rehire: fireEligible,
+    });
+    if (tErr) {
+      setFireSubmitting(false);
+      setFireError(tErr.message);
+      return;
+    }
+    // Snapshot the exit clearance so the panel reflects the outstanding dues.
+    await supabase.rpc("assess_clearance", { p_employee_id: fireTarget.id });
+    setFireSubmitting(false);
+    setFireTarget(null);
+    if (selectedEmployee?.id === fireTarget.id) {
+      setSelectedEmployee({ ...selectedEmployee, lifecycle_state: "terminated", status: "Inactive" } as EmployeeRow);
+    }
+    await loadData();
+  };
+
+  const confirmReactivate = async () => {
+    if (!reactivateTarget) return;
+    const emp = reactivateTarget;
+    setReactivateTarget(null);
     setStatusTogglingId(emp.id);
     setError(null);
-    const { error: upErr } = await supabase
-      .from("employees")
-      .update({ status: next, updated_at: new Date().toISOString() })
-      .eq("id", emp.id);
+    const { error: tErr } = await supabase.rpc("transition_employee_lifecycle", {
+      p_employee_id: emp.id,
+      p_to_state: "active",
+    });
     setStatusTogglingId(null);
-    if (upErr) {
-      setError(upErr.message);
+    if (tErr) {
+      setError(tErr.message);
       return;
     }
     await loadData();
@@ -1516,7 +1599,7 @@ export default function EmployeeManagement() {
                 {([
                   { v: "all", label: "All" },
                   { v: "active", label: "Active" },
-                  { v: "inactive", label: "Inactive" },
+                  { v: "inactive", label: "Fired" },
                 ] as const).map((t) => (
                   <button
                     key={t.v}
@@ -1704,17 +1787,23 @@ export default function EmployeeManagement() {
                           type="button"
                           disabled={statusTogglingId === employee.id}
                           onClick={() => requestStatusToggle(employee)}
-                          title={employee.status === "Active" ? "Click to mark Inactive" : "Click to mark Active"}
+                          title={isFired(employee) ? "Click to reactivate" : "Click to fire"}
                           className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium border transition-colors disabled:opacity-50 ${
-                            employee.status === "Active"
+                            employee.lifecycle_state === "terminated"
+                              ? "bg-danger-50 text-danger-700 dark:text-danger-500 border-danger-200 hover:bg-danger-100"
+                              : employee.status === "Active"
                               ? "bg-success-50 text-success-700 dark:text-success-500 border-success-200 hover:bg-success-100"
                               : employee.status === "On Leave"
                               ? "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200 hover:bg-warning-100"
                               : "bg-secondary text-muted-foreground border-border hover:bg-accent"
                           }`}
                         >
-                          <span className={`w-1.5 h-1.5 rounded-full ${employee.status === "Active" ? "bg-success-500" : employee.status === "On Leave" ? "bg-warning-500" : "bg-slate-400"}`} />
-                          {employee.status}
+                          <span className={`w-1.5 h-1.5 rounded-full ${employee.lifecycle_state === "terminated" ? "bg-danger-500" : employee.status === "Active" ? "bg-success-500" : employee.status === "On Leave" ? "bg-warning-500" : "bg-slate-400"}`} />
+                          {employee.lifecycle_state === "terminated"
+                            ? "Fired"
+                            : employee.lifecycle_state === "left"
+                            ? "Left"
+                            : employee.status}
                         </button>
                       </td>
                       <td className="px-6 py-3.5 sticky right-0 z-10 border-l border-border bg-card group-hover:bg-accent/50 transition-colors">
@@ -2738,39 +2827,124 @@ export default function EmployeeManagement() {
           </form>
         )}
       </Modal>
+      {/* Fire modal — outstanding dues + required reason + rehire decision. */}
       <Modal
-        isOpen={statusConfirmTarget !== null}
-        onClose={() => setStatusConfirmTarget(null)}
-        title="Confirm Status Change"
+        isOpen={fireTarget !== null}
+        onClose={() => setFireTarget(null)}
+        title="Fire Guard"
         size="sm"
       >
-        {statusConfirmTarget && (
+        {fireTarget && (
           <div className="space-y-4">
             <p className="text-sm text-slate-600">
-              Are you sure you want to mark{" "}
-              <span className="text-slate-900 font-medium">
-                {statusConfirmTarget.full_name}
-              </span>{" "}
-              ({statusConfirmTarget.employee_code}) as{" "}
-              <span className="font-medium">
-                {statusConfirmTarget.status === "Active" ? "Inactive" : "Active"}
-              </span>
-              ?
+              You are about to fire{" "}
+              <span className="text-slate-900 font-medium">{fireTarget.full_name}</span>{" "}
+              ({fireTarget.employee_code}).
             </p>
+
+            {/* Outstanding dues — only shown when there is something outstanding. */}
+            {fireGatesLoading ? (
+              <div className="flex items-center gap-2 text-sm text-slate-500">
+                <Loader2 className="w-4 h-4 animate-spin" /> Checking outstanding dues…
+              </div>
+            ) : fireGates && (
+              fireGates.undisbursed_salary > 0 ||
+              fireGates.outstanding_advance > 0 ||
+              fireGates.outstanding_kit_count > 0 ||
+              fireGates.open_incident_count > 0
+            ) ? (
+              <div className="rounded-md border border-warning-200 bg-warning-50 p-3 space-y-1.5">
+                <p className="text-xs font-semibold uppercase tracking-wide text-warning-800">
+                  Outstanding before exit
+                </p>
+                <ul className="text-sm text-warning-900 space-y-1">
+                  {fireGates.undisbursed_salary > 0 && (
+                    <li className="flex justify-between gap-4">
+                      <span>Salary not yet disbursed</span>
+                      <span className="font-medium tabular-nums">{fireGates.undisbursed_salary.toLocaleString()}</span>
+                    </li>
+                  )}
+                  {fireGates.outstanding_advance > 0 && (
+                    <li className="flex justify-between gap-4">
+                      <span>Advance outstanding</span>
+                      <span className="font-medium tabular-nums">{fireGates.outstanding_advance.toLocaleString()}</span>
+                    </li>
+                  )}
+                  {fireGates.outstanding_kit_count > 0 && (
+                    <li className="flex justify-between gap-4">
+                      <span>Equipment / kit not returned</span>
+                      <span className="font-medium tabular-nums">{fireGates.outstanding_kit_count} item{fireGates.outstanding_kit_count === 1 ? "" : "s"}</span>
+                    </li>
+                  )}
+                  {fireGates.open_incident_count > 0 && (
+                    <li className="flex justify-between gap-4">
+                      <span>Open incidents</span>
+                      <span className="font-medium tabular-nums">{fireGates.open_incident_count}</span>
+                    </li>
+                  )}
+                </ul>
+                <p className="text-xs text-warning-700 pt-1">
+                  These are recorded on the exit clearance; final dues can only be released once settled.
+                </p>
+              </div>
+            ) : fireGates ? (
+              <p className="text-sm text-success-700">No outstanding dues, kit, or open incidents.</p>
+            ) : null}
+
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Reason for firing *</label>
+              <textarea
+                value={fireReason}
+                onChange={(e) => setFireReason(e.target.value)}
+                rows={2}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                placeholder="e.g. Repeated no-shows, misconduct…"
+              />
+            </div>
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" checked={fireEligible} onChange={(e) => setFireEligible(e.target.checked)} />
+              <span>Eligible for rehire</span>
+            </label>
+
+            {fireError && <p className="text-xs text-danger-600">{fireError}</p>}
+
             <div className="flex items-center gap-3 pt-2">
               <Button
-                variant="primary"
+                variant="danger"
                 size="md"
                 className="flex-1"
-                onClick={confirmStatusToggle}
+                disabled={fireSubmitting || fireGatesLoading}
+                onClick={confirmFire}
               >
-                Yes, Mark {statusConfirmTarget.status === "Active" ? "Inactive" : "Active"}
+                {fireSubmitting ? "Firing…" : "Confirm Fire"}
               </Button>
-              <Button
-                variant="secondary"
-                size="md"
-                onClick={() => setStatusConfirmTarget(null)}
-              >
+              <Button variant="secondary" size="md" onClick={() => setFireTarget(null)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Reactivate (rehire) modal. */}
+      <Modal
+        isOpen={reactivateTarget !== null}
+        onClose={() => setReactivateTarget(null)}
+        title="Reactivate Guard"
+        size="sm"
+      >
+        {reactivateTarget && (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600">
+              Reactivate{" "}
+              <span className="text-slate-900 font-medium">{reactivateTarget.full_name}</span>{" "}
+              ({reactivateTarget.employee_code}) back to Active?
+            </p>
+            <div className="flex items-center gap-3 pt-2">
+              <Button variant="primary" size="md" className="flex-1" onClick={confirmReactivate}>
+                Yes, Reactivate
+              </Button>
+              <Button variant="secondary" size="md" onClick={() => setReactivateTarget(null)}>
                 Cancel
               </Button>
             </div>

@@ -1336,7 +1336,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                     {([
                       { v: "all", label: "All" },
                       { v: "active", label: "Active" },
-                      { v: "inactive", label: "Inactive" },
+                      { v: "inactive", label: "Fired" },
                     ] as const).map((t) => (
                       <button
                         key={t.v}

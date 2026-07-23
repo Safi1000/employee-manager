@@ -345,7 +345,8 @@ export default function EmployeeLifecyclePanel({
             </div>
             <div className="text-xs text-slate-500">
               Kit outstanding: {clearance.outstanding_kit_count ?? "—"} · Advance outstanding:{" "}
-              {clearance.outstanding_advance != null ? clearance.outstanding_advance.toLocaleString() : "—"} · Open incidents:{" "}
+              {clearance.outstanding_advance != null ? clearance.outstanding_advance.toLocaleString() : "—"} · Salary undisbursed:{" "}
+              {clearance.undisbursed_salary != null ? clearance.undisbursed_salary.toLocaleString() : "—"} · Open incidents:{" "}
               {clearance.open_incident_count ?? "—"}
             </div>
             {clearance.dues_released && (
