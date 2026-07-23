@@ -19,7 +19,7 @@ import { useAuth } from "../lib/auth";
  * no session, and RequireAuth handles the redirect once signOut() clears it.
  */
 
-const IDLE_LIMIT_MS = 15 * 60 * 1000; // total inactivity before logout
+const IDLE_LIMIT_MS =15 * 60 * 1000; // total inactivity before logout
 const WARN_MS = 60 * 1000; // show the warning this long before the cutoff
 const WRITE_THROTTLE_MS = 2000; // don't hammer localStorage on every mousemove
 
@@ -57,8 +57,18 @@ export default function InactivityLogout() {
   const lastWriteRef = useRef(0);
   const loggingOutRef = useRef(false);
 
+  // Keep signOut in a ref so the callbacks below stay identity-stable. Without
+  // this, signOut is a fresh function on every AuthProvider render (e.g. a
+  // supabase token refresh on tab-return), which would re-run the watcher effect
+  // and reset the inactivity clock — silently defeating the wall-clock check
+  // exactly when returning from a long background/sleep.
+  const signOutRef = useRef(signOut);
+  useEffect(() => {
+    signOutRef.current = signOut;
+  }, [signOut]);
+
   // Reset the shared inactivity clock. `force` bypasses the write-throttle
-  // (used for the "Stay logged in" action and on login).
+  // (used for the "Stay logged in" action and on login). Stable identity.
   const resetTimer = useCallback((force: boolean) => {
     const t = Date.now();
     if (force || t - lastWriteRef.current > WRITE_THROTTLE_MS) {
@@ -80,13 +90,13 @@ export default function InactivityLogout() {
       /* ignore */
     }
     try {
-      await signOut();
+      await signOutRef.current();
     } finally {
       // RequireAuth redirects to /login once the session is cleared.
       warnRef.current = false;
       setWarning(false);
     }
-  }, [signOut]);
+  }, []);
 
   useEffect(() => {
     if (!active) {
@@ -146,13 +156,19 @@ export default function InactivityLogout() {
       }
       if (e.key === LS_LAST) evaluate();
     };
+    // Re-check the wall-clock elapsed the instant the tab is shown again — after
+    // being backgrounded, the PC waking from sleep, or a bfcache page restore.
+    // This catches an expired session immediately instead of waiting for the
+    // throttled/paused 1s interval to resume.
     const onVisible = () => {
       if (document.visibilityState === "visible") evaluate();
     };
+    const onPageShow = () => evaluate();
 
     window.addEventListener("storage", onStorage);
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", onVisible);
+    window.addEventListener("pageshow", onPageShow);
 
     evaluate();
 
@@ -162,6 +178,7 @@ export default function InactivityLogout() {
       window.removeEventListener("storage", onStorage);
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onVisible);
+      window.removeEventListener("pageshow", onPageShow);
     };
   }, [active, resetTimer, doLogout]);
 
