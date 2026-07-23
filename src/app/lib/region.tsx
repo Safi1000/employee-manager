@@ -88,11 +88,14 @@ export function RegionProvider({ children }: { children: ReactNode }) {
       } else {
         // Restore the last selection, but only if it still exists and is
         // active on this company. Otherwise fall back to consolidated.
+        // Head Office is merged into the consolidated view, so a persisted HO
+        // selection is treated as consolidated (null) rather than an HO-only filter.
+        const hoId = rows.find((r) => r.is_head_office)?.id ?? null;
         let restored: string | null = ALL_REGIONS;
         if (userId) {
           try {
             const saved = localStorage.getItem(storageKey(userId, companyId));
-            if (saved && rows.some((r) => r.id === saved)) restored = saved;
+            if (saved && saved !== hoId && rows.some((r) => r.id === saved)) restored = saved;
           } catch {
             // localStorage unavailable (private mode) — consolidated is fine.
           }

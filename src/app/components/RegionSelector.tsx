@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Globe, Building, MapPin, Lock } from "lucide-react";
+import { ChevronDown, Building, MapPin, Lock } from "lucide-react";
 import { useRegion } from "../lib/region";
 
 // The global region context switch (spec section 3):
@@ -43,8 +43,11 @@ export default function RegionSelector() {
     );
   }
 
-  const label = region ? region.name : "All regions";
-  const Icon = !region ? Globe : region.is_head_office ? Building : MapPin;
+  // Head Office and "All regions" are merged into one consolidated option, so a
+  // selected HO row reads the same as consolidated in the trigger.
+  const isConsolidated = !region || region.is_head_office;
+  const label = isConsolidated ? "Head Office / All Regions" : region!.name;
+  const Icon = isConsolidated ? Building : MapPin;
 
   const select = (id: string | null) => {
     setRegionId(id);
@@ -77,15 +80,16 @@ export default function RegionSelector() {
           role="listbox"
           className="absolute z-30 mt-1 w-64 bg-white border border-slate-200 rounded-md shadow-lg py-1"
         >
-          <button type="button" onClick={() => select(null)} className={optionClass(!regionId)}>
-            <Globe className="w-3.5 h-3.5 text-slate-400" strokeWidth={1.5} />
-            <span className="flex-1">All regions</span>
+          <button type="button" onClick={() => select(null)} className={optionClass(isConsolidated)}>
+            <Building className="w-3.5 h-3.5 text-slate-400" strokeWidth={1.5} />
+            <span className="flex-1">Head Office / All Regions</span>
             <span className="text-xs text-slate-400">Consolidated</span>
           </button>
 
           <div className="my-1 border-t border-slate-100" />
 
-          {regions.map((r) => (
+          {/* Head Office is folded into the consolidated option above. */}
+          {regions.filter((r) => !r.is_head_office).map((r) => (
             <button
               type="button"
               key={r.id}

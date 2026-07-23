@@ -549,6 +549,7 @@ const computePerDay = (baseStr: string): string => {
 // by the in-modal error summary so a failed save names the exact fields.
 const EMPLOYEE_FIELD_LABELS: Record<string, string> = {
   full_name: "Full Name",
+  client_id: "Client",
   phone: "Phone Number",
   cnic_number: "CNIC Number",
   iban: "IBAN",
@@ -653,7 +654,35 @@ export default function EmployeeManagement() {
   // "fix these fields" summary so it only appears once the user tries to save.
   const [addSubmitAttempted, setAddSubmitAttempted] = useState(false);
   const [editSubmitAttempted, setEditSubmitAttempted] = useState(false);
+  // Modal-scoped error for the Add form, so failures show INSIDE the modal
+  // rather than in the page banner that sits behind it.
+  const [addModalError, setAddModalError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Visual top-to-bottom order of validated fields, so a failed save jumps to
+  // the FIRST problem field (its section auto-expands via forceOpen first).
+  const EMPLOYEE_FIELD_ORDER = [
+    "full_name",
+    "client_id",
+    "phone",
+    "bank_account",
+    "iban",
+    "cnic_number",
+    "permanent_address",
+    "current_address",
+    "emergency_contact_phone",
+  ];
+  const scrollToFirstError = (errs: Record<string, string | null>) => {
+    const firstKey = EMPLOYEE_FIELD_ORDER.find((k) => errs[k]);
+    if (!firstKey) return;
+    // Let the section auto-expand (forceOpen) commit before scrolling.
+    setTimeout(() => {
+      const el = document.getElementById("empfield-" + firstKey) as HTMLElement | null;
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      (el as HTMLInputElement).focus?.({ preventScroll: true });
+    }, 60);
+  };
 
   const [editForm, setEditForm] = useState<FormState>(emptyForm);
   const [editStatus, setEditStatus] = useState<EmployeeRow["status"]>("Active");
@@ -1220,30 +1249,32 @@ export default function EmployeeManagement() {
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.full_name.trim()) return;
-    if (form.category === "client" && !form.client_id) {
-      setError("Select a client (or change category to Office Staff / Reliever).");
+    setAddModalError(null);
+    // Field-level validation: format errors PLUS required-empty checks. All of
+    // these surface inline under the field + in the summary + auto-scroll, so the
+    // user never gets a message hidden behind the modal.
+    const errs = computeEmployeeErrors(form);
+    if (!form.full_name.trim()) errs.full_name = "Full Name is required.";
+    if (form.category === "client" && !form.client_id) errs.client_id = "Select a client.";
+    if (Object.values(errs).some(Boolean)) {
+      setFormErrors(errs);
+      setAddSubmitAttempted(true);
+      scrollToFirstError(errs);
       return;
     }
+    // Non-field blockers → modal-scoped banner (inside the modal, always visible).
     if (form.category === "client") {
       const sel = clients.find((c) => c.id === form.client_id);
       if (sel && !sel.employee_id_prefix) {
-        setError(
-          `Set an Employee ID Prefix for ${sel.name} before assigning employees. ` +
-            `Edit the client to add one.`,
+        setAddModalError(
+          `Set an Employee ID Prefix for ${sel.name} before assigning employees. Edit the client to add one.`,
         );
         return;
       }
     }
-    const errs = computeEmployeeErrors(form);
-    if (Object.values(errs).some(Boolean)) {
-      setFormErrors(errs);
-      setAddSubmitAttempted(true);
-      return;
-    }
     const slotErr = validateSlot(form);
     if (slotErr) {
-      setError(slotErr);
+      setAddModalError(slotErr);
       return;
     }
     setSubmitting(true);
@@ -1323,10 +1354,11 @@ export default function EmployeeManagement() {
       await syncAdditionalBranches(newEmp.id, form.additional_branch_ids, form.branch_id);
       setForm(emptyForm);
       setFormErrors({});
+      setAddModalError(null);
       setIsModalOpen(false);
       await loadData();
     } catch (err: any) {
-      setError(err.message ?? String(err));
+      setAddModalError(err.message ?? String(err));
     } finally {
       setSubmitting(false);
     }
@@ -1651,6 +1683,7 @@ export default function EmployeeManagement() {
               onClick={() => {
                 setFormErrors({});
                 setAddSubmitAttempted(false);
+                setAddModalError(null);
                 setIsModalOpen(true);
               }}
             >
@@ -1929,13 +1962,21 @@ export default function EmployeeManagement() {
 
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Add Employee" size="lg">
         <form className="space-y-6" onSubmit={handleAdd}>
+          {addModalError && (
+            <div className="flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
+              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" strokeWidth={2} />
+              <div className="flex-1">{addModalError}</div>
+              <button type="button" onClick={() => setAddModalError(null)}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
           <div>
             <h4 className="text-sm text-slate-900 mb-4">Basic Information</h4>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Full Name *</label>
                 <input
-                  required
                   type="text"
                   id="empfield-full_name"
                   value={form.full_name}
@@ -2066,13 +2107,17 @@ export default function EmployeeManagement() {
                 </ThemedSelect>
               </div>
               {form.category === "client" && (
-                <div>
+                <div id="empfield-client_id">
                   <label className="block text-sm text-slate-700 mb-1">Client *</label>
                   <ThemedSelect
-                    required
                     value={form.client_id}
-                    onChange={(e) => onPickClient(form, setForm, e.target.value)}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    onChange={(e) => {
+                      onPickClient(form, setForm, e.target.value);
+                      if (e.target.value) setFormErrors((p) => ({ ...p, client_id: null }));
+                    }}
+                    className={`w-full px-4 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent ${
+                      formErrors.client_id ? "border-danger-300" : "border-slate-200"
+                    }`}
                   >
                     <option value="">Select client</option>
                     {clientsForBranch(form.branch_id).map((c) => (
@@ -2081,6 +2126,7 @@ export default function EmployeeManagement() {
                       </option>
                     ))}
                   </ThemedSelect>
+                  {formErrors.client_id && <p className="text-xs text-danger-600 mt-1">{formErrors.client_id}</p>}
                   {clientsForBranch(form.branch_id).length === 0 && (
                     <p className="text-xs text-slate-500 mt-1">
                       {form.branch_id
