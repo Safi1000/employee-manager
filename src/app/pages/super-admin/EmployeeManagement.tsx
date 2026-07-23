@@ -545,6 +545,62 @@ const computePerDay = (baseStr: string): string => {
   return pd.toFixed(2);
 };
 
+// Human labels for the validated employee fields, keyed by their form key. Used
+// by the in-modal error summary so a failed save names the exact fields.
+const EMPLOYEE_FIELD_LABELS: Record<string, string> = {
+  full_name: "Full Name",
+  phone: "Phone Number",
+  cnic_number: "CNIC Number",
+  iban: "IBAN",
+  bank_account: "Bank Account",
+  emergency_contact_phone: "Emergency Contact Phone",
+  permanent_address: "Permanent Address",
+  current_address: "Current Address",
+};
+
+// Lists the fields that failed validation as clickable chips. Clicking one
+// scrolls the matching input into view (by DOM id `${idPrefix}${fieldKey}`) and
+// focuses it, so the operator is taken straight to what needs fixing.
+function FieldErrorSummary({
+  errors,
+  idPrefix,
+}: {
+  errors: Record<string, string | null>;
+  idPrefix: string;
+}) {
+  const bad = Object.entries(errors)
+    .filter(([, v]) => Boolean(v))
+    .map(([k]) => k);
+  if (bad.length === 0) return null;
+  const jump = (key: string) => {
+    const el = document.getElementById(idPrefix + key) as HTMLElement | null;
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    // preventScroll so the smooth scroll above isn't overridden by focus().
+    (el as HTMLInputElement).focus?.({ preventScroll: true });
+  };
+  return (
+    <div className="rounded-md border border-danger-200 bg-danger-50 p-3">
+      <p className="text-sm text-danger-700 mb-2">
+        Please fix {bad.length} field{bad.length > 1 ? "s" : ""} before saving — tap to jump:
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {bad.map((key) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => jump(key)}
+            className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded border border-danger-300 bg-white text-danger-700 hover:bg-danger-100 transition-colors"
+          >
+            {EMPLOYEE_FIELD_LABELS[key] ?? key}
+            <span className="text-danger-400">›</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function EmployeeManagement() {
   const { profile, company } = useAuth();
   const { regionId } = useRegion();
@@ -593,6 +649,10 @@ export default function EmployeeManagement() {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [formErrors, setFormErrors] = useState<Record<string, string | null>>({});
   const [editFormErrors, setEditFormErrors] = useState<Record<string, string | null>>({});
+  // Whether a save was attempted with invalid fields — gates the in-modal
+  // "fix these fields" summary so it only appears once the user tries to save.
+  const [addSubmitAttempted, setAddSubmitAttempted] = useState(false);
+  const [editSubmitAttempted, setEditSubmitAttempted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const [editForm, setEditForm] = useState<FormState>(emptyForm);
@@ -1178,7 +1238,7 @@ export default function EmployeeManagement() {
     const errs = computeEmployeeErrors(form);
     if (Object.values(errs).some(Boolean)) {
       setFormErrors(errs);
-      setError("Please fix the highlighted fields before saving.");
+      setAddSubmitAttempted(true);
       return;
     }
     const slotErr = validateSlot(form);
@@ -1445,6 +1505,7 @@ export default function EmployeeManagement() {
       lifecycle_intake: "",
     });
     setEditFormErrors({});
+    setEditSubmitAttempted(false);
     setIsEditModalOpen(true);
   };
 
@@ -1456,7 +1517,7 @@ export default function EmployeeManagement() {
     const errs = computeEmployeeErrors(editForm);
     if (Object.values(errs).some(Boolean)) {
       setEditFormErrors(errs);
-      setError("Please fix the highlighted fields before saving.");
+      setEditSubmitAttempted(true);
       return;
     }
     // Slot check only blocks when this edit makes the employee newly active on a
@@ -1584,7 +1645,15 @@ export default function EmployeeManagement() {
         actions={
           <div className="flex items-center gap-2">
             <ExportButton onExport={handleExport} label="Export" />
-            <Button variant="primary" size="md" onClick={() => setIsModalOpen(true)}>
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => {
+                setFormErrors({});
+                setAddSubmitAttempted(false);
+                setIsModalOpen(true);
+              }}
+            >
               <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
               Add Employee
             </Button>
@@ -1868,6 +1937,7 @@ export default function EmployeeManagement() {
                 <input
                   required
                   type="text"
+                  id="empfield-full_name"
                   value={form.full_name}
                   onChange={(e) => setForm({ ...form, full_name: e.target.value })}
                   onBlur={(e) => setFormErrors((p) => ({ ...p, full_name: validateFreeText(e.target.value) }))}
@@ -1880,6 +1950,7 @@ export default function EmployeeManagement() {
                 <label className="block text-sm text-slate-700 mb-1">Phone Number</label>
                 <input
                   type="tel"
+                  id="empfield-phone"
                   value={form.phone}
                   onChange={(e) => setForm({ ...form, phone: e.target.value })}
                   onBlur={(e) => setFormErrors((p) => ({ ...p, phone: validatePhone(e.target.value) }))}
@@ -2144,6 +2215,7 @@ export default function EmployeeManagement() {
                 <label className="block text-sm text-slate-700 mb-1">Bank Account Number</label>
                 <input
                   type="text"
+                  id="empfield-bank_account"
                   value={form.bank_account}
                   onChange={(e) => setForm({ ...form, bank_account: e.target.value })}
                   onBlur={(e) => setFormErrors((p) => ({ ...p, bank_account: accountOrIbanError(e.target.value) }))}
@@ -2157,6 +2229,7 @@ export default function EmployeeManagement() {
                 <input
                   type="text"
                   maxLength={24}
+                  id="empfield-iban"
                   value={form.iban}
                   onChange={(e) => setForm({ ...form, iban: e.target.value.toUpperCase().replace(/\s+/g, "") })}
                   onBlur={(e) => setFormErrors((p) => ({ ...p, iban: validateIban(e.target.value) }))}
@@ -2179,6 +2252,8 @@ export default function EmployeeManagement() {
             employees={employees}
             errors={formErrors}
             onFieldBlur={(k, err) => setFormErrors((p) => ({ ...p, [k]: err }))}
+            idPrefix="empfield-"
+            forceOpen={addSubmitAttempted}
           />
 
           <div className="pt-4 border-t border-slate-200">
@@ -2240,6 +2315,8 @@ export default function EmployeeManagement() {
               </div>
             </div>
           </div>
+
+          {addSubmitAttempted && <FieldErrorSummary errors={formErrors} idPrefix="empfield-" />}
 
           <div className="flex items-center gap-3 pt-4">
             <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
@@ -2492,6 +2569,7 @@ export default function EmployeeManagement() {
                     required
                     type="text"
                     disabled={!!selectedEmployee?.identity_verified}
+                    id="empeditfield-full_name"
                     value={editForm.full_name}
                     onChange={(e) => setEditForm({ ...editForm, full_name: e.target.value })}
                     onBlur={(e) => setEditFormErrors((p) => ({ ...p, full_name: validateFreeText(e.target.value) }))}
@@ -2503,6 +2581,7 @@ export default function EmployeeManagement() {
                   <label className="block text-sm text-slate-700 mb-1">Phone Number</label>
                   <input
                     type="tel"
+                    id="empeditfield-phone"
                     value={editForm.phone}
                     onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
                     onBlur={(e) => setEditFormErrors((p) => ({ ...p, phone: validatePhone(e.target.value) }))}
@@ -2743,6 +2822,7 @@ export default function EmployeeManagement() {
                   <label className="block text-sm text-slate-700 mb-1">Bank Account Number</label>
                   <input
                     type="text"
+                    id="empeditfield-bank_account"
                     value={editForm.bank_account}
                     onChange={(e) => setEditForm({ ...editForm, bank_account: e.target.value })}
                     onBlur={(e) => setEditFormErrors((p) => ({ ...p, bank_account: accountOrIbanError(e.target.value) }))}
@@ -2768,6 +2848,7 @@ export default function EmployeeManagement() {
                   <input
                     type="text"
                     maxLength={24}
+                    id="empeditfield-iban"
                     value={editForm.iban}
                     onChange={(e) => setEditForm({ ...editForm, iban: e.target.value.toUpperCase().replace(/\s+/g, "") })}
                     onBlur={(e) => setEditFormErrors((p) => ({ ...p, iban: validateIban(e.target.value) }))}
@@ -2787,6 +2868,8 @@ export default function EmployeeManagement() {
               errors={editFormErrors}
               onFieldBlur={(k, err) => setEditFormErrors((p) => ({ ...p, [k]: err }))}
               lockedIdentity={!!selectedEmployee?.identity_verified}
+              idPrefix="empeditfield-"
+              forceOpen={editSubmitAttempted}
             />
 
             {renderPaperFormSections(editForm, setEditForm)}
@@ -2840,6 +2923,8 @@ export default function EmployeeManagement() {
                 </div>
               </div>
             </div>
+
+            {editSubmitAttempted && <FieldErrorSummary errors={editFormErrors} idPrefix="empeditfield-" />}
 
             <div className="flex items-center gap-3 pt-4">
               <Button variant="primary" size="md" className="flex-1" disabled={editing}>
@@ -3545,6 +3630,8 @@ function EmployeeHrSection({
   errors,
   onFieldBlur,
   lockedIdentity = false,
+  idPrefix = "",
+  forceOpen = false,
 }: {
   form: FormState;
   setForm: (f: FormState) => void;
@@ -3556,12 +3643,23 @@ function EmployeeHrSection({
   // §11: once identity is verified, CNIC / DOB / father-name lock here and can
   // only change through the Identity Verification panel's amend flow.
   lockedIdentity?: boolean;
+  // Prefix for input DOM ids, so the parent's "jump to field" can target them.
+  idPrefix?: string;
+  // When true (a save was attempted with errors), sections holding an invalid
+  // field auto-expand so the field — and the jump-to-field target — are visible.
+  forceOpen?: boolean;
 }) {
   const lockCls = lockedIdentity ? " bg-slate-50 text-slate-500 cursor-not-allowed" : "";
   const [openPersonal, setOpenPersonal] = useState(false);
   const [openEmergency, setOpenEmergency] = useState(false);
   const [openEmployment, setOpenEmployment] = useState(false);
   const [openLicences, setOpenLicences] = useState(false);
+
+  // Auto-expand a section when a save was attempted and it holds an invalid field.
+  const personalHasError = Boolean(errors.cnic_number || errors.permanent_address || errors.current_address);
+  const emergencyHasError = Boolean(errors.emergency_contact_phone);
+  const showPersonal = openPersonal || (forceOpen && personalHasError);
+  const showEmergency = openEmergency || (forceOpen && emergencyHasError);
 
   const supervisorOptions = useMemo(
     () => employees.filter((e) => e.id !== excludeEmployeeId && e.status === "Active"),
@@ -3577,14 +3675,15 @@ function EmployeeHrSection({
 
       {/* Personal */}
       <div className="border-t border-slate-100">
-        <SectionHeader open={openPersonal} onClick={() => setOpenPersonal((v) => !v)} title="Personal Information" />
-        {openPersonal && (
+        <SectionHeader open={showPersonal} onClick={() => setOpenPersonal((v) => !v)} title="Personal Information" />
+        {showPersonal && (
           <div className="grid grid-cols-2 gap-3 pb-3">
             <div>
               <label className="block text-sm text-slate-700 mb-1">CNIC Number</label>
               <input
                 type="text"
                 maxLength={15}
+                id={idPrefix + "cnic_number"}
                 disabled={lockedIdentity}
                 value={form.cnic_number}
                 onChange={(e) => setForm({ ...form, cnic_number: formatCnicInline(e.target.value) })}
@@ -3632,6 +3731,7 @@ function EmployeeHrSection({
               <label className="block text-sm text-slate-700 mb-1">Permanent Address</label>
               <textarea
                 rows={2}
+                id={idPrefix + "permanent_address"}
                 value={form.permanent_address}
                 onChange={(e) => setForm({ ...form, permanent_address: e.target.value })}
                 onBlur={(e) => onFieldBlur("permanent_address", validateFreeText(e.target.value))}
@@ -3643,6 +3743,7 @@ function EmployeeHrSection({
               <label className="block text-sm text-slate-700 mb-1">Current Address</label>
               <textarea
                 rows={2}
+                id={idPrefix + "current_address"}
                 value={form.current_address}
                 onChange={(e) => setForm({ ...form, current_address: e.target.value })}
                 onBlur={(e) => onFieldBlur("current_address", validateFreeText(e.target.value))}
@@ -3658,12 +3759,12 @@ function EmployeeHrSection({
       {/* Emergency Contact */}
       <div className="border-t border-slate-100">
         <SectionHeader
-          open={openEmergency}
+          open={showEmergency}
           onClick={() => setOpenEmergency((v) => !v)}
           title="Emergency Contact"
           hint="Required by labour regulations"
         />
-        {openEmergency && (
+        {showEmergency && (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pb-3">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Name</label>
@@ -3691,6 +3792,7 @@ function EmployeeHrSection({
               <label className="block text-sm text-slate-700 mb-1">Phone</label>
               <input
                 type="tel"
+                id={idPrefix + "emergency_contact_phone"}
                 value={form.emergency_contact_phone}
                 onChange={(e) => setForm({ ...form, emergency_contact_phone: e.target.value })}
                 onBlur={(e) => onFieldBlur("emergency_contact_phone", validatePhone(e.target.value))}
