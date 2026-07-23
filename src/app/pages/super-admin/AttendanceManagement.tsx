@@ -161,7 +161,13 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     if (bulkShiftFilter !== "all") pool = pool.filter((e) => e.shift === bulkShiftFilter);
     if (bulkCategoryFilter !== "all") pool = pool.filter((e) => e.category === bulkCategoryFilter);
     const q = bulkEmpSearch.trim().toLowerCase();
-    if (q) pool = pool.filter((e) => e.full_name.toLowerCase().includes(q) || e.employee_code.toLowerCase().includes(q));
+    if (q)
+      pool = pool.filter(
+        (e) =>
+          e.full_name.toLowerCase().includes(q) ||
+          e.employee_code.toLowerCase().includes(q) ||
+          (e.client_name?.toLowerCase().includes(q) ?? false),
+      );
     return pool.slice(0, 100);
   }, [employees, bulkEmpSearch, bulkClientFilter, bulkLocationFilter, bulkBranchFilter, bulkShiftFilter, bulkCategoryFilter, relieversOnly]);
 
@@ -1903,7 +1909,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                     type="text"
                     value={bulkEmpSearch}
                     onChange={(e) => setBulkEmpSearch(e.target.value)}
-                    placeholder="Search name or code…"
+                    placeholder="Search name, code or client…"
                     className="w-full pl-10 pr-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
                   />
                 </div>
