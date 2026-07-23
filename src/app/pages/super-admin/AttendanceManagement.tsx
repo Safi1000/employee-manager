@@ -1836,14 +1836,13 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                 <option value="day">Day</option>
                 <option value="night">Night</option>
               </ThemedSelect>
-              <ThemedSelect
+              <ClientFilterSelect
+                clients={clients}
                 value={bulkClientFilter}
-                onChange={(e) => { setBulkClientFilter(e.target.value); setBulkEmployeeId(""); }}
-                className="px-3 py-2 border border-slate-200 rounded-md text-sm"
-              >
-                <option value="all">All Clients</option>
-                {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </ThemedSelect>
+                onChange={(v) => { setBulkClientFilter(v); setBulkEmployeeId(""); }}
+                allValue="all"
+                className="w-full"
+              />
               <ThemedSelect
                 value={bulkLocationFilter}
                 onChange={(e) => { setBulkLocationFilter(e.target.value); setBulkEmployeeId(""); }}
