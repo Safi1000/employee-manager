@@ -454,6 +454,9 @@ export type AttendanceEmployeeRow = {
   designation: string;
   empCode: string;
   shift: "day" | "night";
+  // Effective shift per day (override-aware). shiftByDay[day-1] = "day"|"night".
+  // Falls back to `shift` for every day when omitted.
+  shiftByDay?: ("day" | "night")[];
   // statusByDay[day-1] = "P" | "A" | "L" | ""
   statusByDay: string[];
   presents: number;
@@ -515,7 +518,10 @@ export function exportAttendance(opts: {
     ];
     for (let i = 0; i < daysInMonth; i += 1) {
       const status = row.statusByDay[i] ?? "";
-      if (row.shift === "day") {
+      // Per-day shift decides the D vs N column, so a day a guard swapped shifts
+      // lands in the right column instead of always their default shift.
+      const dayShift = row.shiftByDay?.[i] ?? row.shift;
+      if (dayShift === "day") {
         r.push(status, "");
         if (status === "P") totalPresentsByDay[i].d += 1;
         if (status === "L") totalLeavesByDay[i].d += 1;

@@ -8,6 +8,8 @@ import { formatDate } from "../../lib/date";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import ClientFilterSelect from "../../components/ClientFilterSelect";
+import ExportButton from "../../components/ExportButton";
+import { exportTable } from "../../lib/excel";
 import { useRegion, withRegion } from "../../lib/region";
 import {
   supabase,
@@ -994,6 +996,34 @@ export default function EmployeeManagement() {
   const [fireSubmitting, setFireSubmitting] = useState(false);
   const [fireError, setFireError] = useState<string | null>(null);
 
+  // Export exactly what the table is showing — the same `filtered` rows, in the
+  // same visible column order — so filters/search/tab carry into the export.
+  const handleExport = () => {
+    const statusLabel = (e: EmployeeRow) =>
+      e.lifecycle_state === "terminated" ? "Fired" : e.lifecycle_state === "left" ? "Left" : e.status;
+    const categoryOrClient = (e: EmployeeRow) =>
+      (e.category ?? "client") === "client"
+        ? e.client_name ?? ""
+        : (e.category ?? "client").replace("_", " ");
+    exportTable({
+      fileName: "Employees.xlsx",
+      sheetName: "Employees",
+      title: "Employees",
+      headers: ["Employee ID", "Name", "Phone", "Location", "Branch", "Client / Category", "Shift", "Status"],
+      rows: filtered.map((e) => [
+        e.employee_code,
+        e.full_name,
+        e.phone ?? "",
+        e.location_name ?? "",
+        e.branch_name ?? "",
+        categoryOrClient(e),
+        e.shift,
+        statusLabel(e),
+      ]),
+      columnWidths: [14, 24, 16, 18, 18, 20, 8, 10],
+    });
+  };
+
   const isFired = (emp: EmployeeRow) =>
     emp.lifecycle_state === "terminated" || emp.lifecycle_state === "left";
 
@@ -1552,10 +1582,13 @@ export default function EmployeeManagement() {
         title="Employee Management"
         subtitle="Workforce roster, branches and document uploads"
         actions={
-          <Button variant="primary" size="md" onClick={() => setIsModalOpen(true)}>
-            <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
-            Add Employee
-          </Button>
+          <div className="flex items-center gap-2">
+            <ExportButton onExport={handleExport} label="Export" />
+            <Button variant="primary" size="md" onClick={() => setIsModalOpen(true)}>
+              <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
+              Add Employee
+            </Button>
+          </div>
         }
       />
 

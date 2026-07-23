@@ -113,6 +113,14 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   const [bulkEmployeeId, setBulkEmployeeId] = useState<string>("");
   const [bulkMonth, setBulkMonth] = useState<string>(today().slice(0, 7));
   const [bulkExisting, setBulkExisting] = useState<Map<string, AttendanceStatus>>(new Map());
+  // Per-day shift overrides for the shown month (date -> "day"|"night"), so the
+  // calendar can flag which days already differ from the guard's default shift.
+  const [bulkShiftOverrides, setBulkShiftOverrides] = useState<Map<string, "day" | "night">>(new Map());
+  // Shift toggle applied to the current selection when a status button is
+  // pressed. Unchecked = the guard's own (default) shift; checked = the OTHER
+  // shift. So a day-shift guard shows "Mark as Night Shift" and a night-shift
+  // guard shows "Mark as Day Shift".
+  const [bulkMarkOther, setBulkMarkOther] = useState(false);
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
@@ -164,24 +172,39 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     const [y, m] = monthKey.split("-").map(Number);
     const lastDay = new Date(y, m, 0).getDate();
     const end = `${monthKey}-${String(lastDay).padStart(2, "0")}`;
-    const { data, error: err } = await supabase
-      .from("attendance_records")
-      .select("attendance_date, status")
-      .eq("employee_id", employeeId)
-      .gte("attendance_date", start)
-      .lte("attendance_date", end);
-    if (err) setBulkError(err.message);
+    const [attRes, ovrRes] = await Promise.all([
+      supabase
+        .from("attendance_records")
+        .select("attendance_date, status")
+        .eq("employee_id", employeeId)
+        .gte("attendance_date", start)
+        .lte("attendance_date", end),
+      supabase
+        .from("attendance_shift_overrides")
+        .select("attendance_date, override_shift")
+        .eq("employee_id", employeeId)
+        .gte("attendance_date", start)
+        .lte("attendance_date", end),
+    ]);
+    if (attRes.error) setBulkError(attRes.error.message);
     const map = new Map<string, AttendanceStatus>();
-    for (const r of (data ?? []) as { attendance_date: string; status: AttendanceStatus }[]) {
+    for (const r of (attRes.data ?? []) as { attendance_date: string; status: AttendanceStatus }[]) {
       map.set(r.attendance_date, r.status);
     }
     setBulkExisting(map);
+    const ovr = new Map<string, "day" | "night">();
+    for (const r of (ovrRes.data ?? []) as { attendance_date: string; override_shift: "day" | "night" }[]) {
+      ovr.set(r.attendance_date, r.override_shift);
+    }
+    setBulkShiftOverrides(ovr);
     setBulkLoading(false);
   };
 
   useEffect(() => {
     if (!isBulkOpen || !bulkEmployeeId) return;
     setBulkSelected(new Set());
+    // Default to the guard's own shift (checkbox unchecked).
+    setBulkMarkOther(false);
     loadBulkMonth(bulkEmployeeId, bulkMonth);
   }, [isBulkOpen, bulkEmployeeId, bulkMonth]);
 
@@ -334,7 +357,8 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     if (!bulkEmployeeId || bulkSelected.size === 0) return;
     setBulkSubmitting(true);
     setBulkError(null);
-    const rows = Array.from(bulkSelected).map((d) => ({
+    const days = Array.from(bulkSelected);
+    const rows = days.map((d) => ({
       employee_id: bulkEmployeeId,
       attendance_date: d,
       status,
@@ -342,11 +366,42 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     const { error: err } = await supabase
       .from("attendance_records")
       .upsert(rows, { onConflict: "employee_id,attendance_date" });
-    setBulkSubmitting(false);
     if (err) {
+      setBulkSubmitting(false);
       setBulkError(err.message);
       return;
     }
+
+    // Record the shift for the marked days. Unchecked keeps the guard's default
+    // shift (clear any override); checked flips to the other shift (store an
+    // override so this stretch of days reads as the opposite shift).
+    const companyId = profile?.view_as_company ?? profile?.company_id ?? null;
+    const defaultShift: "day" | "night" = bulkEmployee?.shift ?? "day";
+    const otherShift: "day" | "night" = defaultShift === "day" ? "night" : "day";
+    const targetShift: "day" | "night" = bulkMarkOther ? otherShift : defaultShift;
+    if (companyId) {
+      if (targetShift === defaultShift) {
+        const { error: delErr } = await supabase
+          .from("attendance_shift_overrides")
+          .delete()
+          .eq("employee_id", bulkEmployeeId)
+          .in("attendance_date", days);
+        if (delErr) setBulkError(delErr.message);
+      } else {
+        const ovrRows = days.map((d) => ({
+          employee_id: bulkEmployeeId,
+          company_id: companyId,
+          attendance_date: d,
+          override_shift: targetShift,
+        }));
+        const { error: ovrErr } = await supabase
+          .from("attendance_shift_overrides")
+          .upsert(ovrRows, { onConflict: "employee_id,attendance_date" });
+        if (ovrErr) setBulkError(ovrErr.message);
+      }
+    }
+
+    setBulkSubmitting(false);
     await loadBulkMonth(bulkEmployeeId, bulkMonth);
     setBulkSelected(new Set());
   };
@@ -895,6 +950,21 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       byEmp.get(r.employee_id)!.set(day, (r as any).status as AttendanceStatus);
     }
 
+    // Per-day shift overrides ("Mark as Night/Day Shift") so each day lands in
+    // the correct D/N column in the export instead of always the guard's default.
+    const ovrByEmp = new Map<string, Map<number, "day" | "night">>();
+    const { data: ovrData } = await supabase
+      .from("attendance_shift_overrides")
+      .select("employee_id, attendance_date, override_shift")
+      .gte("attendance_date", monthStart)
+      .lte("attendance_date", monthEnd)
+      .in("employee_id", empIds);
+    for (const r of (ovrData ?? []) as { employee_id: string; attendance_date: string; override_shift: "day" | "night" }[]) {
+      const day = Number(r.attendance_date.slice(8, 10));
+      if (!ovrByEmp.has(r.employee_id)) ovrByEmp.set(r.employee_id, new Map());
+      ovrByEmp.get(r.employee_id)!.set(day, r.override_shift);
+    }
+
     // Leave allowance comes from the employee's contract, falling back to their client
     // for records predating the move of this setting onto contracts.
     const clientById = new Map(clients.map((c) => [c.id, c]));
@@ -902,7 +972,9 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
 
     const rows: AttendanceEmployeeRow[] = filteredEmployees.map((emp, idx) => {
       const dayMap = byEmp.get(emp.id) ?? new Map<number, AttendanceStatus>();
+      const ovrMap = ovrByEmp.get(emp.id) ?? new Map<number, "day" | "night">();
       const statusByDay: string[] = [];
+      const shiftByDay: ("day" | "night")[] = [];
       let p = 0;
       let a = 0;
       let l = 0;
@@ -920,6 +992,8 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         } else {
           statusByDay.push("");
         }
+        // Effective shift for this day: override if present, else the default.
+        shiftByDay.push(ovrMap.get(d) ?? emp.shift);
       }
       const allowed = resolveAllowedLeaves(
         emp.contract_id ? contractById.get(emp.contract_id) : null,
@@ -933,6 +1007,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         designation: "",
         empCode: emp.employee_code,
         shift: emp.shift,
+        shiftByDay,
         statusByDay,
         presents: p,
         absents: a,
@@ -1790,7 +1865,19 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
             {bulkEmployee ? (
               <div className="flex items-center justify-between gap-3 p-3 border border-slate-200 rounded-md bg-slate-50">
                 <div className="min-w-0">
-                  <div className="text-sm text-slate-900 truncate">{bulkEmployee.full_name}</div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-slate-900 truncate">{bulkEmployee.full_name}</span>
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border capitalize ${
+                        bulkEmployee.shift === "day"
+                          ? "bg-warning-50 text-warning-700 border-warning-200"
+                          : "bg-info-50 text-info-700 border-info-200"
+                      }`}
+                      title="Guard's default shift"
+                    >
+                      {bulkEmployee.shift} shift
+                    </span>
+                  </div>
                   <div className="text-xs text-slate-500 font-mono">
                     {bulkEmployee.employee_code}
                     {bulkEmployee.client_name && ` · ${bulkEmployee.client_name}`}
@@ -1935,6 +2022,11 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                       }
                       const status = bulkExisting.get(c.date);
                       const selected = bulkSelected.has(c.date);
+                      // Effective shift for this day: an override if present, else
+                      // the guard's default. Flag it only when it differs from the
+                      // default so the eye is drawn to the exceptions.
+                      const dayShift = bulkShiftOverrides.get(c.date) ?? bulkEmployee?.shift ?? "day";
+                      const isOverridden = bulkShiftOverrides.has(c.date);
                       const statusClass =
                         status === "Present"
                           ? "bg-success-50 text-success-700 dark:text-success-500 border-success-200"
@@ -1954,9 +2046,20 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                           }}
                           onMouseEnter={() => extendBulkDrag(c.date!)}
                           className={`h-14 rounded-lg border p-1.5 flex flex-col justify-between text-left transition-all ${statusClass} ${ring}`}
-                          title={status ? `Currently: ${status}` : "Unmarked"}
+                          title={`${status ? `Currently: ${status}` : "Unmarked"} · ${dayShift} shift${isOverridden ? " (override)" : ""}`}
                         >
-                          <div className="text-xs font-medium tabular-nums">{c.day}</div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-medium tabular-nums">{c.day}</span>
+                            {isOverridden && (
+                              <span
+                                className={`text-[8px] font-bold uppercase leading-none px-1 py-0.5 rounded ${
+                                  dayShift === "night" ? "bg-info-100 text-info-700" : "bg-warning-100 text-warning-700"
+                                }`}
+                              >
+                                {dayShift[0]}
+                              </span>
+                            )}
+                          </div>
                           {status && (
                             <div className="text-[9px] font-bold uppercase tracking-wider self-end">
                               {status[0]}
@@ -1978,6 +2081,30 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                   {bulkError}
                 </div>
               )}
+
+              {/* Shift toggle applied to the marked days. The label always offers
+                  the OPPOSITE of the guard's default shift. */}
+              {(() => {
+                const other = (bulkEmployee?.shift ?? "day") === "day" ? "Night" : "Day";
+                const applied = bulkMarkOther ? other.toLowerCase() : (bulkEmployee?.shift ?? "day");
+                return (
+                  <label className="flex items-center gap-2 text-sm text-slate-700 pt-2">
+                    <input
+                      type="checkbox"
+                      checked={bulkMarkOther}
+                      onChange={(e) => setBulkMarkOther(e.target.checked)}
+                      className="w-4 h-4"
+                    />
+                    <span>
+                      Mark as <strong>{other} Shift</strong>
+                      <span className="text-slate-400">
+                        {" "}— selected days will be recorded as {applied} shift
+                        {!bulkMarkOther ? " (default)" : ""}
+                      </span>
+                    </span>
+                  </label>
+                );
+              })()}
 
               {/* Action buttons */}
               <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-200">
