@@ -1819,7 +1819,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                 <ThemedSelect
                   value={bulkCategoryFilter}
                   onChange={(e) => { setBulkCategoryFilter(e.target.value as typeof bulkCategoryFilter); setBulkEmployeeId(""); }}
-                  className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
                 >
                   <option value="all">All Categories</option>
                   <option value="client">Client Guards</option>
@@ -1830,7 +1830,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
               <ThemedSelect
                 value={bulkShiftFilter}
                 onChange={(e) => { setBulkShiftFilter(e.target.value as typeof bulkShiftFilter); setBulkEmployeeId(""); }}
-                className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
               >
                 <option value="all">All Shifts</option>
                 <option value="day">Day</option>
@@ -1842,23 +1842,26 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                 onChange={(v) => { setBulkClientFilter(v); setBulkEmployeeId(""); }}
                 allValue="all"
                 className="w-full"
+                buttonClassName="w-full"
               />
               <ThemedSelect
                 value={bulkLocationFilter}
                 onChange={(e) => { setBulkLocationFilter(e.target.value); setBulkEmployeeId(""); }}
-                className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
               >
                 <option value="all">All Locations</option>
                 {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
               </ThemedSelect>
-              <ThemedSelect
-                value={bulkBranchFilter}
-                onChange={(e) => { setBulkBranchFilter(e.target.value); setBulkEmployeeId(""); }}
-                className="px-3 py-2 border border-slate-200 rounded-md text-sm col-span-2"
-              >
-                <option value="all">All Branches</option>
-                {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </ThemedSelect>
+              <div className="col-span-2">
+                <ThemedSelect
+                  value={bulkBranchFilter}
+                  onChange={(e) => { setBulkBranchFilter(e.target.value); setBulkEmployeeId(""); }}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                >
+                  <option value="all">All Branches</option>
+                  {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </ThemedSelect>
+              </div>
             </div>
           )}
 

@@ -11,6 +11,9 @@ type Props = {
   extraOption?: { value: string; label: string };
   filterFn?: (c: Client) => boolean;
   className?: string;
+  // Width utility for the trigger button. Defaults to the standalone "md:w-56";
+  // pass "w-full" to let it fill a grid/flex cell instead.
+  buttonClassName?: string;
 };
 
 // Combobox: typing filters; click a match to select; clear button to reset.
@@ -23,6 +26,7 @@ export default function ClientFilterSelect({
   extraOption,
   filterFn,
   className = "",
+  buttonClassName = "md:w-56",
 }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -79,7 +83,7 @@ export default function ClientFilterSelect({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="w-full md:w-56 flex items-center gap-2 px-3 py-2 border border-slate-200 rounded-md text-sm bg-white text-left hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-900"
+        className={`w-full ${buttonClassName} flex items-center gap-2 px-3 py-2 border border-slate-200 rounded-md text-sm bg-white text-left hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-900`}
       >
         <Search className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" strokeWidth={1.5} />
         <span className={`flex-1 truncate ${value === allValue ? "text-slate-500" : "text-slate-900"}`}>
