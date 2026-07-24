@@ -1,6 +1,6 @@
 import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Calendar as CalendarIcon, AlertCircle, Loader2, X, CalendarRange, ChevronLeft, ChevronRight, Search, Clock, MoreHorizontal } from "lucide-react";
+import { Calendar as CalendarIcon, AlertCircle, Loader2, X, CalendarRange, ChevronLeft, ChevronRight, Search, Clock, MoreHorizontal, SlidersHorizontal, ChevronDown } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -98,6 +98,13 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   const [categoryFilter, setCategoryFilter] = useState<"all" | "client" | "office_staff" | "reliever">("all");
   const [unmarkedOnly, setUnmarkedOnly] = useState<boolean>(false);
   const [empSearch, setEmpSearch] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const activeFilterCount =
+    (clientFilter !== "all" ? 1 : 0) +
+    (locationFilter !== "all" ? 1 : 0) +
+    (branchFilter !== "all" ? 1 : 0) +
+    (categoryFilter !== "all" ? 1 : 0) +
+    (shiftFilter !== "all" ? 1 : 0);
   const [historyFrom, setHistoryFrom] = useState<string>(daysAgo(13));
   const [historyTo, setHistoryTo] = useState<string>(today());
 
@@ -741,6 +748,44 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     loadHistory();
   };
 
+  // Clear a single employee's mark for the selected date (delete the row).
+  const unmarkStatus = async (employeeId: string) => {
+    const prevStatus = todayRecords[employeeId];
+    if (!prevStatus) return;
+    const prevClient = todayWorkedFor[employeeId] ?? null;
+    setSaving((s) => ({ ...s, [employeeId]: true }));
+    setError(null);
+    // optimistic removal
+    setTodayRecords((m) => {
+      const n = { ...m };
+      delete n[employeeId];
+      return n;
+    });
+    setTodayWorkedFor((m) => {
+      const n = { ...m };
+      delete n[employeeId];
+      return n;
+    });
+    const { error: delErr } = await supabase
+      .from("attendance_records")
+      .delete()
+      .eq("employee_id", employeeId)
+      .eq("attendance_date", date);
+    setSaving((s) => {
+      const n = { ...s };
+      delete n[employeeId];
+      return n;
+    });
+    if (delErr) {
+      setError(delErr.message);
+      // roll back
+      setTodayRecords((m) => ({ ...m, [employeeId]: prevStatus }));
+      setTodayWorkedFor((m) => ({ ...m, [employeeId]: prevClient }));
+      return;
+    }
+    loadHistory();
+  };
+
   // Sprint 3: open the half-day / late / OT editor for a given employee on the
   // currently-selected date. Loads any existing detail values from the
   // attendance_records row.
@@ -1220,127 +1265,124 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
           </div>
         )}
 
-        <div className="bg-white rounded-lg border border-slate-200 mb-6 p-6">
-          <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
-            <div>
-              <label className="block text-sm text-slate-700 mb-2">Date</label>
-              <div className="relative">
-                <CalendarIcon
-                  className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 cursor-pointer"
-                  strokeWidth={1.5}
-                  onClick={() => dateInputRef.current?.showPicker()}
-                />
-                <input
-                  ref={dateInputRef}
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                />
-              </div>
+        <div className="bg-card rounded-xl border border-border mb-6 p-4">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Date — the primary control for attendance */}
+            <div className="relative">
+              <CalendarIcon
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground cursor-pointer"
+                strokeWidth={1.5}
+                onClick={() => dateInputRef.current?.showPicker()}
+              />
+              <input
+                ref={dateInputRef}
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="pl-10 pr-3 py-2 border border-border rounded-md text-sm bg-input-background focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+              />
             </div>
-            <div>
-              <label className="block text-sm text-slate-700 mb-2">Search Employee</label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />
-                <input
-                  type="text"
-                  placeholder="Name or ID…"
-                  value={empSearch}
-                  onChange={(e) => setEmpSearch(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                />
-              </div>
+            {/* Search — flex to fill */}
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" strokeWidth={1.5} />
+              <input
+                type="text"
+                placeholder="Search employee by name or ID…"
+                value={empSearch}
+                onChange={(e) => setEmpSearch(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-border rounded-md text-sm bg-input-background focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
+              />
             </div>
-            <div>
-              <label className="block text-sm text-slate-700 mb-2">Client</label>
+            {/* Unmarked-only quick toggle (kept prominent — it's the "who still needs marking" shortcut) */}
+            <button
+              type="button"
+              onClick={() => setUnmarkedOnly((v) => !v)}
+              title={`Show only employees with no attendance for ${date}`}
+              className={`px-3 py-2 text-sm rounded-md border transition-colors whitespace-nowrap ${
+                unmarkedOnly
+                  ? "border-danger-500 bg-danger-50 text-danger-700 dark:text-danger-500 font-medium"
+                  : "border-border text-muted-foreground hover:bg-accent"
+              }`}
+            >
+              Unmarked only
+            </button>
+            {/* Filters toggle */}
+            <button
+              type="button"
+              onClick={() => setFiltersOpen((v) => !v)}
+              className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-md border border-border text-foreground hover:bg-accent transition-colors"
+            >
+              <SlidersHorizontal className="w-4 h-4" strokeWidth={1.5} />
+              Filters
+              {activeFilterCount > 0 && (
+                <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-semibold rounded-full bg-brand-500 text-[#241a06]">{activeFilterCount}</span>
+              )}
+              <ChevronDown className={`w-4 h-4 transition-transform ${filtersOpen ? "rotate-180" : ""}`} strokeWidth={1.5} />
+            </button>
+          </div>
+          {filtersOpen && (
+            <div className="mt-3 pt-3 border-t border-border flex flex-wrap gap-2">
               <ClientFilterSelect
                 clients={clients}
                 value={clientFilter}
                 onChange={setClientFilter}
                 allValue="all"
               />
-            </div>
-            <div>
-              <label className="block text-sm text-slate-700 mb-2">Location</label>
               <ThemedSelect
                 value={locationFilter}
                 onChange={(e) => setLocationFilter(e.target.value)}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                className="px-3 py-2 border border-border rounded-md text-sm"
               >
                 <option value="all">All Locations</option>
                 {locations.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.name}
-                  </option>
+                  <option key={l.id} value={l.id}>{l.name}</option>
                 ))}
               </ThemedSelect>
-            </div>
-            <div>
-              <label className="block text-sm text-slate-700 mb-2">Branch</label>
               <ThemedSelect
                 value={branchFilter}
                 onChange={(e) => setBranchFilter(e.target.value)}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                className="px-3 py-2 border border-border rounded-md text-sm"
               >
                 <option value="all">All Branches</option>
                 {branches.map((b) => (
                   <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
               </ThemedSelect>
-            </div>
-            {!relieversOnly && (
-              <div>
-                <label className="block text-sm text-slate-700 mb-2">Category</label>
+              {!relieversOnly && (
                 <ThemedSelect
                   value={categoryFilter}
                   onChange={(e) => setCategoryFilter(e.target.value as typeof categoryFilter)}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  className="px-3 py-2 border border-border rounded-md text-sm"
                 >
                   <option value="all">All Categories</option>
                   <option value="client">Client</option>
                   <option value="office_staff">Office Staff</option>
                   <option value="reliever">Reliever</option>
                 </ThemedSelect>
-              </div>
-            )}
-            <div>
-              <label className="block text-sm text-slate-700 mb-2">Shift</label>
+              )}
               <ThemedSelect
                 value={shiftFilter}
                 onChange={(e) => setShiftFilter(e.target.value as "all" | "day" | "night")}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                className="px-3 py-2 border border-border rounded-md text-sm"
               >
                 <option value="all">All Shifts</option>
                 <option value="day">Day</option>
                 <option value="night">Night</option>
               </ThemedSelect>
             </div>
-          </div>
-          <label className="mt-4 inline-flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={unmarkedOnly}
-              onChange={(e) => setUnmarkedOnly(e.target.checked)}
-              className="rounded border-slate-300"
-            />
-            <span>
-              Show only employees with no attendance for{" "}
-              <span className="font-mono text-slate-900">{date}</span>
-            </span>
-          </label>
+          )}
         </div>
 
-        <div className="bg-white rounded-lg border border-slate-200 mb-6">
-          <div className="p-4 md:p-6 border-b border-slate-200 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <div className="bg-card rounded-xl border border-border mb-6">
+          <div className="p-4 md:p-6 border-b border-border flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div className="min-w-0">
-              <h3 className="text-base text-slate-900">Mark Attendance — {date}</h3>
-              <p className="text-xs text-slate-500 mt-1">
+              <h3 className="text-base font-semibold text-foreground">Mark Attendance — {date}</h3>
+              <p className="text-xs text-muted-foreground mt-1">
                 {filteredEmployees.length} employee{filteredEmployees.length === 1 ? "" : "s"} •{" "}
-                <span className="text-success-600">{stats.p} present</span> ·{" "}
-                <span className="text-danger-600">{stats.a} absent</span> ·{" "}
-                <span className="text-warning-600">{stats.l} leave</span> ·{" "}
-                <span className="text-slate-500">{stats.unm} unmarked</span>
+                <span className="text-success-600 dark:text-success-500">{stats.p} present</span> ·{" "}
+                <span className="text-danger-600 dark:text-danger-500">{stats.a} absent</span> ·{" "}
+                <span className="text-warning-600 dark:text-warning-500">{stats.l} leave</span> ·{" "}
+                <span className="text-muted-foreground">{stats.unm} unmarked</span>
               </p>
             </div>
             <div className="flex items-center gap-2 self-stretch md:self-auto">
@@ -1374,18 +1416,18 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-slate-200">
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Employee ID</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Name</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">
+                <tr className="border-b border-border bg-slate-50">
+                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Employee ID</th>
+                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Name</th>
+                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                     {relieversOnly ? "Worked for" : "Client"}
                   </th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Location</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Shift</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Status</th>
+                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Location</th>
+                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Shift</th>
+                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody className="divide-y divide-border">
                 {loading && (
                   <tr>
                     <td colSpan={6} className="px-6 py-10 text-center text-slate-500">
@@ -1461,65 +1503,79 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                         </td>
                         <td className="px-6 py-4">
                           <span
-                            className={`inline-flex items-center px-2 py-0.5 rounded text-xs capitalize ${
+                            className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border capitalize ${
                               employee.shift === "day"
-                                ? "bg-warning-50 text-warning-700"
-                                : "bg-indigo-50 text-indigo-700"
+                                ? "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200"
+                                : "bg-info-50 text-info-700 dark:text-info-500 border-info-200"
                             }`}
                           >
                             {employee.shift}
                           </span>
                         </td>
                         <td className="px-6 py-4">
-                          <div className="flex gap-2 items-center">
-                            {STATUSES.map((status) => (
+                          <div className="flex gap-1 items-center">
+                            <div className="inline-flex rounded-lg border border-border overflow-hidden">
+                              {STATUSES.map((status) => {
+                                const on = current === status;
+                                const onCls =
+                                  status === "Present" ? "bg-success-500 text-[#fff]"
+                                  : status === "Absent" ? "bg-danger-500 text-[#fff]"
+                                  : "bg-warning-500 text-[#241a06]";
+                                return (
+                                  <button
+                                    key={status}
+                                    onClick={() =>
+                                      markStatus(
+                                        employee.id,
+                                        status,
+                                        employee.category === "reliever"
+                                          ? todayWorkedFor[employee.id] ?? null
+                                          : null,
+                                      )
+                                    }
+                                    disabled={
+                                      isSaving ||
+                                      beforeEffective ||
+                                      (employee.category === "reliever" &&
+                                        status === "Present" &&
+                                        !todayWorkedFor[employee.id])
+                                    }
+                                    title={
+                                      beforeEffective
+                                        ? `Assignment starts ${employee.assignment_effective_from}. Attendance can't be marked before this date.`
+                                        : `Mark ${status}`
+                                    }
+                                    className={`px-3 py-1.5 text-xs font-medium transition-colors border-r border-border last:border-r-0 disabled:opacity-50 ${
+                                      on ? onCls : "bg-card text-muted-foreground hover:bg-accent hover:text-foreground"
+                                    }`}
+                                  >
+                                    {status}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            {current && (
                               <button
-                                key={status}
-                                onClick={() =>
-                                  markStatus(
-                                    employee.id,
-                                    status,
-                                    employee.category === "reliever"
-                                      ? todayWorkedFor[employee.id] ?? null
-                                      : null,
-                                  )
-                                }
-                                disabled={
-                                  isSaving ||
-                                  beforeEffective ||
-                                  (employee.category === "reliever" &&
-                                    status === "Present" &&
-                                    !todayWorkedFor[employee.id])
-                                }
-                                title={
-                                  beforeEffective
-                                    ? `Assignment starts ${employee.assignment_effective_from}. Attendance can't be marked before this date.`
-                                    : undefined
-                                }
-                                className={`px-3 py-1.5 rounded text-xs transition-colors ${
-                                  current === status
-                                    ? status === "Present"
-                                      ? "bg-success-100 text-success-700"
-                                      : status === "Absent"
-                                      ? "bg-danger-100 text-danger-700"
-                                      : "bg-warning-100 text-warning-700"
-                                    : "bg-slate-50 text-slate-600 hover:bg-slate-100"
-                                } disabled:opacity-50`}
+                                type="button"
+                                onClick={() => unmarkStatus(employee.id)}
+                                disabled={isSaving}
+                                className="p-1.5 rounded-md text-muted-foreground hover:bg-danger-50 hover:text-danger-600 dark:hover:text-danger-500 transition-colors disabled:opacity-50"
+                                title="Unmark — clear this attendance"
                               >
-                                {status}
+                                <X className="w-4 h-4" strokeWidth={2} />
                               </button>
-                            ))}
+                            )}
                             {current === "Present" && (
                               <button
                                 type="button"
                                 onClick={() => openDetailsEditor(employee)}
-                                className="p-1.5 rounded text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                                className="p-1.5 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
                                 title="Half-day / Late / Overtime"
                               >
                                 <MoreHorizontal className="w-4 h-4" />
                               </button>
                             )}
-                            {isSaving && <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" />}
+                            {isSaving && <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />}
                           </div>
                         </td>
                       </tr>
