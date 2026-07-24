@@ -24,6 +24,7 @@ import Tasks from "./pages/super-admin/Tasks";
 import Performance from "./pages/super-admin/Performance";
 import Clients from "./pages/super-admin/Clients";
 import Contracts from "./pages/super-admin/Contracts";
+import SitesStrength from "./pages/super-admin/SitesStrength";
 import Licences from "./pages/super-admin/Licences";
 import Roster from "./pages/super-admin/Roster";
 import Incidents from "./pages/super-admin/Incidents";
@@ -79,6 +80,7 @@ export const router = createBrowserRouter([
       { path: "users", element: guard(["users.manage"], <UserManagement />) },
       { path: "clients", element: guard(["clients.view", "clients.edit"], <Clients />) },
       { path: "contracts", element: guard(["contracts.view", "contracts.edit"], <Contracts />) },
+      { path: "sites-strength", element: guard(["clients.view", "clients.edit", "contracts.view", "contracts.edit"], <SitesStrength />) },
       { path: "licences", element: guard(["compliance.view", "compliance.edit"], <Licences />) },
       { path: "roster", element: guard(["roster.view", "roster.edit"], <Roster />) },
       { path: "incidents", element: guard(["incidents.view", "incidents.edit"], <Incidents />) },

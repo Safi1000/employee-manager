@@ -34,6 +34,7 @@ import {
   Users2,
   PieChart,
   Briefcase,
+  MapPin,
 } from "lucide-react";
 
 type LinkDef = {
@@ -76,6 +77,7 @@ export default function SuperAdminLayout() {
   const DASHBOARD: LinkDef = { to: "/super-admin", label: "Dashboard", icon: LayoutDashboard };
   const CLIENTS: LinkDef = { to: "/super-admin/clients", label: "Clients", icon: Building2, perms: ["clients.view", "clients.edit"] };
   const CONTRACTS: LinkDef = { to: "/super-admin/contracts", label: "Contracts", icon: FileSignature, perms: ["contracts.view", "contracts.edit"] };
+  const SITES_STRENGTH: LinkDef = { to: "/super-admin/sites-strength", label: "Sites & Strength", icon: MapPin, perms: ["clients.view", "clients.edit", "contracts.view", "contracts.edit"] };
   const LICENCES: LinkDef = { to: "/super-admin/licences", label: "Licences & Renewals", icon: ShieldAlert, perms: ["compliance.view", "compliance.edit"] };
   const INVOICES: LinkDef = { to: "/super-admin/invoices", label: "Invoices", icon: ReceiptText, perms: ["invoices.view", "invoices.edit"] };
   const EMPLOYEES: LinkDef = { to: "/super-admin/employees", label: "Employees", icon: UserCircle, perms: ["employees.view", "employees.edit"] };
@@ -162,6 +164,7 @@ export default function SuperAdminLayout() {
   const contractsClients = buildGroup("Contracts & Clients", "/super-admin/billing", [
     CLIENTS,
     CONTRACTS,
+    SITES_STRENGTH,
     INVOICES,
     CLIENT_REL,
   ]);
