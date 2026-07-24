@@ -1132,37 +1132,38 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
 
         {/* Metrics row OR per-employee calendar */}
         {!viewEmployee ? (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            <div className="bg-white rounded-lg border border-slate-200 border-l-4 border-l-success-500 p-4">
-              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Present</p>
-              <p className="text-2xl text-success-700">{stats.p}</p>
-              <p className="text-[11px] text-slate-400 mt-1">on {date}</p>
+          /* Compact summary bar — clear at a glance, minimal footprint. */
+          <div className="flex flex-wrap items-center gap-2 mb-6">
+            <div className="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-lg border border-border bg-card">
+              <span className="w-2.5 h-2.5 rounded-full bg-success-500 shrink-0" />
+              <span className="text-xs text-muted-foreground">Present</span>
+              <span className="text-base font-semibold tabular-nums text-success-700 dark:text-success-500">{stats.p}</span>
             </div>
-            <div className="bg-white rounded-lg border border-slate-200 border-l-4 border-l-danger-500 p-4">
-              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Absent</p>
-              <p className="text-2xl text-danger-700">{stats.a}</p>
-              <p className="text-[11px] text-slate-400 mt-1">on {date}</p>
+            <div className="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-lg border border-border bg-card">
+              <span className="w-2.5 h-2.5 rounded-full bg-danger-500 shrink-0" />
+              <span className="text-xs text-muted-foreground">Absent</span>
+              <span className="text-base font-semibold tabular-nums text-danger-700 dark:text-danger-500">{stats.a}</span>
             </div>
-            <div className="bg-white rounded-lg border border-slate-200 border-l-4 border-l-warning-500 p-4">
-              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Leave</p>
-              <p className="text-2xl text-warning-700">{stats.l}</p>
-              <p className="text-[11px] text-slate-400 mt-1">on {date}</p>
+            <div className="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-lg border border-border bg-card">
+              <span className="w-2.5 h-2.5 rounded-full bg-warning-500 shrink-0" />
+              <span className="text-xs text-muted-foreground">Leave</span>
+              <span className="text-base font-semibold tabular-nums text-warning-700 dark:text-warning-500">{stats.l}</span>
             </div>
-            {/* §28.2: unmarked is the figure that silently underpays — make it
-                dominant (red) the moment any post is still unmarked for the day. */}
+            {/* §28.2: unmarked silently underpays — keep it dominant (red) and clickable. */}
             <button
               type="button"
               onClick={() => setUnmarkedOnly((v) => !v)}
               title="Show only unmarked"
-              className={`text-left rounded-lg border p-4 transition-colors ${
+              className={`inline-flex items-center gap-2.5 px-3.5 py-2 rounded-lg border transition-colors ${
                 stats.unm > 0
-                  ? "bg-danger-50 border-danger-200 border-l-4 border-l-danger-500 hover:bg-danger-100"
-                  : "bg-white border-slate-200 border-l-4 border-l-success-500"
-              } ${unmarkedOnly ? "ring-2 ring-danger-400" : ""}`}
+                  ? "bg-danger-50 border-danger-200 hover:bg-danger-100"
+                  : "bg-card border-border hover:bg-accent"
+              } ${unmarkedOnly ? "ring-2 ring-danger-500" : ""}`}
             >
-              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Unmarked</p>
-              <p className={`text-2xl ${stats.unm > 0 ? "text-danger-700 font-semibold" : "text-success-700"}`}>{stats.unm}</p>
-              <p className="text-[11px] text-slate-400 mt-1">{filteredEmployees.length} in filter · click to filter</p>
+              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${stats.unm > 0 ? "bg-danger-500" : "bg-success-500"}`} />
+              <span className="text-xs text-muted-foreground">Unmarked</span>
+              <span className={`text-base font-semibold tabular-nums ${stats.unm > 0 ? "text-danger-700 dark:text-danger-500" : "text-success-700 dark:text-success-500"}`}>{stats.unm}</span>
+              <span className="text-[10px] text-muted-foreground border-l border-border pl-2 ml-0.5 hidden sm:inline">click to filter</span>
             </button>
           </div>
         ) : (
@@ -1513,47 +1514,52 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                           </span>
                         </td>
                         <td className="px-6 py-4">
-                          <div className="flex gap-1 items-center">
-                            <div className="inline-flex rounded-lg border border-border overflow-hidden">
-                              {STATUSES.map((status) => {
-                                const on = current === status;
-                                const onCls =
-                                  status === "Present" ? "bg-success-500 text-[#fff]"
-                                  : status === "Absent" ? "bg-danger-500 text-[#fff]"
-                                  : "bg-warning-500 text-[#241a06]";
-                                return (
-                                  <button
-                                    key={status}
-                                    onClick={() =>
-                                      markStatus(
-                                        employee.id,
-                                        status,
-                                        employee.category === "reliever"
-                                          ? todayWorkedFor[employee.id] ?? null
-                                          : null,
-                                      )
-                                    }
-                                    disabled={
-                                      isSaving ||
-                                      beforeEffective ||
-                                      (employee.category === "reliever" &&
-                                        status === "Present" &&
-                                        !todayWorkedFor[employee.id])
-                                    }
-                                    title={
-                                      beforeEffective
-                                        ? `Assignment starts ${employee.assignment_effective_from}. Attendance can't be marked before this date.`
-                                        : `Mark ${status}`
-                                    }
-                                    className={`px-3 py-1.5 text-xs font-medium transition-colors border-r border-border last:border-r-0 disabled:opacity-50 ${
-                                      on ? onCls : "bg-card text-muted-foreground hover:bg-accent hover:text-foreground"
-                                    }`}
-                                  >
-                                    {status}
-                                  </button>
-                                );
-                              })}
-                            </div>
+                          <div className="flex gap-1.5 items-center">
+                            {STATUSES.map((status) => {
+                              const on = current === status;
+                              const dim = !!current && !on; // another status is set — mute the rest
+                              const cls =
+                                status === "Present"
+                                  ? on
+                                    ? "bg-success-500 text-[#fff] border-success-500 shadow-sm"
+                                    : "bg-success-50 text-success-700 dark:text-success-500 border-success-200 hover:bg-success-100 hover:border-success-500"
+                                  : status === "Absent"
+                                  ? on
+                                    ? "bg-danger-500 text-[#fff] border-danger-500 shadow-sm"
+                                    : "bg-danger-50 text-danger-700 dark:text-danger-500 border-danger-200 hover:bg-danger-100 hover:border-danger-500"
+                                  : on
+                                  ? "bg-warning-500 text-[#241a06] border-warning-500 shadow-sm"
+                                  : "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200 hover:bg-warning-100 hover:border-warning-500";
+                              return (
+                                <button
+                                  key={status}
+                                  onClick={() =>
+                                    markStatus(
+                                      employee.id,
+                                      status,
+                                      employee.category === "reliever"
+                                        ? todayWorkedFor[employee.id] ?? null
+                                        : null,
+                                    )
+                                  }
+                                  disabled={
+                                    isSaving ||
+                                    beforeEffective ||
+                                    (employee.category === "reliever" &&
+                                      status === "Present" &&
+                                      !todayWorkedFor[employee.id])
+                                  }
+                                  title={
+                                    beforeEffective
+                                      ? `Assignment starts ${employee.assignment_effective_from}. Attendance can't be marked before this date.`
+                                      : `Mark ${status}`
+                                  }
+                                  className={`px-3.5 py-1.5 text-xs font-semibold rounded-md border transition-all disabled:opacity-50 ${cls} ${dim ? "opacity-55" : ""}`}
+                                >
+                                  {status}
+                                </button>
+                              );
+                            })}
                             {current && (
                               <button
                                 type="button"
