@@ -29,6 +29,17 @@ const STATUS_LABEL: Record<Status, string> = {
 };
 const EXCEPTION_STATUSES: Status[] = ["absent", "rotation_leave", "rest_day", "double_duty", "relief_cover"];
 
+const VALID_STATUS = new Set<string>(["present", "absent", "rotation_leave", "rest_day", "double_duty", "relief_cover", "blocked"]);
+// Legacy attendance rows (pre-Phase-6) store capitalized Present/Absent/Leave and
+// have none of the new-model fields. Normalize any raw / legacy / missing status
+// to a valid new-model Status so the board NEVER crashes on old data. Unknown or
+// missing values degrade to 'present' (a non-exception), never throw.
+function normalizeStatus(raw: unknown): Status {
+  const s = String(raw ?? "").toLowerCase();
+  if (s === "leave") return "rotation_leave";
+  return (VALID_STATUS.has(s) ? s : "present") as Status;
+}
+
 const today = () => new Date().toISOString().slice(0, 10);
 
 type RosterGuard = {
@@ -77,6 +88,10 @@ export default function AttendanceBoard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [drill, setDrill] = useState<ClientShift | null>(null);
+  // Controls added onto the board (alongside the Phase 6 model, not replacing it).
+  const [clientFilter, setClientFilter] = useState<string>("all");
+  const [search, setSearch] = useState("");
+  const [markingAll, setMarkingAll] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -116,7 +131,9 @@ export default function AttendanceBoard() {
     // marks per guard (attendance rows already entered for this date)
     const markByGuard = new Map<string, { status: Status; absent_reason: AbsentReason | null; shift: string }>();
     for (const a of (att ?? []) as any[]) {
-      markByGuard.set(`${a.employee_id}|${a.worked_shift}`, { status: (String(a.status).toLowerCase() as Status), absent_reason: a.absent_reason, shift: a.worked_shift });
+      // Legacy rows may lack worked_shift — key defensively so nothing is dropped.
+      const ws = a.worked_shift ?? a.scheduled_shift ?? "day";
+      markByGuard.set(`${a.employee_id}|${ws}`, { status: normalizeStatus(a.status), absent_reason: a.absent_reason ?? null, shift: ws });
     }
 
     // Build client-shift rows from active deployments, applying the §8.6 window.
@@ -179,22 +196,109 @@ export default function AttendanceBoard() {
     });
   }, [rows]);
 
+  // Distinct clients present on the board, for the filter dropdown.
+  const clientOptions = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of rows) m.set(r.client_id, r.client_name);
+    return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [rows]);
+
+  // Rows shown = client filter, then (within it) name/code search over the roster.
+  const visibleRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return sorted.filter((r) => {
+      if (clientFilter !== "all" && r.client_id !== clientFilter) return false;
+      if (!q) return true;
+      return r.roster.some((g) =>
+        g.full_name.toLowerCase().includes(q) ||
+        (g.guard_code ?? "").toLowerCase().includes(q) ||
+        (g.employee_code ?? "").toLowerCase().includes(q) ||
+        guardDisplayCode(g, r.client_prefix).toLowerCase().includes(q),
+      );
+    });
+  }, [sorted, clientFilter, search]);
+
   const summary = useMemo(() => {
     let confirmed = 0, onGround = 0, exceptions = 0, awaiting = 0;
-    for (const r of rows) {
+    for (const r of visibleRows) {
       if (r.confirmation) confirmed++;
       if (rowStatus(r) === "awaiting") awaiting++;
       exceptions += r.marks.size;
       onGround += r.roster.length - [...r.marks.values()].filter((m) => m.status === "absent").length;
     }
-    return { confirmed, total: rows.length, onGround, exceptions, awaiting };
-  }, [rows]);
+    return { confirmed, total: visibleRows.length, onGround, exceptions, awaiting };
+  }, [visibleRows]);
+
+  // Mark All Present — scoped to the active CLIENT filter (§8.5 window already
+  // applied in load(): the roster only contains guards whose window contains the
+  // date, so out-of-window/archived guards are never force-marked). Writes the
+  // full Phase 6 audit fields (status/source/marked_by/marked_at) on every row.
+  const markAllPresent = async () => {
+    const targetRows = rows.filter((r) => clientFilter === "all" || r.client_id === clientFilter);
+    const guards = targetRows.flatMap((r) =>
+      r.roster.map((g) => ({ guard_id: g.guard_id, scheduled_shift: g.scheduled_shift, client_id: r.client_id })),
+    );
+    if (guards.length === 0) { setError("No guards to mark for this filter/date."); return; }
+    // §8.5: a closed payroll period (or otherwise blocked date) can't be marked.
+    const { data: gate } = await supabase.rpc("attendance_gate", { p_guard: guards[0].guard_id, p_date: date });
+    if ((gate as { mode?: string } | null)?.mode === "blocked") {
+      setError((gate as { reason?: string }).reason ?? "This date is blocked."); return;
+    }
+    const scope = clientFilter === "all" ? "all clients" : (clientOptions.find((c) => c[0] === clientFilter)?.[1] ?? "this client");
+    if (!confirm(`Mark ${guards.length} guard(s) present for ${date} (${scope})? Existing exceptions are left untouched.`)) return;
+    setMarkingAll(true);
+    try {
+      const nowIso = new Date().toISOString();
+      // Presume present, but do NOT overwrite an already-entered exception.
+      const toWrite = targetRows.flatMap((r) =>
+        r.roster
+          .filter((g) => r.marks.get(g.guard_id) == null) // skip guards with an entered exception
+          .map((g) => ({
+            employee_id: g.guard_id,
+            attendance_date: date,
+            status: "present",
+            scheduled_shift: g.scheduled_shift,
+            worked_shift: g.scheduled_shift,
+            entry_type: "normal",
+            source: "manual",
+            worked_for_client_id: r.client_id,
+            marked_by_role: profile?.role ?? "hr",
+            marked_by_user_id: profile?.id ?? null,
+            marked_at: nowIso,
+          })),
+      );
+      if (toWrite.length > 0) {
+        const { error: upErr } = await supabase
+          .from("attendance_records")
+          .upsert(toWrite, { onConflict: "employee_id,attendance_date,worked_shift" });
+        if (upErr) throw upErr;
+      }
+      // Client-scoped bulk mark also records the confirmation (who confirmed it).
+      // Global (all clients) is logged purely via each row's marked_by/marked_at.
+      if (clientFilter !== "all") {
+        const confs = targetRows.map((r) => ({
+          client_id: r.client_id, site_id: r.site_id, shift_code: r.shift_code,
+          attendance_date: date, supervisor_name: profile?.full_name || "Bulk mark-all", source: "manual",
+        }));
+        const { error: cErr } = await supabase
+          .from("attendance_confirmations")
+          .upsert(confs, { onConflict: "site_id,shift_code,attendance_date" });
+        if (cErr) throw cErr;
+      }
+      await load();
+    } catch (e: any) {
+      setError(e.message ?? String(e));
+    } finally {
+      setMarkingAll(false);
+    }
+  };
 
   const exceptionSummary = (r: ClientShift): string => {
     if (r.marks.size === 0) return "—";
     const counts = new Map<Status, number>();
     for (const m of r.marks.values()) counts.set(m.status, (counts.get(m.status) ?? 0) + 1);
-    return [...counts.entries()].map(([s, n]) => `${n} ${STATUS_LABEL[s].toLowerCase()}`).join(", ");
+    // Guard the label lookup — a normalized status is always valid, but never throw.
+    return [...counts.entries()].map(([s, n]) => `${n} ${(STATUS_LABEL[s] ?? String(s)).toLowerCase()}`).join(", ");
   };
 
   const badge = (s: "awaiting" | "reported" | "confirmed") =>
@@ -229,6 +333,31 @@ export default function AttendanceBoard() {
 
         {tab === "board" && (
           <>
+            {/* Filter + search + Mark-All (added alongside the Phase 6 model). */}
+            <div className="bg-white border border-slate-200 rounded-lg p-3 flex flex-col md:flex-row gap-2 md:items-center">
+              <ThemedSelect
+                value={clientFilter}
+                onChange={(e) => setClientFilter(e.target.value)}
+                className="px-3 py-2 border border-slate-200 rounded-md text-sm md:w-56"
+              >
+                <option value="all">All clients</option>
+                {clientOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+              </ThemedSelect>
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder={clientFilter === "all" ? "Search guards by name or ID…" : "Search within this client…"}
+                  className="w-full pl-3 pr-3 py-2 border border-slate-200 rounded-md text-sm"
+                />
+              </div>
+              <Button size="sm" variant="secondary" disabled={markingAll} onClick={markAllPresent}>
+                {markingAll && <Loader2 className="w-4 h-4 animate-spin mr-1" />}
+                Mark all present{clientFilter === "all" ? " (all)" : ""}
+              </Button>
+            </div>
+
             {/* Summary strip */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
@@ -259,8 +388,8 @@ export default function AttendanceBoard() {
                   </thead>
                   <tbody className="divide-y divide-slate-200">
                     {loading && <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-500"><Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…</td></tr>}
-                    {!loading && sorted.length === 0 && <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-500 text-sm">No client-shifts with guards on this date.</td></tr>}
-                    {!loading && sorted.map((r) => {
+                    {!loading && visibleRows.length === 0 && <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-500 text-sm">No client-shifts match the current filter/search.</td></tr>}
+                    {!loading && visibleRows.map((r) => {
                       const st = rowStatus(r);
                       return (
                         <tr key={r.key} className="hover:bg-slate-50 cursor-pointer" onClick={() => setDrill(r)}>
@@ -285,7 +414,7 @@ export default function AttendanceBoard() {
               </div>
             </div>
             <div className="flex gap-2">
-              <ExportBoardButton rows={sorted} date={date} clientNames={clientNames} branding={branding} />
+              <ExportBoardButton rows={visibleRows} date={date} clientNames={clientNames} branding={branding} />
             </div>
           </>
         )}
@@ -326,6 +455,8 @@ function ShiftDrillModal({
   const [saving, setSaving] = useState(false);
   const [gate, setGate] = useState<{ mode: string; reason: string | null } | null>(null);
   const [override, setOverride] = useState("");
+  // View-only filter over the roster list; never touches `marks` (selections persist).
+  const [rosterSearch, setRosterSearch] = useState("");
 
   useEffect(() => {
     // Gate the shift date using any roster guard (window-independent checks:
@@ -427,8 +558,28 @@ function ShiftDrillModal({
         <p className="text-xs text-slate-500">
           {shift.roster.length} on roster — all presumed <strong>present</strong>. Mark only the exceptions, then confirm.
         </p>
+        <input
+          type="text"
+          value={rosterSearch}
+          onChange={(e) => setRosterSearch(e.target.value)}
+          placeholder="Search this roster by name or code (e.g. Riaz or HMC-042)…"
+          className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+        />
         <div className="border border-slate-200 rounded-lg divide-y divide-slate-100">
-          {shift.roster.map((g) => {
+          {shift.roster
+            .filter((g) => {
+              // View-only filter by name / permanent code / display code. Never
+              // affects `marks` — already-set statuses persist through searching.
+              const q = rosterSearch.trim().toLowerCase();
+              if (!q) return true;
+              return (
+                g.full_name.toLowerCase().includes(q) ||
+                (g.guard_code ?? "").toLowerCase().includes(q) ||
+                (g.employee_code ?? "").toLowerCase().includes(q) ||
+                guardDisplayCode(g, shift.client_prefix).toLowerCase().includes(q)
+              );
+            })
+            .map((g) => {
             const mk = marks.get(g.guard_id);
             return (
               <div key={g.guard_id} className="flex items-center gap-3 px-3 py-2">
