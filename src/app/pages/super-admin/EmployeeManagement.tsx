@@ -1,7 +1,10 @@
 import ThemedSelect from "../../components/ThemedSelect";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, Search, Upload, AlertCircle, Loader2, X, Trash2, ChevronDown, ChevronRight as ChevronRightIcon, FileText, SlidersHorizontal } from "lucide-react";
-import { generateEmployeeFormPdf } from "../../lib/employeeFormPdf";
+import jsPDF from "jspdf";
+import { generateEmployeeFormPdf, type FormApprovals } from "../../lib/employeeFormPdf";
+import { generateIdCardPdf } from "../../lib/idCardPdf";
+import { brandingFromCompany, type PdfBranding } from "../../lib/pdfBranding";
 import EmployeeLifecyclePanel from "../../components/EmployeeLifecyclePanel";
 import Header from "../../components/Header";
 import { formatDate } from "../../lib/date";
@@ -50,6 +53,7 @@ import {
   validateFreeText,
 } from "../../lib/validation";
 import { useAuth } from "../../lib/auth";
+import { generateDischargeSheet } from "../../lib/dischargeSheetPdf";
 
 type EmployeeRow = Employee & {
   location_name: string | null;
@@ -69,9 +73,12 @@ const CODE_HISTORY_REASON: Record<EmployeeCodeHistory["reason"], string> = {
 // One "OLD → NEW, reason · date" line. Shared by the inline latest-only view and
 // the full "View All Logs" modal.
 function CodeHistoryRow({ h }: { h: EmployeeCodeHistory }) {
+  // A permanent-code transfer has old_code === new_code (the code doesn't change
+  // on client reassignment anymore) — render just the code, not a "X → X" arrow.
+  const codeChanged = !!h.old_code && h.old_code !== h.new_code;
   return (
     <div className="flex items-center gap-2 flex-wrap text-sm text-slate-700">
-      {h.old_code ? (
+      {codeChanged ? (
         <>
           <span className="font-mono text-slate-500 line-through">{h.old_code}</span>
           <span className="text-slate-400">→</span>
@@ -610,6 +617,14 @@ export default function EmployeeManagement() {
   const [clients, setClients] = useState<Client[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [contractLines, setContractLines] = useState<ContractLine[]>([]);
+  // Phase 4: the ONLY way to move a guard between clients (or shifts) — a dated
+  // posting change (close current row, open new). Never edited in place.
+  const [changeClientTarget, setChangeClientTarget] = useState<EmployeeRow | null>(null);
+  // Phase 7 §9: separation / rehire.
+  const [separationTarget, setSeparationTarget] = useState<EmployeeRow | null>(null);
+  const [rehireTarget, setRehireTarget] = useState<EmployeeRow | null>(null);
+  // Phase 8 §11.3: bulk document generation over the filtered set.
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [addendums, setAddendums] = useState<ContractAddendum[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
@@ -646,6 +661,12 @@ export default function EmployeeManagement() {
   const [selectedDocs, setSelectedDocs] = useState<DocumentWithUrl[]>([]);
   const [codeHistory, setCodeHistory] = useState<EmployeeCodeHistory[]>([]);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
+  // Phase 3: tabbed record + computed completeness tiers + approval workflow.
+  const [viewTab, setViewTab] = useState<"profile" | "compliance" | "history">("profile");
+  const [completeness, setCompleteness] = useState<{
+    tier1: boolean; tier2: boolean; tier3: boolean; tier4: boolean | null; armed: boolean;
+  } | null>(null);
+  const [approvalBusy, setApprovalBusy] = useState(false);
 
   const [form, setForm] = useState<FormState>(emptyForm);
   const [formErrors, setFormErrors] = useState<Record<string, string | null>>({});
@@ -927,6 +948,17 @@ export default function EmployeeManagement() {
     return null;
   };
 
+  // Phase 3: the client-prefixed DISPLAY code shown in the UI. Prefix is derived
+  // LIVE from the guard's current client; falls back to the permanent guard_code
+  // when there's no client or the client has no prefix.
+  const displayCodeFor = (e: Pick<Employee, "client_id" | "display_number" | "guard_code" | "employee_code">): string => {
+    const fallback = e.guard_code ?? e.employee_code;
+    if (e.display_number == null || !e.client_id) return fallback;
+    const prefix = clients.find((c) => c.id === e.client_id)?.employee_id_prefix;
+    if (!prefix) return fallback;
+    return `${prefix}-${String(e.display_number).padStart(3, "0")}`;
+  };
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return employees.filter((e) => {
@@ -934,6 +966,10 @@ export default function EmployeeManagement() {
         q &&
         !e.full_name.toLowerCase().includes(q) &&
         !e.employee_code.toLowerCase().includes(q) &&
+        // legacy client-prefixed code stays searchable so old WhatsApp msgs /
+        // paper files still resolve to the guard.
+        !(e.legacy_code ?? "").toLowerCase().includes(q) &&
+        !displayCodeFor(e).toLowerCase().includes(q) &&
         !(e.phone ?? "").toLowerCase().includes(q)
       )
         return false;
@@ -1200,6 +1236,43 @@ export default function EmployeeManagement() {
     await loadData();
   };
 
+  // Phase 3D: advance/reverse the approval state machine. Reversal needs a reason.
+  const runTransition = async (action: "ops_verify" | "finance_approve" | "reverse") => {
+    if (!selectedEmployee) return;
+    let reason: string | null = null;
+    if (action === "reverse") {
+      reason = window.prompt("Reason for reversing the approval state:");
+      if (!reason || !reason.trim()) return;
+    }
+    setApprovalBusy(true);
+    setError(null);
+    const { data, error: tErr } = await supabase.rpc("transition_record_state", {
+      p_employee_id: selectedEmployee.id,
+      p_action: action,
+      p_reason: reason,
+    });
+    setApprovalBusy(false);
+    if (tErr) { setError(tErr.message); return; }
+    setSelectedEmployee({ ...selectedEmployee, record_state: data as EmployeeRow["record_state"] });
+    await loadData();
+  };
+
+  // Phase 3G: Archive replaces Delete — reason required, logged, never removes rows.
+  const handleArchive = async (emp: EmployeeRow) => {
+    const reason = window.prompt(`Archive ${emp.full_name} (${displayCodeFor(emp)})?\nEnter a reason (required):`);
+    if (!reason || !reason.trim()) return;
+    setError(null);
+    const { error: aErr } = await supabase.rpc("archive_employee", {
+      p_employee_id: emp.id,
+      p_reason: reason.trim(),
+    });
+    if (aErr) { setError(aErr.message); return; }
+    setIsEditModalOpen(false);
+    setIsViewModalOpen(false);
+    setSelectedEmployee(null);
+    await loadData();
+  };
+
   const handleDelete = async (emp: EmployeeRow) => {
     const confirmed = window.confirm(
       `Delete ${emp.full_name} (${emp.employee_code})? This will permanently remove the employee and all their uploaded documents.`
@@ -1263,15 +1336,8 @@ export default function EmployeeManagement() {
       return;
     }
     // Non-field blockers → modal-scoped banner (inside the modal, always visible).
-    if (form.category === "client") {
-      const sel = clients.find((c) => c.id === form.client_id);
-      if (sel && !sel.employee_id_prefix) {
-        setAddModalError(
-          `Set an Employee ID Prefix for ${sel.name} before assigning employees. Edit the client to add one.`,
-        );
-        return;
-      }
-    }
+    // Guard codes are now permanent GGS-NNNNN (assigned at hiring), no longer
+    // derived from the client prefix — so no prefix is required to add a guard.
     const slotErr = validateSlot(form);
     if (slotErr) {
       setAddModalError(slotErr);
@@ -1335,17 +1401,37 @@ export default function EmployeeManagement() {
       if (insErr) throw insErr;
       const newEmp = data as Employee;
       // Overwrite the throwaway EMP-XXXX the insert trigger minted with a
-      // client-prefixed code ({prefix}-NNN), recording the first assignment in
-      // history (old_code null so the temp EMP never shows there).
+      // PERMANENT sequential guard code (GGS-NNNNN), assigned once at hiring and
+      // immutable thereafter. First assignment is recorded in history.
       if (form.category === "client" && form.client_id) {
-        const { data: code, error: codeErr } = await supabase.rpc("assign_employee_code", {
+        const { data: code, error: codeErr } = await supabase.rpc("assign_guard_code", {
           p_employee_id: newEmp.id,
-          p_client_id: form.client_id,
-          p_reason: "assigned",
-          p_old_code: null,
         });
         if (codeErr) throw codeErr;
         if (code) newEmp.employee_code = code as string;
+        // Phase 3: allocate the client-scoped DISPLAY number ({prefix}-NNN). No
+        // history on first assignment — only transitions (transfers) are logged.
+        const { error: dispErr } = await supabase.rpc("assign_display_number", {
+          p_employee_id: newEmp.id,
+        });
+        if (dispErr) throw dispErr;
+        // Phase 4: write the client posting SILENTLY at hiring (the guard↔client
+        // relationship is a dated row, not a field). One row, reason "new hire".
+        const { data: defSite } = await supabase
+          .from("sites")
+          .select("id")
+          .eq("client_id", form.client_id)
+          .eq("is_default", true)
+          .maybeSingle();
+        const { error: postErr } = await supabase.from("deployments").insert({
+          guard_id: newEmp.id,
+          client_id: form.client_id,
+          contract_line_id: form.contract_line_id || null,
+          site_id: defSite?.id ?? null,
+          start_date: form.join_date || today(),
+          reason: "new_hire",
+        });
+        if (postErr) throw postErr;
       }
       await uploadDocs(
         { id: newEmp.id, employee_code: newEmp.employee_code, full_name: newEmp.full_name },
@@ -1399,7 +1485,13 @@ export default function EmployeeManagement() {
     setSelectedEmployee(emp);
     setSelectedDocs([]);
     setCodeHistory([]);
+    setViewTab("profile");
+    setCompleteness(null);
     setIsViewModalOpen(true);
+    // Phase 3E: computed completeness tiers (never manually flagged).
+    supabase
+      .rpc("guard_completeness", { p_employee_id: emp.id })
+      .then(({ data }) => data && setCompleteness(data as typeof completeness));
     supabase
       .from("employee_code_history")
       .select("*")
@@ -1429,16 +1521,41 @@ export default function EmployeeManagement() {
   };
 
   // §11 branded 2-page form PDF: pull the repeating sections, then render.
+  // Phase 8 §11: build the four §4 approval blocks from the approval events,
+  // resolving the approver's name + role. office_clerk stays a physical signature.
+  const buildApprovals = async (employeeId: string): Promise<FormApprovals> => {
+    const { data } = await supabase
+      .from("employee_approval_events")
+      .select("action, changed_at, approver:approved_by(full_name, role)")
+      .eq("employee_id", employeeId)
+      .order("changed_at");
+    const out: FormApprovals = {};
+    for (const ev of ((data ?? []) as any[])) {
+      const name = ev.approver?.full_name ?? "";
+      const role = ev.approver?.role ?? "";
+      const date = String(ev.changed_at).slice(0, 10);
+      if (ev.action === "ops_verify") {
+        if (role === "ops_director") out.director_ops = { name, date };
+        else out.manager_ops = { name, date };
+      } else if (ev.action === "finance_approve") {
+        out.director_finance = { name, date };
+      }
+    }
+    return out;
+  };
+
   const downloadFormPdf = async (emp: EmployeeRow) => {
-    const [c, r, j, d] = await Promise.all([
+    const [c, r, j, d, approvals] = await Promise.all([
       supabase.from("employee_children").select("*").eq("employee_id", emp.id).order("created_at"),
       supabase.from("employee_references").select("*").eq("employee_id", emp.id),
       supabase.from("employee_previous_jobs").select("*").eq("employee_id", emp.id).order("seq"),
       supabase.from("employee_document_checklist").select("*").eq("employee_id", emp.id).order("doc_type"),
+      buildApprovals(emp.id),
     ]);
     generateEmployeeFormPdf({
       employee: emp,
-      companyName: company?.name ?? "Company",
+      branding: brandingFromCompany(company),
+      approvals,
       children: (c.data ?? []) as EmployeeChild[],
       references: (r.data ?? []) as EmployeeReference[],
       jobs: (j.data ?? []) as EmployeePreviousJob[],
@@ -1562,20 +1679,17 @@ export default function EmployeeManagement() {
         return;
       }
     }
-    // Reassigning to a client with no prefix set can't produce an ID — block it
-    // with the same message the create flow uses.
-    if (editForm.category === "client" && editForm.client_id) {
-      const sel = clients.find((c) => c.id === editForm.client_id);
-      if (sel && !sel.employee_id_prefix) {
-        setError(
-          `Set an Employee ID Prefix for ${sel.name} before assigning employees. ` +
-            `Edit the client to add one.`,
-        );
-        return;
-      }
-    }
+    // Guard codes are permanent and no longer derived from the client prefix, so
+    // moving a guard to another client neither requires a prefix nor changes the
+    // code — see the transfer-logging block after the update.
     setEditing(true);
     setError(null);
+    // Phase 3: if the guard's posting (client) changes, clear the old per-client
+    // display_number in the SAME update so it can't collide with an existing
+    // guard's number at the new client (the unique index excludes NULL); the new
+    // number is then allocated by assign_display_number below.
+    const nextClientId = editForm.category === "client" ? (editForm.client_id || null) : null;
+    const postingChanged = nextClientId !== selectedEmployee.client_id;
     try {
       const { error: upErr } = await supabase
         .from("employees")
@@ -1583,6 +1697,7 @@ export default function EmployeeManagement() {
           full_name: editForm.full_name.trim(),
           phone: editForm.phone.trim() || null,
           location_id: editForm.location_id || null,
+          ...(postingChanged ? { display_number: null } : {}),
           client_id: editForm.category === "client" ? (editForm.client_id || null) : null,
           contract_id: editForm.category === "client" ? (editForm.contract_id || null) : null,
           contract_line_id: editForm.category === "client" ? (editForm.contract_line_id || null) : null,
@@ -1633,21 +1748,45 @@ export default function EmployeeManagement() {
         })
         .eq("id", selectedEmployee.id);
       if (upErr) throw upErr;
-      // Moving to a different client regenerates the Employee ID from the new
-      // client's prefix, preserving the old code in history. Same-client edits and
-      // moves to a non-client category leave the code untouched.
+      // Guard codes (GGS-) are IMMUTABLE and untouched by a transfer. Phase 3:
+      // moving to a different client allocates a BRAND-NEW client-scoped DISPLAY
+      // number under the new client and records the DISPLAY transition
+      // (HMC-024 → EMR-053) in the service log, so past references still resolve.
       const reassigned =
         editForm.category === "client" &&
         !!editForm.client_id &&
         editForm.client_id !== selectedEmployee.client_id;
       if (reassigned) {
-        const { error: codeErr } = await supabase.rpc("assign_employee_code", {
-          p_employee_id: selectedEmployee.id,
-          p_client_id: editForm.client_id,
-          p_reason: "reassigned",
-          p_old_code: selectedEmployee.employee_code,
+        // Old display code, computed from the guard's PRIOR client + number.
+        const oldDisplay = displayCodeFor(selectedEmployee);
+        // Phase 4: a client move is a POSTING change — close the current dated
+        // row and open a new one (never edited in place). change_client keeps
+        // employees.client_id (the mirror) in step via its sync trigger.
+        // (Interim reason; the dedicated "Change client" modal offers the full
+        // reason picker — new hire / relief cover / return to pool / shift change.)
+        const { error: moveErr } = await supabase.rpc("change_client", {
+          p_guard_id: selectedEmployee.id,
+          p_new_client_id: editForm.client_id,
+          p_contract_line_id: editForm.contract_line_id || null,
+          p_reason: "relief_cover",
         });
-        if (codeErr) throw codeErr;
+        if (moveErr) throw moveErr;
+        // Allocate the new per-client number under the now-current client.
+        const { data: newDisp, error: dispErr } = await supabase.rpc("assign_display_number", {
+          p_employee_id: selectedEmployee.id,
+        });
+        if (dispErr) throw dispErr;
+        const permanentCode = selectedEmployee.guard_code ?? selectedEmployee.employee_code;
+        const newDisplay = (newDisp as string | null) ?? permanentCode;
+        const { error: histErr } = await supabase.from("employee_code_history").insert({
+          company_id: selectedEmployee.company_id,
+          employee_id: selectedEmployee.id,
+          old_code: oldDisplay,
+          new_code: newDisplay,
+          client_id: editForm.client_id,
+          reason: "reassigned",
+        });
+        if (histErr) throw histErr;
       }
       await uploadDocs(
         {
@@ -1677,6 +1816,11 @@ export default function EmployeeManagement() {
         actions={
           <div className="flex items-center gap-2">
             <ExportButton onExport={handleExport} label="Export" />
+            {/* Phase 8 §11.3: bulk-generate documents for the current filtered set. */}
+            <Button variant="secondary" size="md" disabled={filtered.length === 0} onClick={() => setBulkOpen(true)}>
+              <FileText className="w-4 h-4 mr-2" strokeWidth={1.5} />
+              Generate documents ({filtered.length})
+            </Button>
             <Button
               variant="primary"
               size="md"
@@ -1881,7 +2025,8 @@ export default function EmployeeManagement() {
                       title={incomplete ? "Incomplete profile — physical document copies not on file" : "Complete profile"}
                     >
                       <td className={`px-6 py-3.5 text-sm font-mono border-l-2 ${incomplete ? "border-l-danger-500" : "border-l-transparent"}`}>
-                        <span className={incomplete ? "text-danger-600 dark:text-danger-500" : "text-muted-foreground"}>{employee.employee_code}</span>
+                        <span className={incomplete ? "text-danger-600 dark:text-danger-500" : "text-foreground"}>{displayCodeFor(employee)}</span>
+                        <span className="block text-[11px] text-muted-foreground">{employee.guard_code ?? employee.employee_code}</span>
                       </td>
                       <td className="px-6 py-3.5 text-sm text-foreground">
                         <div className="flex items-center gap-2">
@@ -2394,12 +2539,91 @@ export default function EmployeeManagement() {
                 Download Form PDF
               </Button>
             </div>
+
+            {/* Phase 3E/3D: computed completeness tiers + approval workflow,
+                always visible above the tabs. */}
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-2">
+                {([
+                  ["Created", completeness?.tier1, false],
+                  ["Deployable", completeness?.tier2, false],
+                  ["Payable", completeness?.tier3, false],
+                  ["Armed post", completeness?.tier4 ?? false, !completeness?.armed],
+                ] as const).map(([label, ok, na]) => (
+                  <span
+                    key={label}
+                    className={`px-2.5 py-1 rounded-full text-xs border font-medium ${
+                      na
+                        ? "bg-slate-50 text-slate-400 border-slate-200"
+                        : ok
+                          ? "bg-success-50 text-success-700 border-success-200"
+                          : "bg-slate-50 text-slate-500 border-slate-200"
+                    }`}
+                  >
+                    {na ? "–" : ok ? "✓" : "○"} {label}
+                  </span>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-slate-500">Approval</span>
+                <span className="px-2 py-0.5 rounded text-xs bg-brand-50 text-brand-700 border border-brand-200 capitalize">
+                  {selectedEmployee.record_state.replace("_", " ")}
+                </span>
+                {selectedEmployee.record_state === "draft" && (
+                  <Button size="sm" variant="secondary" disabled={approvalBusy} onClick={() => runTransition("ops_verify")}>Ops verify</Button>
+                )}
+                {selectedEmployee.record_state === "ops_verified" && (
+                  <Button size="sm" variant="secondary" disabled={approvalBusy} onClick={() => runTransition("finance_approve")}>Finance approve</Button>
+                )}
+                {selectedEmployee.record_state !== "draft" && (
+                  <Button size="sm" variant="ghost" disabled={approvalBusy} onClick={() => runTransition("reverse")}>Reverse</Button>
+                )}
+                {/* Phase 7 §9: separation / rehire on the record. */}
+                {["active", "on_leave"].includes(selectedEmployee.lifecycle_state) && (
+                  <Button size="sm" variant="secondary" onClick={() => setSeparationTarget(selectedEmployee)}>Record separation</Button>
+                )}
+                {["left", "fired", "absconded"].includes(selectedEmployee.lifecycle_state) && (
+                  <Button size="sm" variant="secondary"
+                    disabled={selectedEmployee.eligible_for_rehire === false}
+                    title={selectedEmployee.eligible_for_rehire === false ? "Not eligible for rehire" : ""}
+                    onClick={() => setRehireTarget(selectedEmployee)}>Rehire</Button>
+                )}
+                <div className="flex-1" />
+                <button
+                  type="button"
+                  onClick={() => handleArchive(selectedEmployee)}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-sm text-danger-700 hover:bg-danger-50 border border-danger-200"
+                >
+                  <Trash2 className="w-4 h-4" strokeWidth={1.5} /> Archive
+                </button>
+              </div>
+              <div className="flex gap-1 border-b border-slate-200">
+                {([["profile", "Profile"], ["compliance", "Compliance"], ["history", "History"]] as const).map(([k, l]) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => setViewTab(k)}
+                    className={`px-3 py-2 text-sm border-b-2 -mb-px ${
+                      viewTab === k ? "border-brand-600 text-brand-700 font-medium" : "border-transparent text-slate-500 hover:text-slate-700"
+                    }`}
+                  >
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {viewTab === "profile" && (
             <div>
               <h4 className="text-sm text-slate-900 mb-4">Basic Information</h4>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <p className="text-slate-500 mb-1">Employee ID</p>
-                  <p className="text-slate-900 font-mono">{selectedEmployee.employee_code}</p>
+                  <p className="text-slate-500 mb-1">Display Code</p>
+                  <p className="text-slate-900 font-mono">{displayCodeFor(selectedEmployee)}</p>
+                  <p className="text-xs text-slate-400 font-mono mt-0.5">
+                    Guard code {selectedEmployee.guard_code ?? selectedEmployee.employee_code}
+                    {selectedEmployee.legacy_code && <> · was {selectedEmployee.legacy_code}</>}
+                  </p>
                 </div>
                 <div>
                   <p className="text-slate-500 mb-1">Name</p>
@@ -2409,10 +2633,7 @@ export default function EmployeeManagement() {
                   <p className="text-slate-500 mb-1">Phone</p>
                   <p className="text-slate-900">{selectedEmployee.phone ?? "—"}</p>
                 </div>
-                <div>
-                  <p className="text-slate-500 mb-1">Location</p>
-                  <p className="text-slate-900">{selectedEmployee.location_name ?? "—"}</p>
-                </div>
+                {/* Phase 3H: Location deprecated — hidden from UI (column retained). */}
                 <div>
                   <p className="text-slate-500 mb-1">Branch</p>
                   <p className="text-slate-900">{selectedEmployee.branch_name ?? "—"}</p>
@@ -2430,11 +2651,19 @@ export default function EmployeeManagement() {
                       ? selectedEmployee.client_name ?? "—"
                       : "—"}
                   </p>
+                  {(selectedEmployee.category ?? "client") === "client" && (
+                    <button
+                      type="button"
+                      className="text-xs text-brand-700 hover:underline mt-1 disabled:text-slate-300"
+                      disabled={selectedEmployee.record_state === "draft"}
+                      title={selectedEmployee.record_state === "draft" ? "Ops-verify the guard before changing client" : ""}
+                      onClick={() => setChangeClientTarget(selectedEmployee)}
+                    >
+                      Change client
+                    </button>
+                  )}
                 </div>
-                <div>
-                  <p className="text-slate-500 mb-1">Department</p>
-                  <p className="text-slate-900">{selectedEmployee.department ?? "—"}</p>
-                </div>
+                {/* Phase 3H: Department deprecated — hidden from UI (column retained). */}
                 <div>
                   <p className="text-slate-500 mb-1">Shift</p>
                   <p className="text-slate-900 capitalize">{selectedEmployee.shift}</p>
@@ -2447,14 +2676,8 @@ export default function EmployeeManagement() {
                       : "—"}
                   </p>
                 </div>
-                <div>
-                  <p className="text-slate-500 mb-1">Per Day Salary</p>
-                  <p className="text-slate-900">
-                    {selectedEmployee.per_day_salary != null
-                      ? `PKR ${selectedEmployee.per_day_salary.toLocaleString()}`
-                      : "—"}
-                  </p>
-                </div>
+                {/* Phase 3H: stored Per Day Salary deprecated — hidden from UI; the
+                    per-day rate is computed at runtime (rate ÷ days_in_month). */}
                 <div>
                   <p className="text-slate-500 mb-1">Allowance</p>
                   <p className="text-slate-900">
@@ -2494,8 +2717,9 @@ export default function EmployeeManagement() {
                 </div>
               </div>
             </div>
+            )}
 
-            {codeHistory.length > 0 && (
+            {viewTab === "profile" && codeHistory.length > 0 && (
               <div>
                 <h4 className="text-sm text-slate-900 mb-2">Employee ID History</h4>
                 {/* Only the most recent change is shown inline; older entries live
@@ -2513,6 +2737,7 @@ export default function EmployeeManagement() {
               </div>
             )}
 
+            {viewTab === "compliance" && (
             <div className="pt-4 border-t border-slate-200">
               <h4 className="text-sm text-slate-900 mb-4">Documents</h4>
               {selectedDocs.length === 0 ? (
@@ -2543,6 +2768,21 @@ export default function EmployeeManagement() {
                 </div>
               )}
             </div>
+            )}
+
+            {viewTab === "history" && (
+              <div className="space-y-3">
+                {/* §8.8: month calendar is a correction-only Timesheet, reached
+                    from the record here — not from the daily attendance flow. */}
+                <a
+                  href="/super-admin/attendance/timesheet"
+                  className="inline-flex items-center gap-1 text-sm text-brand-700 hover:underline"
+                >
+                  Open attendance timesheet (corrections) →
+                </a>
+                <ServiceHistoryTab employeeId={selectedEmployee.id} />
+              </div>
+            )}
           </div>
         )}
       </Modal>
@@ -2561,6 +2801,54 @@ export default function EmployeeManagement() {
           ))}
         </ul>
       </Modal>
+
+      {changeClientTarget && (
+        <ChangeClientModal
+          guard={changeClientTarget}
+          clients={clients}
+          contractsForClient={contractsForClient}
+          linesForContract={linesForContract}
+          displayCode={displayCodeFor(changeClientTarget)}
+          onClose={() => setChangeClientTarget(null)}
+          onDone={async () => {
+            setChangeClientTarget(null);
+            await loadData();
+          }}
+          onError={setError}
+        />
+      )}
+
+      {separationTarget && (
+        <SeparationModal
+          guard={separationTarget}
+          displayCode={displayCodeFor(separationTarget)}
+          branding={brandingFromCompany(company)}
+          onClose={() => setSeparationTarget(null)}
+          onDone={async () => { setSeparationTarget(null); await loadData(); }}
+          onError={setError}
+        />
+      )}
+
+      {rehireTarget && (
+        <RehireModal
+          guard={rehireTarget}
+          clients={clients}
+          onClose={() => setRehireTarget(null)}
+          onDone={async () => { setRehireTarget(null); await loadData(); }}
+          onError={setError}
+        />
+      )}
+
+      {bulkOpen && (
+        <BulkGenerateModal
+          employees={filtered}
+          clients={clients}
+          branding={brandingFromCompany(company)}
+          displayFor={displayCodeFor}
+          buildApprovals={buildApprovals}
+          onClose={() => setBulkOpen(false)}
+        />
+      )}
 
       <Modal
         isOpen={isEditModalOpen}
@@ -2717,15 +3005,16 @@ export default function EmployeeManagement() {
                     )}
                   </div>
                 </div>
+                {/* Phase 4: posting fields (category / client / shift) are READ-ONLY
+                    here — a guard is moved only via "Change client" on the profile,
+                    which writes a dated posting row (never an in-place edit). */}
                 <div>
                   <label className="block text-sm text-slate-700 mb-1">Category</label>
                   <ThemedSelect
                     value={editForm.category}
-                    onChange={(e) => {
-                      const cat = e.target.value as EmployeeCategory;
-                      setEditForm({ ...editForm, category: cat, client_id: cat === "client" ? editForm.client_id : "" });
-                    }}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    disabled
+                    onChange={() => {}}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50 text-slate-500 cursor-not-allowed"
                   >
                     <option value="client">Client</option>
                     <option value="office_staff">Office Staff</option>
@@ -2737,8 +3026,9 @@ export default function EmployeeManagement() {
                     <label className="block text-sm text-slate-700 mb-1">Client</label>
                     <ThemedSelect
                       value={editForm.client_id}
-                      onChange={(e) => onPickClient(editForm, setEditForm, e.target.value)}
-                      className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                      disabled
+                      onChange={() => {}}
+                      className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50 text-slate-500 cursor-not-allowed"
                     >
                       <option value="">Select client</option>
                       {clientsForBranch(editForm.branch_id).map((c) => (
@@ -2747,10 +3037,13 @@ export default function EmployeeManagement() {
                         </option>
                       ))}
                     </ThemedSelect>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Use “Change client” on the profile to move this guard.
+                    </p>
                   </div>
                 )}
                 {editForm.category === "client" && editForm.client_id && (
-                  <div className="space-y-3">
+                  <div className="space-y-3 opacity-60 pointer-events-none">
                     {renderAssignmentFields(editForm, setEditForm, selectedEmployee?.id)}
                   </div>
                 )}
@@ -2767,10 +3060,9 @@ export default function EmployeeManagement() {
                   <label className="block text-sm text-slate-700 mb-1">Shift</label>
                   <ThemedSelect
                     value={editForm.shift}
-                    onChange={(e) =>
-                      setEditForm({ ...editForm, shift: e.target.value as "day" | "night" | "evening" })
-                    }
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    disabled
+                    onChange={() => {}}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50 text-slate-500 cursor-not-allowed"
                   >
                     <option value="day">Day</option>
                     <option value="night">Night</option>
@@ -2979,13 +3271,15 @@ export default function EmployeeManagement() {
               <Button variant="secondary" size="md" onClick={() => setIsEditModalOpen(false)}>
                 Cancel
               </Button>
+              {/* Phase 3G: Delete is gone — Archive requires a reason, is logged,
+                  and never removes rows. */}
               <button
                 type="button"
-                onClick={() => handleDelete(selectedEmployee)}
+                onClick={() => handleArchive(selectedEmployee)}
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm text-danger-700 hover:bg-danger-50 border border-danger-200"
               >
                 <Trash2 className="w-4 h-4" strokeWidth={1.5} />
-                Delete
+                Archive
               </button>
             </div>
           </form>
@@ -3398,6 +3692,450 @@ const REFERENCE_SLOTS: { type: ReferenceType; label: string }[] = [
   { type: "uc_gazetted", label: "Reference 1 — UC / Gazetted Officer" },
   { type: "blood_relation", label: "Reference 2 — Blood Relation" },
 ];
+
+// Phase 3F: History tab — the unified service-log timeline (lifecycle, approvals,
+// postings, warnings, incidents, training) from the employee_service_history view.
+function ServiceHistoryTab({ employeeId }: { employeeId: string }) {
+  const [rows, setRows] = useState<
+    { kind: string; title: string; detail: string | null; event_at: string }[]
+  >([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    supabase
+      .from("employee_service_history")
+      .select("*")
+      .eq("employee_id", employeeId)
+      .order("event_at", { ascending: false })
+      .then(({ data }) => {
+        if (!alive) return;
+        setRows((data ?? []) as typeof rows);
+        setLoading(false);
+      });
+    return () => { alive = false; };
+  }, [employeeId]);
+  if (loading) return <p className="text-sm text-slate-500">Loading…</p>;
+  if (rows.length === 0) return <p className="text-sm text-slate-500">No history yet.</p>;
+  return (
+    <div className="space-y-2">
+      {rows.map((r, i) => (
+        <div key={i} className="flex gap-3 text-sm border-b border-slate-100 pb-2 last:border-0">
+          <span className="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600 capitalize h-fit whitespace-nowrap">{r.kind}</span>
+          <div className="min-w-0 flex-1">
+            <p className="text-slate-900">{r.title}</p>
+            {r.detail && <p className="text-xs text-slate-500">{r.detail}</p>}
+            <p className="text-[11px] text-slate-400">{new Date(r.event_at).toLocaleDateString()}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const todayIso = () => new Date().toISOString().slice(0, 10);
+
+// Phase 8 §11.3: bulk document generation. Generates one combined PDF for the
+// whole filtered set (append-mode per guard), with progress and per-guard
+// partial-failure handling — a failure is reported, the batch continues.
+function BulkGenerateModal({
+  employees, clients, branding, displayFor, buildApprovals, onClose,
+}: {
+  employees: EmployeeRow[];
+  clients: Client[];
+  branding: PdfBranding;
+  displayFor: (e: EmployeeRow) => string;
+  buildApprovals: (id: string) => Promise<FormApprovals>;
+  onClose: () => void;
+}) {
+  const [docType, setDocType] = useState<"data_form" | "id_card">("data_form");
+  const [running, setRunning] = useState(false);
+  const [done, setDone] = useState(0);
+  const [failures, setFailures] = useState<string[]>([]);
+  const [finished, setFinished] = useState(false);
+
+  const run = async () => {
+    setRunning(true); setDone(0); setFailures([]); setFinished(false);
+    const combined = new jsPDF({ unit: "mm", format: "a4" });
+    let started = false;
+    const fails: string[] = [];
+    for (const emp of employees) {
+      try {
+        if (docType === "data_form") {
+          const [c, r, j, d, approvals] = await Promise.all([
+            supabase.from("employee_children").select("*").eq("employee_id", emp.id).order("created_at"),
+            supabase.from("employee_references").select("*").eq("employee_id", emp.id),
+            supabase.from("employee_previous_jobs").select("*").eq("employee_id", emp.id).order("seq"),
+            supabase.from("employee_document_checklist").select("*").eq("employee_id", emp.id).order("doc_type"),
+            buildApprovals(emp.id),
+          ]);
+          if (started) combined.addPage();
+          generateEmployeeFormPdf({
+            employee: emp, branding, approvals,
+            children: (c.data ?? []) as EmployeeChild[],
+            references: (r.data ?? []) as EmployeeReference[],
+            jobs: (j.data ?? []) as EmployeePreviousJob[],
+            checklist: (d.data ?? []) as EmployeeDocumentChecklistItem[],
+            doc: combined,
+          });
+        } else {
+          if (started) combined.addPage();
+          generateIdCardPdf({
+            branding,
+            full_name: emp.full_name,
+            guard_code: emp.guard_code ?? emp.employee_code,
+            display_code: displayFor(emp),
+            company_id_card_number: emp.company_id_card_number,
+            designation: (emp as { designation?: string | null }).designation,
+            client_name: emp.client_name,
+            cnic_number: emp.cnic_number,
+            photo_url: (emp as { photo_url?: string | null }).photo_url,
+            doc: combined,
+          });
+        }
+        started = true;
+      } catch (e: any) {
+        fails.push(`${emp.full_name}: ${e.message ?? String(e)}`);
+      }
+      setDone((n) => n + 1);
+    }
+    if (started) combined.save(`${docType === "data_form" ? "data-forms" : "id-cards"}-${employees.length}.pdf`);
+    setFailures(fails); setFinished(true); setRunning(false);
+  };
+
+  void clients;
+  return (
+    <Modal isOpen onClose={onClose} size="sm" title={`Generate documents — ${employees.length} guard(s)`}
+      footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" size="sm" onClick={onClose}>{finished ? "Close" : "Cancel"}</Button>
+          <Button size="sm" onClick={run} disabled={running || employees.length === 0}>
+            {running && <Loader2 className="w-4 h-4 animate-spin mr-1" />} Generate
+          </Button>
+        </div>
+      }
+    >
+      <div className="space-y-3">
+        <label className="block"><span className="text-sm text-slate-600">Document</span>
+          <ThemedSelect value={docType} onChange={(e) => setDocType(e.target.value as "data_form" | "id_card")} disabled={running}
+            className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-md text-sm">
+            <option value="data_form">Employee Data Form (2-page)</option>
+            <option value="id_card">Company ID Card</option>
+          </ThemedSelect>
+        </label>
+        <p className="text-xs text-slate-500">
+          One combined PDF for all {employees.length} guards in the current filter. Failures are reported without stopping the batch.
+        </p>
+        {(running || finished) && (
+          <div>
+            <div className="h-2 bg-slate-100 rounded overflow-hidden">
+              <div className="h-2 bg-brand-500 transition-all" style={{ width: `${employees.length ? (done / employees.length) * 100 : 0}%` }} />
+            </div>
+            <p className="text-xs text-slate-500 mt-1">{done} / {employees.length} processed{finished ? " — done" : "…"}</p>
+          </div>
+        )}
+        {finished && failures.length > 0 && (
+          <div className="text-xs text-danger-700 bg-danger-50 border border-danger-200 rounded p-2 max-h-32 overflow-auto">
+            <p className="font-medium mb-1">{failures.length} failed:</p>
+            {failures.map((f, i) => <p key={i}>{f}</p>)}
+          </div>
+        )}
+        {finished && failures.length === 0 && (
+          <p className="text-xs text-success-700">All {employees.length} generated successfully.</p>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+// Phase 7 §9: Record separation — sets the two dates + reason, closes the active
+// posting (RPC), moves lifecycle, generates the discharge sheet PDF and files it
+// into guard_documents. NOTHING is deleted; the guard leaves rosters via the window.
+const SEPARATION_REASONS: { value: string; label: string }[] = [
+  { value: "resignation", label: "Resigned" },
+  { value: "termination_misconduct", label: "Terminated — misconduct" },
+  { value: "termination_performance", label: "Terminated — performance" },
+  { value: "absconded", label: "Absconded" },
+  { value: "retirement", label: "Retired" },
+  { value: "deceased", label: "Deceased" },
+  { value: "contract_end", label: "Contract ended" },
+  { value: "medical_unfit", label: "Medically unfit" },
+];
+
+function SeparationModal({
+  guard, displayCode, branding, onClose, onDone, onError,
+}: {
+  guard: EmployeeRow; displayCode: string; branding: PdfBranding;
+  onClose: () => void; onDone: () => Promise<void>; onError: (m: string) => void;
+}) {
+  const [reason, setReason] = useState("resignation");
+  const [lastWorkingDay, setLastWorkingDay] = useState(todayIso());
+  const [terminationDate, setTerminationDate] = useState(todayIso());
+  const [rehireEligible, setRehireEligible] = useState(true);
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const inputCls = "mt-1 w-full px-3 py-2 border border-slate-200 rounded-md text-sm";
+
+  const save = async () => {
+    if (!note.trim()) { onError("A separation reason/note is required."); return; }
+    setSaving(true);
+    try {
+      const { error: sepErr } = await supabase.rpc("record_separation", {
+        p_guard: guard.id,
+        p_reason: reason,
+        p_last_working_day: lastWorkingDay,
+        p_termination_date: terminationDate || null,
+        p_rehire_eligible: rehireEligible,
+        p_note: note.trim(),
+      });
+      if (sepErr) throw sepErr;
+      // §9.4: generate the discharge sheet and file it into guard_documents.
+      generateDischargeSheet({
+        branding,
+        full_name: guard.full_name,
+        guard_code: guard.guard_code ?? guard.employee_code,
+        display_code: displayCode,
+        cnic_number: (guard as any).cnic_number,
+        join_date: guard.join_date,
+        last_working_day: lastWorkingDay,
+        termination_date: terminationDate,
+        separation_reason: SEPARATION_REASONS.find((r) => r.value === reason)?.label ?? reason,
+        rehire_eligible: rehireEligible,
+        note: note.trim(),
+      });
+      await supabase.from("guard_documents").upsert(
+        {
+          employee_id: guard.id, doc_type: "discharge_sheet", status: "on_file",
+          issue_date: todayIso(), notes: "Generated on separation",
+        },
+        { onConflict: "employee_id,doc_type" },
+      );
+      await onDone();
+    } catch (e: any) { onError(e.message ?? String(e)); setSaving(false); }
+  };
+
+  return (
+    <Modal isOpen onClose={onClose} size="md" title={`Record separation — ${guard.full_name} (${displayCode})`}
+      footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
+          <Button variant="danger" size="sm" onClick={save} disabled={saving}>
+            {saving && <Loader2 className="w-4 h-4 animate-spin mr-1" />} Record separation
+          </Button>
+        </div>
+      }
+    >
+      <div className="space-y-3">
+        <p className="text-xs text-slate-500">Closes the active posting and removes the guard from rosters after the last working day. Nothing is deleted — full history is retained.</p>
+        <label className="block"><span className="text-sm text-slate-600">Reason</span>
+          <ThemedSelect value={reason} onChange={(e) => setReason(e.target.value)} className={inputCls}>
+            {SEPARATION_REASONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+          </ThemedSelect>
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block"><span className="text-sm text-slate-600">Last working day *</span>
+            <input type="date" value={lastWorkingDay} onChange={(e) => setLastWorkingDay(e.target.value)} className={inputCls} />
+          </label>
+          <label className="block"><span className="text-sm text-slate-600">Termination date (HR)</span>
+            <input type="date" value={terminationDate} onChange={(e) => setTerminationDate(e.target.value)} className={inputCls} />
+          </label>
+        </div>
+        <label className="flex items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" checked={rehireEligible} onChange={(e) => setRehireEligible(e.target.checked)} /> Eligible for rehire
+        </label>
+        <label className="block"><span className="text-sm text-slate-600">Reason / note *</span>
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} className={inputCls} />
+        </label>
+      </div>
+    </Modal>
+  );
+}
+
+// Phase 7 §9.6: Rehire — relinks to the SAME record (same permanent code + history).
+function RehireModal({
+  guard, clients, onClose, onDone, onError,
+}: {
+  guard: EmployeeRow; clients: Client[];
+  onClose: () => void; onDone: () => Promise<void>; onError: (m: string) => void;
+}) {
+  const [joinDate, setJoinDate] = useState(todayIso());
+  const [clientId, setClientId] = useState(guard.client_id ?? "");
+  const [saving, setSaving] = useState(false);
+  const inputCls = "mt-1 w-full px-3 py-2 border border-slate-200 rounded-md text-sm";
+
+  const save = async () => {
+    if (!clientId) { onError("Select the client to rehire into."); return; }
+    setSaving(true);
+    try {
+      const { error: rErr } = await supabase.rpc("rehire_guard", {
+        p_guard: guard.id, p_join_date: joinDate, p_client_id: clientId,
+      });
+      if (rErr) throw rErr;
+      // New client-prefixed display code for the new stint (permanent code kept).
+      await supabase.rpc("assign_display_number", { p_employee_id: guard.id });
+      await onDone();
+    } catch (e: any) { onError(e.message ?? String(e)); setSaving(false); }
+  };
+
+  return (
+    <Modal isOpen onClose={onClose} size="sm" title={`Rehire — ${guard.full_name}`}
+      footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
+          <Button size="sm" onClick={save} disabled={saving}>
+            {saving && <Loader2 className="w-4 h-4 animate-spin mr-1" />} Rehire
+          </Button>
+        </div>
+      }
+    >
+      <div className="space-y-3">
+        <p className="text-xs text-slate-500">
+          Same person, same permanent code ({guard.guard_code ?? guard.employee_code}) and full history. Opens a new posting and reopens the employment window.
+        </p>
+        <label className="block"><span className="text-sm text-slate-600">Rehire (joining) date</span>
+          <input type="date" value={joinDate} onChange={(e) => setJoinDate(e.target.value)} className={inputCls} />
+        </label>
+        <label className="block"><span className="text-sm text-slate-600">Client</span>
+          <ThemedSelect value={clientId} onChange={(e) => setClientId(e.target.value)} className={inputCls}>
+            <option value="">— Select —</option>
+            {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </ThemedSelect>
+        </label>
+      </div>
+    </Modal>
+  );
+}
+
+// Phase 4: dedicated "Change client" action — the ONLY way to move a guard.
+// Closes the current posting and opens a new dated one (never edits in place),
+// wired to Phase-2 display-code renumbering. Same-client shift change keeps the
+// number. The word "deployment" never appears here.
+function ChangeClientModal({
+  guard,
+  clients,
+  contractsForClient,
+  linesForContract,
+  displayCode,
+  onClose,
+  onDone,
+  onError,
+}: {
+  guard: EmployeeRow;
+  clients: Client[];
+  contractsForClient: (clientId: string) => Contract[];
+  linesForContract: (contractId: string) => ContractLine[];
+  displayCode: string;
+  onClose: () => void;
+  onDone: () => Promise<void>;
+  onError: (m: string) => void;
+}) {
+  const [clientId, setClientId] = useState(guard.client_id ?? "");
+  const [contractLineId, setContractLineId] = useState("");
+  const [reason, setReason] = useState<
+    "relief_cover" | "return_to_pool" | "separation" | "shift_change"
+  >("relief_cover");
+  const [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().slice(0, 10));
+  const [saving, setSaving] = useState(false);
+
+  const clientChanged = clientId !== (guard.client_id ?? "");
+  const lines = clientId
+    ? contractsForClient(clientId).flatMap((c) => linesForContract(c.id))
+    : [];
+
+  const save = async () => {
+    if (!clientId) {
+      onError("Select a client.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const { error: moveErr } = await supabase.rpc("change_client", {
+        p_guard_id: guard.id,
+        p_new_client_id: clientId,
+        p_contract_line_id: contractLineId || null,
+        p_reason: reason,
+        p_effective_date: effectiveDate || null,
+      });
+      if (moveErr) throw moveErr;
+      // Only a real client change renumbers the display code + logs the transition.
+      if (clientChanged) {
+        const { data: newDisp, error: dispErr } = await supabase.rpc("assign_display_number", {
+          p_employee_id: guard.id,
+        });
+        if (dispErr) throw dispErr;
+        const permanent = guard.guard_code ?? guard.employee_code;
+        const { error: histErr } = await supabase.from("employee_code_history").insert({
+          company_id: guard.company_id,
+          employee_id: guard.id,
+          old_code: displayCode,
+          new_code: (newDisp as string | null) ?? permanent,
+          client_id: clientId,
+          reason: "reassigned",
+        });
+        if (histErr) throw histErr;
+      }
+      await onDone();
+    } catch (e: any) {
+      onError(e.message ?? String(e));
+      setSaving(false);
+    }
+  };
+
+  const inputCls = "mt-1 w-full px-3 py-2 border border-slate-200 rounded-md text-sm";
+  return (
+    <Modal
+      isOpen
+      onClose={onClose}
+      title="Change client"
+      size="sm"
+      footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
+          <Button size="sm" onClick={save} disabled={saving}>
+            {saving && <Loader2 className="w-4 h-4 animate-spin mr-1" />} Save
+          </Button>
+        </div>
+      }
+    >
+      <div className="space-y-3">
+        <p className="text-xs text-slate-500">
+          Moving {guard.full_name} ({displayCode}). This closes the current client record and opens a
+          new dated one.{clientChanged && " A new client number will be issued."}
+        </p>
+        <label className="block">
+          <span className="text-sm text-slate-600">Client</span>
+          <ThemedSelect
+            value={clientId}
+            onChange={(e) => { setClientId(e.target.value); setContractLineId(""); }}
+            className={inputCls}
+          >
+            <option value="">— Select —</option>
+            {clients.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
+          </ThemedSelect>
+        </label>
+        <label className="block">
+          <span className="text-sm text-slate-600">Contract line (optional)</span>
+          <ThemedSelect value={contractLineId} onChange={(e) => setContractLineId(e.target.value)} className={inputCls}>
+            <option value="">— None —</option>
+            {lines.map((l) => (<option key={l.id} value={l.id}>{l.label ?? l.category}</option>))}
+          </ThemedSelect>
+        </label>
+        <label className="block">
+          <span className="text-sm text-slate-600">Reason</span>
+          <ThemedSelect value={reason} onChange={(e) => setReason(e.target.value as typeof reason)} className={inputCls}>
+            <option value="relief_cover">Relief cover</option>
+            <option value="shift_change">Shift change (same client)</option>
+            <option value="return_to_pool">Return to pool</option>
+            <option value="separation">Separation</option>
+          </ThemedSelect>
+        </label>
+        <label className="block">
+          <span className="text-sm text-slate-600">Effective date</span>
+          <input type="date" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} className={inputCls} />
+        </label>
+      </div>
+    </Modal>
+  );
+}
 
 function EmployeeChildTables({ employeeId }: { employeeId: string }) {
   const [children, setChildren] = useState<EmployeeChild[]>([]);

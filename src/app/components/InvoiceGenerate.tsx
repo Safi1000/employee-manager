@@ -118,6 +118,26 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
     [clients, group],
   );
 
+  // Phase 9 §10.4: Variable clients bill from VERIFIED attendance. Pre-fetch the
+  // attendance-driven billable quantity (avg guards on ground) per client for the
+  // period; buildDraft (sync) then uses it in place of the flat committed count.
+  const [attQty, setAttQty] = useState<Map<string, number>>(new Map());
+  useEffect(() => {
+    if (group !== "VARIABLE") { setAttQty(new Map()); return; }
+    let alive = true;
+    (async () => {
+      const { start, end } = monthBounds(period);
+      const entries = await Promise.all(
+        groupClients.map(async (c) => {
+          const { data } = await supabase.rpc("attendance_billable_quantity", { p_client: c.id, p_start: start, p_end: end });
+          return [c.id, Number(data) || 0] as [string, number];
+        }),
+      );
+      if (alive) setAttQty(new Map(entries));
+    })();
+    return () => { alive = false; };
+  }, [group, period, groupClients]);
+
   // Ref number: {CompanyPrefix}-{YY}-{ClientPrefix}-{MM}, e.g. GGS-26-HMT-06.
   // CompanyPrefix from Invoice Structure settings (falls back to company-name
   // initials); ClientPrefix reuses the client's Employee-ID prefix.
@@ -174,7 +194,12 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
       const draftLines: DraftLine[] = [];
       for (const l of conLines) {
         const single = conLines.filter((x) => x.category === l.category).length === 1;
-        const qty = single && eff.get(l.category) != null ? eff.get(l.category)! : l.committed_count;
+        // §10.4: Variable clients — the guard headcount line's quantity comes from
+        // verified attendance (avg guards on ground), not the flat committed count.
+        const attributed = group === "VARIABLE" && l.category === "GUARD" ? attQty.get(client.id) : undefined;
+        const qty = attributed != null && attributed > 0
+          ? attributed
+          : single && eff.get(l.category) != null ? eff.get(l.category)! : l.committed_count;
         if (qty <= 0 && l.unit_rate <= 0) continue;
         draftLines.push({
           category: l.category,
@@ -212,7 +237,7 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
         status: "Pending",
       };
     },
-    [period, lines, addendums, invoices, suggestNumber, contractPreviousBalance],
+    [period, lines, addendums, invoices, suggestNumber, contractPreviousBalance, group, attQty],
   );
 
   // Rebuild drafts on any filter/data change. A contract that already has an

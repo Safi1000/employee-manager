@@ -22,6 +22,9 @@ export const ROLE_HOMES: Record<UserRole, string> = {
   super_admin: "/super-admin",
   hr: "/super-admin",
   accounting: "/super-admin",
+  ops_manager: "/super-admin",
+  ops_director: "/super-admin",
+  finance_director: "/super-admin",
 };
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -255,7 +258,7 @@ async function unwrapFnError(error: unknown): Promise<string> {
 export async function callCreateUser(input: {
   email: string;
   password: string;
-  role?: "super_admin" | "hr" | "accounting";
+  role?: "super_admin" | "hr" | "accounting" | "ops_manager" | "ops_director" | "finance_director";
   title?: string | null;
   company_id: string;
   branch_id?: string | null;

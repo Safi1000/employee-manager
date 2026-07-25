@@ -18,6 +18,9 @@ const ROLE_LABEL: Record<UserRole, string> = {
   super_admin: "Super Admin",
   hr: "HR",
   accounting: "Accounting",
+  ops_manager: "Manager Ops",
+  ops_director: "Director Ops",
+  finance_director: "Director Finance",
 };
 
 const displayLabel = (u: Profile) => u.title?.trim() || ROLE_LABEL[u.role];

@@ -13,6 +13,7 @@ import {
   type EmployeeDocument,
   type Location,
 } from "../../lib/supabase";
+import { guardDisplayCode } from "../../lib/guardCode";
 import { useAuth } from "../../lib/auth";
 
 type EmployeeRow = Employee & {
@@ -42,6 +43,8 @@ export default function Documents() {
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const empDisplay = (emp: { client_id?: string | null; display_number?: number | null; guard_code?: string | null; employee_code?: string | null }) =>
+    guardDisplayCode(emp, clients.find((c) => c.id === emp.client_id)?.employee_id_prefix ?? null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -114,6 +117,7 @@ export default function Documents() {
         q &&
         !e.full_name.toLowerCase().includes(q) &&
         !e.employee_code.toLowerCase().includes(q) &&
+        !empDisplay(e).toLowerCase().includes(q) &&
         !(e.phone ?? "").toLowerCase().includes(q)
       )
         return false;
@@ -412,7 +416,7 @@ export default function Documents() {
                   filtered.map((emp) => (
                     <tr key={emp.id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-6 py-4 text-sm text-slate-600 font-mono">
-                        {emp.employee_code}
+                        {empDisplay(emp)}
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-900">{emp.full_name}</td>
                       <td className="px-6 py-4 text-sm text-slate-600">{emp.phone ?? "—"}</td>
@@ -474,7 +478,7 @@ export default function Documents() {
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
                 <p className="text-slate-500 mb-1">Employee ID</p>
-                <p className="text-slate-900 font-mono">{viewing.employee_code}</p>
+                <p className="text-slate-900 font-mono">{empDisplay(viewing)}</p>
               </div>
               <div>
                 <p className="text-slate-500 mb-1">Name</p>
@@ -608,7 +612,7 @@ export default function Documents() {
           <form className="space-y-4" onSubmit={handleEditSubmit}>
             <div className="p-3 bg-slate-50 border border-slate-200 rounded-md text-sm">
               <p className="text-slate-900">{editing.full_name}</p>
-              <p className="text-slate-500 text-xs mt-0.5 font-mono">{editing.employee_code}</p>
+              <p className="text-slate-500 text-xs mt-0.5 font-mono">{empDisplay(editing)}</p>
             </div>
 
             <p className="text-xs text-slate-500">

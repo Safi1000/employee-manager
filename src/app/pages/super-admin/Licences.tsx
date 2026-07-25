@@ -12,6 +12,7 @@ import {
   type Employee,
   type ImportantDate,
 } from "../../lib/supabase";
+import { guardDisplayCode } from "../../lib/guardCode";
 
 type RowKind =
   | "weapon_licence"
@@ -70,6 +71,8 @@ export default function Licences() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const empDisplay = (emp: { client_id?: string | null; display_number?: number | null; guard_code?: string | null; employee_code?: string | null }) =>
+    guardDisplayCode(emp, clients.find((c) => c.id === emp.client_id)?.employee_id_prefix ?? null);
   const [importantDates, setImportantDates] = useState<ImportantDate[]>([]);
   const [kindFilter, setKindFilter] = useState<"all" | RowKind>("all");
   const [bandFilter, setBandFilter] = useState<"all" | "expired" | "30" | "90" | "future">("all");
@@ -83,7 +86,7 @@ export default function Licences() {
       supabase
         .from("employees")
         .select(
-          "id, employee_code, full_name, weapon_licence_expiry, guard_service_licence_expiry, medical_fitness_expiry, probation_end_date, status",
+          "id, employee_code, guard_code, display_number, client_id, full_name, weapon_licence_expiry, guard_service_licence_expiry, medical_fitness_expiry, probation_end_date, status",
         ),
       supabase.from("contracts").select("*"),
       supabase.from("clients").select("id, name, client_code"),
@@ -113,7 +116,7 @@ export default function Licences() {
           id: `weapon-${e.id}`,
           kind: "weapon_licence",
           title: e.full_name,
-          subtitle: `${e.employee_code} · Weapon licence`,
+          subtitle: `${empDisplay(e)} · Weapon licence`,
           expiry_date: e.weapon_licence_expiry,
           days_remaining: daysBetween(e.weapon_licence_expiry),
           href: KIND_HREF.weapon_licence,
@@ -124,7 +127,7 @@ export default function Licences() {
           id: `guard-${e.id}`,
           kind: "guard_service_licence",
           title: e.full_name,
-          subtitle: `${e.employee_code} · Guard service licence`,
+          subtitle: `${empDisplay(e)} · Guard service licence`,
           expiry_date: e.guard_service_licence_expiry,
           days_remaining: daysBetween(e.guard_service_licence_expiry),
           href: KIND_HREF.guard_service_licence,
@@ -135,7 +138,7 @@ export default function Licences() {
           id: `medical-${e.id}`,
           kind: "medical_fitness",
           title: e.full_name,
-          subtitle: `${e.employee_code} · Medical fitness`,
+          subtitle: `${empDisplay(e)} · Medical fitness`,
           expiry_date: e.medical_fitness_expiry,
           days_remaining: daysBetween(e.medical_fitness_expiry),
           href: KIND_HREF.medical_fitness,
@@ -146,7 +149,7 @@ export default function Licences() {
           id: `probation-${e.id}`,
           kind: "probation_end",
           title: e.full_name,
-          subtitle: `${e.employee_code} · Probation ends`,
+          subtitle: `${empDisplay(e)} · Probation ends`,
           expiry_date: e.probation_end_date,
           days_remaining: daysBetween(e.probation_end_date),
           href: KIND_HREF.probation_end,

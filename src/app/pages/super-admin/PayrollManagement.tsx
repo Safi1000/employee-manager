@@ -23,6 +23,7 @@ import {
   type Contract,
 } from "../../lib/supabase";
 import { useRegion, withRegion } from "../../lib/region";
+import { guardDisplayCode } from "../../lib/guardCode";
 
 type EmployeeRow = Employee & { location_name: string | null; client_name: string | null };
 
@@ -104,6 +105,10 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  // Client-prefixed display code for user-facing ID displays (permanent GGS code
+  // is kept in immutable accounting/journal descriptions + payslip filenames).
+  const empDisplay = (emp: { client_id?: string | null; display_number?: number | null; guard_code?: string | null; employee_code?: string | null }) =>
+    guardDisplayCode(emp, clients.find((c) => c.id === emp.client_id)?.employee_id_prefix ?? null);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [banks, setBanks] = useState<BankAccount[]>([]);
   const [cheques, setCheques] = useState<Cheque[]>([]);
@@ -119,6 +124,10 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
   // Per-reliever per-client present-day counts for the active period.
   // Only loaded in relieversOnly mode (cheap, small dataset).
   const [relieverPerClient, setRelieverPerClient] = useState<Map<string, Map<string | "unattributed", number>>>(new Map());
+  const [attPayroll, setAttPayroll] = useState<Map<string, { worked_shifts: number; earned: number; leave_days: number; absent_days: number; rate_effective: number }>>(new Map());
+  // Phase 9 §10.2: guards who worked but are below finance_approved — excluded
+  // from payroll lines, surfaced as a warning.
+  const [belowFinanceCount, setBelowFinanceCount] = useState(0);
   const [attendanceAgg, setAttendanceAgg] = useState<Map<string, { present: number; absent: number; leave: number }>>(
     new Map()
   );
@@ -192,7 +201,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     // Server-side aggregation RPCs — raw SELECT was hitting PostgREST's
     // ~1000-row response cap once a company crossed ~30 employees with full
     // month coverage, silently dropping attendance for most people.
-    const [attRes, payRes, advRes, attHistRes] = await Promise.all([
+    const [attRes, payRes, advRes, attHistRes, apRes] = await Promise.all([
       supabase.rpc("attendance_period_counts", { p_start: start, p_end: end }),
       supabase.from("payslips").select("*").eq("period_month", period),
       supabase
@@ -204,14 +213,31 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
         p_window_start: carryWindowStartIso,
         p_until: start,
       }),
+      // Phase 9 §10: earnings from verified attendance × salary-history rate per date.
+      supabase.rpc("attendance_payroll", { p_start: start, p_end: end }),
     ]);
+    const apMap = new Map<string, { worked_shifts: number; earned: number; leave_days: number; absent_days: number; rate_effective: number }>();
+    for (const r of ((apRes.data ?? []) as any[])) {
+      apMap.set(r.employee_id, {
+        worked_shifts: Number(r.worked_shifts) || 0,
+        earned: Number(r.earned) || 0,
+        leave_days: Number(r.leave_days) || 0,
+        absent_days: Number(r.absent_days) || 0,
+        rate_effective: Number(r.rate_effective) || 0,
+      });
+    }
+    setAttPayroll(apMap);
     const agg = new Map<string, { present: number; absent: number; leave: number }>();
     (attRes.data ?? []).forEach((a: any) => {
       const cur = agg.get(a.employee_id) ?? { present: 0, absent: 0, leave: 0 };
       const cnt = Number(a.cnt) || 0;
-      if (a.status === "Present") cur.present += cnt;
-      else if (a.status === "Absent") cur.absent += cnt;
-      else if (a.status === "Leave") cur.leave += cnt;
+      // Phase 6: normalize legacy (Present/Absent/Leave) + new spec status set.
+      // blocked NEVER counts as absence or shortfall (§8.3).
+      const s = String(a.status).toLowerCase();
+      if (s === "present" || s === "double_duty" || s === "relief_cover") cur.present += cnt;
+      else if (s === "absent") cur.absent += cnt;
+      else if (s === "leave" || s === "rotation_leave" || s === "rest_day") cur.leave += cnt;
+      // "blocked" (and anything else) is ignored.
       agg.set(a.employee_id, cur);
     });
     setAttendanceAgg(agg);
@@ -225,7 +251,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
         .select("employee_id, worked_for_client_id")
         .gte("attendance_date", start)
         .lte("attendance_date", end)
-        .eq("status", "Present");
+        .in("status", ["Present", "present", "double_duty", "relief_cover"]);
       const per = new Map<string, Map<string | "unattributed", number>>();
       for (const r of ((relRows ?? []) as { employee_id: string; worked_for_client_id: string | null }[])) {
         const key: string | "unattributed" = r.worked_for_client_id ?? "unattributed";
@@ -274,9 +300,12 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       // Region scopes the payroll roster (each row = an employee). Bank/treasury/
       // cheque reads below stay company-wide — the cash pool isn't region-split.
       withRegion(
+        // Phase 3D gate: no payroll line before Finance-approved. Only
+        // finance_approved / active records enter the payroll roster.
         supabase
           .from("employees")
           .select("*, location:location_id(name), client:client_id(name)")
+          .in("record_state", ["finance_approved", "active"])
           .order("employee_code"),
         regionId,
       ),
@@ -297,6 +326,14 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
         client_name: e.client?.name ?? null,
       }))
     );
+    // §10.2 warning: count Active guards who worked but are still below
+    // finance_approved (draft / ops_verified) — excluded from payroll lines.
+    const { count: belowCount } = await supabase
+      .from("employees")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "Active")
+      .in("record_state", ["draft", "ops_verified"]);
+    setBelowFinanceCount(belowCount ?? 0);
     setLocations(locRes.data ?? []);
     setClients(cliRes.data ?? []);
     setContracts((conRes.data ?? []) as Contract[]);
@@ -463,7 +500,13 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     const daysThisPeriod = daysInMonth(selectedPeriod);
     return employees.map((emp) => {
       const existing = payslipsMap.get(emp.id);
-      const att = attendanceAgg.get(emp.id) ?? { present: 0, absent: 0, leave: 0 };
+      // Phase 9 §10: prefer the attendance-payroll RPC (worked shifts incl. double
+      // duty / relief cover, blocked excluded, partial months natural); fall back
+      // to the legacy aggregate only when the RPC has no row for this guard.
+      const ap = attPayroll.get(emp.id);
+      const att = ap
+        ? { present: ap.worked_shifts, absent: ap.absent_days, leave: ap.leave_days }
+        : (attendanceAgg.get(emp.id) ?? { present: 0, absent: 0, leave: 0 });
       const baseSal = Number(existing?.base_salary ?? emp.base_salary ?? 0);
       const computedAdvance = advancesByEmployee.get(emp.id) ?? 0;
       const baseAllowed = allowedLeavesByEmployee.get(emp.id) ?? 0;
@@ -521,11 +564,17 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       merged.extra_leave_absent = extraLeaveAbsent;
       merged.effective_absent_days = rawAbsent + extraLeaveAbsent;
 
-      const perDay = daysThisPeriod > 0 && merged.base_salary > 0
-        ? merged.base_salary / daysThisPeriod
-        : 0;
+      // §10.1/§10.3: rate effective per attendance date drives earnings; per-day
+      // rate = rate ÷ days_in_month is computed at RUNTIME, never stored.
+      const rateEff = ap && ap.rate_effective > 0 ? ap.rate_effective : merged.base_salary;
+      const perDay = daysThisPeriod > 0 && rateEff > 0 ? rateEff / daysThisPeriod : 0;
       merged.per_day_salary = perDay > 0 ? Math.round(perDay) : null;
-      const earned = Math.round(perDay * merged.effective_present_days);
+      // Worked earnings come from verified attendance × per-date rate (double duty /
+      // relief cover already produce extra shifts in ap.earned). Paid leaves (up to
+      // the allowance) are paid at the effective per-day rate.
+      const earnedWorked = ap ? ap.earned : perDay * rawPresent;
+      const paidLeavePay = perDay * countableLeaves;
+      const earned = Math.round(earnedWorked + paidLeavePay);
       merged.final_salary = Math.max(0, Math.round(earned + merged.bonus - merged.deductions));
       // Income tax: 1% of (final_salary - 50000) when > 50000.
       merged.income_tax = merged.final_salary > 50000
@@ -542,7 +591,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
         ) + Math.round(merged.allowance);
       return merged;
     });
-  }, [employees, payslipsMap, attendanceAgg, advancesByEmployee, allowedLeavesByEmployee, eobiByEmployee, carriedAllowance, selectedPeriod, rowEdits]);
+  }, [employees, payslipsMap, attendanceAgg, attPayroll, advancesByEmployee, allowedLeavesByEmployee, eobiByEmployee, carriedAllowance, selectedPeriod, rowEdits]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -556,6 +605,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
         q &&
         !e.full_name.toLowerCase().includes(q) &&
         !e.employee_code.toLowerCase().includes(q) &&
+        !empDisplay(e).toLowerCase().includes(q) &&
         !(e.phone ?? "").toLowerCase().includes(q)
       )
         return false;
@@ -1099,7 +1149,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     doc.setTextColor(90);
     doc.text(`Period: ${formatPeriod(row.period_month)}`, 40, y);
     y += 16;
-    doc.text(`Employee: ${row.employee.full_name} (${row.employee.employee_code})`, 40, y);
+    doc.text(`Employee: ${row.employee.full_name} (${empDisplay(row.employee)})`, 40, y);
     y += 16;
     if (row.employee.phone) {
       doc.text(`Phone: ${row.employee.phone}`, 40, y);
@@ -1265,6 +1315,16 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
             <button onClick={() => setError(null)}>
               <X className="w-4 h-4" />
             </button>
+          </div>
+        )}
+
+        {!relieversOnly && belowFinanceCount > 0 && (
+          <div className="mb-4 flex items-start gap-2 p-3 bg-warning-50 text-warning-800 border border-warning-200 rounded-md text-sm">
+            <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
+            <div className="flex-1">
+              {belowFinanceCount} active guard{belowFinanceCount === 1 ? " has" : "s have"} attendance but are below
+              <strong> Finance-approved</strong> — excluded from payroll until their record is approved (§10.2).
+            </div>
           </div>
         )}
 
@@ -1497,7 +1557,8 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                                 </span>
                               </div>
                               <div className="text-xs text-slate-500 font-mono">
-                                {e.employee_code}
+                                {empDisplay(e)}
+                                <span className="block text-[11px] text-slate-400">{e.guard_code ?? e.employee_code}</span>
                               </div>
                             </td>
                             <td className="px-4 py-3 text-sm text-slate-700">
@@ -1635,7 +1696,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                   <div className="pb-2 border-b border-border">
                     <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Employee</p>
                     <p className="text-foreground font-medium">{selectedRow.employee.full_name}</p>
-                    <p className="text-xs text-muted-foreground font-mono">{selectedRow.employee.employee_code}</p>
+                    <p className="text-xs text-muted-foreground font-mono">{empDisplay(selectedRow.employee)} · {selectedRow.employee.guard_code ?? selectedRow.employee.employee_code}</p>
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-center">
@@ -1950,7 +2011,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
               </div>
               <div>
                 <p className="text-slate-500 mb-1">Employee ID</p>
-                <p className="text-slate-900 font-mono">{payslipData.employee.employee_code}</p>
+                <p className="text-slate-900 font-mono">{empDisplay(payslipData.employee)}</p>
               </div>
               {payslipData.employee.phone && (
                 <div>
@@ -2217,7 +2278,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
             <p className="text-sm text-slate-600">
               Disbursing payroll for{" "}
               <span className="text-slate-900">{rowDisburseTarget.employee.full_name}</span>{" "}
-              ({rowDisburseTarget.employee.employee_code}) · PKR {rowDisburseTarget.net_salary.toLocaleString()}
+              ({empDisplay(rowDisburseTarget.employee)}) · PKR {rowDisburseTarget.net_salary.toLocaleString()}
             </p>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Disbursement Date *</label>

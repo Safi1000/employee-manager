@@ -20,10 +20,14 @@ import {
 } from "../../lib/supabase";
 import { useRegion, withRegion } from "../../lib/region";
 import { hasPermission, useAuth } from "../../lib/auth";
+import { guardDisplayCode } from "../../lib/guardCode";
 
 type EmployeeLite = {
   id: string;
   employee_code: string;
+  // Phase 2/3: client-prefixed display code (primary) + permanent GGS code.
+  display_code: string;
+  permanent_code: string;
   full_name: string;
   location_id: string | null;
   location_name: string | null;
@@ -50,6 +54,7 @@ type HistoryRow = {
     employee_id: string;
     full_name: string;
     employee_code: string;
+    display_code: string;
     status: AttendanceStatus;
   }[];
 };
@@ -173,6 +178,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         (e) =>
           e.full_name.toLowerCase().includes(q) ||
           e.employee_code.toLowerCase().includes(q) ||
+          e.display_code.toLowerCase().includes(q) ||
           (e.client_name?.toLowerCase().includes(q) ?? false),
       );
     return pool.slice(0, 100);
@@ -278,7 +284,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     let pool = employees.filter((e) => e.category === "client" || e.category === "reliever");
     if (overrideShiftFilter !== "all") pool = pool.filter((e) => e.shift === overrideShiftFilter);
     const q = overrideSearch.trim().toLowerCase();
-    if (q) pool = pool.filter((e) => e.full_name.toLowerCase().includes(q) || e.employee_code.toLowerCase().includes(q));
+    if (q) pool = pool.filter((e) => e.full_name.toLowerCase().includes(q) || e.employee_code.toLowerCase().includes(q) || e.display_code.toLowerCase().includes(q));
     return pool;
   }, [employees, overrideShiftFilter, overrideSearch]);
 
@@ -528,7 +534,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         supabase
           .from("employees")
           .select(
-            "id, employee_code, full_name, location_id, client_id, contract_id, branch_id, shift, category, assignment_effective_from, location:location_id(name), client:client_id(name)"
+            "id, employee_code, guard_code, display_number, full_name, location_id, client_id, contract_id, branch_id, shift, category, assignment_effective_from, location:location_id(name), client:client_id(name, employee_id_prefix)"
           )
           .order("full_name"),
         regionId,
@@ -556,6 +562,8 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       (empRes.data ?? []).map((e: any) => ({
         id: e.id,
         employee_code: e.employee_code,
+        display_code: guardDisplayCode(e, e.client?.employee_id_prefix),
+        permanent_code: e.guard_code ?? e.employee_code,
         full_name: e.full_name,
         location_id: e.location_id,
         location_name: e.location?.name ?? null,
@@ -642,6 +650,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         employee_id: emp.id,
         full_name: emp.full_name,
         employee_code: emp.employee_code,
+        display_code: emp.display_code,
         status: r.status,
       });
       // unused groupKey, keep logic simple
@@ -692,7 +701,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       if (shiftFilter !== "all" && e.shift !== shiftFilter) return false;
       if (categoryFilter !== "all" && e.category !== categoryFilter) return false;
       if (unmarkedOnly && todayRecords[e.id]) return false;
-      if (q && !e.full_name.toLowerCase().includes(q) && !e.employee_code.toLowerCase().includes(q)) return false;
+      if (q && !e.full_name.toLowerCase().includes(q) && !e.employee_code.toLowerCase().includes(q) && !e.display_code.toLowerCase().includes(q)) return false;
       return true;
     });
   }, [employees, clientFilter, locationFilter, branchFilter, shiftFilter, categoryFilter, unmarkedOnly, todayRecords, empSearch, relieversOnly]);
@@ -1056,7 +1065,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         serial: idx + 1,
         name: emp.full_name,
         designation: "",
-        empCode: emp.employee_code,
+        empCode: emp.display_code,
         shift: emp.shift,
         shiftByDay,
         statusByDay,
@@ -1084,7 +1093,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   return (
     <>
       <Header
-        title={relieversOnly ? "Reliever Attendance" : "Attendance Management"}
+        title={relieversOnly ? "Reliever Attendance" : "Attendance Timesheet (corrections)"}
         subtitle={
           relieversOnly
             ? "Pick the client a reliever covered, then mark present"
@@ -1104,18 +1113,11 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       />
 
       <div className="flex-1 overflow-y-auto p-8">
-        {/* Main tab bar */}
-        <div className="flex gap-1 bg-slate-100 rounded-md p-1 mb-6 w-fit">
-          {(["attendance", "shift_override"] as const).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setMainTab(t)}
-              className={`px-3 py-1.5 text-sm rounded transition-colors ${mainTab === t ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}
-            >
-              {t === "attendance" ? "Daily Attendance" : "Shift Override"}
-            </button>
-          ))}
+        {/* Phase 6 §8.8: this page is now the CORRECTION-only Timesheet (reached
+            from a guard's History tab). Daily marking lives on the Attendance
+            board. The Shift Override tab and Mark-All-Present are removed. */}
+        <div className="mb-6 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
+          Correction tool — for backfilling or fixing past attendance. Daily marking is done on the Attendance board.
         </div>
 
         {error && (
@@ -1174,7 +1176,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                   {viewEmployee.full_name}
                 </h3>
                 <p className="text-xs text-slate-500 font-mono">
-                  {viewEmployee.employee_code}
+                  {viewEmployee.display_code}
                   {viewEmployee.client_name && ` · ${viewEmployee.client_name}`}
                   {viewEmployee.location_name && ` · ${viewEmployee.location_name}`}
                 </p>
@@ -1386,32 +1388,8 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                 <span className="text-muted-foreground">{stats.unm} unmarked</span>
               </p>
             </div>
-            <div className="flex items-center gap-2 self-stretch md:self-auto">
-              {lastBulk && lastBulk.date === date && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={undoMarkAll}
-                  disabled={undoing}
-                  className="whitespace-nowrap"
-                >
-                  {undoing ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    "Undo Mark All"
-                  )}
-                </Button>
-              )}
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={markAllPresent}
-                disabled={filteredEmployees.length === 0}
-                className="whitespace-nowrap"
-              >
-                Mark All Present
-              </Button>
-            </div>
+            {/* Phase 6: Mark-All-Present and its Undo are removed. Confirmation
+                is per client-shift on the Attendance board. */}
           </div>
 
           <div className="overflow-x-auto">
@@ -1463,8 +1441,9 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                             className="text-brand-700 hover:text-brand-900 hover:underline"
                             title="View attendance calendar"
                           >
-                            {employee.employee_code}
+                            {employee.display_code}
                           </button>
+                          <span className="block text-[11px] text-slate-400 font-mono">{employee.permanent_code}</span>
                         </td>
                         <td className="px-6 py-4 text-sm">
                           <button
@@ -1748,7 +1727,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                         <tr key={emp.id} className="hover:bg-slate-50 transition-colors">
                           <td className="px-6 py-4">
                             <p className="text-sm text-slate-900">{emp.full_name}</p>
-                            <p className="text-xs text-slate-500 font-mono">{emp.employee_code}</p>
+                            <p className="text-xs text-slate-500 font-mono">{emp.display_code}</p>
                           </td>
                           <td className="px-6 py-4">
                             <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs ${emp.shift === "day" ? "bg-amber-50 text-amber-700" : "bg-indigo-50 text-indigo-700"}`}>
@@ -1834,7 +1813,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                     className="flex items-center justify-between text-sm p-2 rounded hover:bg-slate-50"
                   >
                     <div className="flex items-center gap-3">
-                      <span className="font-mono text-slate-500">{e.employee_code}</span>
+                      <span className="font-mono text-slate-500">{e.display_code}</span>
                       <span className="text-slate-900">{e.full_name}</span>
                     </div>
                     <span
@@ -1949,7 +1928,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                     </span>
                   </div>
                   <div className="text-xs text-slate-500 font-mono">
-                    {bulkEmployee.employee_code}
+                    {bulkEmployee.display_code}
                     {bulkEmployee.client_name && ` · ${bulkEmployee.client_name}`}
                   </div>
                 </div>
@@ -1990,7 +1969,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                       >
                         <div className="text-slate-900">{e.full_name}</div>
                         <div className="text-xs text-slate-500 font-mono">
-                          {e.employee_code}
+                          {e.display_code}
                           {e.client_name && ` · ${e.client_name}`}
                         </div>
                       </button>
@@ -2152,29 +2131,8 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                 </div>
               )}
 
-              {/* Shift toggle applied to the marked days. The label always offers
-                  the OPPOSITE of the guard's default shift. */}
-              {(() => {
-                const other = (bulkEmployee?.shift ?? "day") === "day" ? "Night" : "Day";
-                const applied = bulkMarkOther ? other.toLowerCase() : (bulkEmployee?.shift ?? "day");
-                return (
-                  <label className="flex items-center gap-2 text-sm text-slate-700 pt-2">
-                    <input
-                      type="checkbox"
-                      checked={bulkMarkOther}
-                      onChange={(e) => setBulkMarkOther(e.target.checked)}
-                      className="w-4 h-4"
-                    />
-                    <span>
-                      Mark as <strong>{other} Shift</strong>
-                      <span className="text-slate-400">
-                        {" "}— selected days will be recorded as {applied} shift
-                        {!bulkMarkOther ? " (default)" : ""}
-                      </span>
-                    </span>
-                  </label>
-                );
-              })()}
+              {/* Phase 6 §8.4: the "Mark as Night/Day Shift" checkbox is removed —
+                  shift changes are row actions (swap) on the Attendance board. */}
 
               {/* Action buttons */}
               <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-200">
@@ -2232,7 +2190,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
           <div className="space-y-3">
             <div className="text-xs text-slate-500">
               Date: <strong className="text-slate-700">{date}</strong> ·
-              <span className="ml-1 font-mono">{detailsEmp.employee_code}</span>
+              <span className="ml-1 font-mono">{detailsEmp.display_code}</span>
             </div>
             <label className="flex items-center gap-2 text-sm">
               <input

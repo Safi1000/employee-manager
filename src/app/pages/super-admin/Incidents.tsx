@@ -30,6 +30,7 @@ import {
   type Post,
   type Employee,
 } from "../../lib/supabase";
+import { guardDisplayCode } from "../../lib/guardCode";
 import { useAuth } from "../../lib/auth";
 
 type IncidentRow = Incident & {
@@ -84,6 +85,8 @@ export default function Incidents() {
   const { regionId } = useRegion();
   const [rows, setRows] = useState<IncidentRow[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const empDisplay = (emp: { client_id?: string | null; display_number?: number | null; guard_code?: string | null; employee_code?: string | null }) =>
+    guardDisplayCode(emp, clients.find((c) => c.id === emp.client_id)?.employee_id_prefix ?? null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
@@ -110,7 +113,7 @@ export default function Incidents() {
       ),
       supabase.from("clients").select("*").order("name"),
       supabase.from("posts").select("*").order("name"),
-      supabase.from("employees").select("id, full_name, employee_code, status, client_id").order("full_name"),
+      supabase.from("employees").select("id, full_name, employee_code, guard_code, display_number, status, client_id").order("full_name"),
       supabase.from("incident_guards").select("*"),
     ]);
     if (incRes.error) setError(incRes.error.message);
@@ -472,6 +475,7 @@ export default function Incidents() {
                 allGuards={guardsForClient}
                 selectedIds={form.guard_ids}
                 onChange={(ids) => setForm({ ...form, guard_ids: ids })}
+                display={empDisplay}
               />
               {guardsForClient.length === 0 && (
                 <p className="text-xs text-slate-500 mt-1">No active guards are assigned to this client.</p>
@@ -833,19 +837,21 @@ function GuardMultiSelect({
   allGuards,
   selectedIds,
   onChange,
+  display,
 }: {
   allGuards: Employee[];
   selectedIds: string[];
   onChange: (ids: string[]) => void;
+  display: (g: Employee) => string;
 }) {
   const [query, setQuery] = useState("");
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return allGuards.slice(0, 50);
     return allGuards.filter((g) =>
-      g.full_name.toLowerCase().includes(q) || g.employee_code.toLowerCase().includes(q),
+      g.full_name.toLowerCase().includes(q) || g.employee_code.toLowerCase().includes(q) || display(g).toLowerCase().includes(q),
     ).slice(0, 50);
-  }, [allGuards, query]);
+  }, [allGuards, query, display]);
 
   const toggle = (id: string) => {
     if (selectedIds.includes(id)) onChange(selectedIds.filter((x) => x !== id));
@@ -896,7 +902,7 @@ function GuardMultiSelect({
                 onChange={() => toggle(g.id)}
               />
               <span className="text-slate-900">{g.full_name}</span>
-              <span className="text-xs text-slate-500 font-mono ml-auto">{g.employee_code}</span>
+              <span className="text-xs text-slate-500 font-mono ml-auto">{display(g)}</span>
             </label>
           ))
         )}

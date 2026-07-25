@@ -3,6 +3,9 @@ import { useCallback, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import Button from "./Button";
 import { formatDate } from "../lib/date";
+import { useAuth } from "../lib/auth";
+import { brandingFromCompany } from "../lib/pdfBranding";
+import { generateClearanceCertificatePdf } from "../lib/clearanceCertificatePdf";
 import {
   supabase,
   LIFECYCLE_STATE_LABEL,
@@ -41,6 +44,7 @@ export default function EmployeeLifecyclePanel({
   employee: Employee;
   onChanged: () => void | Promise<void>;
 }) {
+  const { company } = useAuth();
   const [warnings, setWarnings] = useState<DisciplinaryWarning[]>([]);
   const [training, setTraining] = useState<EmployeeTrainingRecord[]>([]);
   const [clearance, setClearance] = useState<ClearanceCertificate | null>(null);
@@ -180,8 +184,13 @@ export default function EmployeeLifecyclePanel({
 
   const assessClearance = () =>
     run(supabase.rpc("assess_clearance", { p_employee_id: employee.id }));
-  const releaseDues = () =>
-    run(supabase.rpc("release_final_dues", { p_employee_id: employee.id }));
+  const releaseDues = async () => {
+    if (await run(supabase.rpc("release_final_dues", { p_employee_id: employee.id }))) {
+      // §9.3: issuing the exit clearance is logged to the service log.
+      await supabase.rpc("log_clearance_issued", { p_guard: employee.id, p_note: "Final dues released — exit clearance issued" });
+      await load();
+    }
+  };
 
   const activeWarnings = warnings.filter((w) => !w.rescinded).length;
 
@@ -369,6 +378,33 @@ export default function EmployeeLifecyclePanel({
           >
             Release final dues
           </Button>
+          {clearance && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => generateClearanceCertificatePdf({
+                branding: brandingFromCompany(company),
+                full_name: employee.full_name,
+                guard_code: employee.guard_code ?? employee.employee_code,
+                last_working_day: (employee as { last_working_day?: string | null }).last_working_day,
+                separation_reason: (employee as { separation_reason?: string | null }).separation_reason,
+                clearance: {
+                  status: clearance.status,
+                  kit_returned: clearance.kit_returned,
+                  outstanding_kit_count: clearance.outstanding_kit_count,
+                  advance_settled: clearance.advance_settled,
+                  outstanding_advance: clearance.outstanding_advance,
+                  incidents_reviewed: clearance.incidents_reviewed,
+                  open_incident_count: clearance.open_incident_count,
+                  dues_released: clearance.dues_released,
+                  dues_released_on: clearance.dues_released_on,
+                },
+              })}
+            >
+              Download certificate
+            </Button>
+          )}
         </div>
       </div>
 

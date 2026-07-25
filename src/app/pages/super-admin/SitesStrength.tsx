@@ -99,6 +99,13 @@ type StrengthLine = {
 };
 
 type ContractLite = { id: string; client_id: string; contract_code: string | null };
+type SiteGuard = {
+  guard_id: string;
+  site_id: string | null;
+  full_name: string;
+  code: string;
+  display_number: number | null;
+};
 
 // Compute duration in hours from HH:MM strings, wrapping past midnight.
 function computeDuration(start: string, end: string): { hours: number; crosses: boolean } {
@@ -122,6 +129,8 @@ const varianceBadge = (v: number) => {
 
 export default function SitesStrength() {
   const [recon, setRecon] = useState<ReconRow[]>([]);
+  // Phase 9 §10.6: contracted vs deployed vs attendance-on-ground vs shortfall.
+  const [billing, setBilling] = useState<{ client_id: string; client_name: string; contracted: number; deployed: number; attendance_on_ground: number; shortfall: number }[]>([]);
   const [contracts, setContracts] = useState<ContractLite[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -133,18 +142,22 @@ export default function SitesStrength() {
   const [sites, setSites] = useState<Site[]>([]);
   const [shiftDefs, setShiftDefs] = useState<ShiftDef[]>([]);
   const [strengthLines, setStrengthLines] = useState<StrengthLine[]>([]);
+  // Phase 4: guards currently posted to each site (active deployment rows).
+  const [guards, setGuards] = useState<SiteGuard[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
 
   const loadRecon = async () => {
     setLoading(true);
     setError(null);
-    const [{ data: rec, error: recErr }, { data: ct, error: ctErr }] = await Promise.all([
+    const [{ data: rec, error: recErr }, { data: ct, error: ctErr }, { data: bill }] = await Promise.all([
       supabase.from("v_client_strength_reconciliation").select("*").order("client_name"),
       supabase.from("contracts").select("id, client_id, contract_code"),
+      supabase.from("v_client_billing_reconciliation").select("*").order("shortfall", { ascending: false }),
     ]);
     if (recErr) setError(recErr.message);
     else setRecon((rec ?? []) as ReconRow[]);
     if (!ctErr) setContracts((ct ?? []) as ContractLite[]);
+    setBilling((bill ?? []) as typeof billing);
     setLoading(false);
   };
 
@@ -163,17 +176,33 @@ export default function SitesStrength() {
       .order("name");
     const siteRows = (s ?? []) as Site[];
     const siteIds = siteRows.map((x) => x.id);
-    const [{ data: sd }, { data: sl }] = await Promise.all([
+    const [{ data: sd }, { data: sl }, { data: dep }] = await Promise.all([
       siteIds.length
         ? supabase.from("shift_definitions").select("*").in("site_id", siteIds)
         : Promise.resolve({ data: [] as ShiftDef[] }),
       siteIds.length
         ? supabase.from("contract_lines").select("*").in("site_id", siteIds)
         : Promise.resolve({ data: [] as StrengthLine[] }),
+      siteIds.length
+        ? supabase
+            .from("deployments")
+            .select("guard_id, site_id, employees:guard_id(full_name, guard_code, employee_code, display_number)")
+            .in("site_id", siteIds)
+            .is("end_date", null)
+        : Promise.resolve({ data: [] as unknown[] }),
     ]);
     setSites(siteRows);
     setShiftDefs((sd ?? []) as ShiftDef[]);
     setStrengthLines((sl ?? []) as StrengthLine[]);
+    setGuards(
+      ((dep ?? []) as any[]).map((r) => ({
+        guard_id: r.guard_id,
+        site_id: r.site_id,
+        full_name: r.employees?.full_name ?? "—",
+        code: r.employees?.guard_code ?? r.employees?.employee_code ?? "—",
+        display_number: r.employees?.display_number ?? null,
+      })),
+    );
     setDetailLoading(false);
   };
 
@@ -327,6 +356,42 @@ export default function SitesStrength() {
         <p className="text-xs text-slate-400">
           Variance = contracted − enrolled(active). Positive (amber) = understaffed; negative (red) = over-enrolled.
         </p>
+
+        {/* §10.6: billing reconciliation — contracted vs deployed vs on-ground vs shortfall */}
+        <div className="pt-2">
+          <h3 className="text-sm font-semibold text-slate-700 mb-2">Billing reconciliation — contracted vs deployed vs billed (§10.6)</h3>
+          <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50">
+                    <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Client</th>
+                    <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Contracted</th>
+                    <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Deployed</th>
+                    <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">On ground (att.)</th>
+                    <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Shortfall</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {billing.filter((b) => b.contracted > 0 || b.deployed > 0).map((b) => (
+                    <tr key={b.client_id}>
+                      <td className="px-4 py-3 text-sm font-medium text-slate-900">{b.client_name}</td>
+                      <td className="px-4 py-3 text-sm text-right text-slate-600">{b.contracted}</td>
+                      <td className="px-4 py-3 text-sm text-right text-slate-600">{b.deployed}</td>
+                      <td className="px-4 py-3 text-sm text-right text-slate-600">{b.attendance_on_ground}</td>
+                      <td className="px-4 py-3 text-right">
+                        <span className={`inline-block px-2 py-0.5 rounded-md text-xs border font-medium ${b.shortfall > 0 ? "bg-warning-50 text-warning-800 border-warning-200" : "bg-success-50 text-success-700 border-success-200"}`}>
+                          {b.shortfall > 0 ? `−${b.shortfall}` : "0"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <p className="text-xs text-slate-400 mt-1">Shortfall = contracted − deployed. A client contracted for more than is on ground surfaces recruitment exposure (ties to the §8.10 vacancy queue).</p>
+        </div>
       </div>
 
       {openClient && (
@@ -336,6 +401,7 @@ export default function SitesStrength() {
           sites={sites}
           shiftDefs={shiftDefs}
           strengthLines={strengthLines}
+          guards={guards}
           loading={detailLoading}
           onClose={() => setOpenClient(null)}
           onChanged={refreshDetail}
@@ -353,6 +419,7 @@ function ClientDetailModal({
   sites,
   shiftDefs,
   strengthLines,
+  guards,
   loading,
   onClose,
   onChanged,
@@ -363,6 +430,7 @@ function ClientDetailModal({
   sites: Site[];
   shiftDefs: ShiftDef[];
   strengthLines: StrengthLine[];
+  guards: SiteGuard[];
   loading: boolean;
   onClose: () => void;
   onChanged: () => Promise<void>;
@@ -413,6 +481,7 @@ function ClientDetailModal({
             const siteShifts = shiftDefs.filter((s) => s.site_id === site.id);
             const siteLines = strengthLines.filter((l) => l.site_id === site.id);
             const siteBilled = siteLines.reduce((a, l) => a + (l.billed_qty ?? 0), 0);
+            const siteGuards = guards.filter((g) => g.site_id === site.id);
             return (
               <div key={site.id} className="border border-slate-200 rounded-lg overflow-hidden">
                 <div className="bg-slate-50 px-4 py-2.5 flex items-center justify-between">
@@ -530,6 +599,23 @@ function ClientDetailModal({
                       </ul>
                     )}
                   </div>
+                </div>
+                {/* Client → site → guards: who is currently posted here. */}
+                <div className="px-3 pb-3">
+                  <div className="text-xs font-semibold text-slate-600 uppercase flex items-center gap-1 mb-1.5">
+                    <Users className="w-3.5 h-3.5" /> Guards ({siteGuards.length})
+                  </div>
+                  {siteGuards.length === 0 ? (
+                    <div className="text-xs text-slate-400">No guards posted here.</div>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {siteGuards.map((g) => (
+                        <span key={g.guard_id} className="text-xs bg-slate-50 border border-slate-200 rounded px-2 py-1">
+                          {g.full_name} <span className="text-slate-400 font-mono">{g.code}</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             );

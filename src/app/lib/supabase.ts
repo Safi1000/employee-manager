@@ -33,7 +33,15 @@ export const EXPENSE_RECEIPTS_BUCKET = "expense-receipts";
 export const INVOICE_ATTACHMENTS_BUCKET = "invoice-attachments";
 export const CHEQUE_ATTACHMENTS_BUCKET = "cheque-attachments";
 
-export type UserRole = "super_super_admin" | "super_admin" | "accounting" | "hr";
+export type UserRole =
+  | "super_super_admin"
+  | "super_admin"
+  | "accounting"
+  | "hr"
+  // Phase 3D approval chain roles
+  | "ops_manager"
+  | "ops_director"
+  | "finance_director";
 
 export type Company = {
   id: string;
@@ -814,7 +822,17 @@ export const isHardcodedCategory = (name: string) =>
 
 export type Employee = {
   id: string;
+  company_id: string;
   employee_code: string;
+  // Phase 2: permanent immutable guard code (GGS-NNNNN); employee_code mirrors it.
+  // legacy_code preserves the old client-prefixed code (searchable).
+  guard_code: string | null;
+  legacy_code: string | null;
+  // Phase 3: per-client sequential number; the client-prefixed DISPLAY code is
+  // {current client prefix}-{padded display_number}. Null => fall back to guard_code.
+  display_number: number | null;
+  // Phase 3D approval state machine.
+  record_state: "draft" | "ops_verified" | "finance_approved" | "active";
   full_name: string;
   phone: string | null;
   location_id: string | null;

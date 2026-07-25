@@ -32,6 +32,7 @@ import {
   type Post,
   type ContractShift,
 } from "../../lib/supabase";
+import { guardDisplayCode } from "../../lib/guardCode";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const addDaysISO = (iso: string, days: number): string => {
@@ -64,6 +65,8 @@ export default function Roster() {
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const empDisplay = (emp: { client_id?: string | null; display_number?: number | null; guard_code?: string | null; employee_code?: string | null }) =>
+    guardDisplayCode(emp, clients.find((c) => c.id === emp.client_id)?.employee_id_prefix ?? null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [rosterByKey, setRosterByKey] = useState<Map<string, RosterAssignment>>(new Map());
 
@@ -148,7 +151,7 @@ export default function Roster() {
     const q = search.trim().toLowerCase();
     return employees.filter((e) => {
       if (clientFilter !== "all" && e.client_id !== clientFilter) return false;
-      if (q && !e.full_name.toLowerCase().includes(q) && !e.employee_code.toLowerCase().includes(q)) return false;
+      if (q && !e.full_name.toLowerCase().includes(q) && !e.employee_code.toLowerCase().includes(q) && !empDisplay(e).toLowerCase().includes(q)) return false;
       return true;
     });
   }, [employees, search, clientFilter]);
@@ -244,7 +247,7 @@ export default function Roster() {
         const statusLbl = ROSTER_STATUS_LABEL[a.status];
         return [statusLbl, postName].filter(Boolean).join(" — ");
       });
-      return [emp.employee_code, emp.full_name, ...cells];
+      return [empDisplay(emp), emp.full_name, ...cells];
     });
     const csv = [headers, ...rows]
       .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","))
@@ -435,7 +438,7 @@ export default function Roster() {
                   <tr key={emp.id} className="hover:bg-slate-50/60">
                     <td className="sticky left-0 bg-white z-10 px-3 py-2 text-sm border-b border-slate-100">
                       <div className="text-slate-900">{emp.full_name}</div>
-                      <div className="text-xs text-slate-500 font-mono">{emp.employee_code}</div>
+                      <div className="text-xs text-slate-500 font-mono">{empDisplay(emp)}</div>
                     </td>
                     {dates.map((d) => {
                       const a = rosterByKey.get(`${emp.id}:${d}`);
@@ -503,7 +506,7 @@ export default function Roster() {
             <div className="text-xs text-slate-500">
               Shift: <strong className="text-slate-700">{CONTRACT_SHIFT_LABEL[shift]}</strong>
               <span className="mx-2">·</span>
-              Employee code: <span className="font-mono">{editCell.employee.employee_code}</span>
+              Employee code: <span className="font-mono">{empDisplay(editCell.employee)}</span>
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Post</label>

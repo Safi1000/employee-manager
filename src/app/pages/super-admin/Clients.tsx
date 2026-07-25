@@ -482,9 +482,7 @@ export default function Clients() {
       setError("Please fix the highlighted fields before saving.");
       return;
     }
-    const original = rows.find((r) => r.id === editingId);
     const newPrefix = form.employee_id_prefix.trim().toUpperCase() || null;
-    const oldPrefix = original?.employee_id_prefix ?? null;
 
     const clash = newPrefix ? prefixClash(newPrefix, editingId) : undefined;
     if (clash) {
@@ -496,21 +494,9 @@ export default function Clients() {
       return;
     }
 
-    // Step 5: setting or changing a prefix regenerates the Employee ID of every
-    // currently-assigned employee. Flag it explicitly before it happens; the old
-    // IDs are preserved in history by the RPC. Cancelling aborts the whole save so
-    // the prefix and the employee codes never drift apart.
-    const affected = original?.employees_count ?? 0;
-    const cascade = newPrefix !== null && newPrefix !== oldPrefix && affected > 0;
-    if (cascade) {
-      const ok = window.confirm(
-        `This will update the Employee ID for ${affected} currently assigned ` +
-          `employee(s) to use the "${newPrefix}" prefix. Each old ID is kept in ` +
-          `their history. Continue?`,
-      );
-      if (!ok) return;
-    }
-
+    // Phase 2: guard codes are permanent and immutable. Changing a client's
+    // prefix NO LONGER renumbers any employee — the prefix is now only the
+    // invoice Ref-number source and a derived posting display label.
     setSubmitting(true);
     setError(null);
     const { error: upErr } = await supabase
@@ -521,19 +507,6 @@ export default function Clients() {
       setSubmitting(false);
       setError(upErr.message);
       return;
-    }
-    if (cascade) {
-      const { error: rpcErr } = await supabase.rpc("reassign_client_employee_codes", {
-        p_client_id: editingId,
-      });
-      if (rpcErr) {
-        setSubmitting(false);
-        setError(
-          `Client saved, but regenerating employee IDs failed: ${rpcErr.message}. ` +
-            `Re-save the client to retry.`,
-        );
-        return;
-      }
     }
     setSubmitting(false);
     setEditingId(null);
@@ -731,7 +704,7 @@ export default function Clients() {
             </ThemedSelect>
           </div>
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Employee ID Prefix</label>
+            <label className="block text-sm text-slate-700 mb-1">Client Prefix (invoices & posting label)</label>
             <input
               type="text"
               value={form.employee_id_prefix}
@@ -749,7 +722,8 @@ export default function Clients() {
               <p className="text-xs text-danger-600 mt-1">{fieldErrors.employee_id_prefix}</p>
             ) : (
               <p className="text-xs text-slate-500 mt-1">
-                Employees assigned to this client get IDs like {form.employee_id_prefix || "EMR"}-001.
+                Used for invoice Ref numbers (e.g. GGS-26-{form.employee_id_prefix || "EMR"}-06) and as a
+                guard's derived posting label. Guard codes are permanent (GGS-…) and are not affected by this.
               </p>
             )}
           </div>

@@ -1,5 +1,6 @@
 import jsPDF from "jspdf";
 import { formatDate } from "./date";
+import { drawBrandedHeader, drawBrandedFooter, type PdfBranding } from "./pdfBranding";
 import {
   CHECKLIST_DOC_LABEL,
   type Employee,
@@ -10,25 +11,39 @@ import {
 } from "./supabase";
 
 // §11 — branded 2-page reproduction of the paper Employee Data Form, with the
-// fingerprint grid and four approval signature blocks. Built with jsPDF, the
+// fingerprint grid and four §4 approval signature blocks. Built with jsPDF, the
 // same engine used for payslips/invoices, so no new dependency.
 
 const MARGIN = 14;
 const PAGE_W = 210; // A4 portrait mm
 const CONTENT_W = PAGE_W - MARGIN * 2;
 
+export type ApprovalBlock = { name: string; date: string } | null;
+export type FormApprovals = {
+  office_clerk?: ApprovalBlock;
+  manager_ops?: ApprovalBlock;
+  director_ops?: ApprovalBlock;
+  director_finance?: ApprovalBlock;
+};
+
 type FormData = {
   employee: Employee;
-  companyName: string;
+  branding: PdfBranding;
+  approvals?: FormApprovals;
   children: EmployeeChild[];
   references: EmployeeReference[];
   jobs: EmployeePreviousJob[];
   checklist: EmployeeDocumentChecklistItem[];
+  // When provided, pages are appended to this doc (bulk combine) and the caller
+  // saves; otherwise a standalone PDF is created and saved.
+  doc?: jsPDF;
 };
 
-export function generateEmployeeFormPdf(data: FormData) {
-  const { employee: e, companyName, children, references, jobs, checklist } = data;
-  const doc = new jsPDF({ unit: "mm", format: "a4" });
+export function generateEmployeeFormPdf(data: FormData): jsPDF {
+  const { employee: e, branding, approvals, children, references, jobs, checklist } = data;
+  const appending = !!data.doc;
+  const doc = data.doc ?? new jsPDF({ unit: "mm", format: "a4" });
+  // Caller manages page breaks between guards (bulk); draw from the current page.
   let y = MARGIN;
 
   const dash = (v: unknown) =>
@@ -74,26 +89,16 @@ export function generateEmployeeFormPdf(data: FormData) {
     y += 2;
   };
 
-  // ---- Header ----
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(14);
-  doc.setTextColor(15, 23, 42);
-  doc.text(companyName, MARGIN, y + 4);
-  doc.setFontSize(11);
-  doc.setTextColor(71, 85, 105);
-  doc.text("Employee Data Form", MARGIN, y + 10);
+  // ---- Branded header (per-company, never hardcoded) ----
+  y = drawBrandedHeader(doc, branding, "Employee Data Form",
+    `${dash(e.employee_code)}  ·  Serial ${dash(e.form_serial_no)}  ·  Interview ${e.interview_date ? formatDate(e.interview_date) : "—"}`);
   // Photo box (top-right)
   doc.setDrawColor(203, 213, 225);
-  doc.rect(PAGE_W - MARGIN - 28, y, 28, 34);
+  doc.rect(PAGE_W - MARGIN - 28, MARGIN, 28, 34);
   doc.setFontSize(7);
   doc.setTextColor(148, 163, 184);
-  doc.text("PHOTO", PAGE_W - MARGIN - 20, y + 18);
-  doc.setFontSize(8);
-  doc.setTextColor(71, 85, 105);
-  doc.text(`Employee ID: ${dash(e.employee_code)}`, MARGIN, y + 16);
-  doc.text(`Form Serial: ${dash(e.form_serial_no)}`, MARGIN, y + 21);
-  doc.text(`Interview Date: ${e.interview_date ? formatDate(e.interview_date) : "—"}`, MARGIN, y + 26);
-  y += 40;
+  doc.text("PHOTO", PAGE_W - MARGIN - 20, MARGIN + 18);
+  y = Math.max(y, MARGIN + 38);
 
   // ---- Personal ----
   sectionTitle("Personal");
@@ -262,29 +267,41 @@ export function generateEmployeeFormPdf(data: FormData) {
     doc.addPage();
     y = MARGIN;
   }
-  sectionTitle("Approvals");
-  const sigLabels = ["Employee", "HR Officer", "Operations", "Approving Authority"];
+  sectionTitle("Approvals (§4 state machine)");
+  const blocks: [string, ApprovalBlock][] = [
+    ["Office Clerk", approvals?.office_clerk ?? null],
+    ["Manager Ops", approvals?.manager_ops ?? null],
+    ["Director Ops", approvals?.director_ops ?? null],
+    ["Director Finance", approvals?.director_finance ?? null],
+  ];
   const sigW = CONTENT_W / 2;
   for (let i = 0; i < 4; i++) {
     const col = i % 2;
     const x = MARGIN + col * sigW;
     if (col === 0 && i > 0) y += 22;
+    const blk = blocks[i][1];
+    if (blk) {
+      // Approved through this stage: show approver name above the line.
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.setTextColor(15, 23, 42);
+      doc.text(blk.name, x, y + 11);
+    }
     doc.setDrawColor(148, 163, 184);
     doc.line(x, y + 14, x + sigW - 8, y + 14);
+    doc.setFont("helvetica", "normal");
     doc.setFontSize(8);
     doc.setTextColor(71, 85, 105);
-    doc.text(`${sigLabels[i]} — Signature & Date`, x, y + 18);
+    doc.text(
+      `${blocks[i][0]}${blk ? ` — approved ${formatDate(blk.date)}` : " — Signature & Date"}`,
+      x,
+      y + 18,
+    );
   }
   y += 22;
 
-  // Footer note
-  doc.setFontSize(7);
-  doc.setTextColor(148, 163, 184);
-  doc.text(
-    `Form signed on: ${e.form_signed_on ? formatDate(e.form_signed_on) : "____________"}   ·   Generated ${formatDate(new Date().toISOString().slice(0, 10))}`,
-    MARGIN,
-    288,
-  );
+  drawBrandedFooter(doc, branding, `Form signed: ${e.form_signed_on ? formatDate(e.form_signed_on) : "____________"}`);
 
-  doc.save(`employee-form-${e.employee_code || e.id}.pdf`);
+  if (!appending) doc.save(`employee-form-${e.employee_code || e.id}.pdf`);
+  return doc;
 }

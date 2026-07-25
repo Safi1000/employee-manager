@@ -10,6 +10,7 @@ import Dashboard from "./pages/super-admin/Dashboard";
 import UserManagement from "./pages/super-admin/UserManagement";
 import EmployeeManagement from "./pages/super-admin/EmployeeManagement";
 import AttendanceManagement from "./pages/super-admin/AttendanceManagement";
+import AttendanceBoard from "./pages/super-admin/AttendanceBoard";
 import PayrollManagement from "./pages/super-admin/PayrollManagement";
 import Accounting from "./pages/super-admin/Accounting";
 import FinancialReports from "./pages/super-admin/FinancialReports";
@@ -71,7 +72,7 @@ export const router = createBrowserRouter([
   {
     path: "/super-admin",
     element: (
-      <RequireAuth roles={["super_admin", "hr", "accounting"]}>
+      <RequireAuth roles={["super_admin", "hr", "accounting", "ops_manager", "ops_director", "finance_director"]}>
         <SuperAdminLayout />
       </RequireAuth>
     ),
@@ -88,7 +89,10 @@ export const router = createBrowserRouter([
       { path: "period-close", element: guard(["period_close.manage", "reports.view"], <PeriodClose />) },
       { path: "audit-log", element: <RequireAuth roles={["super_super_admin", "super_admin"]}><AuditLog /></RequireAuth> },
       { path: "employees", element: guard(["employees.view", "employees.edit"], <EmployeeManagement />) },
-      { path: "attendance", element: guard(["attendance.view", "attendance.edit"], <AttendanceManagement />) },
+      { path: "attendance", element: guard(["attendance.view", "attendance.edit"], <AttendanceBoard />) },
+      // Month calendar retained as a CORRECTION-only Timesheet (§8.8), reached
+      // from the guard's record (History tab), not the daily flow.
+      { path: "attendance/timesheet", element: guard(["attendance.view", "attendance.edit"], <AttendanceManagement />) },
       { path: "payroll", element: guard(["payroll.view", "payroll.edit"], <PayrollManagement />) },
       { path: "payroll-runs", element: guard(["payroll.view", "payroll.edit", "payroll.approve"], <PayrollRuns />) },
       { path: "performance", element: guard(["payroll.view", "performance.approve"], <Performance />) },
