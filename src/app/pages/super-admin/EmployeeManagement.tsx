@@ -1,6 +1,6 @@
 import ThemedSelect from "../../components/ThemedSelect";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Search, Upload, AlertCircle, Loader2, X, Trash2, ChevronDown, ChevronRight as ChevronRightIcon, FileText, SlidersHorizontal, Image as ImageIcon } from "lucide-react";
+import { Plus, Search, Upload, AlertCircle, Loader2, X, Trash2, ChevronDown, ChevronRight as ChevronRightIcon, FileText, SlidersHorizontal, Image as ImageIcon, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import jsPDF from "jspdf";
 import { generateEmployeeFormPdf, type FormApprovals } from "../../lib/employeeFormPdf";
 import { generateIdCardPdf } from "../../lib/idCardPdf";
@@ -651,6 +651,9 @@ export default function EmployeeManagement() {
   // Quick Active / Inactive tab split (Inactive = anything not currently Active).
   const [empTab, setEmpTab] = useState<"all" | "active" | "inactive">("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  // Sort by the NUMERIC part of the client-prefixed display code (= display_number
+  // integer column). null = default load order (newest-first); asc = 001 first.
+  const [sortDir, setSortDir] = useState<null | "asc" | "desc">(null);
   const activeFilterCount =
     (locationFilter !== "all" ? 1 : 0) +
     (clientFilter !== "all" ? 1 : 0) +
@@ -1005,6 +1008,22 @@ export default function EmployeeManagement() {
     });
   }, [employees, search, locationFilter, clientFilter, branchFilter, categoryFilter, shiftFilter, statusFilter, completenessFilter, lifecycleFilter, expiredCardFilter, empTab, branches]);
 
+  // Numeric sort on the client-prefixed display code's number (display_number).
+  // NUMERIC — orders 001,002…010,011 correctly, never a lexicographic "10<2".
+  // Employees without a display_number (office staff / unposted) sink to the
+  // bottom in both directions. null sortDir keeps the default load order.
+  const sorted = useMemo(() => {
+    if (!sortDir) return filtered;
+    const num = (e: Employee) => (e.display_number == null ? null : Number(e.display_number));
+    return [...filtered].sort((a, b) => {
+      const na = num(a), nb = num(b);
+      if (na == null && nb == null) return 0;
+      if (na == null) return 1;   // nulls last
+      if (nb == null) return -1;
+      return sortDir === "asc" ? na - nb : nb - na;
+    });
+  }, [filtered, sortDir]);
+
   type EmpRef = { id: string; employee_code: string; full_name: string };
 
   const uploadDoc = async (employee: EmpRef, docType: string, file: File) => {
@@ -1147,7 +1166,7 @@ export default function EmployeeManagement() {
       sheetName: "Employees",
       title: "Employees",
       headers: ["Employee ID", "Name", "Phone", "Location", "Branch", "Client / Category", "Shift", "Status"],
-      rows: filtered.map((e) => [
+      rows: sorted.map((e) => [
         e.employee_code,
         e.full_name,
         e.phone ?? "",
@@ -1890,6 +1909,23 @@ export default function EmployeeManagement() {
                 )}
                 <ChevronDown className={`w-4 h-4 transition-transform ${filtersOpen ? "rotate-180" : ""}`} strokeWidth={1.5} />
               </button>
+              {/* Sort by the display-code NUMBER. Cycles: off → 001 first (asc) →
+                  highest first (desc) → off. Numeric so 010 follows 009, not 1. */}
+              <button
+                type="button"
+                onClick={() => setSortDir((d) => (d === null ? "asc" : d === "asc" ? "desc" : null))}
+                title="Sort by employee ID number"
+                className={`inline-flex items-center gap-2 px-3 py-2 text-sm rounded-md border transition-colors ${
+                  sortDir
+                    ? "border-brand-500 bg-brand-500/15 text-brand-700 dark:text-brand-500 font-medium"
+                    : "border-border text-foreground hover:bg-accent"
+                }`}
+              >
+                {sortDir === "asc" ? <ArrowUp className="w-4 h-4" strokeWidth={1.5} />
+                  : sortDir === "desc" ? <ArrowDown className="w-4 h-4" strokeWidth={1.5} />
+                  : <ArrowUpDown className="w-4 h-4" strokeWidth={1.5} />}
+                {sortDir === "asc" ? "ID 001→high" : sortDir === "desc" ? "ID high→001" : "Sort by ID"}
+              </button>
               <div className="flex gap-2 ml-auto">
                 {([
                   { v: "all", label: "All" },
@@ -2039,7 +2075,7 @@ export default function EmployeeManagement() {
                   </tr>
                 )}
                 {!loading &&
-                  filtered.map((employee) => {
+                  sorted.map((employee) => {
                     // Profile completeness is driven by the "Physical Copy Present"
                     // flag: incomplete → red row, complete → green row.
                     const incomplete = !employee.physical_copy_present;
@@ -2909,7 +2945,7 @@ export default function EmployeeManagement() {
 
       {bulkOpen && (
         <BulkGenerateModal
-          employees={filtered}
+          employees={sorted}
           clients={clients}
           branding={brandingFromCompany(company)}
           displayFor={displayCodeFor}
