@@ -3,6 +3,7 @@ import { AlertCircle, Loader2, X, ChevronRight, ChevronLeft, CheckCircle2, Clock
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
+import Tabs from "../../components/Tabs";
 import ThemedSelect from "../../components/ThemedSelect";
 import { supabase, fetchAllRows, resolveAllowedLeaves } from "../../lib/supabase";
 import { useAuth, hasPermission } from "../../lib/auth";
@@ -363,7 +364,7 @@ export default function AttendanceBoard() {
         subtitle="Daily board by client-shift — presume present, enter only exceptions, confirm per shift"
         actions={
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
-            className="px-3 py-2 border border-slate-200 rounded-md text-sm" />
+            className="px-3 py-2 border border-border bg-card rounded-md text-sm text-foreground" />
         }
       />
       <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-4">
@@ -374,32 +375,35 @@ export default function AttendanceBoard() {
           </div>
         )}
 
-        <div className="flex gap-1 border-b border-slate-200">
-          {([["board", "Daily board"], ["vacancies", `Vacancies (${vacancies.length})`]] as const).map(([k, l]) => (
-            <button key={k} onClick={() => setTab(k)}
-              className={`px-3 py-2 text-sm border-b-2 -mb-px ${tab === k ? "border-brand-600 text-brand-700 font-medium" : "border-transparent text-slate-500 hover:text-slate-700"}`}>{l}</button>
-          ))}
-        </div>
+        <Tabs
+          value={tab}
+          onChange={setTab}
+          items={[
+            { value: "board", label: "Daily board" },
+            { value: "vacancies", label: "Vacancies", count: vacancies.length },
+          ]}
+        />
 
         {tab === "board" && (
           <>
             {/* Filter + search + Mark-All (added alongside the Phase 6 model). */}
-            <div className="bg-white border border-slate-200 rounded-lg p-3 flex flex-col md:flex-row gap-2 md:items-center">
+            <div className="bg-card border border-border rounded-lg p-3 flex flex-col md:flex-row gap-2 md:items-center">
               <ThemedSelect
                 value={clientFilter}
                 onChange={(e) => setClientFilter(e.target.value)}
-                className="px-3 py-2 border border-slate-200 rounded-md text-sm md:w-56"
+                className="px-3 py-2 border border-border bg-card rounded-md text-sm md:w-56"
               >
                 <option value="all">All groups</option>
                 {clientOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
               </ThemedSelect>
               <div className="relative flex-1">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" strokeWidth={1.5} />
                 <input
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder={clientFilter === "all" ? "Search guards by name or ID…" : "Search within this client…"}
-                  className="w-full pl-3 pr-3 py-2 border border-slate-200 rounded-md text-sm"
+                  className="w-full pl-10 pr-3 py-2 border border-border bg-card rounded-md text-sm text-foreground"
                 />
               </div>
               {canBulk && (
@@ -415,54 +419,55 @@ export default function AttendanceBoard() {
               </div>
             </div>
 
-            {/* Summary strip */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {/* Compact summary strip — clear at a glance, minimal footprint. */}
+            <div className="flex flex-wrap gap-2">
               {[
-                { label: "Confirmed", value: `${summary.confirmed}/${summary.total}`, icon: CheckCircle2 },
-                { label: "On ground", value: summary.onGround, icon: CheckCircle2 },
-                { label: "Exceptions", value: summary.exceptions, icon: AlertCircle },
-                { label: "Awaiting", value: summary.awaiting, icon: Clock },
+                { label: "Confirmed", value: `${summary.confirmed}/${summary.total}`, icon: CheckCircle2, tint: "text-success-600 dark:text-success-500" },
+                { label: "On ground", value: summary.onGround, icon: Users, tint: "text-brand-600 dark:text-brand-500" },
+                { label: "Exceptions", value: summary.exceptions, icon: AlertCircle, tint: "text-danger-600 dark:text-danger-500" },
+                { label: "Awaiting", value: summary.awaiting, icon: Clock, tint: "text-warning-600 dark:text-warning-500" },
               ].map((t) => (
-                <div key={t.label} className="bg-white border border-slate-200 rounded-lg p-4">
-                  <div className="flex items-center gap-2 text-slate-500 text-xs uppercase tracking-wide"><t.icon className="w-4 h-4" /> {t.label}</div>
-                  <div className="mt-1 text-2xl font-bold text-slate-900">{t.value}</div>
+                <div key={t.label} className="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-lg border border-border bg-card">
+                  <t.icon className={`w-4 h-4 shrink-0 ${t.tint}`} strokeWidth={2} />
+                  <span className="text-xs uppercase tracking-wide text-muted-foreground">{t.label}</span>
+                  <span className="text-base font-semibold tabular-nums text-foreground">{t.value}</span>
                 </div>
               ))}
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+            <div className="bg-card border border-border rounded-lg overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
-                    <tr className="border-b border-slate-200 bg-slate-50">
-                      <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Client · site · shift</th>
-                      <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Contracted</th>
-                      <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">On roster</th>
-                      <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Exceptions</th>
-                      <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Status</th>
+                    <tr className="border-b border-border bg-slate-50">
+                      <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase tracking-wide">Client · site · shift</th>
+                      <th className="text-right px-4 py-3 text-xs text-muted-foreground uppercase tracking-wide">Contracted</th>
+                      <th className="text-right px-4 py-3 text-xs text-muted-foreground uppercase tracking-wide">On roster</th>
+                      <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase tracking-wide">Exceptions</th>
+                      <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase tracking-wide">Status</th>
                       <th className="px-4 py-3"></th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-200">
-                    {loading && <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-500"><Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…</td></tr>}
-                    {!loading && visibleRows.length === 0 && <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-500 text-sm">No client-shifts match the current filter/search.</td></tr>}
+                  <tbody className="divide-y divide-border">
+                    {loading && <tr><td colSpan={6} className="px-4 py-10 text-center text-muted-foreground"><Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…</td></tr>}
+                    {!loading && visibleRows.length === 0 && <tr><td colSpan={6} className="px-4 py-10 text-center text-muted-foreground text-sm">No client-shifts match the current filter/search.</td></tr>}
                     {!loading && visibleRows.map((r) => {
                       const st = rowStatus(r);
                       return (
-                        <tr key={r.key} className="hover:bg-slate-50 cursor-pointer" onClick={() => setDrill(r)}>
+                        <tr key={r.key} className="hover:bg-accent/50 cursor-pointer transition-colors" onClick={() => setDrill(r)}>
                           <td className="px-4 py-3 text-sm">
-                            <span className="font-medium text-slate-900">{r.client_name}</span>
-                            <span className="text-slate-400"> · {r.site_name} · </span>
-                            <span className="capitalize inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-xs">{r.shift_code}</span>
+                            <span className="font-medium text-foreground">{r.client_name}</span>
+                            <span className="text-muted-foreground"> · {r.site_name} · </span>
+                            <span className="capitalize inline-block px-1.5 py-0.5 rounded bg-secondary text-muted-foreground text-xs">{r.shift_code}</span>
                           </td>
-                          <td className="px-4 py-3 text-sm text-right text-slate-600">{r.contracted || "—"}</td>
-                          <td className="px-4 py-3 text-sm text-right text-slate-600">{r.roster.length}</td>
-                          <td className="px-4 py-3 text-sm text-slate-600">{exceptionSummary(r)}</td>
+                          <td className="px-4 py-3 text-sm text-right text-muted-foreground">{r.contracted || "—"}</td>
+                          <td className="px-4 py-3 text-sm text-right text-muted-foreground">{r.roster.length}</td>
+                          <td className="px-4 py-3 text-sm text-muted-foreground">{exceptionSummary(r)}</td>
                           <td className="px-4 py-3">
                             <span className={`inline-block px-2 py-0.5 rounded-md text-xs border capitalize ${badge(st)}`}>{st}</span>
-                            {r.confirmation && <span className="block text-[11px] text-slate-400 mt-0.5">by {r.confirmation.supervisor_name}</span>}
+                            {r.confirmation && <span className="block text-[11px] text-muted-foreground mt-0.5">by {r.confirmation.supervisor_name}</span>}
                           </td>
-                          <td className="px-4 py-3 text-right"><ChevronRight className="w-4 h-4 text-slate-400 inline-block" /></td>
+                          <td className="px-4 py-3 text-right"><ChevronRight className="w-4 h-4 text-muted-foreground inline-block" /></td>
                         </tr>
                       );
                     })}
@@ -1127,22 +1132,22 @@ function VacancyQueue({ vacancies, clientNames, onChanged }: {
     await onChanged();
   };
   return (
-    <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-      <div className="px-4 py-3 border-b border-slate-200 flex items-center gap-2 text-sm text-slate-700">
+    <div className="bg-card border border-border rounded-lg overflow-hidden">
+      <div className="px-4 py-3 border-b border-border flex items-center gap-2 text-sm text-muted-foreground">
         <Briefcase className="w-4 h-4" /> Open vacancies drive recruitment — the client is still contracted for that strength.
       </div>
       {vacancies.length === 0 ? (
-        <div className="px-4 py-8 text-center text-slate-500 text-sm">No open vacancies.</div>
+        <div className="px-4 py-8 text-center text-muted-foreground text-sm">No open vacancies.</div>
       ) : (
         <table className="w-full">
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-border">
             {vacancies.map((v) => (
-              <tr key={v.id}>
-                <td className="px-4 py-3 text-sm font-medium text-slate-900">{clientNames.get(v.client_id) ?? "—"}</td>
-                <td className="px-4 py-3 text-sm text-slate-500">{v.opened_reason}</td>
-                <td className="px-4 py-3 text-xs text-slate-400">{new Date(v.opened_at).toLocaleDateString()}</td>
+              <tr key={v.id} className="hover:bg-accent/50 transition-colors">
+                <td className="px-4 py-3 text-sm font-medium text-foreground">{clientNames.get(v.client_id) ?? "—"}</td>
+                <td className="px-4 py-3 text-sm text-muted-foreground">{v.opened_reason}</td>
+                <td className="px-4 py-3 text-xs text-muted-foreground">{new Date(v.opened_at).toLocaleDateString()}</td>
                 <td className="px-4 py-3 text-right">
-                  <button onClick={() => close(v.id)} className="text-xs text-slate-500 hover:text-danger-600">Dismiss</button>
+                  <button onClick={() => close(v.id)} className="text-xs text-muted-foreground hover:text-danger-600">Dismiss</button>
                 </td>
               </tr>
             ))}
@@ -1325,14 +1330,14 @@ function ExportMenu({ rows, date, branding, client }: {
       type="button"
       disabled={disabled}
       onClick={() => { if (disabled) return; setOpen(false); onClick(); }}
-      className={`flex w-full items-start gap-3 px-3 py-2.5 text-left transition-colors ${disabled ? "cursor-not-allowed opacity-45" : "hover:bg-slate-50"}`}
+      className={`flex w-full items-start gap-3 px-3 py-2.5 text-left transition-colors ${disabled ? "cursor-not-allowed opacity-45" : "hover:bg-accent"}`}
     >
       <span className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${tint}`}>
         <Icon className="h-4 w-4" />
       </span>
       <span className="min-w-0">
-        <span className="block text-sm font-medium text-slate-800">{title}</span>
-        <span className="block truncate text-xs text-slate-500">{subtitle}</span>
+        <span className="block text-sm font-medium text-foreground">{title}</span>
+        <span className="block truncate text-xs text-muted-foreground">{subtitle}</span>
       </span>
     </button>
   );
@@ -1350,8 +1355,8 @@ function ExportMenu({ rows, date, branding, client }: {
       {open && (
         <>
           <button className="fixed inset-0 z-40 cursor-default" aria-hidden onClick={() => setOpen(false)} />
-          <div className="absolute right-0 z-50 mt-2 w-80 origin-top-right overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl ring-1 ring-black/5">
-            <div className="px-3 pt-2.5 pb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+          <div className="absolute right-0 z-50 mt-2 w-80 origin-top-right overflow-hidden rounded-xl border border-border bg-card shadow-xl ring-1 ring-black/5">
+            <div className="px-3 pt-2.5 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               Selected day · {prettyDate}
             </div>
             <Item
@@ -1366,8 +1371,8 @@ function ExportMenu({ rows, date, branding, client }: {
               subtitle="One row per rostered guard · PDF"
               onClick={() => exportGuardSheet(branding, date, rows)}
             />
-            <div className="my-1 border-t border-slate-100" />
-            <div className="px-3 pt-1.5 pb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+            <div className="my-1 border-t border-border" />
+            <div className="px-3 pt-1.5 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               Full month · {monthLabel}
             </div>
             <Item

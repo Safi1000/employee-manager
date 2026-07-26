@@ -16,6 +16,7 @@ import {
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
+import Tabs from "../../components/Tabs";
 import ThemedSelect from "../../components/ThemedSelect";
 import { supabase } from "../../lib/supabase";
 
@@ -136,6 +137,9 @@ export default function SitesStrength() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [onlyMismatch, setOnlyMismatch] = useState(false);
+  // Which reconciliation view is shown — kept as tabs so the two heavy tables
+  // don't stack and the page reads like the rest of the system.
+  const [view, setView] = useState<"strength" | "billing">("strength");
 
   // Drill-in state
   const [openClient, setOpenClient] = useState<ReconRow | null>(null);
@@ -254,71 +258,84 @@ export default function SitesStrength() {
           </div>
         )}
 
-        {/* Summary tiles */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {/* Compact summary strip — clear at a glance, minimal footprint. */}
+        <div className="flex flex-wrap gap-2">
           {[
-            { label: "Contracted (billed)", value: totals.contracted, icon: Building2 },
-            { label: "Enrolled (active)", value: totals.enrolled, icon: Users },
-            { label: "Sites", value: totals.sites, icon: MapPin },
-            { label: "Clients mismatched", value: totals.mismatched, icon: AlertCircle },
+            { label: "Contracted (billed)", value: totals.contracted, icon: Building2, tint: "text-brand-600 dark:text-brand-500" },
+            { label: "Enrolled (active)", value: totals.enrolled, icon: Users, tint: "text-success-600 dark:text-success-500" },
+            { label: "Sites", value: totals.sites, icon: MapPin, tint: "text-muted-foreground" },
+            { label: "Clients mismatched", value: totals.mismatched, icon: AlertCircle, tint: totals.mismatched > 0 ? "text-warning-600 dark:text-warning-500" : "text-success-600 dark:text-success-500" },
           ].map((t) => (
-            <div key={t.label} className="bg-white border border-slate-200 rounded-lg p-4">
-              <div className="flex items-center gap-2 text-slate-500 text-xs uppercase tracking-wide">
-                <t.icon className="w-4 h-4" /> {t.label}
-              </div>
-              <div className="mt-1 text-2xl font-bold text-slate-900">{t.value}</div>
+            <div key={t.label} className="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-lg border border-border bg-card">
+              <t.icon className={`w-4 h-4 shrink-0 ${t.tint}`} strokeWidth={2} />
+              <span className="text-xs uppercase tracking-wide text-muted-foreground">{t.label}</span>
+              <span className="text-base font-semibold tabular-nums text-foreground">{t.value}</span>
             </div>
           ))}
         </div>
 
-        {/* Filters */}
-        <div className="bg-white border border-slate-200 rounded-lg p-4 flex flex-col md:flex-row gap-3 md:items-center">
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search client…"
-              className="w-full pl-10 pr-3 py-2 border border-slate-200 rounded-md text-sm"
-            />
-          </div>
-          <label className="flex items-center gap-2 text-sm text-slate-600 select-none">
-            <input
-              type="checkbox"
-              checked={onlyMismatch}
-              onChange={(e) => setOnlyMismatch(e.target.checked)}
-            />
-            Show only mismatches
-          </label>
+        {/* Tabs + filters */}
+        <div className="flex flex-col md:flex-row md:items-center gap-3">
+          <Tabs
+            value={view}
+            onChange={setView}
+            items={[
+              { value: "strength", label: "Strength reconciliation" },
+              { value: "billing", label: "Billing reconciliation" },
+            ]}
+          />
+          {view === "strength" && (
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 md:ml-auto">
+              <div className="relative flex-1 sm:w-64">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" strokeWidth={1.5} />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search client…"
+                  className="w-full pl-10 pr-3 py-2 border border-border bg-card rounded-md text-sm text-foreground"
+                />
+              </div>
+              <label className="flex items-center gap-2 text-sm text-muted-foreground select-none whitespace-nowrap">
+                <input
+                  type="checkbox"
+                  checked={onlyMismatch}
+                  onChange={(e) => setOnlyMismatch(e.target.checked)}
+                />
+                Only mismatches
+              </label>
+            </div>
+          )}
         </div>
 
-        {/* Reconciliation table */}
-        <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+        {/* Strength reconciliation table */}
+        {view === "strength" && (
+        <>
+        <div className="bg-card border border-border rounded-lg overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50">
-                  <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Client</th>
-                  <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Sites</th>
-                  <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Contracted</th>
-                  <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">On-ground req.</th>
-                  <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Enrolled (active)</th>
-                  <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Variance</th>
+                <tr className="border-b border-border bg-slate-50">
+                  <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase tracking-wide">Client</th>
+                  <th className="text-right px-4 py-3 text-xs text-muted-foreground uppercase tracking-wide">Sites</th>
+                  <th className="text-right px-4 py-3 text-xs text-muted-foreground uppercase tracking-wide">Contracted</th>
+                  <th className="text-right px-4 py-3 text-xs text-muted-foreground uppercase tracking-wide">On-ground req.</th>
+                  <th className="text-right px-4 py-3 text-xs text-muted-foreground uppercase tracking-wide">Enrolled (active)</th>
+                  <th className="text-right px-4 py-3 text-xs text-muted-foreground uppercase tracking-wide">Variance</th>
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody className="divide-y divide-border">
                 {loading && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-10 text-center text-slate-500">
+                    <td colSpan={7} className="px-4 py-10 text-center text-muted-foreground">
                       <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                     </td>
                   </tr>
                 )}
                 {!loading && filtered.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-10 text-center text-slate-500 text-sm">
+                    <td colSpan={7} className="px-4 py-10 text-center text-muted-foreground text-sm">
                       No clients match the current filters.
                     </td>
                   </tr>
@@ -327,14 +344,14 @@ export default function SitesStrength() {
                   filtered.map((r) => (
                     <tr
                       key={r.client_id}
-                      className="hover:bg-slate-50 cursor-pointer"
+                      className="hover:bg-accent/50 cursor-pointer transition-colors"
                       onClick={() => loadDetail(r)}
                     >
-                      <td className="px-4 py-3 text-sm font-medium text-slate-900">{r.client_name}</td>
-                      <td className="px-4 py-3 text-sm text-right text-slate-600">{r.site_count}</td>
-                      <td className="px-4 py-3 text-sm text-right text-slate-600">{r.contracted_billed_qty}</td>
-                      <td className="px-4 py-3 text-sm text-right text-slate-600">{r.required_on_ground}</td>
-                      <td className="px-4 py-3 text-sm text-right text-slate-600">{r.enrolled_active}</td>
+                      <td className="px-4 py-3 text-sm font-medium text-foreground">{r.client_name}</td>
+                      <td className="px-4 py-3 text-sm text-right text-muted-foreground">{r.site_count}</td>
+                      <td className="px-4 py-3 text-sm text-right text-muted-foreground">{r.contracted_billed_qty}</td>
+                      <td className="px-4 py-3 text-sm text-right text-muted-foreground">{r.required_on_ground}</td>
+                      <td className="px-4 py-3 text-sm text-right text-muted-foreground">{r.enrolled_active}</td>
                       <td className="px-4 py-3 text-right">
                         <span
                           className={`inline-block px-2 py-0.5 rounded-md text-xs border font-medium ${varianceBadge(
@@ -345,7 +362,7 @@ export default function SitesStrength() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <ChevronRight className="w-4 h-4 text-slate-400 inline-block" />
+                        <ChevronRight className="w-4 h-4 text-muted-foreground inline-block" />
                       </td>
                     </tr>
                   ))}
@@ -353,32 +370,41 @@ export default function SitesStrength() {
             </table>
           </div>
         </div>
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-muted-foreground">
           Variance = contracted − enrolled(active). Positive (amber) = understaffed; negative (red) = over-enrolled.
         </p>
+        </>
+        )}
 
         {/* §10.6: billing reconciliation — contracted vs deployed vs on-ground vs shortfall */}
-        <div className="pt-2">
-          <h3 className="text-sm font-semibold text-slate-700 mb-2">Billing reconciliation — contracted vs deployed vs billed (§10.6)</h3>
-          <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+        {view === "billing" && (
+        <div>
+          <div className="bg-card border border-border rounded-lg overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50">
-                    <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Client</th>
-                    <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Contracted</th>
-                    <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Deployed</th>
-                    <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">On ground (att.)</th>
-                    <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Shortfall</th>
+                  <tr className="border-b border-border bg-slate-50">
+                    <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase tracking-wide">Client</th>
+                    <th className="text-right px-4 py-3 text-xs text-muted-foreground uppercase tracking-wide">Contracted</th>
+                    <th className="text-right px-4 py-3 text-xs text-muted-foreground uppercase tracking-wide">Deployed</th>
+                    <th className="text-right px-4 py-3 text-xs text-muted-foreground uppercase tracking-wide">On ground (att.)</th>
+                    <th className="text-right px-4 py-3 text-xs text-muted-foreground uppercase tracking-wide">Shortfall</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200">
+                <tbody className="divide-y divide-border">
+                  {!loading && billing.filter((b) => b.contracted > 0 || b.deployed > 0).length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-10 text-center text-muted-foreground text-sm">
+                        No billing lines to reconcile yet.
+                      </td>
+                    </tr>
+                  )}
                   {billing.filter((b) => b.contracted > 0 || b.deployed > 0).map((b) => (
-                    <tr key={b.client_id}>
-                      <td className="px-4 py-3 text-sm font-medium text-slate-900">{b.client_name}</td>
-                      <td className="px-4 py-3 text-sm text-right text-slate-600">{b.contracted}</td>
-                      <td className="px-4 py-3 text-sm text-right text-slate-600">{b.deployed}</td>
-                      <td className="px-4 py-3 text-sm text-right text-slate-600">{b.attendance_on_ground}</td>
+                    <tr key={b.client_id} className="hover:bg-accent/50 transition-colors">
+                      <td className="px-4 py-3 text-sm font-medium text-foreground">{b.client_name}</td>
+                      <td className="px-4 py-3 text-sm text-right text-muted-foreground">{b.contracted}</td>
+                      <td className="px-4 py-3 text-sm text-right text-muted-foreground">{b.deployed}</td>
+                      <td className="px-4 py-3 text-sm text-right text-muted-foreground">{b.attendance_on_ground}</td>
                       <td className="px-4 py-3 text-right">
                         <span className={`inline-block px-2 py-0.5 rounded-md text-xs border font-medium ${b.shortfall > 0 ? "bg-warning-50 text-warning-800 border-warning-200" : "bg-success-50 text-success-700 border-success-200"}`}>
                           {b.shortfall > 0 ? `−${b.shortfall}` : "0"}
@@ -390,8 +416,9 @@ export default function SitesStrength() {
               </table>
             </div>
           </div>
-          <p className="text-xs text-slate-400 mt-1">Shortfall = contracted − deployed. A client contracted for more than is on ground surfaces recruitment exposure (ties to the §8.10 vacancy queue).</p>
+          <p className="text-xs text-muted-foreground mt-1">Shortfall = contracted − deployed. A client contracted for more than is on ground surfaces recruitment exposure (ties to the §8.10 vacancy queue).</p>
         </div>
+        )}
       </div>
 
       {openClient && (
@@ -450,15 +477,15 @@ function ClientDetailModal({
   return (
     <Modal isOpen onClose={onClose} title={`${client.client_name} — Sites & Strength`} size="lg">
       {loading ? (
-        <div className="py-10 text-center text-slate-500">
+        <div className="py-10 text-center text-muted-foreground">
           <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
         </div>
       ) : (
         <div className="space-y-5">
           <div className="flex items-center justify-between">
-            <div className="text-sm text-slate-500">
-              Contracted <strong className="text-slate-800">{client.contracted_billed_qty}</strong> ·
-              Enrolled <strong className="text-slate-800">{client.enrolled_active}</strong> ·
+            <div className="text-sm text-muted-foreground">
+              Contracted <strong className="text-foreground">{client.contracted_billed_qty}</strong> ·
+              Enrolled <strong className="text-foreground">{client.enrolled_active}</strong> ·
               Variance{" "}
               <span
                 className={`px-1.5 py-0.5 rounded border text-xs ${varianceBadge(client.variance)}`}
@@ -472,7 +499,7 @@ function ClientDetailModal({
           </div>
 
           {sites.length === 0 && (
-            <div className="text-sm text-slate-500 border border-dashed border-slate-300 rounded-lg p-6 text-center">
+            <div className="text-sm text-muted-foreground border border-dashed border-border rounded-lg p-6 text-center">
               No sites yet. Add the first site for this client.
             </div>
           )}
@@ -483,11 +510,11 @@ function ClientDetailModal({
             const siteBilled = siteLines.reduce((a, l) => a + (l.billed_qty ?? 0), 0);
             const siteGuards = guards.filter((g) => g.site_id === site.id);
             return (
-              <div key={site.id} className="border border-slate-200 rounded-lg overflow-hidden">
-                <div className="bg-slate-50 px-4 py-2.5 flex items-center justify-between">
+              <div key={site.id} className="border border-border rounded-lg overflow-hidden">
+                <div className="bg-secondary px-4 py-2.5 flex items-center justify-between">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-slate-900">{site.name}</span>
+                      <span className="font-medium text-foreground">{site.name}</span>
                       {site.is_default && (
                         <span className="text-[10px] uppercase tracking-wide bg-brand-50 text-brand-700 border border-brand-200 rounded px-1.5 py-0.5">
                           default
@@ -495,17 +522,17 @@ function ClientDetailModal({
                       )}
                     </div>
                     {site.location && (
-                      <div className="text-xs text-slate-500 flex items-center gap-1 truncate">
+                      <div className="text-xs text-muted-foreground flex items-center gap-1 truncate">
                         <MapPin className="w-3 h-3" /> {site.location}
                       </div>
                     )}
                   </div>
                   <div className="flex items-center gap-1">
-                    <span className="text-xs text-slate-500 mr-2">billed {siteBilled}</span>
-                    <button className="p-1.5 text-slate-400 hover:text-slate-700" onClick={() => setSiteModal(site)}>
+                    <span className="text-xs text-muted-foreground mr-2">billed {siteBilled}</span>
+                    <button className="p-1.5 text-muted-foreground hover:text-foreground" onClick={() => setSiteModal(site)}>
                       <Pencil className="w-4 h-4" />
                     </button>
-                    <button className="p-1.5 text-slate-400 hover:text-danger-600" onClick={() => del("sites", site.id)}>
+                    <button className="p-1.5 text-muted-foreground hover:text-danger-600" onClick={() => del("sites", site.id)}>
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
@@ -515,7 +542,7 @@ function ClientDetailModal({
                   {/* Shift definitions */}
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
-                      <div className="text-xs font-semibold text-slate-600 uppercase flex items-center gap-1">
+                      <div className="text-xs font-semibold text-muted-foreground uppercase flex items-center gap-1">
                         <Clock className="w-3.5 h-3.5" /> Shifts
                       </div>
                       <button
@@ -526,7 +553,7 @@ function ClientDetailModal({
                       </button>
                     </div>
                     {siteShifts.length === 0 ? (
-                      <div className="text-xs text-slate-400">No shifts defined.</div>
+                      <div className="text-xs text-muted-foreground">No shifts defined.</div>
                     ) : (
                       <ul className="space-y-1">
                         {siteShifts
@@ -534,17 +561,17 @@ function ClientDetailModal({
                           .map((s) => (
                             <li
                               key={s.id}
-                              className="flex items-center justify-between text-sm bg-slate-50 rounded px-2 py-1"
+                              className="flex items-center justify-between text-sm bg-secondary rounded px-2 py-1"
                             >
                               <span className="capitalize">
                                 {s.shift_code} · {s.start_time.slice(0, 5)}–{s.end_time.slice(0, 5)} ·{" "}
                                 {s.duration_hours}h{s.crosses_midnight ? " ⤵" : ""}
                               </span>
                               <span className="flex gap-1">
-                                <button className="text-slate-400 hover:text-slate-700" onClick={() => setShiftModal({ site, def: s })}>
+                                <button className="text-muted-foreground hover:text-foreground" onClick={() => setShiftModal({ site, def: s })}>
                                   <Pencil className="w-3.5 h-3.5" />
                                 </button>
-                                <button className="text-slate-400 hover:text-danger-600" onClick={() => del("shift_definitions", s.id)}>
+                                <button className="text-muted-foreground hover:text-danger-600" onClick={() => del("shift_definitions", s.id)}>
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                               </span>
@@ -557,11 +584,11 @@ function ClientDetailModal({
                   {/* Strength lines */}
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
-                      <div className="text-xs font-semibold text-slate-600 uppercase flex items-center gap-1">
+                      <div className="text-xs font-semibold text-muted-foreground uppercase flex items-center gap-1">
                         <Users className="w-3.5 h-3.5" /> Strength lines
                       </div>
                       <button
-                        className="text-xs text-brand-700 hover:underline disabled:text-slate-300"
+                        className="text-xs text-brand-700 hover:underline disabled:text-muted-foreground/50"
                         disabled={!contract}
                         title={contract ? "" : "Client has no contract — cannot add strength line"}
                         onClick={() => contract && setLineModal({ site, line: null })}
@@ -570,7 +597,7 @@ function ClientDetailModal({
                       </button>
                     </div>
                     {siteLines.length === 0 ? (
-                      <div className="text-xs text-slate-400">
+                      <div className="text-xs text-muted-foreground">
                         {contract ? "No strength lines." : "No contract on file for this client."}
                       </div>
                     ) : (
@@ -578,7 +605,7 @@ function ClientDetailModal({
                         {siteLines.map((l) => (
                           <li
                             key={l.id}
-                            className="flex items-center justify-between text-sm bg-slate-50 rounded px-2 py-1"
+                            className="flex items-center justify-between text-sm bg-secondary rounded px-2 py-1"
                           >
                             <span>
                               {CATEGORY_LABEL[l.category]}
@@ -587,10 +614,10 @@ function ClientDetailModal({
                               <strong>{l.required_on_ground ?? 0}</strong>
                             </span>
                             <span className="flex gap-1">
-                              <button className="text-slate-400 hover:text-slate-700" onClick={() => setLineModal({ site, line: l })}>
+                              <button className="text-muted-foreground hover:text-foreground" onClick={() => setLineModal({ site, line: l })}>
                                 <Pencil className="w-3.5 h-3.5" />
                               </button>
-                              <button className="text-slate-400 hover:text-danger-600" onClick={() => del("contract_lines", l.id)}>
+                              <button className="text-muted-foreground hover:text-danger-600" onClick={() => del("contract_lines", l.id)}>
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </span>
@@ -602,16 +629,16 @@ function ClientDetailModal({
                 </div>
                 {/* Client → site → guards: who is currently posted here. */}
                 <div className="px-3 pb-3">
-                  <div className="text-xs font-semibold text-slate-600 uppercase flex items-center gap-1 mb-1.5">
+                  <div className="text-xs font-semibold text-muted-foreground uppercase flex items-center gap-1 mb-1.5">
                     <Users className="w-3.5 h-3.5" /> Guards ({siteGuards.length})
                   </div>
                   {siteGuards.length === 0 ? (
-                    <div className="text-xs text-slate-400">No guards posted here.</div>
+                    <div className="text-xs text-muted-foreground">No guards posted here.</div>
                   ) : (
                     <div className="flex flex-wrap gap-1.5">
                       {siteGuards.map((g) => (
-                        <span key={g.guard_id} className="text-xs bg-slate-50 border border-slate-200 rounded px-2 py-1">
-                          {g.full_name} <span className="text-slate-400 font-mono">{g.code}</span>
+                        <span key={g.guard_id} className="text-xs bg-secondary border border-border rounded px-2 py-1">
+                          {g.full_name} <span className="text-muted-foreground font-mono">{g.code}</span>
                         </span>
                       ))}
                     </div>
@@ -714,12 +741,12 @@ function SiteFormModal({
     >
       <div className="space-y-3">
         <label className="block">
-          <span className="text-sm text-slate-600">Site name</span>
-          <input value={name} onChange={(e) => setName(e.target.value)} className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-md text-sm" />
+          <span className="text-sm text-muted-foreground">Site name</span>
+          <input value={name} onChange={(e) => setName(e.target.value)} className="mt-1 w-full px-3 py-2 border border-border rounded-md text-sm" />
         </label>
         <label className="block">
-          <span className="text-sm text-slate-600">Location</span>
-          <input value={location} onChange={(e) => setLocation(e.target.value)} className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-md text-sm" />
+          <span className="text-sm text-muted-foreground">Location</span>
+          <input value={location} onChange={(e) => setLocation(e.target.value)} className="mt-1 w-full px-3 py-2 border border-border rounded-md text-sm" />
         </label>
       </div>
     </Modal>
@@ -781,8 +808,8 @@ function ShiftFormModal({
     >
       <div className="space-y-3">
         <label className="block">
-          <span className="text-sm text-slate-600">Shift</span>
-          <ThemedSelect value={shiftCode} onChange={(e) => setShiftCode(e.target.value as ShiftCode)} className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-md text-sm">
+          <span className="text-sm text-muted-foreground">Shift</span>
+          <ThemedSelect value={shiftCode} onChange={(e) => setShiftCode(e.target.value as ShiftCode)} className="mt-1 w-full px-3 py-2 border border-border rounded-md text-sm">
             {SHIFTS.map((s) => (
               <option key={s} value={s} className="capitalize">{s}</option>
             ))}
@@ -790,15 +817,15 @@ function ShiftFormModal({
         </label>
         <div className="grid grid-cols-2 gap-3">
           <label className="block">
-            <span className="text-sm text-slate-600">Start</span>
-            <input type="time" value={start} onChange={(e) => setStart(e.target.value)} className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-md text-sm" />
+            <span className="text-sm text-muted-foreground">Start</span>
+            <input type="time" value={start} onChange={(e) => setStart(e.target.value)} className="mt-1 w-full px-3 py-2 border border-border rounded-md text-sm" />
           </label>
           <label className="block">
-            <span className="text-sm text-slate-600">End</span>
-            <input type="time" value={end} onChange={(e) => setEnd(e.target.value)} className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-md text-sm" />
+            <span className="text-sm text-muted-foreground">End</span>
+            <input type="time" value={end} onChange={(e) => setEnd(e.target.value)} className="mt-1 w-full px-3 py-2 border border-border rounded-md text-sm" />
           </label>
         </div>
-        <div className="text-xs text-slate-500">
+        <div className="text-xs text-muted-foreground">
           Duration <strong>{hours}h</strong>
           {crosses && <span className="ml-2 text-warning-700">crosses midnight</span>}
         </div>
@@ -861,7 +888,7 @@ function StrengthLineFormModal({
     else await onSaved();
   };
 
-  const inputCls = "mt-1 w-full px-3 py-2 border border-slate-200 rounded-md text-sm";
+  const inputCls = "mt-1 w-full px-3 py-2 border border-border rounded-md text-sm";
 
   return (
     <Modal
@@ -880,7 +907,7 @@ function StrengthLineFormModal({
     >
       <div className="grid grid-cols-2 gap-3">
         <label className="block">
-          <span className="text-sm text-slate-600">Category</span>
+          <span className="text-sm text-muted-foreground">Category</span>
           <ThemedSelect value={category} onChange={(e) => setCategory(e.target.value as LineCategory)} className={inputCls}>
             {CATEGORIES.map((c) => (
               <option key={c} value={c}>{CATEGORY_LABEL[c]}</option>
@@ -888,7 +915,7 @@ function StrengthLineFormModal({
           </ThemedSelect>
         </label>
         <label className="block">
-          <span className="text-sm text-slate-600">Shift</span>
+          <span className="text-sm text-muted-foreground">Shift</span>
           <ThemedSelect value={shiftCode} onChange={(e) => setShiftCode(e.target.value as ShiftCode)} className={inputCls}>
             {SHIFTS.map((s) => (
               <option key={s} value={s} className="capitalize">{s}</option>
@@ -896,15 +923,15 @@ function StrengthLineFormModal({
           </ThemedSelect>
         </label>
         <label className="block">
-          <span className="text-sm text-slate-600">Billed qty</span>
+          <span className="text-sm text-muted-foreground">Billed qty</span>
           <input type="number" min={0} value={billedQty} onChange={(e) => setBilledQty(e.target.value)} className={inputCls} />
         </label>
         <label className="block">
-          <span className="text-sm text-slate-600">Relief allowance</span>
+          <span className="text-sm text-muted-foreground">Relief allowance</span>
           <input type="number" min={0} value={relief} onChange={(e) => setRelief(e.target.value)} className={inputCls} />
         </label>
         <label className="block">
-          <span className="text-sm text-slate-600">Relief mode</span>
+          <span className="text-sm text-muted-foreground">Relief mode</span>
           <ThemedSelect value={reliefMode} onChange={(e) => setReliefMode(e.target.value as ReliefMode)} className={inputCls}>
             {RELIEF_MODES.map((m) => (
               <option key={m} value={m} className="capitalize">{m}</option>
@@ -912,24 +939,24 @@ function StrengthLineFormModal({
           </ThemedSelect>
         </label>
         <div className="flex items-end">
-          <div className="text-sm text-slate-500">
-            Required on ground: <strong className="text-slate-800">{req}</strong>
+          <div className="text-sm text-muted-foreground">
+            Required on ground: <strong className="text-foreground">{req}</strong>
           </div>
         </div>
         <label className="block">
-          <span className="text-sm text-slate-600">Billing rate (/guard/mo)</span>
+          <span className="text-sm text-muted-foreground">Billing rate (/guard/mo)</span>
           <input type="number" min={0} value={billingRate} onChange={(e) => setBillingRate(e.target.value)} className={inputCls} />
         </label>
         <label className="block">
-          <span className="text-sm text-slate-600">Client OT rate</span>
+          <span className="text-sm text-muted-foreground">Client OT rate</span>
           <input type="number" min={0} value={otRate} onChange={(e) => setOtRate(e.target.value)} className={inputCls} />
         </label>
         <label className="block">
-          <span className="text-sm text-slate-600">Effective from</span>
+          <span className="text-sm text-muted-foreground">Effective from</span>
           <input type="date" value={effFrom} onChange={(e) => setEffFrom(e.target.value)} className={inputCls} />
         </label>
         <label className="block">
-          <span className="text-sm text-slate-600">Effective to</span>
+          <span className="text-sm text-muted-foreground">Effective to</span>
           <input type="date" value={effTo} onChange={(e) => setEffTo(e.target.value)} className={inputCls} />
         </label>
       </div>

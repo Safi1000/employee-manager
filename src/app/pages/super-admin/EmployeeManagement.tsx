@@ -10,6 +10,7 @@ import Header from "../../components/Header";
 import { formatDate } from "../../lib/date";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
+import Tabs from "../../components/Tabs";
 import ClientFilterSelect from "../../components/ClientFilterSelect";
 import ExportButton from "../../components/ExportButton";
 import { exportTable } from "../../lib/excel";
@@ -1926,26 +1927,16 @@ export default function EmployeeManagement() {
                   : <ArrowUpDown className="w-4 h-4" strokeWidth={1.5} />}
                 {sortDir === "asc" ? "ID 001→high" : sortDir === "desc" ? "ID high→001" : "Sort by ID"}
               </button>
-              <div className="flex gap-2 ml-auto">
-                {([
-                  { v: "all", label: "All" },
-                  { v: "active", label: "Active" },
-                  { v: "inactive", label: "Fired" },
-                ] as const).map((t) => (
-                  <button
-                    key={t.v}
-                    type="button"
-                    onClick={() => setEmpTab(t.v)}
-                    className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${
-                      empTab === t.v
-                        ? "border-brand-500 bg-brand-500/15 text-brand-700 dark:text-brand-500 font-medium"
-                        : "border-border text-muted-foreground hover:bg-accent"
-                    }`}
-                  >
-                    {t.label}
-                  </button>
-                ))}
-              </div>
+              <Tabs
+                className="ml-auto"
+                value={empTab}
+                onChange={setEmpTab}
+                items={[
+                  { value: "all", label: "All" },
+                  { value: "active", label: "Active" },
+                  { value: "inactive", label: "Fired" },
+                ]}
+              />
             </div>
             {filtersOpen && (
               <div className="mt-3 pt-3 border-t border-border flex flex-wrap gap-2">
@@ -2679,20 +2670,15 @@ export default function EmployeeManagement() {
                   <Trash2 className="w-4 h-4" strokeWidth={1.5} /> Archive
                 </button>
               </div>
-              <div className="flex gap-1 border-b border-slate-200">
-                {([["profile", "Profile"], ["compliance", "Compliance"], ["history", "History"]] as const).map(([k, l]) => (
-                  <button
-                    key={k}
-                    type="button"
-                    onClick={() => setViewTab(k)}
-                    className={`px-3 py-2 text-sm border-b-2 -mb-px ${
-                      viewTab === k ? "border-brand-600 text-brand-700 font-medium" : "border-transparent text-slate-500 hover:text-slate-700"
-                    }`}
-                  >
-                    {l}
-                  </button>
-                ))}
-              </div>
+              <Tabs
+                value={viewTab}
+                onChange={setViewTab}
+                items={[
+                  { value: "profile", label: "Profile" },
+                  { value: "compliance", label: "Compliance" },
+                  { value: "history", label: "History" },
+                ]}
+              />
             </div>
 
             {viewTab === "profile" && (
