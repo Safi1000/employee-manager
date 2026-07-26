@@ -482,24 +482,29 @@ function ClientDetailModal({
         </div>
       ) : (
         <div className="space-y-5">
-          <div className="flex items-center justify-between">
-            <div className="text-sm text-muted-foreground">
-              Contracted <strong className="text-foreground">{client.contracted_billed_qty}</strong> ·
-              Enrolled <strong className="text-foreground">{client.enrolled_active}</strong> ·
-              Variance{" "}
-              <span
-                className={`px-1.5 py-0.5 rounded border text-xs ${varianceBadge(client.variance)}`}
-              >
+          {/* Summary stat pills + add-site action. */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-card">
+              <span className="text-xs uppercase tracking-wide text-muted-foreground">Contracted</span>
+              <span className="text-sm font-semibold tabular-nums text-foreground">{client.contracted_billed_qty}</span>
+            </div>
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-card">
+              <span className="text-xs uppercase tracking-wide text-muted-foreground">Enrolled</span>
+              <span className="text-sm font-semibold tabular-nums text-foreground">{client.enrolled_active}</span>
+            </div>
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-card">
+              <span className="text-xs uppercase tracking-wide text-muted-foreground">Variance</span>
+              <span className={`px-1.5 py-0.5 rounded-md border text-xs font-semibold tabular-nums ${varianceBadge(client.variance)}`}>
                 {client.variance > 0 ? `+${client.variance}` : client.variance}
               </span>
             </div>
-            <Button size="sm" variant="secondary" onClick={() => setSiteModal("new")}>
+            <Button size="sm" variant="secondary" className="ml-auto" onClick={() => setSiteModal("new")}>
               <Plus className="w-4 h-4 mr-1" /> Add site
             </Button>
           </div>
 
           {sites.length === 0 && (
-            <div className="text-sm text-muted-foreground border border-dashed border-border rounded-lg p-6 text-center">
+            <div className="text-sm text-muted-foreground border border-dashed border-border rounded-xl p-8 text-center">
               No sites yet. Add the first site for this client.
             </div>
           )}
@@ -510,68 +515,74 @@ function ClientDetailModal({
             const siteBilled = siteLines.reduce((a, l) => a + (l.billed_qty ?? 0), 0);
             const siteGuards = guards.filter((g) => g.site_id === site.id);
             return (
-              <div key={site.id} className="border border-border rounded-lg overflow-hidden">
-                <div className="bg-secondary px-4 py-2.5 flex items-center justify-between">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-foreground">{site.name}</span>
-                      {site.is_default && (
-                        <span className="text-[10px] uppercase tracking-wide bg-brand-50 text-brand-700 border border-brand-200 rounded px-1.5 py-0.5">
-                          default
-                        </span>
+              <div key={site.id} className="border border-border rounded-xl overflow-hidden bg-card shadow-sm">
+                {/* Site header */}
+                <div className="px-4 py-3 flex items-start justify-between gap-3 border-b border-border">
+                  <div className="min-w-0 flex items-start gap-2.5">
+                    <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-500/10 text-brand-600 dark:text-brand-500">
+                      <Building2 className="w-4 h-4" strokeWidth={2} />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-foreground truncate">{site.name}</span>
+                        {site.is_default && (
+                          <span className="text-[10px] font-semibold uppercase tracking-wide bg-brand-500/15 text-brand-700 dark:text-brand-500 border border-brand-200 rounded-full px-2 py-0.5">
+                            default
+                          </span>
+                        )}
+                      </div>
+                      {site.location && (
+                        <div className="text-xs text-muted-foreground flex items-center gap-1 truncate mt-0.5">
+                          <MapPin className="w-3 h-3 shrink-0" /> {site.location}
+                        </div>
                       )}
                     </div>
-                    {site.location && (
-                      <div className="text-xs text-muted-foreground flex items-center gap-1 truncate">
-                        <MapPin className="w-3 h-3" /> {site.location}
-                      </div>
-                    )}
                   </div>
-                  <div className="flex items-center gap-1">
-                    <span className="text-xs text-muted-foreground mr-2">billed {siteBilled}</span>
-                    <button className="p-1.5 text-muted-foreground hover:text-foreground" onClick={() => setSiteModal(site)}>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className="text-[11px] font-medium text-muted-foreground bg-secondary rounded-md px-2 py-1 mr-1 tabular-nums">billed {siteBilled}</span>
+                    <button className="w-8 h-8 grid place-items-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors" onClick={() => setSiteModal(site)}>
                       <Pencil className="w-4 h-4" />
                     </button>
-                    <button className="p-1.5 text-muted-foreground hover:text-danger-600" onClick={() => del("sites", site.id)}>
+                    <button className="w-8 h-8 grid place-items-center rounded-md text-muted-foreground hover:text-danger-600 hover:bg-danger-50 transition-colors" onClick={() => del("sites", site.id)}>
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
 
-                <div className="p-3 grid md:grid-cols-2 gap-4">
+                <div className="p-4 grid md:grid-cols-2 gap-5">
                   {/* Shift definitions */}
                   <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <div className="text-xs font-semibold text-muted-foreground uppercase flex items-center gap-1">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
                         <Clock className="w-3.5 h-3.5" /> Shifts
                       </div>
                       <button
-                        className="text-xs text-brand-700 hover:underline"
+                        className="inline-flex items-center gap-1 text-xs font-medium text-brand-700 dark:text-brand-500 hover:bg-brand-500/10 rounded-md px-2 py-1 transition-colors"
                         onClick={() => setShiftModal({ site, def: null })}
                       >
-                        + Add
+                        <Plus className="w-3.5 h-3.5" /> Add
                       </button>
                     </div>
                     {siteShifts.length === 0 ? (
-                      <div className="text-xs text-muted-foreground">No shifts defined.</div>
+                      <div className="text-xs text-muted-foreground border border-dashed border-border rounded-lg px-3 py-2.5">No shifts defined.</div>
                     ) : (
-                      <ul className="space-y-1">
+                      <ul className="space-y-1.5">
                         {siteShifts
                           .sort((a, b) => a.start_time.localeCompare(b.start_time))
                           .map((s) => (
                             <li
                               key={s.id}
-                              className="flex items-center justify-between text-sm bg-secondary rounded px-2 py-1"
+                              className="group flex items-center justify-between gap-2 text-sm border border-border rounded-lg px-3 py-2 hover:border-brand-500/40 transition-colors"
                             >
-                              <span className="capitalize">
+                              <span className="capitalize text-foreground truncate">
                                 {s.shift_code} · {s.start_time.slice(0, 5)}–{s.end_time.slice(0, 5)} ·{" "}
                                 {s.duration_hours}h{s.crosses_midnight ? " ⤵" : ""}
                               </span>
-                              <span className="flex gap-1">
-                                <button className="text-muted-foreground hover:text-foreground" onClick={() => setShiftModal({ site, def: s })}>
+                              <span className="flex gap-0.5 shrink-0">
+                                <button className="w-7 h-7 grid place-items-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors" onClick={() => setShiftModal({ site, def: s })}>
                                   <Pencil className="w-3.5 h-3.5" />
                                 </button>
-                                <button className="text-muted-foreground hover:text-danger-600" onClick={() => del("shift_definitions", s.id)}>
+                                <button className="w-7 h-7 grid place-items-center rounded-md text-muted-foreground hover:text-danger-600 hover:bg-danger-50 transition-colors" onClick={() => del("shift_definitions", s.id)}>
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                               </span>
@@ -583,41 +594,41 @@ function ClientDetailModal({
 
                   {/* Strength lines */}
                   <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <div className="text-xs font-semibold text-muted-foreground uppercase flex items-center gap-1">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
                         <Users className="w-3.5 h-3.5" /> Strength lines
                       </div>
                       <button
-                        className="text-xs text-brand-700 hover:underline disabled:text-muted-foreground/50"
+                        className="inline-flex items-center gap-1 text-xs font-medium text-brand-700 dark:text-brand-500 hover:bg-brand-500/10 rounded-md px-2 py-1 transition-colors disabled:text-muted-foreground/50 disabled:hover:bg-transparent"
                         disabled={!contract}
                         title={contract ? "" : "Client has no contract — cannot add strength line"}
                         onClick={() => contract && setLineModal({ site, line: null })}
                       >
-                        + Add
+                        <Plus className="w-3.5 h-3.5" /> Add
                       </button>
                     </div>
                     {siteLines.length === 0 ? (
-                      <div className="text-xs text-muted-foreground">
+                      <div className="text-xs text-muted-foreground border border-dashed border-border rounded-lg px-3 py-2.5">
                         {contract ? "No strength lines." : "No contract on file for this client."}
                       </div>
                     ) : (
-                      <ul className="space-y-1">
+                      <ul className="space-y-1.5">
                         {siteLines.map((l) => (
                           <li
                             key={l.id}
-                            className="flex items-center justify-between text-sm bg-secondary rounded px-2 py-1"
+                            className="group flex items-center justify-between gap-2 text-sm border border-border rounded-lg px-3 py-2 hover:border-brand-500/40 transition-colors"
                           >
-                            <span>
+                            <span className="text-foreground truncate">
                               {CATEGORY_LABEL[l.category]}
                               {l.shift_code ? ` · ${l.shift_code}` : ""} · billed {l.billed_qty ?? 0}
                               {l.relief_allowance ? ` − ${l.relief_allowance} relief` : ""} ={" "}
                               <strong>{l.required_on_ground ?? 0}</strong>
                             </span>
-                            <span className="flex gap-1">
-                              <button className="text-muted-foreground hover:text-foreground" onClick={() => setLineModal({ site, line: l })}>
+                            <span className="flex gap-0.5 shrink-0">
+                              <button className="w-7 h-7 grid place-items-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors" onClick={() => setLineModal({ site, line: l })}>
                                 <Pencil className="w-3.5 h-3.5" />
                               </button>
-                              <button className="text-muted-foreground hover:text-danger-600" onClick={() => del("contract_lines", l.id)}>
+                              <button className="w-7 h-7 grid place-items-center rounded-md text-muted-foreground hover:text-danger-600 hover:bg-danger-50 transition-colors" onClick={() => del("contract_lines", l.id)}>
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </span>
@@ -628,8 +639,8 @@ function ClientDetailModal({
                   </div>
                 </div>
                 {/* Client → site → guards: who is currently posted here. */}
-                <div className="px-3 pb-3">
-                  <div className="text-xs font-semibold text-muted-foreground uppercase flex items-center gap-1 mb-1.5">
+                <div className="px-4 pb-4 pt-1 border-t border-border">
+                  <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5 mb-2 mt-3">
                     <Users className="w-3.5 h-3.5" /> Guards ({siteGuards.length})
                   </div>
                   {siteGuards.length === 0 ? (
@@ -637,8 +648,9 @@ function ClientDetailModal({
                   ) : (
                     <div className="flex flex-wrap gap-1.5">
                       {siteGuards.map((g) => (
-                        <span key={g.guard_id} className="text-xs bg-secondary border border-border rounded px-2 py-1">
-                          {g.full_name} <span className="text-muted-foreground font-mono">{g.code}</span>
+                        <span key={g.guard_id} className="inline-flex items-center gap-1.5 text-xs bg-secondary border border-border rounded-md px-2 py-1">
+                          <span className="text-foreground">{g.full_name}</span>
+                          <span className="text-muted-foreground font-mono text-[11px]">{g.code}</span>
                         </span>
                       ))}
                     </div>

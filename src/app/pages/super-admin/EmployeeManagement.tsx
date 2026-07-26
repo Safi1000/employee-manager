@@ -2601,18 +2601,6 @@ export default function EmployeeManagement() {
       >
         {selectedEmployee && (
           <div className="space-y-6">
-            <div className="flex justify-end">
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => downloadFormPdf(selectedEmployee)}
-              >
-                <FileText className="w-4 h-4 mr-2" strokeWidth={1.5} />
-                Download Form PDF
-              </Button>
-            </div>
-
             {/* Phase 3E/3D: computed completeness tiers + approval workflow,
                 always visible above the tabs. */}
             <div className="space-y-3">
@@ -2662,6 +2650,15 @@ export default function EmployeeManagement() {
                     onClick={() => setRehireTarget(selectedEmployee)}>Rehire</Button>
                 )}
                 <div className="flex-1" />
+                <button
+                  type="button"
+                  onClick={() => downloadFormPdf(selectedEmployee)}
+                  title="Download Form PDF"
+                  aria-label="Download Form PDF"
+                  className="inline-flex items-center justify-center w-8 h-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent border border-border transition-colors"
+                >
+                  <FileText className="w-4 h-4" strokeWidth={1.5} />
+                </button>
                 <button
                   type="button"
                   onClick={() => handleArchive(selectedEmployee)}
