@@ -1,6 +1,6 @@
 import ThemedSelect from "../../components/ThemedSelect";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Search, Upload, AlertCircle, Loader2, X, Trash2, ChevronDown, ChevronRight as ChevronRightIcon, FileText, SlidersHorizontal } from "lucide-react";
+import { Plus, Search, Upload, AlertCircle, Loader2, X, Trash2, ChevronDown, ChevronRight as ChevronRightIcon, FileText, SlidersHorizontal, Image as ImageIcon } from "lucide-react";
 import jsPDF from "jspdf";
 import { generateEmployeeFormPdf, type FormApprovals } from "../../lib/employeeFormPdf";
 import { generateIdCardPdf } from "../../lib/idCardPdf";
@@ -134,6 +134,7 @@ type FormState = {
   eobi_registration_number: string;
   iban: string;
   // §11 Employee Data Form — extended paper-form fields
+  photo_url: string;
   interview_date: string;
   form_serial_no: string;
   cnic_expiry: string;
@@ -189,6 +190,7 @@ type FormState = {
 // Default values for the §11 extended fields, spread into both emptyForm and the
 // edit-form population so the two never drift.
 const emptyPaperFormFields = {
+  photo_url: "",
   interview_date: "",
   form_serial_no: "",
   cnic_expiry: "",
@@ -482,6 +484,7 @@ function renderPaperFormSections(f: FormState, setF: (f: FormState) => void) {
 // father_or_husband_name) are handled by the normal payload and, once verified, are
 // locked by the DB — changes must go through the amend flow.
 const paperFormPayload = (f: FormState) => ({
+  photo_url: f.photo_url || null,
   interview_date: f.interview_date || null,
   form_serial_no: f.form_serial_no.trim() || null,
   cnic_expiry: f.cnic_expiry || null,
@@ -620,6 +623,8 @@ export default function EmployeeManagement() {
   // Phase 4: the ONLY way to move a guard between clients (or shifts) — a dated
   // posting change (close current row, open new). Never edited in place.
   const [changeClientTarget, setChangeClientTarget] = useState<EmployeeRow | null>(null);
+  // §7.5: dated shift change — closes the old-shift posting, opens a new one.
+  const [changeShiftTarget, setChangeShiftTarget] = useState<EmployeeRow | null>(null);
   // Phase 7 §9: separation / rehire.
   const [separationTarget, setSeparationTarget] = useState<EmployeeRow | null>(null);
   const [rehireTarget, setRehireTarget] = useState<EmployeeRow | null>(null);
@@ -641,6 +646,8 @@ export default function EmployeeManagement() {
   const [completenessFilter, setCompletenessFilter] = useState<"all" | "complete" | "incomplete">("all");
   // §12 recruitment pipeline / lifecycle-state filter.
   const [lifecycleFilter, setLifecycleFilter] = useState<"all" | EmployeeLifecycleState>("all");
+  // Show only employees whose CNIC card has expired.
+  const [expiredCardFilter, setExpiredCardFilter] = useState<"all" | "expired">("all");
   // Quick Active / Inactive tab split (Inactive = anything not currently Active).
   const [empTab, setEmpTab] = useState<"all" | "active" | "inactive">("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -652,7 +659,8 @@ export default function EmployeeManagement() {
     (shiftFilter !== "all" ? 1 : 0) +
     (statusFilter !== "all" ? 1 : 0) +
     (completenessFilter !== "all" ? 1 : 0) +
-    (lifecycleFilter !== "all" ? 1 : 0);
+    (lifecycleFilter !== "all" ? 1 : 0) +
+    (expiredCardFilter !== "all" ? 1 : 0);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
@@ -990,11 +998,12 @@ export default function EmployeeManagement() {
       if (completenessFilter === "complete" && !e.physical_copy_present) return false;
       if (completenessFilter === "incomplete" && e.physical_copy_present) return false;
       if (lifecycleFilter !== "all" && e.lifecycle_state !== lifecycleFilter) return false;
+      if (expiredCardFilter === "expired" && !isCardExpired(e.cnic_expiry)) return false;
       if (empTab === "active" && e.status !== "Active") return false;
       if (empTab === "inactive" && e.status === "Active") return false;
       return true;
     });
-  }, [employees, search, locationFilter, clientFilter, branchFilter, categoryFilter, shiftFilter, statusFilter, completenessFilter, lifecycleFilter, empTab, branches]);
+  }, [employees, search, locationFilter, clientFilter, branchFilter, categoryFilter, shiftFilter, statusFilter, completenessFilter, lifecycleFilter, expiredCardFilter, empTab, branches]);
 
   type EmpRef = { id: string; employee_code: string; full_name: string };
 
@@ -1103,8 +1112,6 @@ export default function EmployeeManagement() {
   // always agree — a change in one is immediately reflected in the others.
   const [statusTogglingId, setStatusTogglingId] = useState<string | null>(null);
 
-  // Reactivate (rehire) confirm target — a currently-fired/left guard.
-  const [reactivateTarget, setReactivateTarget] = useState<EmployeeRow | null>(null);
 
   // Fire flow: outstanding-dues popup + required reason + rehire decision.
   type ExitGates = {
@@ -1118,6 +1125,11 @@ export default function EmployeeManagement() {
   const [fireGatesLoading, setFireGatesLoading] = useState(false);
   const [fireReason, setFireReason] = useState("");
   const [fireEligible, setFireEligible] = useState(true);
+  // Separation type + effective date (§9). Firing and Resignation behave
+  // IDENTICALLY for the roster (both close the posting + set last_working_day);
+  // they differ only in recorded reason and the default rehire eligibility.
+  const [fireType, setFireType] = useState<"firing" | "resignation">("firing");
+  const [fireDate, setFireDate] = useState<string>(todayIso());
   const [fireSubmitting, setFireSubmitting] = useState(false);
   const [fireError, setFireError] = useState<string | null>(null);
 
@@ -1150,11 +1162,17 @@ export default function EmployeeManagement() {
   };
 
   const isFired = (emp: EmployeeRow) =>
-    emp.lifecycle_state === "terminated" || emp.lifecycle_state === "left";
+    ["terminated", "left", "fired", "absconded"].includes(emp.lifecycle_state);
 
   const requestStatusToggle = (emp: EmployeeRow) => {
     if (isFired(emp)) {
-      setReactivateTarget(emp);
+      // Rehire relinks to the SAME record; only allowed when eligible (the RPC
+      // enforces it too). Opens the dated Rehire flow (new posting from a date).
+      if (emp.eligible_for_rehire === false) {
+        setError("This guard is not eligible for rehire (set at their last separation).");
+        return;
+      }
+      setRehireTarget(emp);
     } else if (emp.lifecycle_state === "active" || emp.lifecycle_state === "on_leave") {
       openFireModal(emp);
     }
@@ -1165,7 +1183,9 @@ export default function EmployeeManagement() {
   const openFireModal = async (emp: EmployeeRow) => {
     setFireTarget(emp);
     setFireReason("");
-    setFireEligible(true);
+    setFireType("firing");
+    setFireEligible(false); // firing defaults to NOT rehire-eligible
+    setFireDate(todayIso());
     setFireError(null);
     setFireGates(null);
     setFireGatesLoading(true);
@@ -1192,46 +1212,41 @@ export default function EmployeeManagement() {
   const confirmFire = async () => {
     if (!fireTarget) return;
     if (!fireReason.trim()) {
-      setFireError("A reason is required to fire a guard.");
+      setFireError("A reason is required.");
+      return;
+    }
+    if (!fireDate) {
+      setFireError("An effective (last working) date is required.");
       return;
     }
     setFireSubmitting(true);
     setFireError(null);
-    const { error: tErr } = await supabase.rpc("transition_employee_lifecycle", {
-      p_employee_id: fireTarget.id,
-      p_to_state: "terminated",
-      p_reason: fireReason.trim(),
-      p_eligible_for_rehire: fireEligible,
+    // §9: record_separation sets last_working_day + termination_date, records the
+    // reason + rehire flag, moves lifecycle_state, and CLOSES the active posting
+    // (end_date = last working day). This is what removes the guard from the
+    // roster from the day after — the old transition RPC did none of that.
+    const reasonVal = fireType === "resignation" ? "resignation" : "termination_misconduct";
+    const { error: sErr } = await supabase.rpc("record_separation", {
+      p_guard: fireTarget.id,
+      p_reason: reasonVal,
+      p_last_working_day: fireDate,
+      p_termination_date: fireDate,
+      p_rehire_eligible: fireEligible,
+      p_note: fireReason.trim(),
     });
-    if (tErr) {
+    if (sErr) {
       setFireSubmitting(false);
-      setFireError(tErr.message);
+      setFireError(sErr.message);
       return;
     }
     // Snapshot the exit clearance so the panel reflects the outstanding dues.
     await supabase.rpc("assess_clearance", { p_employee_id: fireTarget.id });
     setFireSubmitting(false);
+    const firedId = fireTarget.id;
+    const newState = fireType === "resignation" ? "left" : "fired";
     setFireTarget(null);
-    if (selectedEmployee?.id === fireTarget.id) {
-      setSelectedEmployee({ ...selectedEmployee, lifecycle_state: "terminated", status: "Inactive" } as EmployeeRow);
-    }
-    await loadData();
-  };
-
-  const confirmReactivate = async () => {
-    if (!reactivateTarget) return;
-    const emp = reactivateTarget;
-    setReactivateTarget(null);
-    setStatusTogglingId(emp.id);
-    setError(null);
-    const { error: tErr } = await supabase.rpc("transition_employee_lifecycle", {
-      p_employee_id: emp.id,
-      p_to_state: "active",
-    });
-    setStatusTogglingId(null);
-    if (tErr) {
-      setError(tErr.message);
-      return;
+    if (selectedEmployee?.id === firedId) {
+      setSelectedEmployee({ ...selectedEmployee, lifecycle_state: newState, status: "Inactive" } as EmployeeRow);
     }
     await loadData();
   };
@@ -1608,6 +1623,7 @@ export default function EmployeeManagement() {
       eobi_registration_number: emp.eobi_registration_number ?? "",
       iban: emp.iban ?? "",
       // §11 extended paper-form fields
+      photo_url: (emp as { photo_url?: string | null }).photo_url ?? "",
       interview_date: emp.interview_date ?? "",
       form_serial_no: emp.form_serial_no ?? "",
       cnic_expiry: emp.cnic_expiry ?? "",
@@ -1978,6 +1994,15 @@ export default function EmployeeManagement() {
                   <option key={s} value={s}>{LIFECYCLE_STATE_LABEL[s]}</option>
                 ))}
               </ThemedSelect>
+              <ThemedSelect
+                value={expiredCardFilter}
+                onChange={(e) => setExpiredCardFilter(e.target.value as "all" | "expired")}
+                className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                title="CNIC card expiry"
+              >
+                <option value="all">All Cards</option>
+                <option value="expired">Expired card only</option>
+              </ThemedSelect>
               </div>
             )}
           </div>
@@ -2037,6 +2062,12 @@ export default function EmployeeManagement() {
                               Incomplete
                             </span>
                           )}
+                          {isCardExpired(employee.cnic_expiry) && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-warning-700 dark:text-warning-500 bg-warning-50 border border-warning-200 px-1.5 py-0.5 rounded-md" title="CNIC card expired">
+                              <AlertCircle className="w-3 h-3" strokeWidth={2} />
+                              Card expired
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td className="px-6 py-3.5 text-sm text-muted-foreground tabular-nums">{employee.phone ?? "—"}</td>
@@ -2052,15 +2083,32 @@ export default function EmployeeManagement() {
                         )}
                       </td>
                       <td className="px-6 py-3.5">
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border capitalize ${
-                            employee.shift === "day"
-                              ? "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200"
-                              : "bg-info-50 text-info-700 dark:text-info-500 border-info-200"
-                          }`}
-                        >
-                          {employee.shift}
-                        </span>
+                        {(employee.category ?? "client") === "client"
+                          && ["active", "on_leave"].includes(employee.lifecycle_state)
+                          && employee.record_state !== "draft" ? (
+                          <button
+                            type="button"
+                            onClick={() => setChangeShiftTarget(employee)}
+                            title="Click to change shift (dated — keeps past attendance on the old shift)"
+                            className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border capitalize transition-colors ${
+                              employee.shift === "day"
+                                ? "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200 hover:bg-warning-100"
+                                : "bg-info-50 text-info-700 dark:text-info-500 border-info-200 hover:bg-info-100"
+                            }`}
+                          >
+                            {employee.shift}
+                          </button>
+                        ) : (
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border capitalize ${
+                              employee.shift === "day"
+                                ? "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200"
+                                : "bg-info-50 text-info-700 dark:text-info-500 border-info-200"
+                            }`}
+                          >
+                            {employee.shift}
+                          </span>
+                        )}
                       </td>
                       <td className="px-6 py-3.5">
                         <button
@@ -2465,8 +2513,6 @@ export default function EmployeeManagement() {
             </p>
           </div>
 
-          {renderPaperFormSections(form, setForm)}
-
           <div className="pt-4 border-t border-slate-200">
             <h4 className="text-sm text-slate-900 mb-4">Documents</h4>
             <div className="space-y-3">
@@ -2667,6 +2713,18 @@ export default function EmployeeManagement() {
                 <div>
                   <p className="text-slate-500 mb-1">Shift</p>
                   <p className="text-slate-900 capitalize">{selectedEmployee.shift}</p>
+                  {(selectedEmployee.category ?? "client") === "client"
+                    && ["active", "on_leave"].includes(selectedEmployee.lifecycle_state) && (
+                    <button
+                      type="button"
+                      className="text-xs text-brand-700 hover:underline mt-1 disabled:text-slate-300"
+                      disabled={selectedEmployee.record_state === "draft"}
+                      title={selectedEmployee.record_state === "draft" ? "Ops-verify the guard before changing shift" : ""}
+                      onClick={() => setChangeShiftTarget(selectedEmployee)}
+                    >
+                      Change shift
+                    </button>
+                  )}
                 </div>
                 <div>
                   <p className="text-slate-500 mb-1">Base Salary</p>
@@ -2814,6 +2872,16 @@ export default function EmployeeManagement() {
             setChangeClientTarget(null);
             await loadData();
           }}
+          onError={setError}
+        />
+      )}
+
+      {changeShiftTarget && (
+        <ChangeShiftModal
+          guard={changeShiftTarget}
+          displayCode={displayCodeFor(changeShiftTarget)}
+          onClose={() => setChangeShiftTarget(null)}
+          onDone={async () => { setChangeShiftTarget(null); await loadData(); }}
           onError={setError}
         />
       )}
@@ -3068,6 +3136,21 @@ export default function EmployeeManagement() {
                     <option value="night">Night</option>
                     <option value="evening">Evening</option>
                   </ThemedSelect>
+                  {(editForm.category ?? "client") === "client"
+                    && ["active", "on_leave"].includes(selectedEmployee?.lifecycle_state ?? "")
+                    && selectedEmployee?.record_state !== "draft" ? (
+                    <button
+                      type="button"
+                      onClick={() => { setIsEditModalOpen(false); setChangeShiftTarget(selectedEmployee); }}
+                      className="text-xs text-brand-700 hover:underline mt-1"
+                    >
+                      Change shift (dated — keeps past attendance on the old shift)
+                    </button>
+                  ) : (
+                    <p className="text-xs text-slate-500 mt-1">
+                      A shift change is a dated posting change (Ops-verify / active guards only).
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm text-slate-700 mb-1">Base Salary (PKR)</label>
@@ -3210,8 +3293,6 @@ export default function EmployeeManagement() {
               forceOpen={editSubmitAttempted}
             />
 
-            {renderPaperFormSections(editForm, setEditForm)}
-
             <EmployeeChildTables employeeId={selectedEmployee.id} />
 
             <EmployeeLifecyclePanel
@@ -3285,20 +3366,59 @@ export default function EmployeeManagement() {
           </form>
         )}
       </Modal>
-      {/* Fire modal — outstanding dues + required reason + rehire decision. */}
+      {/* Separation modal — type + effective date + outstanding dues + reason. */}
       <Modal
         isOpen={fireTarget !== null}
         onClose={() => setFireTarget(null)}
-        title="Fire Guard"
+        title="Fire / Resign guard"
         size="sm"
       >
         {fireTarget && (
           <div className="space-y-4">
             <p className="text-sm text-slate-600">
-              You are about to fire{" "}
+              Separating{" "}
               <span className="text-slate-900 font-medium">{fireTarget.full_name}</span>{" "}
-              ({fireTarget.employee_code}).
+              ({fireTarget.employee_code}). Removes them from the roster from the day
+              after the last working day; prior attendance stays intact.
             </p>
+
+            {/* Separation type — both remove from the roster identically; they
+                differ only in recorded reason + default rehire eligibility. */}
+            <div>
+              <span className="block text-sm text-slate-700 mb-1">Separation type</span>
+              <div className="flex gap-2">
+                {([["firing", "Firing"], ["resignation", "Resignation"]] as const).map(([val, label]) => (
+                  <button
+                    key={val}
+                    type="button"
+                    onClick={() => { setFireType(val); setFireEligible(val === "resignation"); }}
+                    className={`flex-1 px-3 py-2 rounded-md text-sm border ${fireType === val ? "bg-slate-900 text-[#fff] border-slate-900" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Effective date — Today or a picker. */}
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Effective (last working) date *</label>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFireDate(todayIso())}
+                  className={`px-3 py-2 rounded-md text-sm border ${fireDate === todayIso() ? "bg-slate-100 border-slate-300 text-slate-900" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+                >
+                  Today
+                </button>
+                <input
+                  type="date"
+                  value={fireDate}
+                  onChange={(e) => setFireDate(e.target.value)}
+                  className="flex-1 px-3 py-2 border border-slate-200 rounded-md text-sm"
+                />
+              </div>
+            </div>
 
             {/* Outstanding dues — only shown when there is something outstanding. */}
             {fireGatesLoading ? (
@@ -3350,13 +3470,15 @@ export default function EmployeeManagement() {
             ) : null}
 
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Reason for firing *</label>
+              <label className="block text-sm text-slate-700 mb-1">
+                {fireType === "resignation" ? "Resignation note *" : "Reason for firing *"}
+              </label>
               <textarea
                 value={fireReason}
                 onChange={(e) => setFireReason(e.target.value)}
                 rows={2}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                placeholder="e.g. Repeated no-shows, misconduct…"
+                placeholder={fireType === "resignation" ? "e.g. Resigned for personal reasons…" : "e.g. Repeated no-shows, misconduct…"}
               />
             </div>
             <label className="flex items-center gap-2 text-sm text-slate-700">
@@ -3374,35 +3496,9 @@ export default function EmployeeManagement() {
                 disabled={fireSubmitting || fireGatesLoading}
                 onClick={confirmFire}
               >
-                {fireSubmitting ? "Firing…" : "Confirm Fire"}
+                {fireSubmitting ? "Saving…" : fireType === "resignation" ? "Confirm Resignation" : "Confirm Fire"}
               </Button>
               <Button variant="secondary" size="md" onClick={() => setFireTarget(null)}>
-                Cancel
-              </Button>
-            </div>
-          </div>
-        )}
-      </Modal>
-
-      {/* Reactivate (rehire) modal. */}
-      <Modal
-        isOpen={reactivateTarget !== null}
-        onClose={() => setReactivateTarget(null)}
-        title="Reactivate Guard"
-        size="sm"
-      >
-        {reactivateTarget && (
-          <div className="space-y-4">
-            <p className="text-sm text-slate-600">
-              Reactivate{" "}
-              <span className="text-slate-900 font-medium">{reactivateTarget.full_name}</span>{" "}
-              ({reactivateTarget.employee_code}) back to Active?
-            </p>
-            <div className="flex items-center gap-3 pt-2">
-              <Button variant="primary" size="md" className="flex-1" onClick={confirmReactivate}>
-                Yes, Reactivate
-              </Button>
-              <Button variant="secondary" size="md" onClick={() => setReactivateTarget(null)}>
                 Cancel
               </Button>
             </div>
@@ -3733,6 +3829,17 @@ function ServiceHistoryTab({ employeeId }: { employeeId: string }) {
 }
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
+
+// CNIC card expiry: expired when the expiry date is strictly before today.
+// (ISO YYYY-MM-DD strings compare correctly lexicographically.)
+const isCardExpired = (cnicExpiry?: string | null): boolean =>
+  !!cnicExpiry && cnicExpiry < todayIso();
+
+const fmtDate = (iso?: string | null): string => {
+  if (!iso) return "";
+  const d = new Date(`${iso}T00:00:00`);
+  return isNaN(d.getTime()) ? iso : d.toLocaleDateString();
+};
 
 // Phase 8 §11.3: bulk document generation. Generates one combined PDF for the
 // whole filtered set (append-mode per guard), with progress and per-guard
@@ -4137,6 +4244,112 @@ function ChangeClientModal({
   );
 }
 
+// §7.5: dated shift change. Options are the guard's SITE's actual
+// shift_definitions (Phase 1) — never a hardcoded list. Closes the current
+// posting (day before the change) and opens a new one on the chosen shift from
+// the change date; nothing is rewritten in place, so past attendance stays on
+// the old shift and only dates from the change date forward are on the new one.
+function ChangeShiftModal({
+  guard, displayCode, onClose, onDone, onError,
+}: {
+  guard: EmployeeRow; displayCode: string;
+  onClose: () => void; onDone: () => Promise<void>; onError: (m: string) => void;
+}) {
+  const [shifts, setShifts] = useState<string[]>([]);
+  const [loadingShifts, setLoadingShifts] = useState(true);
+  const [newShift, setNewShift] = useState("");
+  const [effectiveDate, setEffectiveDate] = useState(todayIso());
+  const [saving, setSaving] = useState(false);
+  const inputCls = "mt-1 w-full px-3 py-2 border border-slate-200 rounded-md text-sm";
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoadingShifts(true);
+      // Resolve the guard's site: their current open posting, else the client's
+      // default site. The shift list is whatever that site's shift_definitions say.
+      let siteId: string | null = null;
+      const { data: dep } = await supabase
+        .from("deployments").select("site_id")
+        .eq("guard_id", guard.id).is("end_date", null)
+        .order("start_date", { ascending: false }).limit(1).maybeSingle();
+      siteId = (dep as { site_id?: string } | null)?.site_id ?? null;
+      if (!siteId && guard.client_id) {
+        const { data: s } = await supabase
+          .from("sites").select("id")
+          .eq("client_id", guard.client_id).eq("is_default", true).limit(1).maybeSingle();
+        siteId = (s as { id?: string } | null)?.id ?? null;
+      }
+      let codes: string[] = [];
+      if (siteId) {
+        const { data: sd } = await supabase
+          .from("shift_definitions").select("shift_code, start_time")
+          .eq("site_id", siteId).order("start_time", { ascending: true });
+        codes = (sd ?? []).map((r: any) => r.shift_code as string);
+      }
+      // Ensure the current shift is always present so the list is never empty.
+      if (!codes.includes(guard.shift)) codes = [...codes, guard.shift];
+      if (cancelled) return;
+      setShifts(codes);
+      setNewShift(codes.find((c) => c !== guard.shift) ?? guard.shift);
+      setLoadingShifts(false);
+    })();
+    return () => { cancelled = true; };
+  }, [guard.id, guard.client_id, guard.shift]);
+
+  const save = async () => {
+    if (!newShift) { onError("Select a shift."); return; }
+    if (newShift === guard.shift) { onError("Pick a different shift from the current one."); return; }
+    if (!effectiveDate) { onError("An effective date is required."); return; }
+    setSaving(true);
+    try {
+      const { error: cErr } = await supabase.rpc("change_guard_shift", {
+        p_guard: guard.id, p_new_shift: newShift, p_effective_date: effectiveDate,
+      });
+      if (cErr) throw cErr;
+      await onDone();
+    } catch (e: any) { onError(e.message ?? String(e)); setSaving(false); }
+  };
+
+  return (
+    <Modal isOpen onClose={onClose} size="sm" title={`Change shift — ${guard.full_name}`}
+      footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
+          <Button size="sm" onClick={save} disabled={saving || loadingShifts}>
+            {saving && <Loader2 className="w-4 h-4 animate-spin mr-1" />} Change shift
+          </Button>
+        </div>
+      }
+    >
+      <div className="space-y-3">
+        <p className="text-xs text-slate-500">
+          {guard.full_name} ({displayCode}) is currently on the{" "}
+          <span className="font-medium capitalize">{guard.shift}</span> shift. From the effective
+          date they move to the new shift; all attendance before that date stays on the old shift.
+        </p>
+        <label className="block"><span className="text-sm text-slate-600">New shift</span>
+          <ThemedSelect value={newShift} onChange={(e) => setNewShift(e.target.value)} className={inputCls} disabled={loadingShifts}>
+            {shifts.map((s) => (
+              <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}{s === guard.shift ? " (current)" : ""}</option>
+            ))}
+          </ThemedSelect>
+        </label>
+        <label className="block"><span className="text-sm text-slate-600">Effective date</span>
+          <div className="mt-1 flex items-center gap-2">
+            <button type="button" onClick={() => setEffectiveDate(todayIso())}
+              className={`px-3 py-2 rounded-md text-sm border ${effectiveDate === todayIso() ? "bg-slate-100 border-slate-300 text-slate-900" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+              Today
+            </button>
+            <input type="date" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)}
+              className="flex-1 px-3 py-2 border border-slate-200 rounded-md text-sm" />
+          </div>
+        </label>
+      </div>
+    </Modal>
+  );
+}
+
 function EmployeeChildTables({ employeeId }: { employeeId: string }) {
   const [children, setChildren] = useState<EmployeeChild[]>([]);
   const [refs, setRefs] = useState<EmployeeReference[]>([]);
@@ -4434,34 +4647,142 @@ function EmployeeHrSection({
   forceOpen?: boolean;
 }) {
   const lockCls = lockedIdentity ? " bg-slate-50 text-slate-500 cursor-not-allowed" : "";
-  const [openPersonal, setOpenPersonal] = useState(false);
-  const [openEmergency, setOpenEmergency] = useState(false);
-  const [openEmployment, setOpenEmployment] = useState(false);
-  const [openLicences, setOpenLicences] = useState(false);
+  const inputCls = "w-full px-3 py-2 border border-slate-200 rounded-md text-sm";
 
-  // Auto-expand a section when a save was attempted and it holds an invalid field.
+  // Text / textarea inputs bound to a string field on FormState.
+  const txt = (
+    key: keyof FormState,
+    label: string,
+    opts: { type?: string; placeholder?: string } = {},
+  ) => (
+    <div>
+      <label className="block text-sm text-slate-700 mb-1">{label}</label>
+      <input
+        type={opts.type ?? "text"}
+        value={(form[key] as string) ?? ""}
+        onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+        className={inputCls}
+        placeholder={opts.placeholder}
+      />
+    </div>
+  );
+  const area = (key: keyof FormState, label: string) => (
+    <div className="col-span-2">
+      <label className="block text-sm text-slate-700 mb-1">{label}</label>
+      <textarea rows={2} value={(form[key] as string) ?? ""}
+        onChange={(e) => setForm({ ...form, [key]: e.target.value })} className={inputCls} />
+    </div>
+  );
+
   const personalHasError = Boolean(errors.cnic_number || errors.permanent_address || errors.current_address);
   const emergencyHasError = Boolean(errors.emergency_contact_phone);
-  const showPersonal = openPersonal || (forceOpen && personalHasError);
-  const showEmergency = openEmergency || (forceOpen && emergencyHasError);
+  const cardExpired = isCardExpired(form.cnic_expiry);
 
   const supervisorOptions = useMemo(
     () => employees.filter((e) => e.id !== excludeEmployeeId && e.status === "Active"),
     [employees, excludeEmployeeId],
   );
 
+  // Reorganized into clean tabs (Licences & Compliance folded into Internal
+  // Office Data). Shared by the Add and Edit modals via this one component.
+  const HR_TABS = [
+    { id: "personal", label: "Personal Information" },
+    { id: "emergency", label: "Emergency Contact" },
+    { id: "contract", label: "Contract & Reporting" },
+    { id: "exservice", label: "Ex-Service" },
+    { id: "experience", label: "Experience" },
+    { id: "office", label: "Internal Office Data" },
+  ] as const;
+  type HrTabId = (typeof HR_TABS)[number]["id"];
+  const [activeTab, setActiveTab] = useState<HrTabId>("personal");
+
+  // On a failed save, jump to the tab holding the first invalid field.
+  useEffect(() => {
+    if (!forceOpen) return;
+    if (personalHasError) setActiveTab("personal");
+    else if (emergencyHasError) setActiveTab("emergency");
+  }, [forceOpen, personalHasError, emergencyHasError]);
+
+  // Photo stored as a data URL in photo_url (buckets are private; this keeps the
+  // upload self-contained and works in the Add modal before an id exists). The
+  // image is downscaled to ≤512px JPEG so the row (and the list select) stays light.
+  const onPhoto = (file: File | null) => {
+    if (!file) { setForm({ ...form, photo_url: "" }); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const raw = String(reader.result ?? "");
+      const img = new window.Image();
+      img.onload = () => {
+        const max = 512;
+        const scale = Math.min(1, max / Math.max(img.width, img.height));
+        const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { setForm({ ...form, photo_url: raw }); return; }
+        ctx.drawImage(img, 0, 0, w, h);
+        setForm({ ...form, photo_url: canvas.toDataURL("image/jpeg", 0.82) });
+      };
+      img.onerror = () => setForm({ ...form, photo_url: raw });
+      img.src = raw;
+    };
+    reader.readAsDataURL(file);
+  };
+
   return (
     <div className="pt-4 border-t border-slate-200">
-      <h4 className="text-sm text-slate-900 mb-2">HR Details & Compliance</h4>
-      <p className="text-xs text-slate-500 mb-3">
-        Optional Pakistani-HR-compliant fields. Expiry dates feed the Compliance Calendar.
-      </p>
+      <h4 className="text-sm text-slate-900 mb-3">Employee Details</h4>
 
-      {/* Personal */}
-      <div className="border-t border-slate-100">
-        <SectionHeader open={showPersonal} onClick={() => setOpenPersonal((v) => !v)} title="Personal Information" />
-        {showPersonal && (
-          <div className="grid grid-cols-2 gap-3 pb-3">
+      {/* Tab bar */}
+      <div className="flex flex-wrap gap-1.5 mb-4">
+        {HR_TABS.map((t) => {
+          const err = (t.id === "personal" && personalHasError) || (t.id === "emergency" && emergencyHasError);
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setActiveTab(t.id)}
+              className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${
+                activeTab === t.id
+                  ? "border-brand-500 bg-brand-500/15 text-brand-700 dark:text-brand-500 font-medium"
+                  : err
+                    ? "border-danger-300 text-danger-700"
+                    : "border-border text-muted-foreground hover:bg-accent"
+              }`}
+            >
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ── Personal Information ─────────────────────────────────────────── */}
+      {activeTab === "personal" && (
+        <div className="space-y-4">
+          {/* Photo */}
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Photo</label>
+            <div className="flex items-center gap-3">
+              {form.photo_url ? (
+                <img src={form.photo_url} alt="Employee" className="w-16 h-16 rounded-md object-cover border border-slate-200" />
+              ) : (
+                <div className="w-16 h-16 rounded-md border border-dashed border-slate-300 flex items-center justify-center text-slate-300">
+                  <ImageIcon className="w-6 h-6" />
+                </div>
+              )}
+              <div className="flex flex-col gap-1">
+                <label className="text-xs px-2.5 py-1.5 rounded-md border border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer w-max">
+                  {form.photo_url ? "Replace photo" : "Upload photo"}
+                  <input type="file" accept="image/*" className="hidden" onChange={(e) => onPhoto(e.target.files?.[0] ?? null)} />
+                </label>
+                {form.photo_url && (
+                  <button type="button" onClick={() => onPhoto(null)} className="text-xs text-danger-600 hover:underline w-max">Remove</button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm text-slate-700 mb-1">CNIC Number</label>
               <input
@@ -4500,17 +4821,39 @@ function EmployeeHrSection({
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Blood Group</label>
-              <ThemedSelect
-                value={form.blood_group}
-                onChange={(e) => setForm({ ...form, blood_group: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-              >
+              <ThemedSelect value={form.blood_group} onChange={(e) => setForm({ ...form, blood_group: e.target.value })} className={inputCls}>
                 <option value="">—</option>
-                {BLOOD_GROUPS.map((bg) => (
-                  <option key={bg} value={bg}>{bg}</option>
-                ))}
+                {BLOOD_GROUPS.map((bg) => <option key={bg} value={bg}>{bg}</option>)}
               </ThemedSelect>
             </div>
+
+            {txt("cnic_expiry", "CNIC Expiry", { type: "date" })}
+            {txt("education", "Education")}
+            {cardExpired && (
+              <div className="col-span-2 flex items-start gap-2 text-xs text-warning-800 bg-warning-50 border border-warning-200 rounded-md px-2.5 py-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-warning-600" strokeWidth={2} />
+                <span>This CNIC is expired as of {fmtDate(form.cnic_expiry)} — you are adding/editing an employee with an expired card.</span>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Marital Status</label>
+              <ThemedSelect value={form.marital_status}
+                onChange={(e) => setForm({ ...form, marital_status: e.target.value as "" | MaritalStatus })} className={inputCls}>
+                <option value="">—</option>
+                <option value="single">Single</option>
+                <option value="married">Married</option>
+                <option value="divorced">Divorced</option>
+                <option value="widowed">Widowed</option>
+              </ThemedSelect>
+            </div>
+            {txt("height_cm", "Height (cm)", { type: "number" })}
+            {txt("weight_kg", "Weight (kg)", { type: "number" })}
+            {txt("build", "Build", { placeholder: "e.g. Medium" })}
+            {txt("uniform_size", "Uniform Size")}
+            {txt("shoe_size", "Shoe Size")}
+            {area("special_skills", "Special Skills")}
+
             <div className="col-span-2">
               <label className="block text-sm text-slate-700 mb-1">Permanent Address</label>
               <textarea
@@ -4519,7 +4862,7 @@ function EmployeeHrSection({
                 value={form.permanent_address}
                 onChange={(e) => setForm({ ...form, permanent_address: e.target.value })}
                 onBlur={(e) => onFieldBlur("permanent_address", validateFreeText(e.target.value))}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className={inputCls}
               />
               {errors.permanent_address && <p className="text-xs text-danger-600 mt-1">{errors.permanent_address}</p>}
             </div>
@@ -4531,182 +4874,196 @@ function EmployeeHrSection({
                 value={form.current_address}
                 onChange={(e) => setForm({ ...form, current_address: e.target.value })}
                 onBlur={(e) => onFieldBlur("current_address", validateFreeText(e.target.value))}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className={inputCls}
                 placeholder="Leave blank to default to permanent address"
               />
               {errors.current_address && <p className="text-xs text-danger-600 mt-1">{errors.current_address}</p>}
             </div>
           </div>
-        )}
-      </div>
 
-      {/* Emergency Contact */}
-      <div className="border-t border-slate-100">
-        <SectionHeader
-          open={showEmergency}
-          onClick={() => setOpenEmergency((v) => !v)}
-          title="Emergency Contact"
-          hint="Required by labour regulations"
-        />
-        {showEmergency && (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pb-3">
-            <div>
-              <label className="block text-sm text-slate-700 mb-1">Name</label>
-              <input
-                type="text"
-                value={form.emergency_contact_name}
-                onChange={(e) => setForm({ ...form, emergency_contact_name: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-              />
+          <div className="pt-3 border-t border-slate-100">
+            <h5 className="text-sm text-slate-900 mb-3">Family</h5>
+            <div className="grid grid-cols-2 gap-3">
+              {txt("spouse_name", "Spouse Name")}
+              {txt("next_of_kin_name", "Next of Kin — Name")}
+              {txt("next_of_kin_relation", "Next of Kin — Relation")}
+              {txt("next_of_kin_cnic", "Next of Kin — CNIC")}
+              {txt("next_of_kin_contact", "Next of Kin — Contact")}
             </div>
+          </div>
+
+          <div className="pt-3 border-t border-slate-100">
+            <h5 className="text-sm text-slate-900 mb-3">Political / Locality</h5>
+            <div className="grid grid-cols-2 gap-3">
+              {txt("post_office", "Post Office")}
+              {txt("police_station", "Police Station")}
+              {txt("area_nazim", "Area Nazim")}
+              {txt("union_council", "Union Council")}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Emergency Contact ────────────────────────────────────────────── */}
+      {activeTab === "emergency" && (
+        <div className="space-y-4">
+          <div>
+            <h5 className="text-sm text-slate-900 mb-3">Emergency Contact</h5>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Name</label>
+                <input type="text" value={form.emergency_contact_name}
+                  onChange={(e) => setForm({ ...form, emergency_contact_name: e.target.value })} className={inputCls} />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Relation</label>
+                <ThemedSelect value={form.emergency_contact_relation}
+                  onChange={(e) => setForm({ ...form, emergency_contact_relation: e.target.value })} className={inputCls}>
+                  <option value="">—</option>
+                  {EMERGENCY_CONTACT_RELATIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+                </ThemedSelect>
+              </div>
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Phone</label>
+                <input type="tel" id={idPrefix + "emergency_contact_phone"} value={form.emergency_contact_phone}
+                  onChange={(e) => setForm({ ...form, emergency_contact_phone: e.target.value })}
+                  onBlur={(e) => onFieldBlur("emergency_contact_phone", validatePhone(e.target.value))}
+                  className={inputCls} placeholder="+92 …" />
+                {errors.emergency_contact_phone && <p className="text-xs text-danger-600 mt-1">{errors.emergency_contact_phone}</p>}
+              </div>
+            </div>
+          </div>
+          <div className="pt-3 border-t border-slate-100">
+            <h5 className="text-sm text-slate-900 mb-3">Second Emergency Contact</h5>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {txt("emergency_contact2_name", "Name")}
+              {txt("emergency_contact2_relation", "Relation")}
+              {txt("emergency_contact2_phone", "Phone", { type: "tel" })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Contract & Reporting ─────────────────────────────────────────── */}
+      {activeTab === "contract" && (
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Contract Type</label>
+            <ThemedSelect value={form.employee_contract_type}
+              onChange={(e) => setForm({ ...form, employee_contract_type: e.target.value as FormState["employee_contract_type"] })} className={inputCls}>
+              <option value="">—</option>
+              <option value="permanent">Permanent</option>
+              <option value="contract">Contract</option>
+              <option value="probation">Probation</option>
+              <option value="daily_wages">Daily Wages</option>
+            </ThemedSelect>
+          </div>
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Probation End Date</label>
+            <input type="date" value={form.probation_end_date}
+              onChange={(e) => setForm({ ...form, probation_end_date: e.target.value })}
+              className={inputCls} disabled={form.employee_contract_type !== "probation"} />
+          </div>
+          <div className="col-span-2">
+            <label className="block text-sm text-slate-700 mb-1">Reporting To (supervisor)</label>
+            <ThemedSelect value={form.reporting_to_employee_id}
+              onChange={(e) => setForm({ ...form, reporting_to_employee_id: e.target.value })} className={inputCls}>
+              <option value="">— Nobody —</option>
+              {supervisorOptions.map((e) => <option key={e.id} value={e.id}>{e.full_name} ({e.employee_code})</option>)}
+            </ThemedSelect>
+          </div>
+        </div>
+      )}
+
+      {/* ── Ex-Service (replaces the removed Licences & Compliance tab) ───── */}
+      {activeTab === "exservice" && (
+        <div className="grid grid-cols-2 gap-3">
+          <label className="col-span-2 flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" checked={form.is_ex_serviceman}
+              onChange={(e) => setForm({ ...form, is_ex_serviceman: e.target.checked })} />
+            <span>Ex-serviceman</span>
+          </label>
+          {form.is_ex_serviceman ? (
+            <>
+              {txt("army_number", "Army Number")}
+              {txt("service_unit", "Unit")}
+              {txt("service_rank", "Rank")}
+              {txt("service_trade", "Trade")}
+              {txt("service_join_date", "Join Date", { type: "date" })}
+              {txt("service_discharge_date", "Discharge Date", { type: "date" })}
+              {txt("discharging_officer", "Discharging Officer")}
+            </>
+          ) : (
+            <p className="col-span-2 text-xs text-slate-500">Tick “Ex-serviceman” to record army service details.</p>
+          )}
+        </div>
+      )}
+
+      {/* ── Experience ───────────────────────────────────────────────────── */}
+      {activeTab === "experience" && (
+        <div className="grid grid-cols-2 gap-3">{area("weapons_trained", "Weapons Trained On")}</div>
+      )}
+
+      {/* ── Internal Office Data (+ folded Licences & Compliance) ─────────── */}
+      {activeTab === "office" && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            {txt("interview_date", "Interview Date", { type: "date" })}
+            {txt("form_serial_no", "Form Serial No.")}
+            {txt("designation", "Designation")}
+            {txt("project", "Project")}
+            {txt("company_id_card_number", "Company ID Card No.")}
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Relation</label>
-              <ThemedSelect
-                value={form.emergency_contact_relation}
-                onChange={(e) => setForm({ ...form, emergency_contact_relation: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-              >
+              <label className="block text-sm text-slate-700 mb-1">Social Security Status</label>
+              <ThemedSelect value={form.social_security_status}
+                onChange={(e) => setForm({ ...form, social_security_status: e.target.value as "" | SocialSecurityStatus })} className={inputCls}>
                 <option value="">—</option>
-                {EMERGENCY_CONTACT_RELATIONS.map((r) => (
-                  <option key={r} value={r}>{r}</option>
-                ))}
+                <option value="registered">Registered</option>
+                <option value="not_registered">Not registered</option>
+                <option value="exempt">Exempt</option>
               </ThemedSelect>
             </div>
-            <div>
-              <label className="block text-sm text-slate-700 mb-1">Phone</label>
-              <input
-                type="tel"
-                id={idPrefix + "emergency_contact_phone"}
-                value={form.emergency_contact_phone}
-                onChange={(e) => setForm({ ...form, emergency_contact_phone: e.target.value })}
-                onBlur={(e) => onFieldBlur("emergency_contact_phone", validatePhone(e.target.value))}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-                placeholder="+92 …"
-              />
-              {errors.emergency_contact_phone && <p className="text-xs text-danger-600 mt-1">{errors.emergency_contact_phone}</p>}
-            </div>
+            {txt("social_security_number", "Social Security No.")}
+            {txt("insurance_provider", "Insurance Provider")}
+            {txt("insurance_number", "Insurance No.")}
+            {area("remarks", "Remarks")}
           </div>
-        )}
-      </div>
 
-      {/* Employment specifics */}
-      <div className="border-t border-slate-100">
-        <SectionHeader open={openEmployment} onClick={() => setOpenEmployment((v) => !v)} title="Contract & Reporting" />
-        {openEmployment && (
-          <div className="grid grid-cols-2 gap-3 pb-3">
-            <div>
-              <label className="block text-sm text-slate-700 mb-1">Contract Type</label>
-              <ThemedSelect
-                value={form.employee_contract_type}
-                onChange={(e) =>
-                  setForm({ ...form, employee_contract_type: e.target.value as FormState["employee_contract_type"] })
-                }
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-              >
-                <option value="">—</option>
-                <option value="permanent">Permanent</option>
-                <option value="contract">Contract</option>
-                <option value="probation">Probation</option>
-                <option value="daily_wages">Daily Wages</option>
-              </ThemedSelect>
-            </div>
-            <div>
-              <label className="block text-sm text-slate-700 mb-1">Probation End Date</label>
-              <input
-                type="date"
-                value={form.probation_end_date}
-                onChange={(e) => setForm({ ...form, probation_end_date: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-                disabled={form.employee_contract_type !== "probation"}
-              />
-            </div>
-            <div className="col-span-2">
-              <label className="block text-sm text-slate-700 mb-1">Reporting To (supervisor)</label>
-              <ThemedSelect
-                value={form.reporting_to_employee_id}
-                onChange={(e) => setForm({ ...form, reporting_to_employee_id: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-              >
-                <option value="">— Nobody —</option>
-                {supervisorOptions.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.full_name} ({e.employee_code})
-                  </option>
-                ))}
-              </ThemedSelect>
+          <div className="pt-3 border-t border-slate-100">
+            <h5 className="text-sm text-slate-900 mb-3">Recruitment</h5>
+            <div className="grid grid-cols-2 gap-3">
+              {txt("referral_source", "Referral Source", { placeholder: "e.g. Walk-in, Advert, Referral" })}
+              {txt("referred_by_name", "Referred By")}
             </div>
           </div>
-        )}
-      </div>
 
-      {/* Licences & Compliance */}
-      <div className="border-t border-slate-100">
-        <SectionHeader
-          open={openLicences}
-          onClick={() => setOpenLicences((v) => !v)}
-          title="Licences & Compliance"
-          hint="Expiry dates feed Compliance Calendar"
-        />
-        {openLicences && (
-          <div className="grid grid-cols-2 gap-3 pb-3">
-            <div>
-              <label className="block text-sm text-slate-700 mb-1">Weapon Licence #</label>
-              <input
-                type="text"
-                value={form.weapon_licence_number}
-                onChange={(e) => setForm({ ...form, weapon_licence_number: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-slate-700 mb-1">Weapon Licence Expiry</label>
-              <input
-                type="date"
-                value={form.weapon_licence_expiry}
-                onChange={(e) => setForm({ ...form, weapon_licence_expiry: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-slate-700 mb-1">Guard Service Licence #</label>
-              <input
-                type="text"
-                value={form.guard_service_licence_number}
-                onChange={(e) => setForm({ ...form, guard_service_licence_number: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-slate-700 mb-1">Guard Service Licence Expiry</label>
-              <input
-                type="date"
-                value={form.guard_service_licence_expiry}
-                onChange={(e) => setForm({ ...form, guard_service_licence_expiry: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-slate-700 mb-1">Medical Fitness Expiry</label>
-              <input
-                type="date"
-                value={form.medical_fitness_expiry}
-                onChange={(e) => setForm({ ...form, medical_fitness_expiry: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-slate-700 mb-1">EOBI Registration #</label>
-              <input
-                type="text"
-                value={form.eobi_registration_number}
-                onChange={(e) => setForm({ ...form, eobi_registration_number: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-                placeholder="Once issued"
-              />
+          <div className="pt-3 border-t border-slate-100">
+            <h5 className="text-sm text-slate-900 mb-1">Licences & Compliance</h5>
+            <p className="text-xs text-slate-500 mb-3">Expiry dates feed the Compliance Calendar.</p>
+            <div className="grid grid-cols-2 gap-3">
+              {txt("weapon_licence_number", "Weapon Licence #")}
+              {txt("weapon_licence_expiry", "Weapon Licence Expiry", { type: "date" })}
+              {txt("guard_service_licence_number", "Guard Service Licence #")}
+              {txt("guard_service_licence_expiry", "Guard Service Licence Expiry", { type: "date" })}
+              {txt("medical_fitness_expiry", "Medical Fitness Expiry", { type: "date" })}
+              {txt("eobi_registration_number", "EOBI Registration #", { placeholder: "Once issued" })}
             </div>
           </div>
-        )}
-      </div>
+
+          <div className="pt-3 border-t border-slate-100">
+            <h5 className="text-sm text-slate-900 mb-3">Documents</h5>
+            <label className={`flex items-center gap-2 text-sm rounded-md border p-3 cursor-pointer ${form.physical_copy_present ? "bg-success-50 border-success-200 text-success-800" : "bg-danger-50 border-danger-200 text-danger-800"}`}>
+              <input type="checkbox" checked={form.physical_copy_present}
+                onChange={(e) => setForm({ ...form, physical_copy_present: e.target.checked })} />
+              <span>Physical Copy Present
+                <span className="block text-xs opacity-80">
+                  {form.physical_copy_present ? "Profile marked complete." : "Profile is incomplete until the physical copies are on file."}
+                </span>
+              </span>
+            </label>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
