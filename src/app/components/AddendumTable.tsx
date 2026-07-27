@@ -51,7 +51,9 @@ export default function AddendumTable({
                   {ADDENDUM_CHANGE_TYPE_LABEL[a.change_type]}
                   {a.change_type === "RATE_CHANGE"
                     ? a.new_rate != null && ` → PKR ${Number(a.new_rate).toLocaleString()}`
-                    : ` (${a.change_type === "REDUCE_HEADCOUNT" ? "−" : "+"}${a.count_delta})`}
+                    : a.change_type === "EXTEND_END_DATE"
+                      ? ` → ${a.new_is_infinite ? "no end date" : a.new_end_date ? formatDate(a.new_end_date) : "—"}`
+                      : ` (${a.change_type === "REDUCE_HEADCOUNT" ? "−" : "+"}${a.count_delta})`}
                 </td>
                 <td className="px-3 py-1.5 text-slate-600">
                   {cat ? CONTRACT_LINE_CATEGORY_LABEL[cat] : "—"}

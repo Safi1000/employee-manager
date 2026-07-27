@@ -4,7 +4,7 @@ import { Plus, Loader2, AlertCircle, X, Trash2, FileText, Upload } from "lucide-
 import Button from "./Button";
 import Modal from "./Modal";
 import AddendumTable from "./AddendumTable";
-import { useAuth } from "../lib/auth";
+import { useAuth, hasPermission } from "../lib/auth";
 import { formatDate } from "../lib/date";
 import { hasInjectionPattern } from "../lib/validation";
 import {
@@ -135,6 +135,8 @@ type AddendumForm = {
   change_type: AddendumChangeType;
   count_delta: string;
   new_rate: string;
+  new_end_date: string; // EXTEND_END_DATE: the new contract end date
+  new_is_infinite: boolean; // EXTEND_END_DATE: renew to open-ended
   effective_from: string;
   source: AddendumSource;
   reference: string;
@@ -146,6 +148,8 @@ const blankAddendum = (): AddendumForm => ({
   change_type: "ADD_HEADCOUNT",
   count_delta: "0",
   new_rate: "",
+  new_end_date: "",
+  new_is_infinite: false,
   effective_from: new Date().toISOString().slice(0, 10),
   source: "SIGNED_CONTRACT",
   reference: "",
@@ -206,9 +210,12 @@ export default function ContractEditorModal({
   const [addFile, setAddFile] = useState<File | null>(null);
   const [addSubmitting, setAddSubmitting] = useState(false);
 
-  // §23 contract lock: an existing contract is locked — every field except the
-  // Addendums section is read-only. Creating a new contract stays fully editable.
-  const locked = !!contract;
+  // §23 contract lock: existing contracts were originally read-only (changes via
+  // addendums only). Per owner request, holders of contracts.edit (super_admin/SSA
+  // implicitly) may now edit an existing contract's terms & lines directly; everyone
+  // else still sees it locked. Creating a new contract is always fully editable.
+  const canEditContracts = hasPermission(profile, "contracts.edit");
+  const locked = !!contract && !canEditContracts;
 
   const loadAddendums = (contractId: string) =>
     supabase
@@ -427,14 +434,24 @@ export default function ContractEditorModal({
     setAddSubmitting(true);
     setError(null);
     try {
-      const isNewLine = addForm.target === "__new__";
+      const isRenewal = addForm.change_type === "EXTEND_END_DATE";
+      const isRate = addForm.change_type === "RATE_CHANGE";
+      // A renewal is contract-level (no line/category); validate its target end.
+      if (isRenewal && !addForm.new_is_infinite && !addForm.new_end_date) {
+        setError("Set a new end date for the renewal, or tick “no end date”.");
+        setAddSubmitting(false);
+        return;
+      }
+      const isNewLine = !isRenewal && addForm.target === "__new__";
       const payload: Record<string, unknown> = {
         contract_id: contract.id,
-        contract_line_id: isNewLine ? null : addForm.target,
+        contract_line_id: isRenewal || isNewLine ? null : addForm.target,
         category: isNewLine ? addForm.category : null,
         change_type: addForm.change_type,
-        count_delta: addForm.change_type === "RATE_CHANGE" ? 0 : Math.abs(Math.floor(num(addForm.count_delta))),
-        new_rate: addForm.change_type === "RATE_CHANGE" && addForm.new_rate !== "" ? num(addForm.new_rate) : null,
+        count_delta: isRate || isRenewal ? 0 : Math.abs(Math.floor(num(addForm.count_delta))),
+        new_rate: isRate && addForm.new_rate !== "" ? num(addForm.new_rate) : null,
+        new_end_date: isRenewal && !addForm.new_is_infinite ? addForm.new_end_date : null,
+        new_is_infinite: isRenewal ? addForm.new_is_infinite : false,
         effective_from: addForm.effective_from,
         source: addForm.source,
         reference: addForm.reference.trim() || null,
@@ -852,22 +869,29 @@ export default function ContractEditorModal({
               <div>
                 <label className="block text-[11px] text-slate-600 mb-1">Applies to</label>
                 <ThemedSelect
-                  value={addForm.target}
+                  value={addForm.change_type === "EXTEND_END_DATE" ? "__contract__" : addForm.target}
+                  disabled={addForm.change_type === "EXTEND_END_DATE"}
                   onChange={(e) => setAddForm({ ...addForm, target: e.target.value })}
-                  className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                  className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm disabled:bg-slate-100 disabled:text-slate-500"
                 >
-                  <option value="__new__">New line…</option>
-                  {lines
-                    .filter((l) => l.id)
-                    .map((l) => (
-                      <option key={l.id} value={l.id!}>
-                        {CONTRACT_LINE_CATEGORY_LABEL[l.category]}
-                        {l.location ? ` — ${l.location}` : ""}
-                      </option>
-                    ))}
+                  {addForm.change_type === "EXTEND_END_DATE" ? (
+                    <option value="__contract__">Whole contract</option>
+                  ) : (
+                    <>
+                      <option value="__new__">New line…</option>
+                      {lines
+                        .filter((l) => l.id)
+                        .map((l) => (
+                          <option key={l.id} value={l.id!}>
+                            {CONTRACT_LINE_CATEGORY_LABEL[l.category]}
+                            {l.location ? ` — ${l.location}` : ""}
+                          </option>
+                        ))}
+                    </>
+                  )}
                 </ThemedSelect>
               </div>
-              {addForm.target === "__new__" && (
+              {addForm.change_type !== "EXTEND_END_DATE" && addForm.target === "__new__" && (
                 <div>
                   <label className="block text-[11px] text-slate-600 mb-1">New line category</label>
                   <ThemedSelect
@@ -888,12 +912,31 @@ export default function ContractEditorModal({
                   onChange={(e) => setAddForm({ ...addForm, change_type: e.target.value as AddendumChangeType })}
                   className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
                 >
-                  {(["ADD_HEADCOUNT", "REDUCE_HEADCOUNT", "RATE_CHANGE"] as const).map((t) => (
+                  {(["ADD_HEADCOUNT", "REDUCE_HEADCOUNT", "RATE_CHANGE", "EXTEND_END_DATE"] as const).map((t) => (
                     <option key={t} value={t}>{ADDENDUM_CHANGE_TYPE_LABEL[t]}</option>
                   ))}
                 </ThemedSelect>
               </div>
-              {addForm.change_type === "RATE_CHANGE" ? (
+              {addForm.change_type === "EXTEND_END_DATE" ? (
+                <div>
+                  <label className="block text-[11px] text-slate-600 mb-1">New end date</label>
+                  <input
+                    type="date"
+                    value={addForm.new_end_date}
+                    disabled={addForm.new_is_infinite}
+                    onChange={(e) => setAddForm({ ...addForm, new_end_date: e.target.value })}
+                    className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm disabled:bg-slate-100 disabled:text-slate-500"
+                  />
+                  <label className="mt-1 inline-flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={addForm.new_is_infinite}
+                      onChange={(e) => setAddForm({ ...addForm, new_is_infinite: e.target.checked })}
+                    />
+                    No end date (open-ended)
+                  </label>
+                </div>
+              ) : addForm.change_type === "RATE_CHANGE" ? (
                 <div>
                   <label className="block text-[11px] text-slate-600 mb-1">New rate / month</label>
                   <input

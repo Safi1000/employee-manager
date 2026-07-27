@@ -10,6 +10,8 @@ import {
   CLIENT_INVOICE_GROUP_LABEL,
   DEFAULT_INVOICE_SETTINGS,
   effectiveCommittedByCategory,
+  effectiveRateByLine,
+  effectiveContractEnd,
   computeInvoiceTaxes,
   financialYearLabel,
   amountInWords,
@@ -62,6 +64,20 @@ const today = () => new Date().toISOString().slice(0, 10);
 // invoice_date (manual path). Matches the DB uq_invoice_contract_month index.
 const invoiceMonth = (inv: Invoice) => (inv.period_start ?? inv.invoice_date ?? "").slice(0, 7);
 const isCleared = (inv: Invoice) => inv.status === "Paid";
+
+// A period (YYYY-MM) is billable for a contract only WITHIN its active window:
+// on/after the contract's start month, and on/before its EFFECTIVE end month —
+// which honours renewal (EXTEND_END_DATE) addendums, so a renewed contract bills
+// up to the new end (incl. missed months in the gap). infinite / no-end → no upper
+// bound. A contract starting or ending mid-month still bills that whole month.
+const periodInContractWindow = (con: Contract, ym: string, addendums: ContractAddendum[]): boolean => {
+  const startMonth = (con.start_date ?? "").slice(0, 7);
+  if (startMonth && ym < startMonth) return false;
+  const eff = effectiveContractEnd(con, addendums);
+  const endMonth = eff.isInfinite || !eff.endDate ? null : eff.endDate.slice(0, 7);
+  if (endMonth && ym > endMonth) return false;
+  return true;
+};
 
 // End-of-month date string for a YYYY-MM period.
 const monthBounds = (ym: string) => {
@@ -191,6 +207,8 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
       const conLines = lines.filter((l) => l.contract_id === con.id);
       const conAdds = addendums.filter((a) => a.contract_id === con.id);
       const eff = effectiveCommittedByCategory(conLines, conAdds, end);
+      // Rate-change addendums effective by the period end replace the base line rate.
+      const effRate = effectiveRateByLine(conLines, conAdds, end);
       const draftLines: DraftLine[] = [];
       for (const l of conLines) {
         const single = conLines.filter((x) => x.category === l.category).length === 1;
@@ -200,12 +218,13 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
         const qty = attributed != null && attributed > 0
           ? attributed
           : single && eff.get(l.category) != null ? eff.get(l.category)! : l.committed_count;
-        if (qty <= 0 && l.unit_rate <= 0) continue;
+        const rate = effRate.get(l.id) ?? l.unit_rate;
+        if (qty <= 0 && rate <= 0) continue;
         draftLines.push({
           category: l.category,
           label: l.label ?? CONTRACT_LINE_CATEGORY_LABEL[l.category],
           quantity: String(qty),
-          unit_rate: String(l.unit_rate),
+          unit_rate: String(rate),
           taxable: l.taxable,
         });
       }
@@ -250,6 +269,8 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
     for (const client of groupClients) {
       const clientContracts = contracts.filter((c) => c.client_id === client.id && c.status === "active");
       for (const con of clientContracts) {
+        // Never draft a period outside the contract's own start→(effective)end window.
+        if (!periodInContractWindow(con, period, addendums.filter((a) => a.contract_id === con.id))) continue;
         const already = invoices.some((i) => i.contract_id === con.id && invoiceMonth(i) === period);
         if (already) continue;
         const d = buildDraft(client, con, taken);
@@ -291,6 +312,25 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
   const draftRows = rows.filter((r) => r.kind === "draft");
   const existingRows = rows.filter((r) => r.kind === "existing");
   const clearedCount = Object.values(drafts).filter((d) => d.status === "Cleared").length;
+
+  const contractById = useMemo(() => new Map(contracts.map((c) => [c.id, c])), [contracts]);
+
+  // Already-created invoices whose billing month falls OUTSIDE their contract's
+  // active window (e.g. months before the contract's start_date). Surfaced for
+  // MANUAL review + removal — this tab never auto-deletes them. Period-independent
+  // and across all groups, so a full audit shows in one place.
+  const outOfWindowInvoices = useMemo(() => {
+    const out: { inv: Invoice; con: Contract; clientName: string }[] = [];
+    for (const inv of invoices) {
+      if (!inv.contract_id) continue; // manual invoice, no contract to bound against
+      const con = contractById.get(inv.contract_id);
+      if (!con) continue;
+      if (periodInContractWindow(con, invoiceMonth(inv), addendums.filter((a) => a.contract_id === con.id))) continue;
+      const clientName = clients.find((c) => c.id === con.client_id)?.name ?? "—";
+      out.push({ inv, con, clientName });
+    }
+    return out.sort((a, b) => (invoiceMonth(a.inv) < invoiceMonth(b.inv) ? -1 : 1));
+  }, [invoices, contractById, clients, addendums]);
 
   // Derived figures for a draft.
   const figures = (d: Draft) => {
@@ -469,6 +509,55 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
           <CheckCircle2 className="w-4 h-4 mt-0.5" />
           <div className="flex-1">{result}</div>
           <button onClick={() => setResult(null)}><X className="w-4 h-4" /></button>
+        </div>
+      )}
+
+      {/* Pre-contract / out-of-window invoices already in the system — flagged for
+          MANUAL review. This tab does not delete them (remove them on the Invoices
+          tab after checking). Independent of the selected period/group. */}
+      {outOfWindowInvoices.length > 0 && (
+        <div className="border border-warning-300 bg-warning-50 rounded-lg p-4">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 mt-0.5 text-warning-700 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-warning-800">
+                {outOfWindowInvoices.length} invoice{outOfWindowInvoices.length === 1 ? "" : "s"} fall outside their contract's active window
+              </div>
+              <div className="text-xs text-warning-700 mb-2">
+                These were billed for a month before the contract started (or after it ended). Review and delete them manually on the Invoices tab — nothing is removed automatically.
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-left text-warning-800/70 border-b border-warning-300">
+                      <th className="py-1 pr-3">Invoice #</th>
+                      <th className="py-1 pr-3">Client</th>
+                      <th className="py-1 pr-3">Contract</th>
+                      <th className="py-1 pr-3">Billed month</th>
+                      <th className="py-1 pr-3">Contract window</th>
+                      <th className="py-1 pr-3 text-right">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {outOfWindowInvoices.map(({ inv, con, clientName }) => (
+                      <tr key={inv.id} className="border-b border-warning-200/60">
+                        <td className="py-1 pr-3 font-mono">{inv.invoice_number}</td>
+                        <td className="py-1 pr-3">{clientName}</td>
+                        <td className="py-1 pr-3 font-mono">{con.contract_code}</td>
+                        <td className="py-1 pr-3 font-medium text-danger-700">{invoiceMonth(inv)}</td>
+                        <td className="py-1 pr-3">
+                          {(con.start_date ?? "?").slice(0, 7)} → {con.is_infinite || !con.end_date ? "∞" : con.end_date.slice(0, 7)}
+                        </td>
+                        <td className="py-1 pr-3 text-right tabular-nums">
+                          {Number(inv.total_due ?? inv.invoice_amount ?? 0).toLocaleString()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

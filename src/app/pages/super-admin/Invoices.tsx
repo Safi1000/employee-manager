@@ -94,6 +94,13 @@ const monthLabel = (iso: string | null | undefined) => {
   });
 };
 
+// The invoice's BILLING month = its period_start (the selected billing period on
+// generation), falling back to invoice_date for manual invoices that carry no
+// period. This — not invoice_date, which for generated invoices is the generation
+// day (today) — is what "Invoice Month" must reflect.
+const billingMonth = (i: { period_start?: string | null; invoice_date?: string | null }) =>
+  ((i.period_start ?? i.invoice_date) ?? "").slice(0, 7);
+
 const emptyForm = (): InvoiceForm => ({
   client_id: "",
   contract_id: "",
@@ -215,7 +222,7 @@ export default function Invoices() {
   // Item 7: distinct YYYY-MM present in invoices, newest first, for the month filter.
   const monthOptions = useMemo(() => {
     const set = new Set<string>();
-    for (const i of invoices) if (i.invoice_date) set.add(i.invoice_date.slice(0, 7));
+    for (const i of invoices) { const m = billingMonth(i); if (m) set.add(m); }
     return Array.from(set).sort((a, b) => (a < b ? 1 : -1));
   }, [invoices]);
 
@@ -225,7 +232,7 @@ export default function Invoices() {
     return invoices.filter((i) => {
       if (clientFilter && i.client_id !== clientFilter) return false;
       if (branchFilter !== "all" && clientBranch.get(i.client_id) !== branchFilter) return false;
-      if (monthFilter !== "all" && (i.invoice_date ?? "").slice(0, 7) !== monthFilter) return false;
+      if (monthFilter !== "all" && billingMonth(i) !== monthFilter) return false;
       return true;
     });
   }, [invoices, clientFilter, branchFilter, monthFilter, clients]);
@@ -1079,7 +1086,7 @@ export default function Invoices() {
                             {inv.client?.client_code ?? ""}
                           </div>
                         </td>
-                        <td className="px-6 py-4 text-sm text-slate-600">{monthLabel(inv.invoice_date)}</td>
+                        <td className="px-6 py-4 text-sm text-slate-600">{monthLabel(billingMonth(inv))}</td>
                         <td className="px-6 py-4 text-sm text-brand-600 text-right">
                           PKR {Number(inv.invoice_amount).toLocaleString()}
                         </td>

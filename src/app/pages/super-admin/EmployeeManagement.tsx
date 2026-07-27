@@ -1025,6 +1025,22 @@ export default function EmployeeManagement() {
     });
   }, [filtered, sortDir]);
 
+  // Headline counts. Scope = the selected client when one is chosen, else the
+  // whole roster (independent of search / tab so the totals stay stable). "Active"
+  // is the live lifecycle; "Inactive" = everyone else (fired / left / on-leave…).
+  const counts = useMemo(() => {
+    const scope = clientFilter === "all"
+      ? employees
+      : employees.filter((e) => e.client_id === clientFilter);
+    const active = scope.filter((e) => e.status === "Active").length;
+    return { total: scope.length, active, inactive: scope.length - active };
+  }, [employees, clientFilter]);
+
+  const countsClientName = useMemo(
+    () => (clientFilter === "all" ? null : clients.find((c) => c.id === clientFilter)?.name ?? "Selected client"),
+    [clientFilter, clients],
+  );
+
   type EmpRef = { id: string; employee_code: string; full_name: string };
 
   const uploadDoc = async (employee: EmpRef, docType: string, file: File) => {
@@ -1884,6 +1900,21 @@ export default function EmployeeManagement() {
             </button>
           </div>
         )}
+
+        {/* Headline counts — total registered / active / inactive. Scopes to the
+            selected client when one is chosen (label shows the client name). */}
+        <div className="mb-4 grid grid-cols-3 gap-3">
+          {[
+            { label: countsClientName ? `${countsClientName} — Registered` : "Registered", value: counts.total, tint: "text-foreground" },
+            { label: "Active", value: counts.active, tint: "text-success-700 dark:text-success-500" },
+            { label: "Inactive", value: counts.inactive, tint: "text-slate-500" },
+          ].map((c) => (
+            <div key={c.label} className="bg-card border border-border rounded-xl px-4 py-3">
+              <div className="text-xs uppercase tracking-wide text-muted-foreground truncate" title={c.label}>{c.label}</div>
+              <div className={`mt-1 text-2xl font-bold ${c.tint}`}>{c.value}</div>
+            </div>
+          ))}
+        </div>
 
         <div className="bg-card rounded-xl border border-border">
           <div className="p-4 border-b border-border">

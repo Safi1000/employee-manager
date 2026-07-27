@@ -5,6 +5,7 @@ import {
   Search,
   Eye,
   Pencil,
+  Trash2,
   Loader2,
   AlertCircle,
   X,
@@ -22,8 +23,10 @@ import {
   CONTRACT_STATUS_LABEL,
   CONTRACT_LINE_CATEGORY_LABEL,
   CONTRACT_LINE_CATEGORY_ORDER,
-  contractLinesValue,
+  effectiveContractLinesValue,
   effectiveCommittedByCategory,
+  effectiveContractEnd,
+  isContractExpired,
   activeCountByCategory,
   type Branch,
   type Client,
@@ -34,7 +37,7 @@ import {
   type ContractStatus,
   type Employee,
 } from "../../lib/supabase";
-import { useAuth } from "../../lib/auth";
+import { useAuth, hasPermission } from "../../lib/auth";
 import { useRegion } from "../../lib/region";
 
 type ContractRow = Contract & { client_name: string; client_code: string };
@@ -48,6 +51,10 @@ const today = () => new Date().toISOString().slice(0, 10);
 export default function Contracts() {
   const { profile, company } = useAuth();
   const { regionId } = useRegion();
+  // Add / edit / delete contracts is gated on the contracts.edit permission.
+  // super_admin + SSA get it implicitly (see hasPermission); other users only
+  // when it's ticked on their account. View stays open to anyone on the page.
+  const canEdit = hasPermission(profile, "contracts.edit");
   const [rows, setRows] = useState<ContractRow[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -59,13 +66,16 @@ export default function Contracts() {
   const [error, setError] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | ContractStatus>("all");
+  // "needs_renewal" = a pseudo-status filtering on the EFFECTIVE end date (renewal
+  // addendums applied), distinct from the stored contract.status enum.
+  const [statusFilter, setStatusFilter] = useState<"all" | "needs_renewal" | ContractStatus>("all");
   const [clientFilter, setClientFilter] = useState("all");
 
   const [addOpen, setAddOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<ContractRow | null>(null);
   const [viewingRow, setViewingRow] = useState<ContractRow | null>(null);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const loadAll = async () => {
     setLoading(true);
@@ -133,12 +143,14 @@ export default function Contracts() {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
       if (regionId && clientBranchById.get(r.client_id) !== regionId) return false;
-      if (statusFilter !== "all" && r.status !== statusFilter) return false;
+      if (statusFilter === "needs_renewal") {
+        if (!isContractExpired(r, addendumsByContract.get(r.id) ?? [])) return false;
+      } else if (statusFilter !== "all" && r.status !== statusFilter) return false;
       if (clientFilter !== "all" && r.client_id !== clientFilter) return false;
       if (q && !r.client_name.toLowerCase().includes(q) && !r.contract_code.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [rows, search, statusFilter, clientFilter, regionId, clientBranchById]);
+  }, [rows, search, statusFilter, clientFilter, regionId, clientBranchById, addendumsByContract]);
 
   const uploadDocument = async (
     contractId: string,
@@ -187,8 +199,38 @@ export default function Contracts() {
       .eq("id", contractId);
   };
 
-  // §23 contract lock: contracts can never be deleted once created. Changes go
-  // through addendums (Edit modal). The Delete action was removed from the list.
+  // §23 originally locked contracts against deletion (changes go through addendums).
+  // Per owner request, deletion is now allowed for holders of contracts.edit
+  // (super_admin/SSA implicitly), behind an explicit confirmation. FK rules (checked
+  // in the DB): contract_lines / addendums / mobilisations CASCADE away; invoices,
+  // guard assignments and posts are SET NULL (kept but unlinked); a renewal_pipeline
+  // reference (NO ACTION) blocks the delete — surfaced as a friendly message.
+  const deleteContract = async (row: ContractRow) => {
+    const ok = window.confirm(
+      `Delete contract ${row.contract_code}?\n\n` +
+        `• Its contract lines and addendums are permanently removed.\n` +
+        `• Any invoices stay but are unlinked from this contract.\n` +
+        `• Any guard assignments to this contract are cleared.\n\n` +
+        `This cannot be undone.`,
+    );
+    if (!ok) return;
+    setDeletingId(row.id);
+    setError(null);
+    try {
+      const { error: delErr } = await supabase.from("contracts").delete().eq("id", row.id);
+      if (delErr) {
+        const msg = /renewal_pipeline|foreign key|violates/i.test(delErr.message)
+          ? "This contract is referenced by the renewal pipeline — remove it there first."
+          : delErr.message;
+        throw new Error(msg);
+      }
+      await loadAll();
+    } catch (err: any) {
+      setError(err.message ?? String(err));
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const uploadFromRow = async (row: ContractRow, file: File) => {
     setUploadingId(row.id);
@@ -216,10 +258,12 @@ export default function Contracts() {
         title="Contracts"
         subtitle="One client can have multiple contracts — each with per-category committed headcount and rates"
         actions={
-          <Button variant="primary" size="md" onClick={() => setAddOpen(true)}>
-            <Plus className="w-4 h-4 mr-2" />
-            Add Contract
-          </Button>
+          canEdit ? (
+            <Button variant="primary" size="md" onClick={() => setAddOpen(true)}>
+              <Plus className="w-4 h-4 mr-2" />
+              Add Contract
+            </Button>
+          ) : null
         }
       />
 
@@ -257,10 +301,11 @@ export default function Contracts() {
           </ThemedSelect>
           <ThemedSelect
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as "all" | ContractStatus)}
+            onChange={(e) => setStatusFilter(e.target.value as "all" | "needs_renewal" | ContractStatus)}
             className="px-3 py-2 border border-slate-200 rounded-md text-sm"
           >
             <option value="all">All statuses</option>
+            <option value="needs_renewal">Expired / needs renewal</option>
             {(["active", "expired", "terminated", "draft"] as const).map((s) => (
               <option key={s} value={s}>{CONTRACT_STATUS_LABEL[s]}</option>
             ))}
@@ -300,10 +345,16 @@ export default function Contracts() {
                   </tr>
                 )}
                 {!loading && filteredRows.map((row) => {
-                  const dleft = daysUntilEnd(row.end_date);
-                  const endingSoon = dleft != null && dleft <= 90 && dleft >= 0;
                   const lines = linesByContract.get(row.id) ?? [];
                   const addendums = addendumsByContract.get(row.id) ?? [];
+                  // Effective end (renewal addendums applied) drives ending-soon,
+                  // the displayed end date, and the expired/needs-renewal badge.
+                  const eff = effectiveContractEnd(row, addendums);
+                  const effEndDate = eff.isInfinite ? null : eff.endDate;
+                  const renewed = !!addendums.some((a) => a.change_type === "EXTEND_END_DATE");
+                  const dleft = daysUntilEnd(effEndDate);
+                  const endingSoon = dleft != null && dleft <= 90 && dleft >= 0;
+                  const expired = isContractExpired(row, addendums);
                   const contractEmps = employeesByContract.get(row.id) ?? [];
                   // Effective per-category committed = base lines + addendums as of today.
                   const committedByCat = effectiveCommittedByCategory(lines, addendums, today());
@@ -313,7 +364,8 @@ export default function Contracts() {
                   for (const n of committedByCat.values()) totalCommitted += n;
                   let activeGuards = 0;
                   for (const n of activeByCat.values()) activeGuards += n;
-                  const valuePerMonth = contractLinesValue(lines);
+                  // Monthly value with signed rate-change addendums applied.
+                  const valuePerMonth = effectiveContractLinesValue(lines, addendums, today());
                   // Exceeded when any category's active exceeds its committed.
                   const overStaffed = [...activeByCat.entries()].some(
                     ([cat, n]) => n > (committedByCat.get(cat) ?? 0),
@@ -322,22 +374,31 @@ export default function Contracts() {
                     <tr key={row.id} className={`hover:bg-slate-50 transition-colors ${overStaffed ? "bg-danger-50/40" : ""}`}>
                       <td className="px-4 py-3 text-xs font-mono text-slate-900">{row.contract_code}</td>
                       <td className="px-4 py-3 text-sm text-slate-900">
-                        <div>{row.client_name}</div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span>{row.client_name}</span>
+                          {expired && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs bg-warning-50 text-warning-800 border border-warning-200">
+                              <AlertCircle className="w-3 h-3" /> Needs renewal
+                            </span>
+                          )}
+                        </div>
                         <div className="text-xs text-slate-500 font-mono">{row.client_code}</div>
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-600">{CONTRACT_TYPE_LABEL[row.contract_type]}</td>
                       <td className="px-4 py-3 text-sm text-slate-600">
                         <div>{formatDate(row.start_date)}</div>
-                        {row.is_infinite ? (
-                          // No end_date, so it can never read as "ending soon" — say why.
+                        {eff.isInfinite ? (
+                          // No end date (base or via renewal) — can never read "ending soon".
                           <div className="text-xs text-slate-500">
                             → No end date
+                            {renewed && " (renewed)"}
                             {row.notice_period_days != null && ` (${row.notice_period_days}d notice)`}
                           </div>
                         ) : (
-                          row.end_date && (
-                            <div className={endingSoon ? "text-warning-700 text-xs" : "text-xs text-slate-500"}>
-                              → {formatDate(row.end_date)}
+                          effEndDate && (
+                            <div className={endingSoon ? "text-warning-700 text-xs" : expired ? "text-danger-700 text-xs" : "text-xs text-slate-500"}>
+                              → {formatDate(effEndDate)}
+                              {renewed && " (renewed)"}
                               {endingSoon && ` (${dleft}d)`}
                             </div>
                           )
@@ -396,7 +457,7 @@ export default function Contracts() {
                             <FileText className="w-3 h-3" />
                             View
                           </a>
-                        ) : (
+                        ) : canEdit ? (
                           <label className="cursor-pointer text-xs text-slate-500 hover:text-slate-900">
                             {uploadingId === row.id ? "Uploading…" : "Upload"}
                             <input
@@ -409,6 +470,8 @@ export default function Contracts() {
                               }}
                             />
                           </label>
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -421,14 +484,29 @@ export default function Contracts() {
                           >
                             <Eye className="w-4 h-4" />
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => setEditingRow(row)}
-                            className="p-1.5 rounded text-slate-600 hover:bg-slate-100"
-                            title="Edit"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </button>
+                          {canEdit && (
+                            <button
+                              type="button"
+                              onClick={() => setEditingRow(row)}
+                              className="p-1.5 rounded text-slate-600 hover:bg-slate-100"
+                              title="Edit"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                          )}
+                          {canEdit && (
+                            <button
+                              type="button"
+                              onClick={() => deleteContract(row)}
+                              disabled={deletingId === row.id}
+                              className="p-1.5 rounded text-danger-600 hover:bg-danger-50 disabled:opacity-50"
+                              title="Delete contract"
+                            >
+                              {deletingId === row.id
+                                ? <Loader2 className="w-4 h-4 animate-spin" />
+                                : <Trash2 className="w-4 h-4" />}
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

@@ -332,7 +332,7 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
       { key: "clients.view", label: "View clients" },
       { key: "clients.edit", label: "Add / edit clients" },
       { key: "contracts.view", label: "View contracts" },
-      { key: "contracts.edit", label: "Add / edit contracts" },
+      { key: "contracts.edit", label: "Add / edit / delete contracts" },
     ],
   },
   {
@@ -621,14 +621,16 @@ export function contractLinesCommitted(lines: Pick<ContractLine, "committed_coun
   return lines.reduce((sum, l) => sum + (Number(l.committed_count) || 0), 0);
 }
 
-// Phase 2: contract addendums — dated changes to committed headcount / rate.
-export type AddendumChangeType = "ADD_HEADCOUNT" | "REDUCE_HEADCOUNT" | "RATE_CHANGE";
+// Phase 2: contract addendums — dated changes to committed headcount / rate /
+// end date (renewal). EXTEND_END_DATE added 2026-07-27 (migration 0133).
+export type AddendumChangeType = "ADD_HEADCOUNT" | "REDUCE_HEADCOUNT" | "RATE_CHANGE" | "EXTEND_END_DATE";
 export type AddendumSource = "SIGNED_CONTRACT" | "EMAIL" | "VERBAL" | "OTHER";
 
 export const ADDENDUM_CHANGE_TYPE_LABEL: Record<AddendumChangeType, string> = {
   ADD_HEADCOUNT: "Add headcount",
   REDUCE_HEADCOUNT: "Reduce headcount",
   RATE_CHANGE: "Rate change",
+  EXTEND_END_DATE: "Renewal / extend end date",
 };
 
 export const ADDENDUM_SOURCE_LABEL: Record<AddendumSource, string> = {
@@ -647,6 +649,10 @@ export type ContractAddendum = {
   change_type: AddendumChangeType;
   count_delta: number; // magnitude; sign comes from change_type
   new_rate: number | null;
+  // Renewal (EXTEND_END_DATE) target: the new end date, or open-ended when
+  // new_is_infinite. Null / false on every other addendum type.
+  new_end_date?: string | null;
+  new_is_infinite?: boolean;
   effective_from: string;
   source: AddendumSource;
   reference: string | null;
@@ -699,6 +705,102 @@ export function effectiveCommittedByCategory(
   }
   for (const [cat, n] of result) result.set(cat, Math.max(0, n));
   return result;
+}
+
+/**
+ * Effective per-line unit rate on a given date. A RATE_CHANGE addendum replaces the
+ * rate for its line (or, when it carries a category instead of a line, every line of
+ * that category); the latest one effective on/before the date wins. Lines with no
+ * applicable rate change keep their base unit_rate. Mirrors effectiveCommittedByCategory
+ * for headcount — the base line stays untouched, dated addendums layer on top.
+ */
+export function effectiveRateByLine(
+  lines: ContractLine[],
+  addendums: ContractAddendum[],
+  onDate: string,
+): Map<string, number> {
+  const rate = new Map<string, number>();
+  const winning = new Map<string, string>(); // lineId -> the winning addendum's effective_from
+  for (const l of lines) rate.set(l.id, Number(l.unit_rate) || 0);
+  for (const a of addendums) {
+    if (a.change_type !== "RATE_CHANGE" || a.new_rate == null) continue;
+    if (a.effective_from > onDate) continue;
+    const targets = a.contract_line_id
+      ? lines.filter((l) => l.id === a.contract_line_id)
+      : a.category
+        ? lines.filter((l) => l.category === a.category)
+        : [];
+    for (const l of targets) {
+      const prev = winning.get(l.id);
+      // Latest effective_from wins; ties resolve to the later one seen.
+      if (prev == null || a.effective_from >= prev) {
+        rate.set(l.id, Number(a.new_rate) || 0);
+        winning.set(l.id, a.effective_from);
+      }
+    }
+  }
+  return rate;
+}
+
+// Contract monthly value with rate-change addendums applied (base committed count ×
+// the effective per-line rate on the date). Use this instead of contractLinesValue
+// wherever the CURRENT billable value should reflect signed rate changes.
+export function effectiveContractLinesValue(
+  lines: ContractLine[],
+  addendums: ContractAddendum[],
+  onDate: string,
+): number {
+  const rate = effectiveRateByLine(lines, addendums, onDate);
+  return lines.reduce(
+    (sum, l) => sum + (Number(l.committed_count) || 0) * (rate.get(l.id) ?? (Number(l.unit_rate) || 0)),
+    0,
+  );
+}
+
+/**
+ * Effective contract END on a date, honouring EXTEND_END_DATE (renewal) addendums.
+ * The latest renewal in effect (effective_from <= asOf; ties broken by created_at)
+ * REPLACES the contract's own end — extending it, making it open-ended, or (rarely)
+ * shortening it. Its new end applies to the whole window, so months in the gap
+ * between the old end and the renewal can still bill. With no renewal, the base
+ * contract end/is_infinite stands. `asOf` defaults to today.
+ */
+export function effectiveContractEnd(
+  contract: Pick<Contract, "end_date" | "is_infinite">,
+  addendums: ContractAddendum[],
+  asOf?: string,
+): { endDate: string | null; isInfinite: boolean } {
+  const on = asOf ?? new Date().toISOString().slice(0, 10);
+  const renewals = addendums
+    .filter((a) => a.change_type === "EXTEND_END_DATE" && a.effective_from <= on)
+    .sort((a, b) =>
+      a.effective_from !== b.effective_from
+        ? (a.effective_from < b.effective_from ? -1 : 1)
+        : ((a.created_at ?? "") < (b.created_at ?? "") ? -1 : 1),
+    );
+  const latest = renewals[renewals.length - 1];
+  if (latest) {
+    return latest.new_is_infinite
+      ? { endDate: null, isInfinite: true }
+      : { endDate: latest.new_end_date ?? null, isInfinite: false };
+  }
+  return { endDate: contract.end_date ?? null, isInfinite: !!contract.is_infinite };
+}
+
+/**
+ * A contract is EXPIRED when its EFFECTIVE end (renewals applied) is a real date in
+ * the past. Open-ended / no-end / future-end contracts are not expired. `asOf`
+ * defaults to today.
+ */
+export function isContractExpired(
+  contract: Pick<Contract, "end_date" | "is_infinite">,
+  addendums: ContractAddendum[],
+  asOf?: string,
+): boolean {
+  const on = asOf ?? new Date().toISOString().slice(0, 10);
+  const eff = effectiveContractEnd(contract, addendums, on);
+  if (eff.isInfinite || !eff.endDate) return false;
+  return eff.endDate < on;
 }
 
 export const PAKISTAN_INDUSTRIES = [

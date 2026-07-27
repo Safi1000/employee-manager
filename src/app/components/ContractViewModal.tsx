@@ -7,7 +7,9 @@ import { formatDate } from "../lib/date";
 import {
   CONTRACT_TYPE_LABEL,
   CONTRACT_LINE_CATEGORY_LABEL,
-  contractLinesValue,
+  effectiveContractLinesValue,
+  effectiveContractEnd,
+  effectiveRateByLine,
   activeCountByLine,
   effectiveCommittedByCategory,
   type Branch,
@@ -60,17 +62,25 @@ export default function ContractViewModal({
   // Addendums shift the committed count per CATEGORY, so the base line count can be
   // stale — show the effective figure alongside it.
   const effectiveByCategory = effectiveCommittedByCategory(lines, addendums, today());
+  // Rate-change addendums replace the per-line rate; show the effective figure so
+  // the modal reflects signed changes, not just the original line rate.
+  const effectiveRate = effectiveRateByLine(lines, addendums, today());
 
-  const valuePerMonth = contractLinesValue(lines);
+  const valuePerMonth = effectiveContractLinesValue(lines, addendums, today());
   const totalCommitted = lines.reduce((n, l) => n + (Number(l.committed_count) || 0), 0);
   const totalActive = lines.reduce((n, l) => n + (activeByLine.get(l.id) ?? 0), 0);
 
+  // Effective end (renewal addendums applied) — the modal reflects the current end,
+  // not just the original one. `renewed` flags that a renewal addendum is in play.
+  const effEnd = effectiveContractEnd(contract, addendums, today());
+  const renewed = addendums.some((a) => a.change_type === "EXTEND_END_DATE");
+
   // Total contract value = monthly value × months in the term. Meaningless for an
-  // open-ended contract, which has no term to multiply by.
+  // open-ended contract, which has no term to multiply by. Uses the effective end.
   const months = (() => {
-    if (contract.is_infinite || !contract.end_date) return null;
+    if (effEnd.isInfinite || !effEnd.endDate) return null;
     const s = new Date(contract.start_date + "T00:00:00");
-    const e = new Date(contract.end_date + "T00:00:00");
+    const e = new Date(effEnd.endDate + "T00:00:00");
     const m = (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth());
     return m > 0 ? m : null;
   })();
@@ -92,9 +102,9 @@ export default function ContractViewModal({
           <Field label="Type">{CONTRACT_TYPE_LABEL[contract.contract_type]}</Field>
           <Field label="Start date">{formatDate(contract.start_date)}</Field>
           <Field label="End date">
-            {contract.is_infinite ? (
+            {effEnd.isInfinite ? (
               <span>
-                No end date
+                No end date{renewed && <span className="text-brand-600"> (renewed)</span>}
                 {contract.notice_period_days != null && (
                   <span className="text-slate-600">
                     {" "}
@@ -102,8 +112,11 @@ export default function ContractViewModal({
                   </span>
                 )}
               </span>
-            ) : contract.end_date ? (
-              formatDate(contract.end_date)
+            ) : effEnd.endDate ? (
+              <span>
+                {formatDate(effEnd.endDate)}
+                {renewed && <span className="text-brand-600"> (renewed)</span>}
+              </span>
             ) : (
               "—"
             )}
@@ -149,6 +162,9 @@ export default function ContractViewModal({
                     const committed = Number(l.committed_count) || 0;
                     const active = activeByLine.get(l.id) ?? 0;
                     const effective = effectiveByCategory.get(l.category);
+                    const baseRate = Number(l.unit_rate) || 0;
+                    const rate = effectiveRate.get(l.id) ?? baseRate;
+                    const rateChanged = rate !== baseRate;
                     return (
                       <tr key={l.id}>
                         <td className="px-3 py-2 text-slate-900">
@@ -171,10 +187,15 @@ export default function ContractViewModal({
                           {active}
                         </td>
                         <td className="px-3 py-2 text-right text-slate-600 tabular-nums">
-                          {Number(l.unit_rate).toLocaleString()}
+                          {rate.toLocaleString()}
+                          {rateChanged && (
+                            <div className="text-[10px] text-slate-400 line-through">
+                              {baseRate.toLocaleString()}
+                            </div>
+                          )}
                         </td>
                         <td className="px-3 py-2 text-right text-slate-600 tabular-nums">
-                          {(committed * Number(l.unit_rate)).toLocaleString()}
+                          {(committed * rate).toLocaleString()}
                         </td>
                       </tr>
                     );

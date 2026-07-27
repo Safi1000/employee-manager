@@ -55,7 +55,7 @@ import {
   validateIban,
   validateEmployeeIdPrefix,
 } from "../../lib/validation";
-import { useAuth } from "../../lib/auth";
+import { useAuth, hasPermission } from "../../lib/auth";
 import { useRegion, withRegion } from "../../lib/region";
 
 type ClientRow = Client & { employees_count: number; contracts_count: number };
@@ -180,6 +180,9 @@ function Section({
 export default function Clients() {
   const { profile, company } = useAuth();
   const { regionId } = useRegion();
+  // Adding / editing a contract from the client detail is gated on contracts.edit
+  // (super_admin + SSA get it implicitly). Without it the tab stays read-only.
+  const canEditContracts = hasPermission(profile, "contracts.edit");
   const [rows, setRows] = useState<ClientRow[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
@@ -607,6 +610,38 @@ export default function Clients() {
       })
       .eq("id", row.id);
     await loadAll();
+  };
+
+  // Permanently delete a contract (gated by contracts.edit). Lines/addendums cascade
+  // in the DB; invoices, guard assignments and posts are unlinked (SET NULL); a
+  // renewal_pipeline reference blocks it (surfaced as a friendly message).
+  const [deletingContractId, setDeletingContractId] = useState<string | null>(null);
+  const deleteContractEntity = async (c: Contract) => {
+    const ok = window.confirm(
+      `Delete contract ${c.contract_code}?\n\n` +
+        `• Its contract lines and addendums are permanently removed.\n` +
+        `• Any invoices stay but are unlinked from this contract.\n` +
+        `• Any guard assignments to this contract are cleared.\n\n` +
+        `This cannot be undone.`,
+    );
+    if (!ok) return;
+    setDeletingContractId(c.id);
+    setContractError(null);
+    try {
+      const { error: delErr } = await supabase.from("contracts").delete().eq("id", c.id);
+      if (delErr) {
+        throw new Error(
+          /renewal_pipeline|foreign key|violates/i.test(delErr.message)
+            ? "This contract is referenced by the renewal pipeline — remove it there first."
+            : delErr.message,
+        );
+      }
+      await loadAll();
+    } catch (err: any) {
+      setContractError(err.message ?? String(err));
+    } finally {
+      setDeletingContractId(null);
+    }
   };
 
   // Footer lives in the Modal's fixed footer region (outside the scroll area);
@@ -1305,18 +1340,20 @@ export default function Clients() {
 
             {detailTab === "contracts" && (
               <div className="space-y-2">
-                <div className="flex justify-end">
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => {
-                      setEditingContract(null);
-                      setContractEditorOpen(true);
-                    }}
-                  >
-                    <Plus className="w-4 h-4 mr-1" /> Add Contract
-                  </Button>
-                </div>
+                {canEditContracts && (
+                  <div className="flex justify-end">
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => {
+                        setEditingContract(null);
+                        setContractEditorOpen(true);
+                      }}
+                    >
+                      <Plus className="w-4 h-4 mr-1" /> Add Contract
+                    </Button>
+                  </div>
+                )}
                 {contracts.filter((c) => c.client_id === detailRow.id).length === 0 ? (
                   <p className="text-sm text-slate-500">No contracts yet. Use “Add Contract” above.</p>
                 ) : (
@@ -1342,17 +1379,34 @@ export default function Clients() {
                           <td className="px-2 py-2 text-xs text-right">{c.number_of_guards}</td>
                           <td className="px-2 py-2 text-xs text-right">PKR {Number(c.rate_per_guard_per_month).toLocaleString()}</td>
                           <td className="px-2 py-2 text-xs text-right">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingContract(c);
-                                setContractEditorOpen(true);
-                              }}
-                              className="p-1 rounded text-slate-600 hover:bg-slate-100"
-                              title="Edit contract"
-                            >
-                              <Pencil className="w-4 h-4" />
-                            </button>
+                            {canEditContracts ? (
+                              <div className="flex gap-1 justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingContract(c);
+                                    setContractEditorOpen(true);
+                                  }}
+                                  className="p-1 rounded text-slate-600 hover:bg-slate-100"
+                                  title="Edit contract"
+                                >
+                                  <Pencil className="w-4 h-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => deleteContractEntity(c)}
+                                  disabled={deletingContractId === c.id}
+                                  className="p-1 rounded text-danger-600 hover:bg-danger-50 disabled:opacity-50"
+                                  title="Delete contract"
+                                >
+                                  {deletingContractId === c.id
+                                    ? <Loader2 className="w-4 h-4 animate-spin" />
+                                    : <Trash2 className="w-4 h-4" />}
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
                           </td>
                         </tr>
                       ))}
