@@ -386,28 +386,39 @@ function drawCenteredSegments(ctx: Ctx, segs: { t: string; b: boolean }[], y: nu
   });
 }
 
-function drawSignatureAndFooter(ctx: Ctx, yStart: number): void {
+function drawSignatureAndFooter(ctx: Ctx, _yStart: number): void {
   const { doc, pageW, pageH, margin, company, settings } = ctx;
-  const y = Math.min(yStart + 30, pageH - 150);
+
+  // Signature block anchored to the bottom-right, just above the footer rule
+  // (footer rule sits at pageH - 62), like a hand-signed invoice.
+  const rightX = pageW - margin;
+  const labelY = pageH - 86;   // "Authorised Signatory"
+  const nameY = labelY + 12;   // company name beneath it
+  const lineY = labelY - 8;    // signature line above the label
 
   const stamp = company?.stamp_url ?? null;
   const stampFmt = stamp ? imageFormat(stamp) : null;
   if (settings.general_show_stamp && stamp && stampFmt) {
     try {
-      doc.addImage(stamp, stampFmt, pageW / 2 - 130, y, 80, 80);
+      // Stamp sits above the signature line, right-aligned over the block.
+      doc.addImage(stamp, stampFmt, rightX - 90, lineY - 82, 80, 80);
     } catch {
       /* skip */
     }
   }
-  // Signature label block (right of stamp).
+  // Signature line.
+  doc.setDrawColor(0);
+  doc.setLineWidth(0.4);
+  doc.line(rightX - 170, lineY, rightX, lineY);
+  // Signature label + company name, right-aligned to the page margin.
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
   doc.setTextColor(0);
-  doc.text(company?.signature_label || "Authorised Signatory", pageW / 2 - 20, y + 66);
+  doc.text(company?.signature_label || "Authorised Signatory", rightX, labelY, { align: "right" });
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
   doc.setTextColor(70);
-  doc.text(company?.name || legalNameOf(company), pageW / 2 - 20, y + 80);
+  doc.text(company?.name || legalNameOf(company), rightX, nameY, { align: "right" });
 
   // Footer branding (bold labels), centred at the bottom.
   const phones = company?.contact_phones?.length
