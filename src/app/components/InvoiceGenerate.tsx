@@ -8,6 +8,9 @@ import {
   supabase,
   CONTRACT_LINE_CATEGORY_LABEL,
   CLIENT_INVOICE_GROUP_LABEL,
+  SELECTABLE_INVOICE_GROUPS,
+  DEFAULT_VARIABLE_COLUMNS,
+  type VariableGrid,
   DEFAULT_INVOICE_SETTINGS,
   effectiveCommittedByCategory,
   effectiveRateByLine,
@@ -38,6 +41,11 @@ type Draft = {
   periodStart: string;
   periodEnd: string;
   lines: DraftLine[];
+  // Variable clients only: a fully-manual grid (editable headers, arbitrary
+  // columns/rows, hand-typed cells) + a hand-typed total. No auto-calculation.
+  variableColumns: string[];
+  variableRows: string[][];
+  variableTotal: string;
   taxes: DraftTax[];
   notes: string;
   remitIndex: number; // index into client's remit_accounts
@@ -204,6 +212,34 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
   const buildDraft = useCallback(
     (client: Client, con: Contract, taken: Set<string>): Draft | null => {
       const { start, end } = monthBounds(period);
+      // Variable client → seed the manual grid from the client's saved column
+      // STRUCTURE (Change 5), values blank. One empty row to start.
+      if ((client.invoice_group ?? "FIXED") === "VARIABLE") {
+        const columns = (client.variable_columns && client.variable_columns.length > 0)
+          ? client.variable_columns
+          : DEFAULT_VARIABLE_COLUMNS;
+        const number = suggestNumber(client, taken);
+        taken.add(number);
+        return {
+          contractId: con.id,
+          contractCode: con.contract_code,
+          client,
+          invoiceNumber: number,
+          periodStart: start,
+          periodEnd: end,
+          lines: [],
+          variableColumns: columns,
+          variableRows: [columns.map(() => "")],
+          variableTotal: "",
+          taxes: [],
+          notes: "",
+          remitIndex: Math.max(0, (client.remit_accounts ?? []).findIndex((r) => r.is_default)),
+          overrideTotal: "",
+          overrideReason: "",
+          previousBalance: contractPreviousBalance(con.id),
+          status: "Pending",
+        };
+      }
       const conLines = lines.filter((l) => l.contract_id === con.id);
       const conAdds = addendums.filter((a) => a.contract_id === con.id);
       const eff = effectiveCommittedByCategory(conLines, conAdds, end);
@@ -247,6 +283,9 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
         periodStart: start,
         periodEnd: end,
         lines: draftLines,
+        variableColumns: [],
+        variableRows: [],
+        variableTotal: "",
         taxes,
         notes: "",
         remitIndex,
@@ -334,6 +373,12 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
 
   // Derived figures for a draft.
   const figures = (d: Draft) => {
+    // Variable clients: EVERYTHING is manual — the Total Due is the hand-typed
+    // value; no subtotal/tax/auto-sum is computed.
+    if ((d.client.invoice_group ?? "FIXED") === "VARIABLE") {
+      const total = num(d.variableTotal);
+      return { subtotal: total, computed: [] as ReturnType<typeof computeInvoiceTaxes>["computed"], addedTotal: 0, withheldTotal: 0, lineTotal: total, totalDue: total, overridden: false };
+    }
     const subtotal = d.lines.reduce((s, l) => s + num(l.quantity) * num(l.unit_rate), 0);
     const { computed, addedTotal, withheldTotal } = computeInvoiceTaxes(
       subtotal,
@@ -348,6 +393,38 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
   const patchDraft = (contractId: string, patch: Partial<Draft>) =>
     setDrafts((prev) => (prev[contractId] ? { ...prev, [contractId]: { ...prev[contractId], ...patch } } : prev));
 
+  // ── Variable manual-grid editors (no calculation; pure structure/value edits) ──
+  const setVarHeader = (id: string, c: number, val: string) =>
+    patchDraft(id, { variableColumns: drafts[id]?.variableColumns.map((h, i) => (i === c ? val : h)) });
+  const setVarCell = (id: string, r: number, c: number, val: string) =>
+    patchDraft(id, { variableRows: drafts[id]?.variableRows.map((row, ri) => (ri === r ? row.map((cell, ci) => (ci === c ? val : cell)) : row)) });
+  const addVarColumn = (id: string) => {
+    const d = drafts[id];
+    if (!d) return;
+    patchDraft(id, {
+      variableColumns: [...d.variableColumns, `Column ${d.variableColumns.length + 1}`],
+      variableRows: d.variableRows.map((row) => [...row, ""]),
+    });
+  };
+  const removeVarColumn = (id: string, c: number) => {
+    const d = drafts[id];
+    if (!d || d.variableColumns.length <= 1) return;
+    patchDraft(id, {
+      variableColumns: d.variableColumns.filter((_, i) => i !== c),
+      variableRows: d.variableRows.map((row) => row.filter((_, i) => i !== c)),
+    });
+  };
+  const addVarRow = (id: string) => {
+    const d = drafts[id];
+    if (!d) return;
+    patchDraft(id, { variableRows: [...d.variableRows, d.variableColumns.map(() => "")] });
+  };
+  const removeVarRow = (id: string, r: number) => {
+    const d = drafts[id];
+    if (!d) return;
+    patchDraft(id, { variableRows: d.variableRows.filter((_, i) => i !== r) });
+  };
+
   const toggleCleared = (contractId: string) =>
     setDrafts((prev) => {
       const d = prev[contractId];
@@ -360,7 +437,12 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
   // can stop and report which client. Shared by "Generate All Cleared".
   const postDraft = async (d: Draft) => {
     const f = figures(d);
+    const isVariable = (d.client.invoice_group ?? "FIXED") === "VARIABLE";
     const remit: RemitAccount | null = (d.client.remit_accounts ?? [])[d.remitIndex] ?? null;
+    // Variable: the manual grid is the invoice's line data; total is hand-typed.
+    const variableGrid: VariableGrid | null = isVariable
+      ? { columns: d.variableColumns, rows: d.variableRows, total: num(d.variableTotal) }
+      : null;
     const invoiceAmount = f.subtotal + f.addedTotal; // current-period gross
     const insertRow = {
       client_id: d.client.id,
@@ -384,6 +466,7 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
       override_reason: f.overridden ? d.overrideReason.trim() : null,
       financial_year: financialYearLabel(`${period}-01`),
       invoice_group: group,
+      variable_grid: variableGrid,
       generated: true,
     };
     const { data: ins, error: insErr } = await supabase.from("invoices").insert(insertRow).select().single();
@@ -424,6 +507,11 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
     if (taxRows.length) {
       const { error: tErr } = await supabase.from("invoice_taxes").insert(taxRows);
       if (tErr) throw tErr;
+    }
+    // Change 5: persist this Variable client's column STRUCTURE (headers only) so
+    // next month's invoice opens with the same layout. Values are never saved here.
+    if (isVariable) {
+      await supabase.from("clients").update({ variable_columns: d.variableColumns }).eq("id", d.client.id);
     }
     // Template is auto-selected by the client's invoice_group inside
     // generateInvoiceDocument. Pass the contract + its lines so SLA can read the
@@ -580,7 +668,7 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
             onChange={(e) => setGroup(e.target.value as ClientInvoiceGroup)}
             className="px-3 py-2 border border-slate-200 rounded-md text-sm"
           >
-            {(["FIXED", "VARIABLE", "SLA"] as const).map((g) => (
+            {SELECTABLE_INVOICE_GROUPS.map((g) => (
               <option key={g} value={g}>{CLIENT_INVOICE_GROUP_LABEL[g]}</option>
             ))}
           </ThemedSelect>
@@ -662,6 +750,7 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
         if (!d) return null;
         const f = figures(d);
         const remitAccounts = d.client.remit_accounts ?? [];
+        const isVariable = (d.client.invoice_group ?? "FIXED") === "VARIABLE";
         return (
           <div key={`draft-${r.key}`} className="bg-white border border-slate-200 rounded-lg p-4 space-y-3">
             <div className="flex items-center justify-between">
@@ -706,56 +795,123 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
             </div>
 
             {/* Line items */}
-            <div className="border border-slate-200 rounded overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-xs text-slate-500 uppercase border-b border-slate-200">
-                    <th className="text-left px-2 py-1.5">Description</th>
-                    <th className="text-right px-2 py-1.5 w-24">Qty</th>
-                    <th className="text-right px-2 py-1.5 w-32">Rate</th>
-                    <th className="text-right px-2 py-1.5 w-32">Amount</th>
-                    <th className="w-8"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {d.lines.map((l, li) => (
-                    <tr key={li}>
-                      <td className="px-2 py-1">
-                        <input
-                          value={l.label}
-                          onChange={(e) => patchDraft(d.contractId, { lines: d.lines.map((x, j) => (j === li ? { ...x, label: e.target.value } : x)) })}
-                          className="w-full px-2 py-1 border border-slate-200 rounded text-sm"
-                        />
-                      </td>
-                      <td className="px-2 py-1">
-                        <input type="number" min="0" value={l.quantity}
-                          onChange={(e) => patchDraft(d.contractId, { lines: d.lines.map((x, j) => (j === li ? { ...x, quantity: e.target.value } : x)) })}
-                          className="w-full px-2 py-1 border border-slate-200 rounded text-sm text-right" />
-                      </td>
-                      <td className="px-2 py-1">
-                        <input type="number" min="0" step="0.01" value={l.unit_rate}
-                          onChange={(e) => patchDraft(d.contractId, { lines: d.lines.map((x, j) => (j === li ? { ...x, unit_rate: e.target.value } : x)) })}
-                          className="w-full px-2 py-1 border border-slate-200 rounded text-sm text-right" />
-                      </td>
-                      <td className="px-2 py-1 text-right tabular-nums text-slate-700">
-                        {(num(l.quantity) * num(l.unit_rate)).toLocaleString()}
-                      </td>
-                      <td className="px-1 py-1 text-center">
-                        <button onClick={() => patchDraft(d.contractId, { lines: d.lines.filter((_, j) => j !== li) })} className="text-danger-600 hover:bg-danger-50 rounded p-1">
-                          <Trash2 className="w-3.5 h-3.5" />
+            {isVariable ? (
+              /* Fully-manual spreadsheet grid — editable headers, add/remove
+                 columns & rows, every cell typed by hand. Nothing is calculated. */
+              <div className="border border-slate-200 rounded overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50">
+                      {d.variableColumns.map((h, ci) => (
+                        <th key={ci} className="px-1 py-1 align-top">
+                          <div className="flex items-center gap-1">
+                            <input
+                              value={h}
+                              onChange={(e) => setVarHeader(d.contractId, ci, e.target.value)}
+                              placeholder="Column name"
+                              className="w-full min-w-[90px] px-2 py-1 border border-slate-200 rounded text-xs font-medium"
+                            />
+                            <button
+                              onClick={() => removeVarColumn(d.contractId, ci)}
+                              disabled={d.variableColumns.length <= 1}
+                              title="Remove column"
+                              className="text-danger-600 hover:bg-danger-50 rounded p-0.5 disabled:opacity-30"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </th>
+                      ))}
+                      <th className="w-9 px-1 align-top">
+                        <button onClick={() => addVarColumn(d.contractId)} title="Add column" className="text-brand-600 hover:bg-brand-50 rounded p-1">
+                          <Plus className="w-3.5 h-3.5" />
                         </button>
-                      </td>
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-              <button
-                onClick={() => patchDraft(d.contractId, { lines: [...d.lines, { category: null, label: "", quantity: "0", unit_rate: "0", taxable: true }] })}
-                className="text-xs text-brand-600 hover:text-brand-700 px-2 py-1.5 inline-flex items-center gap-1"
-              >
-                <Plus className="w-3.5 h-3.5" /> Add line
-              </button>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {d.variableRows.map((row, ri) => (
+                      <tr key={ri}>
+                        {row.map((cell, ci) => (
+                          <td key={ci} className="px-1 py-1">
+                            <input
+                              value={cell}
+                              onChange={(e) => setVarCell(d.contractId, ri, ci, e.target.value)}
+                              className="w-full px-2 py-1 border border-slate-200 rounded text-sm"
+                            />
+                          </td>
+                        ))}
+                        <td className="px-1 py-1 text-center">
+                          <button onClick={() => removeVarRow(d.contractId, ri)} className="text-danger-600 hover:bg-danger-50 rounded p-1">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="flex flex-wrap items-center gap-3 px-2 py-1.5 border-t border-slate-100">
+                  <button onClick={() => addVarRow(d.contractId)} className="text-xs text-brand-600 hover:text-brand-700 inline-flex items-center gap-1">
+                    <Plus className="w-3.5 h-3.5" /> Add row
+                  </button>
+                  <button onClick={() => addVarColumn(d.contractId)} className="text-xs text-brand-600 hover:text-brand-700 inline-flex items-center gap-1">
+                    <Plus className="w-3.5 h-3.5" /> Add column
+                  </button>
+                  <span className="text-[11px] text-slate-400">All values (including totals) are typed by hand — nothing is calculated.</span>
+                </div>
+              </div>
+            ) : (
+              <div className="border border-slate-200 rounded overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-xs text-slate-500 uppercase border-b border-slate-200">
+                      <th className="text-left px-2 py-1.5">Description</th>
+                      <th className="text-right px-2 py-1.5 w-24">Qty</th>
+                      <th className="text-right px-2 py-1.5 w-32">Rate</th>
+                      <th className="text-right px-2 py-1.5 w-32">Amount</th>
+                      <th className="w-8"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {d.lines.map((l, li) => (
+                      <tr key={li}>
+                        <td className="px-2 py-1">
+                          <input
+                            value={l.label}
+                            onChange={(e) => patchDraft(d.contractId, { lines: d.lines.map((x, j) => (j === li ? { ...x, label: e.target.value } : x)) })}
+                            className="w-full px-2 py-1 border border-slate-200 rounded text-sm"
+                          />
+                        </td>
+                        <td className="px-2 py-1">
+                          <input type="number" min="0" value={l.quantity}
+                            onChange={(e) => patchDraft(d.contractId, { lines: d.lines.map((x, j) => (j === li ? { ...x, quantity: e.target.value } : x)) })}
+                            className="w-full px-2 py-1 border border-slate-200 rounded text-sm text-right" />
+                        </td>
+                        <td className="px-2 py-1">
+                          <input type="number" min="0" step="0.01" value={l.unit_rate}
+                            onChange={(e) => patchDraft(d.contractId, { lines: d.lines.map((x, j) => (j === li ? { ...x, unit_rate: e.target.value } : x)) })}
+                            className="w-full px-2 py-1 border border-slate-200 rounded text-sm text-right" />
+                        </td>
+                        <td className="px-2 py-1 text-right tabular-nums text-slate-700">
+                          {(num(l.quantity) * num(l.unit_rate)).toLocaleString()}
+                        </td>
+                        <td className="px-1 py-1 text-center">
+                          <button onClick={() => patchDraft(d.contractId, { lines: d.lines.filter((_, j) => j !== li) })} className="text-danger-600 hover:bg-danger-50 rounded p-1">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <button
+                  onClick={() => patchDraft(d.contractId, { lines: [...d.lines, { category: null, label: "", quantity: "0", unit_rate: "0", taxable: true }] })}
+                  className="text-xs text-brand-600 hover:text-brand-700 px-2 py-1.5 inline-flex items-center gap-1"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add line
+                </button>
+              </div>
+            )}
 
             {/* Totals + taxes + remit */}
             <div className="grid grid-cols-2 gap-4">
@@ -776,36 +932,54 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
                 <label className="block text-xs text-slate-500 mt-2">Notes</label>
                 <textarea value={d.notes} onChange={(e) => patchDraft(d.contractId, { notes: e.target.value })} rows={2} className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm" />
               </div>
-              <div className="text-sm space-y-1">
-                <Row label="Subtotal" value={f.subtotal} />
-                {f.computed.map((t, ti) => (
-                  <Row key={ti} label={`${t.name} (${t.rate}%)`} value={t.direction === "WITHHELD" ? -t.amount : t.amount} muted />
-                ))}
-                {d.previousBalance !== 0 && <Row label="Previous balance" value={d.previousBalance} muted />}
-                <div className="flex items-center justify-between border-t border-slate-200 pt-1 font-semibold text-slate-900">
-                  <span>Total Due{f.withheldTotal > 0 ? " (net of withholding)" : ""}</span>
-                  <span className="tabular-nums">PKR {f.totalDue.toLocaleString()}</span>
-                </div>
-                <div className="text-[11px] italic text-slate-500">{amountInWords(f.totalDue)}</div>
-                <div className="pt-1">
-                  <label className="block text-xs text-slate-500 mb-1">Override total (optional)</label>
+              {isVariable ? (
+                <div className="text-sm space-y-1">
+                  <label className="block text-xs text-slate-500 mb-1">Total Due (typed manually)</label>
                   <input
                     type="number"
-                    value={d.overrideTotal}
-                    onChange={(e) => patchDraft(d.contractId, { overrideTotal: e.target.value })}
-                    placeholder={String(f.lineTotal)}
-                    className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm text-right"
+                    value={d.variableTotal}
+                    onChange={(e) => patchDraft(d.contractId, { variableTotal: e.target.value })}
+                    placeholder="0"
+                    className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm text-right font-semibold"
                   />
-                  {f.overridden && (
-                    <input
-                      value={d.overrideReason}
-                      onChange={(e) => patchDraft(d.contractId, { overrideReason: e.target.value })}
-                      placeholder="Reason for override (required)"
-                      className={`w-full px-2 py-1.5 mt-1 border rounded text-sm ${d.overrideReason.trim() ? "border-slate-200" : "border-danger-300"}`}
-                    />
-                  )}
+                  <div className="flex items-center justify-between border-t border-slate-200 pt-1 font-semibold text-slate-900">
+                    <span>Total Due</span>
+                    <span className="tabular-nums">PKR {f.totalDue.toLocaleString()}</span>
+                  </div>
+                  <div className="text-[11px] italic text-slate-500">{amountInWords(f.totalDue)}</div>
                 </div>
-              </div>
+              ) : (
+                <div className="text-sm space-y-1">
+                  <Row label="Subtotal" value={f.subtotal} />
+                  {f.computed.map((t, ti) => (
+                    <Row key={ti} label={`${t.name} (${t.rate}%)`} value={t.direction === "WITHHELD" ? -t.amount : t.amount} muted />
+                  ))}
+                  {d.previousBalance !== 0 && <Row label="Previous balance" value={d.previousBalance} muted />}
+                  <div className="flex items-center justify-between border-t border-slate-200 pt-1 font-semibold text-slate-900">
+                    <span>Total Due{f.withheldTotal > 0 ? " (net of withholding)" : ""}</span>
+                    <span className="tabular-nums">PKR {f.totalDue.toLocaleString()}</span>
+                  </div>
+                  <div className="text-[11px] italic text-slate-500">{amountInWords(f.totalDue)}</div>
+                  <div className="pt-1">
+                    <label className="block text-xs text-slate-500 mb-1">Override total (optional)</label>
+                    <input
+                      type="number"
+                      value={d.overrideTotal}
+                      onChange={(e) => patchDraft(d.contractId, { overrideTotal: e.target.value })}
+                      placeholder={String(f.lineTotal)}
+                      className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm text-right"
+                    />
+                    {f.overridden && (
+                      <input
+                        value={d.overrideReason}
+                        onChange={(e) => patchDraft(d.contractId, { overrideReason: e.target.value })}
+                        placeholder="Reason for override (required)"
+                        className={`w-full px-2 py-1.5 mt-1 border rounded text-sm ${d.overrideReason.trim() ? "border-slate-200" : "border-danger-300"}`}
+                      />
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         );

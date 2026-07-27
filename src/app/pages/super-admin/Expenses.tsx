@@ -35,6 +35,7 @@ import {
 } from "../../lib/supabase";
 import { useRegion, withRegion } from "../../lib/region";
 import { useAuth } from "../../lib/auth";
+import { loadCustodianOptions, ensureCustodianLocation, type CustodianOption } from "../../lib/custodian";
 
 const PIE_COLORS = CHART_COLORS;
 
@@ -133,6 +134,9 @@ export default function Expenses() {
   const [branchFilter, setBranchFilter] = useState("all");
   const [advBranchFilter, setAdvBranchFilter] = useState("all");
   const [cashBalance, setCashBalance] = useState(0);
+  // Office-staff custodians + their held cash — for attributing cash expenses (0135).
+  const [custodians, setCustodians] = useState<CustodianOption[]>([]);
+  const [expenseCustodianId, setExpenseCustodianId] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -269,6 +273,16 @@ export default function Expenses() {
     }
     setChequeLinkedSums(linked);
     setCashBalance(Number(treaRes.data?.cash_balance ?? 0));
+    {
+      const cid = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
+      if (cid) {
+        try {
+          setCustodians(await loadCustodianOptions(cid));
+        } catch {
+          /* ignore — custodian attribution is optional */
+        }
+      }
+    }
     setEmployees((empRes.data ?? []) as Employee[]);
     setAdvances(
       (advData ?? []).map((a: any) => ({
@@ -549,6 +563,21 @@ export default function Expenses() {
       setFormError("Cash balance is insufficient.");
       return;
     }
+    if (form.payment_mode === "Cash" && !expenseCustodianId) {
+      setFormError("Select the office-staff member who paid the cash.");
+      return;
+    }
+    if (form.payment_mode === "Cash") {
+      // Non-blocking warning: let the user proceed even if the amount exceeds the
+      // chosen custodian's held cash (they may have cash not yet attributed).
+      const staff = custodians.find((c) => c.employeeId === expenseCustodianId);
+      if (staff && amount > staff.held) {
+        const ok = window.confirm(
+          `This expense (PKR ${amount.toLocaleString()}) exceeds ${staff.fullName}'s held cash (PKR ${Math.round(staff.held).toLocaleString()}). Record it anyway?`,
+        );
+        if (!ok) return;
+      }
+    }
     if (form.payment_mode === "Bank") {
       const bank = banks.find((b) => b.id === form.bank_account_id);
       if (bank && amount > Number(bank.balance)) {
@@ -572,6 +601,13 @@ export default function Expenses() {
         (form.client_id ? clients.find((c) => c.id === form.client_id)?.branch_id ?? null : null) ||
         headOfficeBranchId ||
         null;
+      // Attribute cash paid to the office-staff custodian who paid it (0135).
+      let custodianLocId: string | null = null;
+      if (form.payment_mode === "Cash") {
+        const cid = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
+        const staff = custodians.find((c) => c.employeeId === expenseCustodianId);
+        if (cid && staff) custodianLocId = await ensureCustodianLocation(cid, staff.employeeId, staff.fullName);
+      }
       const { data: inserted, error: insErr } = await supabase
         .from("expenses")
         .insert({
@@ -584,6 +620,7 @@ export default function Expenses() {
           amount,
           expense_date: form.expense_date,
           payment_mode: form.payment_mode,
+          custodian_location_id: custodianLocId,
           bank_account_id:
             form.payment_mode === "Bank"
               ? form.bank_account_id
@@ -639,6 +676,7 @@ export default function Expenses() {
       }
 
       setForm(emptyForm);
+      setExpenseCustodianId("");
       setIsAddOpen(false);
       await loadAll();
     } catch (err: any) {
@@ -1379,7 +1417,7 @@ export default function Expenses() {
               </Button>
             )}
             {activeTab === "expenses" && (
-              <Button variant="primary" size="md" onClick={() => setIsAddOpen(true)}>
+              <Button variant="primary" size="md" onClick={() => { setExpenseCustodianId(""); setIsAddOpen(true); }}>
                 <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
                 Add Expense
               </Button>
@@ -2584,6 +2622,33 @@ export default function Expenses() {
               ))}
             </div>
           </div>
+          {state.payment_mode === "Cash" && !edit && (
+            <div className="col-span-2">
+              <label className="block text-sm text-slate-700 mb-1">Paid By (Office Staff) *</label>
+              <ThemedSelect
+                required
+                value={expenseCustodianId}
+                onChange={(e) => setExpenseCustodianId(e.target.value)}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+              >
+                <option value="">Select who paid the cash…</option>
+                {custodians.map((c) => (
+                  <option key={c.employeeId} value={c.employeeId}>
+                    {c.fullName} — holds PKR {Math.round(c.held).toLocaleString()}
+                  </option>
+                ))}
+              </ThemedSelect>
+              {(() => {
+                const staff = custodians.find((c) => c.employeeId === expenseCustodianId);
+                const amt = Number(state.amount);
+                return staff && amt > 0 && amt > staff.held ? (
+                  <p className="text-[11px] text-warning-700 mt-1.5">
+                    This exceeds {staff.fullName}'s held cash (PKR {Math.round(staff.held).toLocaleString()}). You can still record it.
+                  </p>
+                ) : null;
+              })()}
+            </div>
+          )}
           {state.payment_mode === "Bank" && (
             <div className="col-span-2">
               <label className="block text-sm text-slate-700 mb-1">Bank Account *</label>

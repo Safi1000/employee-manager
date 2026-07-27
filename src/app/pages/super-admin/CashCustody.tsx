@@ -1,6 +1,6 @@
 import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Pencil, AlertCircle, X, Loader2, ArrowRightLeft, Wallet, Building2 } from "lucide-react";
+import { Plus, Pencil, Trash2, AlertCircle, X, Loader2, ArrowRightLeft, Wallet, Building2 } from "lucide-react";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import { supabase } from "../../lib/supabase";
@@ -18,11 +18,16 @@ type CashLocation = {
   location_type: "BANK" | "PETTY_CASH" | "CUSTODIAN";
   custodian_partner_id: string | null;
   custodian_user_id: string | null;
+  // Office-staff custodian who physically holds this cash (0135). The task's
+  // custodian = an office-staff employee; partner-held locations kept for legacy.
+  custodian_employee_id: string | null;
   opening_balance: number;
   branch_id: string | null;
   is_active: boolean;
   bank_account_id: string | null;
 };
+
+type OfficeStaff = { id: string; full_name: string };
 
 type CustodyTransfer = {
   id: string;
@@ -55,6 +60,8 @@ const CASH_IN_HAND_ID = "__cash_in_hand__";
 export function CashCustodyPanel() {
   const { profile } = useAuth();
   const companyId = profile?.view_as_company ?? profile?.company_id ?? null;
+  // Only a (super) admin may delete a custodian added by mistake.
+  const canDelete = profile?.role === "super_admin" || profile?.role === "super_super_admin";
   // Branch-scoped (regional partner) logins see only their own branch's partners;
   // company-wide roles (no branch) see everyone. SSA viewing a company is company-wide.
   const branchScope = profile?.role === "super_super_admin" ? null : (profile?.branch_id ?? null);
@@ -66,6 +73,11 @@ export function CashCustodyPanel() {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [banks, setBanks] = useState<BankAccountLite[]>([]);
   const [cashInHand, setCashInHand] = useState<number>(0);
+  const [officeStaff, setOfficeStaff] = useState<OfficeStaff[]>([]);
+  // Cash attributed to each custodian location: client payments received (in) and
+  // expenses paid (out), summed per custodian_location_id (0135).
+  const [cashInByLoc, setCashInByLoc] = useState<Map<string, number>>(new Map());
+  const [cashOutByLoc, setCashOutByLoc] = useState<Map<string, number>>(new Map());
   const [partnerStats, setPartnerStats] = useState<Map<string, PartnerStats>>(new Map());
   const [investorLiabilities, setInvestorLiabilities] = useState<number>(0);
   const [loading, setLoading] = useState(true);
@@ -76,7 +88,7 @@ export function CashCustodyPanel() {
   const [editLoc, setEditLoc] = useState<CashLocation | null>(null);
   const [locForm, setLocForm] = useState({
     name: "", location_type: "CUSTODIAN" as CashLocation["location_type"],
-    custodian_partner_id: "", branch_id: "", opening_balance: "0", is_active: true,
+    custodian_partner_id: "", custodian_employee_id: "", branch_id: "", opening_balance: "0", is_active: true,
   });
   const [locSaving, setLocSaving] = useState(false);
 
@@ -94,6 +106,7 @@ export function CashCustodyPanel() {
       const [
         { data: locs }, { data: tx }, { data: pts }, { data: brs },
         { data: bnks }, { data: treas }, { data: pEntries }, { data: iEntries },
+        { data: staff }, { data: cashPays }, { data: cashExps },
       ] = await Promise.all([
         supabase.from("cash_locations").select("*").eq("company_id", companyId).order("name"),
         supabase.from("custody_transfers").select("*").eq("company_id", companyId).order("date", { ascending: false }).limit(100),
@@ -103,9 +116,26 @@ export function CashCustodyPanel() {
         supabase.from("treasury").select("cash_balance").eq("company_id", companyId).maybeSingle(),
         supabase.from("partner_account_entries").select("partner_id, type, amount").eq("company_id", companyId),
         supabase.from("investor_ledger_entries").select("investor_id, type, amount").eq("company_id", companyId),
+        supabase.from("employees").select("id, full_name").eq("category", "office_staff").order("full_name"),
+        supabase.from("invoice_payments").select("amount, custodian_location_id").eq("payment_mode", "Cash").not("custodian_location_id", "is", null),
+        supabase.from("expenses").select("amount, custodian_location_id").not("custodian_location_id", "is", null),
       ]);
       const partnerList = ((pts ?? []) as Partner[]).filter((p) => p.is_active);
       setLocations((locs ?? []) as CashLocation[]);
+      setOfficeStaff((staff ?? []) as OfficeStaff[]);
+      // Attributed cash per custodian location.
+      const inBy = new Map<string, number>();
+      for (const p of (cashPays ?? []) as any[]) {
+        if (!p.custodian_location_id) continue;
+        inBy.set(p.custodian_location_id, (inBy.get(p.custodian_location_id) ?? 0) + Number(p.amount ?? 0));
+      }
+      setCashInByLoc(inBy);
+      const outBy = new Map<string, number>();
+      for (const e of (cashExps ?? []) as any[]) {
+        if (!e.custodian_location_id) continue;
+        outBy.set(e.custodian_location_id, (outBy.get(e.custodian_location_id) ?? 0) + Number(e.amount ?? 0));
+      }
+      setCashOutByLoc(outBy);
       setTransfers((tx ?? []) as CustodyTransfer[]);
       setPartners(partnerList);
       setBranches((brs ?? []) as Branch[]);
@@ -174,15 +204,38 @@ export function CashCustodyPanel() {
     [locations, transfers, bankBalanceById],
   );
 
+  // Held cash for a custodian/petty location = opening + net transfers + client cash
+  // received (attributed) − cash expenses paid (attributed). This is the TRUE cash
+  // that office-staff member currently holds (0135). Not applied to BANK locations.
+  const heldCash = (loc: CashLocation): number =>
+    computeLocationBalance(loc) + (cashInByLoc.get(loc.id) ?? 0) - (cashOutByLoc.get(loc.id) ?? 0);
+
+  const staffName = (id: string | null) => (id ? officeStaff.find((s) => s.id === id)?.full_name ?? "—" : "—");
+
+  // Cash-in-hand custodian reconciliation (Change 1): every custodian's held cash,
+  // summed, must equal Total Cash in Hand (treasury). The gap is unattributed cash.
+  const custodyRecon = useMemo(() => {
+    const custodians = locationsWithBalance
+      .filter((l) => l.is_active && l.location_type !== "BANK")
+      .map((l) => ({ loc: l, held: heldCash(l) }))
+      .sort((a, b) => b.held - a.held);
+    const sumHeld = custodians.reduce((s, c) => s + c.held, 0);
+    const discrepancy = cashInHand - sumHeld; // >0 = cash not yet attributed to a custodian
+    return { custodians, sumHeld, discrepancy };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locationsWithBalance, cashInByLoc, cashOutByLoc, cashInHand]);
+
   // Cash in Hand (company treasury) as its own Position row alongside real locations.
   const cashInHandRow: LocationWithBalance = {
     id: CASH_IN_HAND_ID, name: "Cash in Hand", location_type: "PETTY_CASH",
-    custodian_partner_id: null, custodian_user_id: null, opening_balance: 0,
+    custodian_partner_id: null, custodian_user_id: null, custodian_employee_id: null, opening_balance: 0,
     branch_id: null, is_active: true, bank_account_id: null, balance: cashInHand,
   };
+  // Cash Position shows only the headline Cash in Hand figure. Per-custodian holdings
+  // live on the Reconciliation tab; bank balances live on the Bank Accounts tab.
   const positionRows = useMemo(
-    () => [cashInHandRow, ...locationsWithBalance.filter((l) => l.is_active)],
-    [locationsWithBalance, cashInHand],
+    () => [cashInHandRow],
+    [cashInHand],
   );
 
   const totalCash = useMemo(
@@ -207,7 +260,7 @@ export function CashCustodyPanel() {
 
   const openAddLoc = () => {
     setEditLoc(null);
-    setLocForm({ name: "", location_type: "CUSTODIAN", custodian_partner_id: "", branch_id: "", opening_balance: "0", is_active: true });
+    setLocForm({ name: "", location_type: "CUSTODIAN", custodian_partner_id: "", custodian_employee_id: "", branch_id: "", opening_balance: "0", is_active: true });
     setIsLocOpen(true);
   };
 
@@ -215,22 +268,32 @@ export function CashCustodyPanel() {
     setEditLoc(l);
     setLocForm({
       name: l.name, location_type: l.location_type,
-      custodian_partner_id: l.custodian_partner_id ?? "", branch_id: l.branch_id ?? "",
+      custodian_partner_id: l.custodian_partner_id ?? "", custodian_employee_id: l.custodian_employee_id ?? "",
+      branch_id: l.branch_id ?? "",
       opening_balance: String(l.opening_balance), is_active: l.is_active,
     });
     setIsLocOpen(true);
   };
 
   const saveLoc = async () => {
-    if (!companyId || !locForm.name.trim()) return;
+    if (!companyId) return;
+    const empId = locForm.custodian_employee_id;
+    // A custodian IS an office-staff member; the location is named after them.
+    if (locForm.location_type === "CUSTODIAN" && !empId) {
+      setError("Select the office-staff member for this custodian.");
+      return;
+    }
+    const derivedName = (empId ? officeStaff.find((s) => s.id === empId)?.full_name : null) || locForm.name.trim();
+    if (!derivedName) return;
     setLocSaving(true);
     setError(null);
     try {
       const payload = {
         company_id: companyId,
-        name: locForm.name.trim(),
+        name: derivedName,
         location_type: locForm.location_type,
-        custodian_partner_id: locForm.custodian_partner_id || null,
+        custodian_partner_id: null,
+        custodian_employee_id: empId || null,
         branch_id: locForm.branch_id || null,
         opening_balance: parseFloat(locForm.opening_balance) || 0,
         is_active: locForm.is_active,
@@ -239,6 +302,14 @@ export function CashCustodyPanel() {
         const { error: e } = await supabase.from("cash_locations").update(payload).eq("id", editLoc.id);
         if (e) throw e;
       } else {
+        // One custodian per office-staff member — never create a second row for a
+        // person who already has one.
+        const existing = empId ? locations.find((l) => l.custodian_employee_id === empId && l.location_type === "CUSTODIAN") : null;
+        if (existing) {
+          setError(`${derivedName} already has a custody location. Edit it from the list instead.`);
+          setLocSaving(false);
+          return;
+        }
         const { error: e } = await supabase.from("cash_locations").insert(payload);
         if (e) throw e;
       }
@@ -246,6 +317,26 @@ export function CashCustodyPanel() {
       await loadData();
     } catch (e: any) { setError(e.message); }
     finally { setLocSaving(false); }
+  };
+
+  // Delete a custodian added by mistake. Blocked once any cash has moved through it
+  // (transfers or attributed payments/expenses) so history is never orphaned —
+  // deactivate instead in that case.
+  const deleteLoc = async (loc: LocationWithBalance) => {
+    if (!canDelete) return;
+    const hasHistory =
+      (cashInByLoc.get(loc.id) ?? 0) !== 0 ||
+      (cashOutByLoc.get(loc.id) ?? 0) !== 0 ||
+      transfers.some((t) => t.from_location_id === loc.id || t.to_location_id === loc.id);
+    if (hasHistory) {
+      setError(`"${loc.name}" has cash movements recorded and can't be deleted. Deactivate it instead (Edit → uncheck Active).`);
+      return;
+    }
+    if (!window.confirm(`Delete custodian "${loc.name}"? This cannot be undone.`)) return;
+    setError(null);
+    const { error: e } = await supabase.from("cash_locations").delete().eq("id", loc.id);
+    if (e) { setError(e.message); return; }
+    await loadData();
   };
 
   const saveTransfer = async () => {
@@ -353,10 +444,17 @@ export function CashCustodyPanel() {
                       </div>
                     </div>
                   </div>
-                  {loc.custodian_partner_id && (
-                    <p className="text-xs text-slate-500 mb-2">Holder: {partners.find((p) => p.id === loc.custodian_partner_id)?.name ?? "—"}</p>
+                  {(loc.custodian_employee_id || loc.custodian_partner_id) && (
+                    <p className="text-xs text-slate-500 mb-2">
+                      Holder: {loc.custodian_employee_id ? staffName(loc.custodian_employee_id) : partners.find((p) => p.id === loc.custodian_partner_id)?.name ?? "—"}
+                    </p>
                   )}
-                  <p className={`text-xl font-mono ${loc.balance < 0 ? "text-danger-600" : "text-slate-900"}`}>{fmt(loc.balance)}</p>
+                  {(() => {
+                    // Treasury total + BANK use loc.balance; custodian/petty show HELD
+                    // cash (opening + transfers + attributed cash in − cash out).
+                    const shown = loc.id === CASH_IN_HAND_ID || loc.location_type === "BANK" ? loc.balance : heldCash(loc);
+                    return <p className={`text-xl font-mono ${shown < 0 ? "text-danger-600" : "text-slate-900"}`}>{fmt(shown)}</p>;
+                  })()}
                 </div>
               ))}
             </div>
@@ -409,6 +507,59 @@ export function CashCustodyPanel() {
         {/* ── RECONCILIATION TAB ── */}
         {tab === "reconciliation" && (
           <div className="space-y-4">
+            {/* Cash-in-Hand by custodian (0135): Σ custodians must equal Total Cash in Hand. */}
+            <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+              <div className="p-4 border-b border-slate-200">
+                <h3 className="text-base text-slate-900">Cash in Hand — by Custodian</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Which office-staff member holds how much company cash. The sum must equal Total Cash in Hand.</p>
+              </div>
+              {Math.round(custodyRecon.discrepancy) !== 0 && (
+                <div className="m-4 flex items-start gap-2 p-3 bg-warning-50 text-warning-800 border border-warning-200 rounded-md text-sm">
+                  <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" strokeWidth={2} />
+                  <div>
+                    <span className="font-medium">Discrepancy: {fmt(Math.abs(custodyRecon.discrepancy))}</span> {custodyRecon.discrepancy > 0
+                      ? "of Cash in Hand is not attributed to any custodian yet. Assign it via custodian opening balances or record the movements against a custodian."
+                      : "more is attributed to custodians than the Total Cash in Hand — check for an over-attribution."}
+                  </div>
+                </div>
+              )}
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-slate-200">
+                    <th className="text-left px-6 py-3 text-sm text-slate-500">Custodian</th>
+                    <th className="text-left px-6 py-3 text-sm text-slate-500">Holder</th>
+                    <th className="text-right px-6 py-3 text-sm text-slate-500">Held Cash</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {custodyRecon.custodians.length === 0 && (
+                    <tr><td colSpan={3} className="px-6 py-8 text-center text-slate-500 text-sm">No custodian locations yet. Add one (Locations → Add) and set its office-staff holder.</td></tr>
+                  )}
+                  {custodyRecon.custodians.map(({ loc, held }) => (
+                    <tr key={loc.id} className="hover:bg-slate-50">
+                      <td className="px-6 py-4 text-sm text-slate-900">{loc.name}</td>
+                      <td className="px-6 py-4 text-sm text-slate-600">{loc.custodian_employee_id ? staffName(loc.custodian_employee_id) : "—"}</td>
+                      <td className={`px-6 py-4 text-right text-sm font-mono ${held < 0 ? "text-danger-600" : "text-slate-900"}`}>{fmt(held)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-slate-200 bg-slate-50">
+                    <td className="px-6 py-3 text-sm font-medium text-slate-700" colSpan={2}>Sum of custodians</td>
+                    <td className="px-6 py-3 text-right text-sm font-mono font-semibold text-slate-900">{fmt(custodyRecon.sumHeld)}</td>
+                  </tr>
+                  <tr className="bg-slate-50">
+                    <td className="px-6 py-2 text-sm text-slate-500" colSpan={2}>Total Cash in Hand (treasury)</td>
+                    <td className="px-6 py-2 text-right text-sm font-mono text-slate-700">{fmt(cashInHand)}</td>
+                  </tr>
+                  <tr className={`${Math.round(custodyRecon.discrepancy) !== 0 ? "bg-warning-50" : "bg-success-50"}`}>
+                    <td className={`px-6 py-2 text-sm font-medium ${Math.round(custodyRecon.discrepancy) !== 0 ? "text-warning-800" : "text-success-700"}`} colSpan={2}>Unattributed (should be 0)</td>
+                    <td className={`px-6 py-2 text-right text-sm font-mono font-bold ${Math.round(custodyRecon.discrepancy) !== 0 ? "text-warning-800" : "text-success-700"}`}>{fmt(custodyRecon.discrepancy)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
             <div className="bg-white rounded-lg border border-slate-200 p-6">
               <h3 className="text-base text-slate-900 mb-1">Cash vs Liabilities</h3>
               <p className="text-xs text-slate-500 mb-4">Shows how much of the cash on hand is actually owed to partners vs. truly free.</p>
@@ -484,10 +635,11 @@ export function CashCustodyPanel() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {locationsWithBalance.length === 0 && (
+                {/* Banks are managed on the Bank Accounts tab — only cash custodians here. */}
+                {locationsWithBalance.filter((l) => l.location_type !== "BANK").length === 0 && (
                   <tr><td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">No cash locations yet.</td></tr>
                 )}
-                {locationsWithBalance.map((loc) => (
+                {locationsWithBalance.filter((l) => l.location_type !== "BANK").map((loc) => (
                   <tr key={loc.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
@@ -497,10 +649,15 @@ export function CashCustodyPanel() {
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-600">{typeLabel(loc.location_type)}</td>
                     <td className="px-6 py-4 text-sm text-slate-600">
-                      {loc.custodian_partner_id ? partners.find((p) => p.id === loc.custodian_partner_id)?.name ?? "—" : "—"}
+                      {loc.custodian_employee_id ? staffName(loc.custodian_employee_id) : loc.custodian_partner_id ? partners.find((p) => p.id === loc.custodian_partner_id)?.name ?? "—" : "—"}
                     </td>
                     <td className="px-6 py-4 text-right text-sm font-mono text-slate-600">{fmt(loc.opening_balance)}</td>
-                    <td className={`px-6 py-4 text-right text-sm font-mono ${loc.balance < 0 ? "text-danger-600" : "text-slate-900"}`}>{fmt(loc.balance)}</td>
+                    {(() => {
+                      // BANK mirrors its live account; custodian/petty show HELD cash
+                      // (opening + transfers + attributed cash received − cash paid).
+                      const shown = loc.location_type === "BANK" ? loc.balance : heldCash(loc);
+                      return <td className={`px-6 py-4 text-right text-sm font-mono ${shown < 0 ? "text-danger-600" : "text-slate-900"}`}>{fmt(shown)}</td>;
+                    })()}
                     <td className="px-6 py-4">
                       <span className={`inline-flex px-2 py-0.5 rounded text-xs ${loc.is_active ? "bg-success-50 text-success-700" : "bg-slate-100 text-slate-500"}`}>
                         {loc.is_active ? "Active" : "Inactive"}
@@ -510,9 +667,16 @@ export function CashCustodyPanel() {
                       {loc.location_type === "BANK" ? (
                         <span className="text-xs text-slate-400" title="Synced automatically from the Bank Accounts tab">Auto-synced</span>
                       ) : (
-                        <button onClick={() => openEditLoc(loc)} className="p-1.5 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors">
-                          <Pencil className="w-4 h-4" strokeWidth={1.5} />
-                        </button>
+                        <div className="flex items-center justify-end gap-1">
+                          <button onClick={() => openEditLoc(loc)} title="Edit" className="p-1.5 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors">
+                            <Pencil className="w-4 h-4" strokeWidth={1.5} />
+                          </button>
+                          {canDelete && (
+                            <button onClick={() => deleteLoc(loc)} title="Delete (super admin only)" className="p-1.5 rounded hover:bg-danger-50 text-slate-500 hover:text-danger-600 transition-colors">
+                              <Trash2 className="w-4 h-4" strokeWidth={1.5} />
+                            </button>
+                          )}
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -559,47 +723,39 @@ export function CashCustodyPanel() {
       </div>
 
       {/* ── Add/Edit Location Modal ── */}
-      <Modal isOpen={isLocOpen} onClose={() => setIsLocOpen(false)} title={editLoc ? "Edit Cash Location" : "Add Cash Location"} size="md">
+      <Modal isOpen={isLocOpen} onClose={() => setIsLocOpen(false)} title={editLoc ? "Edit Custodian" : "Add Custodian"} size="md">
         <div className="space-y-4">
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Name *</label>
-            <input type="text" placeholder="e.g. CEO Cash, Meezan Bank" value={locForm.name} onChange={(e) => setLocForm({ ...locForm, name: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
+            <label className="block text-sm text-slate-700 mb-1">Office Staff *</label>
+            {/* The custodian IS the office-staff member — no free-text name. Their cash
+                is tracked as one custody under their own name. On Add, staff who already
+                have a custody are hidden so nobody gets a duplicate. */}
+            <ThemedSelect value={locForm.custodian_employee_id} onChange={(e) => setLocForm({ ...locForm, custodian_employee_id: e.target.value })}
+              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
+              <option value="">Select office-staff member…</option>
+              {(editLoc
+                ? officeStaff
+                : officeStaff.filter((s) => !locations.some((l) => l.custodian_employee_id === s.id && l.location_type === "CUSTODIAN"))
+              ).map((s) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
+            </ThemedSelect>
+            {editLoc?.custodian_partner_id && !locForm.custodian_employee_id && (
+              <p className="text-[11px] text-warning-700 mt-1">Legacy partner holder: {partners.find((p) => p.id === editLoc.custodian_partner_id)?.name ?? "—"}. Pick an office-staff holder to migrate.</p>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm text-slate-700 mb-1">Type</label>
-              {/* Bank accounts are auto-synced from the Bank Accounts tab — only
-                  petty cash / custodian locations are created here. */}
-              <ThemedSelect value={locForm.location_type} onChange={(e) => setLocForm({ ...locForm, location_type: e.target.value as any })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
-                <option value="PETTY_CASH">Petty Cash</option>
-                <option value="CUSTODIAN">Custodian (person)</option>
-              </ThemedSelect>
-            </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Opening Balance (PKR)</label>
               <input type="number" value={locForm.opening_balance} onChange={(e) => setLocForm({ ...locForm, opening_balance: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
             </div>
-          </div>
-          {(locForm.location_type === "CUSTODIAN" || locForm.location_type === "PETTY_CASH") && (
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Holder (Partner)</label>
-              <ThemedSelect value={locForm.custodian_partner_id} onChange={(e) => setLocForm({ ...locForm, custodian_partner_id: e.target.value })}
+              <label className="block text-sm text-slate-700 mb-1">Branch (optional)</label>
+              <ThemedSelect value={locForm.branch_id} onChange={(e) => setLocForm({ ...locForm, branch_id: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
-                <option value="">None</option>
-                {partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                <option value="">All / Company-wide</option>
+                {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
               </ThemedSelect>
             </div>
-          )}
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Branch (optional)</label>
-            <ThemedSelect value={locForm.branch_id} onChange={(e) => setLocForm({ ...locForm, branch_id: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
-              <option value="">All / Company-wide</option>
-              {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </ThemedSelect>
           </div>
           <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
             <input type="checkbox" checked={locForm.is_active} onChange={(e) => setLocForm({ ...locForm, is_active: e.target.checked })} className="rounded border-slate-300" />
@@ -625,19 +781,23 @@ export function CashCustodyPanel() {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-slate-700 mb-1">From *</label>
+              <label className="block text-sm text-slate-700 mb-1">From (office staff) *</label>
               <ThemedSelect value={transferForm.from_location_id} onChange={(e) => setTransferForm({ ...transferForm, from_location_id: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
                 <option value="">Select…</option>
-                {locations.filter((l) => l.is_active && l.location_type !== "BANK").map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                {locations.filter((l) => l.is_active && l.location_type !== "BANK" && l.custodian_employee_id).map((l) => (
+                  <option key={l.id} value={l.id}>{staffName(l.custodian_employee_id)} — holds {fmt(heldCash(l))}</option>
+                ))}
               </ThemedSelect>
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">To *</label>
+              <label className="block text-sm text-slate-700 mb-1">To (office staff) *</label>
               <ThemedSelect value={transferForm.to_location_id} onChange={(e) => setTransferForm({ ...transferForm, to_location_id: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
                 <option value="">Select…</option>
-                {locations.filter((l) => l.is_active && l.location_type !== "BANK").map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                {locations.filter((l) => l.is_active && l.location_type !== "BANK" && l.custodian_employee_id).map((l) => (
+                  <option key={l.id} value={l.id}>{staffName(l.custodian_employee_id)} — holds {fmt(heldCash(l))}</option>
+                ))}
               </ThemedSelect>
             </div>
           </div>

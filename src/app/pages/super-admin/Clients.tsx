@@ -27,6 +27,7 @@ import {
   TAX_DIRECTION_LABEL,
   CLIENT_BILLING_TYPE_LABEL,
   CLIENT_INVOICE_GROUP_LABEL,
+  SELECTABLE_INVOICE_GROUPS,
   effectiveCommittedByCategory,
   assignmentActiveOn,
   type Client,
@@ -977,9 +978,11 @@ export default function Clients() {
               onChange={(e) => setForm({ ...form, invoice_group: e.target.value as ClientInvoiceGroup })}
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
             >
-              {(["FIXED", "VARIABLE", "SLA"] as const).map((g) => (
+              {SELECTABLE_INVOICE_GROUPS.map((g) => (
                 <option key={g} value={g}>{CLIENT_INVOICE_GROUP_LABEL[g]}</option>
               ))}
+              {/* A legacy SLA client keeps showing SLA until re-saved as Fixed/Variable. */}
+              {form.invoice_group === "SLA" && <option value="SLA">{CLIENT_INVOICE_GROUP_LABEL.SLA} (legacy)</option>}
             </ThemedSelect>
             <p className="text-[10px] text-slate-500 mt-1">Buckets this client on the Invoices → Generate tab.</p>
           </div>

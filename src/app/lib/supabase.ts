@@ -408,6 +408,17 @@ export const CLIENT_INVOICE_GROUP_LABEL: Record<ClientInvoiceGroup, string> = {
   SLA: "SLA",
 };
 
+// Selectable client groups (Change 1, 2026-07-28): SLA retired as an option — only
+// Fixed and Variable are choosable now. The SLA enum value + PDF template are kept
+// for any legacy invoice, but no new client can be set to SLA.
+export const SELECTABLE_INVOICE_GROUPS: ClientInvoiceGroup[] = ["FIXED", "VARIABLE"];
+
+// Variable clients bill from a FULLY MANUAL spreadsheet grid — no auto-calculation.
+// Per-invoice values live in invoices.variable_grid; the per-client saved column
+// STRUCTURE (headers only, reused next month) lives in clients.variable_columns.
+export type VariableGrid = { columns: string[]; rows: string[][]; total: number };
+export const DEFAULT_VARIABLE_COLUMNS: string[] = ["Description", "Amount"];
+
 export const TAX_BASE_LABEL: Record<TaxBase, string> = {
   WHOLE_INVOICE: "Whole invoice",
   SPECIFIC_COMPONENT: "Specific component",
@@ -456,6 +467,9 @@ export type Client = {
   remit_accounts: RemitAccount[];
   billing_type: ClientBillingType;
   invoice_group: ClientInvoiceGroup;
+  // Saved Variable column STRUCTURE (headers only) reused each month. Null until
+  // the client's Variable grid is customized + posted. See VariableGrid.
+  variable_columns?: string[] | null;
   // Manual prefix that drives client-scoped employee codes ({prefix}-NNN).
   // null on clients that haven't set one yet (existing clients stay EMP-XXXX
   // until a prefix is set). Unique per company where not null.
@@ -1768,6 +1782,9 @@ export type Invoice = {
   override_reason?: string | null;
   financial_year?: string | null;
   invoice_group?: ClientInvoiceGroup | null;
+  // Fully-manual Variable line grid (no auto-calc). Null on Fixed/legacy invoices,
+  // which use invoice_lines instead. { columns, rows (string cells), total }.
+  variable_grid?: VariableGrid | null;
   generated?: boolean;
   created_at?: string;
   updated_at?: string;

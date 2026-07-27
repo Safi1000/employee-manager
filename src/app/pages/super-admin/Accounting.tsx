@@ -37,6 +37,7 @@ import { validateBankAccount, validateIban } from "../../lib/validation";
 import { useAuth } from "../../lib/auth";
 import { CashCustodyPanel } from "./CashCustody";
 import { generateDepositSlipPdf } from "../../lib/depositSlip";
+import { loadCustodianOptions, ensureCustodianLocation, type CustodianOption } from "../../lib/custodian";
 
 type PayableRow = Expense & {
   vendor?: Vendor | null;
@@ -197,6 +198,11 @@ export default function Accounting() {
   >([]);
   const [paymentVia, setPaymentVia] = useState<"Cash" | "Bank" | "Cheque">("Bank");
   const [paymentBankId, setPaymentBankId] = useState<string>("");
+  // Office-staff custodian who physically holds cash (migration 0135). Used for cash
+  // client-payments received (Change 2) and cash payables settled (Change 3).
+  const [custodians, setCustodians] = useState<CustodianOption[]>([]);
+  const [paymentCustodianId, setPaymentCustodianId] = useState<string>("");
+  const [markPaidCustodianId, setMarkPaidCustodianId] = useState<string>("");
   const [paymentNotes, setPaymentNotes] = useState<string>("");
   const [paymentDate, setPaymentDate] = useState<string>(todayStr());
   const [paymentChequeNumber, setPaymentChequeNumber] = useState<string>("");
@@ -665,6 +671,19 @@ export default function Accounting() {
       };
     });
     setReceivables(rec);
+
+    // Office-staff custodians + their held cash (for the cash Record-Payment /
+    // Mark-Paid dropdowns). Best-effort — never block the ledger on it.
+    {
+      const cid = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
+      if (cid) {
+        try {
+          setCustodians(await loadCustodianOptions(cid));
+        } catch {
+          /* ignore — custodian attribution is optional */
+        }
+      }
+    }
 
     setLoading(false);
   };
@@ -1177,6 +1196,7 @@ export default function Accounting() {
     setSelectedPayable(row);
     setMarkPaidVia("Cash");
     setMarkPaidBankId(banks[0]?.id ?? "");
+    setMarkPaidCustodianId("");
     setIsMarkPaidModalOpen(true);
   };
 
@@ -1190,6 +1210,10 @@ export default function Accounting() {
     }
     if (markPaidVia === "Cash" && amount > cashBalance) {
       setError("Insufficient cash balance.");
+      return;
+    }
+    if (markPaidVia === "Cash" && !markPaidCustodianId) {
+      setError("Select the office-staff member who paid the cash.");
       return;
     }
     if (markPaidVia === "Bank") {
@@ -1212,7 +1236,11 @@ export default function Accounting() {
     try {
       const nowIso = new Date().toISOString();
       const vendorName = selectedPayable.vendor?.name ?? "vendor";
+      let custodianLocId: string | null = null;
       if (markPaidVia === "Cash") {
+        const cid = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
+        const staff = custodians.find((c) => c.employeeId === markPaidCustodianId);
+        if (cid && staff) custodianLocId = await ensureCustodianLocation(cid, staff.employeeId, staff.fullName);
         await applyCashDelta(-amount);
         await logTransaction({
           bank_account_id: null,
@@ -1241,6 +1269,7 @@ export default function Accounting() {
           payable_status: "Paid",
           paid_via: markPaidVia,
           paid_bank_account_id: markPaidVia === "Bank" ? markPaidBankId : null,
+          custodian_location_id: custodianLocId,
           paid_at: nowIso,
           updated_at: nowIso,
         })
@@ -1293,6 +1322,7 @@ export default function Accounting() {
           payable_status: "Pending",
           paid_via: null,
           paid_bank_account_id: null,
+          custodian_location_id: null,
           paid_at: null,
           updated_at: new Date().toISOString(),
         })
@@ -1367,6 +1397,7 @@ export default function Accounting() {
     setPaymentAmount("");
     setPaymentVia("Bank");
     setPaymentBankId(banks[0]?.id ?? "");
+    setPaymentCustodianId("");
     setPaymentNotes("");
     setPaymentDate(todayStr());
     setPaymentChequeNumber("");
@@ -1417,6 +1448,19 @@ export default function Accounting() {
       setError("Select the bank account.");
       return;
     }
+    if (paymentVia === "Cash" && !paymentCustodianId) {
+      setError("Select the office-staff member who received the cash.");
+      return;
+    }
+
+    // Resolve (creating on first use) the custodian cash_location for the chosen
+    // office-staff member, so cash received is attributed to who holds it (0135).
+    const resolvePaymentCustodianLoc = async (): Promise<string | null> => {
+      const cid = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
+      const staff = custodians.find((c) => c.employeeId === paymentCustodianId);
+      if (!cid || !staff) return null;
+      return ensureCustodianLocation(cid, staff.employeeId, staff.fullName);
+    };
 
     // Cheque payment: record incoming cheque, no immediate balance change.
     // Outstanding and bank balance only update when the cheque is cleared.
@@ -1505,6 +1549,7 @@ export default function Accounting() {
           payment_date: paymentDate,
           payment_mode: paymentVia,
           bank_account_id: paymentVia === "Bank" ? paymentBankId : null,
+          custodian_location_id: paymentVia === "Cash" ? await resolvePaymentCustodianLoc() : null,
           notes: paymentNotes.trim() || null,
         });
         if (payErr) throw payErr;
@@ -1584,6 +1629,7 @@ export default function Accounting() {
         payment_date: paymentDate,
         payment_mode: paymentVia,
         bank_account_id: paymentVia === "Bank" ? paymentBankId : null,
+        custodian_location_id: paymentVia === "Cash" ? await resolvePaymentCustodianLoc() : null,
         notes: paymentNotes.trim() || null,
       });
       setIsPaymentModalOpen(false);
@@ -3682,6 +3728,27 @@ export default function Accounting() {
                 </p>
               )}
             </div>
+            {paymentVia === "Cash" && (
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Received By (Office Staff) *</label>
+                <ThemedSelect
+                  required
+                  value={paymentCustodianId}
+                  onChange={(e) => setPaymentCustodianId(e.target.value)}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                >
+                  <option value="">Select who received the cash…</option>
+                  {custodians.map((c) => (
+                    <option key={c.employeeId} value={c.employeeId}>
+                      {c.fullName} — holds PKR {Math.round(c.held).toLocaleString()}
+                    </option>
+                  ))}
+                </ThemedSelect>
+                <p className="text-[11px] text-slate-500 mt-1.5">
+                  This cash will be added to the selected staff member's custody balance.
+                </p>
+              </div>
+            )}
             {(paymentVia === "Bank" || paymentVia === "Cheque") && (
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Bank Account *</label>
@@ -4075,6 +4142,32 @@ export default function Accounting() {
                   disabled
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
                 />
+              </div>
+            )}
+            {markPaidVia === "Cash" && (
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Paid By (Office Staff) *</label>
+                <ThemedSelect
+                  required
+                  value={markPaidCustodianId}
+                  onChange={(e) => setMarkPaidCustodianId(e.target.value)}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+                >
+                  <option value="">Select who paid the cash…</option>
+                  {custodians.map((c) => (
+                    <option key={c.employeeId} value={c.employeeId}>
+                      {c.fullName} — holds PKR {Math.round(c.held).toLocaleString()}
+                    </option>
+                  ))}
+                </ThemedSelect>
+                {(() => {
+                  const staff = custodians.find((c) => c.employeeId === markPaidCustodianId);
+                  return staff && Number(selectedPayable.amount) > staff.held ? (
+                    <p className="text-[11px] text-warning-700 mt-1.5">
+                      This exceeds {staff.fullName}'s held cash (PKR {Math.round(staff.held).toLocaleString()}). You can still proceed.
+                    </p>
+                  ) : null;
+                })()}
               </div>
             )}
             {markPaidVia === "Bank" && (

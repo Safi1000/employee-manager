@@ -717,13 +717,85 @@ function renderSla(input: InvoiceDocInput): jsPDF {
   return doc;
 }
 
+// ── VARIABLE manual grid — prints EXACTLY what the user typed (no calculation) ──
+function renderVariableManual(input: InvoiceDocInput): jsPDF {
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const ctx: Ctx = {
+    doc,
+    pageW: doc.internal.pageSize.getWidth(),
+    pageH: doc.internal.pageSize.getHeight(),
+    margin: 45,
+    invoice: input.invoice,
+    client: input.client,
+    company: input.company,
+    settings: mergeSettings(input.company),
+  };
+  drawWatermark(ctx);
+  let y = drawHeader(ctx, ctx.margin);
+  y = drawRefTitleDate(ctx, y);
+  y = drawClientBlock(ctx, y + 10);
+  const svc = ctx.company?.name || legalNameOf(ctx.company);
+  y = drawSalutationIntro(ctx, y, `The monthly charges for ${svc} are as follows: -`);
+
+  const { doc: d, pageW, margin, invoice } = ctx;
+  const usable = pageW - margin * 2;
+  const grid = invoice.variable_grid;
+  const cols = grid?.columns ?? [];
+  const rows = grid?.rows ?? [];
+  if (cols.length > 0) {
+    const colW = usable / cols.length;
+    const xs = cols.map((_, i) => margin + i * colW);
+    const headH = 24;
+    d.setDrawColor(120);
+    d.setLineWidth(0.5);
+    d.setFillColor(244, 241, 232);
+    d.rect(margin, y, usable, headH, "FD");
+    for (let i = 1; i < cols.length; i++) d.line(xs[i], y, xs[i], y + headH);
+    d.setFont("helvetica", "bold");
+    d.setFontSize(8.5);
+    d.setTextColor(0);
+    cols.forEach((h, i) => d.text(d.splitTextToSize(h || "", colW - 6), xs[i] + colW / 2, y + 14, { align: "center" }));
+    y += headH;
+
+    d.setFont("helvetica", "normal");
+    d.setFontSize(9);
+    const rowH = 18;
+    for (const row of rows) {
+      d.rect(margin, y, usable, rowH);
+      for (let i = 1; i < cols.length; i++) d.line(xs[i], y, xs[i], y + rowH);
+      cols.forEach((_, i) => d.text(d.splitTextToSize(String(row[i] ?? ""), colW - 8)[0] ?? "", xs[i] + 5, y + 12));
+      y += rowH;
+    }
+    // Manually-entered Total (never computed from the cells).
+    const total = Number(invoice.total_due ?? grid?.total ?? 0);
+    d.rect(margin, y, usable, rowH);
+    d.setFont("helvetica", "bold");
+    d.setFontSize(10);
+    d.text("Total", margin + 6, y + 12);
+    d.text(fixedMoney(total), margin + usable - 6, y + 12, { align: "right" });
+    y += rowH + 6;
+  }
+  y = drawWordsLine(ctx, y, "Amount in words is");
+  y = drawNotes(ctx, y);
+  y = drawPaymentMethod(ctx, y);
+  drawSignatureAndFooter(ctx, y);
+  return doc;
+}
+
 /**
  * Render + download the correct template for this invoice, chosen by the
- * client's invoice_group. FIXED/unknown → Fixed, SLA → SLA, VARIABLE → Variable.
+ * client's invoice_group. FIXED/unknown → Fixed, SLA → SLA, VARIABLE → manual grid
+ * (legacy VARIABLE invoices without a grid fall back to the Fixed-family table).
  */
 export function generateInvoiceDocument(input: InvoiceDocInput): jsPDF {
   const group = input.client?.invoice_group ?? "FIXED";
-  const doc = group === "SLA" ? renderSla(input) : renderFixedFamily(input, group === "VARIABLE");
+  const hasGrid = !!input.invoice.variable_grid && (input.invoice.variable_grid.columns?.length ?? 0) > 0;
+  const doc =
+    group === "SLA"
+      ? renderSla(input)
+      : group === "VARIABLE" && hasGrid
+        ? renderVariableManual(input)
+        : renderFixedFamily(input, group === "VARIABLE");
   if (input.save !== false) {
     doc.save(`invoice_${input.invoice.invoice_number ?? input.invoice.id}.pdf`);
   }
