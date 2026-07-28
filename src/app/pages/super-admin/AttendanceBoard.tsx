@@ -822,6 +822,9 @@ function BulkMarkByEmployeeModal({ onClose, onSaved }: {
   const [submitting, setSubmitting] = useState(false);
   const [bulkError, setBulkError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Supervisor override reason for backdated days (same rule as the Relievers tab):
+  // days older than the backdate limit are written only when this is filled in.
+  const [overrideReason, setOverrideReason] = useState("");
   // Gallery-style range drag: anchor + pre-drag snapshot, recomputed on each move.
   const [dragMode, setDragMode] = useState<"add" | "remove" | null>(null);
   const [dragAnchor, setDragAnchor] = useState<string | null>(null);
@@ -955,23 +958,33 @@ function BulkMarkByEmployeeModal({ onClose, onSaved }: {
     if (!emp || selected.size === 0) return;
     setSubmitting(true); setBulkError(null); setNotice(null);
     const days = [...selected].filter(inWindow);
-    // §8.5 gate every day: write only 'allowed' / 'allowed_unposted'; skip
-    // 'blocked' (period-close / archived / window) and 'override_required'
-    // (backdated) rather than forcing them.
+    // §8.5 gate every day. 'allowed' / 'allowed_unposted' write normally;
+    // 'override_required' (backdated) writes only with a supervisor override reason
+    // (same as the Relievers tab); 'blocked' (period-close / archived / window) is
+    // always skipped.
     const gates = await Promise.all(days.map((d) =>
       supabase.rpc("attendance_gate", { p_guard: emp.id, p_date: d })
         .then(({ data }) => ({ d, mode: (data as { mode?: string } | null)?.mode ?? "blocked" }))));
-    const ok = (m: string) => m === "allowed" || m === "allowed_unposted";
-    const allowed = gates.filter((x) => ok(x.mode)).map((x) => x.d);
-    const skipped = gates.length - allowed.length;
-    if (allowed.length === 0) {
+    const allowedDays = gates.filter((x) => x.mode === "allowed" || x.mode === "allowed_unposted").map((x) => x.d);
+    const overrideDays = gates.filter((x) => x.mode === "override_required").map((x) => x.d);
+    const blockedCount = gates.filter((x) => x.mode === "blocked").length;
+
+    // Backdated days need a reason before they can be written.
+    if (overrideDays.length > 0 && !overrideReason.trim()) {
       setSubmitting(false);
-      setBulkError(`Nothing written — all ${days.length} selected day(s) are blocked (closed payroll period, archived, or backdated beyond the limit).`);
+      setBulkError(`${overrideDays.length} of ${days.length} selected day(s) are backdated beyond the limit. Enter a supervisor override reason below to include them, or deselect those days.`);
+      return;
+    }
+    const overrideSet = new Set(overrideDays);
+    const toWrite = [...allowedDays, ...(overrideReason.trim() ? overrideDays : [])];
+    if (toWrite.length === 0) {
+      setSubmitting(false);
+      setBulkError(`Nothing written — all ${days.length} selected day(s) are blocked (closed payroll period, archived, or out of employment window).`);
       return;
     }
     const nowIso = new Date().toISOString();
     const shift = emp.shift ?? "day";
-    const rows = allowed.map((d) => ({
+    const rows = toWrite.map((d) => ({
       employee_id: emp.id,
       attendance_date: d,
       status,
@@ -984,13 +997,21 @@ function BulkMarkByEmployeeModal({ onClose, onSaved }: {
       marked_by_role: profile?.role ?? "hr",
       marked_by_user_id: profile?.id ?? null,
       marked_at: nowIso,
+      supervisor_override: overrideSet.has(d),
+      override_reason: overrideSet.has(d) ? overrideReason.trim() : null,
     }));
     const { error } = await supabase
       .from("attendance_records")
       .upsert(rows, { onConflict: "employee_id,attendance_date,worked_shift" });
     setSubmitting(false);
     if (error) { setBulkError(error.message); return; }
-    setNotice(`Marked ${allowed.length} day(s) ${STATUS_LABEL[status].toLowerCase()}${skipped ? ` · skipped ${skipped} blocked / out-of-window` : ""}.`);
+    const overrodeCount = overrideReason.trim() ? overrideDays.length : 0;
+    setNotice(
+      `Marked ${toWrite.length} day(s) ${STATUS_LABEL[status].toLowerCase()}` +
+      (overrodeCount ? ` (${overrodeCount} backdated via override)` : "") +
+      (blockedCount ? ` · skipped ${blockedCount} blocked / out-of-window` : "") + ".",
+    );
+    setOverrideReason("");
     await loadMonth(emp.id, month);
     setSelected(new Set());
     await onSaved();
@@ -1101,6 +1122,20 @@ function BulkMarkByEmployeeModal({ onClose, onSaved }: {
               <p className="text-[11px] text-muted-foreground mt-2.5">
                 Tap a date to toggle, or press and drag to select a range. Greyed days are outside the guard's employment window and can't be marked.
               </p>
+            </div>
+
+            {/* Supervisor override for backdated days (older than the 3-day limit). */}
+            <div className="pt-2">
+              <label className="block text-xs text-slate-500 mb-1">
+                Supervisor override reason <span className="text-slate-400">(only needed to mark days older than 3 days)</span>
+              </label>
+              <input
+                type="text"
+                value={overrideReason}
+                onChange={(e) => setOverrideReason(e.target.value)}
+                placeholder="e.g. Late WhatsApp report — approved by supervisor"
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              />
             </div>
 
             {/* Action buttons — Phase 6 write path (status/source/marked_by/marked_at). */}
