@@ -48,10 +48,34 @@ type Partner = {
   is_active: boolean;
 };
 type Branch = { id: string; name: string };
-type BankAccountLite = { id: string; balance: number; active: boolean };
+type BankAccountLite = { id: string; bank_name: string; account_number: string | null; balance: number; active: boolean };
 type PartnerStats = { allocated: number; drawn: number; contributed: number; balance: number };
 
 type LocationWithBalance = CashLocation & { balance: number };
+
+// One row of a custodian's cash ledger (Transactions tab) — mirrors the Bank
+// Accounts transaction log: date, what happened, cash in / cash out.
+type LedgerEntry = {
+  id: string;
+  date: string;
+  locationId: string;          // the custodian location this row belongs to
+  employeeId: string | null;   // office-staff holder (for the filter)
+  kind: "cheque_cashed" | "bank_to_cash" | "transfer_in" | "transfer_out" | "cash_received" | "cash_paid";
+  detail: string;
+  cashIn: number;
+  cashOut: number;
+  before: number;  // this custodian's held cash before/after the entry
+  after: number;
+};
+
+const LEDGER_KIND_LABEL: Record<LedgerEntry["kind"], string> = {
+  cheque_cashed: "Cheque cashed",
+  bank_to_cash: "Bank → cash",
+  transfer_in: "Transfer in",
+  transfer_out: "Transfer out",
+  cash_received: "Cash received",
+  cash_paid: "Cash paid",
+};
 
 // Synthetic id for the "Cash in Hand" (company treasury) row shown alongside
 // the real cash_locations on the Cash Position tab.
@@ -66,7 +90,9 @@ export function CashCustodyPanel() {
   // company-wide roles (no branch) see everyone. SSA viewing a company is company-wide.
   const branchScope = profile?.role === "super_super_admin" ? null : (profile?.branch_id ?? null);
 
-  const [tab, setTab] = useState<"locations" | "transfers" | "position" | "reconciliation">("position");
+  const [tab, setTab] = useState<"locations" | "transfers" | "position" | "reconciliation" | "transactions">("position");
+  const [ledger, setLedger] = useState<LedgerEntry[]>([]);
+  const [ledgerStaffFilter, setLedgerStaffFilter] = useState<string>("all");
   const [locations, setLocations] = useState<CashLocation[]>([]);
   const [transfers, setTransfers] = useState<CustodyTransfer[]>([]);
   const [partners, setPartners] = useState<Partner[]>([]);
@@ -78,6 +104,10 @@ export function CashCustodyPanel() {
   // expenses paid (out), summed per custodian_location_id (0135).
   const [cashInByLoc, setCashInByLoc] = useState<Map<string, number>>(new Map());
   const [cashOutByLoc, setCashOutByLoc] = useState<Map<string, number>>(new Map());
+  // Cleared cash cheques handed to each custodian (cash they now hold).
+  const [chequeInByLoc, setChequeInByLoc] = useState<Map<string, number>>(new Map());
+  // Bank→custodian withdrawals attributed to each custodian location.
+  const [withdrawInByLoc, setWithdrawInByLoc] = useState<Map<string, number>>(new Map());
   const [partnerStats, setPartnerStats] = useState<Map<string, PartnerStats>>(new Map());
   const [investorLiabilities, setInvestorLiabilities] = useState<number>(0);
   const [loading, setLoading] = useState(true);
@@ -95,7 +125,10 @@ export function CashCustodyPanel() {
   // Transfer modal
   const [isTransferOpen, setIsTransferOpen] = useState(false);
   const [transferForm, setTransferForm] = useState({
-    date: today(), from_location_id: "", to_location_id: "", amount: "", notes: "",
+    // from_type: where the cash comes from — another office-staff custodian, or a
+    // bank (a withdrawal that raises Cash in Hand).
+    from_type: "staff" as "staff" | "bank",
+    date: today(), from_location_id: "", from_bank_id: "", to_location_id: "", amount: "", notes: "",
   });
   const [transferSaving, setTransferSaving] = useState(false);
 
@@ -106,19 +139,21 @@ export function CashCustodyPanel() {
       const [
         { data: locs }, { data: tx }, { data: pts }, { data: brs },
         { data: bnks }, { data: treas }, { data: pEntries }, { data: iEntries },
-        { data: staff }, { data: cashPays }, { data: cashExps },
+        { data: staff }, { data: cashPays }, { data: cashExps }, { data: cashCheques }, { data: bankWd },
       ] = await Promise.all([
         supabase.from("cash_locations").select("*").eq("company_id", companyId).order("name"),
         supabase.from("custody_transfers").select("*").eq("company_id", companyId).order("date", { ascending: false }).limit(100),
         supabase.from("partners").select("id, name, scope, branch_id, opening_balance, is_active").eq("company_id", companyId).order("name"),
         supabase.from("branches").select("id, name").eq("company_id", companyId).order("name"),
-        supabase.from("bank_accounts").select("id, balance, active").eq("company_id", companyId),
+        supabase.from("bank_accounts").select("id, bank_name, account_number, balance, active").eq("company_id", companyId),
         supabase.from("treasury").select("cash_balance").eq("company_id", companyId).maybeSingle(),
         supabase.from("partner_account_entries").select("partner_id, type, amount").eq("company_id", companyId),
         supabase.from("investor_ledger_entries").select("investor_id, type, amount").eq("company_id", companyId),
         supabase.from("employees").select("id, full_name").eq("category", "office_staff").order("full_name"),
-        supabase.from("invoice_payments").select("amount, custodian_location_id").eq("payment_mode", "Cash").not("custodian_location_id", "is", null),
-        supabase.from("expenses").select("amount, custodian_location_id").not("custodian_location_id", "is", null),
+        supabase.from("invoice_payments").select("id, amount, custodian_location_id, payment_date, clients:client_id(name)").eq("payment_mode", "Cash").not("custodian_location_id", "is", null),
+        supabase.from("expenses").select("id, amount, custodian_location_id, expense_date, description").not("custodian_location_id", "is", null),
+        supabase.from("cheques").select("id, amount, custodian_location_id, cheque_date, cheque_number").eq("cheque_type", "cash").eq("status", "cleared").not("custodian_location_id", "is", null),
+        supabase.from("bank_transactions").select("id, cash_delta, reference_id, description, created_at").eq("kind", "withdraw_to_cash").not("reference_id", "is", null),
       ]);
       const partnerList = ((pts ?? []) as Partner[]).filter((p) => p.is_active);
       setLocations((locs ?? []) as CashLocation[]);
@@ -136,7 +171,97 @@ export function CashCustodyPanel() {
         outBy.set(e.custodian_location_id, (outBy.get(e.custodian_location_id) ?? 0) + Number(e.amount ?? 0));
       }
       setCashOutByLoc(outBy);
+      const chqBy = new Map<string, number>();
+      for (const c of (cashCheques ?? []) as any[]) {
+        if (!c.custodian_location_id) continue;
+        chqBy.set(c.custodian_location_id, (chqBy.get(c.custodian_location_id) ?? 0) + Number(c.amount ?? 0));
+      }
+      setChequeInByLoc(chqBy);
+      // Bank→custodian withdrawals attributed by reference_id (a custodian location).
+      const custodianIdSet = new Set(((locs ?? []) as CashLocation[]).filter((l) => l.location_type !== "BANK" && l.custodian_employee_id).map((l) => l.id));
+      const wdBy = new Map<string, number>();
+      for (const w of (bankWd ?? []) as any[]) {
+        if (!w.reference_id || !custodianIdSet.has(w.reference_id)) continue;
+        wdBy.set(w.reference_id, (wdBy.get(w.reference_id) ?? 0) + Number(w.cash_delta ?? 0));
+      }
+      setWithdrawInByLoc(wdBy);
       setTransfers((tx ?? []) as CustodyTransfer[]);
+
+      // Custodian transaction ledger (Transactions tab): every cash movement that
+      // touches a custodian — transfers, bank→cash, client cash, expenses, cheques.
+      const locList = (locs ?? []) as CashLocation[];
+      const staffById = new Map<string, string>();
+      for (const s of (staff ?? []) as OfficeStaff[]) staffById.set(s.id, s.full_name);
+      const custodianLocIds = new Set(locList.filter((l) => l.location_type !== "BANK" && l.custodian_employee_id).map((l) => l.id));
+      const empByLoc = new Map<string, string | null>();
+      const labelByLoc = new Map<string, string>();
+      for (const l of locList) {
+        empByLoc.set(l.id, l.custodian_employee_id);
+        labelByLoc.set(l.id, l.custodian_employee_id ? (staffById.get(l.custodian_employee_id) ?? l.name) : l.name);
+      }
+      const raw: Omit<LedgerEntry, "before" | "after">[] = [];
+      for (const t of (tx ?? []) as CustodyTransfer[]) {
+        const toCustodian = t.to_location_id != null && custodianLocIds.has(t.to_location_id);
+        const fromCustodian = t.from_location_id != null && custodianLocIds.has(t.from_location_id);
+        const fromIsBank = !fromCustodian; // BANK cash_location or null ⇒ bank/cash-in-hand source
+        if (toCustodian) {
+          raw.push({
+            id: `t-in-${t.id}`, date: t.date, locationId: t.to_location_id!, employeeId: empByLoc.get(t.to_location_id!) ?? null,
+            kind: fromIsBank ? "bank_to_cash" : "transfer_in",
+            detail: fromIsBank ? `From ${t.from_location_id ? (labelByLoc.get(t.from_location_id) ?? "bank") : "bank"}` : `From ${labelByLoc.get(t.from_location_id!) ?? "—"}`,
+            cashIn: Number(t.amount), cashOut: 0,
+          });
+        }
+        if (fromCustodian) {
+          raw.push({
+            id: `t-out-${t.id}`, date: t.date, locationId: t.from_location_id!, employeeId: empByLoc.get(t.from_location_id!) ?? null,
+            kind: "transfer_out",
+            detail: `To ${t.to_location_id ? (labelByLoc.get(t.to_location_id) ?? "—") : "—"}`,
+            cashIn: 0, cashOut: Number(t.amount),
+          });
+        }
+      }
+      for (const p of (cashPays ?? []) as any[]) {
+        if (!p.custodian_location_id) continue;
+        raw.push({
+          id: `p-${p.id}`, date: p.payment_date, locationId: p.custodian_location_id, employeeId: empByLoc.get(p.custodian_location_id) ?? null,
+          kind: "cash_received", detail: p.clients?.name ? `Client: ${p.clients.name}` : "Client cash", cashIn: Number(p.amount), cashOut: 0,
+        });
+      }
+      for (const ex of (cashExps ?? []) as any[]) {
+        if (!ex.custodian_location_id) continue;
+        raw.push({
+          id: `e-${ex.id}`, date: ex.expense_date, locationId: ex.custodian_location_id, employeeId: empByLoc.get(ex.custodian_location_id) ?? null,
+          kind: "cash_paid", detail: ex.description || "Expense", cashIn: 0, cashOut: Number(ex.amount),
+        });
+      }
+      for (const c of (cashCheques ?? []) as any[]) {
+        if (!c.custodian_location_id) continue;
+        raw.push({
+          id: `c-${c.id}`, date: c.cheque_date, locationId: c.custodian_location_id, employeeId: empByLoc.get(c.custodian_location_id) ?? null,
+          kind: "cheque_cashed", detail: `Cheque #${c.cheque_number}`, cashIn: Number(c.amount), cashOut: 0,
+        });
+      }
+      for (const w of (bankWd ?? []) as any[]) {
+        if (!w.reference_id || !custodianLocIds.has(w.reference_id)) continue;
+        raw.push({
+          id: `w-${w.id}`, date: String(w.created_at ?? "").slice(0, 10), locationId: w.reference_id, employeeId: empByLoc.get(w.reference_id) ?? null,
+          kind: "bank_to_cash", detail: w.description || "Bank withdrawal to cash", cashIn: Number(w.cash_delta ?? 0), cashOut: 0,
+        });
+      }
+      // Running held-cash per custodian (seed with each custodian's opening
+      // balance), oldest→newest, so each row shows Before → After like the bank log.
+      raw.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.id < b.id ? -1 : 1));
+      const runBal = new Map<string, number>();
+      for (const l of locList) if (l.location_type !== "BANK" && l.custodian_employee_id) runBal.set(l.id, Number(l.opening_balance ?? 0));
+      const withBal: LedgerEntry[] = raw.map((e) => {
+        const before = runBal.get(e.locationId) ?? 0;
+        const after = before + e.cashIn - e.cashOut;
+        runBal.set(e.locationId, after);
+        return { ...e, before, after };
+      });
+      withBal.reverse(); // newest first for display
+      setLedger(withBal);
       setPartners(partnerList);
       setBranches((brs ?? []) as Branch[]);
       setBanks((bnks ?? []) as BankAccountLite[]);
@@ -208,9 +333,25 @@ export function CashCustodyPanel() {
   // received (attributed) − cash expenses paid (attributed). This is the TRUE cash
   // that office-staff member currently holds (0135). Not applied to BANK locations.
   const heldCash = (loc: CashLocation): number =>
-    computeLocationBalance(loc) + (cashInByLoc.get(loc.id) ?? 0) - (cashOutByLoc.get(loc.id) ?? 0);
+    computeLocationBalance(loc) + (cashInByLoc.get(loc.id) ?? 0) - (cashOutByLoc.get(loc.id) ?? 0) + (chequeInByLoc.get(loc.id) ?? 0) + (withdrawInByLoc.get(loc.id) ?? 0);
 
   const staffName = (id: string | null) => (id ? officeStaff.find((s) => s.id === id)?.full_name ?? "—" : "—");
+
+  // Transactions tab: the ledger, optionally narrowed to one office-staff member.
+  const filteredLedger = useMemo(
+    () => (ledgerStaffFilter === "all" ? ledger : ledger.filter((e) => e.employeeId === ledgerStaffFilter)),
+    [ledger, ledgerStaffFilter],
+  );
+  const ledgerTotals = useMemo(() => {
+    let cin = 0, cout = 0;
+    for (const e of filteredLedger) { cin += e.cashIn; cout += e.cashOut; }
+    return { cin, cout, net: cin - cout };
+  }, [filteredLedger]);
+  // Office staff who actually hold a custodian location (for the filter dropdown).
+  const custodianStaff = useMemo(
+    () => officeStaff.filter((s) => locations.some((l) => l.custodian_employee_id === s.id && l.location_type !== "BANK")),
+    [officeStaff, locations],
+  );
 
   // Cash-in-hand custodian reconciliation (Change 1): every custodian's held cash,
   // summed, must equal Total Cash in Hand (treasury). The gap is unattributed cash.
@@ -223,7 +364,7 @@ export function CashCustodyPanel() {
     const discrepancy = cashInHand - sumHeld; // >0 = cash not yet attributed to a custodian
     return { custodians, sumHeld, discrepancy };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locationsWithBalance, cashInByLoc, cashOutByLoc, cashInHand]);
+  }, [locationsWithBalance, cashInByLoc, cashOutByLoc, chequeInByLoc, withdrawInByLoc, cashInHand]);
 
   // Cash in Hand (company treasury) as its own Position row alongside real locations.
   const cashInHandRow: LocationWithBalance = {
@@ -238,8 +379,15 @@ export function CashCustodyPanel() {
     [cashInHand],
   );
 
+  // Total Cash = Cash in Hand (treasury) + BANK mirror balances ONLY. Custodian/
+  // petty/treasury locations are a BREAKDOWN of Cash in Hand, so adding them would
+  // double-count (Σ custodian held already equals Cash in Hand).
   const totalCash = useMemo(
-    () => cashInHand + locationsWithBalance.filter((l) => l.is_active).reduce((s, l) => s + l.balance, 0),
+    () =>
+      cashInHand +
+      locationsWithBalance
+        .filter((l) => l.is_active && l.location_type === "BANK")
+        .reduce((s, l) => s + l.balance, 0),
     [locationsWithBalance, cashInHand],
   );
   const totalPartnerOwed = useMemo(
@@ -327,6 +475,8 @@ export function CashCustodyPanel() {
     const hasHistory =
       (cashInByLoc.get(loc.id) ?? 0) !== 0 ||
       (cashOutByLoc.get(loc.id) ?? 0) !== 0 ||
+      (chequeInByLoc.get(loc.id) ?? 0) !== 0 ||
+      (withdrawInByLoc.get(loc.id) ?? 0) !== 0 ||
       transfers.some((t) => t.from_location_id === loc.id || t.to_location_id === loc.id);
     if (hasHistory) {
       setError(`"${loc.name}" has cash movements recorded and can't be deleted. Deactivate it instead (Edit → uncheck Active).`);
@@ -340,8 +490,11 @@ export function CashCustodyPanel() {
   };
 
   const saveTransfer = async () => {
-    if (!companyId || !transferForm.from_location_id || !transferForm.to_location_id || !transferForm.amount) return;
-    if (transferForm.from_location_id === transferForm.to_location_id) {
+    if (!companyId || !transferForm.to_location_id || !transferForm.amount) return;
+    const fromBank = transferForm.from_type === "bank";
+    if (!fromBank && !transferForm.from_location_id) return;
+    if (fromBank && !transferForm.from_bank_id) { setError("Select the bank to withdraw from."); return; }
+    if (!fromBank && transferForm.from_location_id === transferForm.to_location_id) {
       setError("From and To locations must be different.");
       return;
     }
@@ -350,18 +503,32 @@ export function CashCustodyPanel() {
     try {
       const amt = parseFloat(transferForm.amount);
       if (isNaN(amt) || amt <= 0) throw new Error("Enter a valid amount");
-      const { error: e } = await supabase.from("custody_transfers").insert({
-        company_id: companyId,
-        date: transferForm.date,
-        from_location_id: transferForm.from_location_id,
-        to_location_id: transferForm.to_location_id,
-        amount: amt,
-        notes: transferForm.notes || null,
-        created_by: profile?.id,
-      });
-      if (e) throw e;
+      if (fromBank) {
+        // Bank → office staff: withdrawal that raises Cash in Hand and credits the
+        // custodian, done atomically (bank −, Cash in Hand +, custody transfer, log).
+        const { error: e } = await supabase.rpc("record_bank_to_custodian", {
+          p_bank_account_id: transferForm.from_bank_id,
+          p_custodian_location_id: transferForm.to_location_id,
+          p_amount: amt,
+          p_date: transferForm.date,
+          p_notes: transferForm.notes || null,
+        });
+        if (e) throw e;
+      } else {
+        // Office staff → office staff: pure custody move; Cash in Hand unchanged.
+        const { error: e } = await supabase.from("custody_transfers").insert({
+          company_id: companyId,
+          date: transferForm.date,
+          from_location_id: transferForm.from_location_id,
+          to_location_id: transferForm.to_location_id,
+          amount: amt,
+          notes: transferForm.notes || null,
+          created_by: profile?.id,
+        });
+        if (e) throw e;
+      }
       setIsTransferOpen(false);
-      setTransferForm({ date: today(), from_location_id: "", to_location_id: "", amount: "", notes: "" });
+      setTransferForm({ from_type: "staff", date: today(), from_location_id: "", from_bank_id: "", to_location_id: "", amount: "", notes: "" });
       await loadData();
     } catch (e: any) { setError(e.message); }
     finally { setTransferSaving(false); }
@@ -406,7 +573,7 @@ export function CashCustodyPanel() {
 
         {/* Tab bar */}
         <div className="flex gap-1 bg-slate-100 rounded-md p-1 mb-6 w-fit">
-          {([["position", "Cash Position"], ["reconciliation", "Reconciliation"], ["locations", "Locations"], ["transfers", "Transfers"]] as const).map(([k, l]) => (
+          {([["position", "Cash Position"], ["reconciliation", "Reconciliation"], ["transactions", "Transactions"], ["locations", "Locations"], ["transfers", "Transfers"]] as const).map(([k, l]) => (
             <button key={k} type="button" onClick={() => setTab(k)}
               className={`px-3 py-1.5 text-sm rounded transition-colors ${tab === k ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}>
               {l}
@@ -419,7 +586,7 @@ export function CashCustodyPanel() {
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-2">
               <div className="bg-white rounded-lg border border-slate-200 border-l-4 border-l-brand-500 p-4">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Cash (All Locations)</p>
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Cash (Cash in Hand + Banks)</p>
                 <p className="text-2xl font-mono text-slate-900">{fmt(totalCash)}</p>
               </div>
               <div className="bg-white rounded-lg border border-slate-200 border-l-4 border-l-warning-500 p-4">
@@ -565,7 +732,7 @@ export function CashCustodyPanel() {
               <p className="text-xs text-slate-500 mb-4">Shows how much of the cash on hand is actually owed to partners vs. truly free.</p>
               <div className="space-y-2">
                 <div className="flex items-center justify-between py-2 border-b border-slate-100">
-                  <span className="text-sm text-slate-700">Total Cash (all active locations)</span>
+                  <span className="text-sm text-slate-700">Total Cash (Cash in Hand + banks)</span>
                   <span className="text-sm font-mono font-semibold text-slate-900">{fmt(totalCash)}</span>
                 </div>
                 <div className="flex items-center justify-between py-2 border-b border-slate-100">
@@ -720,6 +887,74 @@ export function CashCustodyPanel() {
             </table>
           </div>
         )}
+
+        {/* ── TRANSACTIONS TAB ── */}
+        {tab === "transactions" && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <h3 className="text-base text-slate-900">Cash Custody Transactions</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Every cash movement through a custodian — cheques cashed, bank withdrawals, transfers, client cash received, and expenses paid.</p>
+              </div>
+              <div>
+                <label className="block text-[11px] uppercase tracking-wide text-slate-500 mb-1">Office Staff</label>
+                <ThemedSelect value={ledgerStaffFilter} onChange={(e) => setLedgerStaffFilter(e.target.value)}
+                  className="px-3 py-2 border border-slate-200 rounded-md text-sm min-w-[200px]">
+                  <option value="all">All custodians</option>
+                  {custodianStaff.map((s) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
+                </ThemedSelect>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="bg-white rounded-lg border border-slate-200 border-l-4 border-l-success-500 p-4">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Cash In</p>
+                <p className="text-xl font-mono text-success-700">{fmt(ledgerTotals.cin)}</p>
+              </div>
+              <div className="bg-white rounded-lg border border-slate-200 border-l-4 border-l-danger-500 p-4">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Cash Out</p>
+                <p className="text-xl font-mono text-danger-700">{fmt(ledgerTotals.cout)}</p>
+              </div>
+              <div className="bg-white rounded-lg border border-slate-200 border-l-4 border-l-brand-500 p-4">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Net {ledgerStaffFilter === "all" ? "" : "(Held)"}</p>
+                <p className={`text-xl font-mono ${ledgerTotals.net < 0 ? "text-danger-600" : "text-slate-900"}`}>{fmt(ledgerTotals.net)}</p>
+              </div>
+            </div>
+            <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-slate-200">
+                    <th className="text-left px-6 py-3 text-sm text-slate-500">Date</th>
+                    <th className="text-left px-6 py-3 text-sm text-slate-500">Kind</th>
+                    <th className="text-left px-6 py-3 text-sm text-slate-500">Custodian</th>
+                    <th className="text-right px-6 py-3 text-sm text-slate-500">Δ</th>
+                    <th className="text-right px-6 py-3 text-sm text-slate-500">Before → After</th>
+                    <th className="text-left px-6 py-3 text-sm text-slate-500">Description</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {filteredLedger.length === 0 && (
+                    <tr><td colSpan={6} className="px-6 py-10 text-center text-slate-500 text-sm">No transactions yet.</td></tr>
+                  )}
+                  {filteredLedger.map((e) => {
+                    const delta = e.cashIn - e.cashOut;
+                    return (
+                      <tr key={e.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-6 py-4 text-sm text-slate-900 whitespace-nowrap">{e.date}</td>
+                        <td className="px-6 py-4 text-sm">
+                          <span className={`inline-flex px-2 py-0.5 rounded text-xs ${e.cashIn > 0 ? "bg-success-50 text-success-700" : "bg-danger-50 text-danger-700"}`}>{LEDGER_KIND_LABEL[e.kind]}</span>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-slate-600">{staffName(e.employeeId)}</td>
+                        <td className={`px-6 py-4 text-right text-sm font-mono ${delta >= 0 ? "text-success-700" : "text-danger-700"}`}>{delta >= 0 ? "+" : ""}{Math.round(delta).toLocaleString()}</td>
+                        <td className="px-6 py-4 text-right text-sm font-mono text-slate-700 whitespace-nowrap">{Math.round(e.before).toLocaleString()} → {Math.round(e.after).toLocaleString()}</td>
+                        <td className="px-6 py-4 text-sm text-slate-500">{e.detail}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Add/Edit Location Modal ── */}
@@ -773,7 +1008,21 @@ export function CashCustodyPanel() {
       {/* ── Custody Transfer Modal ── */}
       <Modal isOpen={isTransferOpen} onClose={() => setIsTransferOpen(false)} title="Record Custody Transfer" size="sm">
         <div className="space-y-4">
-          <p className="text-sm text-slate-500">Move company cash between custodian / petty-cash locations. This does not change who owns the money. (Bank ↔ cash moves happen via Deposit / Withdraw on the Bank Accounts tab.)</p>
+          <p className="text-sm text-slate-500">
+            {transferForm.from_type === "bank"
+              ? "Withdraw cash from a bank to an office-staff custodian. This raises Cash in Hand and reduces the bank."
+              : "Move cash from one office-staff custodian to another. Cash in Hand is unchanged — only who holds it."}
+          </p>
+          {/* From-source toggle */}
+          <div className="flex gap-1 bg-slate-100 rounded-md p-1 w-fit">
+            {([["staff", "From Office Staff"], ["bank", "From Bank"]] as const).map(([k, l]) => (
+              <button key={k} type="button"
+                onClick={() => setTransferForm({ ...transferForm, from_type: k, from_location_id: "", from_bank_id: "" })}
+                className={`px-3 py-1.5 text-sm rounded transition-colors ${transferForm.from_type === k ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}>
+                {l}
+              </button>
+            ))}
+          </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Date *</label>
             <input type="date" value={transferForm.date} onChange={(e) => setTransferForm({ ...transferForm, date: e.target.value })}
@@ -781,14 +1030,24 @@ export function CashCustodyPanel() {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-slate-700 mb-1">From (office staff) *</label>
-              <ThemedSelect value={transferForm.from_location_id} onChange={(e) => setTransferForm({ ...transferForm, from_location_id: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
-                <option value="">Select…</option>
-                {locations.filter((l) => l.is_active && l.location_type !== "BANK" && l.custodian_employee_id).map((l) => (
-                  <option key={l.id} value={l.id}>{staffName(l.custodian_employee_id)} — holds {fmt(heldCash(l))}</option>
-                ))}
-              </ThemedSelect>
+              <label className="block text-sm text-slate-700 mb-1">{transferForm.from_type === "bank" ? "From (bank) *" : "From (office staff) *"}</label>
+              {transferForm.from_type === "bank" ? (
+                <ThemedSelect value={transferForm.from_bank_id} onChange={(e) => setTransferForm({ ...transferForm, from_bank_id: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
+                  <option value="">Select bank…</option>
+                  {banks.filter((b) => b.active).map((b) => (
+                    <option key={b.id} value={b.id}>{b.bank_name}{b.account_number ? ` ••${String(b.account_number).slice(-4)}` : ""} — {fmt(b.balance)}</option>
+                  ))}
+                </ThemedSelect>
+              ) : (
+                <ThemedSelect value={transferForm.from_location_id} onChange={(e) => setTransferForm({ ...transferForm, from_location_id: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
+                  <option value="">Select…</option>
+                  {locations.filter((l) => l.is_active && l.location_type !== "BANK" && l.custodian_employee_id).map((l) => (
+                    <option key={l.id} value={l.id}>{staffName(l.custodian_employee_id)} — holds {fmt(heldCash(l))}</option>
+                  ))}
+                </ThemedSelect>
+              )}
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">To (office staff) *</label>

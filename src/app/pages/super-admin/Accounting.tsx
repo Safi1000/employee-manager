@@ -99,6 +99,8 @@ export default function Accounting() {
     cheque_type: ChequeType;
     direction: ChequeDirection;
     recipient: string;
+    // For a Cash cheque: the office-staff custodian who receives the cash.
+    custodian_employee_id: string;
     notes: string;
     attachment?: File;
   }>({
@@ -109,6 +111,7 @@ export default function Accounting() {
     cheque_type: "payment",
     direction: "outgoing",
     recipient: "",
+    custodian_employee_id: "",
     notes: "",
   });
   const [chequeFormError, setChequeFormError] = useState<string | null>(null);
@@ -246,6 +249,9 @@ export default function Accounting() {
   const [transferDate, setTransferDate] = useState<string>(todayStr());
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [withdrawNotes, setWithdrawNotes] = useState("");
+  // Office-staff custodian who receives the withdrawn cash (attributes it so
+  // Cash in Hand reconciles per custodian).
+  const [withdrawCustodianId, setWithdrawCustodianId] = useState<string>("");
   const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
   const [depositAmount, setDepositAmount] = useState("");
   const [depositDate, setDepositDate] = useState(todayStr());
@@ -1011,6 +1017,7 @@ export default function Accounting() {
     setSelectedBank(bank);
     setWithdrawAmount("");
     setWithdrawNotes("");
+    setWithdrawCustodianId("");
     setIsWithdrawModalOpen(true);
   };
 
@@ -1026,29 +1033,29 @@ export default function Accounting() {
       setError("Withdrawal exceeds available account balance.");
       return;
     }
+    const staff = custodians.find((c) => c.employeeId === withdrawCustodianId);
+    if (!staff) {
+      setError("Select the office-staff member who receives this cash.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
-      const { error: upErr } = await supabase
-        .from("bank_accounts")
-        .update({
-          balance: Number(selectedBank.balance) - amount,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", selectedBank.id);
-      if (upErr) throw upErr;
-      await applyCashDelta(amount);
-      await logTransaction({
-        bank_account_id: selectedBank.id,
-        kind: "withdraw_to_cash",
-        amount,
-        cash_delta: amount,
-        account_delta: -amount,
-        description:
-          withdrawNotes.trim() ||
-          `Withdraw PKR ${amount.toLocaleString()} from ${selectedBank.bank_name} to cash`,
+      const cid = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
+      if (!cid) throw new Error("Company not loaded — refresh and try again.");
+      const custodianLocId = await ensureCustodianLocation(cid, staff.employeeId, staff.fullName);
+      // Atomic: bank −, Cash in Hand +, custodian held +, and a withdraw_to_cash
+      // ledger row (shows in the Transaction Log like a cheque).
+      const { error: rpcErr } = await supabase.rpc("record_bank_to_custodian", {
+        p_bank_account_id: selectedBank.id,
+        p_custodian_location_id: custodianLocId,
+        p_amount: amount,
+        p_date: todayStr(),
+        p_notes: withdrawNotes.trim() || `Withdraw from ${selectedBank.bank_name} to ${staff.fullName}`,
       });
+      if (rpcErr) throw rpcErr;
       setIsWithdrawModalOpen(false);
+      setWithdrawCustodianId("");
       await loadAll();
     } catch (err: any) {
       setError(err.message ?? String(err));
@@ -2747,6 +2754,15 @@ export default function Accounting() {
             setChequeFormError(null);
             const amount = Number(chequeForm.amount);
             if (!chequeForm.bank_account_id || !chequeForm.cheque_number || !amount || amount <= 0 || !chequeForm.cheque_date) return;
+            // A Cash cheque is handed to an office-staff custodian, who then holds
+            // the cash. On creation it clears immediately: bank −, Cash in Hand +,
+            // custodian held +.
+            const isCashCheque = chequeForm.direction === "outgoing" && chequeForm.cheque_type === "cash";
+            const cashStaff = isCashCheque ? custodians.find((c) => c.employeeId === chequeForm.custodian_employee_id) : null;
+            if (isCashCheque && !cashStaff) {
+              setChequeFormError("Select the office-staff member who receives this cash cheque.");
+              return;
+            }
             // For outgoing cheques only: block over-issue if bank balance is insufficient
             if (chequeForm.direction !== "incoming") {
               const issuingBank = banks.find((b) => b.id === chequeForm.bank_account_id);
@@ -2758,6 +2774,11 @@ export default function Accounting() {
             setChequeSubmitting(true);
             setError(null);
             try {
+              const cid = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
+              // Resolve (creating on first use) the custodian cash_location for a cash cheque.
+              const custodianLocId = isCashCheque && cashStaff && cid
+                ? await ensureCustodianLocation(cid, cashStaff.employeeId, cashStaff.fullName)
+                : null;
               const { data: inserted, error: insErr } = await supabase
                 .from("cheques")
                 .insert({
@@ -2767,7 +2788,8 @@ export default function Accounting() {
                   cheque_date: chequeForm.cheque_date,
                   cheque_type: chequeForm.direction === "incoming" ? "cash" : chequeForm.cheque_type,
                   direction: chequeForm.direction,
-                  recipient: chequeForm.recipient.trim() || null,
+                  recipient: isCashCheque ? cashStaff!.fullName : (chequeForm.recipient.trim() || null),
+                  custodian_location_id: custodianLocId,
                   notes: chequeForm.notes.trim() || null,
                   status: "pending",
                 })
@@ -2775,6 +2797,12 @@ export default function Accounting() {
                 .single();
               if (insErr) throw insErr;
               const chequeId = (inserted as Cheque).id;
+              // Immediate clear (user's choice): moves the amount into Cash in Hand
+              // now. The custodian attribution is via custodian_location_id above.
+              if (isCashCheque) {
+                const { error: clrErr } = await supabase.from("cheques").update({ status: "cleared" }).eq("id", chequeId);
+                if (clrErr) throw clrErr;
+              }
               if (chequeForm.attachment) {
                 const file = chequeForm.attachment;
                 const effectiveCompanyId =
@@ -2817,6 +2845,7 @@ export default function Accounting() {
                 cheque_type: "payment",
                 direction: "outgoing",
                 recipient: "",
+                custodian_employee_id: "",
                 notes: "",
                 attachment: undefined,
               });
@@ -2934,15 +2963,35 @@ export default function Accounting() {
             </div>
             <div className="col-span-2">
               <label className="block text-sm text-slate-700 mb-1">
-                {chequeForm.direction === "incoming" ? "Received From (Payer)" : "Recipient"}
+                {chequeForm.direction === "incoming"
+                  ? "Received From (Payer)"
+                  : chequeForm.cheque_type === "cash"
+                    ? "Cash Received By (Office Staff)"
+                    : "Recipient"}
               </label>
-              <input
-                type="text"
-                value={chequeForm.recipient}
-                onChange={(e) => setChequeForm({ ...chequeForm, recipient: e.target.value })}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
-                placeholder={chequeForm.direction === "incoming" ? "Payer / drawer name" : "Payee name"}
-              />
+              {chequeForm.direction === "outgoing" && chequeForm.cheque_type === "cash" ? (
+                <>
+                  <ThemedSelect
+                    value={chequeForm.custodian_employee_id}
+                    onChange={(e) => setChequeForm({ ...chequeForm, custodian_employee_id: e.target.value })}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                  >
+                    <option value="">Select office-staff recipient…</option>
+                    {custodians.map((c) => (
+                      <option key={c.employeeId} value={c.employeeId}>{c.fullName} — holds {`PKR ${Math.round(c.held).toLocaleString()}`}</option>
+                    ))}
+                  </ThemedSelect>
+                  <p className="text-[11px] text-slate-500 mt-1">The cash is added to this custodian's held cash and to Cash in Hand.</p>
+                </>
+              ) : (
+                <input
+                  type="text"
+                  value={chequeForm.recipient}
+                  onChange={(e) => setChequeForm({ ...chequeForm, recipient: e.target.value })}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                  placeholder={chequeForm.direction === "incoming" ? "Payer / drawer name" : "Payee name"}
+                />
+              )}
             </div>
             <div className="col-span-2">
               <label className="block text-sm text-slate-700 mb-1">Notes</label>
@@ -2965,14 +3014,15 @@ export default function Accounting() {
               )}
             </div>
           </div>
-          {chequeForm.direction === "outgoing" && (
+          {chequeForm.direction === "outgoing" && chequeForm.cheque_type === "cash" && (
+            <div className="bg-brand-50 border border-brand-200 rounded-md p-3 text-xs text-brand-800">
+              PKR {Number(chequeForm.amount || 0).toLocaleString()} will be deducted from the bank and added to <strong>Cash in Hand</strong> and to the selected custodian's held cash immediately.
+            </div>
+          )}
+          {chequeForm.direction === "outgoing" && chequeForm.cheque_type === "payment" && (
             <div className="bg-warning-50 border border-warning-200 rounded-md p-3 text-xs text-warning-800">
               Issuing this cheque will <strong>reserve</strong> PKR {Number(chequeForm.amount || 0).toLocaleString()} from the selected bank's Account Balance.{" "}
-              {chequeForm.cheque_type === "cash" ? (
-                <>On clearance, this amount will be added to the <strong>Cash (Treasury)</strong> balance.</>
-              ) : (
-                <>This payment cheque can only be cleared once linked expenses/salaries/advances total exactly its amount.</>
-              )}
+              This payment cheque can only be cleared once linked expenses/salaries/advances total exactly its amount.
               {" "}Deleting it while Pending restores the bank balance.
             </div>
           )}
@@ -3461,6 +3511,20 @@ export default function Accounting() {
               <p className="text-xs text-slate-500 mt-1">
                 Deducts from Account Balance and adds to Cash Balance.
               </p>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Cash Received By (Office Staff) *</label>
+              <ThemedSelect
+                value={withdrawCustodianId}
+                onChange={(e) => setWithdrawCustodianId(e.target.value)}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+              >
+                <option value="">Select office-staff recipient…</option>
+                {custodians.map((c) => (
+                  <option key={c.employeeId} value={c.employeeId}>{c.fullName} — holds {`PKR ${Math.round(c.held).toLocaleString()}`}</option>
+                ))}
+              </ThemedSelect>
+              <p className="text-xs text-slate-500 mt-1">The withdrawn cash is added to this custodian's held cash.</p>
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Notes</label>

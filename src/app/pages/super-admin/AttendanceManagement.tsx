@@ -6,7 +6,9 @@ import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import ExportButton from "../../components/ExportButton";
 import ClientFilterSelect from "../../components/ClientFilterSelect";
+import BulkMarkByEmployeeModal from "../../components/BulkMarkByEmployeeModal";
 import { exportAttendance, type AttendanceEmployeeRow } from "../../lib/excel";
+import { loadShiftResolver, type ShiftResolver } from "../../lib/shiftOnDate";
 import {
   supabase,
   fetchAllRows,
@@ -77,6 +79,10 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   const [contracts, setContracts] = useState<ContractLeaveRow[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [employees, setEmployees] = useState<EmployeeLite[]>([]);
+  // Per-date shift resolver over the dated deployment segments (single source of
+  // truth). Used so marking on a given date records the shift active THAT date,
+  // never the guard's flat current shift.
+  const [shiftResolver, setShiftResolver] = useState<ShiftResolver | null>(null);
   const [todayRecords, setTodayRecords] = useState<Record<string, AttendanceStatus>>({});
   // For relievers: per-day client attribution. Mirrors todayRecords.
   const [todayWorkedFor, setTodayWorkedFor] = useState<Record<string, string | null>>({});
@@ -119,330 +125,12 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   const { regionId } = useRegion();
   const canBulk = hasPermission(profile, "attendance.bulk_mark");
 
-  // ---- Bulk-mark calendar modal ----
+  // ---- Bulk-mark calendar modal (shared BulkMarkByEmployeeModal) ----
   const [isBulkOpen, setIsBulkOpen] = useState(false);
-  const [bulkEmpSearch, setBulkEmpSearch] = useState("");
-  const [bulkEmployeeId, setBulkEmployeeId] = useState<string>("");
-  const [bulkMonth, setBulkMonth] = useState<string>(today().slice(0, 7));
-  const [bulkExisting, setBulkExisting] = useState<Map<string, AttendanceStatus>>(new Map());
-  // Per-day shift overrides for the shown month (date -> "day"|"night"), so the
-  // calendar can flag which days already differ from the guard's default shift.
-  const [bulkShiftOverrides, setBulkShiftOverrides] = useState<Map<string, "day" | "night">>(new Map());
-  // Shift toggle applied to the current selection when a status button is
-  // pressed. Unchecked = the guard's own (default) shift; checked = the OTHER
-  // shift. So a day-shift guard shows "Mark as Night Shift" and a night-shift
-  // guard shows "Mark as Day Shift".
-  const [bulkMarkOther, setBulkMarkOther] = useState(false);
-  const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
-  const [bulkLoading, setBulkLoading] = useState(false);
-  const [bulkSubmitting, setBulkSubmitting] = useState(false);
-  const [bulkError, setBulkError] = useState<string | null>(null);
-  const [bulkDragMode, setBulkDragMode] = useState<"add" | "remove" | null>(null);
-  // Gallery-style range drag: anchor = where the drag started, base = the selection
-  // snapshot before the drag, so the live range can be recomputed on every move.
-  const [bulkDragAnchor, setBulkDragAnchor] = useState<string | null>(null);
-  const [bulkDragBase, setBulkDragBase] = useState<Set<string>>(new Set());
-  // ---- Bulk-mark filters (mirror the daily attendance tab filters) ----
-  const [bulkClientFilter, setBulkClientFilter] = useState("all");
-  const [bulkLocationFilter, setBulkLocationFilter] = useState("all");
-  const [bulkBranchFilter, setBulkBranchFilter] = useState("all");
-  const [bulkShiftFilter, setBulkShiftFilter] = useState<"all" | "day" | "night">("all");
-  const [bulkCategoryFilter, setBulkCategoryFilter] = useState<"all" | "client" | "office_staff" | "reliever">("all");
 
-  // ---- Main tab ----
-  const [mainTab, setMainTab] = useState<"attendance" | "shift_override">("attendance");
-
-  // ---- Shift Override tab ----
-  const [overrideDate, setOverrideDate] = useState<string>(today());
-  const [overrides, setOverrides] = useState<Map<string, "day" | "night">>(new Map());
-  const [overrideSaving, setOverrideSaving] = useState<Set<string>>(new Set());
-  const [overrideShiftFilter, setOverrideShiftFilter] = useState<"all" | "day" | "night">("all");
-  const [overrideSearch, setOverrideSearch] = useState("");
-
-  const bulkEmployee = useMemo(
-    () => employees.find((e) => e.id === bulkEmployeeId),
-    [employees, bulkEmployeeId],
-  );
-
-  const bulkEmployeeOptions = useMemo(() => {
-    let pool = employees;
-    if (relieversOnly) pool = pool.filter((e) => e.category === "reliever");
-    if (bulkClientFilter !== "all") pool = pool.filter((e) => e.client_id === bulkClientFilter);
-    if (bulkLocationFilter !== "all") pool = pool.filter((e) => e.location_id === bulkLocationFilter);
-    if (bulkBranchFilter !== "all") pool = pool.filter((e) => e.branch_id === bulkBranchFilter || e.additional_branch_ids?.includes(bulkBranchFilter));
-    if (bulkShiftFilter !== "all") pool = pool.filter((e) => e.shift === bulkShiftFilter);
-    if (bulkCategoryFilter !== "all") pool = pool.filter((e) => e.category === bulkCategoryFilter);
-    const q = bulkEmpSearch.trim().toLowerCase();
-    if (q)
-      pool = pool.filter(
-        (e) =>
-          e.full_name.toLowerCase().includes(q) ||
-          e.employee_code.toLowerCase().includes(q) ||
-          e.display_code.toLowerCase().includes(q) ||
-          (e.client_name?.toLowerCase().includes(q) ?? false),
-      );
-    return pool.slice(0, 100);
-  }, [employees, bulkEmpSearch, bulkClientFilter, bulkLocationFilter, bulkBranchFilter, bulkShiftFilter, bulkCategoryFilter, relieversOnly]);
-
-  const loadBulkMonth = async (employeeId: string, monthKey: string) => {
-    setBulkLoading(true);
-    setBulkError(null);
-    const start = `${monthKey}-01`;
-    const [y, m] = monthKey.split("-").map(Number);
-    const lastDay = new Date(y, m, 0).getDate();
-    const end = `${monthKey}-${String(lastDay).padStart(2, "0")}`;
-    const [attRes, ovrRes] = await Promise.all([
-      supabase
-        .from("attendance_records")
-        .select("attendance_date, status")
-        .eq("employee_id", employeeId)
-        .gte("attendance_date", start)
-        .lte("attendance_date", end),
-      supabase
-        .from("attendance_shift_overrides")
-        .select("attendance_date, override_shift")
-        .eq("employee_id", employeeId)
-        .gte("attendance_date", start)
-        .lte("attendance_date", end),
-    ]);
-    if (attRes.error) setBulkError(attRes.error.message);
-    const map = new Map<string, AttendanceStatus>();
-    for (const r of (attRes.data ?? []) as { attendance_date: string; status: AttendanceStatus }[]) {
-      map.set(r.attendance_date, r.status);
-    }
-    setBulkExisting(map);
-    const ovr = new Map<string, "day" | "night">();
-    for (const r of (ovrRes.data ?? []) as { attendance_date: string; override_shift: "day" | "night" }[]) {
-      ovr.set(r.attendance_date, r.override_shift);
-    }
-    setBulkShiftOverrides(ovr);
-    setBulkLoading(false);
-  };
-
-  useEffect(() => {
-    if (!isBulkOpen || !bulkEmployeeId) return;
-    setBulkSelected(new Set());
-    // Default to the guard's own shift (checkbox unchecked).
-    setBulkMarkOther(false);
-    loadBulkMonth(bulkEmployeeId, bulkMonth);
-  }, [isBulkOpen, bulkEmployeeId, bulkMonth]);
-
-  const openBulkMark = () => {
-    setBulkEmployeeId("");
-    setBulkEmpSearch("");
-    setBulkMonth(today().slice(0, 7));
-    setBulkSelected(new Set());
-    setBulkExisting(new Map());
-    setBulkError(null);
-    setBulkClientFilter("all");
-    setBulkLocationFilter("all");
-    setBulkBranchFilter("all");
-    setBulkShiftFilter("all");
-    setBulkCategoryFilter("all");
-    setIsBulkOpen(true);
-  };
-
-  // ---- Shift Override functions ----
-  const loadOverrides = async (dt: string) => {
-    const companyId = profile?.view_as_company ?? profile?.company_id ?? null;
-    if (!companyId) return;
-    const { data } = await supabase
-      .from("attendance_shift_overrides")
-      .select("employee_id, override_shift")
-      .eq("company_id", companyId)
-      .eq("attendance_date", dt);
-    const map = new Map<string, "day" | "night">();
-    for (const r of (data ?? [])) map.set(r.employee_id, r.override_shift as "day" | "night");
-    setOverrides(map);
-  };
-
-  const toggleShiftOverride = async (emp: EmployeeLite) => {
-    const companyId = profile?.view_as_company ?? profile?.company_id ?? null;
-    if (!companyId) return;
-    setOverrideSaving((s) => new Set(s).add(emp.id));
-    if (overrides.has(emp.id)) {
-      await supabase
-        .from("attendance_shift_overrides")
-        .delete()
-        .eq("employee_id", emp.id)
-        .eq("attendance_date", overrideDate);
-      setOverrides((prev) => { const m = new Map(prev); m.delete(emp.id); return m; });
-    } else {
-      const overrideShift = emp.shift === "day" ? "night" : "day";
-      await supabase
-        .from("attendance_shift_overrides")
-        .upsert(
-          { employee_id: emp.id, company_id: companyId, attendance_date: overrideDate, override_shift: overrideShift },
-          { onConflict: "employee_id,attendance_date" }
-        );
-      setOverrides((prev) => new Map(prev).set(emp.id, overrideShift as "day" | "night"));
-    }
-    setOverrideSaving((s) => { const n = new Set(s); n.delete(emp.id); return n; });
-  };
-
-  const filteredOverrideEmployees = useMemo(() => {
-    let pool = employees.filter((e) => e.category === "client" || e.category === "reliever");
-    if (overrideShiftFilter !== "all") pool = pool.filter((e) => e.shift === overrideShiftFilter);
-    const q = overrideSearch.trim().toLowerCase();
-    if (q) pool = pool.filter((e) => e.full_name.toLowerCase().includes(q) || e.employee_code.toLowerCase().includes(q) || e.display_code.toLowerCase().includes(q));
-    return pool;
-  }, [employees, overrideShiftFilter, overrideSearch]);
-
-  const bulkCalendarCells = useMemo(() => {
-    const [y, m] = bulkMonth.split("-").map(Number);
-    const first = new Date(y, m - 1, 1);
-    const lastDay = new Date(y, m, 0).getDate();
-    const leading = first.getDay(); // 0=Sun
-    const cells: { date: string | null; day: number | null }[] = [];
-    for (let i = 0; i < leading; i++) cells.push({ date: null, day: null });
-    for (let d = 1; d <= lastDay; d++) {
-      const date = `${bulkMonth}-${String(d).padStart(2, "0")}`;
-      cells.push({ date, day: d });
-    }
-    while (cells.length % 7 !== 0) cells.push({ date: null, day: null });
-    return cells;
-  }, [bulkMonth]);
-
-  const shiftBulkMonth = (delta: number) => {
-    const [y, m] = bulkMonth.split("-").map(Number);
-    const d = new Date(y, m - 1 + delta, 1);
-    setBulkMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
-  };
-
-  const toggleBulkCell = (date: string) => {
-    setBulkSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(date)) next.delete(date);
-      else next.add(date);
-      return next;
-    });
-  };
-
-  // Chronological list of selectable dates + their index, for range computation.
-  const bulkOrderedDates = useMemo(
-    () => bulkCalendarCells.filter((c) => c.date).map((c) => c.date as string),
-    [bulkCalendarCells],
-  );
-  const bulkDateIndex = useMemo(() => {
-    const m = new Map<string, number>();
-    bulkOrderedDates.forEach((d, i) => m.set(d, i));
-    return m;
-  }, [bulkOrderedDates]);
-
-  const applyBulkRange = (
-    base: Set<string>,
-    from: string,
-    to: string,
-    mode: "add" | "remove",
-  ): Set<string> => {
-    const a = bulkDateIndex.get(from);
-    const b = bulkDateIndex.get(to);
-    if (a == null || b == null) return base;
-    const [lo, hi] = a <= b ? [a, b] : [b, a];
-    const next = new Set(base);
-    for (let i = lo; i <= hi; i += 1) {
-      const d = bulkOrderedDates[i];
-      if (mode === "add") next.add(d);
-      else next.delete(d);
-    }
-    return next;
-  };
-
-  // Begin a drag from `date`: remember the anchor and pre-drag selection, then
-  // apply the (single-cell) range so a plain tap still toggles.
-  const startBulkDrag = (date: string) => {
-    const mode: "add" | "remove" = bulkSelected.has(date) ? "remove" : "add";
-    const base = new Set(bulkSelected);
-    setBulkDragMode(mode);
-    setBulkDragAnchor(date);
-    setBulkDragBase(base);
-    setBulkSelected(applyBulkRange(base, date, date, mode));
-  };
-
-  // Recompute the live selection as the pointer moves over `date` during a drag:
-  // everything between the anchor and the current cell takes the drag's mode,
-  // even cells the pointer skipped — like selecting in a phone gallery.
-  const extendBulkDrag = (date: string) => {
-    if (!bulkDragMode || !bulkDragAnchor) return;
-    setBulkSelected(applyBulkRange(bulkDragBase, bulkDragAnchor, date, bulkDragMode));
-  };
-
-  const endBulkDrag = () => {
-    setBulkDragMode(null);
-    setBulkDragAnchor(null);
-  };
-
-  const applyBulkStatus = async (status: AttendanceStatus) => {
-    if (!bulkEmployeeId || bulkSelected.size === 0) return;
-    setBulkSubmitting(true);
-    setBulkError(null);
-    const days = Array.from(bulkSelected);
-    const rows = days.map((d) => ({
-      employee_id: bulkEmployeeId,
-      attendance_date: d,
-      status,
-    }));
-    const { error: err } = await supabase
-      .from("attendance_records")
-      .upsert(rows, { onConflict: "employee_id,attendance_date" });
-    if (err) {
-      setBulkSubmitting(false);
-      setBulkError(err.message);
-      return;
-    }
-
-    // Record the shift for the marked days. Unchecked keeps the guard's default
-    // shift (clear any override); checked flips to the other shift (store an
-    // override so this stretch of days reads as the opposite shift).
-    const companyId = profile?.view_as_company ?? profile?.company_id ?? null;
-    const defaultShift: "day" | "night" = bulkEmployee?.shift ?? "day";
-    const otherShift: "day" | "night" = defaultShift === "day" ? "night" : "day";
-    const targetShift: "day" | "night" = bulkMarkOther ? otherShift : defaultShift;
-    if (companyId) {
-      if (targetShift === defaultShift) {
-        const { error: delErr } = await supabase
-          .from("attendance_shift_overrides")
-          .delete()
-          .eq("employee_id", bulkEmployeeId)
-          .in("attendance_date", days);
-        if (delErr) setBulkError(delErr.message);
-      } else {
-        const ovrRows = days.map((d) => ({
-          employee_id: bulkEmployeeId,
-          company_id: companyId,
-          attendance_date: d,
-          override_shift: targetShift,
-        }));
-        const { error: ovrErr } = await supabase
-          .from("attendance_shift_overrides")
-          .upsert(ovrRows, { onConflict: "employee_id,attendance_date" });
-        if (ovrErr) setBulkError(ovrErr.message);
-      }
-    }
-
-    setBulkSubmitting(false);
-    await loadBulkMonth(bulkEmployeeId, bulkMonth);
-    setBulkSelected(new Set());
-  };
-
-  const clearBulkSelected = async () => {
-    if (!bulkEmployeeId || bulkSelected.size === 0) return;
-    if (!window.confirm(`Clear marks for ${bulkSelected.size} day(s)?`)) return;
-    setBulkSubmitting(true);
-    setBulkError(null);
-    const { error: err } = await supabase
-      .from("attendance_records")
-      .delete()
-      .eq("employee_id", bulkEmployeeId)
-      .in("attendance_date", Array.from(bulkSelected));
-    setBulkSubmitting(false);
-    if (err) {
-      setBulkError(err.message);
-      return;
-    }
-    await loadBulkMonth(bulkEmployeeId, bulkMonth);
-    setBulkSelected(new Set());
-  };
+  // Open the shared Bulk-Mark-by-Employee calendar (BulkMarkByEmployeeModal owns
+  // its own employee picker, filters, month state and marking logic).
+  const openBulkMark = () => setIsBulkOpen(true);
 
   // ---- Inline employee calendar (read-only swap of metrics area) ----
   const [viewEmployee, setViewEmployee] = useState<EmployeeLite | null>(null);
@@ -677,13 +365,19 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   }, [date]);
 
   useEffect(() => {
+    if (employees.length === 0) { setShiftResolver(null); return; }
+    let cancelled = false;
+    (async () => {
+      const resolver = await loadShiftResolver(employees.map((e) => e.id));
+      if (!cancelled) setShiftResolver(() => resolver);
+    })();
+    return () => { cancelled = true; };
+  }, [employees]);
+
+  useEffect(() => {
     if (employees.length === 0) return;
     loadHistory();
   }, [historyFrom, historyTo, employees, clientFilter, locationFilter, branchFilter, shiftFilter]);
-
-  useEffect(() => {
-    if (mainTab === "shift_override") loadOverrides(overrideDate);
-  }, [overrideDate, mainTab]);
 
   const filteredEmployees = useMemo(() => {
     const q = empSearch.trim().toLowerCase();
@@ -706,6 +400,14 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     });
   }, [employees, clientFilter, locationFilter, branchFilter, shiftFilter, categoryFilter, unmarkedOnly, todayRecords, empSearch, relieversOnly]);
 
+  // Shift active for an employee on the currently-selected date, from the dated
+  // deployment segment (falls back to the flat shift only until the resolver
+  // loads / for dates before the first posting).
+  const dayShift = (employeeId: string): string =>
+    (shiftResolver ? shiftResolver(employeeId, date) : null) ??
+    employees.find((e) => e.id === employeeId)?.shift ??
+    "day";
+
   const markStatus = async (
     employeeId: string,
     status: AttendanceStatus,
@@ -718,6 +420,12 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       setError("Pick which client this reliever worked for before marking Present.");
       return;
     }
+    // No future attendance (same rule as the board).
+    if (date > today()) {
+      setError("Future dates can't be marked.");
+      return;
+    }
+    const shift = dayShift(employeeId);
     setSaving((s) => ({ ...s, [employeeId]: true }));
     setError(null);
     const prevStatus = todayRecords[employeeId];
@@ -734,9 +442,11 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
           employee_id: employeeId,
           attendance_date: date,
           status,
+          scheduled_shift: shift,
+          worked_shift: shift,
           worked_for_client_id: status === "Present" ? workedForClientId ?? null : null,
         },
-        { onConflict: "employee_id,attendance_date" }
+        { onConflict: "employee_id,attendance_date,worked_shift" }
       );
     setSaving((s) => {
       const n = { ...s };
@@ -837,6 +547,11 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
 
   const markAllPresent = async () => {
     if (filteredEmployees.length === 0) return;
+    // No future attendance (same rule as the board).
+    if (date > today()) {
+      setError("Future dates can't be marked.");
+      return;
+    }
     // Mark-all skips relievers without a picked client (each must be set
     // individually so attribution stays correct).
     const skipped: string[] = [];
@@ -853,13 +568,18 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         }
         return true;
       })
-      .map((e) => ({
-        employee_id: e.id,
-        attendance_date: date,
-        status: "Present" as AttendanceStatus,
-        worked_for_client_id:
-          e.category === "reliever" ? todayWorkedFor[e.id] ?? null : null,
-      }));
+      .map((e) => {
+        const shift = dayShift(e.id);
+        return {
+          employee_id: e.id,
+          attendance_date: date,
+          status: "Present" as AttendanceStatus,
+          scheduled_shift: shift,
+          worked_shift: shift,
+          worked_for_client_id:
+            e.category === "reliever" ? todayWorkedFor[e.id] ?? null : null,
+        };
+      });
     if (payload.length === 0) {
       setError(
         "All visible rows are relievers without a picked client. Set their client first.",
@@ -879,7 +599,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     setTodayRecords(optimistic);
     const { error: upErr } = await supabase
       .from("attendance_records")
-      .upsert(payload, { onConflict: "employee_id,attendance_date" });
+      .upsert(payload, { onConflict: "employee_id,attendance_date,worked_shift" });
     if (upErr) {
       setError(upErr.message);
       await loadRecordsForDate(date);
@@ -910,11 +630,16 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     // previously unmarked get their record for this date removed.
     const toRestore = entries
       .filter(([, prev]) => prev !== null)
-      .map(([employee_id, prev]) => ({
-        employee_id,
-        attendance_date: lastBulk.date,
-        status: prev as AttendanceStatus,
-      }));
+      .map(([employee_id, prev]) => {
+        const shift = dayShift(employee_id);
+        return {
+          employee_id,
+          attendance_date: lastBulk.date,
+          status: prev as AttendanceStatus,
+          scheduled_shift: shift,
+          worked_shift: shift,
+        };
+      });
     const toDelete = entries
       .filter(([, prev]) => prev === null)
       .map(([employee_id]) => employee_id);
@@ -922,7 +647,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     if (toRestore.length > 0) {
       const { error: rErr } = await supabase
         .from("attendance_records")
-        .upsert(toRestore, { onConflict: "employee_id,attendance_date" });
+        .upsert(toRestore, { onConflict: "employee_id,attendance_date,worked_shift" });
       if (rErr) {
         setError(rErr.message);
         setUndoing(false);
@@ -985,12 +710,12 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     const empIds = filteredEmployees.map((e) => e.id);
     if (empIds.length === 0) return;
 
-    let records: AttendanceRecord[] = [];
+    let records: any[] = [];
     try {
-      records = await fetchAllRows<AttendanceRecord>(() =>
+      records = await fetchAllRows<any>(() =>
         supabase
           .from("attendance_records")
-          .select("employee_id, attendance_date, status")
+          .select("employee_id, attendance_date, status, worked_shift")
           .gte("attendance_date", monthStart)
           .lte("attendance_date", monthEnd)
           .in("employee_id", empIds)
@@ -1003,26 +728,25 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       return;
     }
 
-    const byEmp = new Map<string, Map<number, AttendanceStatus>>();
+    // Per day: the P/A/L symbol AND the shift the guard actually worked that day
+    // (worked_shift on the row — so a day guard who covered one night lands under
+    // N for that day). Status is normalized across the legacy (Present/Absent/
+    // Leave) and spec (present/absent/rotation_leave/…) vocabularies.
+    const symbolOf = (raw: unknown): "P" | "A" | "L" | "" => {
+      const s = String(raw ?? "").toLowerCase();
+      if (s === "present" || s === "double_duty" || s === "relief_cover") return "P";
+      if (s === "absent") return "A";
+      if (s === "leave" || s === "rotation_leave" || s === "rest_day") return "L";
+      return "";
+    };
+    const byEmp = new Map<string, Map<number, { sym: string; ws: string }>>();
     for (const r of records ?? []) {
-      const day = Number((r as any).attendance_date.slice(8, 10));
+      const day = Number(String(r.attendance_date).slice(8, 10));
       if (!byEmp.has(r.employee_id)) byEmp.set(r.employee_id, new Map());
-      byEmp.get(r.employee_id)!.set(day, (r as any).status as AttendanceStatus);
-    }
-
-    // Per-day shift overrides ("Mark as Night/Day Shift") so each day lands in
-    // the correct D/N column in the export instead of always the guard's default.
-    const ovrByEmp = new Map<string, Map<number, "day" | "night">>();
-    const { data: ovrData } = await supabase
-      .from("attendance_shift_overrides")
-      .select("employee_id, attendance_date, override_shift")
-      .gte("attendance_date", monthStart)
-      .lte("attendance_date", monthEnd)
-      .in("employee_id", empIds);
-    for (const r of (ovrData ?? []) as { employee_id: string; attendance_date: string; override_shift: "day" | "night" }[]) {
-      const day = Number(r.attendance_date.slice(8, 10));
-      if (!ovrByEmp.has(r.employee_id)) ovrByEmp.set(r.employee_id, new Map());
-      ovrByEmp.get(r.employee_id)!.set(day, r.override_shift);
+      byEmp.get(r.employee_id)!.set(day, {
+        sym: symbolOf(r.status),
+        ws: (r.worked_shift as string) ?? "day",
+      });
     }
 
     // Leave allowance comes from the employee's contract, falling back to their client
@@ -1031,29 +755,21 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     const contractById = new Map(contracts.map((c) => [c.id, c]));
 
     const rows: AttendanceEmployeeRow[] = filteredEmployees.map((emp, idx) => {
-      const dayMap = byEmp.get(emp.id) ?? new Map<number, AttendanceStatus>();
-      const ovrMap = ovrByEmp.get(emp.id) ?? new Map<number, "day" | "night">();
+      const dayMap = byEmp.get(emp.id) ?? new Map<number, { sym: string; ws: string }>();
       const statusByDay: string[] = [];
       const shiftByDay: ("day" | "night")[] = [];
       let p = 0;
       let a = 0;
       let l = 0;
       for (let d = 1; d <= dim; d += 1) {
-        const s = dayMap.get(d);
-        if (s === "Present") {
-          statusByDay.push("P");
-          p += 1;
-        } else if (s === "Absent") {
-          statusByDay.push("A");
-          a += 1;
-        } else if (s === "Leave") {
-          statusByDay.push("L");
-          l += 1;
-        } else {
-          statusByDay.push("");
-        }
-        // Effective shift for this day: override if present, else the default.
-        shiftByDay.push(ovrMap.get(d) ?? emp.shift);
+        const cell = dayMap.get(d);
+        const sym = cell?.sym ?? "";
+        statusByDay.push(sym);
+        if (sym === "P") p += 1;
+        else if (sym === "A") a += 1;
+        else if (sym === "L") l += 1;
+        // Column D vs N follows the shift actually worked that day.
+        shiftByDay.push((cell?.ws ?? emp.shift) === "night" ? "night" : "day");
       }
       const allowed = resolveAllowedLeaves(
         emp.contract_id ? contractById.get(emp.contract_id) : null,
@@ -1129,8 +845,6 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
             </button>
           </div>
         )}
-
-        {mainTab === "attendance" && (<>
 
         {/* Metrics row OR per-employee calendar */}
         {!viewEmployee ? (
@@ -1281,6 +995,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                 ref={dateInputRef}
                 type="date"
                 value={date}
+                max={today()}
                 onChange={(e) => setDate(e.target.value)}
                 className="pl-10 pr-3 py-2 border border-border rounded-md text-sm bg-input-background focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
               />
@@ -1651,119 +1366,6 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
           </div>
         </div>
 
-        </>)}
-
-        {mainTab === "shift_override" && (
-          <div className="space-y-4">
-            {/* Filters */}
-            <div className="bg-white rounded-lg border border-slate-200 p-4 flex flex-wrap gap-4 items-end">
-              <div>
-                <label className="block text-sm text-slate-700 mb-2">Date</label>
-                <input
-                  type="date"
-                  value={overrideDate}
-                  onChange={(e) => setOverrideDate(e.target.value)}
-                  className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-slate-700 mb-2">Base Shift</label>
-                <ThemedSelect
-                  value={overrideShiftFilter}
-                  onChange={(e) => setOverrideShiftFilter(e.target.value as typeof overrideShiftFilter)}
-                  className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                >
-                  <option value="all">All Shifts</option>
-                  <option value="day">Day</option>
-                  <option value="night">Night</option>
-                </ThemedSelect>
-              </div>
-              <div className="flex-1 min-w-[180px]">
-                <label className="block text-sm text-slate-700 mb-2">Search Employee</label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />
-                  <input
-                    type="text"
-                    placeholder="Name or ID…"
-                    value={overrideSearch}
-                    onChange={(e) => setOverrideSearch(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Override table */}
-            <div className="bg-white rounded-lg border border-slate-200">
-              <div className="p-4 border-b border-slate-200">
-                <h3 className="text-base text-slate-900">Shift Overrides — {overrideDate}</h3>
-                <p className="text-xs text-slate-500 mt-1">
-                  Toggle a guard's shift for this day only. Attendance will be marked against the working shift.
-                </p>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-slate-200">
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Employee</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Base Shift</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Working Shift</th>
-                      <th className="text-right px-6 py-3 text-sm text-slate-500">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200">
-                    {filteredOverrideEmployees.length === 0 && (
-                      <tr>
-                        <td colSpan={4} className="px-6 py-10 text-center text-slate-500 text-sm">
-                          No guards found.
-                        </td>
-                      </tr>
-                    )}
-                    {filteredOverrideEmployees.map((emp) => {
-                      const overrideShift = overrides.get(emp.id);
-                      const workingShift = overrideShift ?? emp.shift;
-                      const isSaving = overrideSaving.has(emp.id);
-                      return (
-                        <tr key={emp.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-6 py-4">
-                            <p className="text-sm text-slate-900">{emp.full_name}</p>
-                            <p className="text-xs text-slate-500 font-mono">{emp.display_code}</p>
-                          </td>
-                          <td className="px-6 py-4">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs ${emp.shift === "day" ? "bg-amber-50 text-amber-700" : "bg-indigo-50 text-indigo-700"}`}>
-                              {emp.shift === "day" ? "Day" : "Night"}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4">
-                            <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs ${workingShift === "day" ? "bg-amber-50 text-amber-700" : "bg-indigo-50 text-indigo-700"}`}>
-                              {workingShift === "day" ? "Day" : "Night"}
-                              {overrideShift && <span className="text-slate-500">(override)</span>}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 text-right">
-                            <Button
-                              variant={overrideShift ? "danger" : "secondary"}
-                              size="sm"
-                              disabled={isSaving}
-                              onClick={() => toggleShiftOverride(emp)}
-                            >
-                              {isSaving
-                                ? "Saving…"
-                                : overrideShift
-                                ? "Revert"
-                                : `Switch to ${emp.shift === "day" ? "Night" : "Day"}`}
-                            </Button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
       </div>
 
       <Modal
@@ -1846,338 +1448,13 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         )}
       </Modal>
 
-      <Modal
-        isOpen={isBulkOpen}
-        onClose={() => setIsBulkOpen(false)}
-        title="Bulk Mark Attendance"
-        size="lg"
-      >
-        <div className="space-y-4">
-          {/* Filters */}
-          {!bulkEmployee && (
-            <div className="grid grid-cols-2 gap-2">
-              {!relieversOnly && (
-                <ThemedSelect
-                  value={bulkCategoryFilter}
-                  onChange={(e) => { setBulkCategoryFilter(e.target.value as typeof bulkCategoryFilter); setBulkEmployeeId(""); }}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-                >
-                  <option value="all">All Categories</option>
-                  <option value="client">Client Guards</option>
-                  <option value="office_staff">Office Staff</option>
-                  <option value="reliever">Relievers</option>
-                </ThemedSelect>
-              )}
-              <ThemedSelect
-                value={bulkShiftFilter}
-                onChange={(e) => { setBulkShiftFilter(e.target.value as typeof bulkShiftFilter); setBulkEmployeeId(""); }}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-              >
-                <option value="all">All Shifts</option>
-                <option value="day">Day</option>
-                <option value="night">Night</option>
-              </ThemedSelect>
-              <ClientFilterSelect
-                clients={clients}
-                value={bulkClientFilter}
-                onChange={(v) => { setBulkClientFilter(v); setBulkEmployeeId(""); }}
-                allValue="all"
-                className="w-full"
-                buttonClassName="w-full"
-              />
-              <ThemedSelect
-                value={bulkLocationFilter}
-                onChange={(e) => { setBulkLocationFilter(e.target.value); setBulkEmployeeId(""); }}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-              >
-                <option value="all">All Locations</option>
-                {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-              </ThemedSelect>
-              <div className="col-span-2">
-                <ThemedSelect
-                  value={bulkBranchFilter}
-                  onChange={(e) => { setBulkBranchFilter(e.target.value); setBulkEmployeeId(""); }}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-                >
-                  <option value="all">All Branches</option>
-                  {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-                </ThemedSelect>
-              </div>
-            </div>
-          )}
-
-          {/* Employee picker */}
-          <div>
-            <label className="block text-xs uppercase tracking-wider text-slate-500 mb-2">
-              Employee
-            </label>
-            {bulkEmployee ? (
-              <div className="flex items-center justify-between gap-3 p-3 border border-slate-200 rounded-md bg-slate-50">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-slate-900 truncate">{bulkEmployee.full_name}</span>
-                    <span
-                      className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border capitalize ${
-                        bulkEmployee.shift === "day"
-                          ? "bg-warning-50 text-warning-700 border-warning-200"
-                          : "bg-info-50 text-info-700 border-info-200"
-                      }`}
-                      title="Guard's default shift"
-                    >
-                      {bulkEmployee.shift} shift
-                    </span>
-                  </div>
-                  <div className="text-xs text-slate-500 font-mono">
-                    {bulkEmployee.display_code}
-                    {bulkEmployee.client_name && ` · ${bulkEmployee.client_name}`}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setBulkEmployeeId("");
-                    setBulkSelected(new Set());
-                  }}
-                  className="text-xs text-slate-500 hover:text-slate-900 underline"
-                >
-                  Change
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />
-                  <input
-                    autoFocus
-                    type="text"
-                    value={bulkEmpSearch}
-                    onChange={(e) => setBulkEmpSearch(e.target.value)}
-                    placeholder="Search name, code or client…"
-                    className="w-full pl-10 pr-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
-                  />
-                </div>
-                <div className="max-h-44 overflow-y-auto border border-slate-200 rounded-md">
-                  {bulkEmployeeOptions.length === 0 ? (
-                    <div className="px-3 py-2 text-xs text-slate-500">No matches.</div>
-                  ) : (
-                    bulkEmployeeOptions.map((e) => (
-                      <button
-                        type="button"
-                        key={e.id}
-                        onClick={() => setBulkEmployeeId(e.id)}
-                        className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 border-b border-slate-100 last:border-b-0"
-                      >
-                        <div className="text-slate-900">{e.full_name}</div>
-                        <div className="text-xs text-slate-500 font-mono">
-                          {e.display_code}
-                          {e.client_name && ` · ${e.client_name}`}
-                        </div>
-                      </button>
-                    ))
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {bulkEmployee && (
-            <>
-              {/* Month nav */}
-              <div className="flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={() => shiftBulkMonth(-1)}
-                  className="p-2 rounded hover:bg-slate-100 text-slate-700"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                <div className="text-sm text-slate-900">
-                  {new Date(`${bulkMonth}-01T00:00:00`).toLocaleDateString(undefined, {
-                    month: "long",
-                    year: "numeric",
-                  })}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => shiftBulkMonth(1)}
-                  className="p-2 rounded hover:bg-slate-100 text-slate-700"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-
-              {/* Selection helpers */}
-              <div className="flex flex-wrap gap-2 text-xs">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const all = new Set<string>();
-                    for (const c of bulkCalendarCells) {
-                      if (c.date) all.add(c.date);
-                    }
-                    setBulkSelected(all);
-                  }}
-                  className="px-2 py-1 rounded border border-slate-200 text-slate-700 hover:bg-slate-50"
-                >
-                  Select month
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const wk = new Set<string>();
-                    for (const c of bulkCalendarCells) {
-                      if (!c.date) continue;
-                      const d = new Date(`${c.date}T00:00:00`).getDay();
-                      if (d !== 0 && d !== 6) wk.add(c.date);
-                    }
-                    setBulkSelected(wk);
-                  }}
-                  className="px-2 py-1 rounded border border-slate-200 text-slate-700 hover:bg-slate-50"
-                >
-                  Weekdays only
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setBulkSelected(new Set())}
-                  className="px-2 py-1 rounded border border-slate-200 text-slate-700 hover:bg-slate-50"
-                >
-                  Clear selection
-                </button>
-                <span className="ml-auto text-slate-500 self-center">
-                  {bulkSelected.size} day{bulkSelected.size === 1 ? "" : "s"} selected
-                </span>
-              </div>
-
-              {/* Calendar grid */}
-              <div
-                className="select-none"
-                onMouseUp={endBulkDrag}
-                onMouseLeave={endBulkDrag}
-              >
-                <div className="grid grid-cols-7 gap-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground mb-1.5">
-                  {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
-                    <div key={d} className="text-center py-1">{d}</div>
-                  ))}
-                </div>
-                {bulkLoading ? (
-                  <div className="flex items-center gap-2 text-muted-foreground py-6">
-                    <Loader2 className="w-4 h-4 animate-spin" /> Loading…
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-7 gap-1.5">
-                    {bulkCalendarCells.map((c, i) => {
-                      if (!c.date) {
-                        return <div key={i} className="h-14 rounded-lg bg-muted/40" />;
-                      }
-                      const status = bulkExisting.get(c.date);
-                      const selected = bulkSelected.has(c.date);
-                      // Effective shift for this day: an override if present, else
-                      // the guard's default. Flag it only when it differs from the
-                      // default so the eye is drawn to the exceptions.
-                      const dayShift = bulkShiftOverrides.get(c.date) ?? bulkEmployee?.shift ?? "day";
-                      const isOverridden = bulkShiftOverrides.has(c.date);
-                      const statusClass =
-                        status === "Present"
-                          ? "bg-success-50 text-success-700 dark:text-success-500 border-success-200"
-                          : status === "Absent"
-                            ? "bg-danger-50 text-danger-700 dark:text-danger-500 border-danger-200"
-                            : status === "Leave"
-                              ? "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200"
-                              : "bg-card text-foreground border-border hover:border-brand-500/50";
-                      const ring = selected ? "ring-2 ring-brand-500 ring-offset-2 ring-offset-card border-brand-500" : "";
-                      return (
-                        <button
-                          key={c.date}
-                          type="button"
-                          onMouseDown={(e) => {
-                            e.preventDefault();
-                            startBulkDrag(c.date!);
-                          }}
-                          onMouseEnter={() => extendBulkDrag(c.date!)}
-                          className={`h-14 rounded-lg border p-1.5 flex flex-col justify-between text-left transition-all ${statusClass} ${ring}`}
-                          title={`${status ? `Currently: ${status}` : "Unmarked"} · ${dayShift} shift${isOverridden ? " (override)" : ""}`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-medium tabular-nums">{c.day}</span>
-                            {isOverridden && (
-                              <span
-                                className={`text-[8px] font-bold uppercase leading-none px-1 py-0.5 rounded ${
-                                  dayShift === "night" ? "bg-info-100 text-info-700" : "bg-warning-100 text-warning-700"
-                                }`}
-                              >
-                                {dayShift[0]}
-                              </span>
-                            )}
-                          </div>
-                          {status && (
-                            <div className="text-[9px] font-bold uppercase tracking-wider self-end">
-                              {status[0]}
-                            </div>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-                <p className="text-[11px] text-muted-foreground mt-2.5">
-                  Tap a date to toggle, or press and drag to select a whole range (everything between the
-                  start and where you drag fills in automatically). P = Present, A = Absent, L = Leave.
-                </p>
-              </div>
-
-              {bulkError && (
-                <div className="text-sm text-danger-600 bg-danger-50 border border-danger-200 px-3 py-2 rounded">
-                  {bulkError}
-                </div>
-              )}
-
-              {/* Phase 6 §8.4: the "Mark as Night/Day Shift" checkbox is removed —
-                  shift changes are row actions (swap) on the Attendance board. */}
-
-              {/* Action buttons */}
-              <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => applyBulkStatus("Present")}
-                  disabled={bulkSubmitting || bulkSelected.size === 0}
-                  className="flex-1 min-w-[120px] px-3 py-2 rounded-md text-sm bg-success-600 text-[#fff] hover:bg-success-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Mark Present
-                </button>
-                <button
-                  type="button"
-                  onClick={() => applyBulkStatus("Absent")}
-                  disabled={bulkSubmitting || bulkSelected.size === 0}
-                  className="flex-1 min-w-[120px] px-3 py-2 rounded-md text-sm bg-danger-600 text-[#fff] hover:bg-danger-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Mark Absent
-                </button>
-                <button
-                  type="button"
-                  onClick={() => applyBulkStatus("Leave")}
-                  disabled={bulkSubmitting || bulkSelected.size === 0}
-                  className="flex-1 min-w-[120px] px-3 py-2 rounded-md text-sm bg-warning-500 text-[#fff] hover:bg-warning-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Mark Leave
-                </button>
-                <button
-                  type="button"
-                  onClick={clearBulkSelected}
-                  disabled={bulkSubmitting || bulkSelected.size === 0}
-                  className="px-3 py-2 rounded-md text-sm border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Clear marks
-                </button>
-                {bulkSubmitting && (
-                  <span className="self-center text-xs text-slate-500 flex items-center gap-1">
-                    <Loader2 className="w-3 h-3 animate-spin" /> Saving…
-                  </span>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-      </Modal>
+      {/* Bulk Mark by Employee — the shared calendar (same UI/logic as the board). */}
+      {isBulkOpen && (
+        <BulkMarkByEmployeeModal
+          onClose={() => setIsBulkOpen(false)}
+          onSaved={async () => { await loadRecordsForDate(date); }}
+        />
+      )}
 
       {/* Sprint 3 — half-day / late / OT editor for a Present employee */}
       <Modal

@@ -23,7 +23,7 @@ export type CustodianOption = {
  * currently hold. Used to render the "who received / who paid" dropdowns.
  */
 export async function loadCustodianOptions(companyId: string): Promise<CustodianOption[]> {
-  const [{ data: staff }, { data: locs }, { data: tx }, { data: cashPays }, { data: cashExps }] =
+  const [{ data: staff }, { data: locs }, { data: tx }, { data: cashPays }, { data: cashExps }, { data: cashCheques }, { data: bankWd }] =
     await Promise.all([
       supabase.from("employees").select("id, full_name").eq("category", "office_staff").order("full_name"),
       supabase
@@ -34,6 +34,10 @@ export async function loadCustodianOptions(companyId: string): Promise<Custodian
       supabase.from("custody_transfers").select("from_location_id, to_location_id, amount").eq("company_id", companyId),
       supabase.from("invoice_payments").select("amount, custodian_location_id").eq("payment_mode", "Cash").not("custodian_location_id", "is", null),
       supabase.from("expenses").select("amount, custodian_location_id").not("custodian_location_id", "is", null),
+      // Cleared cash cheques handed to a custodian — cash they now physically hold.
+      supabase.from("cheques").select("amount, custodian_location_id").eq("cheque_type", "cash").eq("status", "cleared").not("custodian_location_id", "is", null),
+      // Bank→custodian withdrawals (reference_id = custodian cash_location).
+      supabase.from("bank_transactions").select("cash_delta, reference_id").eq("kind", "withdraw_to_cash").not("reference_id", "is", null),
     ]);
 
   // Most-recent active custodian location per employee.
@@ -57,6 +61,12 @@ export async function loadCustodianOptions(companyId: string): Promise<Custodian
   }
   for (const e of (cashExps ?? []) as any[]) {
     if (e.custodian_location_id && heldByLoc.has(e.custodian_location_id)) heldByLoc.set(e.custodian_location_id, (heldByLoc.get(e.custodian_location_id) ?? 0) - Number(e.amount ?? 0));
+  }
+  for (const c of (cashCheques ?? []) as any[]) {
+    if (c.custodian_location_id && heldByLoc.has(c.custodian_location_id)) heldByLoc.set(c.custodian_location_id, (heldByLoc.get(c.custodian_location_id) ?? 0) + Number(c.amount ?? 0));
+  }
+  for (const w of (bankWd ?? []) as any[]) {
+    if (w.reference_id && heldByLoc.has(w.reference_id)) heldByLoc.set(w.reference_id, (heldByLoc.get(w.reference_id) ?? 0) + Number(w.cash_delta ?? 0));
   }
 
   return ((staff ?? []) as any[]).map((s) => {
