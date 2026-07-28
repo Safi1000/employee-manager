@@ -42,10 +42,14 @@ type Draft = {
   periodEnd: string;
   lines: DraftLine[];
   // Variable clients only: a fully-manual grid (editable headers, arbitrary
-  // columns/rows, hand-typed cells) + a hand-typed total. No auto-calculation.
+  // columns/rows, hand-typed cells). The LAST column is always "Amount" and the
+  // Total Due is the auto-sum of that column (no longer hand-typed).
   variableColumns: string[];
   variableRows: string[][];
-  variableTotal: string;
+  variableTotal: string; // legacy; retained for back-compat, no longer an input
+  // Manual, optional withholding tax (BOTH groups). When > 0 it is deducted from
+  // the total. Always hand-typed — never sourced from the tax profile.
+  withholdingAmount: string;
   taxes: DraftTax[];
   notes: string;
   remitIndex: number; // index into client's remit_accounts
@@ -65,6 +69,15 @@ type Row =
   | { kind: "draft"; key: string; client: Client; contract: Contract };
 
 const num = (s: string) => Number(s) || 0;
+
+// Variable grid: the final column is always "Amount" (locked). It's the money
+// column the Total Due is summed from. Normalise any column set so exactly one
+// "Amount" exists and it is last.
+const AMOUNT_COL = "Amount";
+const withAmountLast = (cols: string[]): string[] => {
+  const rest = cols.filter((c) => c.trim().toLowerCase() !== "amount");
+  return [...rest, AMOUNT_COL];
+};
 const monthKey = () => new Date().toISOString().slice(0, 7);
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -215,9 +228,9 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
       // Variable client → seed the manual grid from the client's saved column
       // STRUCTURE (Change 5), values blank. One empty row to start.
       if ((client.invoice_group ?? "FIXED") === "VARIABLE") {
-        const columns = (client.variable_columns && client.variable_columns.length > 0)
+        const columns = withAmountLast((client.variable_columns && client.variable_columns.length > 0)
           ? client.variable_columns
-          : DEFAULT_VARIABLE_COLUMNS;
+          : DEFAULT_VARIABLE_COLUMNS);
         const number = suggestNumber(client, taken);
         taken.add(number);
         return {
@@ -231,6 +244,7 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
           variableColumns: columns,
           variableRows: [columns.map(() => "")],
           variableTotal: "",
+          withholdingAmount: "",
           taxes: [],
           notes: "",
           remitIndex: Math.max(0, (client.remit_accounts ?? []).findIndex((r) => r.is_default)),
@@ -286,6 +300,7 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
         variableColumns: [],
         variableRows: [],
         variableTotal: "",
+        withholdingAmount: "",
         taxes,
         notes: "",
         remitIndex,
@@ -371,19 +386,31 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
     return out.sort((a, b) => (invoiceMonth(a.inv) < invoiceMonth(b.inv) ? -1 : 1));
   }, [invoices, contractById, clients, addendums]);
 
+  // Sum of the Amount column (the locked last column) across all grid rows.
+  const variableAmountTotal = (d: Draft) => {
+    const amtCol = d.variableColumns.length - 1;
+    if (amtCol < 0) return 0;
+    return d.variableRows.reduce((s, row) => s + num(row[amtCol] ?? ""), 0);
+  };
+
   // Derived figures for a draft.
   const figures = (d: Draft) => {
-    // Variable clients: EVERYTHING is manual — the Total Due is the hand-typed
-    // value; no subtotal/tax/auto-sum is computed.
+    // Manual withholding (both groups): optional, hand-typed, deducted from the total.
+    const manualWithholding = num(d.withholdingAmount);
+    // Variable clients: the Total Due is the auto-sum of the Amount column, less any
+    // manual withholding. No other tax/subtotal is computed.
     if ((d.client.invoice_group ?? "FIXED") === "VARIABLE") {
-      const total = num(d.variableTotal);
-      return { subtotal: total, computed: [] as ReturnType<typeof computeInvoiceTaxes>["computed"], addedTotal: 0, withheldTotal: 0, lineTotal: total, totalDue: total, overridden: false };
+      const gross = variableAmountTotal(d);
+      const totalDue = gross - manualWithholding;
+      return { subtotal: gross, computed: [] as ReturnType<typeof computeInvoiceTaxes>["computed"], addedTotal: 0, withheldTotal: manualWithholding, lineTotal: gross, totalDue, overridden: false };
     }
     const subtotal = d.lines.reduce((s, l) => s + num(l.quantity) * num(l.unit_rate), 0);
-    const { computed, addedTotal, withheldTotal } = computeInvoiceTaxes(
+    const { computed, addedTotal, withheldTotal: taxWithheld } = computeInvoiceTaxes(
       subtotal,
       d.taxes.map((t) => ({ name: t.name, rate: num(t.rate), base: t.base, direction: t.direction, component: t.component ?? null })),
     );
+    // Manual withholding adds to any tax-profile withholding.
+    const withheldTotal = taxWithheld + manualWithholding;
     const lineTotal = subtotal + addedTotal - withheldTotal + d.previousBalance;
     const overridden = d.overrideTotal.trim() !== "" && num(d.overrideTotal) !== lineTotal;
     const totalDue = overridden ? num(d.overrideTotal) : lineTotal;
@@ -394,21 +421,27 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
     setDrafts((prev) => (prev[contractId] ? { ...prev, [contractId]: { ...prev[contractId], ...patch } } : prev));
 
   // ── Variable manual-grid editors (no calculation; pure structure/value edits) ──
-  const setVarHeader = (id: string, c: number, val: string) =>
-    patchDraft(id, { variableColumns: drafts[id]?.variableColumns.map((h, i) => (i === c ? val : h)) });
+  const setVarHeader = (id: string, c: number, val: string) => {
+    const d = drafts[id];
+    if (!d || c === d.variableColumns.length - 1) return; // "Amount" (last) is locked
+    patchDraft(id, { variableColumns: d.variableColumns.map((h, i) => (i === c ? val : h)) });
+  };
   const setVarCell = (id: string, r: number, c: number, val: string) =>
     patchDraft(id, { variableRows: drafts[id]?.variableRows.map((row, ri) => (ri === r ? row.map((cell, ci) => (ci === c ? val : cell)) : row)) });
   const addVarColumn = (id: string) => {
     const d = drafts[id];
     if (!d) return;
+    // Insert the new column BEFORE the locked "Amount" column so it stays last.
+    const at = Math.max(0, d.variableColumns.length - 1);
     patchDraft(id, {
-      variableColumns: [...d.variableColumns, `Column ${d.variableColumns.length + 1}`],
-      variableRows: d.variableRows.map((row) => [...row, ""]),
+      variableColumns: [...d.variableColumns.slice(0, at), `Column ${d.variableColumns.length}`, ...d.variableColumns.slice(at)],
+      variableRows: d.variableRows.map((row) => [...row.slice(0, at), "", ...row.slice(at)]),
     });
   };
   const removeVarColumn = (id: string, c: number) => {
     const d = drafts[id];
     if (!d || d.variableColumns.length <= 1) return;
+    if (c === d.variableColumns.length - 1) return; // cannot remove the "Amount" column
     patchDraft(id, {
       variableColumns: d.variableColumns.filter((_, i) => i !== c),
       variableRows: d.variableRows.map((row) => row.filter((_, i) => i !== c)),
@@ -439,9 +472,10 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
     const f = figures(d);
     const isVariable = (d.client.invoice_group ?? "FIXED") === "VARIABLE";
     const remit: RemitAccount | null = (d.client.remit_accounts ?? [])[d.remitIndex] ?? null;
-    // Variable: the manual grid is the invoice's line data; total is hand-typed.
+    // Variable: the manual grid is the invoice's line data; total auto-sums the
+    // fixed Amount column (gross, before withholding).
     const variableGrid: VariableGrid | null = isVariable
-      ? { columns: d.variableColumns, rows: d.variableRows, total: num(d.variableTotal) }
+      ? { columns: d.variableColumns, rows: d.variableRows, total: variableAmountTotal(d) }
       : null;
     const invoiceAmount = f.subtotal + f.addedTotal; // current-period gross
     const insertRow = {
@@ -802,26 +836,38 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50">
-                      {d.variableColumns.map((h, ci) => (
-                        <th key={ci} className="px-1 py-1 align-top">
-                          <div className="flex items-center gap-1">
-                            <input
-                              value={h}
-                              onChange={(e) => setVarHeader(d.contractId, ci, e.target.value)}
-                              placeholder="Column name"
-                              className="w-full min-w-[90px] px-2 py-1 border border-slate-200 rounded text-xs font-medium"
-                            />
-                            <button
-                              onClick={() => removeVarColumn(d.contractId, ci)}
-                              disabled={d.variableColumns.length <= 1}
-                              title="Remove column"
-                              className="text-danger-600 hover:bg-danger-50 rounded p-0.5 disabled:opacity-30"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          </div>
-                        </th>
-                      ))}
+                      {d.variableColumns.map((h, ci) => {
+                        const isAmount = ci === d.variableColumns.length - 1;
+                        // The final "Amount" column is fixed: a static header, no
+                        // rename, no remove — it's the money column that's summed.
+                        if (isAmount) {
+                          return (
+                            <th key={ci} className="px-2 py-1 align-top text-right text-xs font-semibold text-slate-700 min-w-[110px]" title="Fixed column — the Total Due is the sum of this column">
+                              {AMOUNT_COL}
+                            </th>
+                          );
+                        }
+                        return (
+                          <th key={ci} className="px-1 py-1 align-top">
+                            <div className="flex items-center gap-1">
+                              <input
+                                value={h}
+                                onChange={(e) => setVarHeader(d.contractId, ci, e.target.value)}
+                                placeholder="Column name"
+                                className="w-full min-w-[90px] px-2 py-1 border border-slate-200 rounded text-xs font-medium"
+                              />
+                              <button
+                                onClick={() => removeVarColumn(d.contractId, ci)}
+                                disabled={d.variableColumns.length <= 2}
+                                title="Remove column"
+                                className="text-danger-600 hover:bg-danger-50 rounded p-0.5 disabled:opacity-30"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </th>
+                        );
+                      })}
                       <th className="w-9 px-1 align-top">
                         <button onClick={() => addVarColumn(d.contractId)} title="Add column" className="text-brand-600 hover:bg-brand-50 rounded p-1">
                           <Plus className="w-3.5 h-3.5" />
@@ -832,15 +878,20 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
                   <tbody className="divide-y divide-slate-100">
                     {d.variableRows.map((row, ri) => (
                       <tr key={ri}>
-                        {row.map((cell, ci) => (
-                          <td key={ci} className="px-1 py-1">
-                            <input
-                              value={cell}
-                              onChange={(e) => setVarCell(d.contractId, ri, ci, e.target.value)}
-                              className="w-full px-2 py-1 border border-slate-200 rounded text-sm"
-                            />
-                          </td>
-                        ))}
+                        {row.map((cell, ci) => {
+                          const isAmount = ci === d.variableColumns.length - 1;
+                          return (
+                            <td key={ci} className="px-1 py-1">
+                              <input
+                                value={cell}
+                                inputMode={isAmount ? "decimal" : undefined}
+                                onChange={(e) => setVarCell(d.contractId, ri, ci, e.target.value)}
+                                placeholder={isAmount ? "0" : undefined}
+                                className={`w-full px-2 py-1 border border-slate-200 rounded text-sm ${isAmount ? "text-right tabular-nums" : ""}`}
+                              />
+                            </td>
+                          );
+                        })}
                         <td className="px-1 py-1 text-center">
                           <button onClick={() => removeVarRow(d.contractId, ri)} className="text-danger-600 hover:bg-danger-50 rounded p-1">
                             <Trash2 className="w-3.5 h-3.5" />
@@ -857,7 +908,7 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
                   <button onClick={() => addVarColumn(d.contractId)} className="text-xs text-brand-600 hover:text-brand-700 inline-flex items-center gap-1">
                     <Plus className="w-3.5 h-3.5" /> Add column
                   </button>
-                  <span className="text-[11px] text-slate-400">All values (including totals) are typed by hand — nothing is calculated.</span>
+                  <span className="text-[11px] text-slate-400">Cells are typed by hand; the Total Due auto-sums the fixed <span className="font-medium">Amount</span> column.</span>
                 </div>
               </div>
             ) : (
@@ -934,16 +985,21 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
               </div>
               {isVariable ? (
                 <div className="text-sm space-y-1">
-                  <label className="block text-xs text-slate-500 mb-1">Total Due (typed manually)</label>
-                  <input
-                    type="number"
-                    value={d.variableTotal}
-                    onChange={(e) => patchDraft(d.contractId, { variableTotal: e.target.value })}
-                    placeholder="0"
-                    className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm text-right font-semibold"
-                  />
+                  <Row label="Amount (sum of column)" value={variableAmountTotal(d)} />
+                  {/* Manual, optional withholding — deducted from the total. */}
+                  <div className="flex items-center justify-between gap-2 pt-0.5">
+                    <label className="text-xs text-slate-500">Withholding tax (optional)</label>
+                    <input
+                      type="number"
+                      value={d.withholdingAmount}
+                      onChange={(e) => patchDraft(d.contractId, { withholdingAmount: e.target.value })}
+                      placeholder="0"
+                      className="w-28 px-2 py-1 border border-slate-200 rounded text-sm text-right tabular-nums"
+                    />
+                  </div>
+                  {num(d.withholdingAmount) > 0 && <Row label="Less: withholding" value={-num(d.withholdingAmount)} muted />}
                   <div className="flex items-center justify-between border-t border-slate-200 pt-1 font-semibold text-slate-900">
-                    <span>Total Due</span>
+                    <span>Total Due{num(d.withholdingAmount) > 0 ? " (net of withholding)" : ""}</span>
                     <span className="tabular-nums">PKR {f.totalDue.toLocaleString()}</span>
                   </div>
                   <div className="text-[11px] italic text-slate-500">{amountInWords(f.totalDue)}</div>
@@ -954,6 +1010,18 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
                   {f.computed.map((t, ti) => (
                     <Row key={ti} label={`${t.name} (${t.rate}%)`} value={t.direction === "WITHHELD" ? -t.amount : t.amount} muted />
                   ))}
+                  {/* Manual, optional withholding — deducted from the total. */}
+                  <div className="flex items-center justify-between gap-2 pt-0.5">
+                    <label className="text-xs text-slate-500">Withholding tax (optional)</label>
+                    <input
+                      type="number"
+                      value={d.withholdingAmount}
+                      onChange={(e) => patchDraft(d.contractId, { withholdingAmount: e.target.value })}
+                      placeholder="0"
+                      className="w-28 px-2 py-1 border border-slate-200 rounded text-sm text-right tabular-nums"
+                    />
+                  </div>
+                  {num(d.withholdingAmount) > 0 && <Row label="Less: withholding (manual)" value={-num(d.withholdingAmount)} muted />}
                   {d.previousBalance !== 0 && <Row label="Previous balance" value={d.previousBalance} muted />}
                   <div className="flex items-center justify-between border-t border-slate-200 pt-1 font-semibold text-slate-900">
                     <span>Total Due{f.withheldTotal > 0 ? " (net of withholding)" : ""}</span>
