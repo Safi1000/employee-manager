@@ -814,6 +814,8 @@ function BulkMarkByEmployeeModal({ onClose, onSaved }: {
   const [employees, setEmployees] = useState<BulkEmp[]>([]);
   const [loadingEmps, setLoadingEmps] = useState(true);
   const [search, setSearch] = useState("");
+  // Client / group filter — mirrors the Relievers-board filter above.
+  const [clientFilter, setClientFilter] = useState<string>("all");
   const [empId, setEmpId] = useState("");
   const [month, setMonth] = useState(today().slice(0, 7));
   const [existing, setExisting] = useState<Map<string, Status>>(new Map());
@@ -855,9 +857,25 @@ function BulkMarkByEmployeeModal({ onClose, onSaved }: {
     })();
   }, []);
 
+  // Client / group options for the filter: each distinct client, plus non-client
+  // categories (office staff, …) as "cat:<category>" — same grouping as the board.
+  const clientOptions = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const e of employees) {
+      if (e.client_id) m.set(e.client_id, e.client_name ?? "—");
+      else m.set(`cat:${e.category}`, catLabel(e.category));
+    }
+    return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [employees]);
+
   const options = useMemo(() => {
     const q = search.trim().toLowerCase();
     let pool = employees;
+    if (clientFilter !== "all") {
+      pool = clientFilter.startsWith("cat:")
+        ? pool.filter((e) => !e.client_id && `cat:${e.category}` === clientFilter)
+        : pool.filter((e) => e.client_id === clientFilter);
+    }
     if (q) pool = pool.filter((e) =>
       e.full_name.toLowerCase().includes(q) ||
       e.employee_code.toLowerCase().includes(q) ||
@@ -865,7 +883,7 @@ function BulkMarkByEmployeeModal({ onClose, onSaved }: {
       guardDisplayCode(e, e.client_prefix).toLowerCase().includes(q) ||
       (e.client_name?.toLowerCase().includes(q) ?? false));
     return pool.slice(0, 100);
-  }, [employees, search]);
+  }, [employees, search, clientFilter]);
 
   const loadMonth = async (employeeId: string, monthKey: string) => {
     setLoadingMonth(true);
@@ -1045,10 +1063,20 @@ function BulkMarkByEmployeeModal({ onClose, onSaved }: {
             </div>
           ) : (
             <div className="space-y-2">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />
-                <input autoFocus type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, code or client…"
-                  className="w-full pl-10 pr-3 py-2 border border-slate-200 rounded-md text-sm" />
+              <div className="flex flex-col sm:flex-row gap-2">
+                <ThemedSelect
+                  value={clientFilter}
+                  onChange={(e) => setClientFilter(e.target.value)}
+                  className="px-3 py-2 border border-slate-200 rounded-md text-sm sm:w-56"
+                >
+                  <option value="all">All groups</option>
+                  {clientOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+                </ThemedSelect>
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />
+                  <input autoFocus type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={clientFilter === "all" ? "Search name, code or client…" : "Search within this group…"}
+                    className="w-full pl-10 pr-3 py-2 border border-slate-200 rounded-md text-sm" />
+                </div>
               </div>
               <div className="max-h-44 overflow-y-auto border border-slate-200 rounded-md">
                 {loadingEmps ? (
