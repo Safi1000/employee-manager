@@ -1182,9 +1182,10 @@ export default function EmployeeManagement() {
       fileName: "Employees.xlsx",
       sheetName: "Employees",
       title: "Employees",
-      headers: ["Employee ID", "Name", "Phone", "Location", "Branch", "Client / Category", "Shift", "Status"],
+      headers: ["Employee ID", "Permanent Code", "Name", "Phone", "Location", "Branch", "Client / Category", "Shift", "Status"],
       rows: sorted.map((e) => [
-        e.employee_code,
+        displayCodeFor(e),
+        e.guard_code ?? e.employee_code,
         e.full_name,
         e.phone ?? "",
         e.location_name ?? "",
@@ -1193,7 +1194,7 @@ export default function EmployeeManagement() {
         e.shift,
         statusLabel(e),
       ]),
-      columnWidths: [14, 24, 16, 18, 18, 20, 8, 10],
+      columnWidths: [14, 14, 24, 16, 18, 18, 20, 8, 10],
     });
   };
 

@@ -466,21 +466,27 @@ export type AttendanceEmployeeRow = {
 };
 
 export function exportAttendance(opts: {
-  monthLabel: string; // e.g. "MARCH 2026"
+  monthLabel: string; // e.g. "MARCH 2026" or a range label
   daysInMonth: number;
   clientLabel?: string;
   rows: AttendanceEmployeeRow[];
   fileName?: string;
+  // Optional explicit column labels (one per day). When omitted the columns are
+  // numbered 1..daysInMonth (single-month sheet). A date-range export passes the
+  // day-of-month of each date so the sheet can span a month boundary.
+  dayLabels?: (string | number)[];
 }) {
-  const { monthLabel, daysInMonth, clientLabel, rows } = opts;
+  const { monthLabel, clientLabel, rows } = opts;
+  const dayLabels = opts.dayLabels ?? Array.from({ length: opts.daysInMonth }, (_, i) => i + 1);
+  const daysInMonth = dayLabels.length;
   const headers1: any[] = ["Ser.", "Name", "Desg.", "Emp #"];
-  for (let d = 1; d <= daysInMonth; d += 1) {
-    headers1.push(d, ""); // each day spans D + N
+  for (let d = 0; d < daysInMonth; d += 1) {
+    headers1.push(dayLabels[d], ""); // each day spans D + N
   }
   headers1.push("Presents", "Absents", "Leaves", "Pay Days");
 
   const headers2: any[] = ["", "", "", ""];
-  for (let d = 1; d <= daysInMonth; d += 1) {
+  for (let d = 0; d < daysInMonth; d += 1) {
     headers2.push("D", "N");
   }
   headers2.push("", "", "", "");

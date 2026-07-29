@@ -876,7 +876,39 @@ async function exportClientMonth(client: ExportClient, date: string) {
   const monthStart = `${yStr}-${mStr}-01`;
   const dim = new Date(y, m, 0).getDate();
   const monthEnd = `${yStr}-${mStr}-${String(dim).padStart(2, "0")}`;
-  const monthLabel = new Date(y, m - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  return exportClientRange(client, monthStart, monthEnd);
+}
+
+// Enumerate every ISO date from start..end inclusive (both "YYYY-MM-DD").
+function enumerateDates(start: string, end: string): string[] {
+  const out: string[] = [];
+  const [sy, sm, sd] = start.split("-").map(Number);
+  const [ey, em, ed] = end.split("-").map(Number);
+  const cur = new Date(sy, sm - 1, sd);
+  const last = new Date(ey, em - 1, ed);
+  while (cur <= last) {
+    out.push(`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(cur.getDate()).padStart(2, "0")}`);
+    cur.setDate(cur.getDate() + 1);
+  }
+  return out;
+}
+
+// Client attendance sheet over an arbitrary [startDate, endDate] range. Same XLSX
+// format as the monthly export; columns are one-per-date (labelled by day-of-month
+// so the sheet can span a month boundary, e.g. 20 Jul → 10 Aug).
+async function exportClientRange(client: ExportClient, startDate: string, endDate: string) {
+  const dates = enumerateDates(startDate, endDate);
+  if (dates.length === 0) return 0;
+  const monthStart = startDate;
+  const monthEnd = endDate;
+  const dayIndex = new Map(dates.map((d, i) => [d, i]));
+  const fmtLong = (iso: string) => {
+    const [yy, mm, dd] = iso.split("-").map(Number);
+    return new Date(yy, mm - 1, dd).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  };
+  const monthLabel = startDate.slice(0, 7) === endDate.slice(0, 7)
+    ? new Date(Number(startDate.slice(0, 4)), Number(startDate.slice(5, 7)) - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" })
+    : `${fmtLong(startDate)} – ${fmtLong(endDate)}`;
 
   // The selected client's employees (real client_id, or the category for a
   // synthetic office-staff group). Relievers + archived excluded, mirroring
@@ -903,11 +935,14 @@ async function exportClientMonth(client: ExportClient, date: string) {
       .in("employee_id", empIds)
       .order("attendance_date", { ascending: true }) as any,
   );
+  // Keyed by column index within the range (not day-of-month, which would collide
+  // across a month boundary).
   const byEmp = new Map<string, Map<number, { st: Status; ws: string }>>();
   for (const r of records ?? []) {
-    const day = Number(String(r.attendance_date).slice(8, 10));
+    const idx = dayIndex.get(String(r.attendance_date).slice(0, 10));
+    if (idx === undefined) continue;
     if (!byEmp.has(r.employee_id)) byEmp.set(r.employee_id, new Map());
-    byEmp.get(r.employee_id)!.set(day, { st: normalizeStatus(r.status), ws: (r.worked_shift as string) ?? "day" });
+    byEmp.get(r.employee_id)!.set(idx, { st: normalizeStatus(r.status), ws: (r.worked_shift as string) ?? "day" });
   }
 
   // Allowed leaves for the pay-day tally (contract value, client fallback).
@@ -926,7 +961,7 @@ async function exportClientMonth(client: ExportClient, date: string) {
     const shiftByDay: ("day" | "night")[] = [];
     const defShift: "day" | "night" = emp.shift === "night" ? "night" : "day";
     let p = 0, a = 0, l = 0;
-    for (let d = 1; d <= dim; d += 1) {
+    for (let d = 0; d < dates.length; d += 1) {
       const cell = dayMap.get(d);
       const sym = cell ? EXPORT_SYMBOL[cell.st] : "";
       statusByDay.push(sym);
@@ -948,7 +983,8 @@ async function exportClientMonth(client: ExportClient, date: string) {
   });
 
   exportAttendance({
-    monthLabel, daysInMonth: dim, clientLabel: client.name, rows,
+    monthLabel, daysInMonth: dates.length, clientLabel: client.name, rows,
+    dayLabels: dates.map((d) => Number(d.slice(8, 10))),
     fileName: `Attendance ${client.name} ${monthLabel}.xlsx`,
   });
   return rows.length;
@@ -961,7 +997,11 @@ function ExportMenu({ rows, date, branding, client }: {
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [rangeMode, setRangeMode] = useState(false);
   const monthKey = date.slice(0, 7);
+  const monthStart = `${monthKey}-01`;
+  const [rangeStart, setRangeStart] = useState(monthStart);
+  const [rangeEnd, setRangeEnd] = useState(date);
   const prettyDate = new Date(`${date}T00:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
   const monthLabel = new Date(`${monthKey}-01T00:00:00`).toLocaleDateString(undefined, { month: "long", year: "numeric" });
 
@@ -979,14 +1019,30 @@ function ExportMenu({ rows, date, branding, client }: {
     }
   };
 
-  const Item = ({ icon: Icon, tint, title, subtitle, onClick, disabled }: {
+  const runRange = async () => {
+    if (!client) return;
+    if (rangeEnd < rangeStart) { alert("End date must be on or after the start date."); return; }
+    setOpen(false);
+    setRangeMode(false);
+    setBusy(true);
+    try {
+      const n = await exportClientRange(client, rangeStart, rangeEnd);
+      if (n === 0) alert(`No employees found for ${client.name}.`);
+    } catch (err: any) {
+      alert(`Export failed: ${err?.message ?? String(err)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const Item = ({ icon: Icon, tint, title, subtitle, onClick, disabled, keepOpen }: {
     icon: typeof FileText; tint: string; title: string; subtitle: string;
-    onClick: () => void; disabled?: boolean;
+    onClick: () => void; disabled?: boolean; keepOpen?: boolean;
   }) => (
     <button
       type="button"
       disabled={disabled}
-      onClick={() => { if (disabled) return; setOpen(false); onClick(); }}
+      onClick={() => { if (disabled) return; if (!keepOpen) setOpen(false); onClick(); }}
       className={`flex w-full items-start gap-3 px-3 py-2.5 text-left transition-colors ${disabled ? "cursor-not-allowed opacity-45" : "hover:bg-accent"}`}
     >
       <span className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${tint}`}>
@@ -1039,6 +1095,43 @@ function ExportMenu({ rows, date, branding, client }: {
               onClick={runMonthly}
               disabled={!client}
             />
+            <div className="my-1 border-t border-border" />
+            <div className="px-3 pt-1.5 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Custom date range
+            </div>
+            {!rangeMode ? (
+              <Item
+                icon={CalendarRange} tint="bg-amber-50 text-amber-600"
+                title="Pick a date range"
+                subtitle={client ? `${client.name} · Excel (.xlsx)` : "Pick a client in the filter first"}
+                onClick={() => setRangeMode(true)}
+                disabled={!client}
+                keepOpen
+              />
+            ) : (
+              <div className="px-3 py-2.5 space-y-2" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center gap-2">
+                  <label className="w-10 text-xs text-muted-foreground">From</label>
+                  <input
+                    type="date" value={rangeStart} max={rangeEnd}
+                    onChange={(e) => setRangeStart(e.target.value)}
+                    className="flex-1 rounded-md border border-border bg-background px-2 py-1 text-sm"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="w-10 text-xs text-muted-foreground">To</label>
+                  <input
+                    type="date" value={rangeEnd} min={rangeStart}
+                    onChange={(e) => setRangeEnd(e.target.value)}
+                    className="flex-1 rounded-md border border-border bg-background px-2 py-1 text-sm"
+                  />
+                </div>
+                <div className="flex justify-end gap-2 pt-0.5">
+                  <Button size="sm" variant="ghost" onClick={() => setRangeMode(false)}>Cancel</Button>
+                  <Button size="sm" onClick={runRange} disabled={!client}>Export</Button>
+                </div>
+              </div>
+            )}
           </div>
         </>
       )}

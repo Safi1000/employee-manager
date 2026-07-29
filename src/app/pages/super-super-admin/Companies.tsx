@@ -8,6 +8,16 @@ import { useAuth } from "../../lib/auth";
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
+// Derive a sensible prefix suggestion from a company name (editable). Uses word
+// initials ("Danyal Enterprises" -> "DE", "Guards & Guides" -> "GG"); pads a
+// single-word name from its own letters ("SecureCorp" -> "SEC").
+const suggestPrefix = (name: string): string => {
+  const words = name.split(/\s+/).filter((w) => /[A-Za-z]/.test(w));
+  if (words.length === 0) return "";
+  if (words.length === 1) return words[0].replace(/[^A-Za-z]/g, "").slice(0, 3).toUpperCase();
+  return words.map((w) => w.replace(/[^A-Za-z]/g, "")[0] ?? "").join("").slice(0, 4).toUpperCase();
+};
+
 const daysBetween = (a: string, b: string) => {
   const ad = new Date(a + "T00:00:00").getTime();
   const bd = new Date(b + "T00:00:00").getTime();
@@ -27,6 +37,9 @@ export default function Companies() {
 
   const [addOpen, setAddOpen] = useState(false);
   const [name, setName] = useState("");
+  const [prefix, setPrefix] = useState("");
+  // Prefix follows the name suggestion until the admin edits it by hand.
+  const [prefixTouched, setPrefixTouched] = useState(false);
   const [contactEmail, setContactEmail] = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -83,17 +96,27 @@ export default function Companies() {
     if (!name.trim()) return;
     setSubmitting(true);
     setError(null);
+    const cleanPrefix = prefix.trim().toUpperCase();
     const { error: insErr } = await supabase.from("companies").insert({
       name: name.trim(),
       contact_email: contactEmail.trim() || null,
       contact_phone: contactPhone.trim() || null,
+      // The prefix (guard codes + invoice Ref) lives in invoice_settings. Left
+      // blank here, the company's own Super Admin can set it later.
+      ...(cleanPrefix ? { invoice_settings: { company_prefix: cleanPrefix } } : {}),
     });
     setSubmitting(false);
     if (insErr) {
-      setError(insErr.message);
+      setError(
+        insErr.code === "23505" || /companies_company_prefix_unique/.test(insErr.message)
+          ? `Prefix "${cleanPrefix}" is already used by another company. Choose a different one.`
+          : insErr.message,
+      );
       return;
     }
     setName("");
+    setPrefix("");
+    setPrefixTouched(false);
     setContactEmail("");
     setContactPhone("");
     setAddOpen(false);
@@ -199,7 +222,31 @@ export default function Companies() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Name *</label>
-                <input value={name} onChange={(e) => setName(e.target.value)} required className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm" />
+                <input
+                  value={name}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    if (!prefixTouched) setPrefix(suggestPrefix(e.target.value));
+                  }}
+                  required
+                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Company Prefix</label>
+                <input
+                  value={prefix}
+                  onChange={(e) => { setPrefix(e.target.value.toUpperCase()); setPrefixTouched(true); }}
+                  placeholder="e.g. GGS, DE"
+                  maxLength={6}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm uppercase"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  {name.trim() && !prefixTouched && prefix
+                    ? <>Suggested from name — edit if needed. </>
+                    : null}
+                  Used for permanent guard codes &amp; invoice Ref. Can be left blank and set later.
+                </p>
               </div>
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Contact Email</label>
@@ -209,6 +256,10 @@ export default function Companies() {
                 <label className="block text-sm text-slate-700 mb-1">Contact Phone</label>
                 <input value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm" />
               </div>
+            </div>
+            <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
+              <span aria-hidden>⚠️</span>
+              <span>Set the prefix carefully — once the first employee is added under this company, the prefix becomes <strong>permanent and cannot be changed</strong> (guard IDs depend on it).</span>
             </div>
             <div className="flex gap-2 pt-2">
               <Button type="submit" variant="primary" disabled={submitting}>

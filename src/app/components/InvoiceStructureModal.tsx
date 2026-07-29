@@ -30,6 +30,23 @@ export default function InvoiceStructureModal({ isOpen, onClose }: Props) {
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Prefix locks the moment the company's first permanent guard code is issued
+  // (permanent codes are immutable). Mirrors the DB trigger enforce_company_prefix_lock.
+  const [prefixLocked, setPrefixLocked] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen || !company) return;
+    let alive = true;
+    (async () => {
+      const { count } = await supabase
+        .from("employees")
+        .select("id", { count: "exact", head: true })
+        .eq("company_id", company.id)
+        .not("guard_code", "is", null);
+      if (alive) setPrefixLocked((count ?? 0) > 0);
+    })();
+    return () => { alive = false; };
+  }, [isOpen, company]);
 
   useEffect(() => {
     if (!isOpen || !company) return;
@@ -77,7 +94,14 @@ export default function InvoiceStructureModal({ isOpen, onClose }: Props) {
     });
     setSaving(false);
     if (rpcErr) {
-      setError(rpcErr.message);
+      const m = rpcErr.message ?? "";
+      setError(
+        /companies_company_prefix_unique|duplicate key/.test(m)
+          ? `Prefix "${settings.company_prefix}" is already used by another company. Choose a different one.`
+          : /prefix is locked/i.test(m)
+            ? "The company prefix is locked because guards already have permanent codes under it."
+            : m,
+      );
       return;
     }
     await refreshProfile();
@@ -211,14 +235,24 @@ export default function InvoiceStructureModal({ isOpen, onClose }: Props) {
               <input className={input} value={signatureLabel} onChange={(e) => setSignatureLabel(e.target.value)} placeholder="Accounts Manager" />
             </div>
             <div>
-              <label className={label}>Company Prefix (Ref number)</label>
+              <label className={label}>Company Prefix {prefixLocked && <span className="text-slate-400">(locked)</span>}</label>
               <input
-                className={input}
+                className={`${input} ${prefixLocked ? "bg-slate-100 text-slate-500 cursor-not-allowed" : ""}`}
                 value={settings.company_prefix ?? ""}
                 onChange={(e) => setSettings((s) => ({ ...s, company_prefix: e.target.value.toUpperCase() }))}
                 placeholder="e.g. GGS"
+                disabled={prefixLocked}
+                readOnly={prefixLocked}
               />
-              <p className="text-[10px] text-slate-500 mt-1">Used as the first block of the invoice Ref: {"{Prefix}-{YY}-{ClientPrefix}-{MM}"}.</p>
+              {prefixLocked ? (
+                <p className="text-[10px] text-slate-500 mt-1">
+                  🔒 Locked — guards now have permanent codes under this prefix, so it can no longer be changed.
+                </p>
+              ) : (
+                <p className="text-[10px] text-amber-700 mt-1">
+                  ⚠️ Set carefully — used for both permanent guard codes and invoice Ref ({"{Prefix}-{YY}-{ClientPrefix}-{MM}"}). Once the first employee is added it becomes <strong>permanent</strong>.
+                </p>
+              )}
             </div>
             <div>
               <label className={label}>Brand Accent Colour</label>
