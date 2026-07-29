@@ -4,7 +4,9 @@
       "mcp__claude_ai_Supabase__list_projects",
       "Bash(npx vite *)",
       "Bash(echo \"EXIT=$?\")",
-      "PowerShell(npx tsc --noEmit)"
+      "PowerShell(npx tsc --noEmit)",
+      "PowerShell(npx vite build 2>&1)",
+      "PowerShell(if \\($?\\) { \"TYPECHECK OK\" })"
     ]
   }
 }
