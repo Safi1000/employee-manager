@@ -537,6 +537,8 @@ function ShiftDrillModal({
   // Inline validation for the required supervisor name — shown INSIDE the modal
   // footer (not the page-level banner, which sits behind the modal overlay).
   const [supError, setSupError] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const fail = (m: string) => { setErr(m); onError(m); };
 
   useEffect(() => {
     // Gate the shift date using any roster guard (window-independent checks:
@@ -610,11 +612,12 @@ function ShiftDrillModal({
   const needsOverride = gate?.mode === "override_required";
 
   const confirm = async () => {
-    if (blocked) { onError(gate?.reason ?? "Blocked"); return; }
+    if (blocked) { fail(gate?.reason ?? "Blocked"); return; }
     if (!supervisor.trim()) { setSupError("Supervisor name is required to confirm."); return; }
     setSupError(null);
-    if (needsOverride && !override.trim()) { onError("Backdated — a supervisor override reason is required."); return; }
+    if (needsOverride && !override.trim()) { fail("Backdated — a supervisor override reason is required."); return; }
     setSaving(true);
+    setErr(null);
     try {
       // Materialise attendance per roster guard: exception status where marked,
       // else present. Each selected worked_shift becomes its own row — double
@@ -668,13 +671,15 @@ function ShiftDrillModal({
       if (cErr) throw cErr;
       await onDone();
     } catch (e: any) {
-      onError(e.message ?? String(e));
+      fail(e.message ?? String(e));
       setSaving(false);
     }
   };
 
   return (
     <Modal isOpen onClose={onClose} size="lg"
+      error={err}
+      onDismissError={() => setErr(null)}
       title={`${shift.client_name} · ${shift.site_name} · ${shift.shift_code} — ${date}`}
       footer={
         <div className="space-y-1.5">

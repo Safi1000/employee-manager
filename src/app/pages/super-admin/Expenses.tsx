@@ -2120,6 +2120,8 @@ export default function Expenses() {
 
       <Modal
         isOpen={isVendorModalOpen}
+        error={error}
+        onDismissError={() => setError(null)}
         onClose={() => setIsVendorModalOpen(false)}
         title="Manage Vendors"
         size="md"
@@ -2203,6 +2205,8 @@ export default function Expenses() {
 
       <Modal
         isOpen={isCatModalOpen}
+        error={error}
+        onDismissError={() => setError(null)}
         onClose={() => setIsCatModalOpen(false)}
         title={catMode === "add" ? "Add Category" : "Edit Category"}
         size="sm"

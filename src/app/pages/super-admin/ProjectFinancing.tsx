@@ -527,7 +527,7 @@ export default function ProjectFinancing() {
       </div>
 
       {/* ── Add/Edit Project Modal ── */}
-      <Modal isOpen={isProjOpen} onClose={() => setIsProjOpen(false)} title={editProj ? "Edit Project" : "New Project"} size="md">
+      <Modal isOpen={isProjOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsProjOpen(false)} title={editProj ? "Edit Project" : "New Project"} size="md">
         <div className="space-y-4">
           <div>
             <label className="block text-sm text-slate-700 mb-1">Project Name *</label>
@@ -588,7 +588,7 @@ export default function ProjectFinancing() {
       </Modal>
 
       {/* ── Add/Edit Investor Modal ── */}
-      <Modal isOpen={isInvOpen} onClose={() => setIsInvOpen(false)} title={editInv ? "Edit Investor" : "Add Investor"} size="sm">
+      <Modal isOpen={isInvOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsInvOpen(false)} title={editInv ? "Edit Investor" : "Add Investor"} size="sm">
         <div className="space-y-4">
           <div>
             <label className="block text-sm text-slate-700 mb-1">Name *</label>
@@ -627,7 +627,7 @@ export default function ProjectFinancing() {
       </Modal>
 
       {/* ── Add Investment Modal ── */}
-      <Modal isOpen={isInvestmentOpen} onClose={() => setIsInvestmentOpen(false)} title="Link Investor to Project" size="sm">
+      <Modal isOpen={isInvestmentOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsInvestmentOpen(false)} title="Link Investor to Project" size="sm">
         <div className="space-y-4">
           <p className="text-sm text-slate-500">Project: <strong>{projName(investmentProjectId)}</strong></p>
           <div>
@@ -670,7 +670,7 @@ export default function ProjectFinancing() {
       </Modal>
 
       {/* ── Record Ledger Entry Modal ── */}
-      <Modal isOpen={isLedgerOpen} onClose={() => setIsLedgerOpen(false)} title="Record Investor Ledger Entry" size="md">
+      <Modal isOpen={isLedgerOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsLedgerOpen(false)} title="Record Investor Ledger Entry" size="md">
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>

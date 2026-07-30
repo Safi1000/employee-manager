@@ -720,25 +720,30 @@ function SiteFormModal({
   const [name, setName] = useState(site?.name ?? "");
   const [location, setLocation] = useState(site?.location ?? "");
   const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const fail = (m: string) => { setErr(m); onError(m); };
 
   const save = async () => {
     if (!name.trim()) {
-      onError("Site name is required.");
+      fail("Site name is required.");
       return;
     }
     setSaving(true);
+    setErr(null);
     const payload = { name: name.trim(), location: location.trim() || null };
     const { error } = site
       ? await supabase.from("sites").update(payload).eq("id", site.id)
       : await supabase.from("sites").insert({ ...payload, client_id: clientId });
     setSaving(false);
-    if (error) onError(error.message);
+    if (error) fail(error.message);
     else await onSaved();
   };
 
   return (
     <Modal
       isOpen
+      error={err}
+      onDismissError={() => setErr(null)}
       onClose={onClose}
       title={site ? "Edit site" : "Add site"}
       size="sm"
@@ -783,11 +788,14 @@ function ShiftFormModal({
   const [start, setStart] = useState((def?.start_time ?? "08:00").slice(0, 5));
   const [end, setEnd] = useState((def?.end_time ?? "20:00").slice(0, 5));
   const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const fail = (m: string) => { setErr(m); onError(m); };
 
   const { hours, crosses } = computeDuration(start, end);
 
   const save = async () => {
     setSaving(true);
+    setErr(null);
     const payload = {
       shift_code: shiftCode,
       start_time: start,
@@ -799,13 +807,15 @@ function ShiftFormModal({
       ? await supabase.from("shift_definitions").update(payload).eq("id", def.id)
       : await supabase.from("shift_definitions").insert({ ...payload, site_id: site.id });
     setSaving(false);
-    if (error) onError(error.message);
+    if (error) fail(error.message);
     else await onSaved();
   };
 
   return (
     <Modal
       isOpen
+      error={err}
+      onDismissError={() => setErr(null)}
       onClose={onClose}
       title={def ? "Edit shift" : "Add shift"}
       size="sm"
@@ -872,11 +882,14 @@ function StrengthLineFormModal({
   const [effFrom, setEffFrom] = useState(line?.effective_from ?? "");
   const [effTo, setEffTo] = useState(line?.effective_to ?? "");
   const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const fail = (m: string) => { setErr(m); onError(m); };
 
   const req = Math.max(0, (Number(billedQty) || 0) - (Number(relief) || 0));
 
   const save = async () => {
     setSaving(true);
+    setErr(null);
     const payload = {
       category,
       shift_code: shiftCode,
@@ -896,7 +909,7 @@ function StrengthLineFormModal({
           contract_id: contractId,
         });
     setSaving(false);
-    if (error) onError(error.message);
+    if (error) fail(error.message);
     else await onSaved();
   };
 
@@ -905,6 +918,8 @@ function StrengthLineFormModal({
   return (
     <Modal
       isOpen
+      error={err}
+      onDismissError={() => setErr(null)}
       onClose={onClose}
       title={line ? "Edit strength line" : "Add strength line"}
       size="md"

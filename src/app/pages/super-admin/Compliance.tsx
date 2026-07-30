@@ -1038,6 +1038,8 @@ export default function Compliance() {
 
       <Modal
         isOpen={isDateAddOpen}
+        error={error}
+        onDismissError={() => setError(null)}
         onClose={() => {
           setIsDateAddOpen(false);
           setDateForm(emptyDateForm());
@@ -1067,6 +1069,8 @@ export default function Compliance() {
 
       <Modal
         isOpen={isDateEditOpen}
+        error={error}
+        onDismissError={() => setError(null)}
         onClose={() => {
           setIsDateEditOpen(false);
           setEditDateId(null);
@@ -1096,6 +1100,8 @@ export default function Compliance() {
 
       <Modal
         isOpen={isRecAddOpen}
+        error={error}
+        onDismissError={() => setError(null)}
         onClose={() => {
           setIsRecAddOpen(false);
           setRecForm(emptyRecurringForm());
@@ -1125,6 +1131,8 @@ export default function Compliance() {
 
       <Modal
         isOpen={isRecEditOpen}
+        error={error}
+        onDismissError={() => setError(null)}
         onClose={() => {
           setIsRecEditOpen(false);
           setEditRecId(null);

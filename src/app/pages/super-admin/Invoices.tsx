@@ -1403,6 +1403,8 @@ export default function Invoices() {
 
       <Modal
         isOpen={isPaymentOpen}
+        error={error}
+        onDismissError={() => setError(null)}
         onClose={() => {
           setIsPaymentOpen(false);
           setPaymentInvoice(null);
@@ -1551,6 +1553,8 @@ export default function Invoices() {
 
       <Modal
         isOpen={isEditPaymentOpen}
+        error={error}
+        onDismissError={() => setError(null)}
         onClose={() => {
           setIsEditPaymentOpen(false);
           setEditingPayment(null);

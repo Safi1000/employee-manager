@@ -625,7 +625,7 @@ export default function Partners() {
       </div>
 
       {/* ── Add/Edit Partner Modal ── */}
-      <Modal isOpen={isPartnerOpen} onClose={() => setIsPartnerOpen(false)} title={editPartner ? "Edit Partner" : "Add Partner"} size="md">
+      <Modal isOpen={isPartnerOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsPartnerOpen(false)} title={editPartner ? "Edit Partner" : "Add Partner"} size="md">
         <div className="space-y-4">
           <div>
             <label className="block text-sm text-slate-700 mb-1">Name *</label>
@@ -697,7 +697,7 @@ export default function Partners() {
       </Modal>
 
       {/* ── Drawing Modal ── */}
-      <Modal isOpen={isDrawingOpen} onClose={() => setIsDrawingOpen(false)} title="Record Drawing" size="sm">
+      <Modal isOpen={isDrawingOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsDrawingOpen(false)} title="Record Drawing" size="sm">
         <div className="space-y-4">
           <p className="text-sm text-slate-500">Payment <strong>out</strong> to the partner. Does not hit P&L.</p>
           <div className="grid grid-cols-2 gap-4">
@@ -734,7 +734,7 @@ export default function Partners() {
       </Modal>
 
       {/* ── Contribution Modal ── */}
-      <Modal isOpen={isContribOpen} onClose={() => setIsContribOpen(false)} title="Record Contribution" size="sm">
+      <Modal isOpen={isContribOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsContribOpen(false)} title="Record Contribution" size="sm">
         <div className="space-y-4">
           <p className="text-sm text-slate-500">Partner's own money put <strong>into</strong> the company. Does not hit P&L.</p>
           <div className="grid grid-cols-2 gap-4">
@@ -771,7 +771,7 @@ export default function Partners() {
       </Modal>
 
       {/* ── Profit Allocation Modal ── */}
-      <Modal isOpen={isAllocOpen} onClose={() => setIsAllocOpen(false)} title="Record Profit Allocation" size="sm">
+      <Modal isOpen={isAllocOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsAllocOpen(false)} title="Record Profit Allocation" size="sm">
         <div className="space-y-4">
           <p className="text-sm text-slate-500">Post partner's profit share for a period. Use a negative amount for a loss share.</p>
           <div className="grid grid-cols-2 gap-4">

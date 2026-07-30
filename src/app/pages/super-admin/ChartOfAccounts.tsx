@@ -564,7 +564,7 @@ export default function ChartOfAccounts() {
       </div>
 
       {/* CoA add/edit modal */}
-      <Modal isOpen={addOpen} onClose={() => { setAddOpen(false); setEditingRow(null); resetForm(); }} title={editingRow ? `Edit ${editingRow.account_code}` : "Add Account"} size="md">
+      <Modal isOpen={addOpen} error={error} onDismissError={() => setError(null)} onClose={() => { setAddOpen(false); setEditingRow(null); resetForm(); }} title={editingRow ? `Edit ${editingRow.account_code}` : "Add Account"} size="md">
         <form className="space-y-3" onSubmit={handleSubmit}>
           {editingRow?.system_account && (
             <div className="text-xs text-warning-700 bg-warning-50 border border-warning-200 rounded p-2">
@@ -618,7 +618,7 @@ export default function ChartOfAccounts() {
       </Modal>
 
       {/* Manual journal entry modal */}
-      <Modal isOpen={manualOpen} onClose={() => setManualOpen(false)} title="Manual Journal Entry" size="md">
+      <Modal isOpen={manualOpen} error={error} onDismissError={() => setError(null)} onClose={() => setManualOpen(false)} title="Manual Journal Entry" size="md">
         <form className="space-y-3" onSubmit={handleManualJournal}>
           <p className="text-xs text-slate-500">
             Post a balanced debit/credit entry. For adjustments, corrections, or entries not captured by the auto-journal triggers.

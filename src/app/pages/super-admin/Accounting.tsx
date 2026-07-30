@@ -3158,7 +3158,7 @@ export default function Accounting() {
         )}
       </Modal>
 
-      <Modal isOpen={isBankModalOpen} onClose={() => setIsBankModalOpen(false)} title="Add Bank Account" size="md">
+      <Modal isOpen={isBankModalOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsBankModalOpen(false)} title="Add Bank Account" size="md">
         <form className="space-y-4" onSubmit={handleAddBank}>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Bank Name *</label>
@@ -3342,7 +3342,7 @@ export default function Accounting() {
         </form>
       </Modal>
 
-      <Modal isOpen={isDepositModalOpen} onClose={() => setIsDepositModalOpen(false)} title="Cash Deposit" size="md">
+      <Modal isOpen={isDepositModalOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsDepositModalOpen(false)} title="Cash Deposit" size="md">
         {depositSuccess && (
           <div className="space-y-4">
             <div className="flex items-start gap-3 p-3 bg-success-50 border border-success-200 rounded-md">
@@ -3465,7 +3465,7 @@ export default function Accounting() {
         )}
       </Modal>
 
-      <Modal isOpen={isWithdrawModalOpen} onClose={() => setIsWithdrawModalOpen(false)} title="Withdraw to Cash" size="md">
+      <Modal isOpen={isWithdrawModalOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsWithdrawModalOpen(false)} title="Withdraw to Cash" size="md">
         {selectedBank && (
           <form className="space-y-4" onSubmit={handleWithdraw}>
             <div>
@@ -3645,7 +3645,7 @@ export default function Accounting() {
         )}
       </Modal>
 
-      <Modal isOpen={isOpeningBalanceOpen} onClose={() => setIsOpeningBalanceOpen(false)} title="Edit Opening Balance" size="md">
+      <Modal isOpen={isOpeningBalanceOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsOpeningBalanceOpen(false)} title="Edit Opening Balance" size="md">
         {selectedClient && (
           <form className="space-y-4" onSubmit={handleSaveOpeningBalance}>
             <div>
@@ -3684,7 +3684,7 @@ export default function Accounting() {
         )}
       </Modal>
 
-      <Modal isOpen={isPaymentModalOpen} onClose={() => setIsPaymentModalOpen(false)} title="Record Payment" size="md">
+      <Modal isOpen={isPaymentModalOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsPaymentModalOpen(false)} title="Record Payment" size="md">
         {selectedClient && (
           <form className="space-y-4" onSubmit={handleRecordPayment}>
             <div>
@@ -3877,7 +3877,7 @@ export default function Accounting() {
         )}
       </Modal>
 
-      <Modal isOpen={isEditBankModalOpen} onClose={() => setIsEditBankModalOpen(false)} title="Edit Bank Account" size="md">
+      <Modal isOpen={isEditBankModalOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsEditBankModalOpen(false)} title="Edit Bank Account" size="md">
         {selectedBank && (
           <form className="space-y-4" onSubmit={handleEditBank}>
             <div>
@@ -4029,6 +4029,8 @@ export default function Accounting() {
 
       <Modal
         isOpen={isCashOpeningOpen}
+        error={error}
+        onDismissError={() => setError(null)}
         onClose={() => setIsCashOpeningOpen(false)}
         title="Set Opening Cash Balance"
         size="sm"
@@ -4063,7 +4065,7 @@ export default function Accounting() {
         </form>
       </Modal>
 
-      <Modal isOpen={isTransferModalOpen} onClose={() => setIsTransferModalOpen(false)} title="Wire Transfer" size="md">
+      <Modal isOpen={isTransferModalOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsTransferModalOpen(false)} title="Wire Transfer" size="md">
         <form className="space-y-4" onSubmit={handleTransfer}>
           <div>
             <label className="block text-sm text-slate-700 mb-1">From Account *</label>
@@ -4151,7 +4153,7 @@ export default function Accounting() {
         </form>
       </Modal>
 
-      <Modal isOpen={isMarkPaidModalOpen} onClose={() => setIsMarkPaidModalOpen(false)} title="Mark Payable as Paid" size="md">
+      <Modal isOpen={isMarkPaidModalOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsMarkPaidModalOpen(false)} title="Mark Payable as Paid" size="md">
         {selectedPayable && (
           <form className="space-y-4" onSubmit={handleMarkPaid}>
             <div className="grid grid-cols-2 gap-3">
@@ -4265,7 +4267,7 @@ export default function Accounting() {
       </Modal>
 
       {/* Bank Statement Export Modal */}
-      <Modal isOpen={isBankExportOpen} onClose={() => setIsBankExportOpen(false)} title="Export Bank Statement" size="sm">
+      <Modal isOpen={isBankExportOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsBankExportOpen(false)} title="Export Bank Statement" size="sm">
         <div className="space-y-4">
           <div>
             <label className="block text-sm text-slate-700 mb-1">Bank Account</label>

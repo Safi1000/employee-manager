@@ -261,6 +261,7 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
     items: [
       { key: "employees.view", label: "View employees" },
       { key: "employees.edit", label: "Add / edit / delete employees" },
+      { key: "employees.ops_verify", label: "Ops-verify employee records" },
     ],
   },
   {

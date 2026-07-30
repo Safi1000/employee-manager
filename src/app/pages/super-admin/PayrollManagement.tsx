@@ -2153,6 +2153,8 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
 
       <Modal
         isOpen={isBulkDisburseOpen}
+        error={error}
+        onDismissError={() => setError(null)}
         onClose={() => setIsBulkDisburseOpen(false)}
         title="Mark All as Disbursed"
         size="md"
@@ -2269,6 +2271,8 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
 
       <Modal
         isOpen={rowDisburseTarget !== null}
+        error={error}
+        onDismissError={() => setError(null)}
         onClose={() => setRowDisburseTarget(null)}
         title="Disbursement Date"
         size="sm"

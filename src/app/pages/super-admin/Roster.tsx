@@ -497,6 +497,8 @@ export default function Roster() {
       {/* Cell edit modal */}
       <Modal
         isOpen={editCell !== null}
+        error={error}
+        onDismissError={() => setError(null)}
         onClose={() => setEditCell(null)}
         title={editCell ? `${editCell.employee.full_name} — ${dayLabel(editCell.date)}` : ""}
         size="md"

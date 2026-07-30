@@ -784,6 +784,8 @@ export default function Incidents() {
 
       <Modal
         isOpen={addOpen}
+        error={error}
+        onDismissError={() => setError(null)}
         onClose={() => { setAddOpen(false); setForm(emptyForm); setPendingFile(null); }}
         title="Log Incident"
         size="lg"
@@ -793,6 +795,8 @@ export default function Incidents() {
 
       <Modal
         isOpen={editingRow !== null}
+        error={error}
+        onDismissError={() => setError(null)}
         onClose={() => { setEditingRow(null); setForm(emptyForm); setPendingFile(null); }}
         title={`Edit ${editingRow?.incident_code ?? ""}`}
         size="lg"

@@ -385,6 +385,8 @@ export default function Tasks() {
 
       <Modal
         isOpen={isCreateOpen}
+        error={error}
+        onDismissError={() => setError(null)}
         onClose={() => {
           setIsCreateOpen(false);
           resetForm();
@@ -430,6 +432,8 @@ export default function Tasks() {
 
       <Modal
         isOpen={!!editTask}
+        error={error}
+        onDismissError={() => setError(null)}
         onClose={() => {
           setEditTask(null);
           resetForm();

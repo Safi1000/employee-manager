@@ -1127,6 +1127,8 @@ export default function Settings() {
 
       <Modal
         isOpen={locAddOpen}
+        error={error}
+        onDismissError={() => setError(null)}
         onClose={() => {
           setLocAddOpen(false);
           setNewLocName("");
@@ -1167,6 +1169,8 @@ export default function Settings() {
 
       <Modal
         isOpen={branchAddOpen}
+        error={error}
+        onDismissError={() => setError(null)}
         onClose={() => {
           setBranchAddOpen(false);
           setNewBranchName("");

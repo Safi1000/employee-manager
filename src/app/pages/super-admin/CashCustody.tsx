@@ -958,7 +958,7 @@ export function CashCustodyPanel() {
       </div>
 
       {/* ── Add/Edit Location Modal ── */}
-      <Modal isOpen={isLocOpen} onClose={() => setIsLocOpen(false)} title={editLoc ? "Edit Custodian" : "Add Custodian"} size="md">
+      <Modal isOpen={isLocOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsLocOpen(false)} title={editLoc ? "Edit Custodian" : "Add Custodian"} size="md">
         <div className="space-y-4">
           <div>
             <label className="block text-sm text-slate-700 mb-1">Office Staff *</label>
@@ -1006,7 +1006,7 @@ export function CashCustodyPanel() {
       </Modal>
 
       {/* ── Custody Transfer Modal ── */}
-      <Modal isOpen={isTransferOpen} onClose={() => setIsTransferOpen(false)} title="Record Custody Transfer" size="sm">
+      <Modal isOpen={isTransferOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsTransferOpen(false)} title="Record Custody Transfer" size="sm">
         <div className="space-y-4">
           <p className="text-sm text-slate-500">
             {transferForm.from_type === "bank"

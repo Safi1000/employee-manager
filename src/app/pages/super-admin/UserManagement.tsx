@@ -25,6 +25,12 @@ const ROLE_LABEL: Record<UserRole, string> = {
 
 const displayLabel = (u: Profile) => u.title?.trim() || ROLE_LABEL[u.role];
 
+// Roles assignable from this screen (super_super_admin is a platform role, never
+// assigned here). Order = seniority for the dropdown.
+const ASSIGNABLE_ROLES: UserRole[] = [
+  "super_admin", "ops_director", "finance_director", "ops_manager", "accounting", "hr",
+];
+
 function PermissionCheckboxes({
   selected,
   onToggle,
@@ -87,8 +93,14 @@ export default function UserManagement() {
   const [editName, setEditName] = useState("");
   const [editTitle, setEditTitle] = useState("");
   const [editBranchId, setEditBranchId] = useState<string>("");
+  const [editRole, setEditRole] = useState<UserRole>("hr");
   const [editPerms, setEditPerms] = useState<Set<string>>(new Set());
   const [editSubmitting, setEditSubmitting] = useState(false);
+
+  // Only a Super Super Admin may create/demote/delete a Super Admin (mirrors the
+  // password-reset rule). A plain Super Admin manages everyone else freely but
+  // cannot touch another Super Admin's role or existence.
+  const isSSA = profile?.role === "super_super_admin";
 
   const [branches, setBranches] = useState<Branch[]>([]);
 
@@ -172,12 +184,21 @@ export default function UserManagement() {
     const headOfficeId = branches.find((b) => b.is_head_office)?.id ?? null;
     const branchId = u.branch_id && u.branch_id === headOfficeId ? "" : (u.branch_id ?? "");
     setEditBranchId(branchId);
+    setEditRole(u.role);
     setEditPerms(new Set(u.permissions ?? []));
   };
 
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editUser) return;
+    // Guard: touching Super Admin status (demoting one, or promoting someone to
+    // it) is reserved for the Super Super Admin. Non-SSA edits keep the role as-is.
+    const roleTouchesAdmin = editUser.role === "super_admin" || editRole === "super_admin";
+    if (roleTouchesAdmin && editRole !== editUser.role && !isSSA) {
+      setError("Only a Super Super Admin can change a Super Admin's role.");
+      return;
+    }
+    const nextRole = isSSA ? editRole : (roleTouchesAdmin ? editUser.role : editRole);
     setEditSubmitting(true);
     setError(null);
     const { error: err } = await supabase
@@ -186,7 +207,10 @@ export default function UserManagement() {
         full_name: editName.trim() || null,
         title: editTitle.trim() || null,
         branch_id: editBranchId || null,
-        permissions: Array.from(editPerms),
+        role: nextRole,
+        // A Super Admin has implicit full access — don't persist a per-feature
+        // list for them (kept empty), so demoting later starts from a clean slate.
+        permissions: nextRole === "super_admin" ? [] : Array.from(editPerms),
       })
       .eq("id", editUser.id);
     setEditSubmitting(false);
@@ -226,6 +250,10 @@ export default function UserManagement() {
   const handleDelete = async (u: Profile) => {
     if (u.id === profile?.id) {
       setError("You can't delete your own account.");
+      return;
+    }
+    if (u.role === "super_admin" && !isSSA) {
+      setError("Only a Super Super Admin can delete a Super Admin.");
       return;
     }
     if (!window.confirm(`Delete user ${u.email}? This removes their access and profile.`)) return;
@@ -345,9 +373,15 @@ export default function UserManagement() {
                           </button>
                           <button
                             onClick={() => handleDelete(u)}
-                            disabled={u.id === profile?.id}
+                            disabled={u.id === profile?.id || (u.role === "super_admin" && !isSSA)}
                             className="p-1.5 rounded text-danger-600 hover:bg-danger-50 disabled:opacity-30 disabled:cursor-not-allowed"
-                            title={u.id === profile?.id ? "Cannot delete yourself" : "Delete"}
+                            title={
+                              u.id === profile?.id
+                                ? "Cannot delete yourself"
+                                : u.role === "super_admin" && !isSSA
+                                  ? "Only a Super Super Admin can delete a Super Admin"
+                                  : "Delete"
+                            }
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -485,11 +519,31 @@ export default function UserManagement() {
                   value={editTitle}
                   onChange={(e) => setEditTitle(e.target.value)}
                   placeholder="e.g. CEO, CTO, HR Manager"
-                  disabled={editUser.role === "super_admin"}
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm disabled:bg-slate-50 disabled:text-slate-500"
                 />
-                {editUser.role === "super_admin" && (
-                  <p className="text-xs text-brand-600 mt-1">This user is a Super Admin — implicit full access.</p>
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm text-slate-700 mb-1">Role</label>
+                <ThemedSelect
+                  value={editRole}
+                  onChange={(e) => setEditRole(e.target.value as UserRole)}
+                  disabled={editUser.role === "super_admin" && !isSSA}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm disabled:bg-slate-50 disabled:text-slate-500"
+                >
+                  {ASSIGNABLE_ROLES.map((r) => (
+                    // Assigning/keeping Super Admin is Super-Super-Admin-only.
+                    <option key={r} value={r} disabled={r === "super_admin" && !isSSA}>
+                      {ROLE_LABEL[r]}
+                    </option>
+                  ))}
+                </ThemedSelect>
+                {editUser.role === "super_admin" && !isSSA && (
+                  <p className="text-xs text-warning-600 mt-1">
+                    Only a Super Super Admin can change or remove a Super Admin's role.
+                  </p>
+                )}
+                {editRole === "super_admin" && (
+                  <p className="text-xs text-brand-600 mt-1">Super Admin — implicit full access (no per-feature list).</p>
                 )}
               </div>
               <div className="md:col-span-2">
@@ -510,7 +564,7 @@ export default function UserManagement() {
               </div>
             </div>
 
-            {editUser.role !== "super_admin" && (
+            {editRole !== "super_admin" && (
               <div className="pt-4 border-t border-slate-200">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-sm text-slate-900">Permissions</h3>

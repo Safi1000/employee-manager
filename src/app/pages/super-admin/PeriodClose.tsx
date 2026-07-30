@@ -357,6 +357,8 @@ export default function PeriodClose() {
       {/* Confirmation modal */}
       <Modal
         isOpen={actionRow !== null && actionKind !== null}
+        error={error}
+        onDismissError={() => setError(null)}
         onClose={() => { setActionRow(null); setActionKind(null); }}
         title={actionKind === "close" ? `Close ${actionRow?.label}?` : `Re-open ${actionRow?.label}?`}
         size="md"

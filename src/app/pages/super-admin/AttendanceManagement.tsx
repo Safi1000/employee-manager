@@ -1370,6 +1370,8 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
 
       <Modal
         isOpen={detailRecord !== null}
+        error={error}
+        onDismissError={() => setError(null)}
         onClose={() => setDetailRecord(null)}
         title="Attendance Details"
         size="lg"
@@ -1459,6 +1461,8 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       {/* Sprint 3 — half-day / late / OT editor for a Present employee */}
       <Modal
         isOpen={detailsEmp !== null}
+        error={error}
+        onDismissError={() => setError(null)}
         onClose={() => setDetailsEmp(null)}
         title={detailsEmp ? `Attendance details — ${detailsEmp.full_name}` : ""}
         size="sm"

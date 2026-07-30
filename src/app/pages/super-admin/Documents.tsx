@@ -601,6 +601,8 @@ export default function Documents() {
 
       <Modal
         isOpen={editing !== null}
+        error={error}
+        onDismissError={() => setError(null)}
         onClose={() => {
           setEditing(null);
           setEditForm({});

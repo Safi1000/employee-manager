@@ -969,6 +969,8 @@ export default function Inventory() {
 
       <Modal
         isOpen={isAddItemOpen}
+        error={error}
+        onDismissError={() => setError(null)}
         onClose={() => {
           setIsAddItemOpen(false);
           setAddForm(emptyAddItem);
@@ -1131,6 +1133,8 @@ export default function Inventory() {
 
       <Modal
         isOpen={isIssueOpen}
+        error={error}
+        onDismissError={() => setError(null)}
         onClose={() => {
           setIsIssueOpen(false);
           setIssueForm(emptyIssueForm());
@@ -1416,6 +1420,8 @@ export default function Inventory() {
 
       <Modal
         isOpen={stockItem !== null}
+        error={error}
+        onDismissError={() => setError(null)}
         onClose={() => setStockItem(null)}
         title="Manage Stock"
         size="md"
@@ -1453,6 +1459,8 @@ export default function Inventory() {
 
       <Modal
         isOpen={returnIssuance !== null}
+        error={error}
+        onDismissError={() => setError(null)}
         onClose={() => setReturnIssuance(null)}
         title="Mark Item as Returned"
         size="md"

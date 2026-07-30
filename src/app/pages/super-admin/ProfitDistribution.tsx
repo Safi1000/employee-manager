@@ -403,7 +403,7 @@ export default function ProfitDistribution() {
       </div>
 
       {/* ── Add/Edit Rule Modal ── */}
-      <Modal isOpen={isRuleOpen} onClose={() => setIsRuleOpen(false)} title={editRule ? "Edit Distribution Rule" : "Add Distribution Rule"} size="md">
+      <Modal isOpen={isRuleOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsRuleOpen(false)} title={editRule ? "Edit Distribution Rule" : "Add Distribution Rule"} size="md">
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -487,7 +487,7 @@ export default function ProfitDistribution() {
       </Modal>
 
       {/* ── Add/Edit Referral Modal ── */}
-      <Modal isOpen={isReferralOpen} onClose={() => setIsReferralOpen(false)} title={editReferral ? "Edit Referral Arrangement" : "Add Referral Arrangement"} size="md">
+      <Modal isOpen={isReferralOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsReferralOpen(false)} title={editReferral ? "Edit Referral Arrangement" : "Add Referral Arrangement"} size="md">
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>

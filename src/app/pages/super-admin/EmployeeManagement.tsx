@@ -53,7 +53,7 @@ import {
   validateBankAccount,
   validateFreeText,
 } from "../../lib/validation";
-import { useAuth } from "../../lib/auth";
+import { useAuth, hasPermission } from "../../lib/auth";
 import { generateDischargeSheet } from "../../lib/dischargeSheetPdf";
 
 type EmployeeRow = Employee & {
@@ -639,6 +639,12 @@ const lifecycleStatusLabel = (e: {
 export default function EmployeeManagement() {
   const { profile, company } = useAuth();
   const { regionId } = useRegion();
+  // Who may Ops-verify a draft record — mirrors the DB gate in
+  // transition_record_state (0122 + 0150): the Ops roles, super_admin/SSA (both
+  // implied by hasPermission), OR the explicit 'employees.ops_verify' permission.
+  const canOpsVerify =
+    ["ops_manager", "ops_director", "super_admin", "super_super_admin"].includes(profile?.role ?? "") ||
+    hasPermission(profile, "employees.ops_verify");
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -1037,6 +1043,11 @@ export default function EmployeeManagement() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
+    // Digits-only form of the query so a CNIC typed with or without dashes
+    // ("12345-6789012-3" vs "1234567890123") matches the same way. Only used
+    // when the query actually contains digits, so a name/text search is
+    // unaffected (an empty digit-string would otherwise match every CNIC).
+    const qDigits = q.replace(/\D/g, "");
     return employees.filter((e) => {
       if (
         q &&
@@ -1046,7 +1057,10 @@ export default function EmployeeManagement() {
         // paper files still resolve to the guard.
         !(e.legacy_code ?? "").toLowerCase().includes(q) &&
         !displayCodeFor(e).toLowerCase().includes(q) &&
-        !(e.phone ?? "").toLowerCase().includes(q)
+        !(e.phone ?? "").toLowerCase().includes(q) &&
+        // CNIC (dash-insensitive, partial): every record sharing a CNIC matches,
+        // so duplicates surface together.
+        !(qDigits.length > 0 && (e.cnic_number ?? "").replace(/\D/g, "").includes(qDigits))
       )
         return false;
       if (locationFilter !== "all" && e.location_id !== locationFilter) return false;
@@ -1246,19 +1260,23 @@ export default function EmployeeManagement() {
       fileName: "Employees.xlsx",
       sheetName: "Employees",
       title: "Employees",
-      headers: ["Employee ID", "Permanent Code", "Name", "Phone", "Location", "Branch", "Client / Category", "Shift", "Status"],
+      headers: ["Employee ID", "Permanent Code", "Name", "CNIC", "Phone", "Location", "Branch", "Client / Category", "Shift", "Status", "Bank", "Account No.", "IBAN"],
       rows: sorted.map((e) => [
         displayCodeFor(e),
         e.guard_code ?? e.employee_code,
         e.full_name,
+        e.cnic_number ? formatCnicInline(e.cnic_number) : "",
         e.phone ?? "",
         e.location_name ?? "",
         e.branch_name ?? "",
         categoryOrClient(e),
         e.shift,
         statusLabel(e),
+        e.bank_name ?? "",
+        e.bank_account ?? "",
+        e.iban ?? "",
       ]),
-      columnWidths: [14, 14, 24, 16, 18, 18, 20, 8, 10],
+      columnWidths: [14, 14, 24, 18, 16, 18, 18, 20, 8, 10, 18, 22, 28],
     });
   };
 
@@ -2017,7 +2035,7 @@ export default function EmployeeManagement() {
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search by name, phone, or employee ID..."
+                  placeholder="Search by name, CNIC, phone, or employee ID..."
                   className="w-full pl-10 pr-4 py-2 border border-border rounded-md text-sm bg-input-background focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
                 />
               </div>
@@ -2334,7 +2352,7 @@ export default function EmployeeManagement() {
         </div>
       </div>
 
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Add Employee" size="lg">
+      <Modal isOpen={isModalOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsModalOpen(false)} title="Add Employee" size="lg">
         <form className="space-y-6" onSubmit={handleAdd}>
           {addModalError && (
             <div className="flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
@@ -2784,7 +2802,7 @@ export default function EmployeeManagement() {
                 <span className="px-2 py-0.5 rounded text-xs bg-brand-50 text-brand-700 border border-brand-200 capitalize">
                   {selectedEmployee.record_state.replace("_", " ")}
                 </span>
-                {selectedEmployee.record_state === "draft" && (
+                {selectedEmployee.record_state === "draft" && canOpsVerify && (
                   <Button size="sm" variant="secondary" disabled={approvalBusy} onClick={() => runTransition("ops_verify")}>Ops verify</Button>
                 )}
                 {selectedEmployee.record_state === "ops_verified" && (
@@ -2851,6 +2869,12 @@ export default function EmployeeManagement() {
                 <div>
                   <p className="text-slate-500 mb-1">Phone</p>
                   <p className="text-slate-900">{selectedEmployee.phone ?? "—"}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500 mb-1">CNIC</p>
+                  <p className="text-slate-900 font-mono">
+                    {selectedEmployee.cnic_number ? formatCnicInline(selectedEmployee.cnic_number) : "—"}
+                  </p>
                 </div>
                 {/* Phase 3H: Location deprecated — hidden from UI (column retained). */}
                 <div>
@@ -3129,6 +3153,8 @@ export default function EmployeeManagement() {
 
       <Modal
         isOpen={isEditModalOpen}
+        error={error}
+        onDismissError={() => setError(null)}
         onClose={() => setIsEditModalOpen(false)}
         title="Edit Employee"
         size="lg"
@@ -3595,6 +3621,8 @@ export default function EmployeeManagement() {
       {/* Separation modal — type + effective date + outstanding dues + reason. */}
       <Modal
         isOpen={fireTarget !== null}
+        error={error}
+        onDismissError={() => setError(null)}
         onClose={() => setFireTarget(null)}
         title="Fire / Resign guard"
         size="sm"
@@ -4206,11 +4234,14 @@ function SeparationModal({
   const [rehireEligible, setRehireEligible] = useState(true);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const fail = (m: string) => { setErr(m); onError(m); };
   const inputCls = "mt-1 w-full px-3 py-2 border border-slate-200 rounded-md text-sm";
 
   const save = async () => {
-    if (!note.trim()) { onError("A separation reason/note is required."); return; }
+    if (!note.trim()) { fail("A separation reason/note is required."); return; }
     setSaving(true);
+    setErr(null);
     try {
       const { error: sepErr } = await supabase.rpc("record_separation", {
         p_guard: guard.id,
@@ -4243,11 +4274,12 @@ function SeparationModal({
         { onConflict: "employee_id,doc_type" },
       );
       await onDone();
-    } catch (e: any) { onError(e.message ?? String(e)); setSaving(false); }
+    } catch (e: any) { fail(e.message ?? String(e)); setSaving(false); }
   };
 
   return (
     <Modal isOpen onClose={onClose} size="md" title={`Record separation — ${guard.full_name} (${displayCode})`}
+      error={err} onDismissError={() => setErr(null)}
       footer={
         <div className="flex justify-end gap-2">
           <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
@@ -4445,12 +4477,15 @@ function RehireModal({
   const [baseSalary, setBaseSalary] = useState(guard.base_salary != null ? String(guard.base_salary) : "");
   const [allowance, setAllowance] = useState(guard.allowance != null ? String(guard.allowance) : "");
   const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const fail = (m: string) => { setErr(m); onError(m); };
   const inputCls = "mt-1 w-full px-3 py-2 border border-slate-200 rounded-md text-sm";
   const perDay = baseSalary ? computePerDay(baseSalary) : "";
 
   const save = async () => {
-    if (!clientId) { onError("Select the client to rehire into."); return; }
+    if (!clientId) { fail("Select the client to rehire into."); return; }
     setSaving(true);
+    setErr(null);
     try {
       const { error: rErr } = await supabase.rpc("rehire_guard", {
         p_guard: guard.id, p_join_date: joinDate, p_client_id: clientId,
@@ -4472,11 +4507,12 @@ function RehireModal({
         if (salErr) throw salErr;
       }
       await onDone();
-    } catch (e: any) { onError(e.message ?? String(e)); setSaving(false); }
+    } catch (e: any) { fail(e.message ?? String(e)); setSaving(false); }
   };
 
   return (
     <Modal isOpen onClose={onClose} size="sm" title={`Rehire — ${guard.full_name}`}
+      error={err} onDismissError={() => setErr(null)}
       footer={
         <div className="flex justify-end gap-2">
           <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
@@ -4547,6 +4583,8 @@ function ChangeClientModal({
   >("relief_cover");
   const [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().slice(0, 10));
   const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const fail = (m: string) => { setErr(m); onError(m); };
 
   const clientChanged = clientId !== (guard.client_id ?? "");
   const lines = clientId
@@ -4555,10 +4593,11 @@ function ChangeClientModal({
 
   const save = async () => {
     if (!clientId) {
-      onError("Select a client.");
+      fail("Select a client.");
       return;
     }
     setSaving(true);
+    setErr(null);
     try {
       const { error: moveErr } = await supabase.rpc("change_client", {
         p_guard_id: guard.id,
@@ -4587,7 +4626,7 @@ function ChangeClientModal({
       }
       await onDone();
     } catch (e: any) {
-      onError(e.message ?? String(e));
+      fail(e.message ?? String(e));
       setSaving(false);
     }
   };
@@ -4596,6 +4635,8 @@ function ChangeClientModal({
   return (
     <Modal
       isOpen
+      error={err}
+      onDismissError={() => setErr(null)}
       onClose={onClose}
       title="Change client"
       size="sm"
@@ -4689,6 +4730,8 @@ function ChangeCategoryModal({
   const [contractLineId, setContractLineId] = useState("");
   const [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().slice(0, 10));
   const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const fail = (m: string) => { setErr(m); onError(m); };
 
   const lines = clientId
     ? contractsForClient(clientId).flatMap((c) => linesForContract(c.id))
@@ -4699,9 +4742,10 @@ function ChangeCategoryModal({
     (movingToClient && clientId !== (guard.client_id ?? ""));
 
   const save = async () => {
-    if (!changed) { onError("Pick a different category (or a different client)."); return; }
-    if (movingToClient && !clientId) { onError("Select a client to move this employee to."); return; }
+    if (!changed) { fail("Pick a different category (or a different client)."); return; }
+    if (movingToClient && !clientId) { fail("Select a client to move this employee to."); return; }
     setSaving(true);
+    setErr(null);
     try {
       const { error: rpcErr } = await supabase.rpc("change_category", {
         p_guard_id: guard.id,
@@ -4737,7 +4781,7 @@ function ChangeCategoryModal({
       if (histErr) throw histErr;
       await onDone();
     } catch (e: any) {
-      onError(e.message ?? String(e));
+      fail(e.message ?? String(e));
       setSaving(false);
     }
   };
@@ -4746,6 +4790,8 @@ function ChangeCategoryModal({
   return (
     <Modal
       isOpen
+      error={err}
+      onDismissError={() => setErr(null)}
       onClose={onClose}
       title="Change category"
       size="sm"
@@ -4829,6 +4875,8 @@ function ChangeShiftModal({
   const [newShift, setNewShift] = useState("");
   const [effectiveDate, setEffectiveDate] = useState(todayIso());
   const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const fail = (m: string) => { setErr(m); onError(m); };
   const inputCls = "mt-1 w-full px-3 py-2 border border-slate-200 rounded-md text-sm";
 
   useEffect(() => {
@@ -4867,21 +4915,23 @@ function ChangeShiftModal({
   }, [guard.id, guard.client_id, guard.shift]);
 
   const save = async () => {
-    if (!newShift) { onError("Select a shift."); return; }
-    if (newShift === guard.shift) { onError("Pick a different shift from the current one."); return; }
-    if (!effectiveDate) { onError("An effective date is required."); return; }
+    if (!newShift) { fail("Select a shift."); return; }
+    if (newShift === guard.shift) { fail("Pick a different shift from the current one."); return; }
+    if (!effectiveDate) { fail("An effective date is required."); return; }
     setSaving(true);
+    setErr(null);
     try {
       const { error: cErr } = await supabase.rpc("change_guard_shift", {
         p_guard: guard.id, p_new_shift: newShift, p_effective_date: effectiveDate,
       });
       if (cErr) throw cErr;
       await onDone();
-    } catch (e: any) { onError(e.message ?? String(e)); setSaving(false); }
+    } catch (e: any) { fail(e.message ?? String(e)); setSaving(false); }
   };
 
   return (
     <Modal isOpen onClose={onClose} size="sm" title={`Change shift — ${guard.full_name}`}
+      error={err} onDismissError={() => setErr(null)}
       footer={
         <div className="flex justify-end gap-2">
           <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
