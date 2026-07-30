@@ -1506,6 +1506,22 @@ export default function EmployeeManagement() {
         });
         if (postErr) throw postErr;
       }
+      // Seed the FIRST salary-history row so the effective-dated history is the
+      // single source of truth from day one (the capture trigger only fires on
+      // UPDATE, so a fresh hire would otherwise have no history row). Effective
+      // from the joining date; payroll + profile then read this via effective_salary.
+      if (form.base_salary) {
+        const base = Number(form.base_salary);
+        const { error: seedErr } = await supabase.rpc("set_employee_salary", {
+          p_employee_id: newEmp.id,
+          p_effective_date: form.join_date || today(),
+          p_base_salary: base,
+          p_allowance: form.allowance ? Math.max(0, Number(form.allowance)) : 0,
+          p_per_day_salary: form.per_day_salary ? Number(form.per_day_salary) : base / daysInCurrentMonth(),
+          p_reason: form.probation_end_date ? "Initial (probation)" : "Initial salary",
+        });
+        if (seedErr) throw seedErr;
+      }
       await uploadDocs(
         { id: newEmp.id, employee_code: newEmp.employee_code, full_name: newEmp.full_name },
         form,
@@ -1788,9 +1804,9 @@ export default function EmployeeManagement() {
           department: editForm.department.trim() || null,
           shift: editForm.shift,
           status: editStatus,
-          base_salary: editForm.base_salary ? Number(editForm.base_salary) : null,
-          per_day_salary: editForm.per_day_salary ? Number(editForm.per_day_salary) : null,
-          allowance: editForm.allowance ? Math.max(0, Number(editForm.allowance)) : 0,
+          // Salary is NOT written from the edit modal — it changes only through the
+          // dated increment flow (set_employee_salary → employee_salary_history), so
+          // base_salary/allowance/per_day are deliberately omitted here.
           // Opening leaves are one-time: only writable while still unset (null).
           // Once a value exists it's locked, so we omit it from the update.
           ...(selectedEmployee.opening_leaves == null
@@ -3256,13 +3272,15 @@ export default function EmployeeManagement() {
                   <label className="block text-sm text-slate-700 mb-1">Base Salary (PKR)</label>
                   <input
                     type="number"
+                    disabled
+                    readOnly
                     value={editForm.base_salary}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setEditForm({ ...editForm, base_salary: v, per_day_salary: computePerDay(v) });
-                    }}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50 text-slate-500 cursor-not-allowed"
                   />
+                  <p className="text-xs text-slate-500 mt-1">
+                    🔒 Locked — salary changes are dated. Use <span className="font-medium">Add increment</span> below to
+                    change it (records an effective date &amp; reason to salary history).
+                  </p>
                 </div>
                 <div>
                   <label className="block text-sm text-slate-700 mb-1">Per Day Salary (PKR)</label>
@@ -3281,14 +3299,14 @@ export default function EmployeeManagement() {
                   <label className="block text-sm text-slate-700 mb-1">Allowance (PKR)</label>
                   <input
                     type="number"
-                    min={0}
+                    disabled
+                    readOnly
                     value={editForm.allowance}
-                    onChange={(e) => setEditForm({ ...editForm, allowance: e.target.value })}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50 text-slate-500 cursor-not-allowed"
                     placeholder="0"
                   />
                   <p className="text-xs text-slate-500 mt-1">
-                    Always paid with salary, regardless of attendance.
+                    🔒 Locked — set with the salary via <span className="font-medium">Add increment</span> below.
                   </p>
                 </div>
                 {selectedEmployee && (
