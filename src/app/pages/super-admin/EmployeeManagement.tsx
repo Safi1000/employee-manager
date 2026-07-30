@@ -613,6 +613,29 @@ function FieldErrorSummary({
   );
 }
 
+// The human status shown on the badge. A separated employee reads as Fired /
+// Resigned (by separation type) when they were left eligible for rehire, but as
+// "Terminated" when rehire was NOT allowed — a hard exit. Non-separated employees
+// keep their live status (Active / On Leave).
+const lifecycleStatusLabel = (e: {
+  lifecycle_state: string;
+  status: string;
+  eligible_for_rehire?: boolean | null;
+}): string => {
+  const separated = ["terminated", "fired", "left", "absconded"].includes(e.lifecycle_state);
+  if (!separated) return e.status; // Active / On Leave / Inactive
+  // Not eligible for rehire → a hard "Terminated", regardless of separation type.
+  if (e.eligible_for_rehire === false) return "Terminated";
+  switch (e.lifecycle_state) {
+    case "left":
+      return "Resigned";
+    case "absconded":
+      return "Absconded";
+    default:
+      return "Fired"; // terminated / fired
+  }
+};
+
 export default function EmployeeManagement() {
   const { profile, company } = useAuth();
   const { regionId } = useRegion();
@@ -651,6 +674,7 @@ export default function EmployeeManagement() {
   const [lifecycleFilter, setLifecycleFilter] = useState<"all" | EmployeeLifecycleState>("all");
   // Show only employees whose CNIC card has expired.
   const [expiredCardFilter, setExpiredCardFilter] = useState<"all" | "expired">("all");
+  const [dupCnicFilter, setDupCnicFilter] = useState<"all" | "duplicate">("all");
   // Quick Active / Inactive tab split (Inactive = anything not currently Active).
   const [empTab, setEmpTab] = useState<"all" | "active" | "inactive">("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -666,7 +690,8 @@ export default function EmployeeManagement() {
     (statusFilter !== "all" ? 1 : 0) +
     (completenessFilter !== "all" ? 1 : 0) +
     (lifecycleFilter !== "all" ? 1 : 0) +
-    (expiredCardFilter !== "all" ? 1 : 0);
+    (expiredCardFilter !== "all" ? 1 : 0) +
+    (dupCnicFilter !== "all" ? 1 : 0);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
@@ -992,6 +1017,24 @@ export default function EmployeeManagement() {
     return `${prefix}-${String(e.display_number).padStart(3, "0")}`;
   };
 
+  // Employees whose CNIC (compared on digits only, so "12345-6789012-3" and
+  // "1234567890123" match) is shared by 2+ records. Informational flag for a
+  // manager to review — nothing is auto-changed.
+  const duplicateCnicIds = useMemo(() => {
+    const digits = (v: string | null | undefined) => (v ?? "").replace(/\D/g, "");
+    const counts = new Map<string, number>();
+    for (const e of employees) {
+      const d = digits(e.cnic_number);
+      if (d) counts.set(d, (counts.get(d) ?? 0) + 1);
+    }
+    const ids = new Set<string>();
+    for (const e of employees) {
+      const d = digits(e.cnic_number);
+      if (d && (counts.get(d) ?? 0) > 1) ids.add(e.id);
+    }
+    return ids;
+  }, [employees]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return employees.filter((e) => {
@@ -1024,11 +1067,12 @@ export default function EmployeeManagement() {
       if (completenessFilter === "incomplete" && e.physical_copy_present) return false;
       if (lifecycleFilter !== "all" && e.lifecycle_state !== lifecycleFilter) return false;
       if (expiredCardFilter === "expired" && !isCardExpired(e.cnic_expiry)) return false;
+      if (dupCnicFilter === "duplicate" && !duplicateCnicIds.has(e.id)) return false;
       if (empTab === "active" && e.status !== "Active") return false;
       if (empTab === "inactive" && e.status === "Active") return false;
       return true;
     });
-  }, [employees, search, locationFilter, clientFilter, branchFilter, categoryFilter, shiftFilter, statusFilter, completenessFilter, lifecycleFilter, expiredCardFilter, empTab, branches]);
+  }, [employees, search, locationFilter, clientFilter, branchFilter, categoryFilter, shiftFilter, statusFilter, completenessFilter, lifecycleFilter, expiredCardFilter, dupCnicFilter, duplicateCnicIds, empTab, branches]);
 
   // Numeric sort on the client-prefixed display code's number (display_number).
   // NUMERIC — orders 001,002…010,011 correctly, never a lexicographic "10<2".
@@ -1193,8 +1237,7 @@ export default function EmployeeManagement() {
   // Export exactly what the table is showing — the same `filtered` rows, in the
   // same visible column order — so filters/search/tab carry into the export.
   const handleExport = () => {
-    const statusLabel = (e: EmployeeRow) =>
-      e.lifecycle_state === "terminated" ? "Fired" : e.lifecycle_state === "left" ? "Left" : e.status;
+    const statusLabel = lifecycleStatusLabel;
     const categoryOrClient = (e: EmployeeRow) =>
       (e.category ?? "client") === "client"
         ? e.client_name ?? ""
@@ -1304,7 +1347,7 @@ export default function EmployeeManagement() {
     const newState = fireType === "resignation" ? "left" : "fired";
     setFireTarget(null);
     if (selectedEmployee?.id === firedId) {
-      setSelectedEmployee({ ...selectedEmployee, lifecycle_state: newState, status: "Inactive" } as EmployeeRow);
+      setSelectedEmployee({ ...selectedEmployee, lifecycle_state: newState, status: "Inactive", eligible_for_rehire: fireEligible } as EmployeeRow);
     }
     await loadData();
   };
@@ -1402,6 +1445,17 @@ export default function EmployeeManagement() {
     const errs = computeEmployeeErrors(form);
     if (!form.full_name.trim()) errs.full_name = "Full Name is required.";
     if (form.category === "client" && !form.client_id) errs.client_id = "Select a client.";
+    // CNIC must be unique across employees (compared on digits, so formatting
+    // differences don't slip a duplicate through). Enforced on ADD only.
+    const cnicDigits = form.cnic_number.replace(/\D/g, "");
+    if (cnicDigits) {
+      const dup = employees.find((e) => (e.cnic_number ?? "").replace(/\D/g, "") === cnicDigits);
+      if (dup) {
+        errs.cnic_number = isFired(dup)
+          ? `This CNIC already belongs to ${dup.full_name} (${dup.employee_code}), who was separated. Use Rehire instead of adding a duplicate.`
+          : `This CNIC is already registered to ${dup.full_name} (${dup.employee_code}). Duplicate CNICs are not allowed.`;
+      }
+    }
     if (Object.values(errs).some(Boolean)) {
       setFormErrors(errs);
       setAddSubmitAttempted(true);
@@ -2099,6 +2153,15 @@ export default function EmployeeManagement() {
                 <option value="all">All Cards</option>
                 <option value="expired">Expired card only</option>
               </ThemedSelect>
+              <ThemedSelect
+                value={dupCnicFilter}
+                onChange={(e) => setDupCnicFilter(e.target.value as "all" | "duplicate")}
+                className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                title="CNIC shared by more than one employee record"
+              >
+                <option value="all">All CNICs</option>
+                <option value="duplicate">Duplicate CNIC only</option>
+              </ThemedSelect>
               </div>
             )}
           </div>
@@ -2164,6 +2227,12 @@ export default function EmployeeManagement() {
                               Card expired
                             </span>
                           )}
+                          {duplicateCnicIds.has(employee.id) && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-warning-700 dark:text-warning-500 bg-warning-50 border border-warning-200 px-1.5 py-0.5 rounded-md" title="Another employee record shares this CNIC — review and resolve manually">
+                              <AlertCircle className="w-3 h-3" strokeWidth={2} />
+                              Duplicate CNIC
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td className="px-6 py-3.5 text-sm text-muted-foreground tabular-nums">{employee.phone ?? "—"}</td>
@@ -2207,28 +2276,22 @@ export default function EmployeeManagement() {
                         )}
                       </td>
                       <td className="px-6 py-3.5">
-                        <button
-                          type="button"
-                          disabled={statusTogglingId === employee.id}
-                          onClick={() => requestStatusToggle(employee)}
-                          title={isFired(employee) ? "Click to reactivate" : "Click to fire"}
-                          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium border transition-colors disabled:opacity-50 ${
-                            employee.lifecycle_state === "terminated"
-                              ? "bg-danger-50 text-danger-700 dark:text-danger-500 border-danger-200 hover:bg-danger-100"
+                        {/* Plain status label — separation/rehire are explicit
+                            actions in the row, not a click on this badge. */}
+                        <span
+                          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium border ${
+                            isFired(employee)
+                              ? "bg-danger-50 text-danger-700 dark:text-danger-500 border-danger-200"
                               : employee.status === "Active"
-                              ? "bg-success-50 text-success-700 dark:text-success-500 border-success-200 hover:bg-success-100"
+                              ? "bg-success-50 text-success-700 dark:text-success-500 border-success-200"
                               : employee.status === "On Leave"
-                              ? "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200 hover:bg-warning-100"
-                              : "bg-secondary text-muted-foreground border-border hover:bg-accent"
+                              ? "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200"
+                              : "bg-secondary text-muted-foreground border-border"
                           }`}
                         >
-                          <span className={`w-1.5 h-1.5 rounded-full ${employee.lifecycle_state === "terminated" ? "bg-danger-500" : employee.status === "Active" ? "bg-success-500" : employee.status === "On Leave" ? "bg-warning-500" : "bg-slate-400"}`} />
-                          {employee.lifecycle_state === "terminated"
-                            ? "Fired"
-                            : employee.lifecycle_state === "left"
-                            ? "Left"
-                            : employee.status}
-                        </button>
+                          <span className={`w-1.5 h-1.5 rounded-full ${isFired(employee) ? "bg-danger-500" : employee.status === "Active" ? "bg-success-500" : employee.status === "On Leave" ? "bg-warning-500" : "bg-slate-400"}`} />
+                          {lifecycleStatusLabel(employee)}
+                        </span>
                       </td>
                       <td className="px-6 py-3.5 sticky right-0 z-10 border-l border-border bg-card group-hover:bg-accent/50 transition-colors">
                         <div className="flex gap-1">
@@ -2238,6 +2301,28 @@ export default function EmployeeManagement() {
                           <Button variant="ghost" size="sm" onClick={() => openEdit(employee)}>
                             Edit
                           </Button>
+                          {["active", "on_leave"].includes(employee.lifecycle_state) && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-danger-600 hover:text-danger-700"
+                              disabled={statusTogglingId === employee.id}
+                              onClick={() => requestStatusToggle(employee)}
+                            >
+                              Fire
+                            </Button>
+                          )}
+                          {isFired(employee) && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={employee.eligible_for_rehire === false}
+                              title={employee.eligible_for_rehire === false ? "Not eligible for rehire" : ""}
+                              onClick={() => setRehireTarget(employee)}
+                            >
+                              Rehire
+                            </Button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -2872,8 +2957,16 @@ export default function EmployeeManagement() {
                 </div>
                 <div>
                   <p className="text-slate-500 mb-1">Status</p>
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs bg-success-50 text-success-700">
-                    {selectedEmployee.status}
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
+                    isFired(selectedEmployee)
+                      ? "bg-danger-50 text-danger-700"
+                      : selectedEmployee.status === "Active"
+                      ? "bg-success-50 text-success-700"
+                      : selectedEmployee.status === "On Leave"
+                      ? "bg-warning-50 text-warning-700"
+                      : "bg-slate-100 text-slate-600"
+                  }`}>
+                    {lifecycleStatusLabel(selectedEmployee)}
                   </span>
                 </div>
               </div>
@@ -5129,16 +5222,17 @@ function EmployeeHrSection({
   const txt = (
     key: keyof FormState,
     label: string,
-    opts: { type?: string; placeholder?: string } = {},
+    opts: { type?: string; placeholder?: string; format?: (v: string) => string; maxLength?: number } = {},
   ) => (
     <div>
       <label className="block text-sm text-slate-700 mb-1">{label}</label>
       <input
         type={opts.type ?? "text"}
         value={(form[key] as string) ?? ""}
-        onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+        onChange={(e) => setForm({ ...form, [key]: opts.format ? opts.format(e.target.value) : e.target.value })}
         className={inputCls}
         placeholder={opts.placeholder}
+        maxLength={opts.maxLength}
       />
     </div>
   );
@@ -5363,7 +5457,7 @@ function EmployeeHrSection({
               {txt("spouse_name", "Spouse Name")}
               {txt("next_of_kin_name", "Next of Kin — Name")}
               {txt("next_of_kin_relation", "Next of Kin — Relation")}
-              {txt("next_of_kin_cnic", "Next of Kin — CNIC")}
+              {txt("next_of_kin_cnic", "Next of Kin — CNIC", { format: formatCnicInline, maxLength: 15, placeholder: "XXXXX-XXXXXXX-X" })}
               {txt("next_of_kin_contact", "Next of Kin — Contact")}
             </div>
           </div>

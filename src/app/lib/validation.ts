@@ -71,6 +71,15 @@ export function validateCnic(value: string | null | undefined): string | null {
   return "Enter a valid CNIC (e.g. 12345-1234567-1)";
 }
 
+// Live input formatter: strips non-digits and inserts the CNIC hyphens as the
+// user types → 5 digits - 7 digits - 1 digit (XXXXX-XXXXXXX-X). Caps at 13 digits.
+export function formatCnic(raw: string | null | undefined): string {
+  const digits = digitsOnly(raw ?? "").slice(0, 13);
+  if (digits.length <= 5) return digits;
+  if (digits.length <= 12) return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+  return `${digits.slice(0, 5)}-${digits.slice(5, 12)}-${digits.slice(12)}`;
+}
+
 // --- Phone: Pakistani mobile/landline + international ------------------------
 // Permissive: allows +, leading 0, spaces, dashes, parentheses; requires a
 // plausible 10–13 significant digits so landlines and +92 numbers all pass.

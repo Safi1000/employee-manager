@@ -5,6 +5,7 @@ import ThemedSelect from "../../components/ThemedSelect";
 import { useAuth } from "../../lib/auth";
 import { supabase } from "../../lib/supabase";
 import { formatDate } from "../../lib/date";
+import { formatCnic } from "../../lib/validation";
 
 // Workforce ▸ Recruitment: a light candidate intake pipeline. Add a candidate,
 // move them through the stages, and mark the outcome. A hire is flagged 'hired'
@@ -178,7 +179,7 @@ export default function Recruitment() {
             <div>
               <label className="block text-sm text-slate-700 mb-1">CNIC</label>
               <input className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm" value={form.cnic}
-                onChange={(e) => setForm({ ...form, cnic: e.target.value })} placeholder="XXXXX-XXXXXXX-X" />
+                onChange={(e) => setForm({ ...form, cnic: formatCnic(e.target.value) })} maxLength={15} placeholder="XXXXX-XXXXXXX-X" />
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Branch / Region</label>
