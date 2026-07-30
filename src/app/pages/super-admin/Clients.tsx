@@ -59,7 +59,13 @@ import {
 import { useAuth, hasPermission } from "../../lib/auth";
 import { useRegion, withRegion } from "../../lib/region";
 
-type ClientRow = Client & { employees_count: number; contracts_count: number };
+type ClientRow = Client & {
+  employees_count: number;
+  contracts_count: number;
+  // Consolidation Decision 3: light service-review fields folded onto the client.
+  relationship_notes?: string | null;
+  relationship_rating?: number | null;
+};
 type EmployeeAssignmentRow = Pick<
   Employee,
   "id" | "client_id" | "status" | "contract_id" | "contract_line_id" | "assignment_effective_from" | "assignment_effective_to"
@@ -82,6 +88,8 @@ type ClientForm = {
   authorised_signatory: string;
   signatory_cnic: string;
   employee_id_prefix: string;
+  relationship_notes: string;
+  relationship_rating: string; // "" | "1".."5"
 };
 
 const emptyForm: ClientForm = {
@@ -101,6 +109,8 @@ const emptyForm: ClientForm = {
   authorised_signatory: "",
   signatory_cnic: "",
   employee_id_prefix: "",
+  relationship_notes: "",
+  relationship_rating: "",
 };
 
 const formatCnic = (raw: string): string => {
@@ -375,6 +385,8 @@ export default function Clients() {
       authorised_signatory: row.authorised_signatory ?? "",
       signatory_cnic: row.signatory_cnic ?? "",
       employee_id_prefix: row.employee_id_prefix ?? "",
+      relationship_notes: row.relationship_notes ?? "",
+      relationship_rating: row.relationship_rating ? String(row.relationship_rating) : "",
     });
   };
 
@@ -398,6 +410,9 @@ export default function Clients() {
     authorised_signatory: form.authorised_signatory.trim() || null,
     signatory_cnic: form.signatory_cnic.trim() || null,
     employee_id_prefix: form.employee_id_prefix.trim().toUpperCase() || null,
+    // Consolidation Decision 3: light service-review fields.
+    relationship_notes: form.relationship_notes.trim() || null,
+    relationship_rating: form.relationship_rating ? Number(form.relationship_rating) : null,
     // Leave allowance, carry-forward, EOBI, advance payment, auto-invoicing and client
     // type are deliberately absent: those columns are no longer edited from this modal.
     // Omitting them leaves existing rows untouched and lets new rows take their DB
@@ -1068,6 +1083,35 @@ export default function Clients() {
               <p className="text-[10px] text-slate-500">The selected radio marks the default remit account.</p>
             </div>
           )}
+        </div>
+      </Section>
+
+      {/* Consolidation Decision 3: service reviews folded onto the client record. */}
+      <Section isOpen={!!expanded.relationship} onToggle={() => setExpanded((prev) => ({ ...prev, relationship: !prev.relationship }))} title="Relationship">
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3">
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Notes</label>
+            <textarea
+              value={form.relationship_notes}
+              onChange={(e) => setForm({ ...form, relationship_notes: e.target.value })}
+              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              rows={3}
+              placeholder="Service notes, feedback, points of contact…"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Rating</label>
+            <ThemedSelect
+              value={form.relationship_rating}
+              onChange={(e) => setForm({ ...form, relationship_rating: e.target.value })}
+              className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+            >
+              <option value="">—</option>
+              {([1, 2, 3, 4, 5] as const).map((n) => (
+                <option key={n} value={String(n)}>{"★".repeat(n)} ({n})</option>
+              ))}
+            </ThemedSelect>
+          </div>
         </div>
       </Section>
     </form>

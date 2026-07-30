@@ -859,7 +859,7 @@ export default function SuperAdminDashboard() {
                     <CalendarRange className="w-4 h-4 text-brand-600" strokeWidth={1.5} />
                     Deployment roster · next 7 days
                   </h3>
-                  <Link to="/super-admin/roster" className="text-xs text-brand-600 hover:text-brand-700">Open roster →</Link>
+                  <Link to="/super-admin/deployment" className="text-xs text-brand-600 hover:text-brand-700">Open deployment →</Link>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="rounded-lg border border-slate-200 p-4">

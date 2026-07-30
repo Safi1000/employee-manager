@@ -1,5 +1,6 @@
 import ThemedSelect from "../../components/ThemedSelect";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import { useAuth } from "../../lib/auth";
@@ -24,7 +25,11 @@ const thisMonthStart = () => new Date().toISOString().slice(0, 8) + "01";
 export default function Treasury() {
   const { company } = useAuth();
   const companyId = company?.id ?? "";
-  const [tab, setTab] = useState<Tab>("cockpit");
+  const [searchParams] = useSearchParams();
+  const [tab, setTab] = useState<Tab>(() => {
+    const t = searchParams.get("tab");
+    return (["cockpit", "regional", "reserves", "interregion", "capital"] as const).includes(t as Tab) ? (t as Tab) : "cockpit";
+  });
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 

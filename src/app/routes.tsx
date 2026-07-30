@@ -46,6 +46,16 @@ import Receivables from "./pages/super-admin/Receivables";
 import OpeningBalances from "./pages/super-admin/OpeningBalances";
 import RegionalScorecard from "./pages/super-admin/RegionalScorecard";
 import ClientRelationships from "./pages/super-admin/ClientRelationships";
+// Consolidation restructure — merged / renamed homes.
+import PayrollHub from "./pages/super-admin/PayrollHub";
+import AssetsIssuance from "./pages/super-admin/AssetsIssuance";
+import AccountingCore from "./pages/super-admin/AccountingCore";
+import AccessGovernance from "./pages/super-admin/AccessGovernance";
+import Recruitment from "./pages/super-admin/Recruitment";
+import DailyReports from "./pages/super-admin/DailyReports";
+import IncidentsHub from "./pages/super-admin/IncidentsHub";
+import LicencesHub from "./pages/super-admin/LicencesHub";
+import Deployment from "./pages/super-admin/Deployment";
 
 import Companies from "./pages/super-super-admin/Companies";
 import CompanyDetail from "./pages/super-super-admin/CompanyDetail";
@@ -78,14 +88,24 @@ export const router = createBrowserRouter([
     ),
     children: [
       { index: true, Component: Dashboard },
-      { path: "users", element: guard(["users.manage"], <UserManagement />) },
+      // Users & Permissions + Governance merged → Access & Governance (tabs).
+      { path: "access-governance", element: guard(["users.manage", "payroll.approve", "performance.approve", "accounting.edit"], <AccessGovernance />) },
+      { path: "users", element: <Navigate to="/super-admin/access-governance?tab=users" replace /> },
       { path: "clients", element: guard(["clients.view", "clients.edit"], <Clients />) },
       { path: "contracts", element: guard(["contracts.view", "contracts.edit"], <Contracts />) },
-      { path: "sites-strength", element: guard(["clients.view", "clients.edit", "contracts.view", "contracts.edit"], <SitesStrength />) },
-      { path: "licences", element: guard(["compliance.view", "compliance.edit"], <Licences />) },
-      { path: "roster", element: guard(["roster.view", "roster.edit"], <Roster />) },
-      { path: "incidents", element: guard(["incidents.view", "incidents.edit"], <Incidents />) },
-      { path: "chart-of-accounts", element: guard(["coa.view", "reports.view"], <ChartOfAccounts />) },
+      // Operations ▸ Deployment: contracted-vs-active headcount snapshot (surviving
+      // half of Sites & Strength). Per-post drill-down dropped; billing recon → Invoices.
+      { path: "deployment", element: guard(["clients.view", "clients.edit", "contracts.view", "contracts.edit"], <Deployment />) },
+      { path: "sites-strength", element: <Navigate to="/super-admin/deployment" replace /> },
+      // Licenses & Renewals now also hosts the contract renewal pipeline.
+      { path: "licences", element: guard(["compliance.view", "compliance.edit"], <LicencesHub />) },
+      // Deployment Roster killed (supervisor handles daily assignment) → Deployment.
+      { path: "roster", element: <Navigate to="/super-admin/deployment" replace /> },
+      // Incidents now also hosts client complaints (from dissolved Client Relationships).
+      { path: "incidents", element: guard(["incidents.view", "incidents.edit"], <IncidentsHub />) },
+      // Opening Balances + Chart of Accounts (which hosts TB + GL) merged → Accounting Core.
+      { path: "accounting-core", element: guard(["coa.view", "reports.view"], <AccountingCore />) },
+      { path: "chart-of-accounts", element: <Navigate to="/super-admin/accounting-core?tab=coa" replace /> },
       { path: "period-close", element: guard(["period_close.manage", "reports.view"], <PeriodClose />) },
       { path: "audit-log", element: <RequireAuth roles={["super_super_admin", "super_admin"]}><AuditLog /></RequireAuth> },
       { path: "employees", element: guard(["employees.view", "employees.edit"], <EmployeeManagement />) },
@@ -93,10 +113,15 @@ export const router = createBrowserRouter([
       // Month calendar retained as a CORRECTION-only Timesheet (§8.8), reached
       // from the guard's record (History tab), not the daily flow.
       { path: "attendance/timesheet", element: guard(["attendance.view", "attendance.edit"], <AttendanceManagement />) },
-      { path: "payroll", element: guard(["payroll.view", "payroll.edit"], <PayrollManagement />) },
-      { path: "payroll-runs", element: guard(["payroll.view", "payroll.edit", "payroll.approve"], <PayrollRuns />) },
+      // Payroll + Payroll Runs merged into one Payroll home (tabs: Payslips | Runs).
+      { path: "payroll", element: guard(["payroll.view", "payroll.edit"], <PayrollHub />) },
+      { path: "payroll-runs", element: <Navigate to="/super-admin/payroll?tab=runs" replace /> },
       { path: "performance", element: guard(["payroll.view", "performance.approve"], <Performance />) },
-      { path: "relievers/attendance", element: guard(["attendance.view", "attendance.edit"], <AttendanceManagement relieversOnly />) },
+      // Recruitment: new Workforce home (Vacancies + intake), structure reserved.
+      { path: "recruitment", element: guard(["employees.view", "employees.edit"], <Recruitment />) },
+      // Relievers: one thin panel (per-day cost nets vs client), separate from salaried Payroll.
+      { path: "relievers", element: guard(["attendance.view", "attendance.edit"], <AttendanceManagement relieversOnly />) },
+      { path: "relievers/attendance", element: <Navigate to="/super-admin/relievers" replace /> },
       { path: "relievers/payroll", element: guard(["payroll.view", "payroll.edit"], <PayrollManagement relieversOnly />) },
       { path: "accounting", element: guard(["accounting.view", "accounting.edit"], <Accounting />) },
       { path: "reports", element: guard(["reports.view"], <FinancialReports />) },
@@ -104,21 +129,28 @@ export const router = createBrowserRouter([
       { path: "invoices", element: guard(["invoices.view", "invoices.edit"], <Invoices />) },
       { path: "cashflow", element: guard(["cashflow.view"], <Cashflow />) },
       { path: "treasury", element: guard(["accounting.view", "reports.view", "cashflow.view"], <Treasury />) },
-      { path: "receivables", element: guard(["invoices.view", "invoices.edit", "accounting.view"], <Receivables />) },
-      { path: "opening-balances", element: guard(["accounting.edit", "coa.view"], <OpeningBalances />) },
+      // Receivables folded into Bank & Ledgers (Accounting has a Receivables tab).
+      { path: "receivables", element: <Navigate to="/super-admin/accounting?tab=receivables" replace /> },
+      { path: "opening-balances", element: <Navigate to="/super-admin/accounting-core?tab=opening" replace /> },
       { path: "regional-scorecard", element: guard(["reports.view", "accounting.view"], <RegionalScorecard />) },
-      { path: "client-relationships", element: guard(["clients.view", "clients.edit"], <ClientRelationships />) },
-      { path: "field-ops", element: guard(["roster.view", "roster.edit", "incidents.view", "attendance.view"], <FieldOps />) },
+      // Client Relationships dissolved: complaints → Incidents, renewals → Compliance,
+      // reviews → client record. Landing on the client list.
+      { path: "client-relationships", element: <Navigate to="/super-admin/clients" replace /> },
+      // Field Operations repurposed → Daily Reports (date-wise client report → PDF + record).
+      { path: "daily-reports", element: guard(["roster.view", "roster.edit", "incidents.view", "attendance.view"], <DailyReports />) },
+      { path: "field-ops", element: <Navigate to="/super-admin/daily-reports" replace /> },
       { path: "compliance-cases", element: guard(["compliance.view", "compliance.edit"], <ComplianceCases />) },
-      { path: "assets", element: guard(["inventory.view", "inventory.edit", "accounting.view"], <Assets />) },
+      // Inventory + Assets merged → Assets & Issuance (tabs: Register | Issuance).
+      { path: "assets-issuance", element: guard(["inventory.view", "inventory.edit", "accounting.view"], <AssetsIssuance />) },
+      { path: "assets", element: <Navigate to="/super-admin/assets-issuance?tab=register" replace /> },
       { path: "alerts", element: <Alerts /> },
-      { path: "governance", element: guard(["users.manage", "payroll.approve", "performance.approve", "accounting.edit"], <Governance />) },
+      { path: "governance", element: <Navigate to="/super-admin/access-governance?tab=governance" replace /> },
       { path: "partners", element: guard(["accounting.view", "accounting.edit"], <Partners />) },
       // Cash Custody moved into Banks & Ledgers as a 4th tab; redirect the old route.
       { path: "cash-custody", element: <Navigate to="/super-admin/accounting?tab=cash-custody" replace /> },
       { path: "profit-distribution", element: guard(["accounting.view", "accounting.edit"], <ProfitDistribution />) },
       { path: "project-financing", element: guard(["accounting.view", "accounting.edit"], <ProjectFinancing />) },
-      { path: "inventory", element: guard(["inventory.view", "inventory.edit"], <Inventory />) },
+      { path: "inventory", element: <Navigate to="/super-admin/assets-issuance?tab=issuance" replace /> },
       { path: "compliance", element: guard(["compliance.view", "compliance.edit"], <Compliance />) },
       { path: "documents", element: guard(["documents.view", "documents.edit"], <Documents />) },
       { path: "settings", element: guard(["settings.view", "settings.edit"], <Settings />) },

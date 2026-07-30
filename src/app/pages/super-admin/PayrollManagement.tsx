@@ -1252,7 +1252,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
             {totalUnmarkedDays === 1 ? "" : "s"} in this period — these silently earn zero. Do not bulk-disburse blind.
           </span>
           <div className="flex items-center gap-3 flex-shrink-0">
-            <a href="/super-admin/payroll-runs" className="underline whitespace-nowrap">Use the run pipeline →</a>
+            <a href="/super-admin/payroll?tab=runs" className="underline whitespace-nowrap">Use the run pipeline →</a>
             <button
               type="button"
               onClick={() => setWarningDismissed(true)}

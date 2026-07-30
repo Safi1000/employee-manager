@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   Users,
   UserCircle,
+  UserPlus,
   Calendar,
   DollarSign,
   Receipt,
@@ -78,7 +79,7 @@ export default function SuperAdminLayout() {
   const CLIENTS: LinkDef = { to: "/super-admin/clients", label: "Clients", icon: Building2, perms: ["clients.view", "clients.edit"] };
   const CONTRACTS: LinkDef = { to: "/super-admin/contracts", label: "Contracts", icon: FileSignature, perms: ["contracts.view", "contracts.edit"] };
   const SITES_STRENGTH: LinkDef = { to: "/super-admin/sites-strength", label: "Sites & Strength", icon: MapPin, perms: ["clients.view", "clients.edit", "contracts.view", "contracts.edit"] };
-  const LICENCES: LinkDef = { to: "/super-admin/licences", label: "Licences & Renewals", icon: ShieldAlert, perms: ["compliance.view", "compliance.edit"] };
+  const LICENCES: LinkDef = { to: "/super-admin/licences", label: "Licenses & Renewals", icon: ShieldAlert, perms: ["compliance.view", "compliance.edit"] };
   const INVOICES: LinkDef = { to: "/super-admin/invoices", label: "Invoices", icon: ReceiptText, perms: ["invoices.view", "invoices.edit"] };
   const EMPLOYEES: LinkDef = { to: "/super-admin/employees", label: "Employees", icon: UserCircle, perms: ["employees.view", "employees.edit"] };
   const ATTENDANCE: LinkDef = { to: "/super-admin/attendance", label: "Attendance", icon: Calendar, perms: ["attendance.view", "attendance.edit"] };
@@ -90,8 +91,8 @@ export default function SuperAdminLayout() {
   const INVENTORY: LinkDef = { to: "/super-admin/inventory", label: "Inventory", icon: Package, perms: ["inventory.view", "inventory.edit"] };
   const ROSTER: LinkDef = { to: "/super-admin/roster", label: "Deployment Roster", icon: CalendarRange, perms: ["roster.view", "roster.edit"] };
   const INCIDENTS: LinkDef = { to: "/super-admin/incidents", label: "Incidents", icon: Siren, perms: ["incidents.view", "incidents.edit"] };
-  const BANKS: LinkDef = { to: "/super-admin/accounting", label: "Banks & Ledgers", icon: Landmark, perms: ["accounting.view", "accounting.edit"] };
-  const EXPENSES: LinkDef = { to: "/super-admin/expenses", label: "Expenses", icon: Receipt, perms: ["expenses.view", "expenses.edit"] };
+  const BANKS: LinkDef = { to: "/super-admin/accounting", label: "Bank & Ledgers", icon: Landmark, perms: ["accounting.view", "accounting.edit"] };
+  const EXPENSES: LinkDef = { to: "/super-admin/expenses", label: "Expenses & Advances", icon: Receipt, perms: ["expenses.view", "expenses.edit"] };
   const CASHFLOW: LinkDef = { to: "/super-admin/cashflow", label: "Cash Flow", icon: TrendingUp, perms: ["cashflow.view"] };
   const REPORTS: LinkDef = { to: "/super-admin/reports", label: "Financial Reports", icon: FileText, perms: ["reports.view"] };
   const CHART_OF_ACCOUNTS: LinkDef = { to: "/super-admin/chart-of-accounts", label: "Chart of Accounts", icon: BookOpen, perms: ["coa.view", "reports.view"] };
@@ -106,7 +107,7 @@ export default function SuperAdminLayout() {
   const USERS: LinkDef = { to: "/super-admin/users", label: "Users & Permissions", icon: Users, perms: ["users.manage"] };
   const SETTINGS: LinkDef = { to: "/super-admin/settings", label: "Settings", icon: SettingsIcon, perms: ["settings.view", "settings.edit"] };
   // New back-office surfaces (Parts II–VII).
-  const TREASURY: LinkDef = { to: "/super-admin/treasury", label: "Treasury & Regional", icon: Landmark, perms: ["accounting.view", "reports.view", "cashflow.view"] };
+  const TREASURY: LinkDef = { to: "/super-admin/treasury", label: "Treasury & Reserves", icon: Landmark, perms: ["accounting.view", "reports.view", "cashflow.view"] };
   const ASSETS: LinkDef = { to: "/super-admin/assets", label: "Assets & Vehicles", icon: Package, perms: ["inventory.view", "inventory.edit", "accounting.view"] };
   const FIELD_OPS: LinkDef = { to: "/super-admin/field-ops", label: "Field Operations", icon: Siren, perms: ["roster.view", "roster.edit", "incidents.view", "attendance.view"] };
   const COMPLIANCE_CASES: LinkDef = { to: "/super-admin/compliance-cases", label: "Compliance Cases", icon: ShieldAlert, perms: ["compliance.view", "compliance.edit"] };
@@ -116,6 +117,18 @@ export default function SuperAdminLayout() {
   const OPENING_BAL: LinkDef = { to: "/super-admin/opening-balances", label: "Opening Balances", icon: BookOpen, perms: ["accounting.edit", "coa.view"] };
   const REGIONAL_SCORECARD: LinkDef = { to: "/super-admin/regional-scorecard", label: "Regional Scorecard", icon: PieChart, perms: ["reports.view", "accounting.view"] };
   const CLIENT_REL: LinkDef = { to: "/super-admin/client-relationships", label: "Client Relationships", icon: Users2, perms: ["clients.view", "clients.edit"] };
+
+  // Consolidation restructure — merged / renamed / moved homes.
+  const RECRUITMENT: LinkDef = { to: "/super-admin/recruitment", label: "Recruitment", icon: UserPlus, perms: ["employees.view", "employees.edit"] };
+  const RELIEVERS: LinkDef = { to: "/super-admin/relievers", label: "Relievers", icon: Shuffle, perms: ["attendance.view", "attendance.edit"] };
+  const DEPLOYMENT: LinkDef = { to: "/super-admin/deployment", label: "Deployment", icon: MapPin, perms: ["clients.view", "contracts.view", "roster.view"] };
+  const DAILY_REPORTS: LinkDef = { to: "/super-admin/daily-reports", label: "Daily Reports", icon: FileText, perms: ["roster.view", "roster.edit", "incidents.view", "attendance.view"] };
+  const ASSETS_ISSUANCE: LinkDef = { to: "/super-admin/assets-issuance", label: "Assets & Issuance", icon: Package, perms: ["inventory.view", "inventory.edit", "accounting.view"] };
+  const ACCOUNTING_CORE: LinkDef = { to: "/super-admin/accounting-core", label: "Accounting Core", icon: BookOpen, perms: ["coa.view", "reports.view", "accounting.edit"] };
+  const ACCESS_GOVERNANCE: LinkDef = { to: "/super-admin/access-governance", label: "Access & Governance", icon: Users, perms: ["users.manage", "payroll.approve", "performance.approve", "accounting.edit"] };
+  const PARTICIPATION_RULES: LinkDef = { to: "/super-admin/profit-distribution", label: "Participation Rules", icon: PieChart, perms: ["accounting.view", "accounting.edit"] };
+  const RMD_STATEMENTS: LinkDef = { to: "/super-admin/partners", label: "RMD Statements", icon: Users2, perms: ["accounting.view", "accounting.edit"] };
+  const REGIONAL_PNL: LinkDef = { to: "/super-admin/treasury?tab=regional", label: "Regional P&L", icon: PieChart, perms: ["reports.view", "accounting.view"] };
 
   // Build groups, dropping any link the user lacks permission for. Drop the
   // group entirely if it ends up with no visible children.
@@ -160,66 +173,64 @@ export default function SuperAdminLayout() {
   const overview = buildGroup("Overview", "/super-admin/overview", [DASHBOARD]);
   if (overview) links.push(overview);
 
-  // CONTRACTS & CLIENTS
-  const contractsClients = buildGroup("Contracts & Clients", "/super-admin/billing", [
+  // CLIENTS & CONTRACTS — Sites & Strength split out (headcount → Operations ▸
+  // Deployment; billing → Invoices); Client Relationships dissolved (complaints
+  // → Incidents, renewals → Compliance, reviews → client record).
+  const contractsClients = buildGroup("Clients & Contracts", "/super-admin/billing", [
     CLIENTS,
     CONTRACTS,
-    SITES_STRENGTH,
     INVOICES,
-    CLIENT_REL,
   ]);
   if (contractsClients) links.push(contractsClients);
 
-  // WORKFORCE
+  // WORKFORCE — Payroll now hosts Runs as a tab; Relievers is one thin panel
+  // (per-day cost nets against the client, separate from salaried Payroll).
   const workforce = buildGroup("Workforce", "/super-admin/workforce", [
     EMPLOYEES,
+    RECRUITMENT,
     ATTENDANCE,
     PAYROLL,
-    PAYROLL_RUNS,
     PERFORMANCE,
-    {
-      _group: true,
-      label: "Relievers",
-      basePath: "/super-admin/relievers",
-      icon: Shuffle,
-      children: [RELIEVER_ATT, RELIEVER_PAY],
-    },
+    RELIEVERS,
   ]);
   if (workforce) links.push(workforce);
 
-  // OPERATIONS
+  // OPERATIONS — Roster killed (supervisor handles it) → light Deployment
+  // snapshot; Field Ops repurposed → Daily Reports; Inventory + Assets merged
+  // → Assets & Issuance.
   const operations = buildGroup("Operations", "/super-admin/operations", [
-    ROSTER,
-    FIELD_OPS,
+    DEPLOYMENT,
+    DAILY_REPORTS,
     INCIDENTS,
-    INVENTORY,
-    ASSETS,
+    ASSETS_ISSUANCE,
   ]);
   if (operations) links.push(operations);
 
-  // FINANCE
+  // FINANCE — Opening Balances + Chart of Accounts merged → Accounting Core;
+  // Receivables folded into Bank & Ledgers; Regional Scorecard moved →
+  // Profit-Share.
   const finance = buildGroup("Finance", "/super-admin/finance", [
+    ACCOUNTING_CORE,
     BANKS,
-    TREASURY,
-    OPENING_BAL,
     EXPENSES,
-    RECEIVABLES,
     CASHFLOW,
     REPORTS,
-    REGIONAL_SCORECARD,
-    CHART_OF_ACCOUNTS,
     PERIOD_CLOSE,
+    TREASURY,
   ]);
   if (finance) links.push(finance);
 
-  // PARTNERSHIP FINANCE
-  // Cash Custody now lives as a tab inside Banks & Ledgers (Finance group), not here.
-  const partnerFinance = buildGroup("Partnership Finance", "/super-admin/partnership", [
-    PARTNERS,
-    PROFIT_DIST,
+  // PROFIT-SHARE (renamed from Partnership Finance) — Regional Scorecard moved
+  // in from Finance; Partner Accounts → RMD Statements; Profit Distribution →
+  // Participation Rules.
+  const profitShare = buildGroup("Profit-Share", "/super-admin/partnership", [
+    REGIONAL_PNL,
+    PARTICIPATION_RULES,
+    RMD_STATEMENTS,
+    REGIONAL_SCORECARD,
     PROJECT_FIN,
   ]);
-  if (partnerFinance) links.push(partnerFinance);
+  if (profitShare) links.push(profitShare);
 
   // COMPLIANCE
   const compliance = buildGroup("Compliance", "/super-admin/comply", [
@@ -230,12 +241,11 @@ export default function SuperAdminLayout() {
   ]);
   if (compliance) links.push(compliance);
 
-  // ADMIN
+  // ADMIN — Users & Permissions + Governance merged → Access & Governance.
   const admin = buildGroup("Admin", "/super-admin/admin", [
     ALERTS,
     TASKS,
-    USERS,
-    GOVERNANCE,
+    ACCESS_GOVERNANCE,
     AUDIT_LOG,
     SETTINGS,
   ]);
