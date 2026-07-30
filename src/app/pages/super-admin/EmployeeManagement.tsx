@@ -626,6 +626,8 @@ export default function EmployeeManagement() {
   const [changeClientTarget, setChangeClientTarget] = useState<EmployeeRow | null>(null);
   // §7.5: dated shift change — closes the old-shift posting, opens a new one.
   const [changeShiftTarget, setChangeShiftTarget] = useState<EmployeeRow | null>(null);
+  // Category change (reliever / client / office_staff) — same dated-posting model.
+  const [changeCategoryTarget, setChangeCategoryTarget] = useState<EmployeeRow | null>(null);
   // Phase 7 §9: separation / rehire.
   const [separationTarget, setSeparationTarget] = useState<EmployeeRow | null>(null);
   const [rehireTarget, setRehireTarget] = useState<EmployeeRow | null>(null);
@@ -670,6 +672,25 @@ export default function EmployeeManagement() {
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeRow | null>(null);
+  // Salary in force TODAY for the open profile, read from the effective-dated
+  // salary history (same source payroll pays from) so the profile figure always
+  // matches what today's pay would use; a future-dated raise flips on its date.
+  // Falls back to the stored employees.base_salary when there is no history row.
+  const [profilePay, setProfilePay] = useState<{ base: number | null; allowance: number | null } | null>(null);
+  useEffect(() => {
+    const id = selectedEmployee?.id;
+    if (!id) { setProfilePay(null); return; }
+    let alive = true;
+    setProfilePay(null);
+    supabase
+      .rpc("effective_salary", { p_employee_id: id, p_as_of: todayIso() })
+      .then(({ data }) => {
+        if (!alive) return;
+        const row = (data as { base_salary: number | null; allowance: number | null }[] | null)?.[0];
+        setProfilePay(row ? { base: row.base_salary, allowance: row.allowance } : null);
+      });
+    return () => { alive = false; };
+  }, [selectedEmployee?.id]);
   const [selectedDocs, setSelectedDocs] = useState<DocumentWithUrl[]>([]);
   const [codeHistory, setCodeHistory] = useState<EmployeeCodeHistory[]>([]);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
@@ -2740,6 +2761,15 @@ export default function EmployeeManagement() {
                   <p className="text-slate-900 capitalize">
                     {(selectedEmployee.category ?? "client").replace("_", " ")}
                   </p>
+                  {["active", "on_leave"].includes(selectedEmployee.lifecycle_state) && (
+                    <button
+                      type="button"
+                      className="text-xs text-brand-700 hover:underline mt-1"
+                      onClick={() => setChangeCategoryTarget(selectedEmployee)}
+                    >
+                      Change category
+                    </button>
+                  )}
                 </div>
                 <div>
                   <p className="text-slate-500 mb-1">Client</p>
@@ -2777,24 +2807,30 @@ export default function EmployeeManagement() {
                     </button>
                   )}
                 </div>
-                <div>
-                  <p className="text-slate-500 mb-1">Base Salary</p>
-                  <p className="text-slate-900">
-                    {selectedEmployee.base_salary != null
-                      ? `PKR ${selectedEmployee.base_salary.toLocaleString()}`
-                      : "—"}
-                  </p>
-                </div>
-                {/* Phase 3H: stored Per Day Salary deprecated — hidden from UI; the
-                    per-day rate is computed at runtime (rate ÷ days_in_month). */}
-                <div>
-                  <p className="text-slate-500 mb-1">Allowance</p>
-                  <p className="text-slate-900">
-                    {selectedEmployee.allowance
-                      ? `PKR ${Number(selectedEmployee.allowance).toLocaleString()}`
-                      : "—"}
-                  </p>
-                </div>
+                {(() => {
+                  // Prefer the salary effective today (history) over the stored
+                  // column, so the profile matches what payroll would pay now.
+                  const shownBase = profilePay?.base ?? selectedEmployee.base_salary;
+                  const shownAllowance = profilePay?.allowance ?? selectedEmployee.allowance;
+                  return (
+                    <>
+                      <div>
+                        <p className="text-slate-500 mb-1">Base Salary</p>
+                        <p className="text-slate-900">
+                          {shownBase != null ? `PKR ${Number(shownBase).toLocaleString()}` : "—"}
+                        </p>
+                      </div>
+                      {/* Phase 3H: stored Per Day Salary deprecated — hidden from UI; the
+                          per-day rate is computed at runtime (rate ÷ days_in_month). */}
+                      <div>
+                        <p className="text-slate-500 mb-1">Allowance</p>
+                        <p className="text-slate-900">
+                          {shownAllowance ? `PKR ${Number(shownAllowance).toLocaleString()}` : "—"}
+                        </p>
+                      </div>
+                    </>
+                  );
+                })()}
                 {selectedEmployee.opening_leaves != null && (
                   <div>
                     <p className="text-slate-500 mb-1">Opening Leaves</p>
@@ -2933,6 +2969,19 @@ export default function EmployeeManagement() {
           displayCode={displayCodeFor(changeShiftTarget)}
           onClose={() => setChangeShiftTarget(null)}
           onDone={async () => { setChangeShiftTarget(null); await loadData(); }}
+          onError={setError}
+        />
+      )}
+
+      {changeCategoryTarget && (
+        <ChangeCategoryModal
+          guard={changeCategoryTarget}
+          clients={clients}
+          contractsForClient={contractsForClient}
+          linesForContract={linesForContract}
+          displayCode={displayCodeFor(changeCategoryTarget)}
+          onClose={() => setChangeCategoryTarget(null)}
+          onDone={async () => { setChangeCategoryTarget(null); await loadData(); }}
           onError={setError}
         />
       )}
@@ -3242,6 +3291,21 @@ export default function EmployeeManagement() {
                     Always paid with salary, regardless of attendance.
                   </p>
                 </div>
+                {selectedEmployee && (
+                  <SalaryHistoryPanel
+                    employeeId={selectedEmployee.id}
+                    currentBase={editForm.base_salary}
+                    currentAllowance={editForm.allowance}
+                    onApplied={(base, allow, perDay) =>
+                      setEditForm((f) => ({
+                        ...f,
+                        base_salary: String(base),
+                        allowance: String(allow),
+                        per_day_salary: String(Math.round(perDay)),
+                      }))
+                    }
+                  />
+                )}
                 {editForm.category === "client" &&
                   clients.find((c) => c.id === editForm.client_id)?.leave_carry_forward && (
                     <div>
@@ -4109,6 +4173,154 @@ function SeparationModal({
 }
 
 // Phase 7 §9.6: Rehire — relinks to the SAME record (same permanent code + history).
+// Salary increments & history (edit modal). Reads the effective-dated
+// employee_salary_history so past pay is visible with its effective dates, and
+// records a new increment via set_employee_salary (the blessed RPC: writes history
+// AND updates the live employee row when the change is in effect on/before today).
+type SalaryHistoryRow = {
+  effective_date: string;
+  base_salary: number | null;
+  allowance: number | null;
+  per_day_salary: number | null;
+  reason: string | null;
+};
+function SalaryHistoryPanel({
+  employeeId, currentBase, currentAllowance, onApplied,
+}: {
+  employeeId: string;
+  currentBase: string;
+  currentAllowance: string;
+  onApplied: (base: number, allowance: number, perDay: number) => void;
+}) {
+  const [rows, setRows] = useState<SalaryHistoryRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [open, setOpen] = useState(false);
+  const [newBase, setNewBase] = useState(currentBase);
+  const [newAllowance, setNewAllowance] = useState(currentAllowance);
+  const [effDate, setEffDate] = useState(todayIso());
+  const [reason, setReason] = useState("Increment");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from("employee_salary_history")
+      .select("effective_date, base_salary, allowance, per_day_salary, reason")
+      .eq("employee_id", employeeId)
+      .order("effective_date", { ascending: false });
+    setRows((data ?? []) as SalaryHistoryRow[]);
+    setLoading(false);
+  }, [employeeId]);
+  useEffect(() => { load(); }, [load]);
+
+  const fmt = (n: number | null | undefined) =>
+    n == null ? "—" : `PKR ${Number(n).toLocaleString()}`;
+
+  const apply = async () => {
+    const base = Number(newBase);
+    if (!newBase || isNaN(base) || base <= 0) { setErr("Enter a valid new base salary."); return; }
+    if (!effDate) { setErr("Pick an effective date."); return; }
+    setSaving(true); setErr(null);
+    const perDay = base / daysInCurrentMonth();
+    const allowanceNum = newAllowance ? Math.max(0, Number(newAllowance)) : 0;
+    const { error } = await supabase.rpc("set_employee_salary", {
+      p_employee_id: employeeId,
+      p_effective_date: effDate,
+      p_base_salary: base,
+      p_allowance: allowanceNum,
+      p_per_day_salary: perDay,
+      p_reason: reason.trim() || "Increment",
+    });
+    if (error) { setErr(error.message); setSaving(false); return; }
+    await load();
+    // If the raise is already in effect (on/before today), reflect it in the live
+    // salary fields so the modal shows the new current salary.
+    if (effDate <= todayIso()) onApplied(base, allowanceNum, perDay);
+    setSaving(false);
+    setOpen(false);
+  };
+
+  return (
+    <div className="md:col-span-2 border border-slate-200 rounded-md p-3 bg-slate-50/50">
+      <div className="flex items-center justify-between">
+        <h4 className="text-sm font-medium text-slate-800">Salary increments &amp; history</h4>
+        <button
+          type="button"
+          className="text-xs text-brand-700 hover:underline"
+          onClick={() => { setNewBase(currentBase); setNewAllowance(currentAllowance); setOpen((o) => !o); setErr(null); }}
+        >
+          {open ? "Close" : "Add increment"}
+        </button>
+      </div>
+
+      {open && (
+        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-md border border-slate-200 bg-white p-3">
+          <div>
+            <label className="block text-xs text-slate-600 mb-1">New base salary (PKR)</label>
+            <input type="number" value={newBase} onChange={(e) => setNewBase(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-600 mb-1">Allowance (PKR)</label>
+            <input type="number" min={0} value={newAllowance} onChange={(e) => setNewAllowance(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm" placeholder="0" />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-600 mb-1">Effective date</label>
+            <input type="date" value={effDate} onChange={(e) => setEffDate(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm" />
+            <p className="text-[11px] text-slate-500 mt-1">Applies from this date; earlier months keep the old salary.</p>
+          </div>
+          <div>
+            <label className="block text-xs text-slate-600 mb-1">Reason</label>
+            <input value={reason} onChange={(e) => setReason(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm" placeholder="Increment" />
+          </div>
+          {err && <p className="sm:col-span-2 text-xs text-danger-600">{err}</p>}
+          <div className="sm:col-span-2 flex justify-end">
+            <Button size="sm" onClick={apply} disabled={saving}>
+              {saving && <Loader2 className="w-4 h-4 animate-spin mr-1" />} Apply increment
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <div className="mt-3 overflow-x-auto">
+        {loading ? (
+          <p className="text-xs text-slate-500">Loading…</p>
+        ) : rows.length === 0 ? (
+          <p className="text-xs text-slate-500">No salary records yet.</p>
+        ) : (
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-left text-slate-500 border-b border-slate-200">
+                <th className="py-1.5 pr-3 font-medium">Effective date</th>
+                <th className="py-1.5 pr-3 font-medium">Base</th>
+                <th className="py-1.5 pr-3 font-medium">Allowance</th>
+                <th className="py-1.5 font-medium">Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={r.effective_date} className="border-b border-slate-100 last:border-0">
+                  <td className="py-1.5 pr-3 text-slate-800">
+                    {fmtDate(r.effective_date)}
+                    {i === 0 && <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">current</span>}
+                  </td>
+                  <td className="py-1.5 pr-3 text-slate-800 font-mono">{fmt(r.base_salary)}</td>
+                  <td className="py-1.5 pr-3 text-slate-600 font-mono">{fmt(r.allowance)}</td>
+                  <td className="py-1.5 text-slate-500">{r.reason ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function RehireModal({
   guard, clients, onClose, onDone, onError,
 }: {
@@ -4117,8 +4329,13 @@ function RehireModal({
 }) {
   const [joinDate, setJoinDate] = useState(todayIso());
   const [clientId, setClientId] = useState(guard.client_id ?? "");
+  // Salary is re-confirmed on rehire — often a returning guard comes back on a new
+  // rate. Prefilled from their last salary; recorded effective from the join date.
+  const [baseSalary, setBaseSalary] = useState(guard.base_salary != null ? String(guard.base_salary) : "");
+  const [allowance, setAllowance] = useState(guard.allowance != null ? String(guard.allowance) : "");
   const [saving, setSaving] = useState(false);
   const inputCls = "mt-1 w-full px-3 py-2 border border-slate-200 rounded-md text-sm";
+  const perDay = baseSalary ? computePerDay(baseSalary) : "";
 
   const save = async () => {
     if (!clientId) { onError("Select the client to rehire into."); return; }
@@ -4130,6 +4347,19 @@ function RehireModal({
       if (rErr) throw rErr;
       // New client-prefixed display code for the new stint (permanent code kept).
       await supabase.rpc("assign_display_number", { p_employee_id: guard.id });
+      // Record the (possibly new) salary effective from the rehire date, so this
+      // stint pays the rehire rate and it lands in salary history.
+      if (baseSalary) {
+        const { error: salErr } = await supabase.rpc("set_employee_salary", {
+          p_employee_id: guard.id,
+          p_effective_date: joinDate,
+          p_base_salary: Number(baseSalary),
+          p_allowance: allowance ? Math.max(0, Number(allowance)) : 0,
+          p_per_day_salary: Number(baseSalary) / daysInCurrentMonth(),
+          p_reason: "Rehire",
+        });
+        if (salErr) throw salErr;
+      }
       await onDone();
     } catch (e: any) { onError(e.message ?? String(e)); setSaving(false); }
   };
@@ -4158,6 +4388,19 @@ function RehireModal({
             {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </ThemedSelect>
         </label>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block"><span className="text-sm text-slate-600">Base salary (PKR)</span>
+            <input type="number" value={baseSalary} onChange={(e) => setBaseSalary(e.target.value)} className={inputCls} placeholder="0" />
+          </label>
+          <label className="block"><span className="text-sm text-slate-600">Allowance (PKR)</span>
+            <input type="number" min={0} value={allowance} onChange={(e) => setAllowance(e.target.value)} className={inputCls} placeholder="0" />
+          </label>
+        </div>
+        {baseSalary && (
+          <p className="text-[11px] text-slate-500">
+            Per day (this month): PKR {Number(perDay).toLocaleString()} · recorded effective {fmtDate(joinDate)}.
+          </p>
+        )}
       </div>
     </Modal>
   );
@@ -4286,6 +4529,170 @@ function ChangeClientModal({
             <option value="separation">Separation</option>
           </ThemedSelect>
         </label>
+        <label className="block">
+          <span className="text-sm text-slate-600">Effective date</span>
+          <input type="date" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} className={inputCls} />
+        </label>
+      </div>
+    </Modal>
+  );
+}
+
+// Dedicated "Change category" action — move an employee between reliever, client
+// and office staff. Mirrors Change client's dated-posting model: the change_category
+// RPC closes any open posting at eff-1 and (for → client) opens a new dated one, so
+// past attendance stays put and the new category applies from the effective date.
+// The permanent code is untouched; leaving a client drops the client-prefixed
+// display code. The transition is logged to employee_code_history (History tab).
+const CHANGE_CATEGORY_LABEL: Record<EmployeeCategory, string> = {
+  client: "Client",
+  office_staff: "Office Staff",
+  reliever: "Reliever",
+};
+
+function ChangeCategoryModal({
+  guard,
+  clients,
+  contractsForClient,
+  linesForContract,
+  displayCode,
+  onClose,
+  onDone,
+  onError,
+}: {
+  guard: EmployeeRow;
+  clients: Client[];
+  contractsForClient: (clientId: string) => Contract[];
+  linesForContract: (contractId: string) => ContractLine[];
+  displayCode: string;
+  onClose: () => void;
+  onDone: () => Promise<void>;
+  onError: (m: string) => void;
+}) {
+  const currentCategory = (guard.category ?? "client") as EmployeeCategory;
+  // The current category is never an option — you can only move to a different one.
+  const categoryOptions = (["reliever", "client", "office_staff"] as EmployeeCategory[])
+    .filter((c) => c !== currentCategory);
+  const [category, setCategory] = useState<EmployeeCategory>(categoryOptions[0]);
+  const [clientId, setClientId] = useState(guard.client_id ?? "");
+  const [contractLineId, setContractLineId] = useState("");
+  const [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().slice(0, 10));
+  const [saving, setSaving] = useState(false);
+
+  const lines = clientId
+    ? contractsForClient(clientId).flatMap((c) => linesForContract(c.id))
+    : [];
+  const movingToClient = category === "client";
+  const changed =
+    category !== currentCategory ||
+    (movingToClient && clientId !== (guard.client_id ?? ""));
+
+  const save = async () => {
+    if (!changed) { onError("Pick a different category (or a different client)."); return; }
+    if (movingToClient && !clientId) { onError("Select a client to move this employee to."); return; }
+    setSaving(true);
+    try {
+      const { error: rpcErr } = await supabase.rpc("change_category", {
+        p_guard_id: guard.id,
+        p_new_category: category,
+        p_new_client_id: movingToClient ? clientId : null,
+        p_contract_line_id: movingToClient ? (contractLineId || null) : null,
+        p_effective_date: effectiveDate || null,
+      });
+      if (rpcErr) throw rpcErr;
+
+      // Preserve the transition in history. The permanent code is immutable; only
+      // the display code changes (new client number on → client, permanent code
+      // otherwise). old_code holds the PRIOR display, captured before the change.
+      const permanent = guard.guard_code ?? guard.employee_code;
+      let newDisplay = permanent;
+      let logClientId: string | null = null;
+      if (movingToClient) {
+        const { data: newDisp, error: dispErr } = await supabase.rpc("assign_display_number", {
+          p_employee_id: guard.id,
+        });
+        if (dispErr) throw dispErr;
+        newDisplay = (newDisp as string | null) ?? permanent;
+        logClientId = clientId;
+      }
+      const { error: histErr } = await supabase.from("employee_code_history").insert({
+        company_id: guard.company_id,
+        employee_id: guard.id,
+        old_code: displayCode,
+        new_code: newDisplay,
+        client_id: logClientId,
+        reason: `category: ${CHANGE_CATEGORY_LABEL[currentCategory]} → ${CHANGE_CATEGORY_LABEL[category]}`,
+      });
+      if (histErr) throw histErr;
+      await onDone();
+    } catch (e: any) {
+      onError(e.message ?? String(e));
+      setSaving(false);
+    }
+  };
+
+  const inputCls = "mt-1 w-full px-3 py-2 border border-slate-200 rounded-md text-sm";
+  return (
+    <Modal
+      isOpen
+      onClose={onClose}
+      title="Change category"
+      size="sm"
+      footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
+          <Button size="sm" onClick={save} disabled={saving}>
+            {saving && <Loader2 className="w-4 h-4 animate-spin mr-1" />} Save
+          </Button>
+        </div>
+      }
+    >
+      <div className="space-y-3">
+        <p className="text-xs text-slate-500">
+          Moving {guard.full_name} ({displayCode}) from{" "}
+          <span className="font-medium">{CHANGE_CATEGORY_LABEL[currentCategory]}</span>. Past attendance
+          stays under the old posting; the new category applies from the effective date.
+          {movingToClient && " A new client number will be issued."}
+        </p>
+        <label className="block">
+          <span className="text-sm text-slate-600">Category</span>
+          <ThemedSelect
+            value={category}
+            onChange={(e) => {
+              const next = e.target.value as EmployeeCategory;
+              setCategory(next);
+              if (next !== "client") { setClientId(""); setContractLineId(""); }
+              else if (!clientId) setClientId(guard.client_id ?? "");
+            }}
+            className={inputCls}
+          >
+            {categoryOptions.map((c) => (
+              <option key={c} value={c}>{CHANGE_CATEGORY_LABEL[c]}</option>
+            ))}
+          </ThemedSelect>
+        </label>
+        {movingToClient && (
+          <>
+            <label className="block">
+              <span className="text-sm text-slate-600">Client</span>
+              <ThemedSelect
+                value={clientId}
+                onChange={(e) => { setClientId(e.target.value); setContractLineId(""); }}
+                className={inputCls}
+              >
+                <option value="">— Select —</option>
+                {clients.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
+              </ThemedSelect>
+            </label>
+            <label className="block">
+              <span className="text-sm text-slate-600">Contract line (optional)</span>
+              <ThemedSelect value={contractLineId} onChange={(e) => setContractLineId(e.target.value)} className={inputCls}>
+                <option value="">— None —</option>
+                {lines.map((l) => (<option key={l.id} value={l.id}>{l.label ?? l.category}</option>))}
+              </ThemedSelect>
+            </label>
+          </>
+        )}
         <label className="block">
           <span className="text-sm text-slate-600">Effective date</span>
           <input type="date" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} className={inputCls} />
