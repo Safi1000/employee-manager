@@ -420,8 +420,6 @@ export function initBastion(root: ShadowRoot): () => void {
     /** Slider range; the number input may go higher (see inputMax). */
     slider: { min: 1, max: 1000, step: 1, default: 180 },
     inputMax: 5000,
-    /** Above this, show the "custom / enterprise" note. */
-    enterpriseAbove: 500,
     /**
      * MARGINAL bands: a guard is charged only at the rate of the band they
      * fall in, not at one flat rate for the whole headcount. `to: null` = the
@@ -455,7 +453,6 @@ export function initBastion(root: ShadowRoot): () => void {
     total: number;
     perGuard: number;
     aiCredit: number;
-    enterprise: boolean;
   };
 
   /**
@@ -499,7 +496,6 @@ export function initBastion(root: ShadowRoot): () => void {
       total,
       perGuard: total / guards,
       aiCredit: tier ? tier.credit : 0,
-      enterprise: guards > PRICING.enterpriseAbove,
     };
   };
 
@@ -512,7 +508,6 @@ export function initBastion(root: ShadowRoot): () => void {
     const elAi = root.getElementById("pcAi");
     const elLines = root.getElementById("pcLines");
     const elTotalRow = root.getElementById("pcTotalRow");
-    const elEnt = root.getElementById("pcEnterprise");
     const elCta = root.getElementById("pcCta");
 
     // Config drives the controls, so changing PRICING is enough.
@@ -556,7 +551,6 @@ export function initBastion(root: ShadowRoot): () => void {
         )).join("");
       }
       if (elTotalRow) elTotalRow.textContent = money(q.total);
-      if (elEnt) elEnt.hidden = !q.enterprise;
       paintTrack();
     };
 

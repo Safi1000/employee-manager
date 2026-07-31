@@ -564,8 +564,6 @@ h1 { font-size: clamp(2.6rem, 6.2vw, 4.9rem); margin: 1.4rem 0 0; font-weight: 8
 .pc-total { margin-top: .5rem; padding-top: .95rem; border-top: 1px solid var(--hair-dark); border-bottom: 0; }
 .pc-total .pc-line-label { font-family: var(--display); font-weight: 700; color: var(--bone); font-size: 1.02rem; }
 .pc-total b { color: var(--amber); font-size: 1.32rem; font-weight: 700; }
-.pc-enterprise { display: flex; align-items: center; gap: .55rem; flex-wrap: wrap; margin-top: 1rem; padding: .7rem .85rem; border-radius: 10px; background: var(--amber-soft); color: var(--bone-dim); font-size: .86rem; }
-.pc-enterprise[hidden] { display: none; }
 .calc-cta { margin-top: 1.25rem; text-align: center; }
 .calc-fine { margin-top: .85rem; text-align: center; font-size: .8rem; color: var(--muted); }
 
