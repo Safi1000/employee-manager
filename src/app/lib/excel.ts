@@ -457,12 +457,15 @@ export type AttendanceEmployeeRow = {
   // Effective shift per day (override-aware). shiftByDay[day-1] = "day"|"night".
   // Falls back to `shift` for every day when omitted.
   shiftByDay?: ("day" | "night")[];
-  // statusByDay[day-1] = "P" | "A" | "L" | ""
+  // statusByDay[day-1] = "P" | "A" | "L" | "X" (separated — see separationNote) | ""
   statusByDay: string[];
   presents: number;
   absents: number;
   leaves: number;
   payDays: number;
+  // Set for a guard who left/was fired: shown after their name and used for the
+  // legend, e.g. "Fired 10/03/2026". Days from that date on carry "X".
+  separationNote?: string | null;
 };
 
 export function exportAttendance(opts: {
@@ -518,7 +521,9 @@ export function exportAttendance(opts: {
   for (const row of rows) {
     const r: any[] = [
       String(row.serial).padStart(2, "0"),
-      row.name,
+      // A separated guard is called out on their own row, so the sheet explains
+      // its own blanks instead of reading as missing attendance.
+      row.separationNote ? `${row.name} (${row.separationNote})` : row.name,
       row.designation,
       row.empCode,
     ];
@@ -574,7 +579,22 @@ export function exportAttendance(opts: {
   data.push([]);
   data.push(["D", "=", "day shift"]);
   data.push(["N", "=", "night shift"]);
+  data.push(["P / A / L", "=", "present / absent / leave"]);
+  data.push([
+    "X",
+    "=",
+    "not markable on this date — fired / terminated / resigned, before joining, or outside the contract dates",
+  ]);
   data.push(["pay days", "=", "total present + allowed leaves - excessive leaves"]);
+
+  // Roll-call of everyone whose employment ended, with the date — so the sheet
+  // answers "why did this guard stop appearing?" without a second lookup.
+  const separated = rows.filter((r) => r.separationNote);
+  if (separated.length > 0) {
+    data.push([]);
+    data.push(["Separations in / before this period"]);
+    for (const r of separated) data.push([r.empCode, r.name, r.separationNote]);
+  }
 
   const ws = XLSX.utils.aoa_to_sheet(data);
   // Title merges

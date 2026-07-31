@@ -1080,21 +1080,30 @@ export type Employee = {
   updated_at?: string;
 };
 
+// Mirrors the employee_lifecycle_state enum: the original six (0082) plus the
+// Phase-3A additions (0119) that record_separation actually writes —
+// 'fired' (termination), 'absconded', and 'archived'.
 export type EmployeeLifecycleState =
   | "applicant"
   | "waitlisted"
   | "active"
   | "on_leave"
   | "left"
-  | "terminated";
+  | "terminated"
+  | "fired"
+  | "absconded"
+  | "archived";
 
 export const LIFECYCLE_STATE_LABEL: Record<EmployeeLifecycleState, string> = {
   applicant: "Applicant",
   waitlisted: "Waiting list",
   active: "Active",
   on_leave: "On leave",
-  left: "Left",
+  left: "Resigned / left",
   terminated: "Fired",
+  fired: "Fired",
+  absconded: "Absconded",
+  archived: "Archived",
 };
 
 // Allowed transitions, mirrored from lifecycle_transition_allowed (migration 0082).
@@ -1105,6 +1114,11 @@ export const LIFECYCLE_TRANSITIONS: Record<EmployeeLifecycleState, EmployeeLifec
   on_leave: ["active", "left", "terminated"],
   left: ["active"],
   terminated: ["active"],
+  // Separations recorded by record_separation() land here; rehire_guard() is the
+  // only way back, same as 'left'/'terminated'. 'archived' is a dead end.
+  fired: ["active"],
+  absconded: ["active"],
+  archived: [],
 };
 
 export type VettingStatus = "pending" | "cleared" | "adverse";

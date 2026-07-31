@@ -15,6 +15,7 @@ import ClientFilterSelect from "../../components/ClientFilterSelect";
 import ExportButton from "../../components/ExportButton";
 import { exportTable } from "../../lib/excel";
 import { useRegion, withRegion } from "../../lib/region";
+import { isSeparatedState } from "../../lib/employmentWindow";
 import {
   supabase,
   EMPLOYEE_DOCS_BUCKET,
@@ -556,6 +557,13 @@ const computePerDay = (baseStr: string): string => {
   return pd.toFixed(2);
 };
 
+// CNIC and Join Date are mandatory (see computeEmployeeErrors). Records created
+// before that rule can still be missing them, and both matter downstream — the
+// CNIC is the identity key, the join date opens the attendance window — so they
+// are flagged in the list and countable from the headline tiles.
+const isMissingKeyFields = (e: { cnic_number: string | null; join_date: string | null }): boolean =>
+  !e.cnic_number?.trim() || !e.join_date;
+
 // Human labels for the validated employee fields, keyed by their form key. Used
 // by the in-modal error summary so a failed save names the exact fields.
 const EMPLOYEE_FIELD_LABELS: Record<string, string> = {
@@ -563,6 +571,7 @@ const EMPLOYEE_FIELD_LABELS: Record<string, string> = {
   client_id: "Client",
   phone: "Phone Number",
   cnic_number: "CNIC Number",
+  join_date: "Join Date",
   iban: "IBAN",
   bank_account: "Bank Account",
   emergency_contact_phone: "Emergency Contact Phone",
@@ -622,7 +631,7 @@ const lifecycleStatusLabel = (e: {
   status: string;
   eligible_for_rehire?: boolean | null;
 }): string => {
-  const separated = ["terminated", "fired", "left", "absconded"].includes(e.lifecycle_state);
+  const separated = isSeparatedState(e.lifecycle_state);
   if (!separated) return e.status; // Active / On Leave / Inactive
   // Not eligible for rehire → a hard "Terminated", regardless of separation type.
   if (e.eligible_for_rehire === false) return "Terminated";
@@ -681,6 +690,9 @@ export default function EmployeeManagement() {
   // Show only employees whose CNIC card has expired.
   const [expiredCardFilter, setExpiredCardFilter] = useState<"all" | "expired">("all");
   const [dupCnicFilter, setDupCnicFilter] = useState<"all" | "duplicate">("all");
+  // Records missing a mandatory identity field (CNIC and/or Join Date). Driven
+  // by the headline tile, which doubles as the toggle.
+  const [missingKeyFilter, setMissingKeyFilter] = useState<"all" | "missing">("all");
   // Quick Active / Inactive tab split (Inactive = anything not currently Active).
   const [empTab, setEmpTab] = useState<"all" | "active" | "inactive">("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -697,7 +709,8 @@ export default function EmployeeManagement() {
     (completenessFilter !== "all" ? 1 : 0) +
     (lifecycleFilter !== "all" ? 1 : 0) +
     (expiredCardFilter !== "all" ? 1 : 0) +
-    (dupCnicFilter !== "all" ? 1 : 0);
+    (dupCnicFilter !== "all" ? 1 : 0) +
+    (missingKeyFilter !== "all" ? 1 : 0);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
@@ -753,6 +766,7 @@ export default function EmployeeManagement() {
     "bank_account",
     "iban",
     "cnic_number",
+    "join_date",
     "permanent_address",
     "current_address",
     "emergency_contact_phone",
@@ -1082,11 +1096,12 @@ export default function EmployeeManagement() {
       if (lifecycleFilter !== "all" && e.lifecycle_state !== lifecycleFilter) return false;
       if (expiredCardFilter === "expired" && !isCardExpired(e.cnic_expiry)) return false;
       if (dupCnicFilter === "duplicate" && !duplicateCnicIds.has(e.id)) return false;
+      if (missingKeyFilter === "missing" && !isMissingKeyFields(e)) return false;
       if (empTab === "active" && e.status !== "Active") return false;
       if (empTab === "inactive" && e.status === "Active") return false;
       return true;
     });
-  }, [employees, search, locationFilter, clientFilter, branchFilter, categoryFilter, shiftFilter, statusFilter, completenessFilter, lifecycleFilter, expiredCardFilter, dupCnicFilter, duplicateCnicIds, empTab, branches]);
+  }, [employees, search, locationFilter, clientFilter, branchFilter, categoryFilter, shiftFilter, statusFilter, completenessFilter, lifecycleFilter, expiredCardFilter, dupCnicFilter, duplicateCnicIds, missingKeyFilter, empTab, branches]);
 
   // Numeric sort on the client-prefixed display code's number (display_number).
   // NUMERIC — orders 001,002…010,011 correctly, never a lexicographic "10<2".
@@ -1112,7 +1127,12 @@ export default function EmployeeManagement() {
       ? employees
       : employees.filter((e) => e.client_id === clientFilter);
     const active = scope.filter((e) => e.status === "Active").length;
-    return { total: scope.length, active, inactive: scope.length - active };
+    return {
+      total: scope.length,
+      active,
+      inactive: scope.length - active,
+      missingKeyFields: scope.filter(isMissingKeyFields).length,
+    };
   }, [employees, clientFilter]);
 
   const countsClientName = useMemo(
@@ -1280,8 +1300,7 @@ export default function EmployeeManagement() {
     });
   };
 
-  const isFired = (emp: EmployeeRow) =>
-    ["terminated", "left", "fired", "absconded"].includes(emp.lifecycle_state);
+  const isFired = (emp: EmployeeRow) => isSeparatedState(emp.lifecycle_state);
 
   const requestStatusToggle = (emp: EmployeeRow) => {
     if (isFired(emp)) {
@@ -1443,10 +1462,14 @@ export default function EmployeeManagement() {
   };
 
   // Inline field errors for an employee form (null = OK).
+  // CNIC and Join Date are mandatory: the CNIC is the identity key duplicate
+  // detection and rehire rely on, and the join date opens the attendance window
+  // (migration 0152) — a record missing either can't be paid or marked correctly.
   const computeEmployeeErrors = (f: FormState): Record<string, string | null> => ({
     full_name: validateFreeText(f.full_name),
     phone: validatePhone(f.phone),
-    cnic_number: validateCnic(f.cnic_number),
+    cnic_number: !f.cnic_number.trim() ? "CNIC Number is required." : validateCnic(f.cnic_number),
+    join_date: !f.join_date ? "Join Date is required." : null,
     iban: validateIban(f.iban),
     bank_account: accountOrIbanError(f.bank_account),
     emergency_contact_phone: validatePhone(f.emergency_contact_phone),
@@ -2013,7 +2036,7 @@ export default function EmployeeManagement() {
 
         {/* Headline counts — total registered / active / inactive. Scopes to the
             selected client when one is chosen (label shows the client name). */}
-        <div className="mb-4 grid grid-cols-3 gap-3">
+        <div className="mb-4 grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
             { label: countsClientName ? `${countsClientName} — Registered` : "Registered", value: counts.total, tint: "text-foreground" },
             { label: "Active", value: counts.active, tint: "text-success-700 dark:text-success-500" },
@@ -2024,6 +2047,27 @@ export default function EmployeeManagement() {
               <div className={`mt-1 text-2xl font-bold ${c.tint}`}>{c.value}</div>
             </div>
           ))}
+          {/* Missing mandatory identity fields — click to filter the list down
+              to exactly those records so they can be fixed. */}
+          <button
+            type="button"
+            onClick={() => setMissingKeyFilter((v) => (v === "missing" ? "all" : "missing"))}
+            title="Records missing CNIC and/or Join Date — click to show only these"
+            className={`text-left bg-card border rounded-xl px-4 py-3 transition-colors hover:bg-accent ${
+              missingKeyFilter === "missing" ? "border-danger-500 ring-2 ring-danger-500/30" : "border-border"
+            }`}
+          >
+            <div className="text-xs uppercase tracking-wide text-muted-foreground truncate">
+              No CNIC / Join Date
+            </div>
+            <div
+              className={`mt-1 text-2xl font-bold ${
+                counts.missingKeyFields > 0 ? "text-danger-700 dark:text-danger-500" : "text-success-700 dark:text-success-500"
+              }`}
+            >
+              {counts.missingKeyFields}
+            </div>
+          </button>
         </div>
 
         <div className="bg-card rounded-xl border border-border">
@@ -2220,6 +2264,13 @@ export default function EmployeeManagement() {
                     // Profile completeness is driven by the "Physical Copy Present"
                     // flag: incomplete → red row, complete → green row.
                     const incomplete = !employee.physical_copy_present;
+                    // CNIC and Join Date are mandatory on the form now, so any
+                    // record still missing them predates the rule and needs
+                    // fixing — attendance and payroll both depend on them.
+                    const missingKeyFields = [
+                      !employee.cnic_number?.trim() ? "CNIC" : null,
+                      !employee.join_date ? "Join Date" : null,
+                    ].filter(Boolean) as string[];
                     return (
                     <tr
                       key={employee.id}
@@ -2243,6 +2294,15 @@ export default function EmployeeManagement() {
                             <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-warning-700 dark:text-warning-500 bg-warning-50 border border-warning-200 px-1.5 py-0.5 rounded-md" title="CNIC card expired">
                               <AlertCircle className="w-3 h-3" strokeWidth={2} />
                               Card expired
+                            </span>
+                          )}
+                          {missingKeyFields.length > 0 && (
+                            <span
+                              className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-danger-700 dark:text-danger-500 bg-danger-50 border border-danger-200 px-1.5 py-0.5 rounded-md"
+                              title={`Missing ${missingKeyFields.join(" and ")} — required. Attendance can't be gated and payroll can't be trusted without ${missingKeyFields.length > 1 ? "them" : "it"}.`}
+                            >
+                              <AlertCircle className="w-3 h-3" strokeWidth={2} />
+                              No {missingKeyFields.join(" / ")}
                             </span>
                           )}
                           {duplicateCnicIds.has(employee.id) && (
@@ -2631,13 +2691,17 @@ export default function EmployeeManagement() {
                   </div>
                 )}
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Join Date</label>
+                <label className="block text-sm text-slate-700 mb-1">Join Date *</label>
                 <input
                   type="date"
+                  id="empfield-join_date"
                   value={form.join_date}
                   onChange={(e) => setForm({ ...form, join_date: e.target.value })}
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                 />
+                {formErrors.join_date && (
+                  <p className="text-xs text-danger-600 mt-1">{formErrors.join_date}</p>
+                )}
               </div>
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Bank Name</label>
@@ -3473,13 +3537,17 @@ export default function EmployeeManagement() {
                     </div>
                   )}
                 <div>
-                  <label className="block text-sm text-slate-700 mb-1">Join Date</label>
+                  <label className="block text-sm text-slate-700 mb-1">Join Date *</label>
                   <input
                     type="date"
+                    id="empeditfield-join_date"
                     value={editForm.join_date}
                     onChange={(e) => setEditForm({ ...editForm, join_date: e.target.value })}
                     className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                   />
+                  {editFormErrors.join_date && (
+                    <p className="text-xs text-danger-600 mt-1">{editFormErrors.join_date}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm text-slate-700 mb-1">Bank Name</label>
@@ -5404,7 +5472,7 @@ function EmployeeHrSection({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-slate-700 mb-1">CNIC Number</label>
+              <label className="block text-sm text-slate-700 mb-1">CNIC Number *</label>
               <input
                 type="text"
                 maxLength={15}

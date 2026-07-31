@@ -23,6 +23,7 @@ import {
   type Contract,
 } from "../../lib/supabase";
 import { useRegion, withRegion } from "../../lib/region";
+import { isSeparatedState } from "../../lib/employmentWindow";
 import { guardDisplayCode } from "../../lib/guardCode";
 
 type EmployeeRow = Employee & { location_name: string | null; client_name: string | null };
@@ -623,9 +624,16 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       }
       if (statusFilter !== "all" && r.status !== statusFilter) return false;
       if (disbursedFilter !== "all" && (disbursedFilter === "yes" ? !r.disbursed : r.disbursed)) return false;
-      if (empTab === "active" && e.status !== "Active") return false;
-      if (empTab === "inactive" && e.status === "Active") return false;
-      if (empTab === "all" && e.status !== "Active" && r.present_days === 0 && r.advance === 0) return false;
+      // The Fired tab keys off lifecycle_state — the authoritative separation
+      // field the Employees page uses — not the legacy `status` mirror, which
+      // only tracks it through a DB trigger and left this tab empty. "Fired"
+      // covers every separated state: fired, terminated, resigned/left, absconded.
+      const separated = isSeparatedState(e.lifecycle_state);
+      if (empTab === "active" && separated) return false;
+      if (empTab === "inactive" && !separated) return false;
+      // A separated guard with nothing left to pay is noise on every tab — the
+      // only reason to keep listing them is money still owed.
+      if (separated && r.net_salary <= 0 && r.advance === 0) return false;
       if (categoryFilter !== "all" && (e.category ?? "client") !== categoryFilter) return false;
       return true;
     });

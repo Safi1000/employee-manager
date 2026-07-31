@@ -5,6 +5,7 @@ import ClientFilterSelect from "./ClientFilterSelect";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../lib/auth";
 import { guardDisplayCode } from "../lib/guardCode";
+import { attendanceWindowError } from "../lib/employmentWindow";
 import { loadShiftResolver, type ShiftResolver } from "../lib/shiftOnDate";
 
 // ── Shared "Bulk Mark by Employee" calendar ──────────────────────────────────
@@ -71,9 +72,13 @@ type BulkEmp = {
   shift: "day" | "night";
   join_date: string | null;
   last_working_day: string | null;
+  termination_date: string | null;
+  contract_id: string | null;
   lifecycle_state: string | null;
   category: string;
 };
+
+type BulkContract = { id: string; start_date: string | null; end_date: string | null; is_infinite: boolean | null };
 
 export default function BulkMarkByEmployeeModal({ onClose, onSaved }: {
   onClose: () => void;
@@ -81,6 +86,7 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved }: {
 }) {
   const { profile } = useAuth();
   const [employees, setEmployees] = useState<BulkEmp[]>([]);
+  const [contracts, setContracts] = useState<BulkContract[]>([]);
   const [loadingEmps, setLoadingEmps] = useState(true);
   const [search, setSearch] = useState("");
   const [clientFilter, setClientFilter] = useState<string>("all");
@@ -114,20 +120,29 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved }: {
   useEffect(() => {
     (async () => {
       setLoadingEmps(true);
-      const { data, error } = await supabase
-        .from("employees")
-        .select(
-          "id, full_name, guard_code, display_number, employee_code, client_id, shift, " +
-            "join_date, last_working_day, lifecycle_state, category, clients:client_id(name, employee_id_prefix)",
-        )
-        .neq("category", "reliever")
-        .order("full_name");
+      // Contracts come along because the markable window is the intersection of
+      // the employment window and the assigned contract's dates.
+      const [{ data, error }, conRes] = await Promise.all([
+        supabase
+          .from("employees")
+          .select(
+            "id, full_name, guard_code, display_number, employee_code, client_id, shift, " +
+              "join_date, last_working_day, termination_date, contract_id, lifecycle_state, category, " +
+              "clients:client_id(name, employee_id_prefix)",
+          )
+          .neq("category", "reliever")
+          .order("full_name"),
+        supabase.from("contracts").select("id, start_date, end_date, is_infinite"),
+      ]);
       if (error) { setBulkError(error.message); setLoadingEmps(false); return; }
+      setContracts((conRes.data ?? []) as BulkContract[]);
       setEmployees((data ?? []).map((e: any) => ({
         id: e.id, full_name: e.full_name, guard_code: e.guard_code, display_number: e.display_number,
         employee_code: e.employee_code, client_id: e.client_id, client_name: e.clients?.name ?? null,
         client_prefix: e.clients?.employee_id_prefix ?? null, shift: (e.shift ?? "day") as "day" | "night",
-        join_date: e.join_date, last_working_day: e.last_working_day, lifecycle_state: e.lifecycle_state,
+        join_date: e.join_date, last_working_day: e.last_working_day,
+        termination_date: e.termination_date, contract_id: e.contract_id,
+        lifecycle_state: e.lifecycle_state,
         category: e.category,
       })));
       setLoadingEmps(false);
@@ -258,14 +273,21 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved }: {
     return m;
   }, [orderedDates]);
 
-  const inWindow = (d: string): boolean => {
-    if (!emp) return false;
-    if (d > today()) return false; // no future attendance
-    if (emp.lifecycle_state === "archived") return false;
-    if (emp.join_date && d < emp.join_date) return false;
-    if (emp.last_working_day && d > emp.last_working_day) return false;
-    return true;
+  const empContract = useMemo(
+    () => (emp?.contract_id ? contracts.find((c) => c.id === emp.contract_id) ?? null : null),
+    [emp, contracts],
+  );
+
+  // Why this date can't be marked, or null. Shared with the timesheet screens
+  // and mirrored by the DB trigger (migration 0152), so a day greyed out here is
+  // a day the database will refuse regardless of how it's submitted.
+  const windowBlock = (d: string): string | null => {
+    if (!emp) return "No employee selected.";
+    if (d > today()) return "Future dates can't be marked.";
+    return attendanceWindowError(emp, empContract, d);
   };
+
+  const inWindow = (d: string): boolean => windowBlock(d) === null;
 
   const shiftMonth = (delta: number) => {
     const [y, m] = month.split("-").map(Number);
@@ -528,8 +550,8 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved }: {
                 <div className="grid grid-cols-7 gap-1.5">
                   {cells.map((c, i) => {
                     if (!c.date) return <div key={i} className="h-16 rounded-lg bg-muted/40" />;
-                    const win = inWindow(c.date);
-                    const isFuture = c.date > today();
+                    const block = windowBlock(c.date);
+                    const win = block === null;
                     const status = existing.get(c.date);
                     const sel = selected.has(c.date);
                     const picks = shiftsFor(c.date);
@@ -542,7 +564,7 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved }: {
                         onMouseDown={(e) => { if (!win) return; e.preventDefault(); startDrag(c.date!); }}
                         onMouseEnter={() => win && extendDrag(c.date!)}
                         className={`h-16 rounded-lg border p-1.5 flex flex-col justify-between transition-all ${win ? "cursor-pointer" : ""} ${cellClass} ${ring}`}
-                        title={isFuture ? "Future date — not markable" : !win ? "Outside employment window" : status ? `Currently: ${STATUS_LABEL[status]}` : "Unmarked"}>
+                        title={block ?? (status ? `Currently: ${STATUS_LABEL[status]}` : "Unmarked")}>
                         <div className="flex items-start justify-between">
                           <span className="text-xs font-medium tabular-nums">{c.day}</span>
                           {win && status && <span className="text-[9px] font-bold uppercase tracking-wider">{STATUS_SHORT[status]}</span>}
@@ -574,7 +596,9 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved }: {
                 </div>
               )}
               <p className="text-[11px] text-muted-foreground mt-2.5">
-                Tap a date to toggle, or press and drag to select a range. Greyed days are outside the employment window or in the future and can't be marked.
+                Tap a date to toggle, or press and drag to select a range. Greyed days can't be marked —
+                they're in the future, before joining, on/after the separation date, or outside the
+                contract's dates. Hover a greyed day for the reason.
               </p>
             </div>
 

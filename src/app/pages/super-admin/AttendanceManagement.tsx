@@ -23,6 +23,8 @@ import {
 import { useRegion, withRegion } from "../../lib/region";
 import { hasPermission, useAuth } from "../../lib/auth";
 import { guardDisplayCode } from "../../lib/guardCode";
+import { attendanceWindowError, isSeparatedState, SEPARATION_MARK } from "../../lib/employmentWindow";
+import { formatDate } from "../../lib/date";
 
 type EmployeeLite = {
   id: string;
@@ -41,9 +43,18 @@ type EmployeeLite = {
   shift: "day" | "night";
   category: "client" | "office_staff" | "reliever";
   assignment_effective_from: string | null;
+  // Employment window (join → separation) + lifecycle, for gating and for the
+  // separation markers in the Excel export.
+  join_date: string | null;
+  last_working_day: string | null;
+  termination_date: string | null;
+  lifecycle_state: string | null;
 };
 
-type ContractLeaveRow = Pick<Contract, "id" | "allowed_leaves_per_month">;
+type ContractLeaveRow = Pick<
+  Contract,
+  "id" | "allowed_leaves_per_month" | "start_date" | "end_date" | "is_infinite"
+>;
 
 type HistoryRow = {
   date: string;
@@ -124,6 +135,11 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   const { profile } = useAuth();
   const { regionId } = useRegion();
   const canBulk = hasPermission(profile, "attendance.bulk_mark");
+
+  // ---- Export dialog: which month to export (defaults to the shown date's) ----
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportMonth, setExportMonth] = useState<string>(today().slice(0, 7));
+  const [exporting, setExporting] = useState(false);
 
   // ---- Bulk-mark calendar modal (shared BulkMarkByEmployeeModal) ----
   const [isBulkOpen, setIsBulkOpen] = useState(false);
@@ -222,13 +238,13 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         supabase
           .from("employees")
           .select(
-            "id, employee_code, guard_code, display_number, full_name, location_id, client_id, contract_id, branch_id, shift, category, assignment_effective_from, location:location_id(name), client:client_id(name, employee_id_prefix)"
+            "id, employee_code, guard_code, display_number, full_name, location_id, client_id, contract_id, branch_id, shift, category, assignment_effective_from, join_date, last_working_day, termination_date, lifecycle_state, location:location_id(name), client:client_id(name, employee_id_prefix)"
           )
           .order("full_name"),
         regionId,
       ),
       supabase.from("employee_branches").select("employee_id, branch_id"),
-      supabase.from("contracts").select("id, allowed_leaves_per_month"),
+      supabase.from("contracts").select("id, allowed_leaves_per_month, start_date, end_date, is_infinite"),
     ]);
     if (locRes.error) setError(locRes.error.message);
     if (cliRes.error) setError(cliRes.error.message);
@@ -263,6 +279,10 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         shift: e.shift,
         category: e.category,
         assignment_effective_from: e.assignment_effective_from ?? null,
+        join_date: e.join_date ?? null,
+        last_working_day: e.last_working_day ?? null,
+        termination_date: e.termination_date ?? null,
+        lifecycle_state: e.lifecycle_state ?? null,
       }))
     );
   };
@@ -400,6 +420,31 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     });
   }, [employees, clientFilter, locationFilter, branchFilter, shiftFilter, categoryFilter, unmarkedOnly, todayRecords, empSearch, relieversOnly]);
 
+  // Why `d` isn't markable for this employee, or null. Employment window ∩
+  // contract window — mirrored by the DB trigger in migration 0152, so this is
+  // a friendlier restatement of a rule the database enforces on every path.
+  const windowBlockFor = (e: EmployeeLite, d: string): string | null =>
+    attendanceWindowError(
+      e,
+      e.contract_id ? contracts.find((c) => c.id === e.contract_id) ?? null : null,
+      d,
+    );
+
+  // "Fired 10/03/2026" / "Resigned 01/04/2026" — null for anyone still employed.
+  // Dated off termination_date (the day the separation took effect), falling
+  // back to the last working day for legacy records that only carry that.
+  const separationNoteFor = (e: EmployeeLite): string | null => {
+    if (!isSeparatedState(e.lifecycle_state)) return null;
+    const on = e.termination_date ?? e.last_working_day;
+    const label =
+      e.lifecycle_state === "left"
+        ? "Resigned / left"
+        : e.lifecycle_state === "absconded"
+          ? "Absconded"
+          : "Fired";
+    return on ? `${label} ${formatDate(on)}` : label;
+  };
+
   // Shift active for an employee on the currently-selected date, from the dated
   // deployment segment (falls back to the flat shift only until the resolver
   // loads / for dates before the first posting).
@@ -423,6 +468,13 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     // No future attendance (same rule as the board).
     if (date > today()) {
       setError("Future dates can't be marked.");
+      return;
+    }
+    // Employment + contract window. The DB trigger (0152) rejects these anyway;
+    // checking here turns a raw Postgres error into a readable reason.
+    const windowErr = employee ? windowBlockFor(employee, date) : null;
+    if (windowErr) {
+      setError(`${employee?.full_name ?? "This employee"}: ${windowErr}`);
       return;
     }
     const shift = dayShift(employeeId);
@@ -555,11 +607,19 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     // Mark-all skips relievers without a picked client (each must be set
     // individually so attribution stays correct).
     const skipped: string[] = [];
+    const outsideWindow: string[] = [];
     const payload = filteredEmployees
       .filter((e) => {
         // Don't mark before the assignment's effective_from (same gate as the
         // per-row buttons). Null effective_from is left ungated.
         if (e.assignment_effective_from && date < e.assignment_effective_from) {
+          return false;
+        }
+        // Silently skip anyone outside their employment/contract window — one
+        // separated guard in the list must not fail the whole batch on the
+        // trigger (0152).
+        if (windowBlockFor(e, date)) {
+          outsideWindow.push(e.full_name);
           return false;
         }
         if (e.category === "reliever" && !todayWorkedFor[e.id]) {
@@ -582,7 +642,9 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       });
     if (payload.length === 0) {
       setError(
-        "All visible rows are relievers without a picked client. Set their client first.",
+        outsideWindow.length > 0
+          ? `Nothing marked — all ${outsideWindow.length} visible row${outsideWindow.length === 1 ? " is" : "s are"} outside their employment or contract window for this date.`
+          : "All visible rows are relievers without a picked client. Set their client first.",
       );
       return;
     }
@@ -613,11 +675,18 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       attendance_date: date,
       affected_count: payload.length,
     });
+    const notes: string[] = [];
     if (skipped.length > 0) {
-      setError(
-        `Skipped ${skipped.length} reliever${skipped.length === 1 ? "" : "s"} without a picked client: ${skipped.slice(0, 3).join(", ")}${skipped.length > 3 ? "…" : ""}.`,
+      notes.push(
+        `${skipped.length} reliever${skipped.length === 1 ? "" : "s"} without a picked client: ${skipped.slice(0, 3).join(", ")}${skipped.length > 3 ? "…" : ""}`,
       );
     }
+    if (outsideWindow.length > 0) {
+      notes.push(
+        `${outsideWindow.length} outside their employment/contract window: ${outsideWindow.slice(0, 3).join(", ")}${outsideWindow.length > 3 ? "…" : ""}`,
+      );
+    }
+    if (notes.length > 0) setError(`Skipped — ${notes.join("; ")}.`);
     loadHistory();
   };
 
@@ -695,8 +764,10 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     return { p, a, l, unm };
   }, [filteredEmployees, todayRecords]);
 
-  const handleExport = async () => {
-    const [yStr, mStr] = date.split("-");
+  // `month` is a YYYY-MM key chosen in the export dialog — the export is no
+  // longer tied to whichever day the timesheet happens to be showing.
+  const handleExport = async (month: string) => {
+    const [yStr, mStr] = month.split("-");
     const y = Number(yStr);
     const m = Number(mStr);
     const monthStart = `${yStr}-${mStr}-01`;
@@ -763,7 +834,11 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       let l = 0;
       for (let d = 1; d <= dim; d += 1) {
         const cell = dayMap.get(d);
-        const sym = cell?.sym ?? "";
+        const iso = `${yStr}-${mStr}-${String(d).padStart(2, "0")}`;
+        // No record AND not employed that day → "X" rather than a blank, so a
+        // guard who was fired mid-month reads as separated, not unmarked.
+        // A real record always wins: historical data is reported as-is.
+        const sym = cell?.sym ?? (windowBlockFor(emp, iso) ? SEPARATION_MARK : "");
         statusByDay.push(sym);
         if (sym === "P") p += 1;
         else if (sym === "A") a += 1;
@@ -789,6 +864,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         absents: a,
         leaves: l,
         payDays,
+        separationNote: separationNoteFor(emp),
       };
     });
 
@@ -823,7 +899,12 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                 Bulk Mark by Employee
               </Button>
             )}
-            <ExportButton onExport={handleExport} />
+            <ExportButton
+              onExport={() => {
+                setExportMonth(date.slice(0, 7));
+                setExportOpen(true);
+              }}
+            />
           </>
         }
       />
@@ -1448,6 +1529,57 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Export — pick the month to export (the current filters still apply). */}
+      <Modal
+        isOpen={exportOpen}
+        onClose={() => setExportOpen(false)}
+        title="Export attendance to Excel"
+        size="sm"
+        footer={
+          <div className="flex items-center gap-2">
+            <Button
+              variant="primary"
+              size="md"
+              className="flex-1"
+              disabled={exporting || !exportMonth}
+              onClick={async () => {
+                setExporting(true);
+                try {
+                  await handleExport(exportMonth);
+                  setExportOpen(false);
+                } finally {
+                  setExporting(false);
+                }
+              }}
+            >
+              {exporting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {exporting ? "Preparing…" : "Export"}
+            </Button>
+            <Button variant="secondary" size="md" onClick={() => setExportOpen(false)}>
+              Cancel
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs uppercase tracking-wider text-slate-500 mb-1.5">Month</label>
+            <input
+              type="month"
+              value={exportMonth}
+              max={today().slice(0, 7)}
+              onChange={(e) => setExportMonth(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+            />
+          </div>
+          <p className="text-xs text-slate-500">
+            Exports the {filteredEmployees.length} employee{filteredEmployees.length === 1 ? "" : "s"} currently
+            in view (the filters above still apply). Days a guard was no longer employed are marked{" "}
+            <strong>{SEPARATION_MARK}</strong>, and separations are listed with their date at the bottom of the sheet.
+          </p>
+        </div>
       </Modal>
 
       {/* Bulk Mark by Employee — the shared calendar (same UI/logic as the board). */}
