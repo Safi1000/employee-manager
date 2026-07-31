@@ -640,21 +640,20 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       if (empTab === "active" && separated) return false;
       if (empTab === "inactive" && !separated) return false;
       // Nobody with zero attendance in the period being paid belongs on the
-      // payroll — there is nothing to compute. Deliberately NOT keyed on
-      // separation: a fired guard who worked half a month still has attendance
-      // and still gets paid, which is the whole point.
+      // payroll — there is nothing to compute. Applies to EVERY tab, the Fired
+      // tab included: a guard who left months ago has nothing to settle in this
+      // period and is just noise. A fired guard who worked half a month does
+      // have attendance, so they still appear and still get paid — which is the
+      // reason this is keyed on attendance rather than on separation.
       //
-      // Exceptions, because dropping these would hide real money (and
-      // payrollTotals sums this filtered list, so it would understate too):
+      // Two exceptions, both because real money already moved in THIS period
+      // and payrollTotals sums this filtered list — dropping either would
+      // quietly understate the totals:
       //   • a payslip already exists for this period (generated / disbursed)
-      //   • an advance is outstanding against them
-      //   • the Fired tab, which is the register of everyone who has left and
-      //     must stay complete — it is where you check whether a leaver was
-      //     ever settled, and a leaver with nothing owed is exactly the case
-      //     you go there to confirm. Hiding them made the tab look broken
-      //     against the Employees page's own Fired filter.
+      //   • an advance was taken in this period (the advances query is scoped
+      //     to the period, so an old advance doesn't resurrect them forever)
       const hasAttendance = r.present_days > 0 || r.absent_days > 0 || r.leave_days > 0;
-      if (empTab !== "inactive" && !hasAttendance && !r.payslip_id && r.advance === 0) return false;
+      if (!hasAttendance && !r.payslip_id && r.advance === 0) return false;
       if (categoryFilter !== "all" && (e.category ?? "client") !== categoryFilter) return false;
       return true;
     });
