@@ -23,7 +23,7 @@ import {
   type Contract,
 } from "../../lib/supabase";
 import { useRegion, withRegion } from "../../lib/region";
-import { isSeparatedState } from "../../lib/employmentWindow";
+import { isSeparatedState, lifecycleStatusLabel } from "../../lib/employmentWindow";
 import { guardDisplayCode } from "../../lib/guardCode";
 
 type EmployeeRow = Employee & { location_name: string | null; client_name: string | null };
@@ -1573,16 +1573,21 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                             <td className="px-4 py-3">
                               <div className="text-sm text-slate-900 flex items-center gap-2">
                                 {e.full_name}
+                                {/* Says Fired / Terminated / Resigned / Absconded
+                                    for a leaver, not the legacy "Inactive" — same
+                                    label and tint as the Employees table. */}
                                 <span
                                   className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] ${
-                                    e.status === "Active"
-                                      ? "bg-success-50 text-success-700"
-                                      : e.status === "On Leave"
-                                        ? "bg-warning-50 text-warning-700"
-                                        : "bg-slate-100 text-slate-600"
+                                    isSeparatedState(e.lifecycle_state)
+                                      ? "bg-danger-50 text-danger-700"
+                                      : e.status === "Active"
+                                        ? "bg-success-50 text-success-700"
+                                        : e.status === "On Leave"
+                                          ? "bg-warning-50 text-warning-700"
+                                          : "bg-slate-100 text-slate-600"
                                   }`}
                                 >
-                                  {e.status}
+                                  {lifecycleStatusLabel(e)}
                                 </span>
                               </div>
                               <div className="text-xs text-slate-500 font-mono">

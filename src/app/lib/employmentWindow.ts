@@ -28,6 +28,33 @@ export const SEPARATED_LIFECYCLE_STATES = [
 export const isSeparatedState = (state: string | null | undefined): boolean =>
   SEPARATED_LIFECYCLE_STATES.includes(String(state ?? "") as (typeof SEPARATED_LIFECYCLE_STATES)[number]);
 
+/**
+ * The human status for a badge. A separated employee reads as Fired / Resigned /
+ * Absconded by separation type, but as "Terminated" when they were left
+ * ineligible for rehire — a hard exit. Non-separated employees keep their live
+ * status (Active / On Leave / Inactive).
+ *
+ * Shared so every screen says the same word about the same person: the legacy
+ * `status` column only knows "Inactive", which is why Payroll used to label a
+ * fired guard the same as anyone else who wasn't currently active.
+ */
+export const lifecycleStatusLabel = (e: {
+  lifecycle_state: string;
+  status: string;
+  eligible_for_rehire?: boolean | null;
+}): string => {
+  if (!isSeparatedState(e.lifecycle_state)) return e.status;
+  if (e.eligible_for_rehire === false) return "Terminated";
+  switch (e.lifecycle_state) {
+    case "left":
+      return "Resigned";
+    case "absconded":
+      return "Absconded";
+    default:
+      return "Fired"; // terminated / fired
+  }
+};
+
 export type WindowEmployee = {
   join_date?: string | null;
   last_working_day?: string | null;

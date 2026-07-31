@@ -15,7 +15,7 @@ import ClientFilterSelect from "../../components/ClientFilterSelect";
 import ExportButton from "../../components/ExportButton";
 import { exportTable } from "../../lib/excel";
 import { useRegion, withRegion } from "../../lib/region";
-import { isSeparatedState } from "../../lib/employmentWindow";
+import { isSeparatedState, lifecycleStatusLabel } from "../../lib/employmentWindow";
 import {
   supabase,
   EMPLOYEE_DOCS_BUCKET,
@@ -620,29 +620,6 @@ function FieldErrorSummary({
     </div>
   );
 }
-
-// The human status shown on the badge. A separated employee reads as Fired /
-// Resigned (by separation type) when they were left eligible for rehire, but as
-// "Terminated" when rehire was NOT allowed — a hard exit. Non-separated employees
-// keep their live status (Active / On Leave).
-const lifecycleStatusLabel = (e: {
-  lifecycle_state: string;
-  status: string;
-  eligible_for_rehire?: boolean | null;
-}): string => {
-  const separated = isSeparatedState(e.lifecycle_state);
-  if (!separated) return e.status; // Active / On Leave / Inactive
-  // Not eligible for rehire → a hard "Terminated", regardless of separation type.
-  if (e.eligible_for_rehire === false) return "Terminated";
-  switch (e.lifecycle_state) {
-    case "left":
-      return "Resigned";
-    case "absconded":
-      return "Absconded";
-    default:
-      return "Fired"; // terminated / fired
-  }
-};
 
 export default function EmployeeManagement() {
   const { profile, company } = useAuth();
