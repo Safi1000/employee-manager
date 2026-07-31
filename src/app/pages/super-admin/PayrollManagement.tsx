@@ -301,12 +301,21 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       // Region scopes the payroll roster (each row = an employee). Bank/treasury/
       // cheque reads below stay company-wide — the cash pool isn't region-split.
       withRegion(
-        // Phase 3D gate: no payroll line before Finance-approved. Only
+        // Phase 3D gate: no payroll line before Finance-approved, so only
         // finance_approved / active records enter the payroll roster.
+        //
+        // Separated staff are exempt from that gate. Someone fired while their
+        // record was still draft/ops_verified will never be approved now, but
+        // they did work days before they left and are still owed a final
+        // settlement — the old gate made them unpayable and left the Fired tab
+        // showing a fraction of the leavers the Employees page lists.
         supabase
           .from("employees")
           .select("*, location:location_id(name), client:client_id(name)")
-          .in("record_state", ["finance_approved", "active"])
+          .or(
+            "record_state.in.(finance_approved,active)," +
+              "lifecycle_state.in.(fired,terminated,left,absconded)",
+          )
           .order("employee_code"),
         regionId,
       ),
@@ -635,13 +644,17 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       // separation: a fired guard who worked half a month still has attendance
       // and still gets paid, which is the whole point.
       //
-      // Two exceptions, both because real money is already in play and
-      // payrollTotals sums this filtered list — dropping either would quietly
-      // understate the totals:
+      // Exceptions, because dropping these would hide real money (and
+      // payrollTotals sums this filtered list, so it would understate too):
       //   • a payslip already exists for this period (generated / disbursed)
       //   • an advance is outstanding against them
+      //   • the Fired tab, which is the register of everyone who has left and
+      //     must stay complete — it is where you check whether a leaver was
+      //     ever settled, and a leaver with nothing owed is exactly the case
+      //     you go there to confirm. Hiding them made the tab look broken
+      //     against the Employees page's own Fired filter.
       const hasAttendance = r.present_days > 0 || r.absent_days > 0 || r.leave_days > 0;
-      if (!hasAttendance && !r.payslip_id && r.advance === 0) return false;
+      if (empTab !== "inactive" && !hasAttendance && !r.payslip_id && r.advance === 0) return false;
       if (categoryFilter !== "all" && (e.category ?? "client") !== categoryFilter) return false;
       return true;
     });
