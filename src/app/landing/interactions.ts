@@ -247,21 +247,136 @@ export function initBastion(root: ShadowRoot): () => void {
     });
   }
 
-  /* ---- live audit feed ---- */
+  /* ---- live audit feed ----
+     100 lines, every one an action the product can actually perform, so the
+     feed doubles as a feature list you read without meaning to. Shuffled once
+     per visit and then cycled forever, so the loop never repeats a line inside
+     a pass but two visitors never see the same order. Money uses the real
+     minus sign (−) to match the app's number formatting. */
   const events: Array<[string, string, string, string]> = [
+    // ---- Revenue: invoices, payments, receivables ----
     ["in", "Invoice INV-057 marked Paid · UBL Collections", "+312,000", "pos"],
-    ["out", "Payroll disbursed · HBL Main · advance cleared", "−45,000", "negv"],
-    ["evt", "Addendum filed · +5 guards for ABC · eff 01 Mar", "", ""],
-    ["out", "Cheque #4471 cleared · UBL Payroll", "−128,400", "negv"],
-    ["evt", "Incident logged · no-show · Post 12 · client notified", "", ""],
     ["in", "Client payment allocated oldest-first · 3 invoices", "+186,500", "pos"],
+    ["in", "Auto-invoice run complete · 12 clients · PDFs generated", "+2,940,000", "pos"],
+    ["in", "Part payment received · Dolmen City · balance carried", "+95,000", "pos"],
+    ["in", "Invoice INV-061 raised from contract lines", "+418,000", "pos"],
+    ["in", "Withholding tax recorded · filer · 4%", "+16,720", "pos"],
+    ["in", "Receivable cleared · PCI · 62 days outstanding", "+240,000", "pos"],
+    ["in", "Cash sale receipt · ad-hoc event cover", "+75,000", "pos"],
+    ["in", "Client statement issued · Nova Group · 6 invoices", "", ""],
+    ["evt", "Invoice structure saved · per-category rates · MIU", "", ""],
+    ["evt", "Credit note applied · short-billed guard-day", "", ""],
+    ["in", "Advance billing received · Lexus Tower · month ahead", "+520,000", "pos"],
+
+    // ---- Payroll ----
+    ["out", "Payroll disbursed · HBL Main · advance cleared", "−45,000", "negv"],
+    ["evt", "Payroll run moved to Review · June · 214 payslips", "", ""],
+    ["evt", "Payroll run approved · Finance Director sign-off", "", ""],
+    ["out", "Batch disbursement complete · 68 guards · UBL Payroll", "−2,684,000", "negv"],
+    ["evt", "Payslip generated · prorated 18 of 30 days", "", ""],
+    ["out", "Advance recovered on payslip · GGS-00228", "−3,000", "negv"],
+    ["out", "EOBI deducted · 41 guards", "−41,000", "negv"],
+    ["evt", "Leave beyond allowance docked · 2 days", "", ""],
+    ["evt", "Un-disbursed payslip reversed · balance restored", "", ""],
+    ["evt", "Double payment blocked · payslip already claimed", "", ""],
+    ["out", "Final settlement paid · separated guard", "−28,400", "negv"],
+    ["evt", "Payroll period locked · no further edits", "", ""],
+    ["out", "Reliever payout · 14 covered days · Nova Group", "−19,600", "negv"],
+
+    // ---- Attendance ----
+    ["evt", "Shift confirmed · Dolmen City · night · 12 present", "", ""],
+    ["evt", "Exception entered · 1 absent · rest presumed present", "", ""],
+    ["evt", "Bulk mark by employee · 24 days · GGS-00113", "", ""],
     ["evt", "Reliever day tagged to client DEF · attributed", "", ""],
-    ["evt", "Licence expiring in 12 days · weapon #A-238", "", ""],
+    ["evt", "Double duty recorded · day + night · same date", "", ""],
+    ["evt", "Backdated mark blocked · supervisor override required", "", ""],
+    ["evt", "Marking refused · outside employment window", "", ""],
+    ["evt", "Overtime logged · 3 hours · Gate A", "", ""],
+    ["evt", "Half-day recorded · late arrival flagged", "", ""],
+    ["evt", "Timesheet correction filed · May · 2 days amended", "", ""],
+    ["evt", "Attendance exported · June · 214 guards · Excel", "", ""],
+
+    // ---- Banking, cheques, cash ----
+    ["out", "Cheque #4471 cleared · UBL Payroll", "−128,400", "negv"],
+    ["evt", "Cheque #4482 issued · post-dated 15 Aug", "", ""],
+    ["evt", "Cheque #4468 bounced · marked, balance untouched", "", ""],
     ["out", "Wire transfer · HBL Main → UBL Payroll", "500,000", ""],
-    ["evt", "Period closed · June locked app-wide", "", ""],
     ["in", "Cash deposit synced to custody · Cash in Hand", "+60,000", "pos"],
+    ["out", "Bank charges posted · HBL Main", "−1,150", "negv"],
+    ["evt", "Bank reconciliation complete · HBL Main · 0 variance", "", ""],
+    ["in", "Deposit slip recorded · branch cash → bank", "+340,000", "pos"],
+    ["evt", "Cash custody reconciled · custodian handover", "", ""],
+    ["out", "Cash handed to custodian · Islamabad office", "−80,000", "negv"],
+    ["in", "Inter-region loan received · North → HO", "+250,000", "pos"],
+
+    // ---- Expenses & advances ----
     ["out", "Expense paid · fuel · cost of services", "−18,200", "negv"],
+    ["out", "Advance issued · guard request · recover next payslip", "−10,000", "negv"],
+    ["out", "Office rent paid · Islamabad · cheque", "−145,000", "negv"],
+    ["out", "Uniform purchase · 40 sets", "−92,000", "negv"],
+    ["out", "Vehicle maintenance · patrol van", "−23,500", "negv"],
+    ["evt", "Expense marked payable · settles on due date", "", ""],
+    ["evt", "Expense attributed to client · billable cost", "", ""],
+    ["out", "Ammunition restock · licensed store", "−54,000", "negv"],
+
+    // ---- Compliance & licences ----
+    ["evt", "Licence expiring in 12 days · weapon #A-238", "", ""],
+    ["evt", "Guard-service licence renewed · 2 years", "", ""],
+    ["evt", "Medical fitness expired · guard flagged off-duty", "", ""],
+    ["evt", "Police verification cleared · GGS-00471", "", ""],
+    ["evt", "NADRA Verisys returned · identity confirmed", "", ""],
+    ["evt", "NOC filing due in 21 days · reminder sent", "", ""],
+    ["evt", "Contract renewal raised · ABC · expires 30 Sep", "", ""],
+    ["evt", "Compliance case opened · weapon licence renewal", "", ""],
+    ["evt", "Statutory filing marked submitted · monthly", "", ""],
+    ["evt", "Probation ending in 7 days · 3 guards", "", ""],
+    ["evt", "Email alert sent · 4 expiries inside 90 days", "", ""],
+
+    // ---- Operations ----
+    ["evt", "Incident logged · no-show · Post 12 · client notified", "", ""],
+    ["evt", "Client complaint logged · escalated to ops", "", ""],
+    ["evt", "Daily report generated · 14 posts · PDF sent", "", ""],
+    ["evt", "Deployment short · PCI · 14 of 15 · reliever raised", "", ""],
+    ["evt", "Strength restored · Nova Group · back at 8 of 8", "", ""],
+    ["evt", "Addendum filed · +5 guards for ABC · eff 01 Mar", "", ""],
+    ["evt", "Guard posted · Dolmen City · from 01 Aug", "", ""],
+    ["evt", "Posting closed on separation · vacancy raised", "", ""],
+
+    // ---- Workforce & assets ----
+    ["evt", "Candidate moved to Interview · pipeline updated", "", ""],
+    ["evt", "Candidate hired · onboarding started in Employees", "", ""],
+    ["evt", "Guard record ops-verified · awaiting finance approval", "", ""],
+    ["evt", "Weapon issued · shotgun #S-114 · signed out", "", ""],
+    ["evt", "Uniform issued · 3 sets · deducted from stock", "", ""],
+    ["evt", "Kit returned at exit · clearance cleared", "", ""],
+    ["evt", "Guard separated · last working day 10/07", "", ""],
+    ["evt", "Rehire relinked to the same permanent code", "", ""],
+    ["evt", "Document uploaded · CNIC copy · Drive", "", ""],
+    ["evt", "Shift changed · dated · past attendance untouched", "", ""],
+    ["evt", "Appraisal approved · KPI score recorded", "", ""],
+    ["evt", "Bonus pool released · 14 guards", "", ""],
+
+    // ---- Books, partners, control ----
+    ["evt", "Period closed · June locked app-wide", "", ""],
+    ["evt", "Trial balance balanced · 0.00 variance", "", ""],
+    ["evt", "Opening balances posted · receivables carried in", "", ""],
+    ["evt", "Journal written under payment · double entry", "", ""],
+    ["evt", "Regional P&L updated · North · HO cost allocated", "", ""],
+    ["out", "Partner drawing recorded · RMD statement", "−150,000", "negv"],
+    ["evt", "Profit allocated · participation rule 60/40", "", ""],
+    ["in", "Investor capital received · project financing", "+1,000,000", "pos"],
+    ["evt", "Reserve accrual posted · bonus reserve", "", ""],
+    ["evt", "Regional scorecard refreshed · 4 regions", "", ""],
+    ["evt", "Permission revoked · accounting.edit · 1 user", "", ""],
+    ["evt", "User scoped to branch · Islamabad only", "", ""],
+    ["evt", "Audit entry written · salary changed · before/after kept", "", ""],
+    ["evt", "Task assigned · collect PCI payment · due Friday", "", ""],
   ];
+  // Fisher-Yates, once, so the order differs per visit without ever repeating.
+  for (let i = events.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [events[i], events[j]] = [events[j], events[i]];
+  }
   const feed = root.getElementById("feedList");
   const ROWS = 6;
   if (feed) {
