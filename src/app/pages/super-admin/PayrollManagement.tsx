@@ -625,15 +625,23 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       if (statusFilter !== "all" && r.status !== statusFilter) return false;
       if (disbursedFilter !== "all" && (disbursedFilter === "yes" ? !r.disbursed : r.disbursed)) return false;
       // The Fired tab keys off lifecycle_state — the authoritative separation
-      // field the Employees page uses — not the legacy `status` mirror, which
-      // only tracks it through a DB trigger and left this tab empty. "Fired"
-      // covers every separated state: fired, terminated, resigned/left, absconded.
+      // field the Employees page uses. "Fired" covers every separated state:
+      // fired, terminated, resigned/left, absconded.
       const separated = isSeparatedState(e.lifecycle_state);
       if (empTab === "active" && separated) return false;
       if (empTab === "inactive" && !separated) return false;
-      // A separated guard with nothing left to pay is noise on every tab — the
-      // only reason to keep listing them is money still owed.
-      if (separated && r.net_salary <= 0 && r.advance === 0) return false;
+      // Nobody with zero attendance in the period being paid belongs on the
+      // payroll — there is nothing to compute. Deliberately NOT keyed on
+      // separation: a fired guard who worked half a month still has attendance
+      // and still gets paid, which is the whole point.
+      //
+      // Two exceptions, both because real money is already in play and
+      // payrollTotals sums this filtered list — dropping either would quietly
+      // understate the totals:
+      //   • a payslip already exists for this period (generated / disbursed)
+      //   • an advance is outstanding against them
+      const hasAttendance = r.present_days > 0 || r.absent_days > 0 || r.leave_days > 0;
+      if (!hasAttendance && !r.payslip_id && r.advance === 0) return false;
       if (categoryFilter !== "all" && (e.category ?? "client") !== categoryFilter) return false;
       return true;
     });
