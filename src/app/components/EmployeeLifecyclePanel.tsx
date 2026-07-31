@@ -216,7 +216,10 @@ export default function EmployeeLifecyclePanel({
           )}
         </div>
         <div className="flex flex-wrap gap-2">
-          {LIFECYCLE_TRANSITIONS[employee.lifecycle_state].map((to) => (
+          {/* `?? []` on purpose: the DB enum can gain a state before this map
+              does, and an unknown key here used to crash the whole page rather
+              than just offering no transitions. */}
+          {(LIFECYCLE_TRANSITIONS[employee.lifecycle_state] ?? []).map((to) => (
             <Button key={to} type="button" variant="secondary" size="sm" disabled={busy} onClick={() => transition(to)}>
               → {LIFECYCLE_STATE_LABEL[to]}
             </Button>
