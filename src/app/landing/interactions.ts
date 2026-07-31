@@ -125,66 +125,93 @@ export function initBastion(root: ShadowRoot): () => void {
     cal.appendChild(frag);
   }
 
-  /* ---- modules accordion (grouped by stage) ---- */
+  /* ---- modules accordion (mirrors the app's own sidebar, section for section) ----
+     Kept deliberately 1:1 with SuperAdminLayout's nav groups so the landing page
+     stays a faithful summary of the product. If a screen is added, renamed or
+     merged in the sidebar, change it here too. */
   const groups: Array<{ title: string; sub: string; mods: Array<[string, string, string]> }> = [
     {
-      title: "Clients & deals",
-      sub: "Who you guard, and the deal you signed.",
+      title: "Overview",
+      sub: "The whole company on one screen.",
       mods: [
-        ["CL", "Clients", "The master anchor. Tax profile, remit accounts and ID prefix flow everywhere downstream."],
-        ["CT", "Contracts", "Lines, rates and committed headcount, with dated addendums that keep true history."],
-        ["IN", "Invoices", "Built from contract lines and tax profile; tracked from raised to fully paid."],
+        ["DB", "Dashboard", "Live financial overview — balances, receivables, payroll due and the widgets you pick."],
+        ["AI", "AI Assistant", "Ask your data in plain language. It reads through a fixed set of read-only tools, never writes."],
       ],
     },
     {
-      title: "Workforce & payroll",
+      title: "Clients & Contracts",
+      sub: "Who you guard, and the deal you signed.",
+      mods: [
+        ["CL", "Clients", "The master anchor. Tax profile, remit accounts and ID prefix flow everywhere downstream."],
+        ["CT", "Contracts", "Per-category committed headcount and rates, with dated addendums that keep true history."],
+        ["IN", "Invoices", "Built from the contract lines and tax profile; tracked from raised to fully paid, exported to PDF."],
+      ],
+    },
+    {
+      title: "Workforce",
       sub: "Every guard, their days, and their pay.",
       mods: [
-        ["EM", "Employees", "Every guard and staffer, with a full ID history trail on reassignment."],
-        ["AT", "Attendance", "The daily heartbeat. Present, absent, leave and overtime drive the payslip."],
-        ["PR", "Payroll", "Attendance becomes money: prorated, leave aware, advance netted payslips."],
+        ["EM", "Employees", "The full guard record — CNIC, verification, documents, salary and lifecycle from hire to final settlement."],
+        ["RC", "Recruitment", "Candidate intake and pipeline: applied, screening, interview, offer, hired."],
+        ["AT", "Attendance", "A daily board per client-shift: presume present, enter only the exceptions, confirm the shift."],
+        ["PR", "Payroll", "Payslips and the run pipeline — draft, review, approve, disburse — in one place."],
+        ["PF", "Performance", "KPIs, appraisals, bonus pools and guard bonuses, with an approval gate."],
         ["RV", "Relievers", "Floating guards attributed per day to the client they actually covered."],
       ],
     },
     {
-      title: "Money & banking",
+      title: "Operations",
+      sub: "Cover the posts, report the day, track the kit.",
+      mods: [
+        ["DP", "Deployment", "Contracted vs. actually-enrolled headcount per client — every shortfall visible."],
+        ["DR", "Daily Reports", "Date-wise per-post client report, generated to a branded PDF."],
+        ["IC", "Incidents", "Incidents and client complaints on one record: severity, client, post and named guards."],
+        ["AS", "Assets & Issuance", "The asset register plus the weapons and uniform issuance ledger — who holds what."],
+      ],
+    },
+    {
+      title: "Finance",
       sub: "Every rupee through your banks and cash box.",
       mods: [
-        ["BK", "Banks & Ledgers", "Four tabs, every rupee. Deposits, withdrawals, transfers and live balances."],
-        ["CQ", "Cheques", "Modeled as promises. The bank only moves when the cheque clears."],
-        ["EX", "Expenses", "Costs and advances by cash, bank, payable or cheque; auto recovered next payslip."],
-        ["CF", "Cash Flow", "A read only netting view: revenue minus payroll, expenses and advances."],
-        ["CC", "Cash Custody", "Where all the physical cash sits, reconciled against partners and investors."],
-      ],
-    },
-    {
-      title: "Books & partnership",
-      sub: "The accountant's view, and the partners' share.",
-      mods: [
+        ["AC", "Accounting Core", "Opening balances feeding the chart of accounts, trial balance and general ledger."],
+        ["BK", "Bank & Ledgers", "Receivables, payables, bank accounts with cheques and deposits, and cash custody."],
+        ["EX", "Expenses & Advances", "Costs and staff advances by cash, bank, payable or cheque; advances recovered on the next payslip."],
+        ["CF", "Cash Flow", "Inflow against outflow, by month, range or all time."],
         ["FR", "Financial Reports", "P&L, partnership position and full printable client statements."],
-        ["CA", "Chart of Accounts", "A self maintaining trial balance from the double entry journal underneath."],
-        ["PC", "Period Close", "Lock a month app wide so signed off figures can't shift underneath you."],
-        ["PF", "Partnership", "Partner ledgers, profit split rules and project financing for investors."],
+        ["PC", "Period Close", "Lock a month app-wide so signed-off figures can't shift underneath you."],
+        ["TR", "Treasury & Reserves", "Cash cockpit, reserves, regional P&L and inter-region loans."],
       ],
     },
     {
-      title: "Operations & assets",
-      sub: "Plan the posts, log the events, track the kit.",
+      title: "Profit-Share",
+      sub: "What each region earned, and each partner's share.",
       mods: [
-        ["RO", "Deployment Roster", "Assign guards to posts and shifts; gaps and reliever needs at a glance."],
-        ["IC", "Incidents", "Client, post and named guards on one record, with severity and status."],
-        ["IV", "Inventory", "Weapons and uniforms, who holds them, and licence expiries tracked."],
+        ["RP", "Regional P&L", "Profit and loss cut by region, with head-office cost allocated out."],
+        ["PR", "Participation Rules", "How profit splits among partners, branches and clients."],
+        ["RM", "RMD Statements", "A running ledger per partner — drawings, contributions and profit allocations."],
+        ["RS", "Regional Scorecard", "Operating and financial health, region by region."],
+        ["PJ", "Project Financing", "Investors, capital and returns on funded projects."],
       ],
     },
     {
-      title: "Compliance & control",
-      sub: "Nothing expires, and everything is on the record.",
+      title: "Compliance",
+      sub: "Nothing expires without warning.",
       mods: [
-        ["LR", "Licences & Renewals", "One countdown across guards, weapons and contracts. Nothing lapses unseen."],
-        ["CM", "Compliance Calendar", "Renewals, filings and deadlines with recurring reminders."],
+        ["LR", "Licenses & Renewals", "One countdown across guard licences, weapons, medicals and contract renewals, sorted by days left."],
+        ["CM", "Compliance Calendar", "Important dates, contract endings and recurring reminders."],
+        ["CC", "Compliance Cases", "The licence, renewal and NOC case tracker, plus statutory filings."],
+        ["DO", "Documents", "The central employee document repository, backed by Google Drive."],
+      ],
+    },
+    {
+      title: "Admin",
+      sub: "Who can do what, and what everyone did.",
+      mods: [
+        ["AL", "Alerts", "Blocking, warning and dashboard-tier signals surfaced in one list."],
+        ["TK", "Tasks", "The internal task board for the office."],
+        ["AG", "Access & Governance", "Per-person permissions and branch scope, plus the approval workflow engine."],
         ["AU", "Audit Log", "Who changed what, when, and the exact before and after. Always on."],
-        ["AI", "AI Assistant", "Ask your data in plain language. It reads, never changes, your records."],
-        ["ST", "Settings", "Branches, dashboard widgets, invoice template, brand and fiscal year."],
+        ["ST", "Settings", "Locations, regions, branches, dashboard widgets and the invoice template."],
       ],
     },
   ];
