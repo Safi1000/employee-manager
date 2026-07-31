@@ -32,6 +32,7 @@ export const EMPLOYEE_DOCS_BUCKET = "employee-documents";
 export const EXPENSE_RECEIPTS_BUCKET = "expense-receipts";
 export const INVOICE_ATTACHMENTS_BUCKET = "invoice-attachments";
 export const CHEQUE_ATTACHMENTS_BUCKET = "cheque-attachments";
+export const DASHBOARD_ATTACHMENTS_BUCKET = "dashboard-attachments";
 
 export type UserRole =
   | "super_super_admin"

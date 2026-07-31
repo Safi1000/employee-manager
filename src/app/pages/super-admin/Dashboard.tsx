@@ -22,6 +22,7 @@ import Header from "../../components/Header";
 import { formatDate } from "../../lib/date";
 import StatCard from "../../components/StatCard";
 import ActivityFeed, { type FeedItem } from "../../components/ActivityFeed";
+import DashboardAttachments from "../../components/DashboardAttachments";
 import {
   LineChart,
   Line,
@@ -910,6 +911,9 @@ export default function SuperAdminDashboard() {
                 </div>
               </div>
             )}
+
+            {/* Company-wide saved files, images and links (§ dashboard scratch board). */}
+            <DashboardAttachments />
           </>
         )}
       </div>
