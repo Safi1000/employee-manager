@@ -403,7 +403,10 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved }: {
         worked_shift: ws,
         entry_type: isDouble ? "double_duty" : "normal",
         source: "manual",
-        worked_for_client_id: emp.client_id,
+        // worked_for_client_id is deliberately NOT sent: this calendar marks a
+        // whole month at once, and the guard's current client is the wrong
+        // answer for any date before a transfer. The DB derives it per date
+        // from the posting that covers that date (migration 0155).
         marked_by_role: profile?.role ?? "hr",
         marked_by_user_id: profile?.id ?? null,
         marked_at: nowIso,

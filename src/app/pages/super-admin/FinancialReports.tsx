@@ -68,6 +68,9 @@ export default function FinancialReports() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [payslips, setPayslips] = useState<Payslip[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  // client_id → payroll cost for the statement period, split by days worked
+  // (payroll_cost_by_client, migration 0155).
+  const [payrollByClient, setPayrollByClient] = useState<Map<string, number>>(new Map());
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loadingClients, setLoadingClients] = useState(true);
 
@@ -345,7 +348,7 @@ export default function FinancialReports() {
       setLoadingClients(true);
       const start = firstOfMonth(statementPeriod);
       const end = lastOfMonth(statementPeriod);
-      const [cliRes, invRes, psRes, empRes, expRes] = await Promise.all([
+      const [cliRes, invRes, psRes, empRes, expRes, costRes] = await Promise.all([
         supabase.from("clients").select("*").order("name"),
         supabase.from("invoices").select("*").gte("invoice_date", start).lte("invoice_date", end),
         supabase.from("payslips").select("*").eq("period_month", `${statementPeriod}-01`),
@@ -355,26 +358,28 @@ export default function FinancialReports() {
             "id, client_id, full_name, employee_code, base_salary, per_day_salary, shift, status, location_id, department, join_date, phone, bank_account, created_at, updated_at"
           ),
         supabase.from("expenses").select("*").gte("expense_date", start).lte("expense_date", end),
+        // Payroll cost split across the clients each guard actually worked for
+        // that month (migration 0155). A guard who transferred mid-month lands
+        // partly on each client instead of wholly on whoever they're posted to
+        // now — which is what the old employees.client_id grouping did.
+        supabase.rpc("payroll_cost_by_client", { p_period_month: `${statementPeriod}-01` }),
       ]);
       setClients((cliRes.data ?? []) as Client[]);
       setInvoices((invRes.data ?? []) as Invoice[]);
       setPayslips((psRes.data ?? []) as Payslip[]);
       setEmployees((empRes.data ?? []) as Employee[]);
       setExpenses((expRes.data ?? []) as Expense[]);
+      const costMap = new Map<string, number>();
+      for (const r of ((costRes.data ?? []) as { client_id: string; cost: number }[])) {
+        costMap.set(r.client_id, Number(r.cost) || 0);
+      }
+      setPayrollByClient(costMap);
       setLoadingClients(false);
     };
     loadClientData();
   }, [statementPeriod]);
 
   const clientStatementRows: ClientStatementRow[] = useMemo(() => {
-    const empByClient = new Map<string, Set<string>>();
-    for (const e of employees) {
-      if (!e.client_id) continue;
-      const set = empByClient.get(e.client_id) ?? new Set<string>();
-      set.add(e.id);
-      empByClient.set(e.client_id, set);
-    }
-
     const filteredClients = statementBranchFilter === "all"
       ? clients
       : clients.filter((c) => c.branch_id === statementBranchFilter);
@@ -383,10 +388,9 @@ export default function FinancialReports() {
       const clientInvoices = invoices.filter((i) => i.client_id === c.id);
       const total_invoiced = clientInvoices.reduce((s, i) => s + Number(i.invoice_amount), 0);
 
-      const empIds = empByClient.get(c.id) ?? new Set<string>();
-      const payroll_expense = payslips
-        .filter((p) => empIds.has(p.employee_id))
-        .reduce((s, p) => s + Number(p.final_salary), 0);
+      // Days-weighted share of every payslip that touched this client, so a
+      // mid-month transfer bills each client for the days it actually got.
+      const payroll_expense = payrollByClient.get(c.id) ?? 0;
 
       let expense_sum = 0;
       for (const ex of expenses) {
@@ -403,7 +407,7 @@ export default function FinancialReports() {
         invoices: clientInvoices.sort((a, b) => (a.invoice_date < b.invoice_date ? 1 : -1)),
       };
     });
-  }, [clients, invoices, payslips, employees, expenses, statementBranchFilter]);
+  }, [clients, invoices, payslips, employees, expenses, payrollByClient, statementBranchFilter]);
 
   const statementTotals = useMemo(() => {
     let invoiced = 0;
