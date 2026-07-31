@@ -2,14 +2,20 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, ChevronDown, X } from "lucide-react";
 import type { Client } from "../lib/supabase";
 
-type Props = {
-  clients: Client[];
+// Only these three fields are rendered, so callers may pass anything
+// client-shaped — e.g. the attendance bulk-mark modal, whose list mixes real
+// clients with "unassigned, by category" buckets. Generic over the element type
+// so a `filterFn` reading Client-only fields still type-checks.
+export type ClientLike = { id: string; name: string; client_code?: string | null };
+
+type Props<T extends ClientLike> = {
+  clients: T[];
   value: string;
   onChange: (v: string) => void;
   allValue?: string;
   allLabel?: string;
   extraOption?: { value: string; label: string };
-  filterFn?: (c: Client) => boolean;
+  filterFn?: (c: T) => boolean;
   className?: string;
   // Width utility for the trigger button. Defaults to the standalone "md:w-56";
   // pass "w-full" to let it fill a grid/flex cell instead.
@@ -17,7 +23,7 @@ type Props = {
 };
 
 // Combobox: typing filters; click a match to select; clear button to reset.
-export default function ClientFilterSelect({
+export default function ClientFilterSelect<T extends ClientLike = Client>({
   clients,
   value,
   onChange,
@@ -27,7 +33,7 @@ export default function ClientFilterSelect({
   filterFn,
   className = "",
   buttonClassName = "md:w-56",
-}: Props) {
+}: Props<T>) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const containerRef = useRef<HTMLDivElement | null>(null);

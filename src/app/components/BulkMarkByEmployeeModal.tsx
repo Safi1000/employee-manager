@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, ChevronLeft, ChevronRight, Search } from "lucide-react";
 import Modal from "./Modal";
-import ThemedSelect from "./ThemedSelect";
+import ClientFilterSelect from "./ClientFilterSelect";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../lib/auth";
 import { guardDisplayCode } from "../lib/guardCode";
@@ -174,13 +174,18 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [empId]);
 
+  // Groups to filter the employee list by: every client that has staff, plus a
+  // "cat:<category>" bucket per category for staff with no client. Shaped for
+  // ClientFilterSelect (id/name), which only renders those two fields.
   const clientOptions = useMemo(() => {
     const m = new Map<string, string>();
     for (const e of employees) {
       if (e.client_id) m.set(e.client_id, e.client_name ?? "—");
-      else m.set(`cat:${e.category}`, catLabel(e.category));
+      else m.set(`cat:${e.category}`, `${catLabel(e.category)} (no client)`);
     }
-    return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+    return [...m.entries()]
+      .sort((a, b) => a[1].localeCompare(b[1]))
+      .map(([id, name]) => ({ id, name }));
   }, [employees]);
 
   const options = useMemo(() => {
@@ -459,14 +464,15 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved }: {
           ) : (
             <div className="space-y-2">
               <div className="flex flex-col sm:flex-row gap-2">
-                <ThemedSelect
+                <ClientFilterSelect
+                  clients={clientOptions}
                   value={clientFilter}
-                  onChange={(e) => setClientFilter(e.target.value)}
-                  className="px-3 py-2 border border-slate-200 rounded-md text-sm sm:w-56"
-                >
-                  <option value="all">All groups</option>
-                  {clientOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-                </ThemedSelect>
+                  onChange={setClientFilter}
+                  allValue="all"
+                  allLabel="All groups"
+                  className="sm:w-56 flex-shrink-0"
+                  buttonClassName=""
+                />
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />
                   <input autoFocus type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={clientFilter === "all" ? "Search name, code or client…" : "Search within this group…"}

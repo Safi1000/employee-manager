@@ -16,6 +16,7 @@ import Button from "../../components/Button";
 import ContractEditorModal from "../../components/ContractEditorModal";
 import ContractViewModal from "../../components/ContractViewModal";
 import ContractStatusBadge from "../../components/ContractStatusBadge";
+import ClientFilterSelect from "../../components/ClientFilterSelect";
 import { formatDate } from "../../lib/date";
 import {
   supabase,
@@ -289,16 +290,14 @@ export default function Contracts() {
               className="w-full pl-10 pr-3 py-2 border border-slate-200 rounded-md text-sm"
             />
           </div>
-          <ThemedSelect
+          <ClientFilterSelect
+            clients={clients}
             value={clientFilter}
-            onChange={(e) => setClientFilter(e.target.value)}
-            className="px-3 py-2 border border-slate-200 rounded-md text-sm"
-          >
-            <option value="all">All clients</option>
-            {clients.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </ThemedSelect>
+            onChange={setClientFilter}
+            allValue="all"
+            allLabel="All clients"
+            buttonClassName=""
+          />
           <ThemedSelect
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as "all" | "needs_renewal" | ContractStatus)}

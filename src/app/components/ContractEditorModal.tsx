@@ -4,6 +4,7 @@ import { Plus, Loader2, AlertCircle, X, Trash2, FileText, Upload } from "lucide-
 import Button from "./Button";
 import Modal from "./Modal";
 import AddendumTable from "./AddendumTable";
+import ClientFilterSelect from "./ClientFilterSelect";
 import { useAuth, hasPermission } from "../lib/auth";
 import { formatDate } from "../lib/date";
 import { hasInjectionPattern } from "../lib/validation";
@@ -604,17 +605,17 @@ export default function ContractEditorModal({
           {showClientPicker && (
             <div className="col-span-2">
               <label className="block text-sm text-slate-700 mb-1">Client *</label>
-              <ThemedSelect
-                required
+              {/* Searchable — the client list runs long. An empty selection is
+               * caught by the "Select a client." check in handleSubmit, which is
+               * why the native `required` isn't needed here. */}
+              <ClientFilterSelect
+                clients={clients!}
                 value={form.client_id}
-                onChange={(e) => setForm({ ...form, client_id: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-              >
-                <option value="">— Select client —</option>
-                {clients!.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name} ({c.client_code})</option>
-                ))}
-              </ThemedSelect>
+                onChange={(v) => setForm({ ...form, client_id: v })}
+                allValue=""
+                allLabel="— Select client —"
+                buttonClassName=""
+              />
             </div>
           )}
 
