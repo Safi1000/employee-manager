@@ -18,6 +18,7 @@
         <a href="#capabilities">Capabilities</a>
         <a href="#modules">Modules</a>
         <a href="#advantages">For owners</a>
+        <a href="#pricing">Pricing</a>
         <a href="#why">Why Bastion</a>
       </nav>
       <div class="nav-cta">
@@ -33,6 +34,7 @@
       <a href="#capabilities">Capabilities</a>
       <a href="#modules">Modules</a>
       <a href="#advantages">For owners</a>
+      <a href="#pricing">Pricing</a>
       <a href="#why">Why Bastion</a>
       <a href="#" class="btn btn-solid">Sign up</a>
     </div>
@@ -694,6 +696,91 @@
       </div>
     </section>
 
+    <!-- ============ PRICING CALCULATOR ============ -->
+    <section class="pricing" id="pricing">
+      <div class="wrap">
+        <div class="section-head center reveal">
+          <div class="eyebrow">Pricing</div>
+          <h2>Pay for the guards you <span class="grad">actually run.</span></h2>
+          <p class="section-sub">
+            One platform fee, then a per-guard rate that steps down as you grow. Every guard is
+            charged at the rate of the band they fall in — not one flat rate for the whole roster.
+            Move the slider to see your number.
+          </p>
+        </div>
+
+        <div class="calc-grid reveal">
+          <!-- controls + headline numbers -->
+          <div class="calc-col">
+            <div class="panel calc-panel">
+              <div class="calc-field">
+                <label class="calc-label" for="pcNum">How many guards do you run?</label>
+                <div class="calc-input-row">
+                  <input class="calc-range" id="pcRange" type="range"
+                         aria-label="Guard count slider" />
+                  <input class="calc-num mono" id="pcNum" type="number" inputmode="numeric"
+                         aria-label="Guard count" />
+                </div>
+                <p class="calc-hint">
+                  Slider goes to 1,000 — type a higher number for a larger fleet.
+                </p>
+              </div>
+
+              <label class="calc-toggle" for="pcCare">
+                <input type="checkbox" id="pcCare" />
+                <span class="calc-switch" aria-hidden="true"></span>
+                <span class="calc-toggle-txt">
+                  <b>Bastion Care</b>
+                  <span>Priority support and onboarding · PKR 5,000/month</span>
+                </span>
+              </label>
+            </div>
+
+            <div class="calc-stats">
+              <div class="calc-stat">
+                <div class="calc-stat-label">Total per month</div>
+                <div class="calc-stat-num mono" id="pcTotal">PKR 17,350</div>
+              </div>
+              <div class="calc-stat">
+                <div class="calc-stat-label">Effective cost per guard</div>
+                <div class="calc-stat-num mono" id="pcPerGuard">PKR 96</div>
+              </div>
+              <div class="calc-stat">
+                <div class="calc-stat-label">Included AI credit</div>
+                <div class="calc-stat-num mono" id="pcAi">PKR 1,250</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- invoice-style breakdown -->
+          <div class="panel calc-invoice">
+            <div class="panel-top">
+              <div class="dots"><i></i><i></i><i></i></div>
+              <span class="panel-title">Your monthly invoice</span>
+              <span class="live"><span class="live-dot"></span>live</span>
+            </div>
+            <div class="calc-invoice-body">
+              <div id="pcLines"></div>
+              <div class="pc-line pc-total">
+                <span class="pc-line-label">Total per month</span>
+                <b class="mono" id="pcTotalRow">PKR 17,350</b>
+              </div>
+              <p class="pc-enterprise" id="pcEnterprise" hidden>
+                <span class="chip chip-amber">Custom</span>
+                Enterprise — this is the standard rate, and there's room to negotiate.
+              </p>
+              <a href="#" class="btn btn-solid btn-lg btn-full calc-cta" id="pcCta">
+                Get two months free — apply before 15 August <span class="arr">→</span>
+              </a>
+              <p class="calc-fine">
+                Prices in PKR per month, excluding taxes.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- ============ CLOSING CTA ============ -->
     <section class="closing">
       <div class="wrap closing-inner reveal">
@@ -731,6 +818,7 @@
         <a href="#chains">The chain</a>
         <a href="#engine">Money engine</a>
         <a href="#modules">Modules</a>
+        <a href="#pricing">Pricing</a>
         <a href="#roles">Roles</a>
       </div>
       <div class="foot-col">

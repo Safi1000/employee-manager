@@ -490,6 +490,85 @@ h1 { font-size: clamp(2.6rem, 6.2vw, 4.9rem); margin: 1.4rem 0 0; font-weight: 8
 .pc-feats li::before { content: "✓"; position: absolute; left: 0; color: var(--emerald); font-weight: 700; }
 .price-card.featured .pc-feats li::before { color: var(--amber-2); }
 
+/* ============ PRICING CALCULATOR ============
+   Sits on obsidian between the light "Why" section and the amber closing CTA.
+   Reuses .panel / .btn / .chip / .mono and the shared tokens — no new colours. */
+.pricing { padding: clamp(64px, 9vw, 120px) 0; background: var(--obsidian); position: relative; }
+.calc-grid { display: grid; grid-template-columns: 1.02fr .98fr; gap: 1.4rem; align-items: start; }
+.calc-col { display: grid; gap: 1.4rem; }
+
+/* ---- controls ---- */
+.calc-panel { padding: 1.5rem 1.5rem 1.35rem; }
+.calc-label { display: block; font-family: var(--display); font-weight: 700; font-size: 1.05rem; color: var(--bone); margin-bottom: 1rem; }
+.calc-input-row { display: flex; align-items: center; gap: 1rem; }
+.calc-hint { margin-top: .8rem; font-size: .84rem; color: var(--muted); }
+
+/* range: a gauge, filled to --fill (set from JS) in amber, rest hairline */
+.calc-range {
+  --fill: 18%;
+  flex: 1; min-width: 0; height: 6px; -webkit-appearance: none; appearance: none;
+  border-radius: 999px; cursor: pointer; outline: none;
+  background: linear-gradient(90deg, var(--amber) var(--fill), var(--bone-faint) var(--fill));
+}
+.calc-range::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--amber); border: 3px solid var(--void); cursor: grab;
+  box-shadow: 0 0 0 1px var(--amber), 0 6px 18px -6px rgba(0,0,0,.9);
+  transition: transform .18s var(--ease), background .18s var(--ease);
+}
+.calc-range::-webkit-slider-thumb:hover { background: var(--amber-2); transform: scale(1.1); }
+.calc-range::-webkit-slider-thumb:active { cursor: grabbing; }
+.calc-range::-moz-range-thumb {
+  width: 22px; height: 22px; border-radius: 50%; background: var(--amber);
+  border: 3px solid var(--void); cursor: grab;
+  box-shadow: 0 0 0 1px var(--amber), 0 6px 18px -6px rgba(0,0,0,.9);
+}
+.calc-range:focus-visible { box-shadow: 0 0 0 3px var(--amber-soft); }
+
+.calc-num {
+  width: 106px; flex-shrink: 0; text-align: center; font-size: 1.15rem; font-weight: 600;
+  padding: .6rem .5rem; border-radius: 10px; color: var(--bone);
+  background: var(--void); border: 1px solid var(--hair-dark);
+  transition: border-color .2s var(--ease);
+}
+.calc-num:hover { border-color: var(--bone-faint); }
+.calc-num:focus { outline: none; border-color: var(--amber); }
+
+/* ---- Bastion Care toggle ---- */
+.calc-toggle { display: flex; align-items: center; gap: .85rem; margin-top: 1.35rem; padding-top: 1.35rem; border-top: 1px dashed var(--hair-dark); cursor: pointer; }
+.calc-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+.calc-switch { position: relative; flex-shrink: 0; width: 46px; height: 26px; border-radius: 999px; background: var(--void); border: 1px solid var(--hair-dark); transition: background .22s var(--ease), border-color .22s var(--ease); }
+.calc-switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--bone-dim); transition: transform .22s var(--ease), background .22s var(--ease); }
+.calc-toggle input:checked + .calc-switch { background: var(--amber-soft); border-color: var(--amber); }
+.calc-toggle input:checked + .calc-switch::after { transform: translateX(20px); background: var(--amber); }
+.calc-toggle input:focus-visible + .calc-switch { box-shadow: 0 0 0 3px var(--amber-soft); }
+.calc-toggle-txt { display: grid; gap: .15rem; }
+.calc-toggle-txt b { font-family: var(--display); font-weight: 700; color: var(--bone); font-size: .98rem; }
+.calc-toggle-txt span { color: var(--muted); font-size: .86rem; }
+
+/* ---- the three headline numbers ---- */
+.calc-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+.calc-stat { background: var(--panel); border: 1px solid var(--hair-dark); border-radius: 14px; padding: 1.1rem 1.15rem; transition: border-color .25s var(--ease); }
+.calc-stat:hover { border-color: var(--amber-soft); }
+.calc-stat-label { font-family: var(--mono); font-size: .66rem; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); }
+.calc-stat-num { margin-top: .6rem; font-size: clamp(1.15rem, 2.2vw, 1.5rem); font-weight: 700; color: var(--bone); line-height: 1.1; }
+.calc-stat:first-child .calc-stat-num { color: var(--amber); }
+
+/* ---- invoice ---- */
+.calc-invoice-body { padding: 1.3rem 1.35rem 1.4rem; }
+.pc-line { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding: .6rem 0; border-bottom: 1px dashed var(--hair-dark); }
+.pc-line:last-of-type { border-bottom: 0; }
+.pc-line-label { color: var(--bone-dim); font-size: .95rem; }
+.pc-line-detail { font-family: var(--mono); font-style: normal; font-size: .8rem; color: var(--muted); }
+.pc-line b { color: var(--bone); font-weight: 500; white-space: nowrap; }
+.pc-total { margin-top: .5rem; padding-top: .95rem; border-top: 1px solid var(--hair-dark); border-bottom: 0; }
+.pc-total .pc-line-label { font-family: var(--display); font-weight: 700; color: var(--bone); font-size: 1.02rem; }
+.pc-total b { color: var(--amber); font-size: 1.32rem; font-weight: 700; }
+.pc-enterprise { display: flex; align-items: center; gap: .55rem; flex-wrap: wrap; margin-top: 1rem; padding: .7rem .85rem; border-radius: 10px; background: var(--amber-soft); color: var(--bone-dim); font-size: .86rem; }
+.pc-enterprise[hidden] { display: none; }
+.calc-cta { margin-top: 1.25rem; text-align: center; }
+.calc-fine { margin-top: .85rem; text-align: center; font-size: .8rem; color: var(--muted); }
+
 /* ============ ADVANTAGES FOR OWNERS ============ */
 .advantages { padding: clamp(64px, 9vw, 120px) 0; background: var(--paper); color: var(--ink); }
 .advantages h2 { color: var(--ink); } .advantages .section-sub { color: var(--muted); }
@@ -548,6 +627,7 @@ h1 { font-size: clamp(2.6rem, 6.2vw, 4.9rem); margin: 1.4rem 0 0; font-weight: 8
   .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 2rem; }
   .role-grid { grid-template-columns: repeat(2, 1fr); }
   .price-grid { grid-template-columns: 1fr; max-width: 460px; margin: 0 auto; }
+  .calc-grid { grid-template-columns: 1fr; }
   .adv-grid { grid-template-columns: repeat(2, 1fr); }
   .pain-grid, .cap-groups, .why-grid { grid-template-columns: repeat(2, 1fr); }
   .cap-row { grid-template-columns: 64px 1fr; gap: 1rem; }
@@ -558,6 +638,11 @@ h1 { font-size: clamp(2.6rem, 6.2vw, 4.9rem); margin: 1.4rem 0 0; font-weight: 8
 }
 @media (max-width: 560px) {
   .stats-grid, .role-grid, .acc-mods, .adv-grid { grid-template-columns: 1fr; }
+  /* Stack the three numbers, and let the count input sit under the slider so
+     neither gets squeezed on a phone. */
+  .calc-stats { grid-template-columns: 1fr; }
+  .calc-input-row { flex-wrap: wrap; }
+  .calc-num { width: 100%; }
   .pain-grid, .cap-groups, .why-grid { grid-template-columns: 1fr; }
   .cap-row { grid-template-columns: 1fr; gap: .5rem; }
   .everything-head h3 { white-space: normal; }

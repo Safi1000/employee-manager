@@ -402,6 +402,193 @@ export function initBastion(root: ShadowRoot): () => void {
     }
   }
 
+  /* ============================================================
+     PRICING CALCULATOR
+     Everything tweakable lives in PRICING below — rates, bands, AI tiers,
+     the add-on price and the offer deadline. Change a number there and the
+     slider, the invoice breakdown and the section copy all follow.
+     ============================================================ */
+  const PRICING = {
+    currency: "PKR",
+    /** Flat monthly platform fee. Covers the first `includedGuards` guards. */
+    platformFee: 7500,
+    includedGuards: 50,
+    /** Optional add-on. */
+    care: { label: "Bastion Care", price: 5000 },
+    /** Shown in the CTA. */
+    offerDeadline: "15 August",
+    /** Slider range; the number input may go higher (see inputMax). */
+    slider: { min: 1, max: 1000, step: 1, default: 180 },
+    inputMax: 5000,
+    /** Above this, show the "custom / enterprise" note. */
+    enterpriseAbove: 500,
+    /**
+     * MARGINAL bands: a guard is charged only at the rate of the band they
+     * fall in, not at one flat rate for the whole headcount. `to: null` = the
+     * open-ended top band. Bands must be contiguous and ascending.
+     */
+    bands: [
+      { from: 1, to: 50, rate: 0 },
+      { from: 51, to: 100, rate: 85 },
+      { from: 101, to: 250, rate: 70 },
+      { from: 251, to: 500, rate: 55 },
+      { from: 501, to: null as number | null, rate: 45 },
+    ],
+    /** Included monthly AI credit, set by the highest band the count reaches. */
+    aiTiers: [
+      { upTo: 50 as number | null, credit: 250 },
+      { upTo: 100 as number | null, credit: 500 },
+      { upTo: 250 as number | null, credit: 1250 },
+      { upTo: 500 as number | null, credit: 2500 },
+      { upTo: null as number | null, credit: 5000 },
+    ],
+  };
+
+  /** "PKR 17,350" — always a rounded integer, never a float artifact. */
+  const money = (n: number) =>
+    PRICING.currency + " " + Math.round(n).toLocaleString("en-US");
+
+  type PriceLine = { label: string; detail: string; amount: number };
+  type Quote = {
+    guards: number;
+    lines: PriceLine[];
+    total: number;
+    perGuard: number;
+    aiCredit: number;
+    enterprise: boolean;
+  };
+
+  /**
+   * The whole pricing model, in one place.
+   *   total = platform fee + Σ (guards in band × band rate) + Bastion Care
+   * Reference case: 180 guards, no Care →
+   *   7,500 + (50 × 85) + (80 × 70) = 17,350; per guard 96; AI credit 1,250.
+   */
+  const computePricing = (guardsRaw: number, careOn: boolean): Quote => {
+    // One guard minimum, whole guards only.
+    const guards = Math.max(1, Math.floor(guardsRaw) || 1);
+
+    const lines: PriceLine[] = [{
+      label: "Platform fee",
+      detail: "includes the first " + PRICING.includedGuards + " guards",
+      amount: PRICING.platformFee,
+    }];
+
+    for (const band of PRICING.bands) {
+      // How many guards land inside this band, given the headcount.
+      const top = band.to == null ? guards : Math.min(guards, band.to);
+      const count = top - band.from + 1;
+      if (count <= 0 || band.rate === 0) continue; // band 1 is inside the platform fee
+      lines.push({
+        label: "Guards " + band.from + (band.to == null ? "+" : "–" + band.to),
+        detail: count + " × " + band.rate,
+        amount: count * band.rate,
+      });
+    }
+
+    if (careOn) {
+      lines.push({ label: PRICING.care.label, detail: "add-on", amount: PRICING.care.price });
+    }
+
+    const total = lines.reduce((sum, l) => sum + l.amount, 0);
+    const tier = PRICING.aiTiers.find((t) => t.upTo == null || guards <= t.upTo);
+
+    return {
+      guards,
+      lines,
+      total,
+      perGuard: total / guards,
+      aiCredit: tier ? tier.credit : 0,
+      enterprise: guards > PRICING.enterpriseAbove,
+    };
+  };
+
+  const calcRange = root.getElementById("pcRange") as HTMLInputElement | null;
+  const calcNum = root.getElementById("pcNum") as HTMLInputElement | null;
+  const calcCare = root.getElementById("pcCare") as HTMLInputElement | null;
+  if (calcRange && calcNum && calcCare) {
+    const elTotal = root.getElementById("pcTotal");
+    const elPer = root.getElementById("pcPerGuard");
+    const elAi = root.getElementById("pcAi");
+    const elLines = root.getElementById("pcLines");
+    const elTotalRow = root.getElementById("pcTotalRow");
+    const elEnt = root.getElementById("pcEnterprise");
+    const elCta = root.getElementById("pcCta");
+
+    // Config drives the controls, so changing PRICING is enough.
+    calcRange.min = String(PRICING.slider.min);
+    calcRange.max = String(PRICING.slider.max);
+    calcRange.step = String(PRICING.slider.step);
+    calcRange.value = String(PRICING.slider.default);
+    calcNum.min = String(PRICING.slider.min);
+    calcNum.max = String(PRICING.inputMax);
+    calcNum.value = String(PRICING.slider.default);
+    if (elCta) {
+      elCta.innerHTML =
+        "Get two months free — apply before " + PRICING.offerDeadline +
+        ' <span class="arr">→</span>';
+    }
+
+    let guards = PRICING.slider.default;
+
+    // The slider's filled track is painted with a gradient driven by value, so
+    // it reads as a gauge rather than a bare input.
+    const paintTrack = () => {
+      const span = PRICING.slider.max - PRICING.slider.min;
+      const pct = ((Math.min(guards, PRICING.slider.max) - PRICING.slider.min) / span) * 100;
+      calcRange.style.setProperty("--fill", pct + "%");
+    };
+
+    const render = () => {
+      const q = computePricing(guards, calcCare.checked);
+
+      if (elTotal) elTotal.textContent = money(q.total);
+      if (elPer) elPer.textContent = money(q.perGuard);
+      if (elAi) elAi.textContent = money(q.aiCredit);
+
+      if (elLines) {
+        elLines.innerHTML = q.lines.map((l) => (
+          '<div class="pc-line">' +
+            '<span class="pc-line-label">' + l.label +
+              ' <em class="pc-line-detail">' + l.detail + "</em></span>" +
+            '<b class="mono">' + money(l.amount) + "</b>" +
+          "</div>"
+        )).join("");
+      }
+      if (elTotalRow) elTotalRow.textContent = money(q.total);
+      if (elEnt) elEnt.hidden = !q.enterprise;
+      paintTrack();
+    };
+
+    // ---- two-way sync: the slider caps at 1000, the number input goes to 5000
+    on(calcRange, "input", () => {
+      guards = Number(calcRange.value);
+      calcNum.value = String(guards);
+      render();
+    });
+
+    on(calcNum, "input", () => {
+      const raw = calcNum.value.trim();
+      // Let the field be empty mid-typing; don't snap it back under the cursor.
+      if (raw === "") return;
+      const n = Number(raw);
+      if (!Number.isFinite(n)) return;
+      guards = Math.min(Math.max(Math.floor(n), PRICING.slider.min), PRICING.inputMax);
+      // Past the slider's ceiling it simply pins to max.
+      calcRange.value = String(Math.min(guards, PRICING.slider.max));
+      render();
+    });
+
+    // Normalise on blur: whatever is in the field becomes a legal number.
+    on(calcNum, "blur", () => {
+      calcNum.value = String(guards);
+    });
+
+    on(calcCare, "change", render);
+
+    render();
+  }
+
   /* ---- advantages carousel: auto-glide + chevron controls ---- */
   const advMarquee = root.getElementById("advMarquee");
   const advTrack = root.getElementById("advTrack");
