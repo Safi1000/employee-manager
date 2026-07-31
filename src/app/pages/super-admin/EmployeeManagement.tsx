@@ -571,7 +571,6 @@ const EMPLOYEE_FIELD_LABELS: Record<string, string> = {
   client_id: "Client",
   phone: "Phone Number",
   cnic_number: "CNIC Number",
-  join_date: "Join Date",
   iban: "IBAN",
   bank_account: "Bank Account",
   emergency_contact_phone: "Emergency Contact Phone",
@@ -766,7 +765,6 @@ export default function EmployeeManagement() {
     "bank_account",
     "iban",
     "cnic_number",
-    "join_date",
     "permanent_address",
     "current_address",
     "emergency_contact_phone",
@@ -1462,14 +1460,13 @@ export default function EmployeeManagement() {
   };
 
   // Inline field errors for an employee form (null = OK).
-  // CNIC and Join Date are mandatory: the CNIC is the identity key duplicate
-  // detection and rehire rely on, and the join date opens the attendance window
-  // (migration 0152) — a record missing either can't be paid or marked correctly.
+  // CNIC and Join Date are NOT required — both are only format-checked. They are
+  // still flagged in the list (isMissingKeyFields) because attendance gating and
+  // payroll depend on them, but nothing blocks a save without them.
   const computeEmployeeErrors = (f: FormState): Record<string, string | null> => ({
     full_name: validateFreeText(f.full_name),
     phone: validatePhone(f.phone),
-    cnic_number: !f.cnic_number.trim() ? "CNIC Number is required." : validateCnic(f.cnic_number),
-    join_date: !f.join_date ? "Join Date is required." : null,
+    cnic_number: validateCnic(f.cnic_number),
     iban: validateIban(f.iban),
     bank_account: accountOrIbanError(f.bank_account),
     emergency_contact_phone: validatePhone(f.emergency_contact_phone),
@@ -2691,7 +2688,7 @@ export default function EmployeeManagement() {
                   </div>
                 )}
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Join Date *</label>
+                <label className="block text-sm text-slate-700 mb-1">Join Date</label>
                 <input
                   type="date"
                   id="empfield-join_date"
@@ -2699,9 +2696,6 @@ export default function EmployeeManagement() {
                   onChange={(e) => setForm({ ...form, join_date: e.target.value })}
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                 />
-                {formErrors.join_date && (
-                  <p className="text-xs text-danger-600 mt-1">{formErrors.join_date}</p>
-                )}
               </div>
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Bank Name</label>
@@ -3537,7 +3531,7 @@ export default function EmployeeManagement() {
                     </div>
                   )}
                 <div>
-                  <label className="block text-sm text-slate-700 mb-1">Join Date *</label>
+                  <label className="block text-sm text-slate-700 mb-1">Join Date</label>
                   <input
                     type="date"
                     id="empeditfield-join_date"
@@ -3545,9 +3539,6 @@ export default function EmployeeManagement() {
                     onChange={(e) => setEditForm({ ...editForm, join_date: e.target.value })}
                     className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                   />
-                  {editFormErrors.join_date && (
-                    <p className="text-xs text-danger-600 mt-1">{editFormErrors.join_date}</p>
-                  )}
                 </div>
                 <div>
                   <label className="block text-sm text-slate-700 mb-1">Bank Name</label>
@@ -5472,7 +5463,7 @@ function EmployeeHrSection({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-slate-700 mb-1">CNIC Number *</label>
+              <label className="block text-sm text-slate-700 mb-1">CNIC Number</label>
               <input
                 type="text"
                 maxLength={15}
