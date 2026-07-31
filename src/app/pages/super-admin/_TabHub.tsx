@@ -22,9 +22,15 @@ export default function TabHub({
     defaultTab ??
     tabs[0]?.key;
 
+  // The layout shell is a `flex flex-col overflow-hidden` column, and each child
+  // page scrolls itself via `flex-1 overflow-y-auto`. This container has to keep
+  // that height chain intact (`flex-1 min-h-0` + column) or the child scroller
+  // has no bounded height and its overflow is silently clipped by the shell —
+  // which is what left Payroll unscrollable. `overflow-y-auto` on the pane is the
+  // fallback for any child that isn't its own scroller.
   return (
-    <div>
-      <div className="px-4 md:px-8 pt-3">
+    <div className="flex-1 flex flex-col min-h-0">
+      <div className="px-4 md:px-8 pt-3 flex-shrink-0">
         <div className="flex gap-2 flex-wrap">
           {tabs.map((t) => (
             <button
@@ -45,7 +51,13 @@ export default function TabHub({
           ))}
         </div>
       </div>
-      {tabs.map((t) => (active === t.key ? <div key={t.key}>{t.render()}</div> : null))}
+      {tabs.map((t) =>
+        active === t.key ? (
+          <div key={t.key} className="flex-1 flex flex-col min-h-0 overflow-y-auto">
+            {t.render()}
+          </div>
+        ) : null,
+      )}
     </div>
   );
 }
