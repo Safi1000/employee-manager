@@ -759,6 +759,23 @@ export default function EmployeeManagement() {
     }, 60);
   };
 
+  // Top-level sections of the Add and Edit modals — collapsed until opened.
+  const addSections = useSectionState();
+  const editSections = useSectionState();
+  const { expand: expandAdd } = addSections;
+  const { expand: expandEdit } = editSections;
+  // A failed save must not leave its error hidden inside a collapsed panel.
+  useEffect(() => {
+    if (!addSubmitAttempted) return;
+    if (formErrors.full_name || formErrors.phone) expandAdd("basic");
+    if (formErrors.bank_account || formErrors.iban) expandAdd("bank");
+  }, [addSubmitAttempted, formErrors, expandAdd]);
+  useEffect(() => {
+    if (!editSubmitAttempted) return;
+    if (editFormErrors.full_name || editFormErrors.phone) expandEdit("basic");
+    if (editFormErrors.bank_account || editFormErrors.iban) expandEdit("basic");
+  }, [editSubmitAttempted, editFormErrors, expandEdit]);
+
   const [editForm, setEditForm] = useState<FormState>(emptyForm);
   const [editStatus, setEditStatus] = useState<EmployeeRow["status"]>("Active");
   const [editing, setEditing] = useState(false);
@@ -1549,6 +1566,7 @@ export default function EmployeeManagement() {
   };
 
   const openEdit = (emp: EmployeeRow) => {
+    editSections.reset();
     setSelectedEmployee(emp);
     setEditStatus(emp.status);
     const baseStr = emp.base_salary != null ? String(emp.base_salary) : "";
@@ -1814,6 +1832,7 @@ export default function EmployeeManagement() {
                 setFormErrors({});
                 setAddSubmitAttempted(false);
                 setAddModalError(null);
+                addSections.reset();
                 setIsModalOpen(true);
               }}
             >
@@ -2217,7 +2236,7 @@ export default function EmployeeManagement() {
       </div>
 
       <Modal isOpen={isModalOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsModalOpen(false)} title="Add Employee" size="lg">
-        <form className="space-y-6" onSubmit={handleAdd}>
+        <form className="space-y-2" onSubmit={handleAdd}>
           {addModalError && (
             <div className="flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
               <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" strokeWidth={2} />
@@ -2227,8 +2246,12 @@ export default function EmployeeManagement() {
               </button>
             </div>
           )}
-          <div>
-            <h4 className="text-sm text-slate-900 mb-4">Basic Information</h4>
+          <FormSection
+            label="Basic Information"
+            open={addSections.isOpen("basic")}
+            hasError={Boolean(formErrors.full_name || formErrors.phone)}
+            onToggle={() => addSections.toggle("basic")}
+          >
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Full Name *</label>
@@ -2257,12 +2280,12 @@ export default function EmployeeManagement() {
                 {formErrors.phone && <p className="text-xs text-danger-600 mt-1">{formErrors.phone}</p>}
               </div>
             </div>
-          </div>
+          </FormSection>
 
           {/* Posting and pay (client, branch, shift, salary, joining date) are set
               on Workforce ▸ Assignments & Pay, where the whole client can be
               edited at once. A new hire lands in that page's "Unassigned" group. */}
-          <div className="pt-4 border-t border-slate-200 flex items-start gap-2 text-sm text-slate-600">
+          <div className="flex items-start gap-2 text-sm text-slate-600">
             <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-slate-400" strokeWidth={2} />
             <span>
               Client, location, branch, department, shift, salary and joining date are set on{" "}
@@ -2271,8 +2294,12 @@ export default function EmployeeManagement() {
             </span>
           </div>
 
-          <div className="pt-4 border-t border-slate-200">
-            <h4 className="text-sm text-slate-900 mb-4">Bank Details</h4>
+          <FormSection
+            label="Bank Details"
+            open={addSections.isOpen("bank")}
+            hasError={Boolean(formErrors.bank_account || formErrors.iban)}
+            onToggle={() => addSections.toggle("bank")}
+          >
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Bank Name</label>
@@ -2317,7 +2344,7 @@ export default function EmployeeManagement() {
                 )}
               </div>
             </div>
-          </div>
+          </FormSection>
 
           <EmployeeHrSection
             form={form}
@@ -2329,8 +2356,11 @@ export default function EmployeeManagement() {
             forceOpen={addSubmitAttempted}
           />
 
-          <div className="pt-4 border-t border-slate-200">
-            <h4 className="text-sm text-slate-900 mb-2">Recruitment Intake</h4>
+          <FormSection
+            label="Recruitment Intake"
+            open={addSections.isOpen("intake")}
+            onToggle={() => addSections.toggle("intake")}
+          >
             <ThemedSelect
               value={form.lifecycle_intake}
               onChange={(e) =>
@@ -2345,11 +2375,18 @@ export default function EmployeeManagement() {
             <p className="text-xs text-slate-500 mt-1">
               Create as an applicant / waiting-list entry; promote later from the employee's Lifecycle panel.
             </p>
-          </div>
+          </FormSection>
 
-          <div className="pt-4 border-t border-slate-200">
-            <h4 className="text-sm text-slate-900 mb-4">Documents</h4>
+          <FormSection
+            label="Documents"
+            open={addSections.isOpen("docs")}
+            onToggle={() => addSections.toggle("docs")}
+          >
             <div className="space-y-3">
+              <PhysicalCopyToggle
+                checked={form.physical_copy_present}
+                onChange={(v) => setForm({ ...form, physical_copy_present: v })}
+              />
               <div>
                 <label className="block text-sm text-slate-700 mb-1">CNIC</label>
                 <div className="flex items-center gap-3">
@@ -2385,7 +2422,7 @@ export default function EmployeeManagement() {
                 </div>
               </div>
             </div>
-          </div>
+          </FormSection>
 
           {addSubmitAttempted && <FieldErrorSummary errors={formErrors} idPrefix="empfield-" />}
 
@@ -2795,9 +2832,16 @@ export default function EmployeeManagement() {
         size="lg"
       >
         {selectedEmployee && (
-          <form className="space-y-6" onSubmit={handleEdit}>
+          <form className="space-y-2" onSubmit={handleEdit}>
+            <FormSection
+              label="Identity Verification"
+              open={editSections.isOpen("identity")}
+              onToggle={() => editSections.toggle("identity")}
+            >
             <IdentityVerificationPanel
               employee={selectedEmployee}
+              physicalCopyPresent={editForm.physical_copy_present}
+              onPhysicalCopyChange={(v) => setEditForm({ ...editForm, physical_copy_present: v })}
               onChanged={async () => {
                 // Re-read the locked fields so the panel, the disabled inputs, and
                 // editForm all reflect the amended/verified state. Keeping editForm
@@ -2823,8 +2867,14 @@ export default function EmployeeManagement() {
                 loadData();
               }}
             />
-            <div>
-              <h4 className="text-sm text-slate-900 mb-4">Basic Information</h4>
+            </FormSection>
+
+            <FormSection
+              label="Basic Information"
+              open={editSections.isOpen("basic")}
+              hasError={Boolean(editFormErrors.full_name || editFormErrors.phone || editFormErrors.bank_account || editFormErrors.iban)}
+              onToggle={() => editSections.toggle("basic")}
+            >
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm text-slate-700 mb-1">Employee ID</label>
@@ -2925,7 +2975,7 @@ export default function EmployeeManagement() {
                   {editFormErrors.iban && <p className="text-xs text-danger-600 mt-1">{editFormErrors.iban}</p>}
                 </div>
               </div>
-            </div>
+            </FormSection>
 
             <EmployeeHrSection
               form={editForm}
@@ -2939,8 +2989,19 @@ export default function EmployeeManagement() {
               forceOpen={editSubmitAttempted}
             />
 
-            <EmployeeChildTables employeeId={selectedEmployee.id} />
+            <FormSection
+              label="Family, References & Checklist"
+              open={editSections.isOpen("children")}
+              onToggle={() => editSections.toggle("children")}
+            >
+              <EmployeeChildTables employeeId={selectedEmployee.id} />
+            </FormSection>
 
+            <FormSection
+              label="Lifecycle & Verification"
+              open={editSections.isOpen("lifecycle")}
+              onToggle={() => editSections.toggle("lifecycle")}
+            >
             <EmployeeLifecyclePanel
               employee={selectedEmployee}
               onChanged={async () => {
@@ -2957,9 +3018,13 @@ export default function EmployeeManagement() {
                 loadData();
               }}
             />
+            </FormSection>
 
-            <div className="pt-4 border-t border-slate-200">
-              <h4 className="text-sm text-slate-900 mb-4">Add Documents</h4>
+            <FormSection
+              label="Add Documents"
+              open={editSections.isOpen("docs")}
+              onToggle={() => editSections.toggle("docs")}
+            >
               <div className="space-y-3">
                 <div>
                   <label className="block text-sm text-slate-700 mb-1">CNIC</label>
@@ -2987,7 +3052,7 @@ export default function EmployeeManagement() {
                   />
                 </div>
               </div>
-            </div>
+            </FormSection>
 
             {editSubmitAttempted && <FieldErrorSummary errors={editFormErrors} idPrefix="empeditfield-" />}
 
@@ -3207,9 +3272,13 @@ const IDENTITY_FIELDS: { key: string; label: string; type: "text" | "date" }[] =
 function IdentityVerificationPanel({
   employee,
   onChanged,
+  physicalCopyPresent,
+  onPhysicalCopyChange,
 }: {
   employee: EmployeeRow;
   onChanged: () => void | Promise<void>;
+  physicalCopyPresent: boolean;
+  onPhysicalCopyChange: (v: boolean) => void;
 }) {
   const [history, setHistory] = useState<EmployeeIdentityAmendment[]>([]);
   const [busy, setBusy] = useState(false);
@@ -3319,14 +3388,17 @@ function IdentityVerificationPanel({
 
       {err && <p className="text-xs text-danger-600 mt-2">{err}</p>}
 
-      {!verified ? (
-        <div className="mt-3">
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        {!verified && (
           <Button type="button" variant="secondary" size="sm" disabled={busy} onClick={verify}>
             {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
             Verify identity
           </Button>
-        </div>
-      ) : (
+        )}
+        <PhysicalCopyToggle checked={physicalCopyPresent} onChange={onPhysicalCopyChange} />
+      </div>
+
+      {verified && (
         <div className="mt-3 space-y-2">
           {IDENTITY_FIELDS.map((f) => {
             const current = String((employee as unknown as Record<string, unknown>)[f.key] ?? "") || "—";
@@ -4753,12 +4825,12 @@ function EmployeeHrSection({
   };
 
   return (
-    <div className="pt-4 border-t border-slate-200">
-      <h4 className="text-sm text-slate-900 mb-3">Employee Details</h4>
+    <div>
+      <h4 className="text-sm text-slate-900 mb-2 mt-2">Employee Details</h4>
 
       <div className="space-y-2">
       {/* ── Personal Information ─────────────────────────────────────────── */}
-      <HrCollapsible
+      <FormSection
         label={HR_SECTIONS[0].label}
         open={isOpen("personal")}
         hasError={personalHasError}
@@ -4908,10 +4980,10 @@ function EmployeeHrSection({
             </div>
           </div>
         </div>
-      </HrCollapsible>
+      </FormSection>
 
       {/* ── Emergency Contact ────────────────────────────────────────────── */}
-      <HrCollapsible
+      <FormSection
         label={HR_SECTIONS[1].label}
         open={isOpen("emergency")}
         hasError={emergencyHasError}
@@ -4953,10 +5025,10 @@ function EmployeeHrSection({
             </div>
           </div>
         </div>
-      </HrCollapsible>
+      </FormSection>
 
       {/* ── Contract & Reporting ─────────────────────────────────────────── */}
-      <HrCollapsible
+      <FormSection
         label={HR_SECTIONS[2].label}
         open={isOpen("contract")}
         onToggle={() => toggleSection("contract")}
@@ -4988,10 +5060,10 @@ function EmployeeHrSection({
             </ThemedSelect>
           </div>
         </div>
-      </HrCollapsible>
+      </FormSection>
 
       {/* ── Ex-Service (replaces the removed Licences & Compliance tab) ───── */}
-      <HrCollapsible
+      <FormSection
         label={HR_SECTIONS[3].label}
         open={isOpen("exservice")}
         onToggle={() => toggleSection("exservice")}
@@ -5016,19 +5088,19 @@ function EmployeeHrSection({
             <p className="col-span-2 text-xs text-slate-500">Tick “Ex-serviceman” to record army service details.</p>
           )}
         </div>
-      </HrCollapsible>
+      </FormSection>
 
       {/* ── Experience ───────────────────────────────────────────────────── */}
-      <HrCollapsible
+      <FormSection
         label={HR_SECTIONS[4].label}
         open={isOpen("experience")}
         onToggle={() => toggleSection("experience")}
       >
         <div className="grid grid-cols-2 gap-3">{area("weapons_trained", "Weapons Trained On")}</div>
-      </HrCollapsible>
+      </FormSection>
 
       {/* ── Internal Office Data (+ folded Licences & Compliance) ─────────── */}
-      <HrCollapsible
+      <FormSection
         label={HR_SECTIONS[5].label}
         open={isOpen("office")}
         onToggle={() => toggleSection("office")}
@@ -5077,27 +5149,65 @@ function EmployeeHrSection({
             </div>
           </div>
 
-          <div className="pt-3 border-t border-slate-100">
-            <h5 className="text-sm text-slate-900 mb-3">Documents</h5>
-            <label className={`flex items-center gap-2 text-sm rounded-md border p-3 cursor-pointer ${form.physical_copy_present ? "bg-success-50 border-success-200 text-success-800" : "bg-danger-50 border-danger-200 text-danger-800"}`}>
-              <input type="checkbox" checked={form.physical_copy_present}
-                onChange={(e) => setForm({ ...form, physical_copy_present: e.target.checked })} />
-              <span>Physical Copy Present
-                <span className="block text-xs opacity-80">
-                  {form.physical_copy_present ? "Profile marked complete." : "Profile is incomplete until the physical copies are on file."}
-                </span>
-              </span>
-            </label>
-          </div>
         </div>
-      </HrCollapsible>
+      </FormSection>
       </div>
     </div>
   );
 }
 
-/** One collapsible panel in the Employee Details form. Collapsed by default. */
-function HrCollapsible({
+/**
+ * Open/close state for one modal's top-level sections. Everything starts
+ * collapsed — the employee form is long enough that showing it all at once is
+ * what made it unusable in the first place.
+ */
+function useSectionState() {
+  const [open, setOpen] = useState<string[]>([]);
+  const isOpen = useCallback((id: string) => open.includes(id), [open]);
+  const toggle = useCallback(
+    (id: string) => setOpen((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id])),
+    [],
+  );
+  const expand = useCallback(
+    (id: string) => setOpen((p) => (p.includes(id) ? p : [...p, id])),
+    [],
+  );
+  const reset = useCallback(() => setOpen([]), []);
+  return { isOpen, toggle, expand, reset };
+}
+
+/**
+ * "Physical copies on file" — the flag that drives the red/green completeness
+ * state on the roster. Sits beside Verify identity in the edit form: both are
+ * "is this record trustworthy yet?" questions, answered at the same moment.
+ */
+function PhysicalCopyToggle({
+  checked, onChange,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <label
+      className={`flex items-center gap-2 text-sm rounded-md border px-3 py-2 cursor-pointer ${
+        checked
+          ? "bg-success-50 border-success-200 text-success-800"
+          : "bg-danger-50 border-danger-200 text-danger-800"
+      }`}
+    >
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      <span>
+        Physical Copy Present
+        <span className="block text-xs opacity-80">
+          {checked ? "Profile marked complete." : "Profile is incomplete until the physical copies are on file."}
+        </span>
+      </span>
+    </label>
+  );
+}
+
+/** One collapsible panel in the Add / Edit Employee form. Collapsed by default. */
+function FormSection({
   label, open, hasError, onToggle, children,
 }: {
   label: string;

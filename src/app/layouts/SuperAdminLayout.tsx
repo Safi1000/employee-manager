@@ -124,7 +124,6 @@ export default function SuperAdminLayout() {
   // Consolidation restructure — merged / renamed / moved homes.
   const RECRUITMENT: LinkDef = { to: "/super-admin/recruitment", label: "Recruitment", icon: UserPlus, perms: ["employees.view", "employees.edit"] };
   const RELIEVERS: LinkDef = { to: "/super-admin/relievers", label: "Relievers", icon: Shuffle, perms: ["attendance.view", "attendance.edit"] };
-  const DEPLOYMENT: LinkDef = { to: "/super-admin/deployment", label: "Deployment", icon: MapPin, perms: ["clients.view", "contracts.view", "roster.view"] };
   const DAILY_REPORTS: LinkDef = { to: "/super-admin/daily-reports", label: "Daily Reports", icon: FileText, perms: ["roster.view", "roster.edit", "incidents.view", "attendance.view"] };
   const ASSETS_ISSUANCE: LinkDef = { to: "/super-admin/assets-issuance", label: "Assets & Issuance", icon: Package, perms: ["inventory.view", "inventory.edit", "accounting.view"] };
   const ACCOUNTING_CORE: LinkDef = { to: "/super-admin/accounting-core", label: "Accounting Core", icon: BookOpen, perms: ["coa.view", "reports.view", "accounting.edit"] };
@@ -199,11 +198,10 @@ export default function SuperAdminLayout() {
   ]);
   if (workforce) links.push(workforce);
 
-  // OPERATIONS — Roster killed (supervisor handles it) → light Deployment
-  // snapshot; Field Ops repurposed → Daily Reports; Inventory + Assets merged
-  // → Assets & Issuance.
+  // OPERATIONS — Roster killed (supervisor handles it); Deployment merged into
+  // Workforce ▸ Assignments & Pay; Field Ops repurposed → Daily Reports;
+  // Inventory + Assets merged → Assets & Issuance.
   const operations = buildGroup("Operations", "/super-admin/operations", [
-    DEPLOYMENT,
     DAILY_REPORTS,
     INCIDENTS,
     ASSETS_ISSUANCE,

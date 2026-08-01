@@ -56,7 +56,6 @@ import Recruitment from "./pages/super-admin/Recruitment";
 import DailyReports from "./pages/super-admin/DailyReports";
 import IncidentsHub from "./pages/super-admin/IncidentsHub";
 import LicencesHub from "./pages/super-admin/LicencesHub";
-import Deployment from "./pages/super-admin/Deployment";
 
 import Companies from "./pages/super-super-admin/Companies";
 import CompanyDetail from "./pages/super-super-admin/CompanyDetail";
@@ -94,14 +93,14 @@ export const router = createBrowserRouter([
       { path: "users", element: <Navigate to="/super-admin/access-governance?tab=users" replace /> },
       { path: "clients", element: guard(["clients.view", "clients.edit"], <Clients />) },
       { path: "contracts", element: guard(["contracts.view", "contracts.edit"], <Contracts />) },
-      // Operations ▸ Deployment: contracted-vs-active headcount snapshot (surviving
-      // half of Sites & Strength). Per-post drill-down dropped; billing recon → Invoices.
-      { path: "deployment", element: guard(["clients.view", "clients.edit", "contracts.view", "contracts.edit"], <Deployment />) },
-      { path: "sites-strength", element: <Navigate to="/super-admin/deployment" replace /> },
+      // Deployment merged into Workforce ▸ Assignments & Pay: the contracted-vs-
+      // enrolled reconciliation now sits on the same screen as the guards it counts.
+      { path: "deployment", element: <Navigate to="/super-admin/assignments" replace /> },
+      { path: "sites-strength", element: <Navigate to="/super-admin/assignments" replace /> },
       // Licenses & Renewals now also hosts the contract renewal pipeline.
       { path: "licences", element: guard(["compliance.view", "compliance.edit"], <LicencesHub />) },
-      // Deployment Roster killed (supervisor handles daily assignment) → Deployment.
-      { path: "roster", element: <Navigate to="/super-admin/deployment" replace /> },
+      // Deployment Roster killed (supervisor handles daily assignment) → Assignments & Pay.
+      { path: "roster", element: <Navigate to="/super-admin/assignments" replace /> },
       // Incidents now also hosts client complaints (from dissolved Client Relationships).
       { path: "incidents", element: guard(["incidents.view", "incidents.edit"], <IncidentsHub />) },
       // Opening Balances + Chart of Accounts (which hosts TB + GL) merged → Accounting Core.

@@ -9,6 +9,11 @@
 // So employees are grouped under their client — the same mental model as
 // Attendance — and every field is editable for one guard or for the whole group.
 //
+// Absorbed the old Operations ▸ Deployment page: the contracted-vs-enrolled
+// reconciliation belongs on the same screen as the guards it counts, so each
+// client's card carries its own Sites / Contracted / Enrolled / Variance figures
+// and the totals sit above the list.
+//
 // Salary is never overwritten in place: a change goes through set_employee_salary
 // with an effective date + reason, which writes employee_salary_history and only
 // touches the live row when the change is already in effect. Past months keep
@@ -23,6 +28,7 @@ import {
   ChevronRight,
   Building2,
   CheckCircle2,
+  MapPin,
 } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -68,6 +74,28 @@ const CATEGORY_LABEL: Record<EmployeeCategory, string> = {
   reliever: "Reliever",
 };
 
+/**
+ * Per-client contracted-vs-enrolled snapshot, from v_client_strength_reconciliation.
+ * Variance = contracted − enrolled(active): positive = understaffed (amber),
+ * negative = over-enrolled (red), zero = on strength (green).
+ */
+type ReconRow = {
+  client_id: string;
+  client_name: string;
+  site_count: number;
+  contracted_billed_qty: number;
+  required_on_ground: number;
+  enrolled_active: number;
+  enrolled_total: number;
+  variance: number;
+};
+
+const varianceBadge = (v: number) => {
+  if (v === 0) return "bg-success-50 text-success-700 dark:text-success-500 border-success-200";
+  if (v < 0) return "bg-danger-50 text-danger-700 dark:text-danger-500 border-danger-200";
+  return "bg-warning-50 text-warning-800 dark:text-warning-500 border-warning-200";
+};
+
 /** A group of employees shown as one collapsible card. */
 type Group = {
   key: string;
@@ -76,6 +104,8 @@ type Group = {
   clientId: string | null;
   hint: string;
   rows: EmployeeRow[];
+  /** Only set for client groups that appear in the reconciliation view. */
+  recon?: ReconRow;
 };
 
 // ── Bulk edit shape ──────────────────────────────────────────────────────────
@@ -135,12 +165,14 @@ export default function EmployeeAssignments() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [contractLines, setContractLines] = useState<ContractLine[]>([]);
+  const [recon, setRecon] = useState<ReconRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
   const [showSeparated, setShowSeparated] = useState(false);
+  const [onlyMismatch, setOnlyMismatch] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   /** Selected employee ids, keyed by group so a bulk edit can't leak across clients. */
   const [selected, setSelected] = useState<Record<string, Set<string>>>({});
@@ -155,7 +187,7 @@ export default function EmployeeAssignments() {
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const [locRes, cliRes, brRes, empRes, ebRes, conRes, clRes] = await Promise.all([
+    const [locRes, cliRes, brRes, empRes, ebRes, conRes, clRes, recRes] = await Promise.all([
       supabase.from("locations").select("*").order("name"),
       supabase.from("clients").select("*").order("name"),
       supabase.from("branches").select("*").order("is_head_office", { ascending: false }).order("name"),
@@ -169,6 +201,7 @@ export default function EmployeeAssignments() {
       supabase.from("employee_branches").select("employee_id, branch_id"),
       supabase.from("contracts").select("*").order("start_date", { ascending: false }),
       supabase.from("contract_lines").select("*"),
+      supabase.from("v_client_strength_reconciliation").select("*").order("client_name"),
     ]);
     const firstErr = [locRes, cliRes, brRes, empRes].find((r) => r.error)?.error;
     if (firstErr) setError(firstErr.message);
@@ -177,6 +210,7 @@ export default function EmployeeAssignments() {
     setBranches(brRes.data ?? []);
     setContracts((conRes.data ?? []) as Contract[]);
     setContractLines((clRes.data ?? []) as ContractLine[]);
+    setRecon((recRes.data ?? []) as ReconRow[]);
     const addl = new Map<string, string[]>();
     for (const r of (ebRes.data ?? []) as { employee_id: string; branch_id: string }[]) {
       const arr = addl.get(r.employee_id) ?? [];
@@ -256,6 +290,7 @@ export default function EmployeeAssignments() {
       } else unassigned.push(e);
     }
 
+    const reconByClient = new Map(recon.map((r) => [r.client_id, r]));
     const out: Group[] = [];
     for (const [clientId, rows] of byClient) {
       const c = clientById.get(clientId);
@@ -265,7 +300,25 @@ export default function EmployeeAssignments() {
         clientId,
         hint: c?.employee_id_prefix ? `Prefix ${c.employee_id_prefix}` : "",
         rows,
+        recon: reconByClient.get(clientId),
       });
+    }
+    // A client that is contracted but has nobody enrolled still has to show up —
+    // a zero-strength shortfall is exactly what this reconciliation is for.
+    if (!q) {
+      for (const r of recon) {
+        if (byClient.has(r.client_id)) continue;
+        if (r.contracted_billed_qty === 0 && r.enrolled_total === 0) continue;
+        const c = clientById.get(r.client_id);
+        out.push({
+          key: `client:${r.client_id}`,
+          label: c?.name ?? r.client_name,
+          clientId: r.client_id,
+          hint: "No one enrolled yet",
+          rows: [],
+          recon: r,
+        });
+      }
     }
     out.sort((a, b) => a.label.localeCompare(b.label));
 
@@ -281,8 +334,25 @@ export default function EmployeeAssignments() {
       out.push({ key: "office", label: "Office Staff", clientId: null, hint: "No client posting", rows: office });
     if (relievers.length)
       out.push({ key: "relievers", label: "Relievers", clientId: null, hint: "Relief pool", rows: relievers });
+    if (onlyMismatch) return out.filter((g) => g.recon != null && g.recon.variance !== 0);
     return out;
-  }, [employees, search, showSeparated, clientById]);
+  }, [employees, search, showSeparated, clientById, recon, onlyMismatch]);
+
+  // Company-wide strength totals — the old Deployment page's stat row.
+  const totals = useMemo(
+    () =>
+      recon.reduce(
+        (acc, r) => {
+          acc.contracted += r.contracted_billed_qty;
+          acc.enrolled += r.enrolled_active;
+          acc.sites += r.site_count;
+          if (r.variance !== 0) acc.mismatched += 1;
+          return acc;
+        },
+        { contracted: 0, enrolled: 0, sites: 0, mismatched: 0 },
+      ),
+    [recon],
+  );
 
   const toggleGroup = (key: string) =>
     setExpanded((prev) => {
@@ -312,12 +382,18 @@ export default function EmployeeAssignments() {
       fileName: "assignments-and-pay",
       sheetName: "Assignments",
       headers: [
-        "Group", "Code", "Name", "Category", "Client", "Location", "Branch",
+        "Group", "Sites", "Contracted", "On-ground req.", "Enrolled (active)", "Variance",
+        "Code", "Name", "Category", "Client", "Location", "Branch",
         "Department", "Shift", "Base Salary", "Per Day", "Allowance", "Joined", "Status",
       ],
       rows: groups.flatMap((g) =>
         g.rows.map((e) => [
           g.label,
+          g.recon?.site_count ?? "",
+          g.recon?.contracted_billed_qty ?? "",
+          g.recon?.required_on_ground ?? "",
+          g.recon?.enrolled_active ?? "",
+          g.recon?.variance ?? "",
           displayCodeFor(e),
           e.full_name,
           CATEGORY_LABEL[(e.category ?? "client") as EmployeeCategory],
@@ -341,7 +417,7 @@ export default function EmployeeAssignments() {
     <>
       <Header
         title="Assignments & Pay"
-        subtitle="Posting and pay for every employee, grouped by client — edit one or the whole group"
+        subtitle="Posting, pay and contracted-vs-enrolled strength by client — edit one guard or the whole group"
         actions={<ExportButton onExport={handleExport} label="Export" />}
       />
 
@@ -361,6 +437,26 @@ export default function EmployeeAssignments() {
           </div>
         )}
 
+        <div className="mb-4 flex flex-wrap gap-2">
+          {[
+            { label: "Contracted (billed)", value: totals.contracted, icon: Building2, tint: "text-brand-600 dark:text-brand-500" },
+            { label: "Enrolled (active)", value: totals.enrolled, icon: Users, tint: "text-success-600 dark:text-success-500" },
+            { label: "Sites", value: totals.sites, icon: MapPin, tint: "text-muted-foreground" },
+            {
+              label: "Clients mismatched",
+              value: totals.mismatched,
+              icon: AlertCircle,
+              tint: totals.mismatched > 0 ? "text-warning-600 dark:text-warning-500" : "text-success-600 dark:text-success-500",
+            },
+          ].map((t) => (
+            <div key={t.label} className="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-lg border border-border bg-card">
+              <t.icon className={`w-4 h-4 shrink-0 ${t.tint}`} strokeWidth={2} />
+              <span className="text-xs uppercase tracking-wide text-muted-foreground">{t.label}</span>
+              <span className="text-base font-semibold tabular-nums text-foreground">{t.value}</span>
+            </div>
+          ))}
+        </div>
+
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <div className="relative flex-1 min-w-56">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" strokeWidth={1.5} />
@@ -374,6 +470,10 @@ export default function EmployeeAssignments() {
           <label className="flex items-center gap-2 text-sm text-muted-foreground">
             <input type="checkbox" checked={showSeparated} onChange={(e) => setShowSeparated(e.target.checked)} />
             Include separated
+          </label>
+          <label className="flex items-center gap-2 text-sm text-muted-foreground whitespace-nowrap">
+            <input type="checkbox" checked={onlyMismatch} onChange={(e) => setOnlyMismatch(e.target.checked)} />
+            Only mismatches
           </label>
           <span className="text-sm text-muted-foreground">
             {groups.length} group{groups.length === 1 ? "" : "s"} · {totalShown} employee{totalShown === 1 ? "" : "s"}
@@ -391,6 +491,10 @@ export default function EmployeeAssignments() {
             No employees match this search.
           </div>
         )}
+
+        <p className="mb-3 text-xs text-muted-foreground">
+          Variance = contracted − enrolled(active). Positive (amber) = understaffed; negative (red) = over-enrolled.
+        </p>
 
         <div className="space-y-3">
           {groups.map((g) => {
@@ -424,6 +528,21 @@ export default function EmployeeAssignments() {
                     </span>
                     {g.hint && <span className="text-xs text-muted-foreground truncate hidden md:inline">· {g.hint}</span>}
                   </button>
+                  {g.recon && (
+                    <span className="hidden lg:flex items-center gap-3 text-xs text-muted-foreground tabular-nums shrink-0">
+                      <span title="Sites">{g.recon.site_count} site{g.recon.site_count === 1 ? "" : "s"}</span>
+                      <span title="Contracted (billed) vs enrolled (active)">
+                        {g.recon.enrolled_active}/{g.recon.contracted_billed_qty} enrolled
+                      </span>
+                      <span title="On-ground requirement">req. {g.recon.required_on_ground}</span>
+                      <span
+                        className={`inline-block px-2 py-0.5 rounded-md border font-medium ${varianceBadge(g.recon.variance)}`}
+                        title="Variance = contracted − enrolled(active)"
+                      >
+                        {g.recon.variance > 0 ? `+${g.recon.variance}` : g.recon.variance}
+                      </span>
+                    </span>
+                  )}
                   <span className="text-xs text-muted-foreground tabular-nums hidden sm:inline">
                     {money(monthly)}/mo
                   </span>
@@ -431,6 +550,7 @@ export default function EmployeeAssignments() {
                     <Button
                       variant="secondary"
                       size="sm"
+                      disabled={g.rows.length === 0}
                       onClick={() => {
                         if (!open) toggleGroup(g.key);
                         setBulkGroup(g);
@@ -465,6 +585,13 @@ export default function EmployeeAssignments() {
                         </tr>
                       </thead>
                       <tbody>
+                        {g.rows.length === 0 && (
+                          <tr>
+                            <td colSpan={12} className="px-4 py-8 text-center text-sm text-muted-foreground">
+                              Contracted but nobody enrolled yet — add employees and assign them to this client.
+                            </td>
+                          </tr>
+                        )}
                         {g.rows.map((e) => (
                           <tr key={e.id} className="group border-b border-border last:border-0 transition-colors hover:bg-accent">
                             <td className="px-3 py-2">
