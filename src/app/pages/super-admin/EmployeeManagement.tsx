@@ -2822,7 +2822,7 @@ export default function EmployeeManagement() {
             <FormSection
               label="Basic Information"
               collapsible={false}
-              hasError={Boolean(editFormErrors.full_name || editFormErrors.phone || editFormErrors.bank_account || editFormErrors.iban)}
+              hasError={Boolean(editFormErrors.full_name || editFormErrors.phone)}
             >
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -2860,6 +2860,18 @@ export default function EmployeeManagement() {
                   />
                   {editFormErrors.phone && <p className="text-xs text-danger-600 mt-1">{editFormErrors.phone}</p>}
                 </div>
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">Status</label>
+                  <ThemedSelect
+                    value={editStatus}
+                    onChange={(e) => setEditStatus(e.target.value as EmployeeRow["status"])}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  >
+                    <option value="Active">Active</option>
+                    <option value="On Leave">On Leave</option>
+                    <option value="Inactive">Inactive</option>
+                  </ThemedSelect>
+                </div>
                 {/* Posting and pay live on Workforce ▸ Assignments & Pay, where
                     a whole client's guards can be changed in one go instead of
                     fifty modals. Nothing here duplicates them. */}
@@ -2874,6 +2886,16 @@ export default function EmployeeManagement() {
                     , one guard or a whole client at a time.
                   </span>
                 </div>
+              </div>
+            </FormSection>
+
+            {/* Its own section, permanently open, mirroring the Add form. */}
+            <FormSection
+              label="Bank Details"
+              collapsible={false}
+              hasError={Boolean(editFormErrors.bank_account || editFormErrors.iban)}
+            >
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm text-slate-700 mb-1">Bank Name</label>
                   <input
@@ -2896,18 +2918,6 @@ export default function EmployeeManagement() {
                     placeholder="e.g., PK36SCBL0000001123456702"
                   />
                   {editFormErrors.bank_account && <p className="text-xs text-danger-600 mt-1">{editFormErrors.bank_account}</p>}
-                </div>
-                <div>
-                  <label className="block text-sm text-slate-700 mb-1">Status</label>
-                  <ThemedSelect
-                    value={editStatus}
-                    onChange={(e) => setEditStatus(e.target.value as EmployeeRow["status"])}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                  >
-                    <option value="Active">Active</option>
-                    <option value="On Leave">On Leave</option>
-                    <option value="Inactive">Inactive</option>
-                  </ThemedSelect>
                 </div>
                 <div className="col-span-2">
                   <label className="block text-sm text-slate-700 mb-1">IBAN (24 chars)</label>
