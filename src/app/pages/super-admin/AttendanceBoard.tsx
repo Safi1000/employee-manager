@@ -12,6 +12,7 @@ import BulkMarkByEmployeeModal from "../../components/BulkMarkByEmployeeModal";
 import { brandingFromCompany, type PdfBranding } from "../../lib/pdfBranding";
 import { generateClientAttendancePdf, generateGuardAttendancePdf } from "../../lib/attendanceSheetPdf";
 import { exportAttendance, type AttendanceEmployeeRow } from "../../lib/excel";
+import { loadShiftResolver } from "../../lib/shiftOnDate";
 
 // ── Phase 6: Attendance board by client-shift (§8.1-8.10) ─────────────────────
 // Unit of work = client-shift-day. Presume present; operator enters only
@@ -960,19 +961,29 @@ async function exportClientRange(client: ExportClient, startDate: string, endDat
   const conById = new Map((conRows ?? []).map((c: any) => [c.id, c]));
   const cliById = new Map((cliRows ?? []).map((c: any) => [c.id, c]));
 
+  // Per-date shift from the dated posting segments. employees.shift is only the
+  // CURRENT shift, so using it for unmarked days back-dates a shift change over
+  // the whole range — a guard who moved to nights on the 15th would read as
+  // nights from the 1st.
+  const resolveShift = await loadShiftResolver(empIds);
+
   const rows: AttendanceEmployeeRow[] = emps.map((emp, idx) => {
     const dayMap = byEmp.get(emp.id) ?? new Map<number, { st: Status; ws: string }>();
     const statusByDay: string[] = [];
     const shiftByDay: ("day" | "night")[] = [];
-    const defShift: "day" | "night" = emp.shift === "night" ? "night" : "day";
+    // Row-level shift is a fallback only (shiftByDay is always supplied); take it
+    // from the first date in range rather than "now".
+    const defShift: "day" | "night" = resolveShift(emp.id, dates[0]) === "night" ? "night" : "day";
     let p = 0, a = 0, l = 0;
     for (let d = 0; d < dates.length; d += 1) {
       const cell = dayMap.get(d);
       const sym = cell ? EXPORT_SYMBOL[cell.st] : "";
       statusByDay.push(sym);
       if (sym === "P") p += 1; else if (sym === "A") a += 1; else if (sym === "L") l += 1;
-      // Column D vs N follows the shift actually worked that day.
-      shiftByDay.push((cell?.ws ?? emp.shift) === "night" ? "night" : "day");
+      // Column D vs N follows the shift actually worked that day, falling back to
+      // the shift the guard was rostered on for THAT date.
+      const ws = cell?.ws ?? resolveShift(emp.id, dates[d]);
+      shiftByDay.push(ws === "night" ? "night" : "day");
     }
     const allowed = resolveAllowedLeaves(conById.get(emp.contract_id) ?? null, cliById.get(emp.client_id) ?? null);
     const payDays = p + Math.min(l, allowed);

@@ -820,6 +820,13 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       });
     }
 
+    // Per-date shift from the dated posting segments. employees.shift is only the
+    // CURRENT shift, so using it for unmarked days back-dates a shift change over
+    // the whole month — a guard who moved to nights on the 15th would read as
+    // nights from the 1st. Loaded fresh here rather than reusing the component's
+    // resolver, which may not have settled yet when the export is triggered.
+    const resolveShift = await loadShiftResolver(empIds);
+
     // Leave allowance comes from the employee's contract, falling back to their client
     // for records predating the move of this setting onto contracts.
     const clientById = new Map(clients.map((c) => [c.id, c]));
@@ -843,8 +850,10 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         if (sym === "P") p += 1;
         else if (sym === "A") a += 1;
         else if (sym === "L") l += 1;
-        // Column D vs N follows the shift actually worked that day.
-        shiftByDay.push((cell?.ws ?? emp.shift) === "night" ? "night" : "day");
+        // Column D vs N follows the shift actually worked that day, falling back
+        // to the shift the guard was rostered on for THAT date.
+        const ws = cell?.ws ?? resolveShift(emp.id, iso);
+        shiftByDay.push(ws === "night" ? "night" : "day");
       }
       const allowed = resolveAllowedLeaves(
         emp.contract_id ? contractById.get(emp.contract_id) : null,
@@ -857,7 +866,9 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         name: emp.full_name,
         designation: "",
         empCode: emp.display_code,
-        shift: emp.shift,
+        // Fallback only (shiftByDay is always supplied); take it from the first of
+        // the month rather than "now".
+        shift: resolveShift(emp.id, monthStart) === "night" ? "night" : "day",
         shiftByDay,
         statusByDay,
         presents: p,
@@ -1278,15 +1289,25 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                           {employee.location_name ?? "—"}
                         </td>
                         <td className="px-6 py-4">
-                          <span
-                            className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border capitalize ${
-                              employee.shift === "day"
-                                ? "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200"
-                                : "bg-info-50 text-info-700 dark:text-info-500 border-info-200"
-                            }`}
-                          >
-                            {employee.shift}
-                          </span>
+                          {(() => {
+                            const onDate = dayShift(employee.id);
+                            return (
+                              <span
+                                title={
+                                  onDate === employee.shift
+                                    ? undefined
+                                    : `Shift on ${date} — currently ${employee.shift}`
+                                }
+                                className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border capitalize ${
+                                  onDate === "day"
+                                    ? "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200"
+                                    : "bg-info-50 text-info-700 dark:text-info-500 border-info-200"
+                                }`}
+                              >
+                                {onDate}
+                              </span>
+                            );
+                          })()}
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex gap-1.5 items-center">
