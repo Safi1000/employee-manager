@@ -759,9 +759,11 @@ export default function EmployeeManagement() {
     }, 60);
   };
 
-  // Top-level sections of the Add and Edit modals — collapsed until opened.
+  // Top-level sections of the Add and Edit modals. The ones listed here open by
+  // default — the panels you read or fill on every visit. In Edit the bank fields
+  // live inside Basic Information, so "basic" covers both there.
   const addSections = useSectionState(["basic", "bank"]);
-  const editSections = useSectionState(["basic"]);
+  const editSections = useSectionState(["identity", "basic"]);
   const { expand: expandAdd } = addSections;
   const { expand: expandEdit } = editSections;
   // A failed save must not leave its error hidden inside a collapsed panel.
