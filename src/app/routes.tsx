@@ -9,6 +9,7 @@ import SuperSuperAdminLayout from "./layouts/SuperSuperAdminLayout";
 import Dashboard from "./pages/super-admin/Dashboard";
 import UserManagement from "./pages/super-admin/UserManagement";
 import EmployeeManagement from "./pages/super-admin/EmployeeManagement";
+import EmployeeAssignments from "./pages/super-admin/EmployeeAssignments";
 import AttendanceManagement from "./pages/super-admin/AttendanceManagement";
 import AttendanceBoard from "./pages/super-admin/AttendanceBoard";
 import PayrollManagement from "./pages/super-admin/PayrollManagement";
@@ -109,6 +110,9 @@ export const router = createBrowserRouter([
       { path: "period-close", element: guard(["period_close.manage", "reports.view"], <PeriodClose />) },
       { path: "audit-log", element: <RequireAuth roles={["super_super_admin", "super_admin"]}><AuditLog /></RequireAuth> },
       { path: "employees", element: guard(["employees.view", "employees.edit"], <EmployeeManagement />) },
+      // Assignments & Pay: employees grouped under their client, so posting and
+      // pay can be edited for one guard or the whole client at once.
+      { path: "assignments", element: guard(["employees.view", "employees.edit"], <EmployeeAssignments />) },
       { path: "attendance", element: guard(["attendance.view", "attendance.edit"], <AttendanceBoard />) },
       // Month calendar retained as a CORRECTION-only Timesheet (§8.8), reached
       // from the guard's record (History tab), not the daily flow.

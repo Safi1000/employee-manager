@@ -3,6 +3,7 @@ import Sidebar, { type SidebarItem } from "../components/Sidebar";
 import AiChatWidget from "../components/AiChatWidget";
 import InactivityLogout from "../components/InactivityLogout";
 import RegionSelector from "../components/RegionSelector";
+import TopBar from "../components/TopBar";
 import { hasAnyPermission, useAuth } from "../lib/auth";
 import { useRegion } from "../lib/region";
 import { Eye, X } from "lucide-react";
@@ -36,6 +37,7 @@ import {
   PieChart,
   Briefcase,
   MapPin,
+  ClipboardList,
 } from "lucide-react";
 
 type LinkDef = {
@@ -82,6 +84,7 @@ export default function SuperAdminLayout() {
   const LICENCES: LinkDef = { to: "/super-admin/licences", label: "Licenses & Renewals", icon: ShieldAlert, perms: ["compliance.view", "compliance.edit"] };
   const INVOICES: LinkDef = { to: "/super-admin/invoices", label: "Invoices", icon: ReceiptText, perms: ["invoices.view", "invoices.edit"] };
   const EMPLOYEES: LinkDef = { to: "/super-admin/employees", label: "Employees", icon: UserCircle, perms: ["employees.view", "employees.edit"] };
+  const ASSIGNMENTS: LinkDef = { to: "/super-admin/assignments", label: "Assignments & Pay", icon: ClipboardList, perms: ["employees.view", "employees.edit"] };
   const ATTENDANCE: LinkDef = { to: "/super-admin/attendance", label: "Attendance", icon: Calendar, perms: ["attendance.view", "attendance.edit"] };
   const PAYROLL: LinkDef = { to: "/super-admin/payroll", label: "Payroll", icon: DollarSign, perms: ["payroll.view", "payroll.edit"] };
   const PAYROLL_RUNS: LinkDef = { to: "/super-admin/payroll-runs", label: "Payroll Runs", icon: DollarSign, perms: ["payroll.view", "payroll.edit", "payroll.approve"] };
@@ -187,6 +190,7 @@ export default function SuperAdminLayout() {
   // (per-day cost nets against the client, separate from salaried Payroll).
   const workforce = buildGroup("Workforce", "/super-admin/workforce", [
     EMPLOYEES,
+    ASSIGNMENTS,
     RECRUITMENT,
     ATTENDANCE,
     PAYROLL,
@@ -279,18 +283,20 @@ export default function SuperAdminLayout() {
             </button>
           </div>
         )}
-        {showRegionBar && (
-          <div className="bg-white border-b border-slate-200 px-4 md:px-8 py-2 flex items-center gap-3">
-            <RegionSelector />
-            <span className="text-xs text-slate-500 truncate">
-              {locked
-                ? "You see only your region."
-                : region
-                  ? `Showing ${region.name} only.`
-                  : "Showing all regions (consolidated)."}
-            </span>
-          </div>
-        )}
+        <TopBar>
+          {showRegionBar && (
+            <>
+              <RegionSelector />
+              <span className="text-xs text-muted-foreground truncate">
+                {locked
+                  ? "You see only your region."
+                  : region
+                    ? `Showing ${region.name} only.`
+                    : "Showing all regions (consolidated)."}
+              </span>
+            </>
+          )}
+        </TopBar>
         <Outlet />
       </div>
       <AiChatWidget />

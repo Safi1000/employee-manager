@@ -1,5 +1,6 @@
 import ThemedSelect from "../../components/ThemedSelect";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router";
 import { Plus, Search, Upload, AlertCircle, Loader2, X, Trash2, ChevronDown, ChevronRight as ChevronRightIcon, FileText, SlidersHorizontal, Image as ImageIcon, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import jsPDF from "jspdf";
 import { generateEmployeeFormPdf, type FormApprovals } from "../../lib/employeeFormPdf";
@@ -57,7 +58,7 @@ import {
 import { useAuth, hasPermission } from "../../lib/auth";
 import { generateDischargeSheet } from "../../lib/dischargeSheetPdf";
 
-type EmployeeRow = Employee & {
+export type EmployeeRow = Employee & {
   location_name: string | null;
   client_name: string | null;
   branch_name: string | null;
@@ -826,40 +827,6 @@ export default function EmployeeManagement() {
   // Branches first by Head Office then alpha — used in selects with placeholder.
   const branchOptions = useMemo(() => branches.slice(), [branches]);
 
-  // Clients filtered by chosen branch (empty branch = show all in company).
-  const clientsForBranch = (branchId: string): Client[] =>
-    branchId ? clients.filter((c) => c.branch_id === branchId) : clients;
-
-  // When the form's client changes:
-  //  - if the form has no primary branch yet, the client's branch becomes primary.
-  //  - otherwise, the client's branch is added to additional visibility (if not
-  //    already the primary or already listed). Doesn't displace anything.
-  const onPickClient = (
-    f: FormState,
-    setF: (next: FormState) => void,
-    clientId: string,
-  ) => {
-    const c = clients.find((x) => x.id === clientId);
-    const cb = c?.branch_id ?? null;
-    let primary = f.branch_id;
-    let additional = f.additional_branch_ids;
-    if (cb) {
-      if (!primary) {
-        primary = cb;
-      } else if (cb !== primary && !additional.includes(cb)) {
-        additional = [...additional, cb];
-      }
-    }
-    setF({
-      ...f,
-      client_id: clientId,
-      contract_id: "", // contracts are per-client; clear stale selection
-      contract_line_id: "",
-      branch_id: primary,
-      additional_branch_ids: additional,
-    });
-  };
-
   const today = () => new Date().toISOString().slice(0, 10);
 
   // Contracts / lines available for a client (cascading selectors).
@@ -888,101 +855,6 @@ export default function EmployeeManagement() {
     );
     const active = activeCountByCategory(contractEmployees, lineCategoryById, today()).get(cat) ?? 0;
     return { category: cat, committed, active, available: Math.max(0, committed - active), full: active >= committed };
-  };
-
-  // Cascading Client → Contract → Contract Line selectors + assignment window.
-  // Shared by the Add and Edit forms; `excludeEmployeeId` keeps an employee from
-  // counting against their own slot when editing.
-  const renderAssignmentFields = (
-    f: FormState,
-    setF: (next: FormState) => void,
-    excludeEmployeeId?: string,
-  ) => {
-    const clientContracts = contractsForClient(f.client_id);
-    const lines = f.contract_id ? linesForContract(f.contract_id) : [];
-    const info = f.contract_line_id ? slotInfo(f.contract_id, f.contract_line_id, excludeEmployeeId) : null;
-    return (
-      <>
-        <div>
-          <label className="block text-sm text-slate-700 mb-1">Contract</label>
-          <ThemedSelect
-            value={f.contract_id}
-            onChange={(e) => setF({ ...f, contract_id: e.target.value, contract_line_id: "" })}
-            className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-          >
-            <option value="">— Unassigned —</option>
-            {clientContracts.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.contract_code} · {c.status}
-              </option>
-            ))}
-          </ThemedSelect>
-        </div>
-        {f.contract_id && (
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Contract Line (category slot)</label>
-            <ThemedSelect
-              value={f.contract_line_id}
-              onChange={(e) =>
-                setF({
-                  ...f,
-                  contract_line_id: e.target.value,
-                  assignment_effective_from: f.assignment_effective_from || f.join_date || today(),
-                })
-              }
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-            >
-              <option value="">— Select line —</option>
-              {lines.map((l) => {
-                const si = slotInfo(f.contract_id, l.id, excludeEmployeeId);
-                return (
-                  <option key={l.id} value={l.id}>
-                    {CONTRACT_LINE_CATEGORY_LABEL[l.category]}
-                    {l.location ? ` — ${l.location}` : ""}
-                    {si ? ` · ${si.active}/${si.committed} filled` : ""}
-                  </option>
-                );
-              })}
-            </ThemedSelect>
-            {lines.length === 0 && (
-              <p className="text-xs text-warning-700 mt-1">
-                This contract has no lines yet. Add category lines on the Contracts page first.
-              </p>
-            )}
-            {info && (
-              <p className={`text-xs mt-1 ${info.full ? "text-danger-600" : "text-slate-500"}`}>
-                {CONTRACT_LINE_CATEGORY_LABEL[info.category]} slots: {info.active} of {info.committed} active —{" "}
-                {info.available} available.
-              </p>
-            )}
-          </div>
-        )}
-        {f.contract_line_id && (
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm text-slate-700 mb-1">Assignment effective from</label>
-              <input
-                type="date"
-                value={f.assignment_effective_from}
-                onChange={(e) => setF({ ...f, assignment_effective_from: e.target.value })}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
-              />
-              <p className="text-[10px] text-slate-500 mt-1">When this employee starts filling the slot (may differ from join date).</p>
-            </div>
-            <div>
-              <label className="block text-sm text-slate-700 mb-1">Effective to (optional)</label>
-              <input
-                type="date"
-                value={f.assignment_effective_to}
-                onChange={(e) => setF({ ...f, assignment_effective_to: e.target.value })}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
-              />
-              <p className="text-[10px] text-slate-500 mt-1">Leave blank while ongoing; set to free the slot from that date.</p>
-            </div>
-          </div>
-        )}
-      </>
-    );
   };
 
   // Returns an error string if assigning to this line would exceed the
@@ -1459,7 +1331,6 @@ export default function EmployeeManagement() {
     // user never gets a message hidden behind the modal.
     const errs = computeEmployeeErrors(form);
     if (!form.full_name.trim()) errs.full_name = "Full Name is required.";
-    if (form.category === "client" && !form.client_id) errs.client_id = "Select a client.";
     // CNIC must be unique across employees (compared on digits, so formatting
     // differences don't slip a duplicate through). Enforced on ADD only.
     const cnicDigits = form.cnic_number.replace(/\D/g, "");
@@ -1542,55 +1413,11 @@ export default function EmployeeManagement() {
         .single();
       if (insErr) throw insErr;
       const newEmp = data as Employee;
-      // Overwrite the throwaway EMP-XXXX the insert trigger minted with a
-      // PERMANENT sequential guard code (GGS-NNNNN), assigned once at hiring and
-      // immutable thereafter. First assignment is recorded in history.
-      if (form.category === "client" && form.client_id) {
-        const { data: code, error: codeErr } = await supabase.rpc("assign_guard_code", {
-          p_employee_id: newEmp.id,
-        });
-        if (codeErr) throw codeErr;
-        if (code) newEmp.employee_code = code as string;
-        // Phase 3: allocate the client-scoped DISPLAY number ({prefix}-NNN). No
-        // history on first assignment — only transitions (transfers) are logged.
-        const { error: dispErr } = await supabase.rpc("assign_display_number", {
-          p_employee_id: newEmp.id,
-        });
-        if (dispErr) throw dispErr;
-        // Phase 4: write the client posting SILENTLY at hiring (the guard↔client
-        // relationship is a dated row, not a field). One row, reason "new hire".
-        const { data: defSite } = await supabase
-          .from("sites")
-          .select("id")
-          .eq("client_id", form.client_id)
-          .eq("is_default", true)
-          .maybeSingle();
-        const { error: postErr } = await supabase.from("deployments").insert({
-          guard_id: newEmp.id,
-          client_id: form.client_id,
-          contract_line_id: form.contract_line_id || null,
-          site_id: defSite?.id ?? null,
-          start_date: form.join_date || today(),
-          reason: "new_hire",
-        });
-        if (postErr) throw postErr;
-      }
-      // Seed the FIRST salary-history row so the effective-dated history is the
-      // single source of truth from day one (the capture trigger only fires on
-      // UPDATE, so a fresh hire would otherwise have no history row). Effective
-      // from the joining date; payroll + profile then read this via effective_salary.
-      if (form.base_salary) {
-        const base = Number(form.base_salary);
-        const { error: seedErr } = await supabase.rpc("set_employee_salary", {
-          p_employee_id: newEmp.id,
-          p_effective_date: form.join_date || today(),
-          p_base_salary: base,
-          p_allowance: form.allowance ? Math.max(0, Number(form.allowance)) : 0,
-          p_per_day_salary: form.per_day_salary ? Number(form.per_day_salary) : base / daysInCurrentMonth(),
-          p_reason: form.probation_end_date ? "Initial (probation)" : "Initial salary",
-        });
-        if (seedErr) throw seedErr;
-      }
+      // The permanent guard code, the client-scoped display number, the dated
+      // posting row and the opening salary are all issued on the FIRST client
+      // assignment — done on Workforce ▸ Assignments & Pay, since this form no
+      // longer collects a client. Until then the record sits unassigned with the
+      // throwaway EMP-XXXX code the insert trigger minted.
       await uploadDocs(
         { id: newEmp.id, employee_code: newEmp.employee_code, full_name: newEmp.full_name },
         form,
@@ -2248,7 +2075,7 @@ export default function EmployeeManagement() {
                     return (
                     <tr
                       key={employee.id}
-                      className="group border-b border-border transition-colors hover:bg-accent/50"
+                      className="group border-b border-border transition-colors hover:bg-accent"
                       title={incomplete ? "Incomplete profile — physical document copies not on file" : "Complete profile"}
                     >
                       <td className={`px-6 py-3.5 text-sm font-mono border-l-2 ${incomplete ? "border-l-danger-500" : "border-l-transparent"}`}>
@@ -2345,7 +2172,10 @@ export default function EmployeeManagement() {
                           {lifecycleStatusLabel(employee)}
                         </span>
                       </td>
-                      <td className="px-6 py-3.5 sticky right-0 z-10 border-l border-border bg-card group-hover:bg-accent/50 transition-colors">
+                      {/* Sticky column: the background MUST be fully opaque in
+                          every state — a translucent tint (bg-accent/50) lets the
+                          columns underneath show through while scrolling sideways. */}
+                      <td className="px-6 py-3.5 sticky right-0 z-10 border-l border-border bg-card group-hover:bg-accent transition-colors">
                         <div className="flex gap-1">
                           <Button variant="ghost" size="sm" onClick={() => openView(employee)}>
                             View
@@ -2426,254 +2256,24 @@ export default function EmployeeManagement() {
                 />
                 {formErrors.phone && <p className="text-xs text-danger-600 mt-1">{formErrors.phone}</p>}
               </div>
-              <div>
-                <label className="block text-sm text-slate-700 mb-1">Location</label>
-                <ThemedSelect
-                  value={form.location_id}
-                  onChange={(e) => setForm({ ...form, location_id: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                >
-                  <option value="">Select location</option>
-                  {locations.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.name}
-                    </option>
-                  ))}
-                </ThemedSelect>
-                {locations.length === 0 && (
-                  <p className="text-xs text-slate-500 mt-1">
-                    No locations yet. Add them from Settings → Location Management.
-                  </p>
-                )}
-              </div>
-              <div>
-                <label className="block text-sm text-slate-700 mb-1">Primary Branch</label>
-                <ThemedSelect
-                  value={form.branch_id}
-                  onChange={(e) => {
-                    const newBranch = e.target.value;
-                    const cur = clients.find((c) => c.id === form.client_id);
-                    const keepClient = !newBranch || !cur || cur.branch_id === newBranch;
-                    // If the new primary was in additional, drop it from additional.
-                    const additional = form.additional_branch_ids.filter((id) => id !== newBranch);
-                    setForm({
-                      ...form,
-                      branch_id: newBranch,
-                      additional_branch_ids: additional,
-                      client_id: keepClient ? form.client_id : "",
-                    });
-                  }}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                >
-                  <option value="">Head Office (default)</option>
-                  {branchOptions.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-                </ThemedSelect>
-                <p className="text-xs text-slate-500 mt-1">
-                  Used for payroll routing, P&L attribution and cost ownership.
-                </p>
-              </div>
-              <div className="col-span-2">
-                <label className="block text-sm text-slate-700 mb-1">Additional Branches (visibility)</label>
-                <div className="flex flex-wrap gap-2 p-2 border border-slate-200 rounded-md">
-                  {branchOptions
-                    .filter((b) => b.id !== form.branch_id)
-                    .map((b) => {
-                      const checked = form.additional_branch_ids.includes(b.id);
-                      return (
-                        <label
-                          key={b.id}
-                          className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs cursor-pointer border ${
-                            checked
-                              ? "border-slate-900 bg-slate-50 text-slate-900"
-                              : "border-slate-200 text-slate-600 hover:border-slate-300"
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() =>
-                              setForm({
-                                ...form,
-                                additional_branch_ids: checked
-                                  ? form.additional_branch_ids.filter((id) => id !== b.id)
-                                  : [...form.additional_branch_ids, b.id],
-                              })
-                            }
-                            className="rounded border-slate-300"
-                          />
-                          {b.name}
-                        </label>
-                      );
-                    })}
-                  {branchOptions.filter((b) => b.id !== form.branch_id).length === 0 && (
-                    <span className="text-xs text-slate-400">No other branches available.</span>
-                  )}
-                </div>
-                <p className="text-xs text-slate-500 mt-1">
-                  Branched users in these branches can see this employee (read/edit) without owning the cost.
-                </p>
-              </div>
-              <div>
-                <label className="block text-sm text-slate-700 mb-1">Category *</label>
-                <ThemedSelect
-                  value={form.category}
-                  onChange={(e) => {
-                    const cat = e.target.value as EmployeeCategory;
-                    setForm({ ...form, category: cat, client_id: cat === "client" ? form.client_id : "" });
-                  }}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                >
-                  <option value="client">Client</option>
-                  <option value="office_staff">Office Staff</option>
-                  <option value="reliever">Reliever</option>
-                </ThemedSelect>
-              </div>
-              {form.category === "client" && (
-                <div id="empfield-client_id">
-                  <label className="block text-sm text-slate-700 mb-1">Client *</label>
-                  <ThemedSelect
-                    value={form.client_id}
-                    onChange={(e) => {
-                      onPickClient(form, setForm, e.target.value);
-                      if (e.target.value) setFormErrors((p) => ({ ...p, client_id: null }));
-                    }}
-                    className={`w-full px-4 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent ${
-                      formErrors.client_id ? "border-danger-300" : "border-slate-200"
-                    }`}
-                  >
-                    <option value="">Select client</option>
-                    {clientsForBranch(form.branch_id).map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </ThemedSelect>
-                  {formErrors.client_id && <p className="text-xs text-danger-600 mt-1">{formErrors.client_id}</p>}
-                  {clientsForBranch(form.branch_id).length === 0 && (
-                    <p className="text-xs text-slate-500 mt-1">
-                      {form.branch_id
-                        ? "No clients in this branch yet."
-                        : "No clients yet. Add them from Settings → Client Management."}
-                    </p>
-                  )}
-                </div>
-              )}
-              {form.category === "client" && form.client_id && (
-                <div className="space-y-3">{renderAssignmentFields(form, setForm)}</div>
-              )}
-              <div>
-                <label className="block text-sm text-slate-700 mb-1">Department</label>
-                <input
-                  type="text"
-                  value={form.department}
-                  onChange={(e) => setForm({ ...form, department: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                  placeholder="Enter department"
-                />
-              </div>
-              <div className="col-span-2">
-                <label className="block text-sm text-slate-700 mb-2">Shift *</label>
-                <div className="flex gap-3">
-                  {(["day", "night", "evening"] as const).map((s) => (
-                    <label
-                      key={s}
-                      className={`flex-1 flex items-center gap-2 px-4 py-2 border rounded-md cursor-pointer text-sm capitalize ${
-                        form.shift === s
-                          ? "border-slate-900 bg-slate-50"
-                          : "border-slate-200 hover:border-slate-300"
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="shift"
-                        value={s}
-                        checked={form.shift === s}
-                        onChange={() => setForm({ ...form, shift: s })}
-                      />
-                      <span>{s} Shift</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
             </div>
           </div>
 
+          {/* Posting and pay (client, branch, shift, salary, joining date) are set
+              on Workforce ▸ Assignments & Pay, where the whole client can be
+              edited at once. A new hire lands in that page's "Unassigned" group. */}
+          <div className="pt-4 border-t border-slate-200 flex items-start gap-2 text-sm text-slate-600">
+            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-slate-400" strokeWidth={2} />
+            <span>
+              Client, location, branch, department, shift, salary and joining date are set on{" "}
+              <span className="font-medium text-slate-800">Workforce ▸ Assignments &amp; Pay</span> once this
+              record is saved.
+            </span>
+          </div>
+
           <div className="pt-4 border-t border-slate-200">
-            <h4 className="text-sm text-slate-900 mb-4">Employment Details</h4>
+            <h4 className="text-sm text-slate-900 mb-4">Bank Details</h4>
             <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm text-slate-700 mb-1">Base Salary (PKR)</label>
-                <input
-                  type="number"
-                  value={form.base_salary}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setForm({ ...form, base_salary: v, per_day_salary: computePerDay(v) });
-                  }}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                  placeholder="50000"
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-slate-700 mb-1">Per Day Salary (PKR)</label>
-                <input
-                  type="number"
-                  disabled
-                  value={form.per_day_salary}
-                  readOnly
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50 text-slate-500 cursor-not-allowed"
-                  placeholder="Auto = Base ÷ days in month"
-                />
-                <p className="text-xs text-slate-500 mt-1">
-                  Auto-computed: Base Salary ÷ {daysInCurrentMonth()} days this month.
-                </p>
-              </div>
-              <div>
-                <label className="block text-sm text-slate-700 mb-1">Allowance (PKR)</label>
-                <input
-                  type="number"
-                  min={0}
-                  value={form.allowance}
-                  onChange={(e) => setForm({ ...form, allowance: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                  placeholder="0"
-                />
-                <p className="text-xs text-slate-500 mt-1">
-                  Always paid with salary, regardless of attendance.
-                </p>
-              </div>
-              {form.category === "client" &&
-                clients.find((c) => c.id === form.client_id)?.leave_carry_forward && (
-                  <div>
-                    <label className="block text-sm text-slate-700 mb-1">Opening Leaves</label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={form.opening_leaves}
-                      onChange={(e) => setForm({ ...form, opening_leaves: e.target.value })}
-                      className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                      placeholder="0"
-                    />
-                    <p className="text-xs text-slate-500 mt-1">
-                      One-time. Becomes the accumulated balance from this month forward
-                      (overrides prior accrual), then rolls forward. Can't be changed later.
-                    </p>
-                  </div>
-                )}
-              <div>
-                <label className="block text-sm text-slate-700 mb-1">Join Date</label>
-                <input
-                  type="date"
-                  id="empfield-join_date"
-                  value={form.join_date}
-                  onChange={(e) => setForm({ ...form, join_date: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                />
-              </div>
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Bank Name</label>
                 <input
@@ -3261,261 +2861,19 @@ export default function EmployeeManagement() {
                   />
                   {editFormErrors.phone && <p className="text-xs text-danger-600 mt-1">{editFormErrors.phone}</p>}
                 </div>
-                <div>
-                  <label className="block text-sm text-slate-700 mb-1">Location</label>
-                  <ThemedSelect
-                    value={editForm.location_id}
-                    onChange={(e) => setEditForm({ ...editForm, location_id: e.target.value })}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                  >
-                    <option value="">Select location</option>
-                    {locations.map((l) => (
-                      <option key={l.id} value={l.id}>
-                        {l.name}
-                      </option>
-                    ))}
-                  </ThemedSelect>
-                </div>
-                <div>
-                  <label className="block text-sm text-slate-700 mb-1">Primary Branch</label>
-                  <ThemedSelect
-                    value={editForm.branch_id}
-                    onChange={(e) => {
-                      const newBranch = e.target.value;
-                      const cur = clients.find((c) => c.id === editForm.client_id);
-                      const keepClient = !newBranch || !cur || cur.branch_id === newBranch;
-                      const additional = editForm.additional_branch_ids.filter((id) => id !== newBranch);
-                      setEditForm({
-                        ...editForm,
-                        branch_id: newBranch,
-                        additional_branch_ids: additional,
-                        client_id: keepClient ? editForm.client_id : "",
-                      });
-                    }}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                  >
-                    <option value="">Head Office (default)</option>
-                    {branchOptions.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.name}
-                      </option>
-                    ))}
-                  </ThemedSelect>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Used for payroll routing and P&L attribution.
-                  </p>
-                </div>
-                <div className="col-span-2">
-                  <label className="block text-sm text-slate-700 mb-1">Additional Branches (visibility)</label>
-                  <div className="flex flex-wrap gap-2 p-2 border border-slate-200 rounded-md">
-                    {branchOptions
-                      .filter((b) => b.id !== editForm.branch_id)
-                      .map((b) => {
-                        const checked = editForm.additional_branch_ids.includes(b.id);
-                        return (
-                          <label
-                            key={b.id}
-                            className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs cursor-pointer border ${
-                              checked
-                                ? "border-slate-900 bg-slate-50 text-slate-900"
-                                : "border-slate-200 text-slate-600 hover:border-slate-300"
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() =>
-                                setEditForm({
-                                  ...editForm,
-                                  additional_branch_ids: checked
-                                    ? editForm.additional_branch_ids.filter((id) => id !== b.id)
-                                    : [...editForm.additional_branch_ids, b.id],
-                                })
-                              }
-                              className="rounded border-slate-300"
-                            />
-                            {b.name}
-                          </label>
-                        );
-                      })}
-                    {branchOptions.filter((b) => b.id !== editForm.branch_id).length === 0 && (
-                      <span className="text-xs text-slate-400">No other branches available.</span>
-                    )}
-                  </div>
-                </div>
-                {/* Phase 4: posting fields (category / client / shift) are READ-ONLY
-                    here — a guard is moved only via "Change client" on the profile,
-                    which writes a dated posting row (never an in-place edit). */}
-                <div>
-                  <label className="block text-sm text-slate-700 mb-1">Category</label>
-                  <ThemedSelect
-                    value={editForm.category}
-                    disabled
-                    onChange={() => {}}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50 text-slate-500 cursor-not-allowed"
-                  >
-                    <option value="client">Client</option>
-                    <option value="office_staff">Office Staff</option>
-                    <option value="reliever">Reliever</option>
-                  </ThemedSelect>
-                </div>
-                {editForm.category === "client" && (
-                  <div>
-                    <label className="block text-sm text-slate-700 mb-1">Client</label>
-                    <ThemedSelect
-                      value={editForm.client_id}
-                      disabled
-                      onChange={() => {}}
-                      className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50 text-slate-500 cursor-not-allowed"
-                    >
-                      <option value="">Select client</option>
-                      {clientsForBranch(editForm.branch_id).map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </ThemedSelect>
-                    <p className="text-xs text-slate-500 mt-1">
-                      Use “Change client” on the profile to move this guard.
-                    </p>
-                  </div>
-                )}
-                {editForm.category === "client" && editForm.client_id && (
-                  <div className="space-y-3 opacity-60 pointer-events-none">
-                    {renderAssignmentFields(editForm, setEditForm, selectedEmployee?.id)}
-                  </div>
-                )}
-                <div>
-                  <label className="block text-sm text-slate-700 mb-1">Department</label>
-                  <input
-                    type="text"
-                    value={editForm.department}
-                    onChange={(e) => setEditForm({ ...editForm, department: e.target.value })}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm text-slate-700 mb-1">Shift</label>
-                  <ThemedSelect
-                    value={editForm.shift}
-                    disabled
-                    onChange={() => {}}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50 text-slate-500 cursor-not-allowed"
-                  >
-                    <option value="day">Day</option>
-                    <option value="night">Night</option>
-                    <option value="evening">Evening</option>
-                  </ThemedSelect>
-                  {(editForm.category ?? "client") === "client"
-                    && ["active", "on_leave"].includes(selectedEmployee?.lifecycle_state ?? "")
-                    && selectedEmployee?.record_state !== "draft" ? (
-                    <button
-                      type="button"
-                      onClick={() => { setIsEditModalOpen(false); setChangeShiftTarget(selectedEmployee); }}
-                      className="text-xs text-brand-700 hover:underline mt-1"
-                    >
-                      Change shift (dated — keeps past attendance on the old shift)
-                    </button>
-                  ) : (
-                    <p className="text-xs text-slate-500 mt-1">
-                      A shift change is a dated posting change (Ops-verify / active guards only).
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm text-slate-700 mb-1">Base Salary (PKR)</label>
-                  <input
-                    type="number"
-                    disabled
-                    readOnly
-                    value={editForm.base_salary}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50 text-slate-500 cursor-not-allowed"
-                  />
-                  <p className="text-xs text-slate-500 mt-1">
-                    🔒 Locked — salary changes are dated. Use <span className="font-medium">Add increment</span> below to
-                    change it (records an effective date &amp; reason to salary history).
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-sm text-slate-700 mb-1">Per Day Salary (PKR)</label>
-                  <input
-                    type="number"
-                    disabled
-                    readOnly
-                    value={editForm.per_day_salary}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50 text-slate-500 cursor-not-allowed"
-                  />
-                  <p className="text-xs text-slate-500 mt-1">
-                    Auto-computed: Base Salary ÷ {daysInCurrentMonth()} days this month.
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-sm text-slate-700 mb-1">Allowance (PKR)</label>
-                  <input
-                    type="number"
-                    disabled
-                    readOnly
-                    value={editForm.allowance}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50 text-slate-500 cursor-not-allowed"
-                    placeholder="0"
-                  />
-                  <p className="text-xs text-slate-500 mt-1">
-                    🔒 Locked — set with the salary via <span className="font-medium">Add increment</span> below.
-                  </p>
-                </div>
-                {selectedEmployee && (
-                  <SalaryHistoryPanel
-                    employeeId={selectedEmployee.id}
-                    currentBase={editForm.base_salary}
-                    currentAllowance={editForm.allowance}
-                    onApplied={(base, allow, perDay) =>
-                      setEditForm((f) => ({
-                        ...f,
-                        base_salary: String(base),
-                        allowance: String(allow),
-                        per_day_salary: String(Math.round(perDay)),
-                      }))
-                    }
-                  />
-                )}
-                {editForm.category === "client" &&
-                  clients.find((c) => c.id === editForm.client_id)?.leave_carry_forward && (
-                    <div>
-                      <label className="block text-sm text-slate-700 mb-1">Opening Leaves</label>
-                      <input
-                        type="number"
-                        min={0}
-                        value={editForm.opening_leaves}
-                        disabled={selectedEmployee?.opening_leaves != null}
-                        readOnly={selectedEmployee?.opening_leaves != null}
-                        onChange={(e) => setEditForm({ ...editForm, opening_leaves: e.target.value })}
-                        className={
-                          selectedEmployee?.opening_leaves != null
-                            ? "w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50 text-slate-500 cursor-not-allowed"
-                            : "w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                        }
-                        placeholder="0"
-                      />
-                      <p className="text-xs text-slate-500 mt-1">
-                        {selectedEmployee?.opening_leaves != null
-                          ? `Locked — set once${
-                              selectedEmployee.opening_leaves_month
-                                ? `, effective ${formatDate(selectedEmployee.opening_leaves_month)}`
-                                : ""
-                            }.`
-                          : "One-time. Becomes the accumulated balance from this month forward (overrides prior accrual), then rolls forward. Can't be changed later."}
-                      </p>
-                    </div>
-                  )}
-                <div>
-                  <label className="block text-sm text-slate-700 mb-1">Join Date</label>
-                  <input
-                    type="date"
-                    id="empeditfield-join_date"
-                    value={editForm.join_date}
-                    onChange={(e) => setEditForm({ ...editForm, join_date: e.target.value })}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                  />
+                {/* Posting and pay live on Workforce ▸ Assignments & Pay, where
+                    a whole client's guards can be changed in one go instead of
+                    fifty modals. Nothing here duplicates them. */}
+                <div className="col-span-2 flex items-start gap-2 rounded-md border border-border bg-accent/40 px-3 py-2.5 text-sm text-slate-600">
+                  <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-slate-400" strokeWidth={2} />
+                  <span className="flex-1">
+                    Client, location, branch, department, shift, salary, allowance and joining date are
+                    managed on{" "}
+                    <Link to="/super-admin/assignments" className="font-medium text-brand-700 dark:text-brand-500 hover:underline">
+                      Assignments &amp; Pay
+                    </Link>
+                    , one guard or a whole client at a time.
+                  </span>
                 </div>
                 <div>
                   <label className="block text-sm text-slate-700 mb-1">Bank Name</label>
@@ -4363,7 +3721,7 @@ type SalaryHistoryRow = {
   per_day_salary: number | null;
   reason: string | null;
 };
-function SalaryHistoryPanel({
+export function SalaryHistoryPanel({
   employeeId, currentBase, currentAllowance, onApplied,
 }: {
   employeeId: string;
@@ -4593,7 +3951,7 @@ function RehireModal({
 // Closes the current posting and opens a new dated one (never edits in place),
 // wired to Phase-2 display-code renumbering. Same-client shift change keeps the
 // number. The word "deployment" never appears here.
-function ChangeClientModal({
+export function ChangeClientModal({
   guard,
   clients,
   contractsForClient,
@@ -4738,7 +4096,7 @@ const CHANGE_CATEGORY_LABEL: Record<EmployeeCategory, string> = {
   reliever: "Reliever",
 };
 
-function ChangeCategoryModal({
+export function ChangeCategoryModal({
   guard,
   clients,
   contractsForClient,
@@ -4900,7 +4258,7 @@ function ChangeCategoryModal({
 // posting (day before the change) and opens a new one on the chosen shift from
 // the change date; nothing is rewritten in place, so past attendance stays on
 // the old shift and only dates from the change date forward are on the new one.
-function ChangeShiftModal({
+export function ChangeShiftModal({
   guard, displayCode, onClose, onDone, onError,
 }: {
   guard: EmployeeRow; displayCode: string;
@@ -5339,9 +4697,10 @@ function EmployeeHrSection({
     [employees, excludeEmployeeId],
   );
 
-  // Reorganized into clean tabs (Licences & Compliance folded into Internal
-  // Office Data). Shared by the Add and Edit modals via this one component.
-  const HR_TABS = [
+  // Collapsible sections (Licences & Compliance folded into Internal Office
+  // Data). Shared by the Add and Edit modals via this one component. Nothing is
+  // expanded on open — the form is long, so the user picks what to fill in.
+  const HR_SECTIONS = [
     { id: "personal", label: "Personal Information" },
     { id: "emergency", label: "Emergency Contact" },
     { id: "contract", label: "Contract & Reporting" },
@@ -5349,14 +4708,22 @@ function EmployeeHrSection({
     { id: "experience", label: "Experience" },
     { id: "office", label: "Internal Office Data" },
   ] as const;
-  type HrTabId = (typeof HR_TABS)[number]["id"];
-  const [activeTab, setActiveTab] = useState<HrTabId>("personal");
+  type HrSectionId = (typeof HR_SECTIONS)[number]["id"];
+  const [openSections, setOpenSections] = useState<HrSectionId[]>([]);
+  const isOpen = (id: HrSectionId) => openSections.includes(id);
+  const toggleSection = (id: HrSectionId) =>
+    setOpenSections((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
-  // On a failed save, jump to the tab holding the first invalid field.
+  // On a failed save, expand the section holding the first invalid field so the
+  // error isn't hidden inside a collapsed panel.
   useEffect(() => {
     if (!forceOpen) return;
-    if (personalHasError) setActiveTab("personal");
-    else if (emergencyHasError) setActiveTab("emergency");
+    setOpenSections((prev) => {
+      const next = new Set<HrSectionId>(prev);
+      if (personalHasError) next.add("personal");
+      if (emergencyHasError) next.add("emergency");
+      return next.size === prev.length ? prev : [...next];
+    });
   }, [forceOpen, personalHasError, emergencyHasError]);
 
   // Photo stored as a data URL in photo_url (buckets are private; this keeps the
@@ -5389,31 +4756,14 @@ function EmployeeHrSection({
     <div className="pt-4 border-t border-slate-200">
       <h4 className="text-sm text-slate-900 mb-3">Employee Details</h4>
 
-      {/* Tab bar */}
-      <div className="flex flex-wrap gap-1.5 mb-4">
-        {HR_TABS.map((t) => {
-          const err = (t.id === "personal" && personalHasError) || (t.id === "emergency" && emergencyHasError);
-          return (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setActiveTab(t.id)}
-              className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${
-                activeTab === t.id
-                  ? "border-brand-500 bg-brand-500/15 text-brand-700 dark:text-brand-500 font-medium"
-                  : err
-                    ? "border-danger-300 text-danger-700"
-                    : "border-border text-muted-foreground hover:bg-accent"
-              }`}
-            >
-              {t.label}
-            </button>
-          );
-        })}
-      </div>
-
+      <div className="space-y-2">
       {/* ── Personal Information ─────────────────────────────────────────── */}
-      {activeTab === "personal" && (
+      <HrCollapsible
+        label={HR_SECTIONS[0].label}
+        open={isOpen("personal")}
+        hasError={personalHasError}
+        onToggle={() => toggleSection("personal")}
+      >
         <div className="space-y-4">
           {/* Photo */}
           <div>
@@ -5558,10 +4908,15 @@ function EmployeeHrSection({
             </div>
           </div>
         </div>
-      )}
+      </HrCollapsible>
 
       {/* ── Emergency Contact ────────────────────────────────────────────── */}
-      {activeTab === "emergency" && (
+      <HrCollapsible
+        label={HR_SECTIONS[1].label}
+        open={isOpen("emergency")}
+        hasError={emergencyHasError}
+        onToggle={() => toggleSection("emergency")}
+      >
         <div className="space-y-4">
           <div>
             <h5 className="text-sm text-slate-900 mb-3">Emergency Contact</h5>
@@ -5598,10 +4953,14 @@ function EmployeeHrSection({
             </div>
           </div>
         </div>
-      )}
+      </HrCollapsible>
 
       {/* ── Contract & Reporting ─────────────────────────────────────────── */}
-      {activeTab === "contract" && (
+      <HrCollapsible
+        label={HR_SECTIONS[2].label}
+        open={isOpen("contract")}
+        onToggle={() => toggleSection("contract")}
+      >
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-sm text-slate-700 mb-1">Contract Type</label>
@@ -5629,10 +4988,14 @@ function EmployeeHrSection({
             </ThemedSelect>
           </div>
         </div>
-      )}
+      </HrCollapsible>
 
       {/* ── Ex-Service (replaces the removed Licences & Compliance tab) ───── */}
-      {activeTab === "exservice" && (
+      <HrCollapsible
+        label={HR_SECTIONS[3].label}
+        open={isOpen("exservice")}
+        onToggle={() => toggleSection("exservice")}
+      >
         <div className="grid grid-cols-2 gap-3">
           <label className="col-span-2 flex items-center gap-2 text-sm text-slate-700">
             <input type="checkbox" checked={form.is_ex_serviceman}
@@ -5653,15 +5016,23 @@ function EmployeeHrSection({
             <p className="col-span-2 text-xs text-slate-500">Tick “Ex-serviceman” to record army service details.</p>
           )}
         </div>
-      )}
+      </HrCollapsible>
 
       {/* ── Experience ───────────────────────────────────────────────────── */}
-      {activeTab === "experience" && (
+      <HrCollapsible
+        label={HR_SECTIONS[4].label}
+        open={isOpen("experience")}
+        onToggle={() => toggleSection("experience")}
+      >
         <div className="grid grid-cols-2 gap-3">{area("weapons_trained", "Weapons Trained On")}</div>
-      )}
+      </HrCollapsible>
 
       {/* ── Internal Office Data (+ folded Licences & Compliance) ─────────── */}
-      {activeTab === "office" && (
+      <HrCollapsible
+        label={HR_SECTIONS[5].label}
+        open={isOpen("office")}
+        onToggle={() => toggleSection("office")}
+      >
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             {txt("interview_date", "Interview Date", { type: "date" })}
@@ -5719,7 +5090,44 @@ function EmployeeHrSection({
             </label>
           </div>
         </div>
-      )}
+      </HrCollapsible>
+      </div>
+    </div>
+  );
+}
+
+/** One collapsible panel in the Employee Details form. Collapsed by default. */
+function HrCollapsible({
+  label, open, hasError, onToggle, children,
+}: {
+  label: string;
+  open: boolean;
+  hasError?: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="border border-border rounded-lg overflow-hidden">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className={`w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left transition-colors ${
+          open ? "bg-accent/60 text-foreground font-medium" : "text-slate-700 hover:bg-accent/40"
+        }`}
+      >
+        <ChevronRightIcon
+          className={`w-4 h-4 shrink-0 transition-transform ${open ? "rotate-90" : ""}`}
+          strokeWidth={1.75}
+        />
+        <span className="flex-1">{label}</span>
+        {hasError && (
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-danger-700 dark:text-danger-500 bg-danger-50 border border-danger-200 px-1.5 py-0.5 rounded-md">
+            Needs attention
+          </span>
+        )}
+      </button>
+      {open && <div className="px-3 pb-4 pt-3 border-t border-border">{children}</div>}
     </div>
   );
 }

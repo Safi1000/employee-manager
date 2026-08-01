@@ -1,5 +1,4 @@
 import { ReactNode } from "react";
-import ThemeToggle from "./ThemeToggle";
 
 interface HeaderProps {
   title: string;
@@ -17,10 +16,9 @@ export default function Header({ title, subtitle, actions }: HeaderProps) {
           <p className="text-xs text-muted-foreground truncate">{subtitle}</p>
         )}
       </div>
-      <div className="flex items-center gap-2 md:gap-3 flex-wrap">
-        {actions}
-        <ThemeToggle />
-      </div>
+      {/* The light/dark toggle lives in the layout's top bar, not here — page
+          headers hold page actions only. */}
+      <div className="flex items-center gap-2 md:gap-3 flex-wrap">{actions}</div>
     </div>
   );
 }
