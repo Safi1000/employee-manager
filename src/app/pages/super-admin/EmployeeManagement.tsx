@@ -759,24 +759,11 @@ export default function EmployeeManagement() {
     }, 60);
   };
 
-  // Top-level sections of the Add and Edit modals. The ones listed here open by
-  // default — the panels you read or fill on every visit. In Edit the bank fields
-  // live inside Basic Information, so "basic" covers both there.
-  const addSections = useSectionState(["basic", "bank"]);
-  const editSections = useSectionState(["identity", "basic"]);
-  const { expand: expandAdd } = addSections;
-  const { expand: expandEdit } = editSections;
-  // A failed save must not leave its error hidden inside a collapsed panel.
-  useEffect(() => {
-    if (!addSubmitAttempted) return;
-    if (formErrors.full_name || formErrors.phone) expandAdd("basic");
-    if (formErrors.bank_account || formErrors.iban) expandAdd("bank");
-  }, [addSubmitAttempted, formErrors, expandAdd]);
-  useEffect(() => {
-    if (!editSubmitAttempted) return;
-    if (editFormErrors.full_name || editFormErrors.phone) expandEdit("basic");
-    if (editFormErrors.bank_account || editFormErrors.iban) expandEdit("basic");
-  }, [editSubmitAttempted, editFormErrors, expandEdit]);
+  // Collapsible sections of the Add and Edit modals. Basic Information, Bank
+  // Details and Identity Verification are deliberately NOT in here — they render
+  // permanently open, so no validation error can hide behind a fold.
+  const addSections = useSectionState();
+  const editSections = useSectionState();
 
   const [editForm, setEditForm] = useState<FormState>(emptyForm);
   const [editStatus, setEditStatus] = useState<EmployeeRow["status"]>("Active");
@@ -2217,9 +2204,8 @@ export default function EmployeeManagement() {
           )}
           <FormSection
             label="Basic Information"
-            open={addSections.isOpen("basic")}
+            collapsible={false}
             hasError={Boolean(formErrors.full_name || formErrors.phone)}
-            onToggle={() => addSections.toggle("basic")}
           >
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -2265,9 +2251,8 @@ export default function EmployeeManagement() {
 
           <FormSection
             label="Bank Details"
-            open={addSections.isOpen("bank")}
+            collapsible={false}
             hasError={Boolean(formErrors.bank_account || formErrors.iban)}
-            onToggle={() => addSections.toggle("bank")}
           >
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -2802,11 +2787,7 @@ export default function EmployeeManagement() {
       >
         {selectedEmployee && (
           <form className="space-y-2" onSubmit={handleEdit}>
-            <FormSection
-              label="Identity Verification"
-              open={editSections.isOpen("identity")}
-              onToggle={() => editSections.toggle("identity")}
-            >
+            <FormSection label="Identity Verification" collapsible={false}>
             <IdentityVerificationPanel
               employee={selectedEmployee}
               physicalCopyPresent={editForm.physical_copy_present}
@@ -2840,9 +2821,8 @@ export default function EmployeeManagement() {
 
             <FormSection
               label="Basic Information"
-              open={editSections.isOpen("basic")}
+              collapsible={false}
               hasError={Boolean(editFormErrors.full_name || editFormErrors.phone || editFormErrors.bank_account || editFormErrors.iban)}
-              onToggle={() => editSections.toggle("basic")}
             >
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -5126,27 +5106,19 @@ function EmployeeHrSection({
 }
 
 /**
- * Open/close state for one modal's top-level sections. Sections start collapsed
- * unless named in `initial` — the employee form is long enough that showing it
- * all at once is what made it unusable, but the fields you always fill in
- * shouldn't need a click first.
+ * Open/close state for a modal's collapsible sections — the optional ones. The
+ * panels that are filled on every save render permanently open instead and never
+ * pass through here.
  */
-function useSectionState(initial: string[] = []) {
-  const [open, setOpen] = useState<string[]>(initial);
+function useSectionState() {
+  const [open, setOpen] = useState<string[]>([]);
   const isOpen = useCallback((id: string) => open.includes(id), [open]);
   const toggle = useCallback(
     (id: string) => setOpen((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id])),
     [],
   );
-  const expand = useCallback(
-    (id: string) => setOpen((p) => (p.includes(id) ? p : [...p, id])),
-    [],
-  );
-  // `initial` is a fresh array each render; key on its contents so reset() stays
-  // stable and doesn't retrigger the effects that depend on it.
-  const initialKey = initial.join("|");
-  const reset = useCallback(() => setOpen(initial), [initialKey]);
-  return { isOpen, toggle, expand, reset };
+  const reset = useCallback(() => setOpen([]), []);
+  return { isOpen, toggle, reset };
 }
 
 /**
@@ -5181,14 +5153,36 @@ function PhysicalCopyToggle({
 
 /** One collapsible panel in the Add / Edit Employee form. Collapsed by default. */
 function FormSection({
-  label, open, hasError, onToggle, children,
+  label, open, hasError, onToggle, collapsible = true, children,
 }: {
   label: string;
-  open: boolean;
+  open?: boolean;
   hasError?: boolean;
-  onToggle: () => void;
+  onToggle?: () => void;
+  /** false = always shown, with no way to fold it away. */
+  collapsible?: boolean;
   children: React.ReactNode;
 }) {
+  const errorTag = hasError ? (
+    <span className="text-[10px] font-semibold uppercase tracking-wide text-danger-700 dark:text-danger-500 bg-danger-50 border border-danger-200 px-1.5 py-0.5 rounded-md">
+      Needs attention
+    </span>
+  ) : null;
+
+  // Sections you fill in on every save aren't worth a click to reach, and a
+  // collapse control on them is just something to fight with.
+  if (!collapsible) {
+    return (
+      <div className="border border-border rounded-lg overflow-hidden">
+        <div className="flex items-center gap-2 px-3 py-2.5 text-sm bg-accent/60 text-foreground font-medium">
+          <span className="flex-1">{label}</span>
+          {errorTag}
+        </div>
+        <div className="px-3 pb-4 pt-3 border-t border-border">{children}</div>
+      </div>
+    );
+  }
+
   return (
     <div className="border border-border rounded-lg overflow-hidden">
       <button
@@ -5204,11 +5198,7 @@ function FormSection({
           strokeWidth={1.75}
         />
         <span className="flex-1">{label}</span>
-        {hasError && (
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-danger-700 dark:text-danger-500 bg-danger-50 border border-danger-200 px-1.5 py-0.5 rounded-md">
-            Needs attention
-          </span>
-        )}
+        {errorTag}
       </button>
       {open && <div className="px-3 pb-4 pt-3 border-t border-border">{children}</div>}
     </div>
