@@ -760,8 +760,8 @@ export default function EmployeeManagement() {
   };
 
   // Top-level sections of the Add and Edit modals — collapsed until opened.
-  const addSections = useSectionState();
-  const editSections = useSectionState();
+  const addSections = useSectionState(["basic", "bank"]);
+  const editSections = useSectionState(["basic"]);
   const { expand: expandAdd } = addSections;
   const { expand: expandEdit } = editSections;
   // A failed save must not leave its error hidden inside a collapsed panel.
@@ -2055,10 +2055,7 @@ export default function EmployeeManagement() {
                   <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground border-l-2 border-l-transparent">Employee ID</th>
                   <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Name</th>
                   <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Phone</th>
-                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Location</th>
-                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Branch</th>
                   <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Client / Category</th>
-                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Shift</th>
                   <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Status</th>
                   <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground sticky right-0 z-10 bg-slate-50 border-l border-border">Actions</th>
                 </tr>
@@ -2066,7 +2063,7 @@ export default function EmployeeManagement() {
               <tbody>
                 {loading && (
                   <tr>
-                    <td colSpan={9} className="px-6 py-10 text-center text-slate-500">
+                    <td colSpan={6} className="px-6 py-10 text-center text-slate-500">
                       <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
                       Loading…
                     </td>
@@ -2074,7 +2071,7 @@ export default function EmployeeManagement() {
                 )}
                 {!loading && filtered.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="px-6 py-10 text-center text-slate-500 text-sm">
+                    <td colSpan={6} className="px-6 py-10 text-center text-slate-500 text-sm">
                       No employees yet. Click "Add Employee" to create one.
                     </td>
                   </tr>
@@ -2134,42 +2131,12 @@ export default function EmployeeManagement() {
                         </div>
                       </td>
                       <td className="px-6 py-3.5 text-sm text-muted-foreground tabular-nums">{employee.phone ?? "—"}</td>
-                      <td className="px-6 py-3.5 text-sm text-muted-foreground">{employee.location_name ?? "—"}</td>
-                      <td className="px-6 py-3.5 text-sm text-muted-foreground">{employee.branch_name ?? "—"}</td>
                       <td className="px-6 py-3.5 text-sm text-muted-foreground">
                         {(employee.category ?? "client") === "client" ? (
                           employee.client_name ?? "—"
                         ) : (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs bg-secondary text-secondary-foreground border border-border capitalize">
                             {(employee.category ?? "client").replace("_", " ")}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-6 py-3.5">
-                        {(employee.category ?? "client") === "client"
-                          && ["active", "on_leave"].includes(employee.lifecycle_state)
-                          && employee.record_state !== "draft" ? (
-                          <button
-                            type="button"
-                            onClick={() => setChangeShiftTarget(employee)}
-                            title="Click to change shift (dated — keeps past attendance on the old shift)"
-                            className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border capitalize transition-colors ${
-                              employee.shift === "day"
-                                ? "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200 hover:bg-warning-100"
-                                : "bg-info-50 text-info-700 dark:text-info-500 border-info-200 hover:bg-info-100"
-                            }`}
-                          >
-                            {employee.shift}
-                          </button>
-                        ) : (
-                          <span
-                            className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border capitalize ${
-                              employee.shift === "day"
-                                ? "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200"
-                                : "bg-info-50 text-info-700 dark:text-info-500 border-info-200"
-                            }`}
-                          >
-                            {employee.shift}
                           </span>
                         )}
                       </td>
@@ -5157,12 +5124,13 @@ function EmployeeHrSection({
 }
 
 /**
- * Open/close state for one modal's top-level sections. Everything starts
- * collapsed — the employee form is long enough that showing it all at once is
- * what made it unusable in the first place.
+ * Open/close state for one modal's top-level sections. Sections start collapsed
+ * unless named in `initial` — the employee form is long enough that showing it
+ * all at once is what made it unusable, but the fields you always fill in
+ * shouldn't need a click first.
  */
-function useSectionState() {
-  const [open, setOpen] = useState<string[]>([]);
+function useSectionState(initial: string[] = []) {
+  const [open, setOpen] = useState<string[]>(initial);
   const isOpen = useCallback((id: string) => open.includes(id), [open]);
   const toggle = useCallback(
     (id: string) => setOpen((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id])),
@@ -5172,7 +5140,10 @@ function useSectionState() {
     (id: string) => setOpen((p) => (p.includes(id) ? p : [...p, id])),
     [],
   );
-  const reset = useCallback(() => setOpen([]), []);
+  // `initial` is a fresh array each render; key on its contents so reset() stays
+  // stable and doesn't retrigger the effects that depend on it.
+  const initialKey = initial.join("|");
+  const reset = useCallback(() => setOpen(initial), [initialKey]);
   return { isOpen, toggle, expand, reset };
 }
 

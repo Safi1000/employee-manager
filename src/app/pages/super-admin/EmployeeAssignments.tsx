@@ -27,6 +27,7 @@ import {
   X,
   ChevronRight,
   Building2,
+  UserPlus,
   CheckCircle2,
   MapPin,
 } from "lucide-react";
@@ -173,13 +174,14 @@ export default function EmployeeAssignments() {
   const [search, setSearch] = useState("");
   const [showSeparated, setShowSeparated] = useState(false);
   const [onlyMismatch, setOnlyMismatch] = useState(false);
+  const [showServicesClients, setShowServicesClients] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   /** Selected employee ids, keyed by group so a bulk edit can't leak across clients. */
   const [selected, setSelected] = useState<Record<string, Set<string>>>({});
 
   const [bulkGroup, setBulkGroup] = useState<Group | null>(null);
   const [rowTarget, setRowTarget] = useState<EmployeeRow | null>(null);
-  const [assignTarget, setAssignTarget] = useState<EmployeeRow | null>(null);
+  const [assignToClient, setAssignToClient] = useState<{ id: string; name: string } | null>(null);
   const [changeClientTarget, setChangeClientTarget] = useState<EmployeeRow | null>(null);
   const [changeCategoryTarget, setChangeCategoryTarget] = useState<EmployeeRow | null>(null);
   const [changeShiftTarget, setChangeShiftTarget] = useState<EmployeeRow | null>(null);
@@ -243,6 +245,22 @@ export default function EmployeeAssignments() {
   }, [employees]);
 
   const clientById = useMemo(() => new Map(clients.map((c) => [c.id, c])), [clients]);
+
+  // A "Services" contract bills for hardware (weapons / equipment), not people, so
+  // a client whose contracts are ALL Services has no headcount to assign. They are
+  // also junk in the strength reconciliation, which sums contract_lines.billed_qty
+  // without caring whether the line counts guards or rifles — a 40-weapon contract
+  // reads as "40 contracted, 0 enrolled, +40 short". Hidden from this page.
+  // A client with no contracts at all stays visible: absence of evidence isn't
+  // evidence that they have no guards.
+  const servicesOnlyClientIds = useMemo(() => {
+    const seen = new Map<string, boolean>();
+    for (const c of contracts) {
+      const isServices = c.contract_type === "services";
+      seen.set(c.client_id, (seen.get(c.client_id) ?? true) && isServices);
+    }
+    return new Set([...seen].filter(([, only]) => only).map(([id]) => id));
+  }, [contracts]);
   const contractsForClient = useCallback(
     (clientId: string) => contracts.filter((c) => c.client_id === clientId),
     [contracts],
@@ -278,7 +296,6 @@ export default function EmployeeAssignments() {
     const byClient = new Map<string, EmployeeRow[]>();
     const office: EmployeeRow[] = [];
     const relievers: EmployeeRow[] = [];
-    const unassigned: EmployeeRow[] = [];
     for (const e of visible) {
       const cat = (e.category ?? "client") as EmployeeCategory;
       if (cat === "office_staff") office.push(e);
@@ -287,7 +304,9 @@ export default function EmployeeAssignments() {
         const arr = byClient.get(e.client_id) ?? [];
         arr.push(e);
         byClient.set(e.client_id, arr);
-      } else unassigned.push(e);
+      }
+      // Employees with no client posting aren't a group — they're the candidate
+      // pool behind each client's "Assign employees" button.
     }
 
     const reconByClient = new Map(recon.map((r) => [r.client_id, r]));
@@ -322,26 +341,39 @@ export default function EmployeeAssignments() {
     }
     out.sort((a, b) => a.label.localeCompare(b.label));
 
-    if (unassigned.length)
-      out.unshift({
-        key: "unassigned",
-        label: "Unassigned",
-        clientId: null,
-        hint: "Newly added — give them a client, shift and salary",
-        rows: unassigned,
-      });
     if (office.length)
       out.push({ key: "office", label: "Office Staff", clientId: null, hint: "No client posting", rows: office });
     if (relievers.length)
       out.push({ key: "relievers", label: "Relievers", clientId: null, hint: "Relief pool", rows: relievers });
-    if (onlyMismatch) return out.filter((g) => g.recon != null && g.recon.variance !== 0);
-    return out;
-  }, [employees, search, showSeparated, clientById, recon, onlyMismatch]);
+    const visibleGroups = showServicesClients
+      ? out
+      : out.filter((g) => !(g.clientId && servicesOnlyClientIds.has(g.clientId)));
+    if (onlyMismatch) return visibleGroups.filter((g) => g.recon != null && g.recon.variance !== 0);
+    return visibleGroups;
+  }, [employees, search, showSeparated, clientById, recon, onlyMismatch, servicesOnlyClientIds, showServicesClients]);
+
+  // Hiding a client must never make its guards unreachable — this page is the only
+  // place their posting and pay can be edited. If a Services-only client somehow
+  // has people on it, say so and offer a way back in.
+  const strandedOnServices = useMemo(
+    () =>
+      showServicesClients
+        ? 0
+        : employees.filter(
+            (e) =>
+              e.client_id &&
+              servicesOnlyClientIds.has(e.client_id) &&
+              (showSeparated || !isSeparatedState(e.lifecycle_state)),
+          ).length,
+    [employees, servicesOnlyClientIds, showServicesClients, showSeparated],
+  );
 
   // Company-wide strength totals — the old Deployment page's stat row.
   const totals = useMemo(
     () =>
-      recon.reduce(
+      recon
+        .filter((r) => showServicesClients || !servicesOnlyClientIds.has(r.client_id))
+        .reduce(
         (acc, r) => {
           acc.contracted += r.contracted_billed_qty;
           acc.enrolled += r.enrolled_active;
@@ -351,7 +383,14 @@ export default function EmployeeAssignments() {
         },
         { contracted: 0, enrolled: 0, sites: 0, mismatched: 0 },
       ),
-    [recon],
+    [recon, servicesOnlyClientIds, showServicesClients],
+  );
+
+  // Anyone with no open client posting: fresh hires, plus office staff who could
+  // be moved onto a client. Separated records are never offered.
+  const assignable = useMemo(
+    () => employees.filter((e) => !e.client_id && !isSeparatedState(e.lifecycle_state)),
+    [employees],
   );
 
   const toggleGroup = (key: string) =>
@@ -448,8 +487,19 @@ export default function EmployeeAssignments() {
               icon: AlertCircle,
               tint: totals.mismatched > 0 ? "text-warning-600 dark:text-warning-500" : "text-success-600 dark:text-success-500",
             },
+            {
+              label: "Awaiting a client",
+              value: assignable.length,
+              icon: UserPlus,
+              tint: assignable.length > 0 ? "text-warning-600 dark:text-warning-500" : "text-muted-foreground",
+              hint: assignable.length > 0 ? "Use a client's “Assign employees” button" : undefined,
+            },
           ].map((t) => (
-            <div key={t.label} className="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-lg border border-border bg-card">
+            <div
+              key={t.label}
+              title={"hint" in t ? (t.hint as string | undefined) : undefined}
+              className="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-lg border border-border bg-card"
+            >
               <t.icon className={`w-4 h-4 shrink-0 ${t.tint}`} strokeWidth={2} />
               <span className="text-xs uppercase tracking-wide text-muted-foreground">{t.label}</span>
               <span className="text-base font-semibold tabular-nums text-foreground">{t.value}</span>
@@ -489,6 +539,37 @@ export default function EmployeeAssignments() {
         {!loading && groups.length === 0 && (
           <div className="py-16 text-center text-sm text-muted-foreground">
             No employees match this search.
+          </div>
+        )}
+
+        {strandedOnServices > 0 && (
+          <div className="mb-3 flex items-start gap-2 rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-800">
+            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-warning-600" strokeWidth={2} />
+            <span className="flex-1">
+              {strandedOnServices} employee{strandedOnServices === 1 ? " is" : "s are"} posted to a
+              Services-only client, which this page hides. Their contract bills for equipment, not
+              people — either move them to a guard-deployment client or{" "}
+              <button
+                type="button"
+                onClick={() => setShowServicesClients(true)}
+                className="font-medium underline"
+              >
+                show Services clients
+              </button>{" "}
+              to edit them here.
+            </span>
+          </div>
+        )}
+        {showServicesClients && (
+          <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
+            <span>Showing Services-only clients — their contracted figures count equipment, not headcount.</span>
+            <button
+              type="button"
+              onClick={() => setShowServicesClients(false)}
+              className="font-medium underline"
+            >
+              Hide again
+            </button>
           </div>
         )}
 
@@ -546,6 +627,18 @@ export default function EmployeeAssignments() {
                   <span className="text-xs text-muted-foreground tabular-nums hidden sm:inline">
                     {money(monthly)}/mo
                   </span>
+                  {canEdit && g.clientId && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={assignable.length === 0}
+                      title={assignable.length === 0 ? "No unassigned employees" : undefined}
+                      onClick={() => setAssignToClient({ id: g.clientId!, name: g.label })}
+                    >
+                      <UserPlus className="w-4 h-4 mr-1.5" strokeWidth={1.75} />
+                      Assign employees
+                    </Button>
+                  )}
                   {canEdit && (
                     <Button
                       variant="secondary"
@@ -666,7 +759,6 @@ export default function EmployeeAssignments() {
           clients={clients}
           onClose={() => setRowTarget(null)}
           onSaved={async () => { setRowTarget(null); await loadData(); }}
-          onAssignClient={() => { const t = rowTarget; setRowTarget(null); setAssignTarget(t); }}
           onChangeClient={() => { const t = rowTarget; setRowTarget(null); setChangeClientTarget(t); }}
           onChangeCategory={() => { const t = rowTarget; setRowTarget(null); setChangeCategoryTarget(t); }}
           onChangeShift={() => { const t = rowTarget; setRowTarget(null); setChangeShiftTarget(t); }}
@@ -674,14 +766,14 @@ export default function EmployeeAssignments() {
         />
       )}
 
-      {assignTarget && (
-        <FirstAssignmentModal
-          employee={assignTarget}
-          clients={clients}
+      {assignToClient && (
+        <AssignEmployeesModal
+          client={assignToClient}
+          candidates={assignable}
           contractsForClient={contractsForClient}
           linesForContract={linesForContract}
-          onClose={() => setAssignTarget(null)}
-          onDone={async (msg) => { setAssignTarget(null); setNotice(msg); await loadData(); }}
+          onClose={() => setAssignToClient(null)}
+          onDone={async (msg) => { setAssignToClient(null); setNotice(msg); await loadData(); }}
           onError={setError}
         />
       )}
@@ -1013,7 +1105,7 @@ function BulkField({
 // ─────────────────────────────────────────────────────────────────────────────
 function RowEditModal({
   employee, canEdit, displayCode, locations, branches, clients,
-  onClose, onSaved, onAssignClient, onChangeClient, onChangeCategory, onChangeShift, onError,
+  onClose, onSaved, onChangeClient, onChangeCategory, onChangeShift, onError,
 }: {
   employee: EmployeeRow;
   canEdit: boolean;
@@ -1023,7 +1115,6 @@ function RowEditModal({
   clients: Client[];
   onClose: () => void;
   onSaved: () => Promise<void>;
-  onAssignClient: () => void;
   onChangeClient: () => void;
   onChangeCategory: () => void;
   onChangeShift: () => void;
@@ -1139,10 +1230,10 @@ function RowEditModal({
             <div>
               <label className="block text-xs text-muted-foreground mb-1">Client</label>
               <input value={category === "client" ? clientName : "—"} disabled readOnly className={lockedCls} />
-              {canEdit && neverPosted && draftCategory === "client" && (
-                <button type="button" onClick={onAssignClient} className="text-xs text-brand-700 dark:text-brand-500 hover:underline mt-1">
-                  Assign to a client…
-                </button>
+              {canEdit && neverPosted && (
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Assign from the client's card — use its “Assign employees” button.
+                </p>
               )}
               {canEdit && !neverPosted && canPost && category === "client" && (
                 <button type="button" onClick={onChangeClient} className="text-xs text-brand-700 dark:text-brand-500 hover:underline mt-1">
@@ -1287,93 +1378,151 @@ function RowEditModal({
   );
 }
 
+
 // ─────────────────────────────────────────────────────────────────────────────
-// First client assignment for a freshly added employee.
+// Assign employees to a client — the first posting for people who have none.
+//
+// Driven from the client, not the employee: you almost always know which client
+// is short-staffed, not which particular new hire is idle, so the flow is "pick
+// this client's new guards" rather than "find the guard, then pick a client".
 //
 // This can NOT go through change_client(): that RPC refuses a draft record
 // ("must be Ops-verified before being posted"), and a brand-new hire is always
 // draft. Hiring has always been the exception — the posting row is written
 // directly, which the enforce_posting_requires_ops_verified trigger allows
-// because the employee has no prior client. This mirrors what the Add Employee
-// modal used to do inline, now that assignment lives on this page.
+// because the employee has no prior client. Moving an ALREADY-posted guard is a
+// different action ("Change client") and still goes through the RPC.
 // ─────────────────────────────────────────────────────────────────────────────
-function FirstAssignmentModal({
-  employee, clients, contractsForClient, linesForContract, onClose, onDone, onError,
+function AssignEmployeesModal({
+  client, candidates, contractsForClient, linesForContract, onClose, onDone, onError,
 }: {
-  employee: EmployeeRow;
-  clients: Client[];
+  client: { id: string; name: string };
+  candidates: EmployeeRow[];
   contractsForClient: (clientId: string) => Contract[];
   linesForContract: (contractId: string) => ContractLine[];
   onClose: () => void;
   onDone: (message: string) => Promise<void>;
   onError: (m: string) => void;
 }) {
-  const [clientId, setClientId] = useState("");
+  const [search, setSearch] = useState("");
+  const [picked, setPicked] = useState<Set<string>>(new Set());
   const [contractLineId, setContractLineId] = useState("");
-  const [startDate, setStartDate] = useState(employee.join_date ?? todayIso());
-  const [shift, setShift] = useState<string>(employee.shift);
-  const [baseSalary, setBaseSalary] = useState(employee.base_salary != null ? String(employee.base_salary) : "");
-  const [allowance, setAllowance] = useState(employee.allowance != null ? String(employee.allowance) : "");
+  const [startDate, setStartDate] = useState(todayIso());
+  const [shift, setShift] = useState("");
+  const [baseSalary, setBaseSalary] = useState("");
+  const [allowance, setAllowance] = useState("");
   const [saving, setSaving] = useState(false);
+  const [progress, setProgress] = useState(0);
   const [err, setErr] = useState<string | null>(null);
 
-  const lines = clientId ? contractsForClient(clientId).flatMap((c) => linesForContract(c.id)) : [];
+  const lines = contractsForClient(client.id).flatMap((c) => linesForContract(c.id));
+
+  const shown = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return candidates;
+    return candidates.filter(
+      (e) =>
+        e.full_name.toLowerCase().includes(q) ||
+        (e.employee_code ?? "").toLowerCase().includes(q) ||
+        (e.guard_code ?? "").toLowerCase().includes(q) ||
+        (e.cnic_number ?? "").toLowerCase().includes(q) ||
+        (e.phone ?? "").toLowerCase().includes(q),
+    );
+  }, [candidates, search]);
+
+  const toggle = (id: string) =>
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const allShownPicked = shown.length > 0 && shown.every((e) => picked.has(e.id));
+  const toggleAllShown = () =>
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (allShownPicked) shown.forEach((e) => next.delete(e.id));
+      else shown.forEach((e) => next.add(e.id));
+      return next;
+    });
 
   const save = async () => {
-    if (!clientId) { setErr("Select a client."); return; }
+    const targets = candidates.filter((e) => picked.has(e.id));
+    if (targets.length === 0) { setErr("Pick at least one employee."); return; }
     if (!startDate) { setErr("Pick a start date."); return; }
+    const base = baseSalary ? Number(baseSalary) : null;
+    if (base != null && (isNaN(base) || base <= 0)) {
+      setErr("Enter a valid base salary, or leave it blank.");
+      return;
+    }
+
     setSaving(true);
     setErr(null);
+    setProgress(0);
     try {
-      // Shift and category are plain columns until the first posting exists.
-      const { error: upErr } = await supabase
-        .from("employees")
-        .update({ shift, category: "client", join_date: employee.join_date ?? startDate })
-        .eq("id", employee.id);
-      if (upErr) throw upErr;
-
-      // The posting row. Its sync trigger mirrors client_id onto the employee.
+      // The client's default site, resolved once for the whole batch.
       const { data: defSite } = await supabase
         .from("sites").select("id")
-        .eq("client_id", clientId).eq("is_default", true).maybeSingle();
-      const { error: depErr } = await supabase.from("deployments").insert({
-        guard_id: employee.id,
-        client_id: clientId,
-        contract_line_id: contractLineId || null,
-        site_id: (defSite as { id?: string } | null)?.id ?? null,
-        start_date: startDate,
-        reason: "new_hire",
-      });
-      if (depErr) throw depErr;
+        .eq("client_id", client.id).eq("is_default", true).maybeSingle();
+      const siteId = (defSite as { id?: string } | null)?.id ?? null;
 
-      // Permanent GGS-NNNNN (once, at hiring) + the client-scoped display number.
-      if (!employee.guard_code) {
-        const { error: codeErr } = await supabase.rpc("assign_guard_code", { p_employee_id: employee.id });
-        if (codeErr) throw codeErr;
-      }
-      const { error: dispErr } = await supabase.rpc("assign_display_number", { p_employee_id: employee.id });
-      if (dispErr) throw dispErr;
+      // Sequential: each employee needs its own posting row, code and salary seed,
+      // and a failure part-way must name the person it stopped on.
+      for (let i = 0; i < targets.length; i++) {
+        const e = targets[i];
+        const fail = (m: string) => new Error(`${e.full_name}: ${m}`);
 
-      // Seed the first salary-history row — the capture trigger only fires on
-      // UPDATE, so without this the guard would have no effective-dated pay.
-      if (baseSalary) {
-        const base = Number(baseSalary);
-        if (isNaN(base) || base <= 0) throw new Error("Enter a valid base salary.");
-        const { error: salErr } = await supabase.rpc("set_employee_salary", {
-          p_employee_id: employee.id,
-          p_effective_date: startDate,
-          p_base_salary: base,
-          p_allowance: allowance ? Math.max(0, Number(allowance)) : 0,
-          p_per_day_salary: base / daysInCurrentMonth(),
-          p_reason: "Initial salary",
+        // Category and shift are plain columns until the first posting exists.
+        const { error: upErr } = await supabase
+          .from("employees")
+          .update({
+            category: "client",
+            join_date: e.join_date ?? startDate,
+            ...(shift ? { shift } : {}),
+          })
+          .eq("id", e.id);
+        if (upErr) throw fail(upErr.message);
+
+        // The posting row. Its sync trigger mirrors client_id onto the employee.
+        const { error: depErr } = await supabase.from("deployments").insert({
+          guard_id: e.id,
+          client_id: client.id,
+          contract_line_id: contractLineId || null,
+          site_id: siteId,
+          start_date: startDate,
+          reason: "new_hire",
         });
-        if (salErr) throw salErr;
+        if (depErr) throw fail(depErr.message);
+
+        // Permanent GGS-NNNNN (once, at hiring) + the client-scoped display number.
+        if (!e.guard_code) {
+          const { error: codeErr } = await supabase.rpc("assign_guard_code", { p_employee_id: e.id });
+          if (codeErr) throw fail(codeErr.message);
+        }
+        const { error: dispErr } = await supabase.rpc("assign_display_number", { p_employee_id: e.id });
+        if (dispErr) throw fail(dispErr.message);
+
+        // Seed the first salary-history row — the capture trigger only fires on
+        // UPDATE, so without this the guard would have no effective-dated pay.
+        if (base != null) {
+          const { error: salErr } = await supabase.rpc("set_employee_salary", {
+            p_employee_id: e.id,
+            p_effective_date: startDate,
+            p_base_salary: base,
+            p_allowance: allowance ? Math.max(0, Number(allowance)) : 0,
+            p_per_day_salary: base / daysInCurrentMonth(),
+            p_reason: "Initial salary",
+          });
+          if (salErr) throw fail(salErr.message);
+        }
+        setProgress(i + 1);
       }
-      const name = clients.find((c) => c.id === clientId)?.name ?? "client";
-      await onDone(`${employee.full_name} assigned to ${name}.`);
+      await onDone(
+        `${targets.length} employee${targets.length === 1 ? "" : "s"} assigned to ${client.name}.`,
+      );
     } catch (e: any) {
       const m = e.message ?? String(e);
-      setErr(m);
+      setErr(progress > 0 ? `${m} — ${progress} already assigned before this failed.` : m);
       onError(m);
       setSaving(false);
     }
@@ -1386,57 +1535,120 @@ function FirstAssignmentModal({
       error={err}
       onDismissError={() => setErr(null)}
       onClose={onClose}
-      title={`Assign ${employee.full_name} to a client`}
-      size="sm"
+      title={`Assign employees to ${client.name}`}
+      size="lg"
       footer={
-        <div className="flex justify-end gap-2">
-          <Button variant="secondary" size="sm" onClick={onClose} disabled={saving}>Cancel</Button>
-          <Button size="sm" onClick={save} disabled={saving}>
-            {saving && <Loader2 className="w-4 h-4 animate-spin mr-1" />} Assign
-          </Button>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs text-muted-foreground">
+            {saving ? `Assigning ${progress} / ${picked.size}…` : `${picked.size} selected`}
+          </span>
+          <div className="flex gap-2">
+            <Button variant="secondary" size="sm" onClick={onClose} disabled={saving}>Cancel</Button>
+            <Button size="sm" onClick={save} disabled={saving || picked.size === 0}>
+              {saving && <Loader2 className="w-4 h-4 animate-spin mr-1" />}
+              Assign{picked.size > 0 ? ` ${picked.size}` : ""}
+            </Button>
+          </div>
         </div>
       }
     >
-      <div className="space-y-3">
-        <p className="text-xs text-muted-foreground">
-          This is the first posting, so it also issues the permanent guard code and the
-          client number, and records the opening salary.
-        </p>
-        <label className="block">
-          <span className="text-xs text-muted-foreground">Client</span>
-          <ThemedSelect value={clientId} onChange={(e) => { setClientId(e.target.value); setContractLineId(""); }} className={inputCls}>
-            <option value="">— Select —</option>
-            {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </ThemedSelect>
-        </label>
-        <label className="block">
-          <span className="text-xs text-muted-foreground">Contract line (optional)</span>
-          <ThemedSelect value={contractLineId} onChange={(e) => setContractLineId(e.target.value)} className={inputCls}>
-            <option value="">— None —</option>
-            {lines.map((l) => <option key={l.id} value={l.id}>{l.label ?? l.category}</option>)}
-          </ThemedSelect>
-        </label>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="block">
-            <span className="text-xs text-muted-foreground">Start date</span>
-            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className={inputCls} />
-          </label>
-          <label className="block">
-            <span className="text-xs text-muted-foreground">Shift</span>
-            <ThemedSelect value={shift} onChange={(e) => setShift(e.target.value)} className={inputCls}>
-              <option value="day">Day</option>
-              <option value="evening">Evening</option>
-              <option value="night">Night</option>
-            </ThemedSelect>
-          </label>
-          <label className="block">
-            <span className="text-xs text-muted-foreground">Base salary (PKR)</span>
-            <input type="number" value={baseSalary} onChange={(e) => setBaseSalary(e.target.value)} className={inputCls} placeholder="50000" />
-          </label>
-          <label className="block">
-            <span className="text-xs text-muted-foreground">Allowance (PKR)</span>
-            <input type="number" min={0} value={allowance} onChange={(e) => setAllowance(e.target.value)} className={inputCls} placeholder="0" />
-          </label>
+      <div className="space-y-5">
+        <div>
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            <div className="relative flex-1 min-w-52">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" strokeWidth={1.5} />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search name, code, CNIC or phone…"
+                className={inputCls + " pl-9"}
+                autoFocus
+              />
+            </div>
+            {shown.length > 0 && (
+              <Button variant="ghost" size="sm" onClick={toggleAllShown}>
+                {allShownPicked ? "Clear" : `Select all ${shown.length}`}
+              </Button>
+            )}
+          </div>
+
+          <div className="border border-border rounded-md max-h-72 overflow-y-auto">
+            {candidates.length === 0 ? (
+              <p className="px-3 py-8 text-center text-sm text-muted-foreground">
+                Everyone already has a client. Add someone first from Workforce ▸ Employees.
+              </p>
+            ) : shown.length === 0 ? (
+              <p className="px-3 py-8 text-center text-sm text-muted-foreground">
+                No unassigned employee matches that search.
+              </p>
+            ) : (
+              shown.map((e) => {
+                const checked = picked.has(e.id);
+                const cat = (e.category ?? "client") as EmployeeCategory;
+                return (
+                  <label
+                    key={e.id}
+                    className={`flex items-center gap-3 px-3 py-2 border-b border-border last:border-0 cursor-pointer transition-colors ${
+                      checked ? "bg-brand-500/10" : "hover:bg-accent"
+                    }`}
+                  >
+                    <input type="checkbox" checked={checked} onChange={() => toggle(e.id)} />
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-sm text-foreground truncate">{e.full_name}</span>
+                      <span className="block text-xs text-muted-foreground truncate">
+                        {e.guard_code ?? e.employee_code}
+                        {e.cnic_number ? ` · ${e.cnic_number}` : ""}
+                        {e.phone ? ` · ${e.phone}` : ""}
+                      </span>
+                    </span>
+                    {cat !== "client" && (
+                      <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border border-border text-muted-foreground shrink-0">
+                        {CATEGORY_LABEL[cat]}
+                      </span>
+                    )}
+                  </label>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        <div className="pt-4 border-t border-border">
+          <h4 className="text-sm font-medium text-foreground mb-1">Applies to everyone selected</h4>
+          <p className="text-xs text-muted-foreground mb-3">
+            This is each person's first posting, so it also issues their permanent guard code and
+            their client number. Pay can be left blank and set later with Bulk edit.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1">Start date</label>
+              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1">Shift</label>
+              <ThemedSelect value={shift} onChange={(e) => setShift(e.target.value)} className={inputCls}>
+                <option value="">Keep each employee's current shift</option>
+                <option value="day">Day</option>
+                <option value="evening">Evening</option>
+                <option value="night">Night</option>
+              </ThemedSelect>
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-xs text-muted-foreground mb-1">Contract line (optional)</label>
+              <ThemedSelect value={contractLineId} onChange={(e) => setContractLineId(e.target.value)} className={inputCls}>
+                <option value="">— None —</option>
+                {lines.map((l) => <option key={l.id} value={l.id}>{l.label ?? l.category}</option>)}
+              </ThemedSelect>
+            </div>
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1">Base salary (PKR)</label>
+              <input type="number" value={baseSalary} onChange={(e) => setBaseSalary(e.target.value)} className={inputCls} placeholder="Leave blank to set later" />
+            </div>
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1">Allowance (PKR)</label>
+              <input type="number" min={0} value={allowance} onChange={(e) => setAllowance(e.target.value)} className={inputCls} placeholder="0" />
+            </div>
+          </div>
         </div>
       </div>
     </Modal>
