@@ -126,8 +126,13 @@ em { font-style: normal; color: var(--amber); }
 .nav-toggle[aria-expanded="true"] span:last-child { transform: translateY(-4px) rotate(-45deg); }
 .nav-mobile { display: none; flex-direction: column; gap: .25rem; padding: 0 clamp(20px,4vw,44px) 1rem; border-bottom: 1px solid var(--hair-dark); }
 .nav-mobile a { padding: .7rem 0; color: var(--bone-dim); border-bottom: 1px solid var(--hair-dark); }
-.nav-mobile a:last-child { border: 0; margin-top: .5rem; }
+/* Last NAV LINK loses its rule; the CTA block below owns the bottom of the menu. */
+.nav-mobile > a:last-of-type { border-bottom: 0; }
 .nav-mobile.open { display: flex; }
+/* Sign in / Sign up are buttons, not list items — opt them out of the link rules
+   above (which flattened their padding) and stack them full width. */
+.nav-mobile-cta { display: flex; flex-direction: column; gap: .6rem; padding-top: .9rem; }
+.nav-mobile-cta a { padding: .72em 1.2em; margin: 0; border-bottom: 0; }
 
 /* ============ HERO ============ */
 .hero { position: relative; padding-top: clamp(48px, 8vw, 96px); overflow: hidden; }

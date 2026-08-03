@@ -20,10 +20,14 @@ export default function BastionLanding() {
     const shadow = host.shadowRoot ?? host.attachShadow({ mode: "open" });
     shadow.innerHTML = `<style>${bastionCss}</style>${bastionHtml}`;
 
-    // "Sign in" (the sole .btn-ghost, href="#") routes into the CRM login.
-    const signIn = shadow.querySelector<HTMLAnchorElement>(".btn-ghost");
+    // Every "Sign in" link routes into the CRM login. Tagged with [data-signin]
+    // rather than matched on .btn-ghost: the mobile menu has its own sign-in
+    // button, and querySelector would only ever have bound the first one.
+    const signInLinks = Array.from(
+      shadow.querySelectorAll<HTMLAnchorElement>("a[data-signin]"),
+    );
     const onSignIn = (e: Event) => { e.preventDefault(); navigate("/login"); };
-    if (signIn) signIn.addEventListener("click", onSignIn);
+    signInLinks.forEach((a) => a.addEventListener("click", onSignIn));
 
     const dispose = initBastion(shadow);
 
@@ -31,7 +35,7 @@ export default function BastionLanding() {
     document.title = "Bastion · The command system for security-services companies";
 
     return () => {
-      if (signIn) signIn.removeEventListener("click", onSignIn);
+      signInLinks.forEach((a) => a.removeEventListener("click", onSignIn));
       dispose();
       shadow.innerHTML = "";
       document.title = prevTitle;

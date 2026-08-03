@@ -1371,7 +1371,9 @@ export default function EmployeeManagement() {
           full_name: form.full_name.trim(),
           phone: form.phone.trim() || null,
           location_id: form.location_id || null,
-          client_id: form.category === "client" ? form.client_id : null,
+          // "" is not a uuid — and since the client picker moved to Assignments &
+          // Pay, client_id is ALWAYS "" here. Coalesce or Postgres rejects the row.
+          client_id: form.category === "client" ? (form.client_id || null) : null,
           contract_id: form.category === "client" ? (form.contract_id || null) : null,
           contract_line_id: form.category === "client" ? (form.contract_line_id || null) : null,
           assignment_effective_from:
