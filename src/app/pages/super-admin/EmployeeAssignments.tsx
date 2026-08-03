@@ -49,7 +49,12 @@ import {
   type Location,
   type Contract,
   type ContractLine,
+  type ContractAddendum,
+  type ContractLineCategory,
   type EmployeeCategory,
+  CONTRACT_LINE_CATEGORY_LABEL,
+  effectiveCommittedByCategory,
+  activeCountByCategory,
 } from "../../lib/supabase";
 import {
   ChangeClientModal,
@@ -166,6 +171,7 @@ export default function EmployeeAssignments() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [contractLines, setContractLines] = useState<ContractLine[]>([]);
+  const [addendums, setAddendums] = useState<ContractAddendum[]>([]);
   const [recon, setRecon] = useState<ReconRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -189,7 +195,7 @@ export default function EmployeeAssignments() {
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const [locRes, cliRes, brRes, empRes, ebRes, conRes, clRes, recRes] = await Promise.all([
+    const [locRes, cliRes, brRes, empRes, ebRes, conRes, clRes, adRes, recRes] = await Promise.all([
       supabase.from("locations").select("*").order("name"),
       supabase.from("clients").select("*").order("name"),
       supabase.from("branches").select("*").order("is_head_office", { ascending: false }).order("name"),
@@ -203,6 +209,7 @@ export default function EmployeeAssignments() {
       supabase.from("employee_branches").select("employee_id, branch_id"),
       supabase.from("contracts").select("*").order("start_date", { ascending: false }),
       supabase.from("contract_lines").select("*"),
+      supabase.from("contract_addendums").select("*"),
       supabase.from("v_client_strength_reconciliation").select("*").order("client_name"),
     ]);
     const firstErr = [locRes, cliRes, brRes, empRes].find((r) => r.error)?.error;
@@ -212,6 +219,7 @@ export default function EmployeeAssignments() {
     setBranches(brRes.data ?? []);
     setContracts((conRes.data ?? []) as Contract[]);
     setContractLines((clRes.data ?? []) as ContractLine[]);
+    setAddendums((adRes.data ?? []) as ContractAddendum[]);
     setRecon((recRes.data ?? []) as ReconRow[]);
     const addl = new Map<string, string[]>();
     for (const r of (ebRes.data ?? []) as { employee_id: string; branch_id: string }[]) {
@@ -757,6 +765,8 @@ export default function EmployeeAssignments() {
           candidates={assignable}
           contractsForClient={contractsForClient}
           linesForContract={linesForContract}
+          addendums={addendums}
+          allEmployees={employees}
           onClose={() => setAssignToClient(null)}
           onDone={async (msg) => { setAssignToClient(null); setNotice(msg); await loadData(); }}
           onError={setError}
@@ -1379,18 +1389,22 @@ function RowEditModal({
 // different action ("Change client") and still goes through the RPC.
 // ─────────────────────────────────────────────────────────────────────────────
 function AssignEmployeesModal({
-  client, candidates, contractsForClient, linesForContract, onClose, onDone, onError,
+  client, candidates, contractsForClient, linesForContract, addendums, allEmployees,
+  onClose, onDone, onError,
 }: {
   client: { id: string; name: string };
   candidates: EmployeeRow[];
   contractsForClient: (clientId: string) => Contract[];
   linesForContract: (contractId: string) => ContractLine[];
+  addendums: ContractAddendum[];
+  allEmployees: EmployeeRow[];
   onClose: () => void;
   onDone: (message: string) => Promise<void>;
   onError: (m: string) => void;
 }) {
   const [search, setSearch] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [contractId, setContractId] = useState("");
   const [contractLineId, setContractLineId] = useState("");
   const [startDate, setStartDate] = useState(todayIso());
   const [shift, setShift] = useState("");
@@ -1400,7 +1414,44 @@ function AssignEmployeesModal({
   const [progress, setProgress] = useState(0);
   const [err, setErr] = useState<string | null>(null);
 
-  const lines = contractsForClient(client.id).flatMap((c) => linesForContract(c.id));
+  // Contract → line → how many slots are left. A client can hold several
+  // contracts, so the contract has to be chosen before its lines mean anything.
+  const clientContracts = contractsForClient(client.id);
+  const lines = useMemo(
+    () => (contractId ? linesForContract(contractId) : []),
+    [contractId, linesForContract],
+  );
+  const lineCategoryById = useMemo(() => {
+    const m = new Map<string, ContractLineCategory>();
+    for (const l of lines) m.set(l.id, l.category);
+    return m;
+  }, [lines]);
+
+  // Committed vs already-filled for a line's CATEGORY, as of the posting start
+  // date. Committed counts every line of that category plus any dated addendum
+  // in effect, mirroring the contract page's own arithmetic; filled counts the
+  // guards active on that category anywhere on the contract.
+  const slotFor = useCallback(
+    (lineId: string) => {
+      const cat = lineCategoryById.get(lineId);
+      if (!cat) return null;
+      const adds = addendums.filter((a) => a.contract_id === contractId);
+      const committed = effectiveCommittedByCategory(lines, adds, startDate).get(cat) ?? 0;
+      const onContract = allEmployees.filter((e) => e.contract_id === contractId);
+      const filled = activeCountByCategory(onContract, lineCategoryById, startDate).get(cat) ?? 0;
+      return { category: cat, committed, filled, available: Math.max(0, committed - filled) };
+    },
+    [lineCategoryById, addendums, contractId, lines, startDate, allEmployees],
+  );
+
+  const slot = contractLineId ? slotFor(contractLineId) : null;
+  // No line chosen (or a contract with no lines at all) = no committed headcount
+  // to measure against, so nothing to cap.
+  const cap = slot ? slot.available : Infinity;
+  const atCap = picked.size >= cap;
+
+  // Changing contract or line invalidates a selection sized against the old cap.
+  useEffect(() => { setPicked(new Set()); }, [contractId, contractLineId]);
 
   const shown = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -1419,15 +1470,22 @@ function AssignEmployeesModal({
     setPicked((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
-      else next.add(id);
+      else if (next.size < cap) next.add(id);
       return next;
     });
   const allShownPicked = shown.length > 0 && shown.every((e) => picked.has(e.id));
   const toggleAllShown = () =>
     setPicked((prev) => {
       const next = new Set(prev);
-      if (allShownPicked) shown.forEach((e) => next.delete(e.id));
-      else shown.forEach((e) => next.add(e.id));
+      if (allShownPicked) {
+        shown.forEach((e) => next.delete(e.id));
+      } else {
+        // Fill up to the remaining slots, then stop.
+        for (const e of shown) {
+          if (next.size >= cap) break;
+          next.add(e.id);
+        }
+      }
       return next;
     });
 
@@ -1435,6 +1493,19 @@ function AssignEmployeesModal({
     const targets = candidates.filter((e) => picked.has(e.id));
     if (targets.length === 0) { setErr("Pick at least one employee."); return; }
     if (!startDate) { setErr("Pick a start date."); return; }
+    if (clientContracts.length > 0 && !contractId) { setErr("Choose which contract this posting is under."); return; }
+    if (lines.length > 0 && !contractLineId) { setErr("Choose a contract line — it sets the category and its headcount limit."); return; }
+    // Re-check against the live figures: the cap also guards the checkboxes, but
+    // the committed count can move (an addendum, another operator) between the
+    // dialog opening and Assign being pressed.
+    if (slot && targets.length > slot.available) {
+      setErr(
+        `${CONTRACT_LINE_CATEGORY_LABEL[slot.category]}: only ${slot.available} of ` +
+        `${slot.committed} slot${slot.committed === 1 ? "" : "s"} free on this contract ` +
+        `(${slot.filled} already filled). Raise the committed count with an addendum to post more.`,
+      );
+      return;
+    }
     const base = baseSalary ? Number(baseSalary) : null;
     if (base != null && (isNaN(base) || base <= 0)) {
       setErr("Enter a valid base salary, or leave it blank.");
@@ -1463,6 +1534,13 @@ function AssignEmployeesModal({
           .update({
             category: "client",
             join_date: e.join_date ?? startDate,
+            // The slot the guard occupies. activeCountByCategory reads these off
+            // the employee row, so without them the next assignment would see the
+            // line as still empty and blow past its committed count.
+            contract_id: contractId || null,
+            contract_line_id: contractLineId || null,
+            assignment_effective_from: contractLineId ? startDate : null,
+            assignment_effective_to: null,
             ...(shift ? { shift } : {}),
           })
           .eq("id", e.id);
@@ -1539,6 +1617,69 @@ function AssignEmployeesModal({
     >
       <div className="space-y-5">
         <div>
+          <h4 className="text-sm font-medium text-foreground mb-2">Which contract</h4>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1">Contract</label>
+              <ThemedSelect
+                value={contractId}
+                onChange={(e) => { setContractId(e.target.value); setContractLineId(""); }}
+                className={inputCls}
+                disabled={clientContracts.length === 0}
+              >
+                <option value="">{clientContracts.length === 0 ? "No contracts on file" : "— Select —"}</option>
+                {clientContracts.map((c) => (
+                  <option key={c.id} value={c.id}>{c.contract_code} · {c.status}</option>
+                ))}
+              </ThemedSelect>
+            </div>
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1">Contract line (category)</label>
+              <ThemedSelect
+                value={contractLineId}
+                onChange={(e) => setContractLineId(e.target.value)}
+                className={inputCls}
+                disabled={!contractId || lines.length === 0}
+              >
+                <option value="">
+                  {!contractId ? "Pick a contract first" : lines.length === 0 ? "This contract has no lines" : "— Select —"}
+                </option>
+                {lines.map((l) => {
+                  const si = slotFor(l.id);
+                  return (
+                    <option key={l.id} value={l.id}>
+                      {CONTRACT_LINE_CATEGORY_LABEL[l.category]}
+                      {l.location ? ` — ${l.location}` : ""}
+                      {si ? ` · ${si.filled}/${si.committed} filled` : ""}
+                    </option>
+                  );
+                })}
+              </ThemedSelect>
+            </div>
+          </div>
+          {contractId && lines.length === 0 && (
+            <p className="text-xs text-warning-700 dark:text-warning-500 mt-2">
+              This contract has no category lines, so there is no committed headcount to check against.
+              Add lines on the Contracts page to cap postings by category.
+            </p>
+          )}
+          {slot && (
+            <p
+              className={`text-xs mt-2 ${
+                slot.available === 0 ? "text-danger-600 dark:text-danger-500" : "text-muted-foreground"
+              }`}
+            >
+              {CONTRACT_LINE_CATEGORY_LABEL[slot.category]}: {slot.filled} of {slot.committed} committed
+              {slot.committed === 1 ? " slot" : " slots"} filled —{" "}
+              <span className="font-medium">
+                {slot.available} available
+              </span>
+              {slot.available === 0 && " · free a slot or raise the count with an addendum"}
+            </p>
+          )}
+        </div>
+
+        <div>
           <div className="flex flex-wrap items-center gap-2 mb-2">
             <div className="relative flex-1 min-w-52">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" strokeWidth={1.5} />
@@ -1551,11 +1692,17 @@ function AssignEmployeesModal({
               />
             </div>
             {shown.length > 0 && (
-              <Button variant="ghost" size="sm" onClick={toggleAllShown}>
-                {allShownPicked ? "Clear" : `Select all ${shown.length}`}
+              <Button variant="ghost" size="sm" onClick={toggleAllShown} disabled={cap === 0}>
+                {allShownPicked ? "Clear" : `Select ${Math.min(shown.length, cap === Infinity ? shown.length : cap)}`}
               </Button>
             )}
           </div>
+          {slot && (
+            <p className="text-xs text-muted-foreground mb-2">
+              {picked.size} of {slot.available} selectable
+              {atCap && slot.available > 0 && " — line is full for this posting"}
+            </p>
+          )}
 
           <div className="border border-border rounded-md max-h-72 overflow-y-auto">
             {candidates.length === 0 ? (
@@ -1570,14 +1717,16 @@ function AssignEmployeesModal({
               shown.map((e) => {
                 const checked = picked.has(e.id);
                 const cat = (e.category ?? "client") as EmployeeCategory;
+                const blocked = !checked && atCap;
                 return (
                   <label
                     key={e.id}
-                    className={`flex items-center gap-3 px-3 py-2 border-b border-border last:border-0 cursor-pointer transition-colors ${
-                      checked ? "bg-brand-500/10" : "hover:bg-accent"
+                    title={blocked ? "No committed slots left on this contract line" : undefined}
+                    className={`flex items-center gap-3 px-3 py-2 border-b border-border last:border-0 transition-colors ${
+                      checked ? "bg-brand-500/10" : blocked ? "opacity-45 cursor-not-allowed" : "cursor-pointer hover:bg-accent"
                     }`}
                   >
-                    <input type="checkbox" checked={checked} onChange={() => toggle(e.id)} />
+                    <input type="checkbox" checked={checked} disabled={blocked} onChange={() => toggle(e.id)} />
                     <span className="flex-1 min-w-0">
                       <span className="block text-sm text-foreground truncate">{e.full_name}</span>
                       <span className="block text-xs text-muted-foreground truncate">
@@ -1616,13 +1765,6 @@ function AssignEmployeesModal({
                 <option value="day">Day</option>
                 <option value="evening">Evening</option>
                 <option value="night">Night</option>
-              </ThemedSelect>
-            </div>
-            <div className="sm:col-span-2">
-              <label className="block text-xs text-muted-foreground mb-1">Contract line (optional)</label>
-              <ThemedSelect value={contractLineId} onChange={(e) => setContractLineId(e.target.value)} className={inputCls}>
-                <option value="">— None —</option>
-                {lines.map((l) => <option key={l.id} value={l.id}>{l.label ?? l.category}</option>)}
               </ThemedSelect>
             </div>
             <div>
