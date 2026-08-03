@@ -395,10 +395,18 @@ export default function EmployeeAssignments() {
     [recon, servicesOnlyClientIds, showServicesClients],
   );
 
-  // Anyone with no open client posting: fresh hires, plus office staff who could
-  // be moved onto a client. Separated records are never offered.
+  // Genuinely unplaced people only. Office staff and relievers already sit in
+  // their own group — they are assigned, just not to a client — so offering them
+  // here read as if they were spare. To move one onto a client, change their
+  // category first; they then land in this pool.
   const assignable = useMemo(
-    () => employees.filter((e) => !e.client_id && !isSeparatedState(e.lifecycle_state)),
+    () =>
+      employees.filter(
+        (e) =>
+          (e.category ?? "client") === "client" &&
+          !e.client_id &&
+          !isSeparatedState(e.lifecycle_state),
+      ),
     [employees],
   );
 
@@ -1940,18 +1948,22 @@ function UnassignModal({
           .select("id");
         if (depErr) throw fail(depErr.message);
 
-        // Older records can carry a client_id with no posting row behind it. With
-        // nothing to close the trigger never fires, so clear the mirror directly.
-        const orphaned = (closed ?? []).length === 0;
-
+        // Clear the mirror ourselves. sync_employee_active_client() deliberately
+        // does NOT null client_id when a posting closes (0153 keeps a separated
+        // guard attributed to their last client for payroll), so closing the row
+        // leaves employees.client_id pointing at the old client — which is why
+        // unassigning appeared to need two goes: the first closed the posting,
+        // and only the second, finding nothing left to close, cleared the field.
+        void closed;
         const { error: upErr } = await supabase
           .from("employees")
           .update({
+            client_id: null,
+            display_number: null,
             contract_id: null,
             contract_line_id: null,
             assignment_effective_from: null,
             assignment_effective_to: null,
-            ...(orphaned ? { client_id: null, display_number: null } : {}),
           })
           .eq("id", e.id);
         if (upErr) throw fail(upErr.message);

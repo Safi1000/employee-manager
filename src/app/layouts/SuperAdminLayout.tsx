@@ -122,7 +122,6 @@ export default function SuperAdminLayout() {
   const CLIENT_REL: LinkDef = { to: "/super-admin/client-relationships", label: "Client Relationships", icon: Users2, perms: ["clients.view", "clients.edit"] };
 
   // Consolidation restructure — merged / renamed / moved homes.
-  const RECRUITMENT: LinkDef = { to: "/super-admin/recruitment", label: "Recruitment", icon: UserPlus, perms: ["employees.view", "employees.edit"] };
   const RELIEVERS: LinkDef = { to: "/super-admin/relievers", label: "Relievers", icon: Shuffle, perms: ["attendance.view", "attendance.edit"] };
   const DAILY_REPORTS: LinkDef = { to: "/super-admin/daily-reports", label: "Daily Reports", icon: FileText, perms: ["roster.view", "roster.edit", "incidents.view", "attendance.view"] };
   const ASSETS_ISSUANCE: LinkDef = { to: "/super-admin/assets-issuance", label: "Assets & Issuance", icon: Package, perms: ["inventory.view", "inventory.edit", "accounting.view"] };
@@ -130,7 +129,6 @@ export default function SuperAdminLayout() {
   const ACCESS_GOVERNANCE: LinkDef = { to: "/super-admin/access-governance", label: "Access & Governance", icon: Users, perms: ["users.manage", "payroll.approve", "performance.approve", "accounting.edit"] };
   const PARTICIPATION_RULES: LinkDef = { to: "/super-admin/profit-distribution", label: "Participation Rules", icon: PieChart, perms: ["accounting.view", "accounting.edit"] };
   const RMD_STATEMENTS: LinkDef = { to: "/super-admin/partners", label: "RMD Statements", icon: Users2, perms: ["accounting.view", "accounting.edit"] };
-  const REGIONAL_PNL: LinkDef = { to: "/super-admin/treasury?tab=regional", label: "Regional P&L", icon: PieChart, perms: ["reports.view", "accounting.view"] };
 
   // Build groups, dropping any link the user lacks permission for. Drop the
   // group entirely if it ends up with no visible children.
@@ -187,13 +185,12 @@ export default function SuperAdminLayout() {
 
   // WORKFORCE — Payroll now hosts Runs as a tab; Relievers is one thin panel
   // (per-day cost nets against the client, separate from salaried Payroll).
+  // Recruitment removed; Performance hidden (route kept, just not in the nav).
   const workforce = buildGroup("Workforce", "/super-admin/workforce", [
     EMPLOYEES,
     ASSIGNMENTS,
-    RECRUITMENT,
     ATTENDANCE,
     PAYROLL,
-    PERFORMANCE,
     RELIEVERS,
   ]);
   if (workforce) links.push(workforce);
@@ -209,8 +206,7 @@ export default function SuperAdminLayout() {
   if (operations) links.push(operations);
 
   // FINANCE — Opening Balances + Chart of Accounts merged → Accounting Core;
-  // Receivables folded into Bank & Ledgers; Regional Scorecard moved →
-  // Profit-Share.
+  // Receivables folded into Bank & Ledgers. Treasury moved out to Profit-Share.
   const finance = buildGroup("Finance", "/super-admin/finance", [
     ACCOUNTING_CORE,
     BANKS,
@@ -218,34 +214,37 @@ export default function SuperAdminLayout() {
     CASHFLOW,
     REPORTS,
     PERIOD_CLOSE,
-    TREASURY,
   ]);
   if (finance) links.push(finance);
 
-  // PROFIT-SHARE (renamed from Partnership Finance) — Regional Scorecard moved
-  // in from Finance; Partner Accounts → RMD Statements; Profit Distribution →
-  // Participation Rules.
-  const profitShare = buildGroup("Profit-Share", "/super-admin/partnership", [
-    REGIONAL_PNL,
-    PARTICIPATION_RULES,
-    RMD_STATEMENTS,
-    REGIONAL_SCORECARD,
-    PROJECT_FIN,
-  ]);
+  // PROFIT-SHARE — hidden in its entirety. Treasury & Reserves lives here now,
+  // so it is hidden with the group; Regional P&L is gone outright, since it was
+  // the same Treasury screen reached through a tab. Every route still resolves
+  // if opened directly.
+  const PROFIT_SHARE_HIDDEN = true;
+  const profitShare = PROFIT_SHARE_HIDDEN
+    ? null
+    : buildGroup("Profit-Share", "/super-admin/partnership", [
+        TREASURY,
+        PARTICIPATION_RULES,
+        RMD_STATEMENTS,
+        REGIONAL_SCORECARD,
+        PROJECT_FIN,
+      ]);
   if (profitShare) links.push(profitShare);
 
   // COMPLIANCE
+  // Documents hidden (route kept).
   const compliance = buildGroup("Compliance", "/super-admin/comply", [
     LICENCES,
     COMPLIANCE,
     COMPLIANCE_CASES,
-    DOCUMENTS,
   ]);
   if (compliance) links.push(compliance);
 
   // ADMIN — Users & Permissions + Governance merged → Access & Governance.
+  // Alerts hidden (route kept).
   const admin = buildGroup("Admin", "/super-admin/admin", [
-    ALERTS,
     TASKS,
     ACCESS_GOVERNANCE,
     AUDIT_LOG,

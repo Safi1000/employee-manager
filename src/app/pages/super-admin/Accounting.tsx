@@ -116,6 +116,12 @@ export default function Accounting() {
   });
   const [chequeFormError, setChequeFormError] = useState<string | null>(null);
   const [chequeView, setChequeView] = useState<Cheque | null>(null);
+  // Bounce is a real form, not a browser prompt — it needs a reason field, the
+  // balance consequence spelled out, and a busy state while it saves.
+  const [bounceTarget, setBounceTarget] = useState<Cheque | null>(null);
+  const [bounceReason, setBounceReason] = useState("");
+  const [bounceSubmitting, setBounceSubmitting] = useState(false);
+  const [bounceError, setBounceError] = useState<string | null>(null);
   const [chequeViewItems, setChequeViewItems] = useState<{
     kind: "Payslip" | "Expense" | "Advance" | "Invoice Payment";
     description: string;
@@ -2647,7 +2653,11 @@ export default function Accounting() {
               {/* A failed cheque is BOUNCED, never deleted — the bank remembers
                   it either way, and a reconciliation with no trace of it is
                   unexplainable. The row stays with its history. */}
-                              {c.status !== "bounced" && (
+              {/* Only a PENDING cheque can bounce. A cleared one has settled —
+                  money moved, invoice payment recorded — so calling it bounced
+                  after the fact rewrites a settled event. Revert the clearance
+                  first; the two steps then stay separately audited. */}
+                              {c.status === "pending" && (
                                 <button
                                   type="button"
                                   className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-sm text-danger-700 hover:bg-danger-50"
@@ -2656,33 +2666,7 @@ export default function Accounting() {
                                       ? "Mark bounced — the payment never arrived"
                                       : "Mark bounced — the reserved amount returns to the bank"
                                   }
-                                  onClick={async () => {
-                                    const effect = isIncoming
-                                      ? c.status === "cleared"
-                                        ? `PKR ${Number(c.amount).toLocaleString()} will be taken back off ${bank?.bank_name ?? "the bank"}${isReceivables ? " and the client's outstanding balance restored" : ""}.`
-                                        : "No balance change — the bank was never credited."
-                                      : c.status === "cleared" && !isPayment
-                                        ? `PKR ${Number(c.amount).toLocaleString()} will be reversed out of Cash (Treasury) and restored to ${bank?.bank_name ?? "the bank"}.`
-                                        : `PKR ${Number(c.amount).toLocaleString()} will be restored to ${bank?.bank_name ?? "the bank"}.`;
-                                    const reason = window.prompt(
-                                      `Mark cheque #${c.cheque_number} as bounced?
-
-${effect}
-
-The cheque is kept with a bounced status.
-
-Reason (optional):`,
-                                      "",
-                                    );
-                                    // prompt returns null on Cancel; "" is a valid empty reason.
-                                    if (reason === null) return;
-                                    const { error: e } = await supabase
-                                      .from("cheques")
-                                      .update({ status: "bounced", bounce_reason: reason.trim() || null })
-                                      .eq("id", c.id);
-                                    if (e) { setError(e.message); return; }
-                                    await loadAll();
-                                  }}
+                                  onClick={() => { setBounceTarget(c); setBounceReason(""); setBounceError(null); }}
                                 >
                                   <Ban className="w-3.5 h-3.5" strokeWidth={1.5} />
                                   Bounced
@@ -3067,6 +3051,90 @@ Reason (optional):`,
             </Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        isOpen={!!bounceTarget}
+        error={bounceError}
+        onDismissError={() => setBounceError(null)}
+        onClose={() => setBounceTarget(null)}
+        title={bounceTarget ? `Bounce cheque #${bounceTarget.cheque_number}` : ""}
+        size="sm"
+      >
+        {bounceTarget && (() => {
+          const isIncoming = (bounceTarget.direction ?? "outgoing") === "incoming";
+          const bankName =
+            banks.find((b) => b.id === bounceTarget.bank_account_id)?.bank_name ?? "the bank";
+          const amount = `PKR ${Number(bounceTarget.amount).toLocaleString()}`;
+          return (
+            <form
+              className="space-y-4"
+              onSubmit={async (ev) => {
+                ev.preventDefault();
+                setBounceSubmitting(true);
+                setBounceError(null);
+                const { error: e } = await supabase
+                  .from("cheques")
+                  .update({ status: "bounced", bounce_reason: bounceReason.trim() || null })
+                  .eq("id", bounceTarget.id);
+                setBounceSubmitting(false);
+                if (e) { setBounceError(e.message); return; }
+                setBounceTarget(null);
+                await loadAll();
+              }}
+            >
+              <div className="rounded-md border border-danger-200 bg-danger-50 px-3 py-2.5 text-sm text-danger-800">
+                {isIncoming
+                  ? `No balance change — ${bankName} was never credited for this cheque.`
+                  : `${amount} returns to ${bankName}: the amount was reserved when the cheque was issued and the money never left.`}
+              </div>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p className="text-xs text-slate-500">Amount</p>
+                  <p className="text-slate-900">{amount}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Bank</p>
+                  <p className="text-slate-900">{bankName}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Date</p>
+                  <p className="text-slate-900">{formatDate(bounceTarget.cheque_date)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">{isIncoming ? "From" : "To"}</p>
+                  <p className="text-slate-900">{bounceTarget.recipient ?? "—"}</p>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Reason</label>
+                <textarea
+                  rows={3}
+                  autoFocus
+                  value={bounceReason}
+                  onChange={(ev) => setBounceReason(ev.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  placeholder="e.g. Insufficient funds, signature mismatch, stale-dated"
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  Optional, but it is what the bank statement will need explaining against later.
+                </p>
+              </div>
+              <p className="text-xs text-slate-500">
+                The cheque is kept and marked Bounced — it is never deleted, so the record still
+                matches the bank.
+              </p>
+              <div className="flex gap-2 pt-1">
+                <Button variant="danger" size="md" className="flex-1" disabled={bounceSubmitting}>
+                  {bounceSubmitting ? "Saving…" : "Mark Bounced"}
+                </Button>
+                <Button variant="secondary" size="md" onClick={() => setBounceTarget(null)}>
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          );
+        })()}
       </Modal>
 
       <Modal isOpen={!!chequeView} onClose={() => setChequeView(null)} title={chequeView ? `Cheque #${chequeView.cheque_number}` : ""} size="lg">

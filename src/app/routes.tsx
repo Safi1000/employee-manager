@@ -52,7 +52,6 @@ import PayrollHub from "./pages/super-admin/PayrollHub";
 import AssetsIssuance from "./pages/super-admin/AssetsIssuance";
 import AccountingCore from "./pages/super-admin/AccountingCore";
 import AccessGovernance from "./pages/super-admin/AccessGovernance";
-import Recruitment from "./pages/super-admin/Recruitment";
 import DailyReports from "./pages/super-admin/DailyReports";
 import IncidentsHub from "./pages/super-admin/IncidentsHub";
 import LicencesHub from "./pages/super-admin/LicencesHub";
@@ -120,8 +119,8 @@ export const router = createBrowserRouter([
       { path: "payroll", element: guard(["payroll.view", "payroll.edit"], <PayrollHub />) },
       { path: "payroll-runs", element: <Navigate to="/super-admin/payroll?tab=runs" replace /> },
       { path: "performance", element: guard(["payroll.view", "performance.approve"], <Performance />) },
-      // Recruitment: new Workforce home (Vacancies + intake), structure reserved.
-      { path: "recruitment", element: guard(["employees.view", "employees.edit"], <Recruitment />) },
+      // Recruitment page deleted — intake is set on the employee form itself.
+      { path: "recruitment", element: <Navigate to="/super-admin/employees" replace /> },
       // Relievers: one thin panel (per-day cost nets vs client), separate from salaried Payroll.
       { path: "relievers", element: guard(["attendance.view", "attendance.edit"], <AttendanceManagement relieversOnly />) },
       { path: "relievers/attendance", element: <Navigate to="/super-admin/relievers" replace /> },
