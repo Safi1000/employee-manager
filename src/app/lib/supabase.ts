@@ -601,6 +601,23 @@ export const CONTRACT_TYPE_LINE_CATEGORIES: Record<ContractType, ContractLineCat
   guard_deployment: ["SR_SUPERVISOR", "ASST_SUPERVISOR", "SUPERVISOR", "GUARD", "RELIEVER"],
 };
 
+/**
+ * Personnel vs hardware. Headcount arithmetic — committed vs active, slot caps,
+ * the strength reconciliation — only makes sense for people: nobody is "assigned"
+ * to a weapon, so counting a 3-weapon line as 3 unfilled guard slots reads as a
+ * shortfall that can never be closed.
+ */
+export const PERSONNEL_LINE_CATEGORIES: ContractLineCategory[] = [
+  "SR_SUPERVISOR",
+  "ASST_SUPERVISOR",
+  "SUPERVISOR",
+  "GUARD",
+  "RELIEVER",
+];
+export const HARDWARE_LINE_CATEGORIES: ContractLineCategory[] = ["WEAPON", "EQUIPMENT"];
+export const isPersonnelCategory = (c: ContractLineCategory) =>
+  PERSONNEL_LINE_CATEGORIES.includes(c);
+
 // Order categories appear in the default Contract Lines table.
 export const CONTRACT_LINE_CATEGORY_ORDER: ContractLineCategory[] = [
   "SR_SUPERVISOR",

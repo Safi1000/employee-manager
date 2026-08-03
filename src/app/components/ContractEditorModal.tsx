@@ -270,7 +270,14 @@ export default function ContractEditorModal({
   // a select showing a value it no longer offers.
   const onContractTypeChange = (next: ContractType) => {
     const valid = CONTRACT_TYPE_LINE_CATEGORIES[next];
-    setForm((f) => ({ ...f, contract_type: next }));
+    // Zero the shift split when moving to Services — the section is hidden there,
+    // and a stale "8 day guards" left behind on a weapons contract is exactly the
+    // kind of figure that later gets reported as real.
+    setForm((f) => ({
+      ...f,
+      contract_type: next,
+      ...(next === "services" ? { day_guards: "0", night_guards: "0", evening_guards: "0" } : {}),
+    }));
     setLines((prev) =>
       prev.map((l) => {
         if (valid.includes(l.category)) return l;
@@ -713,7 +720,10 @@ export default function ContractEditorModal({
         </div>
 
         {/* Shift detail — informational per-shift headcount. NOT the guard count
-            (that lives in Contract Lines below). Kept from main's schema. */}
+            (that lives in Contract Lines below). Kept from main's schema.
+            Hidden for a Services contract: it bills for weapons and equipment,
+            which nobody staffs, so a day/night/evening split is meaningless. */}
+        {form.contract_type !== "services" && (
         <div className="border border-slate-200 rounded-md p-3">
           <div className="flex items-baseline justify-between mb-2">
             <span className="text-sm font-medium text-slate-700">Shift detail</span>
@@ -740,6 +750,7 @@ export default function ContractEditorModal({
             </div>
           </div>
         </div>
+        )}
 
         {/* Contract Lines — per-category committed count + monthly rate */}
         <div className="border border-slate-200 rounded-md overflow-hidden">

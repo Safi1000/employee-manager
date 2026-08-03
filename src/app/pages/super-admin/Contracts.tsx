@@ -24,6 +24,8 @@ import {
   CONTRACT_STATUS_LABEL,
   CONTRACT_LINE_CATEGORY_LABEL,
   CONTRACT_LINE_CATEGORY_ORDER,
+  HARDWARE_LINE_CATEGORIES,
+  isPersonnelCategory,
   effectiveContractLinesValue,
   effectiveCommittedByCategory,
   effectiveContractEnd,
@@ -322,6 +324,7 @@ export default function Contracts() {
                   <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Period</th>
                   <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Committed by category</th>
                   <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Guards (active/allotted)</th>
+                  <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Weapons &amp; equipment</th>
                   <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Value/mo</th>
                   <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Status</th>
                   <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Document</th>
@@ -331,14 +334,14 @@ export default function Contracts() {
               <tbody className="divide-y divide-slate-200">
                 {loading && (
                   <tr>
-                    <td colSpan={10} className="px-4 py-10 text-center text-slate-500">
+                    <td colSpan={11} className="px-4 py-10 text-center text-slate-500">
                       <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                     </td>
                   </tr>
                 )}
                 {!loading && filteredRows.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="px-4 py-10 text-center text-slate-500 text-sm">
+                    <td colSpan={11} className="px-4 py-10 text-center text-slate-500 text-sm">
                       No contracts match the current filters.
                     </td>
                   </tr>
@@ -359,15 +362,24 @@ export default function Contracts() {
                   const committedByCat = effectiveCommittedByCategory(lines, addendums, today());
                   // Per-category ACTIVE from real contract-line assignments (Phase 4).
                   const activeByCat = activeCountByCategory(contractEmps, lineCategoryById, today());
+                  // Headcount totals count PEOPLE only. Weapons and equipment are
+                  // billed quantities with nobody to assign to them, so folding them
+                  // in read as a permanent, uncloseable guard shortfall.
                   let totalCommitted = 0;
-                  for (const n of committedByCat.values()) totalCommitted += n;
+                  let hardwareCommitted = 0;
+                  for (const [cat, n] of committedByCat) {
+                    if (isPersonnelCategory(cat)) totalCommitted += n;
+                    else hardwareCommitted += n;
+                  }
                   let activeGuards = 0;
-                  for (const n of activeByCat.values()) activeGuards += n;
+                  for (const [cat, n] of activeByCat) {
+                    if (isPersonnelCategory(cat)) activeGuards += n;
+                  }
                   // Monthly value with signed rate-change addendums applied.
                   const valuePerMonth = effectiveContractLinesValue(lines, addendums, today());
                   // Exceeded when any category's active exceeds its committed.
                   const overStaffed = [...activeByCat.entries()].some(
-                    ([cat, n]) => n > (committedByCat.get(cat) ?? 0),
+                    ([cat, n]) => isPersonnelCategory(cat) && n > (committedByCat.get(cat) ?? 0),
                   );
                   return (
                     <tr key={row.id} className={`hover:bg-slate-50 transition-colors ${overStaffed ? "bg-danger-50/40" : ""}`}>
@@ -408,7 +420,9 @@ export default function Contracts() {
                           <span className="text-slate-400 text-xs">No lines</span>
                         ) : (
                           <div className="flex flex-col gap-0.5">
-                            {CONTRACT_LINE_CATEGORY_ORDER.filter((cat) => committedByCat.has(cat)).map((cat) => {
+                            {CONTRACT_LINE_CATEGORY_ORDER.filter(
+                              (cat) => committedByCat.has(cat) && isPersonnelCategory(cat),
+                            ).map((cat) => {
                               const committed = committedByCat.get(cat) ?? 0;
                               const active = activeByCat.get(cat) ?? 0;
                               const over = active > committed;
@@ -421,15 +435,39 @@ export default function Contracts() {
                                 </span>
                               );
                             })}
+                            {/* A hardware-only contract has no personnel lines at all. */}
+                            {![...committedByCat.keys()].some(isPersonnelCategory) && (
+                              <span className="text-xs text-slate-400">No personnel lines</span>
+                            )}
                           </div>
                         )}
                       </td>
                       <td className="px-4 py-3 text-sm text-right">
-                        <span className={overStaffed ? "text-danger-700 font-medium" : "text-slate-900"}>
-                          {activeGuards} / {totalCommitted}
-                        </span>
-                        {overStaffed && (
-                          <div className="text-[10px] text-danger-600">over by {activeGuards - totalCommitted}</div>
+                        {totalCommitted === 0 && activeGuards === 0 ? (
+                          <span className="text-slate-400 text-xs">—</span>
+                        ) : (
+                          <>
+                            <span className={overStaffed ? "text-danger-700 font-medium" : "text-slate-900"}>
+                              {activeGuards} / {totalCommitted}
+                            </span>
+                            {overStaffed && (
+                              <div className="text-[10px] text-danger-600">over by {activeGuards - totalCommitted}</div>
+                            )}
+                          </>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right">
+                        {hardwareCommitted === 0 ? (
+                          <span className="text-slate-400 text-xs">—</span>
+                        ) : (
+                          <div className="flex flex-col items-end gap-0.5">
+                            {HARDWARE_LINE_CATEGORIES.filter((cat) => committedByCat.has(cat)).map((cat) => (
+                              <span key={cat} className="text-xs">
+                                <span className="text-slate-500">{CONTRACT_LINE_CATEGORY_LABEL[cat]}:</span>{" "}
+                                <span className="text-slate-900 font-medium">{committedByCat.get(cat) ?? 0}</span>
+                              </span>
+                            ))}
+                          </div>
                         )}
                       </td>
                       <td className="px-4 py-3 text-sm text-right text-slate-900">
