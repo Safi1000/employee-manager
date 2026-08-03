@@ -13,7 +13,6 @@ import {
 import { useAuth } from "../../lib/auth";
 import { THEME_OPTIONS, DEFAULT_THEME, applyTheme, type ThemeKey } from "../../lib/theme";
 
-type LocationRow = { id: string; name: string; employees: number };
 type BranchRow = { id: string; name: string; is_head_office: boolean; employees: number };
 type ClientRow = {
   id: string;
@@ -125,7 +124,6 @@ export default function Settings() {
     }
   };
 
-  const [locations, setLocations] = useState<LocationRow[]>([]);
   const [branches, setBranches] = useState<BranchRow[]>([]);
   const [branchAddOpen, setBranchAddOpen] = useState(false);
   const [newBranchName, setNewBranchName] = useState("");
@@ -136,10 +134,6 @@ export default function Settings() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [locAddOpen, setLocAddOpen] = useState(false);
-  const [newLocName, setNewLocName] = useState("");
-  const [locEditingId, setLocEditingId] = useState<string | null>(null);
-  const [locEditingName, setLocEditingName] = useState("");
 
   const [clientAddOpen, setClientAddOpen] = useState(false);
   const [newClientName, setNewClientName] = useState("");
@@ -296,9 +290,8 @@ export default function Settings() {
   const loadAll = async () => {
     setLoading(true);
     setError(null);
-    const [empRes, locRes, cliRes, brRes] = await Promise.all([
-      supabase.from("employees").select("location_id, client_id, branch_id"),
-      supabase.from("locations").select("id, name").order("name"),
+    const [empRes, cliRes, brRes] = await Promise.all([
+      supabase.from("employees").select("client_id, branch_id"),
       supabase
         .from("clients")
         .select("id, client_code, name, email, phone, allowed_leaves_per_month, client_type, leave_carry_forward, eobi_enabled, eobi_amount, branch_id, auto_invoice_enabled, auto_invoice_amount, auto_invoice_withholding, contract_start, contract_end, advance_payment, contract_drive_file_id, contract_drive_view_url, contract_file_name")
@@ -310,11 +303,9 @@ export default function Settings() {
         .order("name"),
     ]);
 
-    const locCounts: Record<string, number> = {};
     const cliCounts: Record<string, number> = {};
     const brCounts: Record<string, number> = {};
     (empRes.data ?? []).forEach((e: any) => {
-      if (e.location_id) locCounts[e.location_id] = (locCounts[e.location_id] ?? 0) + 1;
       if (e.client_id) cliCounts[e.client_id] = (cliCounts[e.client_id] ?? 0) + 1;
       if (e.branch_id) brCounts[e.branch_id] = (brCounts[e.branch_id] ?? 0) + 1;
     });
@@ -327,16 +318,8 @@ export default function Settings() {
       })),
     );
 
-    if (locRes.error) setError(locRes.error.message);
     if (cliRes.error) setError(cliRes.error.message);
 
-    setLocations(
-      (locRes.data ?? []).map((r: any) => ({
-        id: r.id,
-        name: r.name,
-        employees: locCounts[r.id] ?? 0,
-      }))
-    );
     setClients(
       (cliRes.data ?? []).map((r: any) => ({
         id: r.id,
@@ -370,389 +353,6 @@ export default function Settings() {
     loadAll();
     loadNotificationSettings();
   }, []);
-
-  const handleAddLocation = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newLocName.trim()) return;
-    setSubmitting(true);
-    setError(null);
-    const { error: insErr } = await supabase.from("locations").insert({ name: newLocName.trim() });
-    setSubmitting(false);
-    if (insErr) {
-      setError(insErr.message);
-      return;
-    }
-    setNewLocName("");
-    setLocAddOpen(false);
-    await loadAll();
-  };
-
-  const handleSaveLocationEdit = async (id: string) => {
-    if (!locEditingName.trim()) return;
-    const { error: upErr } = await supabase
-      .from("locations")
-      .update({ name: locEditingName.trim() })
-      .eq("id", id);
-    if (upErr) {
-      setError(upErr.message);
-      return;
-    }
-    setLocEditingId(null);
-    setLocEditingName("");
-    await loadAll();
-  };
-
-  const handleDeleteLocation = async (row: LocationRow) => {
-    const msg =
-      row.employees > 0
-        ? `Delete "${row.name}"? ${row.employees} employee${row.employees === 1 ? "" : "s"} assigned to this location will have their location cleared.`
-        : `Delete "${row.name}"?`;
-    if (!window.confirm(msg)) return;
-    const { error: delErr } = await supabase.from("locations").delete().eq("id", row.id);
-    if (delErr) {
-      setError(delErr.message);
-      return;
-    }
-    await loadAll();
-  };
-
-  const handleAddClient = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newClientName.trim()) return;
-    setSubmitting(true);
-    setError(null);
-    const { error: insErr } = await supabase.from("clients").insert({
-      name: newClientName.trim(),
-      email: newClientEmail.trim() || null,
-      phone: newClientPhone.trim() || null,
-      allowed_leaves_per_month: Math.max(0, Math.floor(Number(newClientAllowedLeaves) || 0)),
-      client_type: newClientType,
-      leave_carry_forward: newClientCarry,
-      eobi_enabled: newClientEobiOn,
-      eobi_amount: newClientEobiOn ? Math.max(0, Number(newClientEobiAmt) || 0) : 0,
-      branch_id: newClientBranchId || null,
-      auto_invoice_enabled: newClientAutoInv,
-      auto_invoice_amount: newClientAutoInv ? Math.max(0, Number(newClientAutoAmt) || 0) : 0,
-      auto_invoice_withholding: newClientAutoInv ? Math.max(0, Number(newClientAutoWht) || 0) : 0,
-      contract_start: newClientContractStart || null,
-      contract_end: newClientContractEnd || null,
-      advance_payment: newClientAdvancePayment,
-    });
-    setSubmitting(false);
-    if (insErr) {
-      setError(insErr.message);
-      return;
-    }
-    setNewClientName("");
-    setNewClientEmail("");
-    setNewClientPhone("");
-    setNewClientAllowedLeaves(0);
-    setNewClientType("security_services");
-    setNewClientCarry(false);
-    setNewClientEobiOn(false);
-    setNewClientEobiAmt(0);
-    setNewClientBranchId("");
-    setNewClientAutoInv(false);
-    setNewClientAutoAmt(0);
-    setNewClientAutoWht(0);
-    setNewClientContractStart("");
-    setNewClientContractEnd("");
-    setNewClientAdvancePayment(false);
-    setClientAddOpen(false);
-    await loadAll();
-  };
-
-  const openClientEdit = (row: ClientRow) => {
-    setClientEditingId(row.id);
-    setEditClientName(row.name);
-    setEditClientEmail(row.email ?? "");
-    setEditClientPhone(row.phone ?? "");
-    setEditClientAllowedLeaves(row.allowed_leaves_per_month ?? 0);
-    setEditClientType(row.client_type ?? "security_services");
-    setEditClientCarry(!!row.leave_carry_forward);
-    setEditClientEobiOn(!!row.eobi_enabled);
-    setEditClientEobiAmt(Number(row.eobi_amount ?? 0));
-    setEditClientBranchId(row.branch_id ?? "");
-    setEditClientAutoInv(!!row.auto_invoice_enabled);
-    setEditClientAutoAmt(Number(row.auto_invoice_amount ?? 0));
-    setEditClientAutoWht(Number(row.auto_invoice_withholding ?? 0));
-    setEditClientContractStart(row.contract_start ?? "");
-    setEditClientContractEnd(row.contract_end ?? "");
-    setEditClientAdvancePayment(!!row.advance_payment);
-  };
-
-  const handleSaveClientEdit = async (id: string) => {
-    if (!editClientName.trim()) return;
-    const { error: upErr } = await supabase
-      .from("clients")
-      .update({
-        name: editClientName.trim(),
-        email: editClientEmail.trim() || null,
-        phone: editClientPhone.trim() || null,
-        allowed_leaves_per_month: Math.max(0, Math.floor(Number(editClientAllowedLeaves) || 0)),
-        client_type: editClientType,
-        leave_carry_forward: editClientCarry,
-        eobi_enabled: editClientEobiOn,
-        eobi_amount: editClientEobiOn ? Math.max(0, Number(editClientEobiAmt) || 0) : 0,
-        branch_id: editClientBranchId || null,
-        auto_invoice_enabled: editClientAutoInv,
-        auto_invoice_amount: editClientAutoInv ? Math.max(0, Number(editClientAutoAmt) || 0) : 0,
-        auto_invoice_withholding: editClientAutoInv ? Math.max(0, Number(editClientAutoWht) || 0) : 0,
-        contract_start: editClientContractStart || null,
-        contract_end: editClientContractEnd || null,
-        advance_payment: editClientAdvancePayment,
-      })
-      .eq("id", id);
-    if (upErr) {
-      setError(upErr.message);
-      return;
-    }
-    setClientEditingId(null);
-    await loadAll();
-  };
-
-  // Upload (or replace) the contract document for a client. The file is stored
-  // on Google Drive under <Company>/Contracts/<code> - <name>/, and the file
-  // ID + view URL are persisted on the clients row. Replacing an existing
-  // contract deletes the previous Drive file so we don't accumulate orphans.
-  const uploadContract = async (row: ClientRow, file: File) => {
-    // SSA users have profile.company_id = null but get the active company via
-    // view_as_company. Use whichever ID actually backs the loaded `company`.
-    const effectiveCompanyId =
-      profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
-    if (!effectiveCompanyId || !company?.name) {
-      setContractError("Company not loaded — refresh and try again.");
-      return;
-    }
-    setContractUploadingId(row.id);
-    setContractError(null);
-    try {
-      const form = new FormData();
-      form.append("file", file);
-      form.append("category", "contracts");
-      form.append("company_id", effectiveCompanyId);
-      form.append("company_name", company.name);
-      form.append("entity_id", row.id);
-      form.append("entity_code", row.client_code);
-      form.append("entity_name", row.name);
-
-      const { data, error: fnErr } = await supabase.functions.invoke("gdrive-upload", {
-        body: form,
-      });
-      if (fnErr) {
-        // Surface the actual error body from the function rather than the
-        // generic "non-2xx" wrapper that supabase-js returns.
-        let detail = fnErr.message;
-        const ctx = (fnErr as { context?: Response }).context;
-        if (ctx) {
-          try { detail = (await ctx.clone().json())?.error ?? detail; } catch { /* ignore */ }
-        }
-        throw new Error(detail);
-      }
-      const result = data as { drive_file_id: string; drive_view_url: string; file_name: string };
-
-      // Delete the old file (if any) only after the new upload succeeds, so a
-      // failed re-upload doesn't leave the client with no contract.
-      const previousFileId = row.contract_drive_file_id;
-
-      const { error: upErr } = await supabase
-        .from("clients")
-        .update({
-          contract_drive_file_id: result.drive_file_id,
-          contract_drive_view_url: result.drive_view_url,
-          contract_file_name: result.file_name,
-        })
-        .eq("id", row.id);
-      if (upErr) throw upErr;
-
-      if (previousFileId) {
-        await supabase.functions
-          .invoke("gdrive-delete", { body: { drive_file_id: previousFileId } })
-          .catch(() => { /* best effort — file may already be gone */ });
-      }
-      await loadAll();
-    } catch (e: any) {
-      setContractError(e?.message ?? String(e));
-    } finally {
-      setContractUploadingId(null);
-    }
-  };
-
-  const removeContract = async (row: ClientRow) => {
-    if (!row.contract_drive_file_id) return;
-    setContractUploadingId(row.id);
-    setContractError(null);
-    try {
-      await supabase.functions
-        .invoke("gdrive-delete", { body: { drive_file_id: row.contract_drive_file_id } })
-        .catch(() => { /* idempotent */ });
-      const { error: upErr } = await supabase
-        .from("clients")
-        .update({
-          contract_drive_file_id: null,
-          contract_drive_view_url: null,
-          contract_file_name: null,
-        })
-        .eq("id", row.id);
-      if (upErr) throw upErr;
-      await loadAll();
-    } catch (e: any) {
-      setContractError(e?.message ?? String(e));
-    } finally {
-      setContractUploadingId(null);
-    }
-  };
-
-  const openRenewModal = async (row: ClientRow) => {
-    setRenewClient(row);
-    setRenewStart("");
-    setRenewEnd("");
-    setRenewNotes("");
-    setRenewHistory([]);
-    // Fetch history for this client (most recent first).
-    const { data: hist } = await supabase
-      .from("client_contract_history")
-      .select("id, contract_start, contract_end, notes, renewed_at")
-      .eq("client_id", row.id)
-      .order("renewed_at", { ascending: false })
-      .limit(10);
-    setRenewHistory((hist ?? []) as typeof renewHistory);
-  };
-
-  const handleSubmitRenew = async () => {
-    if (!renewClient) return;
-    if (!renewStart || !renewEnd) {
-      setError("Pick both a new start and end date for the renewal.");
-      return;
-    }
-    if (renewEnd < renewStart) {
-      setError("Contract end must be on or after the contract start.");
-      return;
-    }
-    setRenewSubmitting(true);
-    try {
-      // Snapshot the current contract period to history (if there is one).
-      if (renewClient.contract_start || renewClient.contract_end) {
-        const { error: histErr } = await supabase.from("client_contract_history").insert({
-          client_id: renewClient.id,
-          contract_start: renewClient.contract_start,
-          contract_end: renewClient.contract_end,
-          notes: renewNotes.trim() || null,
-        });
-        if (histErr) throw histErr;
-      }
-      // Update client with new dates.
-      const { error: upErr } = await supabase
-        .from("clients")
-        .update({ contract_start: renewStart, contract_end: renewEnd })
-        .eq("id", renewClient.id);
-      if (upErr) throw upErr;
-      setRenewClient(null);
-      await loadAll();
-    } catch (e: any) {
-      setError(e?.message ?? String(e));
-    } finally {
-      setRenewSubmitting(false);
-    }
-  };
-
-  const handleDeleteClient = async (row: ClientRow) => {
-    const msg =
-      row.employees > 0
-        ? `Delete "${row.name}"? ${row.employees} employee${row.employees === 1 ? "" : "s"} assigned to this client will have their client cleared.`
-        : `Delete "${row.name}"?`;
-    if (!window.confirm(msg)) return;
-    const { error: delErr } = await supabase.from("clients").delete().eq("id", row.id);
-    if (delErr) {
-      setError(delErr.message);
-      return;
-    }
-    await loadAll();
-  };
-
-  const renderLocations = () => (
-    <div className="bg-white rounded-lg border border-slate-200 p-4 md:p-6">
-      <div className="flex items-center justify-between gap-3 mb-6">
-        <h3 className="text-base text-slate-900">Location Management</h3>
-        <Button variant="primary" size="sm" onClick={() => setLocAddOpen(true)} className="whitespace-nowrap flex-shrink-0">
-          <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
-          Add Location
-        </Button>
-      </div>
-      {/* Same scroll behaviour as Regional Management, so a long list can't push the
-          rest of the page down. */}
-      <div className="space-y-3 max-h-[40vh] overflow-y-auto pr-1">
-        {loading && (
-          <div className="text-sm text-slate-500 flex items-center gap-2">
-            <Loader2 className="w-4 h-4 animate-spin" /> Loading…
-          </div>
-        )}
-        {!loading && locations.length === 0 && (
-          <p className="text-sm text-slate-500">No locations yet. Add one to get started.</p>
-        )}
-        {!loading &&
-          locations.map((row) => (
-            <div
-              key={row.id}
-              className="p-4 border border-slate-200 rounded-lg flex items-center justify-between"
-            >
-              {locEditingId === row.id ? (
-                <>
-                  <input
-                    autoFocus
-                    value={locEditingName}
-                    onChange={(e) => setLocEditingName(e.target.value)}
-                    className="flex-1 mr-3 px-3 py-1.5 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
-                  />
-                  <div className="flex gap-2">
-                    <Button variant="primary" size="sm" onClick={() => handleSaveLocationEdit(row.id)}>
-                      Save
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setLocEditingId(null);
-                        setLocEditingName("");
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div>
-                    <p className="text-sm text-slate-900">{row.name}</p>
-                    <p className="text-xs text-slate-500 mt-1">{row.employees} employees</p>
-                  </div>
-                  <div className="flex gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setLocEditingId(row.id);
-                        setLocEditingName(row.name);
-                      }}
-                    >
-                      Edit
-                    </Button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteLocation(row)}
-                      className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-danger-700 hover:bg-danger-50"
-                      title="Delete location"
-                    >
-                      <Trash2 className="w-4 h-4" strokeWidth={1.5} />
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          ))}
-      </div>
-    </div>
-  );
 
   const handleAddBranch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -907,7 +507,7 @@ export default function Settings() {
     <>
       <Header
         title="Settings"
-        subtitle="Locations, regions and dashboard widgets"
+        subtitle="Branches, regions and dashboard widgets"
       />
 
       <div className="flex-1 overflow-y-auto p-8">
@@ -990,8 +590,7 @@ export default function Settings() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          {renderLocations()}
+        <div className="grid grid-cols-1 gap-6 mb-6">
           {renderBranches()}
         </div>
 
@@ -1124,48 +723,6 @@ export default function Settings() {
           </div>
         )}
       </div>
-
-      <Modal
-        isOpen={locAddOpen}
-        error={error}
-        onDismissError={() => setError(null)}
-        onClose={() => {
-          setLocAddOpen(false);
-          setNewLocName("");
-        }}
-        title="Add Location"
-        size="sm"
-      >
-        <form className="space-y-4" onSubmit={handleAddLocation}>
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Location Name</label>
-            <input
-              required
-              autoFocus
-              type="text"
-              value={newLocName}
-              onChange={(e) => setNewLocName(e.target.value)}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-              placeholder="e.g., F-10 Islamabad"
-            />
-          </div>
-          <div className="flex items-center gap-3 pt-4">
-            <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
-              {submitting ? "Saving…" : "Add Location"}
-            </Button>
-            <Button
-              variant="secondary"
-              size="md"
-              onClick={() => {
-                setLocAddOpen(false);
-                setNewLocName("");
-              }}
-            >
-              Cancel
-            </Button>
-          </div>
-        </form>
-      </Modal>
 
       <Modal
         isOpen={branchAddOpen}

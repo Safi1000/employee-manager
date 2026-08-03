@@ -103,12 +103,19 @@ const varianceBadge = (v: number) => {
   return "bg-warning-50 text-warning-800 dark:text-warning-500 border-warning-200";
 };
 
+/** Where an "Assign employees" click is sending people. */
+type AssignTarget =
+  | { kind: "client"; id: string; name: string }
+  | { kind: "category"; category: "office_staff" | "reliever"; name: string };
+
 /** A group of employees shown as one collapsible card. */
 type Group = {
   key: string;
   label: string;
-  /** Set for a real client group; null for the category / unassigned buckets. */
+  /** Set for a real client group; null for the category buckets. */
   clientId: string | null;
+  /** Set for the Office Staff / Relievers buckets — what assigning here means. */
+  categoryKey?: "office_staff" | "reliever";
   hint: string;
   rows: EmployeeRow[];
   /** Only set for client groups that appear in the reconciliation view. */
@@ -188,9 +195,8 @@ export default function EmployeeAssignments() {
 
   const [bulkGroup, setBulkGroup] = useState<Group | null>(null);
   const [rowTarget, setRowTarget] = useState<EmployeeRow | null>(null);
-  const [assignToClient, setAssignToClient] = useState<{ id: string; name: string } | null>(null);
+  const [assignTo, setAssignTo] = useState<AssignTarget | null>(null);
   const [unassignFrom, setUnassignFrom] = useState<{ group: Group; rows: EmployeeRow[] } | null>(null);
-  const [poolOpen, setPoolOpen] = useState(false);
   const [changeClientTarget, setChangeClientTarget] = useState<EmployeeRow | null>(null);
   const [changeCategoryTarget, setChangeCategoryTarget] = useState<EmployeeRow | null>(null);
   const [changeShiftTarget, setChangeShiftTarget] = useState<EmployeeRow | null>(null);
@@ -335,10 +341,17 @@ export default function EmployeeAssignments() {
     }));
     out.sort((a, b) => a.label.localeCompare(b.label));
 
-    if (office.length)
-      out.push({ key: "office", label: "Office Staff", clientId: null, hint: "No client posting", rows: office });
-    if (relievers.length)
-      out.push({ key: "relievers", label: "Relievers", clientId: null, hint: "Relief pool", rows: relievers });
+    // Always present, empty or not: they are assignment targets in their own
+    // right, so hiding them when nobody is in them would leave no way to put the
+    // first person there.
+    out.push({
+      key: "office", label: "Office Staff", clientId: null, categoryKey: "office_staff",
+      hint: "No client posting", rows: office,
+    });
+    out.push({
+      key: "relievers", label: "Relievers", clientId: null, categoryKey: "reliever",
+      hint: "Relief pool", rows: relievers,
+    });
     let visibleGroups = showServicesClients
       ? out
       : out.filter((g) => !(g.clientId && servicesOnlyClientIds.has(g.clientId)));
@@ -482,16 +495,6 @@ export default function EmployeeAssignments() {
               value: totals.mismatched,
               icon: AlertCircle,
               tint: totals.mismatched > 0 ? "text-warning-600 dark:text-warning-500" : "text-success-600 dark:text-success-500",
-            },
-            {
-              label: "Awaiting a client",
-              value: assignable.length,
-              icon: UserPlus,
-              tint: assignable.length > 0 ? "text-warning-600 dark:text-warning-500" : "text-muted-foreground",
-              // Clickable: without a group of their own, this is the ONLY way to
-              // open an unassigned employee's record.
-              hint: assignable.length > 0 ? "Open the list — edit or assign them" : undefined,
-              onClick: assignable.length > 0 ? () => setPoolOpen(true) : undefined,
             },
           ].map((t) => {
             const onClick = "onClick" in t ? (t.onClick as (() => void) | undefined) : undefined;
@@ -640,13 +643,19 @@ export default function EmployeeAssignments() {
                   <span className="text-xs text-muted-foreground tabular-nums hidden sm:inline">
                     {money(monthly)}/mo
                   </span>
-                  {canEdit && g.clientId && (
+                  {canEdit && (g.clientId || g.categoryKey) && (
                     <Button
                       variant="secondary"
                       size="sm"
                       disabled={assignable.length === 0}
                       title={assignable.length === 0 ? "No unassigned employees" : undefined}
-                      onClick={() => setAssignToClient({ id: g.clientId!, name: g.label })}
+                      onClick={() =>
+                        setAssignTo(
+                          g.clientId
+                            ? { kind: "client", id: g.clientId, name: g.label }
+                            : { kind: "category", category: g.categoryKey!, name: g.label },
+                        )
+                      }
                     >
                       <UserPlus className="w-4 h-4 mr-1.5" strokeWidth={1.75} />
                       Assign employees
@@ -794,27 +803,17 @@ export default function EmployeeAssignments() {
         />
       )}
 
-      {assignToClient && (
+      {assignTo && (
         <AssignEmployeesModal
-          client={assignToClient}
+          target={assignTo}
           candidates={assignable}
           contractsForClient={contractsForClient}
           linesForContract={linesForContract}
           addendums={addendums}
           allEmployees={employees}
-          onClose={() => setAssignToClient(null)}
-          onDone={async (msg) => { setAssignToClient(null); setNotice(msg); await loadData(); }}
+          onClose={() => setAssignTo(null)}
+          onDone={async (msg) => { setAssignTo(null); setNotice(msg); await loadData(); }}
           onError={setError}
-        />
-      )}
-
-      {poolOpen && (
-        <PoolModal
-          employees={assignable}
-          canEdit={canEdit}
-          displayCodeFor={displayCodeFor}
-          onClose={() => setPoolOpen(false)}
-          onEdit={(e) => { setPoolOpen(false); setRowTarget(e); }}
         />
       )}
 
@@ -1450,10 +1449,10 @@ function RowEditModal({
 // different action ("Change client") and still goes through the RPC.
 // ─────────────────────────────────────────────────────────────────────────────
 function AssignEmployeesModal({
-  client, candidates, contractsForClient, linesForContract, addendums, allEmployees,
+  target, candidates, contractsForClient, linesForContract, addendums, allEmployees,
   onClose, onDone, onError,
 }: {
-  client: { id: string; name: string };
+  target: AssignTarget;
   candidates: EmployeeRow[];
   contractsForClient: (clientId: string) => Contract[];
   linesForContract: (contractId: string) => ContractLine[];
@@ -1475,9 +1474,12 @@ function AssignEmployeesModal({
   const [progress, setProgress] = useState(0);
   const [err, setErr] = useState<string | null>(null);
 
+  // Office Staff and Relievers hold no client posting, so there is no contract,
+  // no line and nothing to cap — the slot machinery is client-only.
+  const toClient = target.kind === "client";
   // Contract → line → how many slots are left. A client can hold several
   // contracts, so the contract has to be chosen before its lines mean anything.
-  const clientContracts = contractsForClient(client.id);
+  const clientContracts = toClient ? contractsForClient(target.id) : [];
   const lines = useMemo(
     () => (contractId ? linesForContract(contractId) : []),
     [contractId, linesForContract],
@@ -1554,8 +1556,8 @@ function AssignEmployeesModal({
     const targets = candidates.filter((e) => picked.has(e.id));
     if (targets.length === 0) { setErr("Pick at least one employee."); return; }
     if (!startDate) { setErr("Pick a start date."); return; }
-    if (clientContracts.length > 0 && !contractId) { setErr("Choose which contract this posting is under."); return; }
-    if (lines.length > 0 && !contractLineId) { setErr("Choose a contract line — it sets the category and its headcount limit."); return; }
+    if (toClient && clientContracts.length > 0 && !contractId) { setErr("Choose which contract this posting is under."); return; }
+    if (toClient && lines.length > 0 && !contractLineId) { setErr("Choose a contract line — it sets the category and its headcount limit."); return; }
     // Re-check against the live figures: the cap also guards the checkboxes, but
     // the committed count can move (an addendum, another operator) between the
     // dialog opening and Assign being pressed.
@@ -1578,16 +1580,51 @@ function AssignEmployeesModal({
     setProgress(0);
     try {
       // The client's default site, resolved once for the whole batch.
-      const { data: defSite } = await supabase
-        .from("sites").select("id")
-        .eq("client_id", client.id).eq("is_default", true).maybeSingle();
-      const siteId = (defSite as { id?: string } | null)?.id ?? null;
+      let siteId: string | null = null;
+      if (toClient) {
+        const { data: defSite } = await supabase
+          .from("sites").select("id")
+          .eq("client_id", target.id).eq("is_default", true).maybeSingle();
+        siteId = (defSite as { id?: string } | null)?.id ?? null;
+      }
 
       // Sequential: each employee needs its own posting row, code and salary seed,
       // and a failure part-way must name the person it stopped on.
       for (let i = 0; i < targets.length; i++) {
         const e = targets[i];
         const fail = (m: string) => new Error(`${e.full_name}: ${m}`);
+
+        if (!toClient) {
+          // change_category closes any open posting the day before, clears the
+          // client mirrors and sets the new category — the same dated path the
+          // "Change category" action uses, so history is handled identically, and
+          // it is fine for someone who never had a posting at all.
+          const { error: catErr } = await supabase.rpc("change_category", {
+            p_guard_id: e.id,
+            p_new_category: target.category,
+            p_new_client_id: null,
+            p_contract_line_id: null,
+            p_effective_date: startDate,
+          });
+          if (catErr) throw fail(catErr.message);
+          if (shift) {
+            const { error: shErr } = await supabase.from("employees").update({ shift }).eq("id", e.id);
+            if (shErr) throw fail(shErr.message);
+          }
+          if (base != null) {
+            const { error: salErr } = await supabase.rpc("set_employee_salary", {
+              p_employee_id: e.id,
+              p_effective_date: startDate,
+              p_base_salary: base,
+              p_allowance: allowance ? Math.max(0, Number(allowance)) : 0,
+              p_per_day_salary: base / daysInCurrentMonth(),
+              p_reason: "Initial salary",
+            });
+            if (salErr) throw fail(salErr.message);
+          }
+          setProgress(i + 1);
+          continue;
+        }
 
         // Category and shift are plain columns until the first posting exists.
         const { error: upErr } = await supabase
@@ -1613,7 +1650,7 @@ function AssignEmployeesModal({
         // a later shift change would repaint every earlier day with the new shift.
         const { error: depErr } = await supabase.from("deployments").insert({
           guard_id: e.id,
-          client_id: client.id,
+          client_id: target.id,
           contract_line_id: contractLineId || null,
           site_id: siteId,
           start_date: startDate,
@@ -1646,7 +1683,7 @@ function AssignEmployeesModal({
         setProgress(i + 1);
       }
       await onDone(
-        `${targets.length} employee${targets.length === 1 ? "" : "s"} assigned to ${client.name}.`,
+        `${targets.length} employee${targets.length === 1 ? "" : "s"} assigned to ${target.name}.`,
       );
     } catch (e: any) {
       const m = e.message ?? String(e);
@@ -1663,7 +1700,7 @@ function AssignEmployeesModal({
       error={err}
       onDismissError={() => setErr(null)}
       onClose={onClose}
-      title={`Assign employees to ${client.name}`}
+      title={`Assign employees to ${target.name}`}
       size="lg"
       footer={
         <div className="flex items-center justify-between gap-2">
@@ -1681,6 +1718,7 @@ function AssignEmployeesModal({
       }
     >
       <div className="space-y-5">
+        {toClient && (
         <div>
           <h4 className="text-sm font-medium text-foreground mb-2">Which contract</h4>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1743,6 +1781,7 @@ function AssignEmployeesModal({
             </p>
           )}
         </div>
+        )}
 
         <div>
           <div className="flex flex-wrap items-center gap-2 mb-2">
@@ -1815,12 +1854,13 @@ function AssignEmployeesModal({
         <div className="pt-4 border-t border-border">
           <h4 className="text-sm font-medium text-foreground mb-1">Applies to everyone selected</h4>
           <p className="text-xs text-muted-foreground mb-3">
-            This is each person's first posting, so it also issues their permanent guard code and
-            their client number. Pay can be left blank and set later with Bulk edit.
+            {toClient
+              ? "This is each person's first posting, so it also issues their permanent guard code and their client number. Pay can be left blank and set later with Bulk edit."
+              : `They move to ${target.name} from the date below. No client posting is created, so no client number is issued. Pay can be left blank and set later with Bulk edit.`}
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-muted-foreground mb-1">Start date</label>
+              <label className="block text-xs text-muted-foreground mb-1">{toClient ? "Start date" : "Effective date"}</label>
               <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className={inputCls} />
             </div>
             <div>
@@ -1989,115 +2029,6 @@ function UnassignModal({
           To end someone's employment altogether, use Fire on the Employees page instead — this only
           removes the client posting.
         </p>
-      </div>
-    </Modal>
-  );
-}
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// The unassigned pool.
-//
-// People with no client posting deliberately have no card of their own — you
-// assign from a client, not from a limbo list. But their record still has to be
-// reachable: category, shift, location, branch, department and joining date are
-// all set here, and for someone never posted, category is an ordinary column
-// they can just pick (an already-posted guard changes it through the dated
-// change_category flow instead). Without this dialog an unassigned employee had
-// no editor at all.
-// ─────────────────────────────────────────────────────────────────────────────
-function PoolModal({
-  employees, canEdit, displayCodeFor, onClose, onEdit,
-}: {
-  employees: EmployeeRow[];
-  canEdit: boolean;
-  displayCodeFor: (e: EmployeeRow) => string;
-  onClose: () => void;
-  onEdit: (e: EmployeeRow) => void;
-}) {
-  const [search, setSearch] = useState("");
-
-  const shown = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return employees;
-    return employees.filter(
-      (e) =>
-        e.full_name.toLowerCase().includes(q) ||
-        (e.employee_code ?? "").toLowerCase().includes(q) ||
-        (e.guard_code ?? "").toLowerCase().includes(q) ||
-        (e.cnic_number ?? "").toLowerCase().includes(q) ||
-        (e.phone ?? "").toLowerCase().includes(q),
-    );
-  }, [employees, search]);
-
-  const inputCls = "w-full px-3 py-2 border border-border rounded-md text-sm bg-card";
-  return (
-    <Modal
-      isOpen
-      onClose={onClose}
-      title="Employees awaiting a client"
-      size="lg"
-      footer={
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-xs text-muted-foreground">
-            {employees.length} employee{employees.length === 1 ? "" : "s"} with no client posting
-          </span>
-          <Button variant="secondary" size="sm" onClick={onClose}>Close</Button>
-        </div>
-      }
-    >
-      <div className="space-y-3">
-        <p className="text-xs text-muted-foreground">
-          To post them to a client, use that client's <span className="font-medium">Assign employees</span> button —
-          it sets the contract line and respects its headcount limit. Edit here to change category
-          (Client / Office Staff / Reliever), shift, location, branch, department or joining date first.
-        </p>
-
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" strokeWidth={1.5} />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search name, code, CNIC or phone…"
-            className={inputCls + " pl-9"}
-            autoFocus
-          />
-        </div>
-
-        <div className="border border-border rounded-md max-h-80 overflow-y-auto">
-          {shown.length === 0 ? (
-            <p className="px-3 py-8 text-center text-sm text-muted-foreground">
-              {employees.length === 0
-                ? "Everyone has a client."
-                : "Nobody matches that search."}
-            </p>
-          ) : (
-            shown.map((e) => {
-              const cat = (e.category ?? "client") as EmployeeCategory;
-              return (
-                <div
-                  key={e.id}
-                  className="flex items-center gap-3 px-3 py-2 border-b border-border last:border-0 hover:bg-accent transition-colors"
-                >
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-sm text-foreground truncate">{e.full_name}</span>
-                    <span className="block text-xs text-muted-foreground truncate">
-                      {displayCodeFor(e)}
-                      {e.cnic_number ? ` · ${e.cnic_number}` : ""}
-                      {e.phone ? ` · ${e.phone}` : ""}
-                    </span>
-                  </span>
-                  <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border border-border text-muted-foreground shrink-0">
-                    {CATEGORY_LABEL[cat]}
-                  </span>
-                  <Button variant="ghost" size="sm" onClick={() => onEdit(e)}>
-                    {canEdit ? "Edit" : "View"}
-                  </Button>
-                </div>
-              );
-            })
-          )}
-        </div>
       </div>
     </Modal>
   );
