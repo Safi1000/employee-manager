@@ -48,3 +48,28 @@ export function formatDateUS(value: string | number | Date | null | undefined): 
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   return `${mm}/${dd}/${d.getFullYear()}`;
 }
+
+/**
+ * The month an invoice belongs to for reporting.
+ *
+ * Invoices carry two dates: period_start/period_end (the service period being
+ * billed) and invoice_date (when the paperwork was raised). June's service
+ * invoiced on 3 August is June revenue — accrual, not cash — so the PERIOD wins
+ * and invoice_date is only a fallback for rows that predate the period columns.
+ *
+ * Every month-scoped read of invoices must use this, or the same invoice lands
+ * in one month on the Invoices list and another in the P&L.
+ */
+export const invoiceMonth = (i: {
+  period_start?: string | null;
+  invoice_date?: string | null;
+}): string => ((i.period_start ?? i.invoice_date) ?? "").slice(0, 7);
+
+/**
+ * PostgREST filter selecting invoices whose BILLING month falls in
+ * [startIso, endIso]. Expressed as an .or() because the column to test depends
+ * on whether period_start is set.
+ */
+export const invoicePeriodFilter = (startIso: string, endIso: string): string =>
+  `and(period_start.gte.${startIso},period_start.lte.${endIso}),` +
+  `and(period_start.is.null,invoice_date.gte.${startIso},invoice_date.lte.${endIso})`;

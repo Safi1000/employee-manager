@@ -43,7 +43,7 @@ import InvoiceGenerate from "../../components/InvoiceGenerate";
 import BillingReconciliation from "./BillingReconciliation";
 import InvoiceStructureModal from "../../components/InvoiceStructureModal";
 import { validateInvoiceNumber, validateAmount, validateFreeText } from "../../lib/validation";
-import { formatDate } from "../../lib/date";
+import { formatDate, invoiceMonth } from "../../lib/date";
 
 type InvoiceRow = Invoice & { client?: { name: string; client_code: string } | null };
 
@@ -99,8 +99,7 @@ const monthLabel = (iso: string | null | undefined) => {
 // generation), falling back to invoice_date for manual invoices that carry no
 // period. This — not invoice_date, which for generated invoices is the generation
 // day (today) — is what "Invoice Month" must reflect.
-const billingMonth = (i: { period_start?: string | null; invoice_date?: string | null }) =>
-  ((i.period_start ?? i.invoice_date) ?? "").slice(0, 7);
+const billingMonth = invoiceMonth;
 
 const emptyForm = (): InvoiceForm => ({
   client_id: "",

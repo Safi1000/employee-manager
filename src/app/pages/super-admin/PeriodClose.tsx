@@ -10,7 +10,7 @@ import {
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
-import { formatDate } from "../../lib/date";
+import { formatDate, invoicePeriodFilter } from "../../lib/date";
 import {
   supabase,
   type AccountingPeriod,
@@ -85,9 +85,8 @@ export default function PeriodClose() {
         supabase.from("profiles").select("id, full_name, email"),
         supabase
           .from("invoices")
-          .select("invoice_date")
-          .gte("invoice_date", startMonth)
-          .lte("invoice_date", endMonth),
+          .select("invoice_date, period_start")
+          .or(invoicePeriodFilter(startMonth, endMonth)),
         supabase
           .from("invoice_payments")
           .select("payment_date")

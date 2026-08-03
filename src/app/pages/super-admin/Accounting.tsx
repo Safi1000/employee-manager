@@ -6,7 +6,7 @@ import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import ExportButton from "../../components/ExportButton";
-import { formatDate } from "../../lib/date";
+import { formatDate, invoiceMonth } from "../../lib/date";
 import {
   exportReceivableLedger,
   exportTable,
@@ -381,10 +381,11 @@ export default function Accounting() {
     const rows: ReceivableRow[] = [];
     for (const c of allClientsForRec) {
       const allInvs = allInvoicesForRec.filter((i) => i.client_id === c.id);
-      const monthInvs = allInvs.filter(
-        (i) => (i.invoice_date ?? "").slice(0, 7) === receivablesMonth,
-      );
-      const priorInvs = allInvs.filter((i) => i.invoice_date < monthStart);
+      // Bucket by BILLING month, matching the Invoices list and the P&L. June's
+      // service invoiced in August is June revenue; keying on invoice_date put
+      // the same invoice in a different month on every screen.
+      const monthInvs = allInvs.filter((i) => invoiceMonth(i) === receivablesMonth);
+      const priorInvs = allInvs.filter((i) => invoiceMonth(i) < monthStart.slice(0, 7));
 
       const priorInvoiced = priorInvs.reduce((s, i) => s + Number(i.invoice_amount), 0);
       const priorWithholding = priorInvs.reduce(

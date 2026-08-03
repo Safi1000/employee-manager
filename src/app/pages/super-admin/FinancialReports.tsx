@@ -2,7 +2,7 @@ import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useState } from "react";
 import { Download, Loader2, FileText, Plus, Lock, Trash2, Pencil } from "lucide-react";
 import Header from "../../components/Header";
-import { formatDate } from "../../lib/date";
+import { formatDate, invoicePeriodFilter } from "../../lib/date";
 import ExportButton from "../../components/ExportButton";
 import {
   exportProfitLoss,
@@ -152,9 +152,8 @@ export default function FinancialReports() {
       const [invRes, expRes, catRes, bankRes, treaRes] = await Promise.all([
         supabase
           .from("invoices")
-          .select("id, invoice_amount, invoice_date")
-          .gte("invoice_date", start)
-          .lte("invoice_date", end),
+          .select("id, invoice_amount, invoice_date, period_start")
+          .or(invoicePeriodFilter(start, end)),
         supabase
           .from("expenses")
           .select("*")
@@ -216,9 +215,8 @@ export default function FinancialReports() {
       const [invRes, psRes, expRes] = await Promise.all([
         supabase
           .from("invoices")
-          .select("invoice_amount, invoice_date, client:client_id(client_type, branch_id)")
-          .gte("invoice_date", start)
-          .lte("invoice_date", end),
+          .select("invoice_amount, invoice_date, period_start, client:client_id(client_type, branch_id)")
+          .or(invoicePeriodFilter(start, end)),
         supabase
           .from("payslips")
           .select("final_salary, employee:employee_id(branch_id, category)")
@@ -350,7 +348,7 @@ export default function FinancialReports() {
       const end = lastOfMonth(statementPeriod);
       const [cliRes, invRes, psRes, empRes, expRes, costRes] = await Promise.all([
         supabase.from("clients").select("*").order("name"),
-        supabase.from("invoices").select("*").gte("invoice_date", start).lte("invoice_date", end),
+        supabase.from("invoices").select("*").or(invoicePeriodFilter(start, end)),
         supabase.from("payslips").select("*").eq("period_month", `${statementPeriod}-01`),
         supabase
           .from("employees")
