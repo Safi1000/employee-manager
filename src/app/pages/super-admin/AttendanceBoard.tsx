@@ -107,6 +107,8 @@ type ClientShift = {
   client_id: string;
   client_name: string;
   client_prefix: string | null;
+  /** Confirmation / grouping key: the site, or the client when there is no site. */
+  group_key: string;
   shift_code: string;
   contracted: number;
   roster: RosterGuard[];
@@ -219,7 +221,11 @@ export default function AttendanceBoard() {
       // Shift of THIS dated posting segment: explicit shift_code first, then the
       // posting's contract-line shift, then the guard's current shift.
       const sched = (d.shift_code ?? d.contract_lines?.shift_code ?? e.shift ?? "day") as string;
-      const key = `${d.site_id}|${sched}`;
+      // Group per CLIENT-shift. The site is the finer unit where sites exist, but
+      // it is nullable — falling back to the client keeps two clients from
+      // collapsing into one "null|<shift>" row (and one shared confirmation).
+      const groupKey = (d.site_id ?? d.client_id) as string;
+      const key = `${groupKey}|${sched}`;
       let row = byKey.get(key);
       if (!row) {
         row = {
@@ -229,6 +235,7 @@ export default function AttendanceBoard() {
           client_id: d.client_id,
           client_name: d.clients?.name ?? "—",
           client_prefix: d.clients?.employee_id_prefix ?? null,
+          group_key: groupKey,
           shift_code: sched,
           contracted: contracted.get(key) ?? 0,
           roster: [],
@@ -265,6 +272,7 @@ export default function AttendanceBoard() {
         row = {
           key,
           site_id: "",
+          group_key: `cat:${e.category}`,
           site_name: "—",
           client_id: `cat:${e.category}`,
           client_name: catLabel(e.category),
@@ -557,6 +565,10 @@ function ShiftDrillModal({
     // rostered scheduled_shift is always included so the default stays selectable
     // even where a site's shift_definitions are not fully seeded.
     let cancelled = false;
+    if (!shift.site_id) {
+      setSiteShifts([shift.shift_code]);
+      return;
+    }
     supabase
       .from("shift_definitions")
       .select("shift_code, start_time")
@@ -657,7 +669,7 @@ function ShiftDrillModal({
       if (upErr) throw upErr;
       // Confirmation keyed by group_key (0132): a client-shift keys on its site,
       // a category group (office staff, …) on 'cat:<category>' with null site.
-      const groupKey = shift.synthetic ? shift.client_id : shift.site_id;
+      const groupKey = shift.group_key;
       const { error: cErr } = await supabase.from("attendance_confirmations").upsert(
         {
           group_key: groupKey,

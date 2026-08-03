@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase, type Company, type Profile, type UserRole } from "./supabase";
 import { applyTheme } from "./theme";
@@ -46,6 +46,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Whose profile is currently loaded, so background auth events can tell a real
+  // user change from a token refresh.
+  const loadedUserIdRef = useRef<string | null>(null);
+
   const loadProfileAndCompany = async (userId: string): Promise<boolean> => {
     try {
       const { data } = await supabase
@@ -55,6 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .maybeSingle();
       const p = (data as Profile) ?? null;
       setProfile(p);
+      loadedUserIdRef.current = p ? userId : null;
 
       if (!p) return false;
 
@@ -71,6 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       return true;
     } catch {
+      loadedUserIdRef.current = null;
       setProfile(null);
       setCompany(null);
       return false;
@@ -132,8 +138,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(s);
       if (s?.user) {
         const uid = s.user.id;
-        setTimeout(() => { loadProfileAndCompany(uid); }, 0);
+        // Only reload for a DIFFERENT user. This callback also fires on token
+        // refresh and on tab focus, and loadProfileAndCompany re-reads
+        // view_as_company — so reloading here would silently swap a super-super
+        // admin into whatever org was last selected elsewhere, mid-session,
+        // while they were just moving between pages. An intentional switch goes
+        // through setViewAsCompany → refreshProfile, which still reloads.
+        if (uid !== loadedUserIdRef.current) {
+          setTimeout(() => { loadProfileAndCompany(uid); }, 0);
+        }
       } else {
+        loadedUserIdRef.current = null;
         setProfile(null);
         setCompany(null);
       }

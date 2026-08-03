@@ -1608,12 +1608,16 @@ function AssignEmployeesModal({
         if (upErr) throw fail(upErr.message);
 
         // The posting row. Its sync trigger mirrors client_id onto the employee.
+        // shift_code MUST be stamped here: it is what makes shift a dated property.
+        // Left null, this segment resolves through to the guard's CURRENT shift, so
+        // a later shift change would repaint every earlier day with the new shift.
         const { error: depErr } = await supabase.from("deployments").insert({
           guard_id: e.id,
           client_id: client.id,
           contract_line_id: contractLineId || null,
           site_id: siteId,
           start_date: startDate,
+          shift_code: shift || e.shift || "day",
           reason: "new_hire",
         });
         if (depErr) throw fail(depErr.message);
