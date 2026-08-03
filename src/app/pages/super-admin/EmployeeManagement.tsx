@@ -648,12 +648,6 @@ function FieldErrorSummary({
 export default function EmployeeManagement() {
   const { profile, company } = useAuth();
   const { regionId } = useRegion();
-  // Who may Ops-verify a draft record — mirrors the DB gate in
-  // transition_record_state (0122 + 0150): the Ops roles, super_admin/SSA (both
-  // implied by hasPermission), OR the explicit 'employees.ops_verify' permission.
-  const canOpsVerify =
-    ["ops_manager", "ops_director", "super_admin", "super_super_admin"].includes(profile?.role ?? "") ||
-    hasPermission(profile, "employees.ops_verify");
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -743,7 +737,6 @@ export default function EmployeeManagement() {
   const [completeness, setCompleteness] = useState<{
     tier1: boolean; tier2: boolean; tier3: boolean; tier4: boolean | null; armed: boolean;
   } | null>(null);
-  const [approvalBusy, setApprovalBusy] = useState(false);
 
   const [form, setForm] = useState<FormState>(emptyForm);
   const [formErrors, setFormErrors] = useState<Record<string, string | null>>({});
@@ -1271,26 +1264,6 @@ export default function EmployeeManagement() {
   };
 
   // Phase 3D: advance/reverse the approval state machine. Reversal needs a reason.
-  const runTransition = async (action: "ops_verify" | "finance_approve" | "reverse") => {
-    if (!selectedEmployee) return;
-    let reason: string | null = null;
-    if (action === "reverse") {
-      reason = window.prompt("Reason for reversing the approval state:");
-      if (!reason || !reason.trim()) return;
-    }
-    setApprovalBusy(true);
-    setError(null);
-    const { data, error: tErr } = await supabase.rpc("transition_record_state", {
-      p_employee_id: selectedEmployee.id,
-      p_action: action,
-      p_reason: reason,
-    });
-    setApprovalBusy(false);
-    if (tErr) { setError(tErr.message); return; }
-    setSelectedEmployee({ ...selectedEmployee, record_state: data as EmployeeRow["record_state"] });
-    await loadData();
-  };
-
   // Phase 3G: Archive replaces Delete — reason required, logged, never removes rows.
   const handleArchive = async (emp: EmployeeRow) => {
     const reason = window.prompt(`Archive ${emp.full_name} (${displayCodeFor(emp)})?\nEnter a reason (required):`);
@@ -2450,19 +2423,6 @@ export default function EmployeeManagement() {
                 ))}
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-slate-500">Approval</span>
-                <span className="px-2 py-0.5 rounded text-xs bg-brand-50 text-brand-700 border border-brand-200 capitalize">
-                  {selectedEmployee.record_state.replace("_", " ")}
-                </span>
-                {selectedEmployee.record_state === "draft" && canOpsVerify && (
-                  <Button size="sm" variant="secondary" disabled={approvalBusy} onClick={() => runTransition("ops_verify")}>Ops verify</Button>
-                )}
-                {selectedEmployee.record_state === "ops_verified" && (
-                  <Button size="sm" variant="secondary" disabled={approvalBusy} onClick={() => runTransition("finance_approve")}>Finance approve</Button>
-                )}
-                {selectedEmployee.record_state !== "draft" && (
-                  <Button size="sm" variant="ghost" disabled={approvalBusy} onClick={() => runTransition("reverse")}>Reverse</Button>
-                )}
                 {/* Phase 7 §9: separation / rehire on the record. */}
                 {["active", "on_leave"].includes(selectedEmployee.lifecycle_state) && (
                   <Button size="sm" variant="secondary" onClick={() => setSeparationTarget(selectedEmployee)}>Record separation</Button>
@@ -2559,8 +2519,6 @@ export default function EmployeeManagement() {
                     <button
                       type="button"
                       className="text-xs text-brand-700 hover:underline mt-1 disabled:text-slate-300"
-                      disabled={selectedEmployee.record_state === "draft"}
-                      title={selectedEmployee.record_state === "draft" ? "Ops-verify the guard before changing client" : ""}
                       onClick={() => setChangeClientTarget(selectedEmployee)}
                     >
                       Change client
@@ -2576,8 +2534,6 @@ export default function EmployeeManagement() {
                     <button
                       type="button"
                       className="text-xs text-brand-700 hover:underline mt-1 disabled:text-slate-300"
-                      disabled={selectedEmployee.record_state === "draft"}
-                      title={selectedEmployee.record_state === "draft" ? "Ops-verify the guard before changing shift" : ""}
                       onClick={() => setChangeShiftTarget(selectedEmployee)}
                     >
                       Change shift

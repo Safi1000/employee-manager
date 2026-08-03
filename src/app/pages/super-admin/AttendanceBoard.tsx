@@ -643,12 +643,12 @@ function ShiftDrillModal({
     let cancelled = false;
     if (!shift.site_id) {
       // No site to read shift_definitions from, so the contract's own
-      // day/night/evening split is the best statement of what this client runs.
+      // day/night/evening split states what this client runs — and it is the
+      // ONLY thing that does. The row's own shift is deliberately not merged in:
+      // a guard wrongly posted to a shift the contract does not staff would
+      // otherwise make that shift selectable for the whole row.
       const fromContract = shift.contract_shifts ?? [];
-      const union = fromContract.includes(shift.shift_code)
-        ? fromContract
-        : [...fromContract, shift.shift_code];
-      setSiteShifts(union.length ? union : [shift.shift_code]);
+      setSiteShifts(fromContract.length ? fromContract : [shift.shift_code]);
       return;
     }
     supabase

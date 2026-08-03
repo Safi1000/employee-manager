@@ -126,9 +126,6 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
   // Only loaded in relieversOnly mode (cheap, small dataset).
   const [relieverPerClient, setRelieverPerClient] = useState<Map<string, Map<string | "unattributed", number>>>(new Map());
   const [attPayroll, setAttPayroll] = useState<Map<string, { worked_shifts: number; earned: number; leave_days: number; absent_days: number; rate_effective: number }>>(new Map());
-  // Phase 9 §10.2: guards who worked but are below finance_approved — excluded
-  // from payroll lines, surfaced as a warning.
-  const [belowFinanceCount, setBelowFinanceCount] = useState(0);
   const [attendanceAgg, setAttendanceAgg] = useState<Map<string, { present: number; absent: number; leave: number }>>(
     new Map()
   );
@@ -301,21 +298,12 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       // Region scopes the payroll roster (each row = an employee). Bank/treasury/
       // cheque reads below stay company-wide — the cash pool isn't region-split.
       withRegion(
-        // Phase 3D gate: no payroll line before Finance-approved, so only
-        // finance_approved / active records enter the payroll roster.
-        //
-        // Separated staff are exempt from that gate. Someone fired while their
-        // record was still draft/ops_verified will never be approved now, but
-        // they did work days before they left and are still owed a final
-        // settlement — the old gate made them unpayable and left the Fired tab
-        // showing a fraction of the leavers the Employees page lists.
+        // Every employee enters the payroll roster. The old Ops-verify /
+        // Finance-approve gate is gone: it silently withheld pay from people who
+        // had genuinely worked, and nothing downstream depended on it.
         supabase
           .from("employees")
           .select("*, location:location_id(name), client:client_id(name)")
-          .or(
-            "record_state.in.(finance_approved,active)," +
-              "lifecycle_state.in.(fired,terminated,left,absconded)",
-          )
           .order("employee_code"),
         regionId,
       ),
@@ -336,14 +324,6 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
         client_name: e.client?.name ?? null,
       }))
     );
-    // §10.2 warning: count Active guards who worked but are still below
-    // finance_approved (draft / ops_verified) — excluded from payroll lines.
-    const { count: belowCount } = await supabase
-      .from("employees")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "Active")
-      .in("record_state", ["draft", "ops_verified"]);
-    setBelowFinanceCount(belowCount ?? 0);
     setLocations(locRes.data ?? []);
     setClients(cliRes.data ?? []);
     setContracts((conRes.data ?? []) as Contract[]);
@@ -1343,16 +1323,6 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
             <button onClick={() => setError(null)}>
               <X className="w-4 h-4" />
             </button>
-          </div>
-        )}
-
-        {!relieversOnly && belowFinanceCount > 0 && (
-          <div className="mb-4 flex items-start gap-2 p-3 bg-warning-50 text-warning-800 border border-warning-200 rounded-md text-sm">
-            <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
-            <div className="flex-1">
-              {belowFinanceCount} active guard{belowFinanceCount === 1 ? " has" : "s have"} attendance but are below
-              <strong> Finance-approved</strong> — excluded from payroll until their record is approved (§10.2).
-            </div>
           </div>
         )}
 

@@ -56,6 +56,7 @@ import {
   CONTRACT_LINE_CATEGORY_LABEL,
   effectiveCommittedByCategory,
   activeCountByCategory,
+  isPersonnelCategory,
 } from "../../lib/supabase";
 import {
   ChangeClientModal,
@@ -296,6 +297,28 @@ export default function EmployeeAssignments() {
     [clientById],
   );
 
+  // Committed PERSONNEL headcount per client, across their active contracts.
+  const committedPersonnelByClient = useMemo(() => {
+    const byClient = new Map<string, number>();
+    const linesByContract = new Map<string, ContractLine[]>();
+    for (const l of contractLines) {
+      const arr = linesByContract.get(l.contract_id) ?? [];
+      arr.push(l);
+      linesByContract.set(l.contract_id, arr);
+    }
+    for (const k of contracts) {
+      if (k.status !== "active" || k.contract_type !== "guard_deployment") continue;
+      const lines = linesByContract.get(k.id) ?? [];
+      if (lines.length === 0) continue;
+      const adds = addendums.filter((a) => a.contract_id === k.id);
+      const committed = effectiveCommittedByCategory(lines, adds, todayIso());
+      let total = 0;
+      for (const [cat, n] of committed) if (isPersonnelCategory(cat)) total += n;
+      byClient.set(k.client_id, (byClient.get(k.client_id) ?? 0) + total);
+    }
+    return byClient;
+  }, [contracts, contractLines, addendums]);
+
   // ── Grouping: one card per client, then the category / unassigned buckets ──
   const groups = useMemo<Group[]>(() => {
     // Search narrows the CLIENT list, not the people inside it — this page is
@@ -326,7 +349,27 @@ export default function EmployeeAssignments() {
     // alone was a chicken-and-egg trap: "Assign employees" lives on a client card,
     // so a client nobody is posted to yet never rendered one and could never be
     // staffed — a brand-new org showed a completely empty page.
-    const reconByClient = new Map(recon.map((r) => [r.client_id, r]));
+    // v_client_strength_reconciliation derives "contracted" by joining
+    // contract_lines through SITES and summing billed_qty. Lines that carry no
+    // site_id — or no billed_qty — contribute nothing, so a fully staffed client
+    // read 70 enrolled against 0 contracted and a variance of -70. Recompute
+    // committed from the contract lines themselves (personnel only, addendums
+    // applied), which is the same arithmetic the Contracts page uses.
+    const reconByClient = new Map(
+      recon.map((r) => {
+        const committed = committedPersonnelByClient.get(r.client_id) ?? 0;
+        if (committed === 0) return [r.client_id, r] as const;
+        return [
+          r.client_id,
+          {
+            ...r,
+            contracted_billed_qty: committed,
+            required_on_ground: r.required_on_ground || committed,
+            variance: committed - r.enrolled_active,
+          },
+        ] as const;
+      }),
+    );
     const out: Group[] = clients.map((c) => ({
       key: `client:${c.id}`,
       label: c.name,
@@ -354,7 +397,7 @@ export default function EmployeeAssignments() {
     if (q) visibleGroups = visibleGroups.filter((g) => g.label.toLowerCase().includes(q));
     if (onlyMismatch) return visibleGroups.filter((g) => g.recon != null && g.recon.variance !== 0);
     return visibleGroups;
-  }, [employees, clients, search, showSeparated, recon, onlyMismatch, servicesOnlyClientIds, showServicesClients]);
+  }, [employees, clients, search, showSeparated, recon, onlyMismatch, servicesOnlyClientIds, showServicesClients, committedPersonnelByClient]);
 
   // Hiding a client must never make its guards unreachable — this page is the only
   // place their posting and pay can be edited. If a Services-only client somehow
@@ -1188,8 +1231,7 @@ function RowEditModal({
 
   const category = (employee.category ?? "client") as EmployeeCategory;
   const clientName = clients.find((c) => c.id === employee.client_id)?.name ?? "—";
-  const canPost =
-    ["active", "on_leave"].includes(employee.lifecycle_state ?? "") && employee.record_state !== "draft";
+  const canPost = ["active", "on_leave"].includes(employee.lifecycle_state ?? "");
   // Before the first client posting exists there is no dated history to protect,
   // so category and shift are ordinary columns the user can just set.
   const neverPosted = !employee.client_id;
@@ -1330,7 +1372,7 @@ function RowEditModal({
           </div>
           {!canPost && (
             <p className="text-xs text-muted-foreground mt-2">
-              Client / category / shift changes need an Ops-verified, active employee.
+              Client / category / shift changes need an active employee.
             </p>
           )}
         </section>
