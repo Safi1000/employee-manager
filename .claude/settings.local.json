@@ -11,7 +11,10 @@
       "mcp__claude_ai_Supabase__list_migrations",
       "PowerShell(npm run *)",
       "Bash(npx tsc *)",
-      "mcp__claude_ai_Supabase__list_projects"
+      "mcp__claude_ai_Supabase__list_projects",
+      "WebSearch",
+      "WebFetch(domain:bayfikr.com)",
+      "WebFetch(domain:bank.codes)"
     ]
   }
 }

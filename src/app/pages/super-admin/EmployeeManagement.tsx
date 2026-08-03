@@ -54,6 +54,8 @@ import {
   validateIban,
   validateBankAccount,
   validateFreeText,
+  PK_BANKS,
+  pkBankCode,
 } from "../../lib/validation";
 import { useAuth, hasPermission } from "../../lib/auth";
 import { generateDischargeSheet } from "../../lib/dischargeSheetPdf";
@@ -1309,6 +1311,15 @@ export default function EmployeeManagement() {
 
   // "Bank Account Number" here accepts either a plain account number OR an IBAN
   // (its placeholder shows an IBAN), so only error when it fails both.
+  // First 4 digits of a plain account number are the branch code (informational
+  // only). Skip the hint when the value looks like an IBAN, where those digits
+  // are the check digits + start of the bank code, not a branch.
+  const branchCodeHint = (v: string): string | null => {
+    if (!/^[0-9\-\s]+$/.test(v.trim())) return null;
+    const d = v.replace(/\D/g, "");
+    return d.length >= 4 ? d.slice(0, 4) : null;
+  };
+
   const accountOrIbanError = (v: string): string | null => {
     if (!v || v.trim() === "") return null;
     if (validateBankAccount(v) === null || validateIban(v) === null) return null;
@@ -1323,7 +1334,7 @@ export default function EmployeeManagement() {
     full_name: validateFreeText(f.full_name),
     phone: validatePhone(f.phone),
     cnic_number: validateCnic(f.cnic_number),
-    iban: validateIban(f.iban),
+    iban: validateIban(f.iban, pkBankCode(f.bank_name)),
     bank_account: accountOrIbanError(f.bank_account),
     emergency_contact_phone: validatePhone(f.emergency_contact_phone),
     permanent_address: validateFreeText(f.permanent_address),
@@ -1806,6 +1817,13 @@ export default function EmployeeManagement() {
 
   return (
     <>
+      {/* Shared options for the bank-name type-to-filter inputs in both the Add
+          and Edit modals. One datalist, referenced by list="pk-bank-list". */}
+      <datalist id="pk-bank-list">
+        {PK_BANKS.map((b) => (
+          <option key={b.code} value={b.name} />
+        ))}
+      </datalist>
       <Header
         title="Employee Management"
         subtitle="Workforce roster, branches and document uploads"
@@ -2279,10 +2297,16 @@ export default function EmployeeManagement() {
                 <label className="block text-sm text-slate-700 mb-1">Bank Name</label>
                 <input
                   type="text"
+                  list="pk-bank-list"
                   value={form.bank_name}
-                  onChange={(e) => setForm({ ...form, bank_name: e.target.value })}
+                  onChange={(e) => {
+                    const bank_name = e.target.value;
+                    setForm({ ...form, bank_name });
+                    // Re-check the IBAN against the newly-selected bank's code.
+                    setFormErrors((p) => ({ ...p, iban: validateIban(form.iban, pkBankCode(bank_name)) }));
+                  }}
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                  placeholder="e.g., Allied Bank"
+                  placeholder="Type to search…"
                 />
               </div>
               <div>
@@ -2294,19 +2318,22 @@ export default function EmployeeManagement() {
                   onChange={(e) => setForm({ ...form, bank_account: e.target.value })}
                   onBlur={(e) => setFormErrors((p) => ({ ...p, bank_account: accountOrIbanError(e.target.value) }))}
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                  placeholder="e.g., PK36SCBL0000001123456702"
+                  placeholder="e.g., 0010053029480016"
                 />
                 {formErrors.bank_account && <p className="text-xs text-danger-600 mt-1">{formErrors.bank_account}</p>}
+                {branchCodeHint(form.bank_account) && (
+                  <p className="text-xs text-slate-500 mt-1">Branch code: {branchCodeHint(form.bank_account)}</p>
+                )}
               </div>
               <div className="col-span-2">
-                <label className="block text-sm text-slate-700 mb-1">IBAN (24 chars)</label>
+                <label className="block text-sm text-slate-700 mb-1">IBAN (24 chars — as issued by the bank)</label>
                 <input
                   type="text"
                   maxLength={24}
                   id="empfield-iban"
                   value={form.iban}
                   onChange={(e) => setForm({ ...form, iban: e.target.value.toUpperCase().replace(/\s+/g, "") })}
-                  onBlur={(e) => setFormErrors((p) => ({ ...p, iban: validateIban(e.target.value) }))}
+                  onBlur={(e) => setFormErrors((p) => ({ ...p, iban: validateIban(e.target.value, pkBankCode(form.bank_name)) }))}
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm font-mono"
                   placeholder="PKxx XXXX XXXX XXXX XXXX XXXX"
                 />
@@ -2882,10 +2909,15 @@ export default function EmployeeManagement() {
                   <label className="block text-sm text-slate-700 mb-1">Bank Name</label>
                   <input
                     type="text"
+                    list="pk-bank-list"
                     value={editForm.bank_name}
-                    onChange={(e) => setEditForm({ ...editForm, bank_name: e.target.value })}
+                    onChange={(e) => {
+                      const bank_name = e.target.value;
+                      setEditForm({ ...editForm, bank_name });
+                      setEditFormErrors((p) => ({ ...p, iban: validateIban(editForm.iban, pkBankCode(bank_name)) }));
+                    }}
                     className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                    placeholder="e.g., Allied Bank"
+                    placeholder="Type to search…"
                   />
                 </div>
                 <div>
@@ -2897,19 +2929,22 @@ export default function EmployeeManagement() {
                     onChange={(e) => setEditForm({ ...editForm, bank_account: e.target.value })}
                     onBlur={(e) => setEditFormErrors((p) => ({ ...p, bank_account: accountOrIbanError(e.target.value) }))}
                     className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                    placeholder="e.g., PK36SCBL0000001123456702"
+                    placeholder="e.g., 0010053029480016"
                   />
                   {editFormErrors.bank_account && <p className="text-xs text-danger-600 mt-1">{editFormErrors.bank_account}</p>}
+                  {branchCodeHint(editForm.bank_account) && (
+                    <p className="text-xs text-slate-500 mt-1">Branch code: {branchCodeHint(editForm.bank_account)}</p>
+                  )}
                 </div>
                 <div className="col-span-2">
-                  <label className="block text-sm text-slate-700 mb-1">IBAN (24 chars)</label>
+                  <label className="block text-sm text-slate-700 mb-1">IBAN (24 chars — as issued by the bank)</label>
                   <input
                     type="text"
                     maxLength={24}
                     id="empeditfield-iban"
                     value={editForm.iban}
                     onChange={(e) => setEditForm({ ...editForm, iban: e.target.value.toUpperCase().replace(/\s+/g, "") })}
-                    onBlur={(e) => setEditFormErrors((p) => ({ ...p, iban: validateIban(e.target.value) }))}
+                    onBlur={(e) => setEditFormErrors((p) => ({ ...p, iban: validateIban(e.target.value, pkBankCode(editForm.bank_name)) }))}
                     className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm font-mono"
                     placeholder="PKxx XXXX XXXX XXXX XXXX XXXX"
                   />
