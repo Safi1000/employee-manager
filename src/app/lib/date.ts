@@ -35,3 +35,16 @@ export function formatDateTime(value: string | number | Date | null | undefined)
   const min = String(d.getMinutes()).padStart(2, "0");
   return `${formatDate(d)}, ${hh}:${min}`;
 }
+
+/**
+ * MM/DD/YYYY. The app standard is DD/MM/YYYY (formatDate); this is for the few
+ * places asked to read US-style, currently the Contracts period column.
+ */
+export function formatDateUS(value: string | number | Date | null | undefined): string {
+  if (value == null || value === "") return "—";
+  const d = toDate(value);
+  if (Number.isNaN(d.getTime())) return typeof value === "string" ? value : "—";
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${mm}/${dd}/${d.getFullYear()}`;
+}

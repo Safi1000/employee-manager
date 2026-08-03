@@ -1,7 +1,7 @@
 import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
-import { Plus, Building2, Download, AlertCircle, X, Loader2, ArrowDownUp, History, Trash2, CheckCircle2, RotateCcw, FileText, Pencil, ArrowLeftRight, Search, Power } from "lucide-react";
+import { Plus, Building2, Download, AlertCircle, X, Loader2, ArrowDownUp, History, Trash2, Ban, CheckCircle2, RotateCcw, FileText, Pencil, ArrowLeftRight, Search, Power } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -124,7 +124,7 @@ export default function Accounting() {
   }[]>([]);
   const [chequeViewAttachmentUrl, setChequeViewAttachmentUrl] = useState<string | null>(null);
   const [chequeSubmitting, setChequeSubmitting] = useState(false);
-  const [chequeFilter, setChequeFilter] = useState<"all" | "pending" | "cleared">("all");
+  const [chequeFilter, setChequeFilter] = useState<"all" | "pending" | "cleared" | "bounced">("all");
   // Which record type the Cheques section shows: cheques or cash deposits.
   const [chequeSectionView, setChequeSectionView] = useState<"cheques" | "deposits">("cheques");
   const [chequeBankFilter, setChequeBankFilter] = useState<string>("all");
@@ -2407,12 +2407,13 @@ export default function Accounting() {
                   {chequeSectionView === "cheques" && (
                     <ThemedSelect
                       value={chequeFilter}
-                      onChange={(e) => setChequeFilter(e.target.value as "all" | "pending" | "cleared")}
+                      onChange={(e) => setChequeFilter(e.target.value as "all" | "pending" | "cleared" | "bounced")}
                       className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
                     >
                       <option value="all">All Status</option>
                       <option value="pending">Pending</option>
                       <option value="cleared">Cleared</option>
+                      <option value="bounced">Bounced</option>
                     </ThemedSelect>
                   )}
                   <ThemedSelect
@@ -2513,7 +2514,14 @@ export default function Accounting() {
                               )}
                             </td>
                             <td className="px-4 py-2">
-                              {c.status === "pending" ? (
+                              {c.status === "bounced" ? (
+                                <span
+                                  className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-danger-50 text-danger-700 border border-danger-200"
+                                  title={c.bounce_reason ?? undefined}
+                                >
+                                  Bounced{c.bounced_at ? ` · ${c.bounced_at.slice(0, 10)}` : ""}
+                                </span>
+                              ) : c.status === "pending" ? (
                                 <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-warning-50 text-warning-700">
                                   Pending
                                 </span>
@@ -2636,24 +2644,48 @@ export default function Accounting() {
                                   Mark Cleared
                                 </Button>
                               )}
-                              {c.status === "pending" && (
+              {/* A failed cheque is BOUNCED, never deleted — the bank remembers
+                  it either way, and a reconciliation with no trace of it is
+                  unexplainable. The row stays with its history. */}
+                              {c.status !== "bounced" && (
                                 <button
                                   type="button"
-                                  className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-danger-700 hover:bg-danger-50"
-                                  title={isReceivables ? "Delete receivables cheque (no balance change)" : isIncoming ? "Delete deposit cheque (no bank change)" : "Delete cheque (restores bank balance)"}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-sm text-danger-700 hover:bg-danger-50"
+                                  title={
+                                    isIncoming
+                                      ? "Mark bounced — the payment never arrived"
+                                      : "Mark bounced — the reserved amount returns to the bank"
+                                  }
                                   onClick={async () => {
-                                    const msg = isReceivables
-                                      ? "Delete this pending receivables cheque? No balance changes will occur — the outstanding balance was not yet reduced."
-                                      : isIncoming
-                                        ? "Delete this pending deposit cheque? No balance change will occur (the bank was not debited)."
-                                        : "Delete this pending cheque? The reserved amount will be restored to the bank.";
-                                    if (!window.confirm(msg)) return;
-                                    const { error: e } = await supabase.from("cheques").delete().eq("id", c.id);
+                                    const effect = isIncoming
+                                      ? c.status === "cleared"
+                                        ? `PKR ${Number(c.amount).toLocaleString()} will be taken back off ${bank?.bank_name ?? "the bank"}${isReceivables ? " and the client's outstanding balance restored" : ""}.`
+                                        : "No balance change — the bank was never credited."
+                                      : c.status === "cleared" && !isPayment
+                                        ? `PKR ${Number(c.amount).toLocaleString()} will be reversed out of Cash (Treasury) and restored to ${bank?.bank_name ?? "the bank"}.`
+                                        : `PKR ${Number(c.amount).toLocaleString()} will be restored to ${bank?.bank_name ?? "the bank"}.`;
+                                    const reason = window.prompt(
+                                      `Mark cheque #${c.cheque_number} as bounced?
+
+${effect}
+
+The cheque is kept with a bounced status.
+
+Reason (optional):`,
+                                      "",
+                                    );
+                                    // prompt returns null on Cancel; "" is a valid empty reason.
+                                    if (reason === null) return;
+                                    const { error: e } = await supabase
+                                      .from("cheques")
+                                      .update({ status: "bounced", bounce_reason: reason.trim() || null })
+                                      .eq("id", c.id);
                                     if (e) { setError(e.message); return; }
                                     await loadAll();
                                   }}
                                 >
-                                  <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                                  <Ban className="w-3.5 h-3.5" strokeWidth={1.5} />
+                                  Bounced
                                 </button>
                               )}
                             </td>
@@ -3056,12 +3088,19 @@ export default function Accounting() {
               <div>
                 <p className="text-xs text-slate-500">Status</p>
                 <p>
-                  {chequeView.status === "pending" ? (
+                  {chequeView.status === "bounced" ? (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-danger-50 text-danger-700 border border-danger-200">
+                      Bounced{chequeView.bounced_at ? ` · ${chequeView.bounced_at.slice(0, 10)}` : ""}
+                    </span>
+                  ) : chequeView.status === "pending" ? (
                     <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-warning-50 text-warning-700">Pending</span>
                   ) : (
                     <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-success-50 text-success-700">
                       Cleared{chequeView.cleared_at ? ` · ${chequeView.cleared_at.slice(0, 10)}` : ""}
                     </span>
+                  )}
+                  {chequeView.bounce_reason && (
+                    <span className="block text-xs text-slate-500 mt-1">{chequeView.bounce_reason}</span>
                   )}
                 </p>
               </div>

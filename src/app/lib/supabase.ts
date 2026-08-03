@@ -924,7 +924,10 @@ export type Cheque = {
   cheque_date: string;
   cheque_type: ChequeType;
   direction: ChequeDirection;
-  status: "pending" | "cleared";
+  /** 'bounced' is terminal: the cheque failed and any balance effect is reversed. */
+  status: "pending" | "cleared" | "bounced";
+  bounced_at?: string | null;
+  bounce_reason?: string | null;
   attachment_path: string | null;
   drive_file_id: string | null;
   drive_view_url: string | null;

@@ -161,6 +161,7 @@ export default function AttendanceBoard() {
               "employees:guard_id(full_name, guard_code, display_number, employee_code, shift, category, join_date, last_working_day, lifecycle_state), " +
               "sites:site_id(name), clients:client_id(name, employee_id_prefix), contract_lines:contract_line_id(shift_code)",
           )
+          .range(0, 9999)
           // The posting whose DATED segment contains the viewed date — not just
           // the current one. So a separated guard drops off from the day after
           // their last working day, and a shift change shows the OLD shift for

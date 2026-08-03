@@ -17,7 +17,7 @@ import ContractEditorModal from "../../components/ContractEditorModal";
 import ContractViewModal from "../../components/ContractViewModal";
 import ContractStatusBadge from "../../components/ContractStatusBadge";
 import ClientFilterSelect from "../../components/ClientFilterSelect";
-import { formatDate } from "../../lib/date";
+import { formatDateUS } from "../../lib/date";
 import {
   supabase,
   CONTRACT_TYPE_LABEL,
@@ -397,7 +397,8 @@ export default function Contracts() {
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-600">{CONTRACT_TYPE_LABEL[row.contract_type]}</td>
                       <td className="px-4 py-3 text-sm text-slate-600">
-                        <div>{formatDate(row.start_date)}</div>
+                        {/* Period reads MM/DD/YYYY; the rest of the app is DD/MM/YYYY. */}
+                        <div>{formatDateUS(row.start_date)}</div>
                         {eff.isInfinite ? (
                           // No end date (base or via renewal) — can never read "ending soon".
                           <div className="text-xs text-slate-500">
@@ -408,7 +409,7 @@ export default function Contracts() {
                         ) : (
                           effEndDate && (
                             <div className={endingSoon ? "text-warning-700 text-xs" : expired ? "text-danger-700 text-xs" : "text-xs text-slate-500"}>
-                              → {formatDate(effEndDate)}
+                              → {formatDateUS(effEndDate)}
                               {renewed && " (renewed)"}
                               {endingSoon && ` (${dleft}d)`}
                             </div>

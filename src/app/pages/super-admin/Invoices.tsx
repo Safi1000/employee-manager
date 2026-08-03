@@ -906,24 +906,6 @@ export default function Invoices() {
         subtitle="Invoice ledger, payment tracking and PDF export"
         actions={
           <div className="flex gap-2">
-            <Button
-              variant="secondary"
-              size="md"
-              onClick={async () => {
-                if (!window.confirm("Run auto-invoice issue now for all eligible clients?")) return;
-                setError(null);
-                try {
-                  const { data, error: rpcErr } = await supabase.rpc("run_auto_invoices");
-                  if (rpcErr) throw rpcErr;
-                  await loadAll();
-                  window.alert(`Auto-invoice issued: ${data ?? 0} invoice(s).`);
-                } catch (e: any) {
-                  setError(e.message ?? String(e));
-                }
-              }}
-            >
-              Run Auto-Invoices
-            </Button>
             <Button variant="secondary" size="md" onClick={() => setStructureOpen(true)}>
               <Settings2 className="w-4 h-4 mr-2" strokeWidth={1.5} />
               Invoice Structure

@@ -1,4 +1,4 @@
--- 0148: freeze the shift on every posting that never recorded one.
+-- 0156: freeze the shift on every posting that never recorded one.
 --
 -- shift is meant to be a DATED property of the posting (0130), but postings
 -- created before deployments.shift_code existed — and those created by
