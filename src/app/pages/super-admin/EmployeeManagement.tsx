@@ -67,6 +67,29 @@ export type EmployeeRow = Employee & {
 };
 type DocumentWithUrl = EmployeeDocument & { publicUrl: string | null };
 
+// Filter options for the lifecycle dropdown, one per distinct LABEL. Two states
+// (terminated / fired) share the label "Fired" — legacy and current naming for the
+// same outcome — so listing raw keys showed "Fired" twice, with each entry hiding
+// the rows belonging to the other. `states` holds every key behind one option.
+const LIFECYCLE_FILTER_OPTIONS: {
+  value: EmployeeLifecycleState;
+  label: string;
+  states: EmployeeLifecycleState[];
+}[] = (() => {
+  const byLabel = new Map<string, EmployeeLifecycleState[]>();
+  for (const s of Object.keys(LIFECYCLE_STATE_LABEL) as EmployeeLifecycleState[]) {
+    const label = LIFECYCLE_STATE_LABEL[s];
+    const seen = byLabel.get(label);
+    if (seen) seen.push(s);
+    else byLabel.set(label, [s]);
+  }
+  return [...byLabel].map(([label, states]) => ({ value: states[0], label, states }));
+})();
+
+const LIFECYCLE_FILTER_STATES = new Map(
+  LIFECYCLE_FILTER_OPTIONS.map((o) => [o.value, o.states]),
+);
+
 const CODE_HISTORY_REASON: Record<EmployeeCodeHistory["reason"], string> = {
   assigned: "assigned",
   reassigned: "reassigned",
@@ -946,7 +969,12 @@ export default function EmployeeManagement() {
       if (statusFilter !== "all" && e.status !== statusFilter) return false;
       if (completenessFilter === "complete" && !e.physical_copy_present) return false;
       if (completenessFilter === "incomplete" && e.physical_copy_present) return false;
-      if (lifecycleFilter !== "all" && e.lifecycle_state !== lifecycleFilter) return false;
+      if (lifecycleFilter !== "all") {
+        // Match every state behind the chosen option, not just its representative
+        // key, so "Fired" catches both terminated and fired records.
+        const wanted = LIFECYCLE_FILTER_STATES.get(lifecycleFilter) ?? [lifecycleFilter];
+        if (!wanted.includes(e.lifecycle_state)) return false;
+      }
       if (expiredCardFilter === "expired" && !isCardExpired(e.cnic_expiry)) return false;
       if (dupCnicFilter === "duplicate" && !duplicateCnicIds.has(e.id)) return false;
       if (missingKeyFilter === "missing" && !isMissingKeyFields(e)) return false;
@@ -2013,8 +2041,8 @@ export default function EmployeeManagement() {
                 title="Recruitment / lifecycle stage"
               >
                 <option value="all">All Lifecycle</option>
-                {(Object.keys(LIFECYCLE_STATE_LABEL) as EmployeeLifecycleState[]).map((s) => (
-                  <option key={s} value={s}>{LIFECYCLE_STATE_LABEL[s]}</option>
+                {LIFECYCLE_FILTER_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </ThemedSelect>
               <ThemedSelect
@@ -2236,6 +2264,23 @@ export default function EmployeeManagement() {
                 />
                 {formErrors.phone && <p className="text-xs text-danger-600 mt-1">{formErrors.phone}</p>}
               </div>
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Recruitment Intake</label>
+                <ThemedSelect
+                  value={form.lifecycle_intake}
+                  onChange={(e) =>
+                    setForm({ ...form, lifecycle_intake: e.target.value as "" | "applicant" | "waitlisted" })
+                  }
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                >
+                  <option value="">Active hire (default)</option>
+                  <option value="applicant">Applicant</option>
+                  <option value="waitlisted">Waiting list</option>
+                </ThemedSelect>
+                <p className="text-xs text-slate-500 mt-1">
+                  Create as an applicant / waiting-list entry; promote later from the employee's Lifecycle panel.
+                </p>
+              </div>
             </div>
           </FormSection>
 
@@ -2311,27 +2356,6 @@ export default function EmployeeManagement() {
             idPrefix="empfield-"
             forceOpen={addSubmitAttempted}
           />
-
-          <FormSection
-            label="Recruitment Intake"
-            open={addSections.isOpen("intake")}
-            onToggle={() => addSections.toggle("intake")}
-          >
-            <ThemedSelect
-              value={form.lifecycle_intake}
-              onChange={(e) =>
-                setForm({ ...form, lifecycle_intake: e.target.value as "" | "applicant" | "waitlisted" })
-              }
-              className="w-full md:w-1/2 px-4 py-2 border border-slate-200 rounded-md text-sm"
-            >
-              <option value="">Active hire (default)</option>
-              <option value="applicant">Applicant</option>
-              <option value="waitlisted">Waiting list</option>
-            </ThemedSelect>
-            <p className="text-xs text-slate-500 mt-1">
-              Create as an applicant / waiting-list entry; promote later from the employee's Lifecycle panel.
-            </p>
-          </FormSection>
 
           <FormSection
             label="Documents"
