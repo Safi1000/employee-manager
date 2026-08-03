@@ -234,11 +234,10 @@ export default function SuperAdminLayout() {
   if (profitShare) links.push(profitShare);
 
   // COMPLIANCE
-  // Documents hidden (route kept).
+  // Documents and Compliance Cases hidden (routes kept).
   const compliance = buildGroup("Compliance", "/super-admin/comply", [
     LICENCES,
     COMPLIANCE,
-    COMPLIANCE_CASES,
   ]);
   if (compliance) links.push(compliance);
 
