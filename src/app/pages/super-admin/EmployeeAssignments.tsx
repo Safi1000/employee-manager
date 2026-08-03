@@ -298,17 +298,13 @@ export default function EmployeeAssignments() {
 
   // ── Grouping: one card per client, then the category / unassigned buckets ──
   const groups = useMemo<Group[]>(() => {
+    // Search narrows the CLIENT list, not the people inside it — this page is
+    // organised by client, so filtering rows away left half-empty cards that
+    // misrepresented a client's headcount.
     const q = search.trim().toLowerCase();
-    const visible = employees.filter((e) => {
-      if (!showSeparated && isSeparatedState(e.lifecycle_state)) return false;
-      if (!q) return true;
-      return (
-        e.full_name.toLowerCase().includes(q) ||
-        (e.employee_code ?? "").toLowerCase().includes(q) ||
-        (e.guard_code ?? "").toLowerCase().includes(q) ||
-        (e.cnic_number ?? "").toLowerCase().includes(q)
-      );
-    });
+    const visible = employees.filter(
+      (e) => showSeparated || !isSeparatedState(e.lifecycle_state),
+    );
 
     const byClient = new Map<string, EmployeeRow[]>();
     const office: EmployeeRow[] = [];
@@ -355,8 +351,7 @@ export default function EmployeeAssignments() {
     let visibleGroups = showServicesClients
       ? out
       : out.filter((g) => !(g.clientId && servicesOnlyClientIds.has(g.clientId)));
-    // While searching for a person, empty client cards are just noise.
-    if (q) visibleGroups = visibleGroups.filter((g) => g.rows.length > 0);
+    if (q) visibleGroups = visibleGroups.filter((g) => g.label.toLowerCase().includes(q));
     if (onlyMismatch) return visibleGroups.filter((g) => g.recon != null && g.recon.variance !== 0);
     return visibleGroups;
   }, [employees, clients, search, showSeparated, recon, onlyMismatch, servicesOnlyClientIds, showServicesClients]);
@@ -537,7 +532,7 @@ export default function EmployeeAssignments() {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search name, code or CNIC…"
+              placeholder="Search clients…"
               className="w-full pl-9 pr-4 py-2 border border-border rounded-md text-sm bg-card"
             />
           </div>

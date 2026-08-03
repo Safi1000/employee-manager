@@ -1757,11 +1757,14 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                       <input
                         type="number"
                         value={selectedRow.base_salary}
-                        onChange={(e) =>
-                          updateEdit(selectedRow.employee.id, { base_salary: Number(e.target.value) })
-                        }
-                        className="w-full px-2 py-1 border border-slate-200 rounded text-sm"
+                        disabled
+                        readOnly
+                        className="w-full px-2 py-1 border border-slate-200 rounded text-sm bg-slate-50 text-slate-500 cursor-not-allowed"
                       />
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        Set on Assignments &amp; Pay — salary is effective-dated, so changing it here
+                        would price this payslip off a figure no salary record contains.
+                      </p>
                     </div>
                     <div>
                       <label className="block text-xs text-slate-500 mb-1">Per Day (display)</label>

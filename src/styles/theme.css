@@ -357,3 +357,17 @@
 @media (prefers-reduced-motion: reduce) {
   .feed-row-fresh { animation: none; }
 }
+
+/* Number inputs carry money and headcounts here, never something you nudge one
+   step at a time. The spinners only steal width and invite mis-clicks, so drop
+   them everywhere; the field still accepts keyboard arrows. */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}

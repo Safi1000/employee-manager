@@ -109,6 +109,12 @@ type ClientShift = {
   client_prefix: string | null;
   /** Confirmation / grouping key: the site, or the client when there is no site. */
   group_key: string;
+  /**
+   * Shifts this row's client actually runs, from the contract. Used by the
+   * marking form where there is no site to read shift_definitions from — without
+   * it a siteless client could only ever offer the one shift being viewed.
+   */
+  contract_shifts: string[];
   shift_code: string;
   contracted: number;
   roster: RosterGuard[];
@@ -265,6 +271,7 @@ export default function AttendanceBoard() {
           client_name: d.clients?.name ?? "—",
           client_prefix: d.clients?.employee_id_prefix ?? null,
           group_key: groupKey,
+          contract_shifts: [...(shiftStrength.get(d.client_id)?.keys() ?? [])],
           shift_code: sched,
           contracted:
             contracted.get(`${d.site_id}|${sched}`) ??
@@ -311,6 +318,7 @@ export default function AttendanceBoard() {
           key,
           site_id: "",
           group_key: clientId,
+          contract_shifts: [...perShift.keys()],
           site_name: "—",
           client_id: clientId,
           client_name: c?.name ?? "—",
@@ -340,6 +348,7 @@ export default function AttendanceBoard() {
           key,
           site_id: "",
           group_key: `cat:${e.category}`,
+          contract_shifts: [],
           site_name: "—",
           client_id: `cat:${e.category}`,
           client_name: catLabel(e.category),
@@ -633,7 +642,13 @@ function ShiftDrillModal({
     // even where a site's shift_definitions are not fully seeded.
     let cancelled = false;
     if (!shift.site_id) {
-      setSiteShifts([shift.shift_code]);
+      // No site to read shift_definitions from, so the contract's own
+      // day/night/evening split is the best statement of what this client runs.
+      const fromContract = shift.contract_shifts ?? [];
+      const union = fromContract.includes(shift.shift_code)
+        ? fromContract
+        : [...fromContract, shift.shift_code];
+      setSiteShifts(union.length ? union : [shift.shift_code]);
       return;
     }
     supabase

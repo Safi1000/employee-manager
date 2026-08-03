@@ -3090,7 +3090,7 @@ export default function EmployeeManagement() {
                     key={val}
                     type="button"
                     onClick={() => { setFireType(val); setFireEligible(val === "resignation"); }}
-                    className={`flex-1 px-3 py-2 rounded-md text-sm border ${fireType === val ? "bg-slate-900 text-[#fff] border-slate-900" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}
+                    className={`flex-1 px-3 py-2 rounded-md text-sm border transition-colors ${fireType === val ? "bg-brand-500 text-brand-950 border-brand-500 font-medium" : "border-border text-muted-foreground hover:bg-accent"}`}
                   >
                     {label}
                   </button>

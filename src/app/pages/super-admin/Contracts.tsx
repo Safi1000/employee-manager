@@ -46,8 +46,8 @@ import { useRegion } from "../../lib/region";
 type ContractRow = Contract & { client_name: string; client_code: string };
 type EmployeeAssignment = Pick<
   Employee,
-  "status" | "contract_id" | "contract_line_id" | "assignment_effective_from" | "assignment_effective_to"
->;
+  "status" | "client_id" | "contract_id" | "contract_line_id" | "assignment_effective_from" | "assignment_effective_to"
+> & { lifecycle_state?: string | null };
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -64,6 +64,7 @@ export default function Contracts() {
   const [linesByContract, setLinesByContract] = useState<Map<string, ContractLine[]>>(new Map());
   const [addendumsByContract, setAddendumsByContract] = useState<Map<string, ContractAddendum[]>>(new Map());
   const [employeesByContract, setEmployeesByContract] = useState<Map<string, EmployeeAssignment[]>>(new Map());
+  const [looseActiveByClient, setLooseActiveByClient] = useState<Map<string, number>>(new Map());
   const [lineCategoryById, setLineCategoryById] = useState<Map<string, ContractLineCategory>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -88,7 +89,7 @@ export default function Contracts() {
       supabase.from("clients").select("*").order("name"),
       supabase
         .from("employees")
-        .select("status, contract_id, contract_line_id, assignment_effective_from, assignment_effective_to"),
+        .select("status, client_id, contract_id, contract_line_id, assignment_effective_from, assignment_effective_to, lifecycle_state"),
       supabase.from("contract_lines").select("*"),
       supabase.from("contract_addendums").select("*"),
       supabase.from("branches").select("*"),
@@ -119,12 +120,26 @@ export default function Contracts() {
     setAddendumsByContract(addMap);
     // Per-contract employee assignments — drive per-category active counts.
     const empMap = new Map<string, EmployeeAssignment[]>();
+    // Active staff per CLIENT who are NOT pinned to a contract line. Most guards
+    // are posted to a client without ever being put on a specific line, so
+    // counting line assignments alone reported "0 / 70" for a fully staffed
+    // client. These are attributed to the client's contract below, but only when
+    // exactly one guard-deployment contract could own them.
+    const looseByClient = new Map<string, number>();
     for (const e of (empRes.data ?? []) as EmployeeAssignment[]) {
-      if (!e.contract_id) continue;
-      if (!empMap.has(e.contract_id)) empMap.set(e.contract_id, []);
-      empMap.get(e.contract_id)!.push(e);
+      if (e.contract_id) {
+        if (!empMap.has(e.contract_id)) empMap.set(e.contract_id, []);
+        empMap.get(e.contract_id)!.push(e);
+      } else if (
+        e.client_id &&
+        e.status === "Active" &&
+        e.lifecycle_state !== "archived"
+      ) {
+        looseByClient.set(e.client_id, (looseByClient.get(e.client_id) ?? 0) + 1);
+      }
     }
     setEmployeesByContract(empMap);
+    setLooseActiveByClient(looseByClient);
     setRows(list);
     setClients(cs);
     setLoading(false);
@@ -375,6 +390,22 @@ export default function Contracts() {
                   for (const [cat, n] of activeByCat) {
                     if (isPersonnelCategory(cat)) activeGuards += n;
                   }
+                  // Guards posted to the client but never pinned to a line still
+                  // work under this contract. Attribute them only when this is the
+                  // client's single guard-deployment contract — with more than one
+                  // there is nothing to say which they belong to, so leave them out
+                  // rather than double-count.
+                  const clientGdContracts = rows.filter(
+                    (r) =>
+                      r.client_id === row.client_id &&
+                      r.contract_type === "guard_deployment" &&
+                      r.status === "active",
+                  ).length;
+                  const looseActive =
+                    row.contract_type === "guard_deployment" && clientGdContracts === 1
+                      ? looseActiveByClient.get(row.client_id) ?? 0
+                      : 0;
+                  activeGuards += looseActive;
                   // Monthly value with signed rate-change addendums applied.
                   const valuePerMonth = effectiveContractLinesValue(lines, addendums, today());
                   // Exceeded when any category's active exceeds its committed.
@@ -451,6 +482,11 @@ export default function Contracts() {
                             <span className={overStaffed ? "text-danger-700 font-medium" : "text-slate-900"}>
                               {activeGuards} / {totalCommitted}
                             </span>
+                            {looseActive > 0 && (
+                              <div className="text-[10px] text-slate-500" title="Posted to the client but not pinned to a contract line">
+                                {looseActive} not on a line
+                              </div>
+                            )}
                             {overStaffed && (
                               <div className="text-[10px] text-danger-600">over by {activeGuards - totalCommitted}</div>
                             )}

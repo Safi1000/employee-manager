@@ -1160,16 +1160,6 @@ export default function Invoices() {
                             <Download className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
                             PDF
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => openPayment(inv)}
-                            disabled={isSettled}
-                            title={isSettled ? "Invoice fully paid" : "Record payment"}
-                          >
-                            <Wallet className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
-                            Record Payment
-                          </Button>
                           <Button variant="ghost" size="sm" onClick={() => openEdit(inv)}>
                             <Pencil className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
                             Edit
