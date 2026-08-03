@@ -175,9 +175,13 @@ export default function AttendanceBoard() {
         // The contract's per-shift headcount decides which shifts a client runs.
         supabase
           .from("contracts")
-          .select("client_id, contract_type, status, day_guards, night_guards, evening_guards")
+          .select("client_id, contract_type, status, day_guards, night_guards, evening_guards, start_date, end_date, is_infinite")
           .eq("status", "active")
-          .eq("contract_type", "guard_deployment"),
+          .eq("contract_type", "guard_deployment")
+          // In force ON the viewed date — a contract starting in 2026 must not
+          // put rows on a 2024 board.
+          .lte("start_date", date)
+          .or(`is_infinite.eq.true,end_date.is.null,end_date.gte.${date}`),
         supabase.from("vacancies").select("*").eq("status", "open").order("opened_at", { ascending: false }),
         // Non-client categories (office staff + any future category) have no
         // client posting; load them directly so they appear on the board too.
@@ -204,6 +208,10 @@ export default function AttendanceBoard() {
     // guard-deployment contracts. A shift with 0 committed simply isn't run.
     const shiftStrength = new Map<string, Map<string, number>>();
     for (const k of (cons ?? []) as any[]) {
+      // Belt and braces: the query already windows on the date, but a null
+      // start_date would slip through PostgREST's filter.
+      if (k.start_date && k.start_date > date) continue;
+      if (!k.is_infinite && k.end_date && k.end_date < date) continue;
       const per = shiftStrength.get(k.client_id) ?? new Map<string, number>();
       for (const [shift, n] of [
         ["day", k.day_guards], ["night", k.night_guards], ["evening", k.evening_guards],
