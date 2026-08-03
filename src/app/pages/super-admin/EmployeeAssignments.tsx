@@ -309,48 +309,33 @@ export default function EmployeeAssignments() {
       // pool behind each client's "Assign employees" button.
     }
 
+    // EVERY client gets a card, staffed or not. Building the list from employees
+    // alone was a chicken-and-egg trap: "Assign employees" lives on a client card,
+    // so a client nobody is posted to yet never rendered one and could never be
+    // staffed — a brand-new org showed a completely empty page.
     const reconByClient = new Map(recon.map((r) => [r.client_id, r]));
-    const out: Group[] = [];
-    for (const [clientId, rows] of byClient) {
-      const c = clientById.get(clientId);
-      out.push({
-        key: `client:${clientId}`,
-        label: c?.name ?? "Unknown client",
-        clientId,
-        hint: c?.employee_id_prefix ? `Prefix ${c.employee_id_prefix}` : "",
-        rows,
-        recon: reconByClient.get(clientId),
-      });
-    }
-    // A client that is contracted but has nobody enrolled still has to show up —
-    // a zero-strength shortfall is exactly what this reconciliation is for.
-    if (!q) {
-      for (const r of recon) {
-        if (byClient.has(r.client_id)) continue;
-        if (r.contracted_billed_qty === 0 && r.enrolled_total === 0) continue;
-        const c = clientById.get(r.client_id);
-        out.push({
-          key: `client:${r.client_id}`,
-          label: c?.name ?? r.client_name,
-          clientId: r.client_id,
-          hint: "No one enrolled yet",
-          rows: [],
-          recon: r,
-        });
-      }
-    }
+    const out: Group[] = clients.map((c) => ({
+      key: `client:${c.id}`,
+      label: c.name,
+      clientId: c.id,
+      hint: c.employee_id_prefix ? `Prefix ${c.employee_id_prefix}` : "",
+      rows: byClient.get(c.id) ?? [],
+      recon: reconByClient.get(c.id),
+    }));
     out.sort((a, b) => a.label.localeCompare(b.label));
 
     if (office.length)
       out.push({ key: "office", label: "Office Staff", clientId: null, hint: "No client posting", rows: office });
     if (relievers.length)
       out.push({ key: "relievers", label: "Relievers", clientId: null, hint: "Relief pool", rows: relievers });
-    const visibleGroups = showServicesClients
+    let visibleGroups = showServicesClients
       ? out
       : out.filter((g) => !(g.clientId && servicesOnlyClientIds.has(g.clientId)));
+    // While searching for a person, empty client cards are just noise.
+    if (q) visibleGroups = visibleGroups.filter((g) => g.rows.length > 0);
     if (onlyMismatch) return visibleGroups.filter((g) => g.recon != null && g.recon.variance !== 0);
     return visibleGroups;
-  }, [employees, search, showSeparated, clientById, recon, onlyMismatch, servicesOnlyClientIds, showServicesClients]);
+  }, [employees, clients, search, showSeparated, recon, onlyMismatch, servicesOnlyClientIds, showServicesClients]);
 
   // Hiding a client must never make its guards unreachable — this page is the only
   // place their posting and pay can be edited. If a Services-only client somehow
@@ -681,7 +666,7 @@ export default function EmployeeAssignments() {
                         {g.rows.length === 0 && (
                           <tr>
                             <td colSpan={12} className="px-4 py-8 text-center text-sm text-muted-foreground">
-                              Contracted but nobody enrolled yet — add employees and assign them to this client.
+                              Nobody is posted to this client yet — use “Assign employees” above.
                             </td>
                           </tr>
                         )}
