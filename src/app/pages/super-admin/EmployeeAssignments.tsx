@@ -28,6 +28,7 @@ import {
   ChevronRight,
   Building2,
   UserPlus,
+  UserMinus,
   CheckCircle2,
   MapPin,
 } from "lucide-react";
@@ -188,6 +189,7 @@ export default function EmployeeAssignments() {
   const [bulkGroup, setBulkGroup] = useState<Group | null>(null);
   const [rowTarget, setRowTarget] = useState<EmployeeRow | null>(null);
   const [assignToClient, setAssignToClient] = useState<{ id: string; name: string } | null>(null);
+  const [unassignFrom, setUnassignFrom] = useState<{ group: Group; rows: EmployeeRow[] } | null>(null);
   const [changeClientTarget, setChangeClientTarget] = useState<EmployeeRow | null>(null);
   const [changeCategoryTarget, setChangeCategoryTarget] = useState<EmployeeRow | null>(null);
   const [changeShiftTarget, setChangeShiftTarget] = useState<EmployeeRow | null>(null);
@@ -645,6 +647,21 @@ export default function EmployeeAssignments() {
                       Bulk edit{sel.size > 0 ? ` (${sel.size})` : ""}
                     </Button>
                   )}
+                  {canEdit && g.clientId && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={sel.size === 0}
+                      title={sel.size === 0 ? "Tick the employees to unassign" : undefined}
+                      onClick={() => {
+                        if (!open) toggleGroup(g.key);
+                        setUnassignFrom({ group: g, rows: g.rows.filter((r) => sel.has(r.id)) });
+                      }}
+                    >
+                      <UserMinus className="w-4 h-4 mr-1.5" strokeWidth={1.75} />
+                      Unassign{sel.size > 0 ? ` (${sel.size})` : ""}
+                    </Button>
+                  )}
                 </div>
 
                 {open && (
@@ -769,6 +786,22 @@ export default function EmployeeAssignments() {
           allEmployees={employees}
           onClose={() => setAssignToClient(null)}
           onDone={async (msg) => { setAssignToClient(null); setNotice(msg); await loadData(); }}
+          onError={setError}
+        />
+      )}
+
+      {unassignFrom && (
+        <UnassignModal
+          clientName={unassignFrom.group.label}
+          rows={unassignFrom.rows}
+          onClose={() => setUnassignFrom(null)}
+          onDone={async (msg) => {
+            const key = unassignFrom.group.key;
+            setUnassignFrom(null);
+            setSelected((prev) => ({ ...prev, [key]: new Set<string>() }));
+            setNotice(msg);
+            await loadData();
+          }}
           onError={setError}
         />
       )}
@@ -1777,6 +1810,153 @@ function AssignEmployeesModal({
             </div>
           </div>
         </div>
+      </div>
+    </Modal>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Unassign — take guards off a client and return them to the pool.
+//
+// The posting is a dated row, so this CLOSES the open deployment rather than
+// deleting it: the guard's history at that client stays intact and attendance
+// already recorded against it is untouched. Closing the last open posting makes
+// sync_employee_active_client() null employees.client_id and drop the
+// client-scoped display number, which is what puts them back in the "awaiting a
+// client" pool. The permanent guard code is never reissued.
+//
+// Ending on a FUTURE date is refused: that trigger keys off "no open posting",
+// so a future end_date would drop the guard off the client immediately while
+// claiming they stay until then.
+// ─────────────────────────────────────────────────────────────────────────────
+function UnassignModal({
+  clientName, rows, onClose, onDone, onError,
+}: {
+  clientName: string;
+  rows: EmployeeRow[];
+  onClose: () => void;
+  onDone: (message: string) => Promise<void>;
+  onError: (m: string) => void;
+}) {
+  const [endDate, setEndDate] = useState(todayIso());
+  const [saving, setSaving] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [err, setErr] = useState<string | null>(null);
+
+  const save = async () => {
+    if (rows.length === 0) { setErr("Nobody selected."); return; }
+    if (!endDate) { setErr("Pick a last day."); return; }
+    if (endDate > todayIso()) {
+      setErr("The last day can't be in the future — unassigning takes effect immediately.");
+      return;
+    }
+    setSaving(true);
+    setErr(null);
+    setProgress(0);
+    try {
+      for (let i = 0; i < rows.length; i++) {
+        const e = rows[i];
+        const fail = (m: string) => new Error(`${e.full_name}: ${m}`);
+
+        // Close the open posting. The sync trigger clears client_id + display_number.
+        const { data: closed, error: depErr } = await supabase
+          .from("deployments")
+          .update({ end_date: endDate, reason: "return_to_pool" })
+          .eq("guard_id", e.id)
+          .is("end_date", null)
+          .select("id");
+        if (depErr) throw fail(depErr.message);
+
+        // Older records can carry a client_id with no posting row behind it. With
+        // nothing to close the trigger never fires, so clear the mirror directly.
+        const orphaned = (closed ?? []).length === 0;
+
+        const { error: upErr } = await supabase
+          .from("employees")
+          .update({
+            contract_id: null,
+            contract_line_id: null,
+            assignment_effective_from: null,
+            assignment_effective_to: null,
+            ...(orphaned ? { client_id: null, display_number: null } : {}),
+          })
+          .eq("id", e.id);
+        if (upErr) throw fail(upErr.message);
+        setProgress(i + 1);
+      }
+      await onDone(
+        `${rows.length} employee${rows.length === 1 ? "" : "s"} unassigned from ${clientName}.`,
+      );
+    } catch (e: any) {
+      const m = e.message ?? String(e);
+      setErr(progress > 0 ? `${m} — ${progress} already unassigned before this failed.` : m);
+      onError(m);
+      setSaving(false);
+    }
+  };
+
+  const inputCls = "w-full px-3 py-2 border border-border rounded-md text-sm bg-card";
+  return (
+    <Modal
+      isOpen
+      error={err}
+      onDismissError={() => setErr(null)}
+      onClose={onClose}
+      title={`Unassign from ${clientName}`}
+      size="sm"
+      footer={
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs text-muted-foreground">
+            {saving ? `Unassigning ${progress} / ${rows.length}…` : `${rows.length} selected`}
+          </span>
+          <div className="flex gap-2">
+            <Button variant="secondary" size="sm" onClick={onClose} disabled={saving}>Cancel</Button>
+            <Button size="sm" onClick={save} disabled={saving}>
+              {saving && <Loader2 className="w-4 h-4 animate-spin mr-1" />}
+              Unassign {rows.length}
+            </Button>
+          </div>
+        </div>
+      }
+    >
+      <div className="space-y-4">
+        <p className="text-xs text-muted-foreground">
+          Their time at {clientName} is kept — the posting is closed on the date below, not deleted, so
+          past attendance and payroll stay as they were. They return to the pool and can be assigned to
+          another client. Their client number is released; the permanent guard code stays.
+        </p>
+
+        <div className="border border-border rounded-md max-h-56 overflow-y-auto">
+          {rows.map((e) => (
+            <div key={e.id} className="px-3 py-2 border-b border-border last:border-0">
+              <span className="block text-sm text-foreground truncate">{e.full_name}</span>
+              <span className="block text-xs text-muted-foreground truncate">
+                {e.guard_code ?? e.employee_code}
+                {e.department ? ` · ${e.department}` : ""}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1">Last day at this client</label>
+          <input
+            type="date"
+            value={endDate}
+            max={todayIso()}
+            onChange={(e) => setEndDate(e.target.value)}
+            className={inputCls}
+          />
+          <p className="text-[11px] text-muted-foreground mt-1">
+            Attendance up to and including this date stays attributed to {clientName}.
+          </p>
+        </div>
+
+        <p className="text-xs text-muted-foreground">
+          To end someone's employment altogether, use Fire on the Employees page instead — this only
+          removes the client posting.
+        </p>
       </div>
     </Modal>
   );
