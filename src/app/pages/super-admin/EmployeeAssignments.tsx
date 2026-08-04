@@ -279,6 +279,20 @@ export default function EmployeeAssignments() {
     }
     return new Set([...seen].filter(([, only]) => only).map(([id]) => id));
   }, [contracts]);
+  // A line's own label if it carries one, else its category name — the role the
+  // employee is contracted as. This replaces the free-text department field.
+  const lineLabelById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const l of contractLines) {
+      m.set(l.id, (l.label ?? "").trim() || CONTRACT_LINE_CATEGORY_LABEL[l.category]);
+    }
+    return m;
+  }, [contractLines]);
+  const departmentOf = useCallback(
+    (e: EmployeeRow) => (e.contract_line_id ? lineLabelById.get(e.contract_line_id) ?? null : null),
+    [lineLabelById],
+  );
+
   const contractsForClient = useCallback(
     (clientId: string) => contracts.filter((c) => c.client_id === clientId),
     [contracts],
@@ -494,7 +508,7 @@ export default function EmployeeAssignments() {
           e.client_name ?? "",
           e.location_name ?? "",
           e.branch_name ?? "",
-          e.department ?? "",
+          departmentOf(e) ?? "",
           e.shift,
           e.base_salary ?? "",
           perDayOf(e.base_salary) ?? "",
@@ -789,7 +803,11 @@ export default function EmployeeAssignments() {
                             </td>
                             <td className="px-3 py-2 text-sm text-muted-foreground whitespace-nowrap">{e.location_name ?? "—"}</td>
                             <td className="px-3 py-2 text-sm text-muted-foreground whitespace-nowrap">{e.branch_name ?? "—"}</td>
-                            <td className="px-3 py-2 text-sm text-muted-foreground whitespace-nowrap">{e.department ?? "—"}</td>
+                            <td className="px-3 py-2 text-sm text-muted-foreground whitespace-nowrap">
+                              {departmentOf(e) ?? (
+                                <span title="Not assigned to a contract line">—</span>
+                              )}
+                            </td>
                             <td className="px-3 py-2 text-sm text-muted-foreground capitalize whitespace-nowrap">{e.shift}</td>
                             <td className="px-3 py-2 text-sm text-foreground tabular-nums whitespace-nowrap">{money(e.base_salary)}</td>
                             <td className="px-3 py-2 text-sm text-muted-foreground tabular-nums whitespace-nowrap">{money(perDayOf(e.base_salary))}</td>
@@ -837,6 +855,7 @@ export default function EmployeeAssignments() {
           employee={rowTarget}
           canEdit={canEdit}
           displayCode={displayCodeFor(rowTarget)}
+          departmentLabel={departmentOf(rowTarget)}
           locations={locations}
           branches={branches}
           clients={clients}
@@ -963,7 +982,6 @@ function BulkEditModal({
     const patch: Record<string, unknown> = {};
     if (bulk.setLocation) patch.location_id = bulk.locationId || null;
     if (bulk.setBranch) patch.branch_id = bulk.branchId || null;
-    if (bulk.setDepartment) patch.department = bulk.department.trim() || null;
     if (bulk.setJoinDate) patch.join_date = bulk.joinDate || null;
     return patch;
   }, [bulk]);
@@ -1157,13 +1175,6 @@ function BulkEditModal({
               </ThemedSelect>
             </BulkField>
             <BulkField
-              label="Department"
-              checked={bulk.setDepartment}
-              onToggle={(v) => set("setDepartment", v)}
-            >
-              <input value={bulk.department} onChange={(e) => set("department", e.target.value)} className={inputCls} placeholder="e.g. Security" />
-            </BulkField>
-            <BulkField
               label="Joining date"
               checked={bulk.setJoinDate}
               onToggle={(v) => set("setJoinDate", v)}
@@ -1206,11 +1217,13 @@ function BulkField({
 // ─────────────────────────────────────────────────────────────────────────────
 function RowEditModal({
   employee, canEdit, displayCode, locations, branches, clients,
-  onClose, onSaved, onChangeClient, onChangeCategory, onChangeShift, onError,
+  onClose, onSaved, onChangeClient, onChangeCategory, onChangeShift, onError, departmentLabel,
 }: {
   employee: EmployeeRow;
   canEdit: boolean;
   displayCode: string;
+  /** The contract line this employee fills — shown in place of a free-text department. */
+  departmentLabel: string | null;
   locations: Location[];
   branches: Branch[];
   clients: Client[];
@@ -1224,7 +1237,6 @@ function RowEditModal({
   const [locationId, setLocationId] = useState(employee.location_id ?? "");
   const [branchId, setBranchId] = useState(employee.branch_id ?? "");
   const [additional, setAdditional] = useState<string[]>([...(employee.additional_branch_ids ?? [])]);
-  const [department, setDepartment] = useState(employee.department ?? "");
   const [joinDate, setJoinDate] = useState(employee.join_date ?? "");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -1247,7 +1259,6 @@ function RowEditModal({
         .update({
           location_id: locationId || null,
           branch_id: branchId || null,
-          department: department.trim() || null,
           join_date: joinDate || null,
           ...(neverPosted ? { shift, category: draftCategory } : {}),
         })
@@ -1362,12 +1373,10 @@ function RowEditModal({
             </div>
             <div>
               <label className="block text-xs text-muted-foreground mb-1">Department</label>
-              <input
-                value={department}
-                disabled={!canEdit}
-                onChange={(e) => setDepartment(e.target.value)}
-                className={canEdit ? inputCls : lockedCls}
-              />
+              <input value={departmentLabel ?? "—"} disabled readOnly className={lockedCls} />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Follows the contract line this employee fills.
+              </p>
             </div>
           </div>
           {!canPost && (

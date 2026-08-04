@@ -635,6 +635,11 @@ export type ContractLine = {
   category: ContractLineCategory;
   label: string | null;
   location: string | null;
+  /** The site this line staffs, and the shift it runs. Null = contract-wide. */
+  site_id: string | null;
+  shift_code: string | null;
+  billed_qty?: number | null;
+  required_on_ground?: number | null;
   committed_count: number;
   unit_rate: number;
   cost_components: Record<string, unknown> | null;
@@ -871,6 +876,33 @@ export const PAKISTAN_BANKS = [
   "United Bank Limited (UBL)",
   "Other",
 ] as const;
+
+/**
+ * A physical posting location under a client. A client may run several (a mall
+ * with three gates, a bank with branch offices); one is flagged is_default and
+ * receives postings made without an explicit site.
+ */
+export type Site = {
+  id: string;
+  company_id?: string;
+  client_id: string;
+  name: string;
+  location: string | null;
+  is_default: boolean;
+  created_at?: string;
+  updated_at?: string;
+};
+
+/** Which shifts a SITE runs, and when they start. Drives the attendance board. */
+export type ShiftDefinition = {
+  id: string;
+  company_id?: string;
+  site_id: string;
+  shift_code: string;
+  start_time: string | null;
+  end_time?: string | null;
+  created_at?: string;
+};
 
 export type RegionKind = "regional" | "head_office";
 
