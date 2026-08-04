@@ -13,6 +13,8 @@ import {
   CONTRACT_TYPE_LABEL,
   CONTRACT_STATUS_LABEL,
   CONTRACT_LINE_CATEGORY_LABEL,
+  isPersonnelCategory,
+  type Site,
   CONTRACT_TYPE_LINE_CATEGORIES,
   ADDENDUM_CHANGE_TYPE_LABEL,
   ADDENDUM_SOURCE_LABEL,
@@ -49,9 +51,13 @@ type ContractFormState = {
   status: ContractStatus;
 };
 
-// One editable row in the Contract Lines table.
+// One editable row in a site's Contract Lines table.
 type LineDraft = {
   id?: string; // existing contract_lines.id — absent for new rows
+  /** Which SiteDraft this line belongs to. "" = contract-wide (no site). */
+  site_key: string;
+  /** The shift this line staffs. Blank for hardware lines, which nobody works. */
+  shift_code: string;
   category: ContractLineCategory;
   label: string;
   location: string;
@@ -59,6 +65,32 @@ type LineDraft = {
   unit_rate: string;
   taxable: boolean;
 };
+
+/**
+ * A site being edited. `key` is a client-side identity so brand-new sites can own
+ * lines before they have a database id.
+ */
+type SiteDraft = {
+  key: string;
+  id?: string;
+  name: string;
+  location: string;
+  is_default: boolean;
+};
+
+/** Shifts a line can staff. Hardware lines carry none. */
+const SHIFT_CODES = ["day", "evening", "night"] as const;
+const SHIFT_LABEL: Record<string, string> = {
+  day: "Day",
+  evening: "Evening",
+  night: "Night",
+};
+
+/** Lines with no site of their own — kept so older contracts keep working. */
+const NO_SITE = "";
+
+let siteKeySeq = 0;
+const nextSiteKey = () => `site-${++siteKeySeq}`;
 
 const blankForm = (clientId: string): ContractFormState => ({
   client_id: clientId,
@@ -100,8 +132,10 @@ const fromContract = (c: Contract): ContractFormState => ({
 const defaultCategoryFor = (type: ContractType): ContractLineCategory =>
   CONTRACT_TYPE_LINE_CATEGORIES[type][0];
 
-// A blank draft row for a category.
-const blankLine = (category: ContractLineCategory): LineDraft => ({
+// A blank draft row for a category, belonging to a site.
+const blankLine = (category: ContractLineCategory, siteKey = NO_SITE): LineDraft => ({
+  site_key: siteKey,
+  shift_code: isPersonnelCategory(category) ? "day" : "",
   category,
   label: CONTRACT_LINE_CATEGORY_LABEL[category],
   location: "",
@@ -113,10 +147,16 @@ const blankLine = (category: ContractLineCategory): LineDraft => ({
 // Show exactly the lines the contract actually has. A new contract starts with a
 // single blank row — pre-seeding all seven categories with zeros only produced
 // clutter that the user had to clear out. Further rows come from "+ Add Line".
-const seedLines = (existing: ContractLine[], type: ContractType): LineDraft[] => {
+const seedLines = (
+  existing: ContractLine[],
+  type: ContractType,
+  siteKeyById: Map<string, string>,
+): LineDraft[] => {
   if (!existing.length) return [blankLine(defaultCategoryFor(type))];
   return existing.map((l) => ({
     id: l.id,
+    site_key: l.site_id ? siteKeyById.get(l.site_id) ?? NO_SITE : NO_SITE,
+    shift_code: l.shift_code ?? (isPersonnelCategory(l.category) ? "day" : ""),
     category: l.category,
     label: l.label ?? CONTRACT_LINE_CATEGORY_LABEL[l.category],
     location: l.location ?? "",
@@ -124,6 +164,13 @@ const seedLines = (existing: ContractLine[], type: ContractType): LineDraft[] =>
     unit_rate: String(l.unit_rate),
     taxable: l.taxable,
   }));
+};
+
+/** Start times stamped on a shift_definition created from a contract line. */
+const DEFAULT_SHIFT_START: Record<string, string> = {
+  day: "08:00",
+  evening: "16:00",
+  night: "20:00",
 };
 
 const num = (s: string) => Number(s) || 0;
@@ -196,7 +243,10 @@ export default function ContractEditorModal({
 }) {
   const { profile, company } = useAuth();
   const [form, setForm] = useState<ContractFormState>(blankForm(clientId ?? ""));
-  const [lines, setLines] = useState<LineDraft[]>(seedLines([], "guard_deployment"));
+  const [lines, setLines] = useState<LineDraft[]>(seedLines([], "guard_deployment", new Map()));
+  const [sites, setSites] = useState<SiteDraft[]>([]);
+  /** Site ids present when the modal opened — anything missing now gets deleted. */
+  const [loadedSiteIds, setLoadedSiteIds] = useState<string[]>([]);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [loadingLines, setLoadingLines] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -236,23 +286,42 @@ export default function ContractEditorModal({
     setAddFile(null);
     setAddendums([]);
     setDuplicateCount(null);
-    // Load existing lines for edit; a single blank row for add.
-    if (contract) {
-      setLoadingLines(true);
-      supabase
-        .from("contract_lines")
-        .select("*")
-        .eq("contract_id", contract.id)
-        .order("created_at", { ascending: true })
-        .then(({ data, error: err }) => {
-          if (err) setError(err.message);
-          setLines(seedLines((data ?? []) as ContractLine[], initial.contract_type));
-          setLoadingLines(false);
-        });
-      loadAddendums(contract.id);
-    } else {
-      setLines(seedLines([], initial.contract_type));
-    }
+    // Sites belong to the CLIENT, not the contract, so they load for both add and
+    // edit as soon as a client is known — a second contract for the same client
+    // edits the same sites.
+    const effClient = initial.client_id;
+    setLoadingLines(true);
+    (async () => {
+      const siteRes = effClient
+        ? await supabase.from("sites").select("*").eq("client_id", effClient).order("name")
+        : { data: [] as Site[], error: null };
+      if (siteRes.error) setError(siteRes.error.message);
+      const siteRows = (siteRes.data ?? []) as Site[];
+      const drafts: SiteDraft[] = siteRows.map((r) => ({
+        key: nextSiteKey(),
+        id: r.id,
+        name: r.name,
+        location: r.location ?? "",
+        is_default: r.is_default,
+      }));
+      const keyById = new Map(drafts.map((d) => [d.id!, d.key]));
+      setSites(drafts);
+      setLoadedSiteIds(siteRows.map((r) => r.id));
+
+      if (contract) {
+        const { data, error: err } = await supabase
+          .from("contract_lines")
+          .select("*")
+          .eq("contract_id", contract.id)
+          .order("created_at", { ascending: true });
+        if (err) setError(err.message);
+        setLines(seedLines((data ?? []) as ContractLine[], initial.contract_type, keyById));
+        loadAddendums(contract.id);
+      } else {
+        setLines(seedLines([], initial.contract_type, keyById));
+      }
+      setLoadingLines(false);
+    })();
   }, [isOpen, contract, clientId]);
 
   // Categories valid for the current contract type (2d). Weapon/Equipment for
@@ -306,8 +375,53 @@ export default function ContractEditorModal({
   const updateLine = (idx: number, patch: Partial<LineDraft>) =>
     setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
 
-  const addLine = () => setLines((prev) => [...prev, blankLine(defaultCategoryFor(form.contract_type))]);
+  const addLine = (siteKey: string = NO_SITE) =>
+    setLines((prev) => [...prev, blankLine(defaultCategoryFor(form.contract_type), siteKey)]);
   const removeLine = (idx: number) => setLines((prev) => prev.filter((_, i) => i !== idx));
+
+  // Sites hang off the client, so nothing can be added before one is chosen.
+  const effectiveClientId = form.client_id || clientId || "";
+
+  const addSite = () =>
+    setSites((prev) => [
+      ...prev,
+      {
+        key: nextSiteKey(),
+        name: "",
+        location: "",
+        // The first site a client gets is the default one postings fall back to.
+        is_default: prev.length === 0,
+      },
+    ]);
+  const updateSite = (key: string, patch: Partial<SiteDraft>) =>
+    setSites((prev) => prev.map((x) => (x.key === key ? { ...x, ...patch } : x)));
+  /** Drops the site AND its lines — a line cannot outlive the site it staffs. */
+  const removeSite = (key: string) => {
+    setSites((prev) => prev.filter((x) => x.key !== key));
+    setLines((prev) => prev.filter((l) => l.site_key !== key));
+  };
+
+  const linesForSite = (key: string) => lines.filter((l) => l.site_key === key);
+  /** A site's shift detail: committed personnel per shift, summed from its lines. */
+  const shiftDetailFor = (key: string) => {
+    const per: Record<string, number> = { day: 0, evening: 0, night: 0 };
+    for (const l of lines) {
+      if (l.site_key !== key) continue;
+      if (!isPersonnelCategory(l.category)) continue;
+      if (!l.shift_code) continue;
+      per[l.shift_code] = (per[l.shift_code] ?? 0) + Math.max(0, Math.floor(num(l.committed_count)));
+    }
+    return per;
+  };
+  /** Contract-wide per-shift totals — the legacy columns the board still reads. */
+  const shiftTotals = (() => {
+    const per: Record<string, number> = { day: 0, evening: 0, night: 0 };
+    for (const l of lines) {
+      if (!isPersonnelCategory(l.category) || !l.shift_code) continue;
+      per[l.shift_code] = (per[l.shift_code] ?? 0) + Math.max(0, Math.floor(num(l.committed_count)));
+    }
+    return per;
+  })();
 
   // Legacy scalar columns are still read by a few display spots; keep them in
   // sync with the lines so nothing downstream shows stale numbers.
@@ -333,9 +447,11 @@ export default function ContractEditorModal({
     // the source of truth is contract_lines. guard_rates is deprecated (0065) and
     // deliberately NOT written here.
     number_of_guards: totalCommitted,
-    day_guards: Math.max(0, Math.floor(num(form.day_guards))),
-    night_guards: Math.max(0, Math.floor(num(form.night_guards))),
-    evening_guards: Math.max(0, Math.floor(num(form.evening_guards))),
+    // Rolled up from the per-site lines rather than typed in twice. The
+    // attendance board reads these to decide which shifts a client runs.
+    day_guards: shiftTotals.day,
+    night_guards: shiftTotals.night,
+    evening_guards: shiftTotals.evening,
     rate_per_guard_per_month: legacyGuardRate,
     allowed_leaves_per_month:
       form.allowed_leaves_per_month === "" ? null : Math.max(0, Math.floor(num(form.allowed_leaves_per_month))),
@@ -346,23 +462,118 @@ export default function ContractEditorModal({
     status: form.status,
   });
 
+  /**
+   * Save the client's sites, returning draft-key -> saved-site-id so the lines
+   * that follow can point at them. Runs before persistLines for that reason.
+   *
+   * A site with no name is skipped rather than saved blank: it is an empty row
+   * the user added and never filled in.
+   */
+  const persistSites = async (effClientId: string): Promise<Map<string, string>> => {
+    const named = sites.filter((x) => x.name.trim());
+    const keyToId = new Map<string, string>();
+
+    for (const x of named) {
+      const payload = {
+        client_id: effClientId,
+        name: x.name.trim(),
+        location: x.location.trim() || null,
+        is_default: x.is_default,
+      };
+      if (x.id) {
+        const { error: upErr } = await supabase.from("sites").update(payload).eq("id", x.id);
+        if (upErr) throw upErr;
+        keyToId.set(x.key, x.id);
+      } else {
+        const { data, error: insErr } = await supabase
+          .from("sites").insert(payload).select("id").single();
+        if (insErr) throw insErr;
+        keyToId.set(x.key, (data as { id: string }).id);
+      }
+    }
+
+    // Sites the user removed. Postings and attendance reference a site, so the
+    // delete is allowed to fail loudly rather than cascade someone's history away.
+    const keptIds = new Set([...keyToId.values()]);
+    const goneIds = loadedSiteIds.filter((id) => !keptIds.has(id));
+    if (goneIds.length) {
+      const { error: delErr } = await supabase.from("sites").delete().in("id", goneIds);
+      if (delErr) {
+        throw new Error(
+          `A site could not be removed because guards are still posted to it. ` +
+            `Move them to another site first. (${delErr.message})`,
+        );
+      }
+    }
+    return keyToId;
+  };
+
+  /**
+   * Which shifts each site runs, derived from that site's personnel lines. The
+   * attendance board reads shift_definitions to know what a site can be marked
+   * for, so a shift that has lines must have a definition and one that lost its
+   * lines must lose the definition.
+   */
+  const persistShiftDefinitions = async (keyToId: Map<string, string>) => {
+    for (const [key, siteId] of keyToId) {
+      const wanted = new Set(
+        lines
+          .filter((l) => l.site_key === key && isPersonnelCategory(l.category) && l.shift_code)
+          .filter(isMeaningful)
+          .map((l) => l.shift_code),
+      );
+      const { data: existing, error: exErr } = await supabase
+        .from("shift_definitions").select("id, shift_code").eq("site_id", siteId);
+      if (exErr) throw exErr;
+      const have = new Map(
+        ((existing ?? []) as { id: string; shift_code: string }[]).map((r) => [r.shift_code, r.id]),
+      );
+
+      const toAdd = [...wanted].filter((c) => !have.has(c));
+      if (toAdd.length) {
+        const { error: insErr } = await supabase.from("shift_definitions").insert(
+          toAdd.map((shift_code) => ({
+            site_id: siteId,
+            shift_code,
+            start_time: DEFAULT_SHIFT_START[shift_code] ?? null,
+          })),
+        );
+        if (insErr) throw insErr;
+      }
+      const toDrop = [...have].filter(([code]) => !wanted.has(code)).map(([, id]) => id);
+      if (toDrop.length) {
+        const { error: delErr } = await supabase.from("shift_definitions").delete().in("id", toDrop);
+        if (delErr) throw delErr;
+      }
+    }
+  };
+
   // Reconcile the draft lines against what's stored: insert new meaningful
   // rows, update changed ones, delete rows that became empty.
-  const persistLines = async (contractId: string, existingIds: string[]) => {
-    const meaningful = lines.filter(isMeaningful);
+  const persistLines = async (
+    contractId: string,
+    existingIds: string[],
+    keyToId: Map<string, string>,
+  ) => {
+    // A line whose site was added but left unnamed has nowhere to live.
+    const meaningful = lines.filter(
+      (l) => isMeaningful(l) && (l.site_key === NO_SITE || keyToId.has(l.site_key)),
+    );
     const keptIds = new Set(meaningful.map((l) => l.id).filter(Boolean) as string[]);
+    const rowFor = (l: LineDraft) => ({
+      site_id: l.site_key === NO_SITE ? null : keyToId.get(l.site_key) ?? null,
+      shift_code: isPersonnelCategory(l.category) ? l.shift_code || null : null,
+      category: l.category,
+      label: l.label.trim() || CONTRACT_LINE_CATEGORY_LABEL[l.category],
+      location: l.location.trim() || null,
+      committed_count: Math.max(0, Math.floor(num(l.committed_count))),
+      unit_rate: Math.max(0, num(l.unit_rate)),
+      taxable: l.taxable,
+    });
 
     const toInsert = meaningful
       .filter((l) => !l.id)
-      .map((l) => ({
-        contract_id: contractId,
-        category: l.category,
-        label: l.label.trim() || CONTRACT_LINE_CATEGORY_LABEL[l.category],
-        location: l.location.trim() || null,
-        committed_count: Math.max(0, Math.floor(num(l.committed_count))),
-        unit_rate: Math.max(0, num(l.unit_rate)),
-        taxable: l.taxable,
-      }));
+      .map((l) => ({ contract_id: contractId, ...rowFor(l) }));
     if (toInsert.length) {
       const { error: insErr } = await supabase.from("contract_lines").insert(toInsert);
       if (insErr) throw insErr;
@@ -371,14 +582,7 @@ export default function ContractEditorModal({
     for (const l of meaningful.filter((x) => x.id)) {
       const { error: upErr } = await supabase
         .from("contract_lines")
-        .update({
-          category: l.category,
-          label: l.label.trim() || CONTRACT_LINE_CATEGORY_LABEL[l.category],
-          location: l.location.trim() || null,
-          committed_count: Math.max(0, Math.floor(num(l.committed_count))),
-          unit_rate: Math.max(0, num(l.unit_rate)),
-          taxable: l.taxable,
-        })
+        .update(rowFor(l))
         .eq("id", l.id!);
       if (upErr) throw upErr;
     }
@@ -540,11 +744,14 @@ export default function ContractEditorModal({
     setSubmitting(true);
     setError(null);
     try {
+      // Sites first: the lines that follow point at them.
+      const keyToId = await persistSites(effClientId);
       if (contract) {
         const { error: upErr } = await supabase.from("contracts").update(buildContractPayload(effClientId)).eq("id", contract.id);
         if (upErr) throw upErr;
         const { data: existing } = await supabase.from("contract_lines").select("id").eq("contract_id", contract.id);
-        await persistLines(contract.id, ((existing ?? []) as { id: string }[]).map((r) => r.id));
+        await persistLines(contract.id, ((existing ?? []) as { id: string }[]).map((r) => r.id), keyToId);
+        await persistShiftDefinitions(keyToId);
         if (pendingFile) await uploadDocument(contract.id, contract.contract_code, pendingFile, contract.drive_file_id);
       } else {
         const { data, error: insErr } = await supabase
@@ -554,7 +761,8 @@ export default function ContractEditorModal({
           .single();
         if (insErr) throw insErr;
         const inserted = data as Contract;
-        await persistLines(inserted.id, []);
+        await persistLines(inserted.id, [], keyToId);
+        await persistShiftDefinitions(keyToId);
         if (pendingFile) await uploadDocument(inserted.id, inserted.contract_code, pendingFile, null);
       }
       onSaved();
@@ -719,143 +927,150 @@ export default function ContractEditorModal({
           </div>
         </div>
 
-        {/* Shift detail — informational per-shift headcount. NOT the guard count
-            (that lives in Contract Lines below). Kept from main's schema.
-            Hidden for a Services contract: it bills for weapons and equipment,
-            which nobody staffs, so a day/night/evening split is meaningless. */}
-        {form.contract_type !== "services" && (
-        <div className="border border-slate-200 rounded-md p-3">
-          <div className="flex items-baseline justify-between mb-2">
-            <span className="text-sm font-medium text-slate-700">Shift detail</span>
-            <span className="text-[11px] text-slate-500">Informational only — guard count &amp; rate are set in Contract Lines below.</span>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs text-slate-500 mb-1">Day guards</label>
-              <input type="number" min="0" value={form.day_guards}
-                onChange={(e) => setForm({ ...form, day_guards: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm text-right" />
-            </div>
-            <div>
-              <label className="block text-xs text-slate-500 mb-1">Night guards</label>
-              <input type="number" min="0" value={form.night_guards}
-                onChange={(e) => setForm({ ...form, night_guards: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm text-right" />
-            </div>
-            <div>
-              <label className="block text-xs text-slate-500 mb-1">Evening guards</label>
-              <input type="number" min="0" value={form.evening_guards}
-                onChange={(e) => setForm({ ...form, evening_guards: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm text-right" />
-            </div>
-          </div>
-        </div>
-        )}
-
-        {/* Contract Lines — per-category committed count + monthly rate */}
+        {/* Sites — each with its own shift detail and contract lines.
+            A client may run several posting locations (a mall's three gates, a
+            bank's branches) and they rarely staff identically, so the lines live
+            per site rather than once for the whole contract. Shift detail is not
+            typed in separately: it is the per-shift sum of that site's personnel
+            lines, which keeps the two from disagreeing. */}
         <div className="border border-slate-200 rounded-md overflow-hidden">
           <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-200">
-            <span className="text-sm font-medium text-slate-700">Contract Lines</span>
-            <Button type="button" variant="secondary" size="sm" onClick={addLine}>
-              <Plus className="w-3.5 h-3.5 mr-1" /> Add Line
+            <div>
+              <span className="text-sm font-medium text-slate-700">Sites &amp; Contract Lines</span>
+              <span className="text-[11px] text-slate-500 ml-2">
+                {form.contract_type === "services"
+                  ? "Equipment lines — no shifts to staff."
+                  : "Each site carries its own shifts and lines."}
+              </span>
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={!effectiveClientId}
+              title={effectiveClientId ? "Add a site under this client" : "Select a client first"}
+              onClick={() => addSite()}
+            >
+              <Plus className="w-3.5 h-3.5 mr-1" /> Add Site
             </Button>
           </div>
+
+          {!effectiveClientId && (
+            <p className="px-3 py-4 text-sm text-slate-500">
+              Select a client above to add sites.
+            </p>
+          )}
+
           {loadingLines ? (
             <div className="px-3 py-6 text-center text-sm text-slate-500">
-              <Loader2 className="w-4 h-4 animate-spin inline-block mr-2" /> Loading lines…
+              <Loader2 className="w-4 h-4 animate-spin inline-block mr-2" /> Loading sites &amp; lines…
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-xs text-slate-500 uppercase border-b border-slate-200">
-                    <th className="text-left px-3 py-2">Category</th>
-                    <th className="text-left px-3 py-2">Notes</th>
-                    <th className="text-right px-3 py-2 w-28">Committed</th>
-                    <th className="text-right px-3 py-2 w-36">Rate / month</th>
-                    <th className="text-right px-3 py-2 w-32">Line value</th>
-                    <th className="px-2 py-2 w-8"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {lines.map((l, idx) => (
-                    <tr key={l.id ?? `new-${idx}`}>
-                      <td className="px-3 py-1.5">
-                        <ThemedSelect
-                          value={l.category}
-                          onChange={(e) => {
-                            const cat = e.target.value as ContractLineCategory;
-                            updateLine(idx, {
-                              category: cat,
-                              // Keep a custom label if the user set one, else follow the category.
-                              label:
-                                l.label === CONTRACT_LINE_CATEGORY_LABEL[l.category]
-                                  ? CONTRACT_LINE_CATEGORY_LABEL[cat]
-                                  : l.label,
-                            });
-                          }}
-                          className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
-                        >
-                          {allowedCategories.map((cat) => (
-                            <option key={cat} value={cat}>{CONTRACT_LINE_CATEGORY_LABEL[cat]}</option>
-                          ))}
-                        </ThemedSelect>
-                      </td>
-                      <td className="px-3 py-1.5">
-                        <input
-                          type="text"
-                          value={l.location}
-                          onChange={(e) => updateLine(idx, { location: e.target.value })}
-                          className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
-                        />
-                      </td>
-                      <td className="px-3 py-1.5">
-                        <input
-                          type="number"
-                          min="0"
-                          value={l.committed_count}
-                          onChange={(e) => updateLine(idx, { committed_count: e.target.value })}
-                          className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm text-right"
-                        />
-                      </td>
-                      <td className="px-3 py-1.5">
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={l.unit_rate}
-                          onChange={(e) => updateLine(idx, { unit_rate: e.target.value })}
-                          className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm text-right"
-                        />
-                      </td>
-                      <td className="px-3 py-1.5 text-right text-slate-600 tabular-nums">
-                        {(num(l.committed_count) * num(l.unit_rate)).toLocaleString()}
-                      </td>
-                      <td className="px-2 py-1.5 text-right">
-                        <button
-                          type="button"
-                          onClick={() => removeLine(idx)}
-                          className="p-1 rounded text-danger-600 hover:bg-danger-50"
-                          title="Remove line"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t border-slate-200 bg-slate-50 font-medium text-slate-800">
-                    <td className="px-3 py-2" colSpan={2}>Total</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{totalCommitted}</td>
-                    <td className="px-3 py-2"></td>
-                    <td className="px-3 py-2 text-right tabular-nums">PKR {totalValue.toLocaleString()}</td>
-                    <td></td>
-                  </tr>
-                </tfoot>
-              </table>
+            <div className="divide-y divide-slate-200">
+              {/* Lines that predate sites, or belong to the contract as a whole. */}
+              {linesForSite(NO_SITE).length > 0 && (
+                <SiteLinesBlock
+                  title="Contract-wide"
+                  subtitle="Not tied to a site."
+                  siteKey={NO_SITE}
+                  lines={linesForSite(NO_SITE)}
+                  allLines={lines}
+                  allowedCategories={allowedCategories}
+                  contractType={form.contract_type}
+                  shiftDetail={shiftDetailFor(NO_SITE)}
+                  onAddLine={() => addLine(NO_SITE)}
+                  onUpdateLine={updateLine}
+                  onRemoveLine={removeLine}
+                />
+              )}
+
+              {sites.map((site) => (
+                <div key={site.key} className="p-3 space-y-3">
+                  <div className="flex flex-wrap items-end gap-3">
+                    <div className="flex-1 min-w-48">
+                      <label className="block text-xs text-slate-500 mb-1">Site name *</label>
+                      <input
+                        type="text"
+                        value={site.name}
+                        onChange={(e) => updateSite(site.key, { name: e.target.value })}
+                        placeholder="e.g. Main Gate"
+                        className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                      />
+                    </div>
+                    <div className="flex-1 min-w-48">
+                      <label className="block text-xs text-slate-500 mb-1">Location</label>
+                      <input
+                        type="text"
+                        value={site.location}
+                        onChange={(e) => updateSite(site.key, { location: e.target.value })}
+                        placeholder="Optional"
+                        className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                      />
+                    </div>
+                    <label className="flex items-center gap-2 text-xs text-slate-600 pb-2.5" title="Postings made without naming a site land here">
+                      <input
+                        type="checkbox"
+                        checked={site.is_default}
+                        onChange={(e) =>
+                          setSites((prev) =>
+                            prev.map((x) => ({
+                              ...x,
+                              // Exactly one default per client.
+                              is_default: e.target.checked ? x.key === site.key : x.key === site.key ? false : x.is_default,
+                            })),
+                          )
+                        }
+                      />
+                      Default
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => removeSite(site.key)}
+                      className="p-2 rounded text-danger-600 hover:bg-danger-50 mb-1"
+                      title="Remove site and its lines"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <SiteLinesBlock
+                    title={site.name.trim() || "Unnamed site"}
+                    subtitle=""
+                    siteKey={site.key}
+                    lines={linesForSite(site.key)}
+                    allLines={lines}
+                    allowedCategories={allowedCategories}
+                    contractType={form.contract_type}
+                    shiftDetail={shiftDetailFor(site.key)}
+                    onAddLine={() => addLine(site.key)}
+                    onUpdateLine={updateLine}
+                    onRemoveLine={removeLine}
+                  />
+                </div>
+              ))}
+
+              {sites.length === 0 && linesForSite(NO_SITE).length === 0 && effectiveClientId && (
+                <p className="px-3 py-4 text-sm text-slate-500">
+                  No sites yet. Add one to record what this contract staffs.
+                </p>
+              )}
             </div>
           )}
+
+          <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-t border-slate-200 text-sm">
+            <span className="text-slate-600">
+              {form.contract_type !== "services" && (
+                <>
+                  Day {shiftTotals.day} · Evening {shiftTotals.evening} · Night {shiftTotals.night}
+                  <span className="text-slate-400"> · </span>
+                </>
+              )}
+              {totalCommitted} committed
+            </span>
+            <span className="font-medium text-slate-800 tabular-nums">
+              PKR {totalValue.toLocaleString()}
+            </span>
+          </div>
           <p className="px-3 py-2 text-[11px] text-slate-500">
             Contract value = Σ (committed count × rate). Only rows with a count or rate are saved.
           </p>
@@ -1166,5 +1381,162 @@ export default function ContractEditorModal({
         </div>
       </Modal>
     </Modal>
+  );
+}
+
+
+/**
+ * One site's contract lines, with its shift detail shown above them. The detail
+ * is derived from the lines rather than entered, so the two can never disagree —
+ * which is exactly what went wrong when shift counts lived on the contract and
+ * the lines lived separately.
+ */
+function SiteLinesBlock({
+  title, subtitle, siteKey, lines, allLines, allowedCategories, contractType,
+  shiftDetail, onAddLine, onUpdateLine, onRemoveLine,
+}: {
+  title: string;
+  subtitle: string;
+  siteKey: string;
+  lines: LineDraft[];
+  allLines: LineDraft[];
+  allowedCategories: ContractLineCategory[];
+  contractType: ContractType;
+  shiftDetail: Record<string, number>;
+  onAddLine: () => void;
+  onUpdateLine: (idx: number, patch: Partial<LineDraft>) => void;
+  onRemoveLine: (idx: number) => void;
+}) {
+  // Row indices are into the FLAT draft list, which is what the mutators expect.
+  const indexOf = (l: LineDraft) => allLines.indexOf(l);
+  const showShifts = contractType !== "services";
+
+  return (
+    <div className="border border-slate-200 rounded-md overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-slate-50 border-b border-slate-200">
+        <div className="min-w-0">
+          <span className="text-sm font-medium text-slate-700">{title}</span>
+          {subtitle && <span className="text-[11px] text-slate-500 ml-2">{subtitle}</span>}
+          {showShifts && (
+            <span className="block text-[11px] text-slate-500">
+              Shift detail — Day {shiftDetail.day ?? 0} · Evening {shiftDetail.evening ?? 0} · Night{" "}
+              {shiftDetail.night ?? 0}
+            </span>
+          )}
+        </div>
+        <Button type="button" variant="secondary" size="sm" onClick={onAddLine}>
+          <Plus className="w-3.5 h-3.5 mr-1" /> Add Line
+        </Button>
+      </div>
+
+      {lines.length === 0 ? (
+        <p className="px-3 py-4 text-sm text-slate-500">No lines yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-xs text-slate-500 uppercase border-b border-slate-200">
+                <th className="text-left px-3 py-2">Category</th>
+                {showShifts && <th className="text-left px-3 py-2 w-32">Shift</th>}
+                <th className="text-left px-3 py-2">Notes</th>
+                <th className="text-right px-3 py-2 w-28">Committed</th>
+                <th className="text-right px-3 py-2 w-36">Rate / month</th>
+                <th className="text-right px-3 py-2 w-32">Line value</th>
+                <th className="px-2 py-2 w-8"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {lines.map((l) => {
+                const idx = indexOf(l);
+                const personnel = isPersonnelCategory(l.category);
+                return (
+                  <tr key={l.id ?? `${siteKey}-${idx}`}>
+                    <td className="px-3 py-1.5">
+                      <ThemedSelect
+                        value={l.category}
+                        onChange={(e) => {
+                          const cat = e.target.value as ContractLineCategory;
+                          onUpdateLine(idx, {
+                            category: cat,
+                            label:
+                              l.label === CONTRACT_LINE_CATEGORY_LABEL[l.category]
+                                ? CONTRACT_LINE_CATEGORY_LABEL[cat]
+                                : l.label,
+                            // Hardware is not staffed, so it carries no shift.
+                            shift_code: isPersonnelCategory(cat) ? l.shift_code || "day" : "",
+                          });
+                        }}
+                        className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                      >
+                        {allowedCategories.map((cat) => (
+                          <option key={cat} value={cat}>{CONTRACT_LINE_CATEGORY_LABEL[cat]}</option>
+                        ))}
+                      </ThemedSelect>
+                    </td>
+                    {showShifts && (
+                      <td className="px-3 py-1.5">
+                        {personnel ? (
+                          <ThemedSelect
+                            value={l.shift_code}
+                            onChange={(e) => onUpdateLine(idx, { shift_code: e.target.value })}
+                            className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                          >
+                            {SHIFT_CODES.map((c) => (
+                              <option key={c} value={c}>{SHIFT_LABEL[c]}</option>
+                            ))}
+                          </ThemedSelect>
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
+                      </td>
+                    )}
+                    <td className="px-3 py-1.5">
+                      <input
+                        type="text"
+                        value={l.location}
+                        onChange={(e) => onUpdateLine(idx, { location: e.target.value })}
+                        className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                      />
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <input
+                        type="number"
+                        min="0"
+                        value={l.committed_count}
+                        onChange={(e) => onUpdateLine(idx, { committed_count: e.target.value })}
+                        className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm text-right"
+                      />
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={l.unit_rate}
+                        onChange={(e) => onUpdateLine(idx, { unit_rate: e.target.value })}
+                        className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm text-right"
+                      />
+                    </td>
+                    <td className="px-3 py-1.5 text-right text-slate-600 tabular-nums">
+                      {(num(l.committed_count) * num(l.unit_rate)).toLocaleString()}
+                    </td>
+                    <td className="px-2 py-1.5 text-right">
+                      <button
+                        type="button"
+                        onClick={() => onRemoveLine(idx)}
+                        className="p-1 rounded text-danger-600 hover:bg-danger-50"
+                        title="Remove line"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   );
 }
