@@ -231,7 +231,19 @@ export default function EmployeeAssignments() {
     setError(null);
     const [locRes, cliRes, brRes, empRes, ebRes, conRes, clRes, adRes, recRes, siteRes, depRes] = await Promise.all([
       supabase.from("locations").select("*").order("name"),
-      supabase.from("clients").select("*").order("name"),
+      // Clients carry a branch, and a branch IS the region — so the region
+      // selector has to narrow them too. Filtering only the employees below left
+      // an out-of-region client rendering as a card with zero people, which reads
+      // as "this client's guards have vanished" rather than "you are looking at
+      // another region". A client with no branch set belongs to no region and
+      // stays visible everywhere, so the filter can never hide it completely.
+      regionId
+        ? supabase
+            .from("clients")
+            .select("*")
+            .or(`branch_id.eq.${regionId},branch_id.is.null`)
+            .order("name")
+        : supabase.from("clients").select("*").order("name"),
       supabase.from("branches").select("*").order("is_head_office", { ascending: false }).order("name"),
       withRegion(
         supabase
