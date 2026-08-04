@@ -119,8 +119,21 @@ type Group = {
   categoryKey?: "office_staff" | "reliever";
   hint: string;
   rows: EmployeeRow[];
+  /**
+   * The client's sites, each with the people posted there. Present only for
+   * clients that actually have sites — one without keeps the flat table.
+   */
+  siteBuckets?: SiteBucket[];
   /** Only set for client groups that appear in the reconciliation view. */
   recon?: ReconRow;
+};
+
+/** One site inside a client card, and who is posted to it. */
+type SiteBucket = {
+  /** Site id, or "" for people whose posting names no site. */
+  id: string;
+  name: string;
+  rows: EmployeeRow[];
 };
 
 // ── Bulk edit shape ──────────────────────────────────────────────────────────
@@ -182,6 +195,9 @@ export default function EmployeeAssignments() {
   const [contractLines, setContractLines] = useState<ContractLine[]>([]);
   const [addendums, setAddendums] = useState<ContractAddendum[]>([]);
   const [recon, setRecon] = useState<ReconRow[]>([]);
+  const [sites, setSites] = useState<{ id: string; client_id: string; name: string }[]>([]);
+  /** guard_id -> site_id of their open posting. The employee row does not know. */
+  const [siteByGuard, setSiteByGuard] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -191,6 +207,15 @@ export default function EmployeeAssignments() {
   const [onlyMismatch, setOnlyMismatch] = useState(false);
   const [showServicesClients, setShowServicesClients] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  /** Expanded site rows inside a client card, keyed `${groupKey}|${siteId}`. */
+  const [openSites, setOpenSites] = useState<Set<string>>(new Set());
+  const toggleSite = (k: string) =>
+    setOpenSites((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
   /** Selected employee ids, keyed by group so a bulk edit can't leak across clients. */
   const [selected, setSelected] = useState<Record<string, Set<string>>>({});
 
@@ -205,7 +230,7 @@ export default function EmployeeAssignments() {
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const [locRes, cliRes, brRes, empRes, ebRes, conRes, clRes, adRes, recRes] = await Promise.all([
+    const [locRes, cliRes, brRes, empRes, ebRes, conRes, clRes, adRes, recRes, siteRes, depRes] = await Promise.all([
       supabase.from("locations").select("*").order("name"),
       supabase.from("clients").select("*").order("name"),
       supabase.from("branches").select("*").order("is_head_office", { ascending: false }).order("name"),
@@ -221,6 +246,12 @@ export default function EmployeeAssignments() {
       supabase.from("contract_lines").select("*"),
       supabase.from("contract_addendums").select("*"),
       supabase.from("v_client_strength_reconciliation").select("*").order("client_name"),
+      supabase.from("sites").select("id, client_id, name").order("name"),
+      supabase
+        .from("deployments")
+        .select("guard_id, site_id")
+        .is("end_date", null)
+        .range(0, 9999),
     ]);
     const firstErr = [locRes, cliRes, brRes, empRes].find((r) => r.error)?.error;
     if (firstErr) setError(firstErr.message);
@@ -231,6 +262,12 @@ export default function EmployeeAssignments() {
     setContractLines((clRes.data ?? []) as ContractLine[]);
     setAddendums((adRes.data ?? []) as ContractAddendum[]);
     setRecon((recRes.data ?? []) as ReconRow[]);
+    setSites((siteRes.data ?? []) as { id: string; client_id: string; name: string }[]);
+    const guardSite = new Map<string, string>();
+    for (const d of (depRes.data ?? []) as { guard_id: string; site_id: string | null }[]) {
+      if (d.site_id) guardSite.set(d.guard_id, d.site_id);
+    }
+    setSiteByGuard(guardSite);
     const addl = new Map<string, string[]>();
     for (const r of (ebRes.data ?? []) as { employee_id: string; branch_id: string }[]) {
       const arr = addl.get(r.employee_id) ?? [];
@@ -384,14 +421,44 @@ export default function EmployeeAssignments() {
         ] as const;
       }),
     );
-    const out: Group[] = clients.map((c) => ({
-      key: `client:${c.id}`,
-      label: c.name,
-      clientId: c.id,
-      hint: c.employee_id_prefix ? `Prefix ${c.employee_id_prefix}` : "",
-      rows: byClient.get(c.id) ?? [],
-      recon: reconByClient.get(c.id),
-    }));
+    const sitesByClient = new Map<string, { id: string; name: string }[]>();
+    for (const st of sites) {
+      const arr = sitesByClient.get(st.client_id) ?? [];
+      arr.push({ id: st.id, name: st.name });
+      sitesByClient.set(st.client_id, arr);
+    }
+
+    const out: Group[] = clients.map((c) => {
+      const rows = byClient.get(c.id) ?? [];
+      const clientSites = sitesByClient.get(c.id) ?? [];
+      let siteBuckets: SiteBucket[] | undefined;
+      if (clientSites.length > 0) {
+        const bySite = new Map<string, EmployeeRow[]>();
+        for (const e of rows) {
+          const sid = siteByGuard.get(e.id) ?? "";
+          const arr = bySite.get(sid) ?? [];
+          arr.push(e);
+          bySite.set(sid, arr);
+        }
+        siteBuckets = clientSites.map((st) => ({
+          id: st.id,
+          name: st.name,
+          rows: bySite.get(st.id) ?? [],
+        }));
+        // Anyone whose posting names no site would otherwise vanish from the card.
+        const orphans = bySite.get("") ?? [];
+        if (orphans.length) siteBuckets.push({ id: "", name: "No site recorded", rows: orphans });
+      }
+      return {
+        key: `client:${c.id}`,
+        label: c.name,
+        clientId: c.id,
+        hint: c.employee_id_prefix ? `Prefix ${c.employee_id_prefix}` : "",
+        rows,
+        siteBuckets,
+        recon: reconByClient.get(c.id),
+      };
+    });
     out.sort((a, b) => a.label.localeCompare(b.label));
 
     // Always present, empty or not: they are assignment targets in their own
@@ -411,7 +478,7 @@ export default function EmployeeAssignments() {
     if (q) visibleGroups = visibleGroups.filter((g) => g.label.toLowerCase().includes(q));
     if (onlyMismatch) return visibleGroups.filter((g) => g.recon != null && g.recon.variance !== 0);
     return visibleGroups;
-  }, [employees, clients, search, showSeparated, recon, onlyMismatch, servicesOnlyClientIds, showServicesClients, committedPersonnelByClient]);
+  }, [employees, clients, sites, siteByGuard, search, showSeparated, recon, onlyMismatch, servicesOnlyClientIds, showServicesClients, committedPersonnelByClient]);
 
   // Hiding a client must never make its guards unreachable — this page is the only
   // place their posting and pay can be edited. If a Services-only client somehow
@@ -478,12 +545,106 @@ export default function EmployeeAssignments() {
       else next.add(id);
       return { ...prev, [key]: next };
     });
-  const toggleAll = (g: Group) =>
+  /**
+   * Select/clear the rows currently on screen. Selection stays keyed on the
+   * CLIENT group even when the rows come from a single site, so Bulk edit keeps
+   * spanning the whole card.
+   */
+  const toggleRows = (groupKey: string, rows: EmployeeRow[]) =>
     setSelected((prev) => {
-      const cur = prev[g.key] ?? new Set<string>();
-      const all = cur.size === g.rows.length;
-      return { ...prev, [g.key]: all ? new Set<string>() : new Set(g.rows.map((r) => r.id)) };
+      const cur = new Set(prev[groupKey] ?? []);
+      const allOn = rows.length > 0 && rows.every((r) => cur.has(r.id));
+      for (const r of rows) {
+        if (allOn) cur.delete(r.id);
+        else cur.add(r.id);
+      }
+      return { ...prev, [groupKey]: cur };
     });
+
+  /**
+   * One employee table, shared by the flat client view and by each site row so
+   * the two can never drift apart. `rowsToShow` is the slice being rendered.
+   */
+  const renderEmployeeTable = (g: Group, rowsToShow: EmployeeRow[]) => {
+    const sel = selectionFor(g.key);
+    return (
+                  <div className="overflow-x-auto border-t border-border">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-border bg-slate-50">
+                          <th className="px-3 py-2 w-9">
+                            <input
+                              type="checkbox"
+                              checked={rowsToShow.length > 0 && rowsToShow.every((r) => sel.has(r.id))}
+                              onChange={() => toggleRows(g.key, rowsToShow)}
+                              aria-label={`Select all in ${g.label}`}
+                            />
+                          </th>
+                          {["Code", "Name", "Location", "Branch", "Department", "Shift", "Base", "Per day", "Allowance", "Joined"].map((h) => (
+                            <th key={h} className="text-left px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground whitespace-nowrap">
+                              {h}
+                            </th>
+                          ))}
+                          <th className="text-left px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground sticky right-0 z-10 bg-slate-50 border-l border-border">
+                            Edit
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rowsToShow.length === 0 && (
+                          <tr>
+                            <td colSpan={12} className="px-4 py-8 text-center text-sm text-muted-foreground">
+                              Nobody is posted to this client yet — use “Assign employees” above.
+                            </td>
+                          </tr>
+                        )}
+                        {rowsToShow.map((e) => (
+                          <tr key={e.id} className="group border-b border-border last:border-0 transition-colors hover:bg-accent">
+                            <td className="px-3 py-2">
+                              <input
+                                type="checkbox"
+                                checked={sel.has(e.id)}
+                                onChange={() => toggleRow(g.key, e.id)}
+                                aria-label={`Select ${e.full_name}`}
+                              />
+                            </td>
+                            <td className="px-3 py-2 text-sm font-mono text-foreground whitespace-nowrap">{displayCodeFor(e)}</td>
+                            <td className="px-3 py-2 text-sm text-foreground whitespace-nowrap">
+                              {e.full_name}
+                              {isSeparatedState(e.lifecycle_state) && (
+                                <span className="ml-2 text-[10px] uppercase tracking-wide text-danger-700 dark:text-danger-500">
+                                  {lifecycleStatusLabel(e)}
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-sm text-muted-foreground whitespace-nowrap">{e.location_name ?? "—"}</td>
+                            <td className="px-3 py-2 text-sm text-muted-foreground whitespace-nowrap">{e.branch_name ?? "—"}</td>
+                            <td className="px-3 py-2 text-sm text-muted-foreground whitespace-nowrap">
+                              {departmentOf(e) ?? (
+                                <span title="Not assigned to a contract line">—</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-sm text-muted-foreground capitalize whitespace-nowrap">{e.shift}</td>
+                            <td className="px-3 py-2 text-sm text-foreground tabular-nums whitespace-nowrap">{money(e.base_salary)}</td>
+                            <td className="px-3 py-2 text-sm text-muted-foreground tabular-nums whitespace-nowrap">{money(perDayOf(e.base_salary))}</td>
+                            <td className="px-3 py-2 text-sm text-muted-foreground tabular-nums whitespace-nowrap">{money(e.allowance)}</td>
+                            <td className="px-3 py-2 text-sm text-muted-foreground whitespace-nowrap">
+                              {e.join_date ? formatDate(e.join_date) : "—"}
+                            </td>
+                            {/* Sticky column: opaque in every state, or the columns
+                                underneath show through while scrolling sideways. */}
+                            <td className="px-3 py-2 sticky right-0 z-10 border-l border-border bg-card group-hover:bg-accent transition-colors">
+                              <Button variant="ghost" size="sm" onClick={() => setRowTarget(e)}>
+                                {canEdit ? "Edit" : "View"}
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+    );
+  };
 
   const handleExport = () =>
     exportTable({
@@ -752,81 +913,40 @@ export default function EmployeeAssignments() {
                 </div>
 
                 {open && (
-                  <div className="overflow-x-auto border-t border-border">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b border-border bg-slate-50">
-                          <th className="px-3 py-2 w-9">
-                            <input
-                              type="checkbox"
-                              checked={sel.size > 0 && sel.size === g.rows.length}
-                              onChange={() => toggleAll(g)}
-                              aria-label={`Select all in ${g.label}`}
-                            />
-                          </th>
-                          {["Code", "Name", "Location", "Branch", "Department", "Shift", "Base", "Per day", "Allowance", "Joined"].map((h) => (
-                            <th key={h} className="text-left px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground whitespace-nowrap">
-                              {h}
-                            </th>
-                          ))}
-                          <th className="text-left px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground sticky right-0 z-10 bg-slate-50 border-l border-border">
-                            Edit
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {g.rows.length === 0 && (
-                          <tr>
-                            <td colSpan={12} className="px-4 py-8 text-center text-sm text-muted-foreground">
-                              Nobody is posted to this client yet — use “Assign employees” above.
-                            </td>
-                          </tr>
-                        )}
-                        {g.rows.map((e) => (
-                          <tr key={e.id} className="group border-b border-border last:border-0 transition-colors hover:bg-accent">
-                            <td className="px-3 py-2">
-                              <input
-                                type="checkbox"
-                                checked={sel.has(e.id)}
-                                onChange={() => toggleRow(g.key, e.id)}
-                                aria-label={`Select ${e.full_name}`}
+                  g.siteBuckets ? (
+                    /* Client → site → employees. The site level only appears for
+                       clients that have sites; a guard's site comes from their
+                       open posting, not the employee row. */
+                    <div className="border-t border-border">
+                      {g.siteBuckets.map((b) => {
+                        const sKey = `${g.key}|${b.id}`;
+                        const sOpen = openSites.has(sKey);
+                        return (
+                          <div key={sKey} className="border-b border-border last:border-0">
+                            <button
+                              type="button"
+                              onClick={() => toggleSite(sKey)}
+                              aria-expanded={sOpen}
+                              className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-accent transition-colors"
+                            >
+                              <ChevronRight
+                                className={`w-4 h-4 shrink-0 text-muted-foreground transition-transform ${sOpen ? "rotate-90" : ""}`}
+                                strokeWidth={1.75}
                               />
-                            </td>
-                            <td className="px-3 py-2 text-sm font-mono text-foreground whitespace-nowrap">{displayCodeFor(e)}</td>
-                            <td className="px-3 py-2 text-sm text-foreground whitespace-nowrap">
-                              {e.full_name}
-                              {isSeparatedState(e.lifecycle_state) && (
-                                <span className="ml-2 text-[10px] uppercase tracking-wide text-danger-700 dark:text-danger-500">
-                                  {lifecycleStatusLabel(e)}
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-3 py-2 text-sm text-muted-foreground whitespace-nowrap">{e.location_name ?? "—"}</td>
-                            <td className="px-3 py-2 text-sm text-muted-foreground whitespace-nowrap">{e.branch_name ?? "—"}</td>
-                            <td className="px-3 py-2 text-sm text-muted-foreground whitespace-nowrap">
-                              {departmentOf(e) ?? (
-                                <span title="Not assigned to a contract line">—</span>
-                              )}
-                            </td>
-                            <td className="px-3 py-2 text-sm text-muted-foreground capitalize whitespace-nowrap">{e.shift}</td>
-                            <td className="px-3 py-2 text-sm text-foreground tabular-nums whitespace-nowrap">{money(e.base_salary)}</td>
-                            <td className="px-3 py-2 text-sm text-muted-foreground tabular-nums whitespace-nowrap">{money(perDayOf(e.base_salary))}</td>
-                            <td className="px-3 py-2 text-sm text-muted-foreground tabular-nums whitespace-nowrap">{money(e.allowance)}</td>
-                            <td className="px-3 py-2 text-sm text-muted-foreground whitespace-nowrap">
-                              {e.join_date ? formatDate(e.join_date) : "—"}
-                            </td>
-                            {/* Sticky column: opaque in every state, or the columns
-                                underneath show through while scrolling sideways. */}
-                            <td className="px-3 py-2 sticky right-0 z-10 border-l border-border bg-card group-hover:bg-accent transition-colors">
-                              <Button variant="ghost" size="sm" onClick={() => setRowTarget(e)}>
-                                {canEdit ? "Edit" : "View"}
-                              </Button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                              <MapPin className="w-4 h-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
+                              <span className="text-sm text-foreground truncate">{b.name}</span>
+                              <span className="text-xs text-muted-foreground shrink-0">
+                                {b.rows.length} employee{b.rows.length === 1 ? "" : "s"}
+                              </span>
+                            </button>
+                            {sOpen && renderEmployeeTable(g, b.rows)}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    renderEmployeeTable(g, g.rows)
+                  )
                 )}
               </div>
             );

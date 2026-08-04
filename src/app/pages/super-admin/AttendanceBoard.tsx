@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, Loader2, X, ChevronRight, ChevronLeft, CheckCircle2, Clock, Download, Briefcase, CalendarRange, Search, ChevronDown, FileText, Users, FileSpreadsheet, Loader } from "lucide-react";
+import { AlertCircle, Building2, MapPin, Loader2, X, ChevronRight, ChevronLeft, CheckCircle2, Clock, Download, Briefcase, CalendarRange, Search, ChevronDown, FileText, Users, FileSpreadsheet, Loader } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -147,6 +147,16 @@ export default function AttendanceBoard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [drill, setDrill] = useState<ClientShift | null>(null);
+  /** Expanded client cards, then expanded sites within them. */
+  const [openClients, setOpenClients] = useState<Set<string>>(new Set());
+  const [openSites, setOpenSites] = useState<Set<string>>(new Set());
+  const toggleIn = (k: string, set: (fn: (p: Set<string>) => Set<string>) => void) =>
+    set((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
   // Controls added onto the board (alongside the Phase 6 model, not replacing it).
   const [clientFilter, setClientFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
@@ -425,6 +435,44 @@ export default function AttendanceBoard() {
     });
   }, [sorted, clientFilter, search]);
 
+  /**
+   * The flat client-shift rows folded into client → site → shift. The rows are
+   * untouched: the drill-down still receives exactly the ClientShift it always
+   * did, so marking and confirmation behave identically. This only changes how
+   * they are presented.
+   */
+  const tree = useMemo(() => {
+    const byClient = new Map<
+      string,
+      {
+        clientId: string;
+        clientName: string;
+        sites: Map<string, { siteId: string; siteName: string; shifts: ClientShift[] }>;
+      }
+    >();
+    for (const r of visibleRows) {
+      const c =
+        byClient.get(r.client_id) ??
+        { clientId: r.client_id, clientName: r.client_name, sites: new Map() };
+      const siteKey = r.site_id || "__none__";
+      const site =
+        c.sites.get(siteKey) ??
+        {
+          siteId: siteKey,
+          // A siteless client-shift is still a real unit of work, so label it
+          // plainly rather than inventing a site name for it.
+          siteName: r.site_id ? r.site_name : "All shifts",
+          shifts: [] as ClientShift[],
+        };
+      site.shifts.push(r);
+      c.sites.set(siteKey, site);
+      byClient.set(r.client_id, c);
+    }
+    return [...byClient.values()]
+      .map((c) => ({ ...c, sites: [...c.sites.values()] }))
+      .sort((a, b) => a.clientName.localeCompare(b.clientName));
+  }, [visibleRows]);
+
   const summary = useMemo(() => {
     let confirmed = 0, onGround = 0, exceptions = 0, awaiting = 0;
     for (const r of visibleRows) {
@@ -527,45 +575,134 @@ export default function AttendanceBoard() {
               ))}
             </div>
 
-            <div className="bg-card border border-border rounded-lg overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-border bg-slate-50">
-                      <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase tracking-wide">Client · site · shift</th>
-                      <th className="text-right px-4 py-3 text-xs text-muted-foreground uppercase tracking-wide">Contracted</th>
-                      <th className="text-right px-4 py-3 text-xs text-muted-foreground uppercase tracking-wide">On roster</th>
-                      <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase tracking-wide">Exceptions</th>
-                      <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase tracking-wide">Status</th>
-                      <th className="px-4 py-3"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {loading && <tr><td colSpan={6} className="px-4 py-10 text-center text-muted-foreground"><Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…</td></tr>}
-                    {!loading && visibleRows.length === 0 && <tr><td colSpan={6} className="px-4 py-10 text-center text-muted-foreground text-sm">No client-shifts match the current filter/search.</td></tr>}
-                    {!loading && visibleRows.map((r) => {
-                      const st = rowStatus(r);
-                      return (
-                        <tr key={r.key} className="hover:bg-accent/50 cursor-pointer transition-colors" onClick={() => setDrill(r)}>
-                          <td className="px-4 py-3 text-sm">
-                            <span className="font-medium text-foreground">{r.client_name}</span>
-                            <span className="text-muted-foreground"> · {r.site_name} · </span>
-                            <span className="capitalize inline-block px-1.5 py-0.5 rounded bg-secondary text-muted-foreground text-xs">{r.shift_code}</span>
-                          </td>
-                          <td className="px-4 py-3 text-sm text-right text-muted-foreground">{r.contracted || "—"}</td>
-                          <td className="px-4 py-3 text-sm text-right text-muted-foreground">{r.roster.length}</td>
-                          <td className="px-4 py-3 text-sm text-muted-foreground">{exceptionSummary(r)}</td>
-                          <td className="px-4 py-3">
-                            <span className={`inline-block px-2 py-0.5 rounded-md text-xs border capitalize ${badge(st)}`}>{st}</span>
-                            {r.confirmation && <span className="block text-[11px] text-muted-foreground mt-0.5">by {r.confirmation.supervisor_name}</span>}
-                          </td>
-                          <td className="px-4 py-3 text-right"><ChevronRight className="w-4 h-4 text-muted-foreground inline-block" /></td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+            {/* Client → site → shift. The shift row is the unit of work: opening
+                one is what marks attendance, exactly as the flat list did. */}
+            {loading && (
+              <div className="bg-card border border-border rounded-lg px-4 py-10 text-center text-muted-foreground">
+                <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
               </div>
+            )}
+            {!loading && tree.length === 0 && (
+              <div className="bg-card border border-border rounded-lg px-4 py-10 text-center text-sm text-muted-foreground">
+                No client-shifts match the current filter/search.
+              </div>
+            )}
+
+            <div className="space-y-3">
+              {!loading && tree.map((c) => {
+                const cOpen = openClients.has(c.clientId);
+                const allShifts = c.sites.flatMap((st) => st.shifts);
+                const rosterTotal = allShifts.reduce((n, r) => n + r.roster.length, 0);
+                const pending = allShifts.filter((r) => rowStatus(r) !== "confirmed").length;
+                return (
+                  <div key={c.clientId} className="bg-card border border-border rounded-lg overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => toggleIn(c.clientId, setOpenClients)}
+                      aria-expanded={cOpen}
+                      className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-accent transition-colors"
+                    >
+                      <ChevronRight
+                        className={`w-4 h-4 shrink-0 text-muted-foreground transition-transform ${cOpen ? "rotate-90" : ""}`}
+                        strokeWidth={1.75}
+                      />
+                      <Building2 className="w-4 h-4 shrink-0 text-brand-600 dark:text-brand-500" strokeWidth={1.5} />
+                      <span className="font-medium text-foreground truncate flex-1">{c.clientName}</span>
+                      <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">
+                        {c.sites.length} site{c.sites.length === 1 ? "" : "s"} · {rosterTotal} on roster
+                      </span>
+                      {pending > 0 ? (
+                        <span className="text-xs px-2 py-0.5 rounded-md border bg-warning-50 text-warning-800 dark:text-warning-500 border-warning-200 shrink-0">
+                          {pending} to confirm
+                        </span>
+                      ) : (
+                        <span className="text-xs px-2 py-0.5 rounded-md border bg-success-50 text-success-700 dark:text-success-500 border-success-200 shrink-0">
+                          All confirmed
+                        </span>
+                      )}
+                    </button>
+
+                    {cOpen && (
+                      <div className="border-t border-border">
+                        {c.sites.map((st) => {
+                          const sKey = `${c.clientId}|${st.siteId}`;
+                          const sOpen = openSites.has(sKey);
+                          const sRoster = st.shifts.reduce((n, r) => n + r.roster.length, 0);
+                          return (
+                            <div key={sKey} className="border-b border-border last:border-0">
+                              <button
+                                type="button"
+                                onClick={() => toggleIn(sKey, setOpenSites)}
+                                aria-expanded={sOpen}
+                                className="w-full flex items-center gap-2 px-4 py-2.5 pl-8 text-left hover:bg-accent transition-colors"
+                              >
+                                <ChevronRight
+                                  className={`w-4 h-4 shrink-0 text-muted-foreground transition-transform ${sOpen ? "rotate-90" : ""}`}
+                                  strokeWidth={1.75}
+                                />
+                                <MapPin className="w-4 h-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
+                                <span className="text-sm text-foreground truncate flex-1">{st.siteName}</span>
+                                <span className="text-xs text-muted-foreground shrink-0">
+                                  {st.shifts.length} shift{st.shifts.length === 1 ? "" : "s"} · {sRoster} on roster
+                                </span>
+                              </button>
+
+                              {sOpen && (
+                                <div className="overflow-x-auto border-t border-border">
+                                  <table className="w-full">
+                                    <thead>
+                                      <tr className="border-b border-border bg-slate-50">
+                                        <th className="text-left px-4 py-2 pl-14 text-xs text-muted-foreground uppercase tracking-wide">Shift</th>
+                                        <th className="text-right px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">Contracted</th>
+                                        <th className="text-right px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">On roster</th>
+                                        <th className="text-left px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">Exceptions</th>
+                                        <th className="text-left px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">Status</th>
+                                        <th className="px-4 py-2"></th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-border">
+                                      {st.shifts.map((r) => {
+                                        const rst = rowStatus(r);
+                                        return (
+                                          <tr
+                                            key={r.key}
+                                            className="hover:bg-accent/50 cursor-pointer transition-colors"
+                                            onClick={() => setDrill(r)}
+                                          >
+                                            <td className="px-4 py-3 pl-14 text-sm">
+                                              <span className="capitalize inline-block px-1.5 py-0.5 rounded bg-secondary text-muted-foreground text-xs">
+                                                {r.shift_code}
+                                              </span>
+                                            </td>
+                                            <td className="px-4 py-3 text-sm text-right text-muted-foreground">{r.contracted || "—"}</td>
+                                            <td className="px-4 py-3 text-sm text-right text-muted-foreground">{r.roster.length}</td>
+                                            <td className="px-4 py-3 text-sm text-muted-foreground">{exceptionSummary(r)}</td>
+                                            <td className="px-4 py-3">
+                                              <span className={`inline-block px-2 py-0.5 rounded-md text-xs border capitalize ${badge(rst)}`}>{rst}</span>
+                                              {r.confirmation && (
+                                                <span className="block text-[11px] text-muted-foreground mt-0.5">
+                                                  by {r.confirmation.supervisor_name}
+                                                </span>
+                                              )}
+                                            </td>
+                                            <td className="px-4 py-3 text-right">
+                                              <ChevronRight className="w-4 h-4 text-muted-foreground inline-block" />
+                                            </td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </>
         )}
