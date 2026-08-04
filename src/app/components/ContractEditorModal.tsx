@@ -245,6 +245,14 @@ export default function ContractEditorModal({
   const [form, setForm] = useState<ContractFormState>(blankForm(clientId ?? ""));
   const [lines, setLines] = useState<LineDraft[]>(seedLines([], "guard_deployment", new Map()));
   const [sites, setSites] = useState<SiteDraft[]>([]);
+  /**
+   * Whether this contract splits its lines across sites. Derived on open from
+   * whether its lines actually point at one, so it needs no column of its own and
+   * can never drift from the data. Toggling to No moves the lines back to
+   * contract-wide; it never deletes the client's sites, which other contracts
+   * may still be using.
+   */
+  const [hasSites, setHasSites] = useState(false);
   /** Site ids present when the modal opened — anything missing now gets deleted. */
   const [loadedSiteIds, setLoadedSiteIds] = useState<string[]>([]);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -315,10 +323,13 @@ export default function ContractEditorModal({
           .eq("contract_id", contract.id)
           .order("created_at", { ascending: true });
         if (err) setError(err.message);
-        setLines(seedLines((data ?? []) as ContractLine[], initial.contract_type, keyById));
+        const rows = (data ?? []) as ContractLine[];
+        setLines(seedLines(rows, initial.contract_type, keyById));
+        setHasSites(initial.contract_type !== "services" && rows.some((l) => !!l.site_id));
         loadAddendums(contract.id);
       } else {
         setLines(seedLines([], initial.contract_type, keyById));
+        setHasSites(false);
       }
       setLoadingLines(false);
     })();
@@ -347,18 +358,24 @@ export default function ContractEditorModal({
       contract_type: next,
       ...(next === "services" ? { day_guards: "0", night_guards: "0", evening_guards: "0" } : {}),
     }));
+    if (next === "services") setHasSites(false);
     setLines((prev) =>
       prev.map((l) => {
-        if (valid.includes(l.category)) return l;
+        const base =
+          next === "services"
+            ? { ...l, site_key: NO_SITE, shift_code: "" }
+            : l;
+        if (valid.includes(base.category)) return base;
         const cat = valid[0];
         return {
-          ...l,
+          ...base,
           category: cat,
+          shift_code: isPersonnelCategory(cat) ? base.shift_code || "day" : "",
           // Preserve a hand-written label; replace an auto-generated one.
           label:
-            l.label === CONTRACT_LINE_CATEGORY_LABEL[l.category]
+            base.label === CONTRACT_LINE_CATEGORY_LABEL[base.category]
               ? CONTRACT_LINE_CATEGORY_LABEL[cat]
-              : l.label,
+              : base.label,
         };
       }),
     );
@@ -381,6 +398,15 @@ export default function ContractEditorModal({
 
   // Sites hang off the client, so nothing can be added before one is chosen.
   const effectiveClientId = form.client_id || clientId || "";
+
+  const isServices = form.contract_type === "services";
+
+  const setUsesSites = (next: boolean) => {
+    setHasSites(next);
+    // Lines have to follow: with no sites they are contract-wide, and a line
+    // pointing at a site the form no longer shows would save invisibly.
+    if (!next) setLines((prev) => prev.map((l) => ({ ...l, site_key: NO_SITE })));
+  };
 
   const addSite = () =>
     setSites((prev) => [
@@ -470,6 +496,9 @@ export default function ContractEditorModal({
    * the user added and never filled in.
    */
   const persistSites = async (effClientId: string): Promise<Map<string, string>> => {
+    // Not a site-based contract: leave the client's sites completely alone. They
+    // belong to the client, and another contract may well be using them.
+    if (!hasSites) return new Map();
     const named = sites.filter((x) => x.name.trim());
     const keyToId = new Map<string, string>();
 
@@ -515,6 +544,7 @@ export default function ContractEditorModal({
    * lines must lose the definition.
    */
   const persistShiftDefinitions = async (keyToId: Map<string, string>) => {
+    if (!hasSites) return;
     for (const [key, siteId] of keyToId) {
       const wanted = new Set(
         lines
@@ -927,35 +957,66 @@ export default function ContractEditorModal({
           </div>
         </div>
 
-        {/* Sites — each with its own shift detail and contract lines.
-            A client may run several posting locations (a mall's three gates, a
-            bank's branches) and they rarely staff identically, so the lines live
-            per site rather than once for the whole contract. Shift detail is not
-            typed in separately: it is the per-shift sum of that site's personnel
-            lines, which keeps the two from disagreeing. */}
+        {/* Shift detail & contract lines.
+
+            A Services contract bills for weapons and equipment: it keeps its
+            lines, but nobody staffs them and they sit at no site, so the shift
+            column, the shift totals, the sites question and Add Site are all
+            hidden for one.
+
+            Otherwise the contract either runs from one place (lines are
+            contract-wide) or splits across sites — a mall's gates, a bank's
+            branches — which rarely staff identically. Shift detail is never typed
+            in separately: it is the per-shift sum of the personnel lines beneath
+            it, so the two cannot disagree. */}
         <div className="border border-slate-200 rounded-md overflow-hidden">
-          <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-200">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-slate-50 border-b border-slate-200">
             <div>
-              <span className="text-sm font-medium text-slate-700">Sites &amp; Contract Lines</span>
-              <span className="text-[11px] text-slate-500 ml-2">
-                {form.contract_type === "services"
-                  ? "Equipment lines — no shifts to staff."
-                  : "Each site carries its own shifts and lines."}
+              <span className="text-sm font-medium text-slate-700">
+                {isServices
+                  ? "Contract Lines"
+                  : hasSites
+                    ? "Sites, Shift Detail & Contract Lines"
+                    : "Shift Detail & Contract Lines"}
+              </span>
+              <span className="block text-[11px] text-slate-500">
+                {isServices
+                  ? "Weapons and equipment — nothing to staff."
+                  : hasSites
+                    ? "Each site carries its own shifts and lines."
+                    : "One set of shifts and lines for the whole contract."}
               </span>
             </div>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              disabled={!effectiveClientId}
-              title={effectiveClientId ? "Add a site under this client" : "Select a client first"}
-              onClick={() => addSite()}
-            >
-              <Plus className="w-3.5 h-3.5 mr-1" /> Add Site
-            </Button>
+            <div className="flex items-center gap-3">
+              {!isServices && (
+              <label className="flex items-center gap-2 text-xs text-slate-600">
+                <span>Split by site?</span>
+                <ThemedSelect
+                  value={hasSites ? "yes" : "no"}
+                  onChange={(e) => setUsesSites(e.target.value === "yes")}
+                  className="px-2 py-1.5 border border-slate-200 rounded text-sm"
+                >
+                  <option value="no">No</option>
+                  <option value="yes">Yes</option>
+                </ThemedSelect>
+              </label>
+              )}
+              {!isServices && hasSites && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={!effectiveClientId}
+                  title={effectiveClientId ? "Add a site under this client" : "Select a client first"}
+                  onClick={() => addSite()}
+                >
+                  <Plus className="w-3.5 h-3.5 mr-1" /> Add Site
+                </Button>
+              )}
+            </div>
           </div>
 
-          {!effectiveClientId && (
+          {hasSites && !effectiveClientId && (
             <p className="px-3 py-4 text-sm text-slate-500">
               Select a client above to add sites.
             </p>
@@ -967,11 +1028,14 @@ export default function ContractEditorModal({
             </div>
           ) : (
             <div className="divide-y divide-slate-200">
-              {/* Lines that predate sites, or belong to the contract as a whole. */}
-              {linesForSite(NO_SITE).length > 0 && (
+              {/* Not split by site: one plain block, which is also where legacy
+                  lines with no site_id live. */}
+              {(!hasSites || linesForSite(NO_SITE).length > 0) && (
                 <SiteLinesBlock
-                  title="Contract-wide"
-                  subtitle="Not tied to a site."
+                  title={
+                    isServices ? "Lines" : hasSites ? "Contract-wide" : "Shift detail & contract lines"
+                  }
+                  subtitle={hasSites && !isServices ? "Not tied to a site." : ""}
                   siteKey={NO_SITE}
                   lines={linesForSite(NO_SITE)}
                   allLines={lines}
@@ -984,7 +1048,7 @@ export default function ContractEditorModal({
                 />
               )}
 
-              {sites.map((site) => (
+              {hasSites && sites.map((site) => (
                 <div key={site.key} className="p-3 space-y-3">
                   <div className="flex flex-wrap items-end gap-3">
                     <div className="flex-1 min-w-48">
@@ -1049,7 +1113,7 @@ export default function ContractEditorModal({
                 </div>
               ))}
 
-              {sites.length === 0 && linesForSite(NO_SITE).length === 0 && effectiveClientId && (
+              {hasSites && sites.length === 0 && effectiveClientId && (
                 <p className="px-3 py-4 text-sm text-slate-500">
                   No sites yet. Add one to record what this contract staffs.
                 </p>
@@ -1059,7 +1123,7 @@ export default function ContractEditorModal({
 
           <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-t border-slate-200 text-sm">
             <span className="text-slate-600">
-              {form.contract_type !== "services" && (
+              {!isServices && (
                 <>
                   Day {shiftTotals.day} · Evening {shiftTotals.evening} · Night {shiftTotals.night}
                   <span className="text-slate-400"> · </span>
