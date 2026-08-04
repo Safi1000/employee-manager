@@ -1006,6 +1006,14 @@ export default function EmployeeAssignments() {
           canEdit={canEdit}
           displayCode={displayCodeFor(rowTarget)}
           departmentLabel={departmentOf(rowTarget)}
+          lineOptions={
+            rowTarget.client_id
+              ? contractsForClient(rowTarget.client_id)
+                  .filter((c) => c.status === "active")
+                  .flatMap((c) => linesForContract(c.id))
+                  .filter((l) => isPersonnelCategory(l.category))
+              : []
+          }
           locations={locations}
           branches={branches}
           clients={clients}
@@ -1365,12 +1373,15 @@ function BulkField({
 function RowEditModal({
   employee, canEdit, displayCode, locations, branches, clients,
   onClose, onSaved, onChangeClient, onChangeCategory, onChangeShift, onError, departmentLabel,
+  lineOptions,
 }: {
   employee: EmployeeRow;
   canEdit: boolean;
   displayCode: string;
   /** The contract line this employee fills — shown in place of a free-text department. */
   departmentLabel: string | null;
+  /** Personnel lines on this client's active contracts, to pin the employee to one. */
+  lineOptions: ContractLine[];
   locations: Location[];
   branches: Branch[];
   clients: Client[];
@@ -1396,6 +1407,10 @@ function RowEditModal({
   const neverPosted = !employee.client_id;
   const [shift, setShift] = useState<string>(employee.shift);
   const [draftCategory, setDraftCategory] = useState<EmployeeCategory>(category);
+  const [lineId, setLineId] = useState(employee.contract_line_id ?? "");
+  // Only offer the picker where there is a real choice to make. With one line the
+  // Department is already inferred, and with none there is nothing to pick.
+  const canPickLine = canEdit && category === "client" && lineOptions.length > 1;
 
   const save = async () => {
     setSaving(true);
@@ -1408,9 +1423,22 @@ function RowEditModal({
           branch_id: branchId || null,
           join_date: joinDate || null,
           ...(neverPosted ? { shift, category: draftCategory } : {}),
+          ...(canPickLine ? { contract_line_id: lineId || null } : {}),
         })
         .eq("id", employee.id);
       if (error) throw error;
+
+      // The line also lives on the open posting, which is what site/strength
+      // reporting reads. Correcting one without the other leaves the two
+      // disagreeing about which slot the guard fills.
+      if (canPickLine && lineId !== (employee.contract_line_id ?? "")) {
+        const { error: depErr } = await supabase
+          .from("deployments")
+          .update({ contract_line_id: lineId || null })
+          .eq("guard_id", employee.id)
+          .is("end_date", null);
+        if (depErr) throw depErr;
+      }
 
       // employee_branches junction: additional visibility only, never the primary.
       const desired = new Set(additional.filter((id) => id && id !== branchId));
@@ -1520,10 +1548,29 @@ function RowEditModal({
             </div>
             <div>
               <label className="block text-xs text-muted-foreground mb-1">Department</label>
-              <input value={departmentLabel ?? "—"} disabled readOnly className={lockedCls} />
-              <p className="text-[11px] text-muted-foreground mt-1">
-                Follows the contract line this employee fills.
-              </p>
+              {canPickLine ? (
+                <>
+                  <ThemedSelect value={lineId} onChange={(e) => setLineId(e.target.value)} className={inputCls}>
+                    <option value="">— Not set —</option>
+                    {lineOptions.map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {(l.label ?? "").trim() || CONTRACT_LINE_CATEGORY_LABEL[l.category]}
+                      </option>
+                    ))}
+                  </ThemedSelect>
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    This client's contract has more than one kind of post, so who fills
+                    which has to be set here.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <input value={departmentLabel ?? "—"} disabled readOnly className={lockedCls} />
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    Follows the contract line this employee fills.
+                  </p>
+                </>
+              )}
             </div>
           </div>
           {!canPost && (

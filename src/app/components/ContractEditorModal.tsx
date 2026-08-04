@@ -166,11 +166,20 @@ const seedLines = (
   }));
 };
 
-/** Start times stamped on a shift_definition created from a contract line. */
-const DEFAULT_SHIFT_START: Record<string, string> = {
-  day: "08:00",
-  evening: "16:00",
-  night: "20:00",
+/**
+ * The shift window stamped on a shift_definition created from a contract line.
+ * start_time, end_time, duration_hours and crosses_midnight are all NOT NULL on
+ * the table, so every one of them has to be supplied. These match the standard
+ * 12-hour day/night pattern seeded in migration 0116; the times can be edited
+ * per site afterwards.
+ */
+const DEFAULT_SHIFT_WINDOW: Record<
+  string,
+  { start_time: string; end_time: string; duration_hours: number; crosses_midnight: boolean }
+> = {
+  day: { start_time: "08:00", end_time: "20:00", duration_hours: 12, crosses_midnight: false },
+  evening: { start_time: "16:00", end_time: "00:00", duration_hours: 8, crosses_midnight: true },
+  night: { start_time: "20:00", end_time: "08:00", duration_hours: 12, crosses_midnight: true },
 };
 
 const num = (s: string) => Number(s) || 0;
@@ -592,7 +601,7 @@ export default function ContractEditorModal({
           toAdd.map((shift_code) => ({
             site_id: siteId,
             shift_code,
-            start_time: DEFAULT_SHIFT_START[shift_code] ?? null,
+            ...(DEFAULT_SHIFT_WINDOW[shift_code] ?? DEFAULT_SHIFT_WINDOW.day),
           })),
         );
         if (insErr) throw insErr;
