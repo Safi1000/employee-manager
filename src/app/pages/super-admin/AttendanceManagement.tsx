@@ -835,7 +835,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     const rows: AttendanceEmployeeRow[] = filteredEmployees.map((emp, idx) => {
       const dayMap = byEmp.get(emp.id) ?? new Map<number, { sym: string; ws: string }>();
       const statusByDay: string[] = [];
-      const shiftByDay: ("day" | "night")[] = [];
+      const shiftByDay: string[] = [];
       let p = 0;
       let a = 0;
       let l = 0;
@@ -850,10 +850,11 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         if (sym === "P") p += 1;
         else if (sym === "A") a += 1;
         else if (sym === "L") l += 1;
-        // Column D vs N follows the shift actually worked that day, falling back
-        // to the shift the guard was rostered on for THAT date.
+        // The shift column follows the shift actually worked that day, falling
+        // back to the shift the guard was rostered on for THAT date. Real shift
+        // code (day/night/evening/…) — the exporter builds columns from these.
         const ws = cell?.ws ?? resolveShift(emp.id, iso);
-        shiftByDay.push(ws === "night" ? "night" : "day");
+        shiftByDay.push(ws || "day");
       }
       const allowed = resolveAllowedLeaves(
         emp.contract_id ? contractById.get(emp.contract_id) : null,
@@ -868,7 +869,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         empCode: emp.display_code,
         // Fallback only (shiftByDay is always supplied); take it from the first of
         // the month rather than "now".
-        shift: resolveShift(emp.id, monthStart) === "night" ? "night" : "day",
+        shift: resolveShift(emp.id, monthStart) || "day",
         shiftByDay,
         statusByDay,
         presents: p,

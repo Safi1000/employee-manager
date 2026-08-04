@@ -453,10 +453,12 @@ export type AttendanceEmployeeRow = {
   name: string;
   designation: string;
   empCode: string;
-  shift: "day" | "night";
-  // Effective shift per day (override-aware). shiftByDay[day-1] = "day"|"night".
+  // Fallback shift code for days with no explicit shiftByDay entry.
+  shift: string;
+  // Effective shift CODE per day (override-aware), e.g. "day" | "night" | "evening"
+  // or any code a contract defines. shiftByDay[day-1] = the code worked that day.
   // Falls back to `shift` for every day when omitted.
-  shiftByDay?: ("day" | "night")[];
+  shiftByDay?: string[];
   // statusByDay[day-1] = "P" | "A" | "L" | "X" (separated — see separationNote) | ""
   statusByDay: string[];
   presents: number;
@@ -466,6 +468,26 @@ export type AttendanceEmployeeRow = {
   // Set for a guard who left/was fired: shown after their name and used for the
   // legend, e.g. "Fired 10/03/2026". Days from that date on carry "X".
   separationNote?: string | null;
+};
+
+// Compact one-letter column badge for a shift code (day → D, night → N,
+// evening → E). Data-driven from the code, mirroring AttendanceBoard's shiftAbbr.
+const shiftAbbr = (code: string): string => (code ? code[0].toUpperCase() : "?");
+const titleCase = (code: string): string =>
+  code.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
+
+// Column order is a DISPLAY preference only — the SET of shifts is always derived
+// from the data. Known shifts sort in this natural order; anything else follows,
+// alphabetically, so a contract with novel shift codes still exports every one.
+const SHIFT_DISPLAY_ORDER = ["day", "night", "evening"];
+const orderShifts = (codes: Iterable<string>): string[] => {
+  const uniq = Array.from(new Set(Array.from(codes, (c) => String(c || "day").toLowerCase())));
+  return uniq.sort((a, b) => {
+    const ia = SHIFT_DISPLAY_ORDER.indexOf(a);
+    const ib = SHIFT_DISPLAY_ORDER.indexOf(b);
+    if (ia !== -1 || ib !== -1) return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+    return a < b ? -1 : a > b ? 1 : 0;
+  });
 };
 
 export function exportAttendance(opts: {
@@ -478,45 +500,54 @@ export function exportAttendance(opts: {
   // numbered 1..daysInMonth (single-month sheet). A date-range export passes the
   // day-of-month of each date so the sheet can span a month boundary.
   dayLabels?: (string | number)[];
+  // Optional explicit shift-column set. When omitted it is derived from the rows'
+  // actual shift codes, so the sheet shows exactly the shifts present (Day/Night,
+  // or Day/Night/Evening for a 3-shift contract like HMC) — never a fixed set.
+  shifts?: string[];
 }) {
   const { monthLabel, clientLabel, rows } = opts;
   const dayLabels = opts.dayLabels ?? Array.from({ length: opts.daysInMonth }, (_, i) => i + 1);
   const daysInMonth = dayLabels.length;
+
+  // The shift columns, data-driven: every code appearing in any row's per-day or
+  // fallback shift. Defaults to ["day"] so an all-day sheet still has one column.
+  const shiftCodes = new Set<string>();
+  for (const row of rows) {
+    for (const c of row.shiftByDay ?? []) shiftCodes.add(String(c || row.shift || "day").toLowerCase());
+    shiftCodes.add(String(row.shift || "day").toLowerCase());
+  }
+  const shifts = opts.shifts ?? (shiftCodes.size ? orderShifts(shiftCodes) : ["day"]);
+  const S = shifts.length;
+  const shiftIndex = new Map(shifts.map((c, i) => [c, i]));
+
   const headers1: any[] = ["Ser.", "Name", "Desg.", "Emp #"];
   for (let d = 0; d < daysInMonth; d += 1) {
-    headers1.push(dayLabels[d], ""); // each day spans D + N
+    headers1.push(dayLabels[d], ...Array(S - 1).fill("")); // each day spans its shifts
   }
   headers1.push("Presents", "Absents", "Leaves", "Pay Days");
 
   const headers2: any[] = ["", "", "", ""];
   for (let d = 0; d < daysInMonth; d += 1) {
-    headers2.push("D", "N");
+    for (const c of shifts) headers2.push(shiftAbbr(c));
   }
   headers2.push("", "", "", "");
 
   const data: any[][] = [];
   data.push([DEFAULT_COMPANY]);
+  const shiftTitle = shifts.map((c) => c.toUpperCase()).join(" & ");
   data.push([
     `ATTENDANCE SHEET - ${monthLabel.toUpperCase()}${
-      clientLabel ? ` (${clientLabel} - DAY & NIGHT SHIFTS)` : " (DAY & NIGHT SHIFTS)"
+      clientLabel ? ` (${clientLabel} - ${shiftTitle} SHIFTS)` : ` (${shiftTitle} SHIFTS)`
     }`,
   ]);
   data.push(headers1);
   data.push(headers2);
 
-  // Day totals
-  const totalPresentsByDay: { d: number; n: number }[] = Array.from(
-    { length: daysInMonth },
-    () => ({ d: 0, n: 0 }),
-  );
-  const totalLeavesByDay: { d: number; n: number }[] = Array.from(
-    { length: daysInMonth },
-    () => ({ d: 0, n: 0 }),
-  );
-  const totalAbsentsByDay: { d: number; n: number }[] = Array.from(
-    { length: daysInMonth },
-    () => ({ d: 0, n: 0 }),
-  );
+  // Day totals: [dayIndex][shiftIndex].
+  const zeros = () => Array.from({ length: daysInMonth }, () => Array(S).fill(0) as number[]);
+  const totalPresentsByDay = zeros();
+  const totalLeavesByDay = zeros();
+  const totalAbsentsByDay = zeros();
 
   for (const row of rows) {
     const r: any[] = [
@@ -529,20 +560,14 @@ export function exportAttendance(opts: {
     ];
     for (let i = 0; i < daysInMonth; i += 1) {
       const status = row.statusByDay[i] ?? "";
-      // Per-day shift decides the D vs N column, so a day a guard swapped shifts
-      // lands in the right column instead of always their default shift.
-      const dayShift = row.shiftByDay?.[i] ?? row.shift;
-      if (dayShift === "day") {
-        r.push(status, "");
-        if (status === "P") totalPresentsByDay[i].d += 1;
-        if (status === "L") totalLeavesByDay[i].d += 1;
-        if (status === "A") totalAbsentsByDay[i].d += 1;
-      } else {
-        r.push("", status);
-        if (status === "P") totalPresentsByDay[i].n += 1;
-        if (status === "L") totalLeavesByDay[i].n += 1;
-        if (status === "A") totalAbsentsByDay[i].n += 1;
-      }
+      // Per-day shift decides which shift column the mark lands in, so a day a
+      // guard swapped shifts shows under the shift actually worked.
+      const dayShift = String(row.shiftByDay?.[i] ?? row.shift ?? "day").toLowerCase();
+      const si = shiftIndex.get(dayShift) ?? 0;
+      for (let c = 0; c < S; c += 1) r.push(c === si ? status : "");
+      if (status === "P") totalPresentsByDay[i][si] += 1;
+      if (status === "L") totalLeavesByDay[i][si] += 1;
+      if (status === "A") totalAbsentsByDay[i][si] += 1;
     }
     r.push(row.presents, row.absents, row.leaves, row.payDays);
     data.push(r);
@@ -551,11 +576,11 @@ export function exportAttendance(opts: {
   // Totals rows
   const totalRow = (
     label: string,
-    src: { d: number; n: number }[],
+    src: number[][],
     final: { p: number; a: number; l: number; pd: number } | null,
   ) => {
     const r: any[] = [label, "", "", ""];
-    for (const v of src) r.push(v.d, v.n);
+    for (const perShift of src) for (const v of perShift) r.push(v);
     if (final) r.push(final.p, final.a, final.l, final.pd);
     else r.push("", "", "", "");
     return r;
@@ -570,15 +595,13 @@ export function exportAttendance(opts: {
   data.push(totalRow("Total Leaves", totalLeavesByDay, null));
   data.push(totalRow("Total Absents", totalAbsentsByDay, null));
 
-  const grandByDay: { d: number; n: number }[] = totalPresentsByDay.map((p, i) => ({
-    d: p.d + totalLeavesByDay[i].d + totalAbsentsByDay[i].d,
-    n: p.n + totalLeavesByDay[i].n + totalAbsentsByDay[i].n,
-  }));
+  const grandByDay: number[][] = totalPresentsByDay.map((perShift, i) =>
+    perShift.map((p, s) => p + totalLeavesByDay[i][s] + totalAbsentsByDay[i][s]),
+  );
   data.push(totalRow("Grand Total", grandByDay, null));
 
   data.push([]);
-  data.push(["D", "=", "day shift"]);
-  data.push(["N", "=", "night shift"]);
+  for (const c of shifts) data.push([shiftAbbr(c), "=", `${c} shift`]);
   data.push(["P / A / L", "=", "present / absent / leave"]);
   data.push([
     "X",
@@ -598,15 +621,17 @@ export function exportAttendance(opts: {
 
   const ws = XLSX.utils.aoa_to_sheet(data);
   // Title merges
-  const totalCols = 4 + daysInMonth * 2 + 4;
+  const totalCols = 4 + daysInMonth * S + 4;
   mergeCell(ws, 0, 0, 0, totalCols - 1);
   mergeCell(ws, 1, 0, 1, totalCols - 1);
-  // Day-number header merges (each pair: D+N share the day number cell visually)
-  for (let i = 0; i < daysInMonth; i += 1) {
-    mergeCell(ws, 2, 4 + i * 2, 2, 4 + i * 2 + 1);
+  // Day-number header merges (the day's shift columns share the day number cell)
+  if (S > 1) {
+    for (let i = 0; i < daysInMonth; i += 1) {
+      mergeCell(ws, 2, 4 + i * S, 2, 4 + i * S + S - 1);
+    }
   }
   const widths = [6, 28, 8, 14];
-  for (let i = 0; i < daysInMonth; i += 1) widths.push(4, 4);
+  for (let i = 0; i < daysInMonth; i += 1) for (let c = 0; c < S; c += 1) widths.push(4);
   widths.push(10, 10, 10, 10);
   setColWidths(ws, widths);
 
