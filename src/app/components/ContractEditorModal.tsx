@@ -324,8 +324,17 @@ export default function ContractEditorModal({
           .order("created_at", { ascending: true });
         if (err) setError(err.message);
         const rows = (data ?? []) as ContractLine[];
-        setLines(seedLines(rows, initial.contract_type, keyById));
-        setHasSites(initial.contract_type !== "services" && rows.some((l) => !!l.site_id));
+        let seeded = seedLines(rows, initial.contract_type, keyById);
+        const splitBySite = initial.contract_type !== "services" && rows.some((l) => !!l.site_id);
+        // Mixed data — some lines sited, some not — would otherwise render a
+        // contract-wide block alongside the sites. Adopt the orphans into the
+        // first site so "split by site" means exactly that.
+        if (splitBySite && drafts.length > 0) {
+          const firstKey = drafts[0].key;
+          seeded = seeded.map((l) => (l.site_key === NO_SITE ? { ...l, site_key: firstKey } : l));
+        }
+        setLines(seeded);
+        setHasSites(splitBySite);
         loadAddendums(contract.id);
       } else {
         setLines(seedLines([], initial.contract_type, keyById));
@@ -403,9 +412,27 @@ export default function ContractEditorModal({
 
   const setUsesSites = (next: boolean) => {
     setHasSites(next);
-    // Lines have to follow: with no sites they are contract-wide, and a line
-    // pointing at a site the form no longer shows would save invisibly.
-    if (!next) setLines((prev) => prev.map((l) => ({ ...l, site_key: NO_SITE })));
+    if (!next) {
+      // Back to one contract-wide set. A line pointing at a site the form no
+      // longer shows would save invisibly.
+      setLines((prev) => prev.map((l) => ({ ...l, site_key: NO_SITE })));
+      return;
+    }
+    // Split by site means every line sits under a site — there is no
+    // contract-wide remainder to fall back on. Any existing lines move to the
+    // first site, creating one if the client has none yet, so nothing is
+    // stranded where the form can no longer show it.
+    setSites((prevSites) => {
+      const target =
+        prevSites.length > 0
+          ? prevSites
+          : [{ key: nextSiteKey(), name: "", location: "", is_default: true }];
+      const firstKey = target[0].key;
+      setLines((prev) =>
+        prev.map((l) => (l.site_key === NO_SITE ? { ...l, site_key: firstKey } : l)),
+      );
+      return target;
+    });
   };
 
   const addSite = () =>
@@ -751,6 +778,29 @@ export default function ContractEditorModal({
       setError("Special characters are not allowed in contract line label/notes.");
       return;
     }
+    if (hasSites) {
+      const badSite = sites.find(
+        (x) => hasInjectionPattern(x.name) || hasInjectionPattern(x.location),
+      );
+      if (badSite) {
+        setError("Special characters are not allowed in a site name or location.");
+        return;
+      }
+      // An unnamed site cannot be saved, so its lines would be dropped without a
+      // word. Say so instead of losing them.
+      const unnamedWithLines = sites.find(
+        (x) => !x.name.trim() && lines.some((l) => l.site_key === x.key && isMeaningful(l)),
+      );
+      if (unnamedWithLines) {
+        setError("Name every site — a site with no name cannot be saved, and its lines would be lost.");
+        return;
+      }
+      const orphanLines = lines.some((l) => l.site_key === NO_SITE && isMeaningful(l));
+      if (orphanLines) {
+        setError("Every contract line must sit under a site while “Split by site” is Yes.");
+        return;
+      }
+    }
     // 2f: adding a second contract for a client is legitimate but rarely intended,
     // so make it explicit. Only ask once — a confirmed submit comes straight here.
     if (!contract && duplicateCount === null) {
@@ -1030,12 +1080,10 @@ export default function ContractEditorModal({
             <div className="divide-y divide-slate-200">
               {/* Not split by site: one plain block, which is also where legacy
                   lines with no site_id live. */}
-              {(!hasSites || linesForSite(NO_SITE).length > 0) && (
+              {!hasSites && (
                 <SiteLinesBlock
-                  title={
-                    isServices ? "Lines" : hasSites ? "Contract-wide" : "Shift detail & contract lines"
-                  }
-                  subtitle={hasSites && !isServices ? "Not tied to a site." : ""}
+                  title={isServices ? "Lines" : "Shift detail & contract lines"}
+                  subtitle=""
                   siteKey={NO_SITE}
                   lines={linesForSite(NO_SITE)}
                   allLines={lines}
