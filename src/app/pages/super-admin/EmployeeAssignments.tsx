@@ -28,7 +28,7 @@ import {
   ChevronRight,
   Building2,
   UserPlus,
-  UserMinus,
+  ArrowLeftRight,
   CheckCircle2,
   MapPin,
 } from "lucide-react";
@@ -203,7 +203,6 @@ export default function EmployeeAssignments() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
-  const [showSeparated, setShowSeparated] = useState(false);
   const [onlyMismatch, setOnlyMismatch] = useState(false);
   const [showServicesClients, setShowServicesClients] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -222,7 +221,7 @@ export default function EmployeeAssignments() {
   const [bulkGroup, setBulkGroup] = useState<Group | null>(null);
   const [rowTarget, setRowTarget] = useState<EmployeeRow | null>(null);
   const [assignTo, setAssignTo] = useState<AssignTarget | null>(null);
-  const [unassignFrom, setUnassignFrom] = useState<{ group: Group; rows: EmployeeRow[] } | null>(null);
+  const [transferTarget, setTransferTarget] = useState<EmployeeRow | null>(null);
   const [changeClientTarget, setChangeClientTarget] = useState<EmployeeRow | null>(null);
   const [changeCategoryTarget, setChangeCategoryTarget] = useState<EmployeeRow | null>(null);
   const [changeShiftTarget, setChangeShiftTarget] = useState<EmployeeRow | null>(null);
@@ -325,9 +324,46 @@ export default function EmployeeAssignments() {
     }
     return m;
   }, [contractLines]);
+  /**
+   * The single personnel category a client's active contracts commit to, where
+   * there is exactly one. Most guards are posted to a client without ever being
+   * pinned to a contract line — 328 of 497 in one company — so the Department
+   * column read blank for whole clients. When the contract commits to only one
+   * kind of person, every unpinned guard on it is unambiguously that kind.
+   * With two or more categories there is nothing to infer from, so it stays blank
+   * rather than guessing.
+   */
+  const soleCategoryByClient = useMemo(() => {
+    const byClient = new Map<string, ContractLineCategory | null>();
+    const linesByContract = new Map<string, ContractLine[]>();
+    for (const l of contractLines) {
+      const arr = linesByContract.get(l.contract_id) ?? [];
+      arr.push(l);
+      linesByContract.set(l.contract_id, arr);
+    }
+    for (const k of contracts) {
+      if (k.status !== "active") continue;
+      const cats = new Set<ContractLineCategory>();
+      for (const l of linesByContract.get(k.id) ?? []) {
+        if (isPersonnelCategory(l.category)) cats.add(l.category);
+      }
+      if (cats.size === 0) continue;
+      const prev = byClient.get(k.client_id);
+      const only = cats.size === 1 ? [...cats][0] : null;
+      // Another contract already disagreed, or this one is mixed -> ambiguous.
+      byClient.set(k.client_id, prev === undefined ? only : prev === only ? only : null);
+    }
+    return byClient;
+  }, [contracts, contractLines]);
+
   const departmentOf = useCallback(
-    (e: EmployeeRow) => (e.contract_line_id ? lineLabelById.get(e.contract_line_id) ?? null : null),
-    [lineLabelById],
+    (e: EmployeeRow) => {
+      if (e.contract_line_id) return lineLabelById.get(e.contract_line_id) ?? null;
+      if (!e.client_id) return null;
+      const sole = soleCategoryByClient.get(e.client_id);
+      return sole ? CONTRACT_LINE_CATEGORY_LABEL[sole] : null;
+    },
+    [lineLabelById, soleCategoryByClient],
   );
 
   const contractsForClient = useCallback(
@@ -377,7 +413,7 @@ export default function EmployeeAssignments() {
     // misrepresented a client's headcount.
     const q = search.trim().toLowerCase();
     const visible = employees.filter(
-      (e) => showSeparated || !isSeparatedState(e.lifecycle_state),
+      (e) => !isSeparatedState(e.lifecycle_state),
     );
 
     const byClient = new Map<string, EmployeeRow[]>();
@@ -478,7 +514,7 @@ export default function EmployeeAssignments() {
     if (q) visibleGroups = visibleGroups.filter((g) => g.label.toLowerCase().includes(q));
     if (onlyMismatch) return visibleGroups.filter((g) => g.recon != null && g.recon.variance !== 0);
     return visibleGroups;
-  }, [employees, clients, sites, siteByGuard, search, showSeparated, recon, onlyMismatch, servicesOnlyClientIds, showServicesClients, committedPersonnelByClient]);
+  }, [employees, clients, sites, siteByGuard, search, recon, onlyMismatch, servicesOnlyClientIds, showServicesClients, committedPersonnelByClient]);
 
   // Hiding a client must never make its guards unreachable — this page is the only
   // place their posting and pay can be edited. If a Services-only client somehow
@@ -491,9 +527,9 @@ export default function EmployeeAssignments() {
             (e) =>
               e.client_id &&
               servicesOnlyClientIds.has(e.client_id) &&
-              (showSeparated || !isSeparatedState(e.lifecycle_state)),
+              !isSeparatedState(e.lifecycle_state),
           ).length,
-    [employees, servicesOnlyClientIds, showServicesClients, showSeparated],
+    [employees, servicesOnlyClientIds, showServicesClients],
   );
 
   // Company-wide strength totals — the old Deployment page's stat row.
@@ -634,9 +670,22 @@ export default function EmployeeAssignments() {
                             {/* Sticky column: opaque in every state, or the columns
                                 underneath show through while scrolling sideways. */}
                             <td className="px-3 py-2 sticky right-0 z-10 border-l border-border bg-card group-hover:bg-accent transition-colors">
-                              <Button variant="ghost" size="sm" onClick={() => setRowTarget(e)}>
-                                {canEdit ? "Edit" : "View"}
-                              </Button>
+                              <div className="flex gap-1">
+                                <Button variant="ghost" size="sm" onClick={() => setRowTarget(e)}>
+                                  {canEdit ? "Edit" : "View"}
+                                </Button>
+                                {canEdit && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    title="Move to another client, or to office staff / relievers"
+                                    onClick={() => setTransferTarget(e)}
+                                  >
+                                    <ArrowLeftRight className="w-3.5 h-3.5 mr-1" strokeWidth={1.75} />
+                                    Transfer
+                                  </Button>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -754,10 +803,6 @@ export default function EmployeeAssignments() {
               className="w-full pl-9 pr-4 py-2 border border-border rounded-md text-sm bg-card"
             />
           </div>
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            <input type="checkbox" checked={showSeparated} onChange={(e) => setShowSeparated(e.target.checked)} />
-            Include separated
-          </label>
           <label className="flex items-center gap-2 text-sm text-muted-foreground whitespace-nowrap">
             <input type="checkbox" checked={onlyMismatch} onChange={(e) => setOnlyMismatch(e.target.checked)} />
             Only mismatches
@@ -895,21 +940,6 @@ export default function EmployeeAssignments() {
                       Bulk edit{sel.size > 0 ? ` (${sel.size})` : ""}
                     </Button>
                   )}
-                  {canEdit && g.clientId && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      disabled={sel.size === 0}
-                      title={sel.size === 0 ? "Tick the employees to unassign" : undefined}
-                      onClick={() => {
-                        if (!open) toggleGroup(g.key);
-                        setUnassignFrom({ group: g, rows: g.rows.filter((r) => sel.has(r.id)) });
-                      }}
-                    >
-                      <UserMinus className="w-4 h-4 mr-1.5" strokeWidth={1.75} />
-                      Unassign{sel.size > 0 ? ` (${sel.size})` : ""}
-                    </Button>
-                  )}
                 </div>
 
                 {open && (
@@ -1002,18 +1032,15 @@ export default function EmployeeAssignments() {
         />
       )}
 
-      {unassignFrom && (
-        <UnassignModal
-          clientName={unassignFrom.group.label}
-          rows={unassignFrom.rows}
-          onClose={() => setUnassignFrom(null)}
-          onDone={async (msg) => {
-            const key = unassignFrom.group.key;
-            setUnassignFrom(null);
-            setSelected((prev) => ({ ...prev, [key]: new Set<string>() }));
-            setNotice(msg);
-            await loadData();
-          }}
+      {transferTarget && (
+        <TransferModal
+          employee={transferTarget}
+          clients={clients}
+          displayCode={displayCodeFor(transferTarget)}
+          contractsForClient={contractsForClient}
+          linesForContract={linesForContract}
+          onClose={() => setTransferTarget(null)}
+          onDone={async (msg) => { setTransferTarget(null); setNotice(msg); await loadData(); }}
           onError={setError}
         />
       )}
@@ -2063,84 +2090,100 @@ function AssignEmployeesModal({
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Unassign — take guards off a client and return them to the pool.
+// Transfer — move one employee to another client, or onto office staff /
+// relievers.
 //
-// The posting is a dated row, so this CLOSES the open deployment rather than
-// deleting it: the guard's history at that client stays intact and attendance
-// already recorded against it is untouched. Closing the last open posting makes
-// sync_employee_active_client() null employees.client_id and drop the
-// client-scoped display number, which is what puts them back in the "awaiting a
-// client" pool. The permanent guard code is never reissued.
+// All three go through change_category(), which closes the open posting at the
+// day before the effective date and opens a new one where the destination is a
+// client. Nothing is deleted: the guard's history at the old client stays
+// intact, and attendance already recorded against it is untouched.
 //
-// Ending on a FUTURE date is refused: that trigger keys off "no open posting",
-// so a future end_date would drop the guard off the client immediately while
-// claiming they stay until then.
+// Moving to a client also reissues the client-scoped display number and logs the
+// old -> new transition, so past paperwork still resolves. The permanent guard
+// code (GGS-NNNNN) is never reissued.
+//
+// A FUTURE effective date is refused. The posting sync keys off "no open
+// posting", so a future date would move the guard immediately while the form
+// claimed they stay until then.
 // ─────────────────────────────────────────────────────────────────────────────
-function UnassignModal({
-  clientName, rows, onClose, onDone, onError,
+type TransferDest = "client" | "office_staff" | "reliever";
+
+function TransferModal({
+  employee, clients, displayCode, contractsForClient, linesForContract, onClose, onDone, onError,
 }: {
-  clientName: string;
-  rows: EmployeeRow[];
+  employee: EmployeeRow;
+  clients: Client[];
+  displayCode: string;
+  contractsForClient: (clientId: string) => Contract[];
+  linesForContract: (contractId: string) => ContractLine[];
   onClose: () => void;
   onDone: (message: string) => Promise<void>;
   onError: (m: string) => void;
 }) {
-  const [endDate, setEndDate] = useState(todayIso());
+  const currentCategory = (employee.category ?? "client") as EmployeeCategory;
+  const [dest, setDest] = useState<TransferDest>("client");
+  const [clientId, setClientId] = useState("");
+  const [contractLineId, setContractLineId] = useState("");
+  const [effectiveDate, setEffectiveDate] = useState(todayIso());
   const [saving, setSaving] = useState(false);
-  const [progress, setProgress] = useState(0);
   const [err, setErr] = useState<string | null>(null);
 
+  const lines = clientId
+    ? contractsForClient(clientId).flatMap((c) => linesForContract(c.id))
+    : [];
+  const currentClientName = clients.find((c) => c.id === employee.client_id)?.name ?? "—";
+  const movingToClient = dest === "client";
+  const clientChanges = movingToClient && clientId !== (employee.client_id ?? "");
+
   const save = async () => {
-    if (rows.length === 0) { setErr("Nobody selected."); return; }
-    if (!endDate) { setErr("Pick a last day."); return; }
-    if (endDate > todayIso()) {
-      setErr("The last day can't be in the future — unassigning takes effect immediately.");
+    if (movingToClient && !clientId) { setErr("Pick the client to transfer to."); return; }
+    if (!effectiveDate) { setErr("Pick an effective date."); return; }
+    if (effectiveDate > todayIso()) {
+      setErr("An effective date in the future is not supported — the transfer takes effect immediately.");
+      return;
+    }
+    if (movingToClient && !clientChanges) {
+      setErr("That is the client they are already on.");
       return;
     }
     setSaving(true);
     setErr(null);
-    setProgress(0);
     try {
-      for (let i = 0; i < rows.length; i++) {
-        const e = rows[i];
-        const fail = (m: string) => new Error(`${e.full_name}: ${m}`);
+      const { error: mvErr } = await supabase.rpc("change_category", {
+        p_guard_id: employee.id,
+        p_new_category: movingToClient ? "client" : dest,
+        p_new_client_id: movingToClient ? clientId : null,
+        p_contract_line_id: movingToClient ? contractLineId || null : null,
+        p_effective_date: effectiveDate,
+      });
+      if (mvErr) throw mvErr;
 
-        // Close the open posting. The sync trigger clears client_id + display_number.
-        const { data: closed, error: depErr } = await supabase
-          .from("deployments")
-          .update({ end_date: endDate, reason: "return_to_pool" })
-          .eq("guard_id", e.id)
-          .is("end_date", null)
-          .select("id");
-        if (depErr) throw fail(depErr.message);
-
-        // Clear the mirror ourselves. sync_employee_active_client() deliberately
-        // does NOT null client_id when a posting closes (0153 keeps a separated
-        // guard attributed to their last client for payroll), so closing the row
-        // leaves employees.client_id pointing at the old client — which is why
-        // unassigning appeared to need two goes: the first closed the posting,
-        // and only the second, finding nothing left to close, cleared the field.
-        void closed;
-        const { error: upErr } = await supabase
-          .from("employees")
-          .update({
-            client_id: null,
-            display_number: null,
-            contract_id: null,
-            contract_line_id: null,
-            assignment_effective_from: null,
-            assignment_effective_to: null,
-          })
-          .eq("id", e.id);
-        if (upErr) throw fail(upErr.message);
-        setProgress(i + 1);
+      let label: string;
+      if (movingToClient) {
+        // New client, new client-scoped number; the transition is logged so the
+        // old code still resolves to this person.
+        const { data: newDisp, error: dispErr } = await supabase.rpc("assign_display_number", {
+          p_employee_id: employee.id,
+        });
+        if (dispErr) throw dispErr;
+        const permanent = employee.guard_code ?? employee.employee_code;
+        const { error: histErr } = await supabase.from("employee_code_history").insert({
+          company_id: employee.company_id,
+          employee_id: employee.id,
+          old_code: displayCode,
+          new_code: (newDisp as string | null) ?? permanent,
+          client_id: clientId,
+          reason: "reassigned",
+        });
+        if (histErr) throw histErr;
+        label = clients.find((c) => c.id === clientId)?.name ?? "the new client";
+      } else {
+        label = CATEGORY_LABEL[dest as EmployeeCategory];
       }
-      await onDone(
-        `${rows.length} employee${rows.length === 1 ? "" : "s"} unassigned from ${clientName}.`,
-      );
+      await onDone(`${employee.full_name} transferred to ${label}.`);
     } catch (e: any) {
       const m = e.message ?? String(e);
-      setErr(progress > 0 ? `${m} — ${progress} already unassigned before this failed.` : m);
+      setErr(m);
       onError(m);
       setSaving(false);
     }
@@ -2153,60 +2196,89 @@ function UnassignModal({
       error={err}
       onDismissError={() => setErr(null)}
       onClose={onClose}
-      title={`Unassign from ${clientName}`}
+      title={`Transfer ${employee.full_name}`}
       size="sm"
       footer={
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-xs text-muted-foreground">
-            {saving ? `Unassigning ${progress} / ${rows.length}…` : `${rows.length} selected`}
-          </span>
-          <div className="flex gap-2">
-            <Button variant="secondary" size="sm" onClick={onClose} disabled={saving}>Cancel</Button>
-            <Button size="sm" onClick={save} disabled={saving}>
-              {saving && <Loader2 className="w-4 h-4 animate-spin mr-1" />}
-              Unassign {rows.length}
-            </Button>
-          </div>
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" size="sm" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button size="sm" onClick={save} disabled={saving}>
+            {saving && <Loader2 className="w-4 h-4 animate-spin mr-1" />} Transfer
+          </Button>
         </div>
       }
     >
-      <div className="space-y-4">
+      <div className="space-y-3">
         <p className="text-xs text-muted-foreground">
-          Their time at {clientName} is kept — the posting is closed on the date below, not deleted, so
-          past attendance and payroll stay as they were. They return to the pool and can be assigned to
-          another client. Their client number is released; the permanent guard code stays.
+          Currently {CATEGORY_LABEL[currentCategory]}
+          {currentCategory === "client" ? ` · ${currentClientName} · ${displayCode}` : ""}. The old
+          posting is closed, not deleted — past attendance stays where it was recorded.
         </p>
 
-        <div className="border border-border rounded-md max-h-56 overflow-y-auto">
-          {rows.map((e) => (
-            <div key={e.id} className="px-3 py-2 border-b border-border last:border-0">
-              <span className="block text-sm text-foreground truncate">{e.full_name}</span>
-              <span className="block text-xs text-muted-foreground truncate">
-                {e.guard_code ?? e.employee_code}
-                {e.department ? ` · ${e.department}` : ""}
-              </span>
-            </div>
-          ))}
-        </div>
+        <label className="block">
+          <span className="text-xs text-muted-foreground">Transfer to</span>
+          <ThemedSelect
+            value={dest}
+            onChange={(e) => setDest(e.target.value as TransferDest)}
+            className={inputCls}
+          >
+            <option value="client">Another client</option>
+            <option value="office_staff">Office Staff</option>
+            <option value="reliever">Reliever</option>
+          </ThemedSelect>
+        </label>
 
-        <div>
-          <label className="block text-xs text-muted-foreground mb-1">Last day at this client</label>
+        {movingToClient && (
+          <>
+            <label className="block">
+              <span className="text-xs text-muted-foreground">Client</span>
+              <ThemedSelect
+                value={clientId}
+                onChange={(e) => { setClientId(e.target.value); setContractLineId(""); }}
+                className={inputCls}
+              >
+                <option value="">— Select —</option>
+                {clients
+                  .filter((c) => c.id !== employee.client_id)
+                  .map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </ThemedSelect>
+            </label>
+            <label className="block">
+              <span className="text-xs text-muted-foreground">Contract line (optional)</span>
+              <ThemedSelect
+                value={contractLineId}
+                onChange={(e) => setContractLineId(e.target.value)}
+                className={inputCls}
+              >
+                <option value="">— None —</option>
+                {lines.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.label ?? CONTRACT_LINE_CATEGORY_LABEL[l.category]}
+                  </option>
+                ))}
+              </ThemedSelect>
+              <span className="block text-[11px] text-muted-foreground mt-1">
+                Sets their Department and counts them against that line's committed strength.
+              </span>
+            </label>
+          </>
+        )}
+
+        <label className="block">
+          <span className="text-xs text-muted-foreground">Effective date</span>
           <input
             type="date"
-            value={endDate}
+            value={effectiveDate}
             max={todayIso()}
-            onChange={(e) => setEndDate(e.target.value)}
+            onChange={(e) => setEffectiveDate(e.target.value)}
             className={inputCls}
           />
-          <p className="text-[11px] text-muted-foreground mt-1">
-            Attendance up to and including this date stays attributed to {clientName}.
-          </p>
-        </div>
+        </label>
 
-        <p className="text-xs text-muted-foreground">
-          To end someone's employment altogether, use Fire on the Employees page instead — this only
-          removes the client posting.
-        </p>
+        {clientChanges && (
+          <p className="text-xs text-muted-foreground">
+            A new client number will be issued; {displayCode} is kept in their history.
+          </p>
+        )}
       </div>
     </Modal>
   );
