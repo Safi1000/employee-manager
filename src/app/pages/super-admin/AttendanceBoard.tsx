@@ -168,7 +168,7 @@ export default function AttendanceBoard() {
     setLoading(true);
     setError(null);
     // Active deployments on the date + guard + site + client + contract line shift.
-    const [{ data: deps, error: depErr }, { data: cls }, { data: confs }, { data: att }, { data: cliRows }, { data: cons }, { data: vac }, { data: staff }] =
+    const [{ data: deps, error: depErr }, { data: cls }, { data: siteRows }, { data: confs }, { data: att }, { data: cliRows }, { data: cons }, { data: vac }, { data: staff }] =
       await Promise.all([
         supabase
           .from("deployments")
@@ -185,6 +185,7 @@ export default function AttendanceBoard() {
           .lte("start_date", date)
           .or(`end_date.is.null,end_date.gte.${date}`),
         supabase.from("contract_lines").select("site_id, shift_code, billed_qty").not("site_id", "is", null),
+        supabase.from("sites").select("id, client_id, name"),
         supabase.from("attendance_confirmations").select("*").eq("attendance_date", date),
         supabase.from("attendance_records").select("employee_id, status, absent_reason, worked_shift, site_id:worked_for_client_id").eq("attendance_date", date),
         supabase.from("clients").select("id, name, employee_id_prefix"),
@@ -310,35 +311,68 @@ export default function AttendanceBoard() {
     // yet — that empty row IS the signal that the shift is unstaffed. Rows built
     // from real postings win; this only fills the gaps. Clients with 0 across all
     // three shifts contribute nothing, which is the "no attendance" case.
+    //
+    // The gap row must land in the SAME group as the client's staffed rows. Where
+    // a client has sites, that means a site: 68 HS has one site and staffs it by
+    // day, but bills its night guards on a contract-wide line, so a client-keyed
+    // night row split the client into a "68 HS" card and a second "All shifts"
+    // card holding the one empty night row. Only a client with no sites at all
+    // groups by shift alone.
     const clientById = new Map((cliRows ?? []).map((c: any) => [c.id, c]));
+    const sitesByClient = new Map<string, { id: string; name: string }[]>();
+    for (const s of (siteRows ?? []) as any[]) {
+      const arr = sitesByClient.get(s.client_id) ?? [];
+      arr.push({ id: s.id, name: s.name });
+      sitesByClient.set(s.client_id, arr);
+    }
+    // Which of a client's sites bill a given shift, from their own contract
+    // lines. A shift no site names is contract-wide, so it belongs to all of them.
+    const siteShifts = new Map<string, Set<string>>();
+    for (const l of (cls ?? []) as any[]) {
+      if (!l.site_id || !l.shift_code) continue;
+      const set = siteShifts.get(l.site_id) ?? new Set<string>();
+      set.add(l.shift_code);
+      siteShifts.set(l.site_id, set);
+    }
+
     for (const [clientId, perShift] of shiftStrength) {
+      const clientSites = sitesByClient.get(clientId) ?? [];
       for (const [shift, committed] of perShift) {
-        // Skip when this client already has a row on that shift, whichever key it
-        // was built under (a client with sites keys on the site, not the client).
-        const already = [...byKey.values()].some(
-          (r) => r.client_id === clientId && r.shift_code === shift,
-        );
-        if (already) continue;
         const c = clientById.get(clientId);
-        const key = `${clientId}|${shift}`;
-        byKey.set(key, {
-          // No site: this row comes from the contract's headcount, not a posting.
-          // "" matches how the category rows mark themselves siteless, and the
-          // drill-down already skips its per-site shift lookup when it is falsy.
-          key,
-          site_id: "",
-          group_key: clientId,
-          contract_shifts: [...perShift.keys()],
-          site_name: "—",
-          client_id: clientId,
-          client_name: c?.name ?? "—",
-          client_prefix: c?.employee_id_prefix ?? null,
-          shift_code: shift,
-          contracted: committed,
-          roster: [],
-          marks: new Map(),
-          confirmation: confMap.get(`${clientId}|${shift}`) ?? null,
-        });
+        // Sites that bill this shift; none naming it means it is contract-wide.
+        const named = clientSites.filter((s) => siteShifts.get(s.id)?.has(shift));
+        const targets: ({ id: string; name: string } | null)[] =
+          clientSites.length === 0 ? [null] : named.length > 0 ? named : clientSites;
+
+        for (const site of targets) {
+          const groupKey = site ? site.id : clientId;
+          // Skip when this group already has a row on that shift — per site, so a
+          // multi-site client showing night at one site still gets the empty row
+          // at a site that has nobody on nights.
+          const already = [...byKey.values()].some(
+            (r) => r.group_key === groupKey && r.shift_code === shift,
+          );
+          if (already) continue;
+          const key = `${groupKey}|${shift}`;
+          byKey.set(key, {
+            key,
+            // Siteless clients keep "": it matches how the category rows mark
+            // themselves, and the drill-down skips its per-site shift lookup
+            // when it is falsy.
+            site_id: site ? site.id : "",
+            group_key: groupKey,
+            contract_shifts: [...perShift.keys()],
+            site_name: site ? site.name : "—",
+            client_id: clientId,
+            client_name: c?.name ?? "—",
+            client_prefix: c?.employee_id_prefix ?? null,
+            shift_code: shift,
+            contracted: site ? contracted.get(`${site.id}|${shift}`) ?? committed : committed,
+            roster: [],
+            marks: new Map(),
+            confirmation: confMap.get(`${groupKey}|${shift}`) ?? null,
+          });
+        }
       }
     }
 
