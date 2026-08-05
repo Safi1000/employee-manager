@@ -48,6 +48,7 @@ type AlertRow = { id: string; title: string; due_date: string; category: string;
 type ExpensePieRow = { name: string; value: number };
 type ContractEndingRow = { id: string; code: string; client_name: string; end_date: string; days_left: number };
 type IncidentRow = { id: string; code: string; severity: string; category: string; occurred_at: string; status: string };
+type RecentPaymentRow = { id: string; client_name: string; amount: number; payment_date: string };
 
 const PIE_COLORS = CHART_COLORS;
 
@@ -163,6 +164,7 @@ export default function SuperAdminDashboard() {
   const [expensesPie, setExpensesPie] = useState<ExpensePieRow[]>([]);
   const [contractsEnding, setContractsEnding] = useState<ContractEndingRow[]>([]);
   const [recentIncidents, setRecentIncidents] = useState<IncidentRow[]>([]);
+  const [recentPayments, setRecentPayments] = useState<RecentPaymentRow[]>([]);
   const [periodClosedThisMonth, setPeriodClosedThisMonth] = useState<boolean | null>(null);
   const [lastClosedMonth, setLastClosedMonth] = useState<string | null>(null);
 
@@ -201,6 +203,7 @@ export default function SuperAdminDashboard() {
           expCatRes,
           contractsEndingRes,
           recentIncRes,
+          recentPayRes,
           rosterRes,
           rosterEmpsRes,
           empExpRes,
@@ -257,6 +260,19 @@ export default function SuperAdminDashboard() {
               .select("id, incident_code, severity, category, occurred_at, status")
               .gte("occurred_at", daysAgoIso(30) + "T00:00:00Z")
               .order("occurred_at", { ascending: false })
+              .limit(8),
+            regionId,
+          ),
+          // Latest payments for the activity feed. Deliberately NOT windowed to a
+          // month: the feed used to reuse the month-to-date figures behind "Top
+          // clients", so on the 1st of every month it emptied itself and the whole
+          // section vanished. Guards and Guides last took a payment on 28 Jul, so
+          // by August the feed had nothing to say. Newest first, no date filter.
+          withRegion(
+            supabase
+              .from("invoice_payments")
+              .select("id, client_id, invoice_id, amount, payment_date")
+              .order("payment_date", { ascending: false })
               .limit(8),
             regionId,
           ),
@@ -490,6 +506,38 @@ export default function SuperAdminDashboard() {
           status: i.status,
         })));
 
+        // Recent payments for the activity feed. A payment names either a client
+        // directly or only the invoice it settles, so unresolved ones are looked
+        // up through invoices — the same two-step the top-clients figures use.
+        type PayRaw = { id: string; client_id: string | null; invoice_id: string | null; amount: number; payment_date: string };
+        const recentPayRaw = (recentPayRes.data ?? []) as PayRaw[];
+        const payClientIds = new Set(recentPayRaw.map((p) => p.client_id).filter(Boolean) as string[]);
+        const payInvoiceIds = recentPayRaw.filter((p) => !p.client_id && p.invoice_id).map((p) => p.invoice_id as string);
+        const invoiceToClient = new Map<string, string>();
+        if (payInvoiceIds.length > 0) {
+          const { data: invs } = await supabase.from("invoices").select("id, client_id").in("id", payInvoiceIds);
+          for (const i of (invs ?? []) as { id: string; client_id: string }[]) {
+            invoiceToClient.set(i.id, i.client_id);
+            payClientIds.add(i.client_id);
+          }
+        }
+        const payNames = new Map<string, string>();
+        if (payClientIds.size > 0) {
+          const { data: cls } = await supabase.from("clients").select("id, name").in("id", [...payClientIds]);
+          for (const c of (cls ?? []) as { id: string; name: string }[]) payNames.set(c.id, c.name);
+        }
+        setRecentPayments(
+          recentPayRaw.map((p) => {
+            const cid = p.client_id ?? (p.invoice_id ? invoiceToClient.get(p.invoice_id) ?? null : null);
+            return {
+              id: p.id,
+              client_name: cid ? payNames.get(cid) ?? "Unknown client" : "Unallocated",
+              amount: Number(p.amount ?? 0),
+              payment_date: p.payment_date,
+            };
+          }),
+        );
+
         // Period close status
         setPeriodClosedThisMonth(periodRes.data != null);
         setLastClosedMonth((periodLastRes.data as { period_month: string } | null)?.period_month ?? null);
@@ -510,21 +558,51 @@ export default function SuperAdminDashboard() {
 
   const branchScopeNote = profile?.branch_id ? "Scoped to your branch." : null;
 
-  // Live activity feed — assembled from real recent data (payments in,
-  // incidents logged, compliance items due) and animated like the landing page.
+  /**
+   * Live activity feed — real recent data: payments in, incidents logged,
+   * compliance items due.
+   *
+   * The payment lines come from the LATEST payments, not month-to-date. They
+   * used to reuse the "Top clients this month" figures, which meant the feed
+   * reset to empty at every month boundary and, because the section was hidden
+   * whenever it had no items, the whole panel disappeared with no explanation.
+   * Guards and Guides last banked a payment on 28 July, so the feed went blank
+   * on 1 August and stayed blank.
+   *
+   * Newest first across all three sources, so the feed reads chronologically
+   * rather than payments-then-incidents-then-alerts.
+   */
   const feedItems = useMemo<FeedItem[]>(() => {
-    const out: FeedItem[] = [];
-    topClients.forEach((c) =>
-      out.push({ id: `pay-${c.id}`, tone: "in", text: `Payment received · ${c.name}`, amount: `+${compact(c.revenue)}` }),
+    const dated: { at: string; item: FeedItem }[] = [];
+    recentPayments.forEach((p) =>
+      dated.push({
+        at: p.payment_date,
+        item: {
+          id: `pay-${p.id}`,
+          tone: "in",
+          text: `Payment received · ${p.client_name} · ${formatDate(p.payment_date)}`,
+          amount: `+${compact(p.amount)}`,
+        },
+      }),
     );
     recentIncidents.forEach((i) =>
-      out.push({ id: `inc-${i.id}`, tone: "out", text: `Incident ${i.code} · ${i.category} · ${i.status.replace(/_/g, " ")}` }),
+      dated.push({
+        at: i.occurred_at.slice(0, 10),
+        item: {
+          id: `inc-${i.id}`,
+          tone: "out",
+          text: `Incident ${i.code} · ${i.category} · ${i.status.replace(/_/g, " ")}`,
+        },
+      }),
     );
     alerts.forEach((a) =>
-      out.push({ id: `al-${a.id}`, tone: "evt", text: `${a.title} · due ${a.due_date}` }),
+      dated.push({
+        at: a.due_date,
+        item: { id: `al-${a.id}`, tone: "evt", text: `${a.title} · due ${formatDate(a.due_date)}` },
+      }),
     );
-    return out;
-  }, [topClients, recentIncidents, alerts]);
+    return dated.sort((a, b) => b.at.localeCompare(a.at)).map((d) => d.item);
+  }, [recentPayments, recentIncidents, alerts]);
 
   return (
     <>
@@ -674,13 +752,22 @@ export default function SuperAdminDashboard() {
               )}
             </div>
 
-            {/* Live activity feed (landing-page style) */}
-            {feedItems.length > 0 && (
-              <div className="mb-6 md:mb-8">
-                <h3 className="text-base font-bold text-foreground mb-3">Live activity</h3>
+            {/* Live activity feed (landing-page style). Always rendered: hiding
+                it on an empty list is what made a quiet week look like a broken
+                dashboard, with nothing on screen to say which it was. */}
+            <div className="mb-6 md:mb-8">
+              <h3 className="text-base font-bold text-foreground mb-3">Live activity</h3>
+              {feedItems.length > 0 ? (
                 <ActivityFeed items={feedItems} />
-              </div>
-            )}
+              ) : (
+                <div className="bg-white dark:bg-card border border-border rounded-lg p-6 text-center">
+                  <p className="text-sm text-muted-foreground">No recent activity.</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Payments received, incidents logged and upcoming compliance dates appear here.
+                  </p>
+                </div>
+              )}
+            </div>
 
             {/* Expenses pie chart */}
             {can.expenses && show("expenses_pie") && (
