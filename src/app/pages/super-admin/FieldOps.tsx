@@ -21,12 +21,23 @@ import { generateDailyOperationsReportPdf } from "../../lib/dailyReportPdf";
 // for the same reason, and are locked — the record of a day that has ended is
 // not edited after the fact.
 
-const todayIso = () => new Date().toISOString().slice(0, 10);
+/**
+ * Local calendar dates, never UTC.
+ *
+ * toISOString() converts to UTC first, and Pakistan is UTC+5 — so local midnight
+ * is 19:00 the PREVIOUS day in UTC. Round-tripping a date through it silently
+ * subtracts a day: "back" jumped two days at once and "next" appeared dead
+ * because +1 day −1 timezone day landed back on the date you started from.
+ */
+const isoOf = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+const todayIso = () => isoOf(new Date());
 
 const shiftDay = (iso: string, days: number) => {
-  const d = new Date(`${iso}T00:00:00`);
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  const [y, m, d] = iso.split("-").map(Number);
+  // Month is 0-based; Date normalises overflow, so day 0 and day 32 are fine.
+  return isoOf(new Date(y, m - 1, d + days));
 };
 
 type ClientRow = { id: string; name: string };
@@ -150,102 +161,107 @@ export default function FieldOps() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 md:p-8">
+    // Header is a SIBLING of the scroll area, not a child of it — that is what
+    // makes it stay put. Inside the scrolling div its `sticky top-0` had no
+    // fixed ancestor to pin against and it just scrolled away with the content.
+    <>
       <Header
         title="Daily Reports"
         subtitle="A written note per active client, day by day, exported as a branded PDF"
       />
 
-      {err && <p className="text-sm text-danger-600 mb-3">{err}</p>}
+      <div className="flex-1 overflow-y-auto p-4 md:p-8">
+        {err && <p className="text-sm text-danger-600 mb-3">{err}</p>}
 
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setDate((d) => shiftDay(d, -1))}
-              className="w-8 h-8 grid place-items-center rounded-md border border-border text-muted-foreground hover:bg-accent"
-              aria-label="Previous day"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <input
-              type="date"
-              value={date}
-              max={todayIso()}
-              onChange={(e) => setDate(e.target.value || todayIso())}
-              className="px-3 py-2 border border-border rounded-md text-sm bg-card"
-            />
-            <button
-              type="button"
-              onClick={() => setDate((d) => shiftDay(d, 1))}
-              disabled={isToday}
-              className="w-8 h-8 grid place-items-center rounded-md border border-border text-muted-foreground hover:bg-accent disabled:opacity-40 disabled:pointer-events-none"
-              aria-label="Next day"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-            {!isToday && (
-              <Button variant="secondary" size="sm" onClick={() => setDate(todayIso())}>
-                Today
-              </Button>
-            )}
+        <div className="space-y-3 pt-2 md:pt-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setDate((d) => shiftDay(d, -1))}
+                className="w-8 h-8 grid place-items-center rounded-md border border-border text-muted-foreground hover:bg-accent"
+                aria-label="Previous day"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <input
+                type="date"
+                value={date}
+                max={todayIso()}
+                onChange={(e) => setDate(e.target.value || todayIso())}
+                className="px-3 py-2 border border-border rounded-md text-sm bg-card"
+              />
+              <button
+                type="button"
+                onClick={() => setDate((d) => shiftDay(d, 1))}
+                disabled={isToday}
+                className="w-8 h-8 grid place-items-center rounded-md border border-border text-muted-foreground hover:bg-accent disabled:opacity-40 disabled:pointer-events-none"
+                aria-label="Next day"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+              {!isToday && (
+                <Button variant="secondary" size="sm" onClick={() => setDate(todayIso())}>
+                  Today
+                </Button>
+              )}
+            </div>
+            <Button variant="secondary" size="sm" disabled={busy || clients.length === 0} onClick={exportPdf}>
+              Download PDF
+            </Button>
           </div>
-          <Button variant="secondary" size="sm" disabled={busy || clients.length === 0} onClick={exportPdf}>
-            Download PDF
-          </Button>
-        </div>
 
-        <p className="text-xs text-muted-foreground">
-          {formatDate(date)} · {clients.length} active client{clients.length === 1 ? "" : "s"} ·{" "}
-          {filledCount} with details
-          {locked && (
-            <span className="ml-2 inline-flex items-center gap-1 text-amber-700 dark:text-amber-500">
-              <Lock className="w-3 h-3" /> past day — read only
-            </span>
-          )}
-        </p>
+          <p className="text-xs text-muted-foreground">
+            {formatDate(date)} · {clients.length} active client{clients.length === 1 ? "" : "s"} ·{" "}
+            {filledCount} with details
+            {locked && (
+              <span className="ml-2 inline-flex items-center gap-1 text-amber-700 dark:text-amber-500">
+                <Lock className="w-3 h-3" /> past day — read only
+              </span>
+            )}
+          </p>
 
-        <div className="overflow-x-auto border border-border rounded-md">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 dark:bg-card text-xs text-muted-foreground uppercase">
-              <tr>
-                <th className="text-left px-3 py-2 w-64">Client</th>
-                <th className="text-left px-3 py-2">Details</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {clients.map((c) => (
-                <DetailsRow
-                  key={c.id}
-                  client={c}
-                  value={details.get(c.id) ?? ""}
-                  locked={locked}
-                  saving={saving.has(c.id)}
-                  savedAt={savedAt.get(c.id)}
-                  onChange={(v) => setDetails((prev) => new Map(prev).set(c.id, v))}
-                  onCommit={(v) => saveOne(c.id, v)}
-                />
-              ))}
-              {clients.length === 0 && !loading && (
+          <div className="overflow-x-auto border border-border rounded-md">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 dark:bg-card text-xs text-muted-foreground uppercase">
                 <tr>
-                  <td colSpan={2} className="px-3 py-4 text-muted-foreground">
-                    No clients with an active contract.
-                  </td>
+                  <th className="text-left px-3 py-2 w-64">Client</th>
+                  <th className="text-left px-3 py-2">Details</th>
                 </tr>
-              )}
-              {loading && (
-                <tr>
-                  <td colSpan={2} className="px-3 py-4 text-muted-foreground">
-                    <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> Loading…
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {clients.map((c) => (
+                  <DetailsRow
+                    key={c.id}
+                    client={c}
+                    value={details.get(c.id) ?? ""}
+                    locked={locked}
+                    saving={saving.has(c.id)}
+                    savedAt={savedAt.get(c.id)}
+                    onChange={(v) => setDetails((prev) => new Map(prev).set(c.id, v))}
+                    onCommit={(v) => saveOne(c.id, v)}
+                  />
+                ))}
+                {clients.length === 0 && !loading && (
+                  <tr>
+                    <td colSpan={2} className="px-3 py-4 text-muted-foreground">
+                      No clients with an active contract.
+                    </td>
+                  </tr>
+                )}
+                {loading && (
+                  <tr>
+                    <td colSpan={2} className="px-3 py-4 text-muted-foreground">
+                      <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> Loading…
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
