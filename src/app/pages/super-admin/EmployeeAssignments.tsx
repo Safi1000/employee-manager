@@ -32,6 +32,7 @@ import {
   CheckCircle2,
   MapPin,
   AlertTriangle,
+  SlidersHorizontal,
 } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -55,6 +56,7 @@ import {
   type ContractLineCategory,
   type EmployeeCategory,
   CONTRACT_LINE_CATEGORY_LABEL,
+  PERSONNEL_LINE_CATEGORIES,
   effectiveCommittedByCategory,
   activeCountByCategory,
   isPersonnelCategory,
@@ -105,9 +107,16 @@ const varianceBadge = (v: number) => {
   return "bg-warning-50 text-warning-800 dark:text-warning-500 border-warning-200";
 };
 
-/** Where an "Assign employees" click is sending people. */
+/**
+ * Where an "Assign employees" click is sending people.
+ *
+ * A client posting always names a SITE. The button used to sit on the client
+ * card, which meant the modal had to guess — it fell back to the client's
+ * default site, so a guard hired for site B silently landed on site A. The
+ * button now lives on the site row and carries the site with it.
+ */
 type AssignTarget =
-  | { kind: "client"; id: string; name: string }
+  | { kind: "client"; id: string; name: string; siteId: string | null; siteName: string | null }
   | { kind: "category"; category: "office_staff" | "reliever"; name: string };
 
 /** A group of employees shown as one collapsible card. */
@@ -139,37 +148,50 @@ type SiteBucket = {
   rows: EmployeeRow[];
 };
 
-// ── Bulk edit shape ──────────────────────────────────────────────────────────
+/** What an "Edit rules" click is editing: one site, or a whole siteless group. */
+type RulesTarget = {
+  /** The group the rows and the selection came from. */
+  group: Group;
+  /** Site id, "" for the No-site bucket, null when the group has no sites. */
+  siteId: string | null;
+  siteName: string | null;
+  rows: EmployeeRow[];
+};
+
+// ── Edit rules shape ─────────────────────────────────────────────────────────
 type PayMode = "none" | "percent" | "flat" | "set";
-type BulkState = {
+/** How pay is decided: one figure for a whole post, or person by person. */
+type RulesMode = "fixed" | "variable";
+/** The pay rule set against one post in Fixed mode. */
+type PostRule = {
   baseMode: PayMode;
   baseValue: string;
   allowanceMode: PayMode;
   allowanceValue: string;
+};
+const emptyRule = (): PostRule => ({
+  baseMode: "none",
+  baseValue: "",
+  allowanceMode: "none",
+  allowanceValue: "",
+});
+type OtherState = {
   effectiveDate: string;
   reason: string;
   setLocation: boolean;
   locationId: string;
   setBranch: boolean;
   branchId: string;
-  setDepartment: boolean;
-  department: string;
   setJoinDate: boolean;
   joinDate: string;
 };
-const emptyBulk = (): BulkState => ({
-  baseMode: "none",
-  baseValue: "",
-  allowanceMode: "none",
-  allowanceValue: "",
+const emptyOther = (): OtherState => ({
   effectiveDate: todayIso(),
   reason: "Increment",
   setLocation: false,
   locationId: "",
   setBranch: false,
   branchId: "",
-  setDepartment: false,
-  department: "",
   setJoinDate: false,
   joinDate: "",
 });
@@ -221,7 +243,7 @@ export default function EmployeeAssignments() {
   /** Selected employee ids, keyed by group so a bulk edit can't leak across clients. */
   const [selected, setSelected] = useState<Record<string, Set<string>>>({});
 
-  const [bulkGroup, setBulkGroup] = useState<Group | null>(null);
+  const [rulesTarget, setRulesTarget] = useState<RulesTarget | null>(null);
   const [rowTarget, setRowTarget] = useState<EmployeeRow | null>(null);
   const [assignTo, setAssignTo] = useState<AssignTarget | null>(null);
   const [transferTarget, setTransferTarget] = useState<EmployeeRow | null>(null);
@@ -407,6 +429,35 @@ export default function EmployeeAssignments() {
   const linesForContract = useCallback(
     (contractId: string) => contractLines.filter((l) => l.contract_id === contractId),
     [contractLines],
+  );
+  /**
+   * The personnel posts a SITE is staffed with — what "Edit rules" reads to know
+   * which roles to offer.
+   *
+   * A line that names this site obviously belongs to it. A line with no site is
+   * contract-wide, so it belongs to every site of the client: most single-site
+   * clients never bother setting site_id (30 of 77 personnel lines company-wide),
+   * and dropping those would leave their only site showing no posts at all.
+   * Scoping stays honest because the PEOPLE are always taken from the site
+   * bucket — a contract-wide Supervisor line edited at site A only ever touches
+   * the supervisors standing at site A.
+   *
+   * siteId "" is the "No site recorded" bucket: those postings name no site, so
+   * they could belong to any line the client has.
+   */
+  const personnelLinesForSite = useCallback(
+    (clientId: string, siteId: string) => {
+      const activeIds = new Set(
+        contracts.filter((c) => c.client_id === clientId && c.status === "active").map((c) => c.id),
+      );
+      return contractLines.filter(
+        (l) =>
+          activeIds.has(l.contract_id) &&
+          isPersonnelCategory(l.category) &&
+          (siteId === "" || l.site_id === siteId || l.site_id === null),
+      );
+    },
+    [contracts, contractLines],
   );
   const displayCodeFor = useCallback(
     (e: Pick<Employee, "client_id" | "display_number" | "guard_code" | "employee_code">) => {
@@ -678,7 +729,7 @@ export default function EmployeeAssignments() {
                         {rowsToShow.length === 0 && (
                           <tr>
                             <td colSpan={12} className="px-4 py-8 text-center text-sm text-muted-foreground">
-                              Nobody is posted to this client yet — use “Assign employees” above.
+                              Nobody is posted here yet — use “Assign employees” above.
                             </td>
                           </tr>
                         )}
@@ -970,7 +1021,12 @@ export default function EmployeeAssignments() {
                   <span className="text-xs text-muted-foreground tabular-nums hidden sm:inline">
                     {money(monthly)}/mo
                   </span>
-                  {canEdit && (g.clientId || g.categoryKey) && (
+                  {/* Assign / Edit rules live on the SITE row when the group has
+                      sites — a posting names a site, and a pay rule reads the
+                      posts of one site's contract lines. Only a group with no
+                      site level (a siteless client, Office Staff, Relievers)
+                      keeps them up here, where the group IS the whole target. */}
+                  {canEdit && !g.siteBuckets && (g.clientId || g.categoryKey) && (
                     <Button
                       variant="secondary"
                       size="sm"
@@ -979,7 +1035,7 @@ export default function EmployeeAssignments() {
                       onClick={() =>
                         setAssignTo(
                           g.clientId
-                            ? { kind: "client", id: g.clientId, name: g.label }
+                            ? { kind: "client", id: g.clientId, name: g.label, siteId: null, siteName: null }
                             : { kind: "category", category: g.categoryKey!, name: g.label },
                         )
                       }
@@ -988,17 +1044,18 @@ export default function EmployeeAssignments() {
                       Assign employees
                     </Button>
                   )}
-                  {canEdit && (
+                  {canEdit && !g.siteBuckets && (
                     <Button
                       variant="secondary"
                       size="sm"
                       disabled={g.rows.length === 0}
                       onClick={() => {
                         if (!open) toggleGroup(g.key);
-                        setBulkGroup(g);
+                        setRulesTarget({ group: g, siteId: null, siteName: null, rows: g.rows });
                       }}
                     >
-                      Bulk edit{sel.size > 0 ? ` (${sel.size})` : ""}
+                      <SlidersHorizontal className="w-4 h-4 mr-1.5" strokeWidth={1.75} />
+                      Edit rules{sel.size > 0 ? ` (${sel.size})` : ""}
                     </Button>
                   )}
                 </div>
@@ -1012,24 +1069,68 @@ export default function EmployeeAssignments() {
                       {g.siteBuckets.map((b) => {
                         const sKey = `${g.key}|${b.id}`;
                         const sOpen = openSites.has(sKey);
+                        // How many of THIS site's people are ticked — the buttons
+                        // must not count a selection made on a sibling site.
+                        const sSel = b.rows.filter((r) => sel.has(r.id)).length;
                         return (
                           <div key={sKey} className="border-b border-border last:border-0">
-                            <button
-                              type="button"
-                              onClick={() => toggleSite(sKey)}
-                              aria-expanded={sOpen}
-                              className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-accent transition-colors"
-                            >
-                              <ChevronRight
-                                className={`w-4 h-4 shrink-0 text-muted-foreground transition-transform ${sOpen ? "rotate-90" : ""}`}
-                                strokeWidth={1.75}
-                              />
-                              <MapPin className="w-4 h-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
-                              <span className="text-sm text-foreground truncate">{b.name}</span>
-                              <span className="text-xs text-muted-foreground shrink-0">
-                                {b.rows.length} employee{b.rows.length === 1 ? "" : "s"}
-                              </span>
-                            </button>
+                            <div className="flex items-center gap-2 px-4 py-2.5 hover:bg-accent transition-colors">
+                              <button
+                                type="button"
+                                onClick={() => toggleSite(sKey)}
+                                aria-expanded={sOpen}
+                                className="flex items-center gap-2 min-w-0 flex-1 text-left"
+                              >
+                                <ChevronRight
+                                  className={`w-4 h-4 shrink-0 text-muted-foreground transition-transform ${sOpen ? "rotate-90" : ""}`}
+                                  strokeWidth={1.75}
+                                />
+                                <MapPin className="w-4 h-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
+                                <span className="text-sm text-foreground truncate">{b.name}</span>
+                                <span className="text-xs text-muted-foreground shrink-0">
+                                  {b.rows.length} employee{b.rows.length === 1 ? "" : "s"}
+                                </span>
+                              </button>
+                              {/* The No-site bucket is not a place: there is
+                                  nothing to post someone TO, so it offers only
+                                  Edit rules to repair the pay of whoever landed
+                                  there. */}
+                              {canEdit && g.clientId && b.id !== "" && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  disabled={assignable.length === 0}
+                                  title={assignable.length === 0 ? "No unassigned employees" : `Post employees to ${b.name}`}
+                                  onClick={() =>
+                                    setAssignTo({
+                                      kind: "client",
+                                      id: g.clientId!,
+                                      name: g.label,
+                                      siteId: b.id,
+                                      siteName: b.name,
+                                    })
+                                  }
+                                >
+                                  <UserPlus className="w-4 h-4 mr-1.5" strokeWidth={1.75} />
+                                  Assign employees
+                                </Button>
+                              )}
+                              {canEdit && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  disabled={b.rows.length === 0}
+                                  title={`Set pay by post for ${b.name}`}
+                                  onClick={() => {
+                                    if (!sOpen) toggleSite(sKey);
+                                    setRulesTarget({ group: g, siteId: b.id, siteName: b.name, rows: b.rows });
+                                  }}
+                                >
+                                  <SlidersHorizontal className="w-4 h-4 mr-1.5" strokeWidth={1.75} />
+                                  Edit rules{sSel > 0 ? ` (${sSel})` : ""}
+                                </Button>
+                              )}
+                            </div>
                             {sOpen && renderEmployeeTable(g, b.rows)}
                           </div>
                         );
@@ -1045,16 +1146,22 @@ export default function EmployeeAssignments() {
         </div>
       </div>
 
-      {bulkGroup && (
-        <BulkEditModal
-          group={bulkGroup}
-          selectedIds={selectionFor(bulkGroup.key)}
+      {rulesTarget && (
+        <EditRulesModal
+          target={rulesTarget}
+          selectedIds={selectionFor(rulesTarget.group.key)}
+          lines={
+            rulesTarget.group.clientId
+              ? personnelLinesForSite(rulesTarget.group.clientId, rulesTarget.siteId ?? "")
+              : []
+          }
+          allLines={contractLines}
           locations={locations}
           branches={branches}
-          onClose={() => setBulkGroup(null)}
+          onClose={() => setRulesTarget(null)}
           onDone={async (msg) => {
-            setBulkGroup(null);
-            setSelected((prev) => ({ ...prev, [bulkGroup.key]: new Set<string>() }));
+            setRulesTarget(null);
+            setSelected((prev) => ({ ...prev, [rulesTarget.group.key]: new Set<string>() }));
             setNotice(msg);
             await loadData();
           }}
@@ -1151,66 +1258,236 @@ export default function EmployeeAssignments() {
   );
 }
 
+/** One post at the site, and who is currently filling it. */
+type PostBucket = {
+  key: string;
+  label: string;
+  /** Null for the catch-all bucket of people pinned to no contract line. */
+  category: ContractLineCategory | null;
+  rows: EmployeeRow[];
+};
+
+const CATEGORY_RANK = new Map(PERSONNEL_LINE_CATEGORIES.map((c, i) => [c, i]));
+
 // ─────────────────────────────────────────────────────────────────────────────
-// Bulk edit — the reason this page exists. Applies one change to every selected
-// employee in a group (or the whole group when nothing is ticked).
+// Edit rules — the reason this page exists. Sets pay for ONE SITE, by the posts
+// that site's contract actually commits to.
+//
+// The old "Bulk edit" applied one figure to a whole client, which is not how a
+// contract is priced: a site staffed by supervisors and guards has two rates,
+// and flattening them was wrong in every case where a client is more than one
+// role. So the modal reads the contract lines that staff this site and offers a
+// row per post — a site with only Guards and Supervisors asks for exactly two
+// figures, nothing else.
+//
+//   Fixed     one rule per post. Every supervisor at this site ends on the same
+//             salary — that is the point of a fixed rule.
+//   Variable  one figure per person, for the sites where pay is negotiated
+//             individually and a single post rate would be a lie.
+//
+// Pay is still never overwritten in place: each change goes through
+// set_employee_salary with an effective date, so past months keep the pay they
+// were actually run on.
 // ─────────────────────────────────────────────────────────────────────────────
-function BulkEditModal({
-  group, selectedIds, locations, branches, onClose, onDone,
+function EditRulesModal({
+  target, selectedIds, lines, allLines, locations, branches, onClose, onDone,
 }: {
-  group: Group;
+  target: RulesTarget;
   selectedIds: Set<string>;
+  /** Personnel contract lines that staff this site — the posts on offer. */
+  lines: ContractLine[];
+  /** Every contract line, to name a post someone is pinned to from elsewhere. */
+  allLines: ContractLine[];
   locations: Location[];
   branches: Branch[];
   onClose: () => void;
   onDone: (message: string) => Promise<void>;
 }) {
-  const [bulk, setBulk] = useState<BulkState>(emptyBulk);
+  const [mode, setMode] = useState<RulesMode>("fixed");
+  /** Fixed mode: post key -> the rule set against it. */
+  const [rules, setRules] = useState<Record<string, PostRule>>({});
+  /** Variable mode: employee id -> the figures typed for them. */
+  const [drafts, setDrafts] = useState<Record<string, { base: string; allowance: string }>>({});
+  const [other, setOther] = useState<OtherState>(emptyOther);
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState(0);
   const [err, setErr] = useState<string | null>(null);
-  const set = <K extends keyof BulkState>(k: K, v: BulkState[K]) => setBulk((b) => ({ ...b, [k]: v }));
+  const setOtherField = <K extends keyof OtherState>(k: K, v: OtherState[K]) =>
+    setOther((o) => ({ ...o, [k]: v }));
+  const ruleFor = (key: string) => rules[key] ?? emptyRule();
+  const setRule = <K extends keyof PostRule>(key: string, k: K, v: PostRule[K]) =>
+    setRules((prev) => ({ ...prev, [key]: { ...(prev[key] ?? emptyRule()), [k]: v } }));
 
-  // Nothing ticked = the whole group; that's the common case ("raise everyone").
-  const targets = useMemo(
-    () => (selectedIds.size > 0 ? group.rows.filter((r) => selectedIds.has(r.id)) : group.rows),
-    [group, selectedIds],
-  );
+  const scopeLabel = target.siteName ?? target.group.label;
 
-  const payChanges = useMemo(
-    () =>
-      targets
-        .map((e) => {
-          const nextBase = applyPayMode(bulk.baseMode, bulk.baseValue, e.base_salary as number | null);
-          const nextAllow = applyPayMode(bulk.allowanceMode, bulk.allowanceValue, e.allowance as number | null);
-          if (nextBase == null && nextAllow == null) return null;
-          return {
-            employee: e,
-            base: nextBase ?? (e.base_salary != null ? Math.round(Number(e.base_salary)) : 0),
-            allowance: nextAllow ?? (e.allowance != null ? Math.round(Number(e.allowance)) : 0),
-          };
-        })
-        .filter(Boolean) as { employee: EmployeeRow; base: number; allowance: number }[],
-    [targets, bulk.baseMode, bulk.baseValue, bulk.allowanceMode, bulk.allowanceValue],
-  );
+  // Nothing ticked at this site = everyone at this site. The selection is stored
+  // per CLIENT, so it has to be intersected here or a tick on a sibling site
+  // would silently shrink this site's target list to nobody.
+  const targets = useMemo(() => {
+    const picked = target.rows.filter((r) => selectedIds.has(r.id));
+    return picked.length > 0 ? picked : target.rows;
+  }, [target.rows, selectedIds]);
+  const usingSelection = targets.length !== target.rows.length;
+
+  // ── The posts ───────────────────────────────────────────────────────────────
+  //
+  // A post is grouped by its LABEL, not by contract line. A site routinely
+  // carries several lines for the same post — Nova Islamabad bills Guard twice,
+  // once for the day shift and once for the night — and showing those as two
+  // identical "Guard" rows would be indistinguishable on screen and would force
+  // the same figure to be typed twice. Since the label falls back to the
+  // category name, two posts can never render under the same heading: lines
+  // deliberately named apart ("Guard — Gate" vs "Guard — Roving") stay apart,
+  // and lines that are the same post split by shift come back together.
+  const lineLabelOf = (l: ContractLine) =>
+    (l.label ?? "").trim() || CONTRACT_LINE_CATEGORY_LABEL[l.category];
+
+  const { buckets, emptyPosts } = useMemo(() => {
+    const lineById = new Map(allLines.map((l) => [l.id, l]));
+    const relevant: ContractLine[] = [...lines];
+    const seen = new Set(relevant.map((l) => l.id));
+    // Someone pinned to a line this site does not list — another site's line, or
+    // one on a contract that has since lapsed — still belongs under their real
+    // post rather than being swept into the leftovers.
+    for (const r of targets) {
+      const id = r.contract_line_id;
+      if (!id || seen.has(id)) continue;
+      const l = lineById.get(id);
+      if (l) { relevant.push(l); seen.add(id); }
+    }
+
+    type Draft = { key: string; label: string; category: ContractLineCategory; rank: number; rows: EmployeeRow[] };
+    const byLabel = new Map<string, Draft>();
+    /** line id -> the post it belongs to, so employees can be routed in one pass. */
+    const postOfLine = new Map<string, string>();
+    for (const l of relevant) {
+      const label = lineLabelOf(l);
+      const key = label.toLowerCase();
+      const rank = CATEGORY_RANK.get(l.category) ?? 99;
+      const existing = byLabel.get(key);
+      if (existing) existing.rank = Math.min(existing.rank, rank);
+      else byLabel.set(key, { key, label, category: l.category, rank, rows: [] });
+      postOfLine.set(l.id, key);
+    }
+
+    const leftover: EmployeeRow[] = [];
+    for (const r of targets) {
+      const post = r.contract_line_id ? postOfLine.get(r.contract_line_id) : undefined;
+      if (post) byLabel.get(post)!.rows.push(r);
+      else leftover.push(r);
+    }
+
+    const ordered = [...byLabel.values()].sort((a, b) => a.rank - b.rank || a.label.localeCompare(b.label));
+    const out: PostBucket[] = ordered.map((d) => ({
+      key: d.key,
+      label: d.label,
+      category: d.category,
+      rows: d.rows,
+    }));
+    if (leftover.length > 0) {
+      // One post at this site means every unpinned person is unambiguously that
+      // post — the same inference the Department column already makes. With two
+      // or more there is nothing to infer from, so they get their own row and
+      // can still be given a rate rather than being left out of the edit.
+      if (out.length === 1) out[0] = { ...out[0], rows: [...out[0].rows, ...leftover] };
+      else out.push({ key: "__unposted", label: "Not on a contract line", category: null, rows: leftover });
+    }
+
+    // Posts the contract commits to that nobody fills yet. They get no inputs —
+    // a rule against zero people does nothing — but they are worth naming,
+    // because an empty post is usually a vacancy rather than a mistake.
+    return {
+      buckets: out.filter((b) => b.rows.length > 0),
+      emptyPosts: out.filter((b) => b.rows.length === 0).map((b) => b.label),
+    };
+  }, [lines, allLines, targets]);
+
+  /** Fixed: one rule per post, expanded to the people filling it. */
+  const fixedChanges = useMemo(() => {
+    const out: { employee: EmployeeRow; base: number; allowance: number }[] = [];
+    for (const b of buckets) {
+      const r = rules[b.key];
+      if (!r || (r.baseMode === "none" && r.allowanceMode === "none")) continue;
+      for (const e of b.rows) {
+        const nextBase = applyPayMode(r.baseMode, r.baseValue, e.base_salary as number | null);
+        const nextAllow = applyPayMode(r.allowanceMode, r.allowanceValue, e.allowance as number | null);
+        if (nextBase == null && nextAllow == null) continue;
+        out.push({
+          employee: e,
+          base: nextBase ?? (e.base_salary != null ? Math.round(Number(e.base_salary)) : 0),
+          allowance: nextAllow ?? (e.allowance != null ? Math.round(Number(e.allowance)) : 0),
+        });
+      }
+    }
+    return out;
+  }, [buckets, rules]);
+
+  const currentPay = (e: EmployeeRow) => ({
+    base: e.base_salary != null ? Math.round(Number(e.base_salary)) : 0,
+    allowance: e.allowance != null ? Math.round(Number(e.allowance)) : 0,
+  });
+  /**
+   * The figures shown for one person in Variable mode: what has been typed, or
+   * what they earn today. Reads from an explicit store so it can also be used
+   * inside the setState updater, where `drafts` would be a stale closure.
+   */
+  const draftIn = (
+    store: Record<string, { base: string; allowance: string }>,
+    e: EmployeeRow,
+  ) => {
+    const cur = currentPay(e);
+    return (
+      store[e.id] ?? {
+        base: e.base_salary != null ? String(cur.base) : "",
+        allowance: e.allowance != null ? String(cur.allowance) : "",
+      }
+    );
+  };
+  const draftFor = (e: EmployeeRow) => draftIn(drafts, e);
+  const setDraft = (e: EmployeeRow, patch: Partial<{ base: string; allowance: string }>) =>
+    setDrafts((prev) => ({ ...prev, [e.id]: { ...draftIn(prev, e), ...patch } }));
+
+  /** Variable: only the people whose typed figures differ from what they earn. */
+  const variableChanges = useMemo(() => {
+    const out: { employee: EmployeeRow; base: number; allowance: number }[] = [];
+    for (const b of buckets) {
+      for (const e of b.rows) {
+        const d = drafts[e.id];
+        if (!d) continue;
+        const cur = currentPay(e);
+        const base = d.base === "" ? cur.base : Math.max(0, Math.round(Number(d.base)));
+        const allowance = d.allowance === "" ? cur.allowance : Math.max(0, Math.round(Number(d.allowance)));
+        if (!Number.isFinite(base) || !Number.isFinite(allowance)) continue;
+        if (base === cur.base && allowance === cur.allowance) continue;
+        out.push({ employee: e, base, allowance });
+      }
+    }
+    return out;
+  }, [buckets, drafts]);
+
+  const payChanges = mode === "fixed" ? fixedChanges : variableChanges;
 
   const fieldPatch = useMemo(() => {
     const patch: Record<string, unknown> = {};
-    if (bulk.setLocation) patch.location_id = bulk.locationId || null;
-    if (bulk.setBranch) patch.branch_id = bulk.branchId || null;
-    if (bulk.setJoinDate) patch.join_date = bulk.joinDate || null;
+    if (other.setLocation) patch.location_id = other.locationId || null;
+    if (other.setBranch) patch.branch_id = other.branchId || null;
+    if (other.setJoinDate) patch.join_date = other.joinDate || null;
     return patch;
-  }, [bulk]);
+  }, [other]);
 
   const hasFieldChange = Object.keys(fieldPatch).length > 0;
   const hasPayChange = payChanges.length > 0;
 
   const apply = async () => {
     if (!hasPayChange && !hasFieldChange) {
-      setErr("Nothing to apply — set a pay change or tick a field to update.");
+      setErr(
+        mode === "fixed"
+          ? "Nothing to apply — set a rule against a post, or tick a field to update."
+          : "Nothing to apply — change someone's figures, or tick a field to update.",
+      );
       return;
     }
-    if (hasPayChange && !bulk.effectiveDate) {
+    if (hasPayChange && !other.effectiveDate) {
       setErr("Pick an effective date for the pay change.");
       return;
     }
@@ -1231,11 +1508,11 @@ function BulkEditModal({
         const c = payChanges[i];
         const { error } = await supabase.rpc("set_employee_salary", {
           p_employee_id: c.employee.id,
-          p_effective_date: bulk.effectiveDate,
+          p_effective_date: other.effectiveDate,
           p_base_salary: c.base,
           p_allowance: c.allowance,
           p_per_day_salary: c.base / daysInCurrentMonth(),
-          p_reason: bulk.reason.trim() || "Increment",
+          p_reason: other.reason.trim() || "Increment",
         });
         if (error) throw new Error(`${c.employee.full_name}: ${error.message}`);
         setProgress(i + 1);
@@ -1243,7 +1520,7 @@ function BulkEditModal({
       const bits: string[] = [];
       if (hasPayChange) bits.push(`pay updated for ${payChanges.length}`);
       if (hasFieldChange) bits.push(`details updated for ${targets.length}`);
-      await onDone(`${group.label}: ${bits.join(", ")}.`);
+      await onDone(`${scopeLabel}: ${bits.join(", ")}.`);
     } catch (e: any) {
       setErr(e.message ?? String(e));
       setSaving(false);
@@ -1251,12 +1528,13 @@ function BulkEditModal({
   };
 
   const inputCls = "w-full px-3 py-2 border border-border rounded-md text-sm bg-card";
-  const modeSelect = (mode: PayMode, onChange: (m: PayMode) => void) => (
-    <ThemedSelect value={mode} onChange={(e) => onChange(e.target.value as PayMode)} className={inputCls}>
+  // Named `payMode` and not `mode`, which is already the Fixed/Variable switch.
+  const modeSelect = (payMode: PayMode, onChange: (m: PayMode) => void) => (
+    <ThemedSelect value={payMode} onChange={(e) => onChange(e.target.value as PayMode)} className={inputCls}>
       <option value="none">No change</option>
+      <option value="set">Set to exact amount</option>
       <option value="percent">Increase by %</option>
       <option value="flat">Add fixed amount</option>
-      <option value="set">Set to exact amount</option>
     </ThemedSelect>
   );
 
@@ -1266,16 +1544,18 @@ function BulkEditModal({
       error={err}
       onDismissError={() => setErr(null)}
       onClose={onClose}
-      title={`Bulk edit — ${group.label}`}
+      title={`Edit rules — ${scopeLabel}`}
       size="lg"
       footer={
         <div className="flex items-center justify-between gap-2">
           <span className="text-xs text-muted-foreground">
             {saving && payChanges.length > 0
               ? `Applying ${progress} / ${payChanges.length}…`
-              : `Applies to ${targets.length} employee${targets.length === 1 ? "" : "s"}${
-                  selectedIds.size > 0 ? " (selected)" : " (whole group)"
-                }`}
+              : hasPayChange
+                ? `${payChanges.length} pay change${payChanges.length === 1 ? "" : "s"} ready`
+                : `${targets.length} employee${targets.length === 1 ? "" : "s"}${
+                    usingSelection ? " (selected)" : ""
+                  } at ${scopeLabel}`}
           </span>
           <div className="flex gap-2">
             <Button variant="secondary" size="sm" onClick={onClose} disabled={saving}>Cancel</Button>
@@ -1288,54 +1568,179 @@ function BulkEditModal({
     >
       <div className="space-y-6">
         <section>
-          <h4 className="text-sm font-medium text-foreground mb-1">Salary &amp; allowance</h4>
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+            <div className="min-w-0">
+              <h4 className="text-sm font-medium text-foreground">
+                {target.siteName ? `${target.group.label} · ${target.siteName}` : target.group.label}
+              </h4>
+              <p className="text-xs text-muted-foreground">
+                {targets.length} employee{targets.length === 1 ? "" : "s"}
+                {usingSelection ? " selected" : ""} · {buckets.length} post
+                {buckets.length === 1 ? "" : "s"}
+              </p>
+            </div>
+            <div className="inline-flex rounded-md border border-border overflow-hidden shrink-0">
+              {(["fixed", "variable"] as RulesMode[]).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setMode(m)}
+                  aria-pressed={mode === m}
+                  className={`px-3 py-1.5 text-sm transition-colors ${
+                    mode === m
+                      ? "bg-brand-500/10 text-foreground font-medium"
+                      : "text-muted-foreground hover:bg-accent"
+                  }`}
+                >
+                  {m === "fixed" ? "Fixed" : "Variable"}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <p className="text-xs text-muted-foreground mb-3">
-            Recorded as a dated increment per employee — earlier months keep the salary they were paid on.
+            {mode === "fixed"
+              ? "One rule per post — everyone filling the same post at this site ends on the same figure. Posts come from the contract lines that staff this site."
+              : "One figure per person, for sites where pay is negotiated individually. Blank keeps what they earn today."}
           </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-muted-foreground mb-1">Base salary</label>
-              {modeSelect(bulk.baseMode, (m) => set("baseMode", m))}
+
+          {buckets.length === 0 ? (
+            <p className="px-3 py-8 text-center text-sm text-muted-foreground border border-border rounded-md">
+              Nobody is posted here yet — use “Assign employees” on this site.
+            </p>
+          ) : mode === "fixed" ? (
+            <div className="space-y-3">
+              {buckets.map((b) => {
+                const r = ruleFor(b.key);
+                const exactBase = r.baseMode === "set" && r.baseValue !== "" && !isNaN(Number(r.baseValue));
+                return (
+                  <div key={b.key} className="border border-border rounded-md p-3">
+                    <div className="flex flex-wrap items-center gap-2 mb-2">
+                      <span className="text-sm font-medium text-foreground">{b.label}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {b.rows.length} employee{b.rows.length === 1 ? "" : "s"}
+                      </span>
+                      {b.category === null && (
+                        <span
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-medium bg-warning-50 text-warning-800 dark:text-warning-500 border-warning-200"
+                          title="Their posting names no contract line, so the contract cannot say which post they fill. Set it with Edit on their row."
+                        >
+                          <AlertTriangle className="w-3 h-3" strokeWidth={2} />
+                          No post on file
+                        </span>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs text-muted-foreground mb-1">Base salary</label>
+                        <div className="flex gap-2">
+                          {modeSelect(r.baseMode, (m) => setRule(b.key, "baseMode", m))}
+                          <input
+                            type="number"
+                            value={r.baseValue}
+                            disabled={r.baseMode === "none"}
+                            onChange={(e) => setRule(b.key, "baseValue", e.target.value)}
+                            className={`w-28 shrink-0 px-3 py-2 border border-border rounded-md text-sm bg-card${
+                              r.baseMode === "none" ? " opacity-50" : ""
+                            }`}
+                            placeholder={r.baseMode === "percent" ? "10" : "35000"}
+                            aria-label={`${b.label} base salary value`}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-muted-foreground mb-1">Allowance</label>
+                        <div className="flex gap-2">
+                          {modeSelect(r.allowanceMode, (m) => setRule(b.key, "allowanceMode", m))}
+                          <input
+                            type="number"
+                            value={r.allowanceValue}
+                            disabled={r.allowanceMode === "none"}
+                            onChange={(e) => setRule(b.key, "allowanceValue", e.target.value)}
+                            className={`w-28 shrink-0 px-3 py-2 border border-border rounded-md text-sm bg-card${
+                              r.allowanceMode === "none" ? " opacity-50" : ""
+                            }`}
+                            placeholder="0"
+                            aria-label={`${b.label} allowance value`}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    {exactBase && (
+                      <p className="text-xs text-muted-foreground mt-2">
+                        All {b.rows.length} → {money(Math.max(0, Math.round(Number(r.baseValue))))} base.
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-            <div>
-              <label className="block text-xs text-muted-foreground mb-1">
-                {bulk.baseMode === "percent" ? "Percent (%)" : "Amount (PKR)"}
-              </label>
-              <input
-                type="number"
-                value={bulk.baseValue}
-                disabled={bulk.baseMode === "none"}
-                onChange={(e) => set("baseValue", e.target.value)}
-                className={inputCls + (bulk.baseMode === "none" ? " opacity-50" : "")}
-                placeholder={bulk.baseMode === "percent" ? "10" : "3000"}
-              />
+          ) : (
+            <div className="space-y-3">
+              {buckets.map((b) => (
+                <div key={b.key} className="border border-border rounded-md overflow-hidden">
+                  <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border-b border-border">
+                    <span className="text-sm font-medium text-foreground">{b.label}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {b.rows.length} employee{b.rows.length === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto">
+                    {b.rows.map((e) => {
+                      const d = draftFor(e);
+                      return (
+                        <div
+                          key={e.id}
+                          className="grid grid-cols-[1fr_7rem_7rem] gap-2 items-center px-3 py-2 border-b border-border last:border-0"
+                        >
+                          <span className="text-sm text-foreground truncate" title={e.full_name}>
+                            {e.full_name}
+                          </span>
+                          <input
+                            type="number"
+                            value={d.base}
+                            onChange={(ev) => setDraft(e, { base: ev.target.value })}
+                            className="w-full px-2 py-1.5 border border-border rounded-md text-sm bg-card tabular-nums"
+                            placeholder="Base"
+                            aria-label={`${e.full_name} base salary`}
+                          />
+                          <input
+                            type="number"
+                            value={d.allowance}
+                            onChange={(ev) => setDraft(e, { allowance: ev.target.value })}
+                            className="w-full px-2 py-1.5 border border-border rounded-md text-sm bg-card tabular-nums"
+                            placeholder="Allowance"
+                            aria-label={`${e.full_name} allowance`}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
-            <div>
-              <label className="block text-xs text-muted-foreground mb-1">Allowance</label>
-              {modeSelect(bulk.allowanceMode, (m) => set("allowanceMode", m))}
-            </div>
-            <div>
-              <label className="block text-xs text-muted-foreground mb-1">
-                {bulk.allowanceMode === "percent" ? "Percent (%)" : "Amount (PKR)"}
-              </label>
-              <input
-                type="number"
-                value={bulk.allowanceValue}
-                disabled={bulk.allowanceMode === "none"}
-                onChange={(e) => set("allowanceValue", e.target.value)}
-                className={inputCls + (bulk.allowanceMode === "none" ? " opacity-50" : "")}
-                placeholder="0"
-              />
-            </div>
+          )}
+
+          {emptyPosts.length > 0 && (
+            <p className="text-xs text-muted-foreground mt-2">
+              This site's contract also commits to {emptyPosts.join(", ")} — nobody fills{" "}
+              {emptyPosts.length === 1 ? "that post" : "those posts"} yet, so there is no pay to set.
+            </p>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
             <div>
               <label className="block text-xs text-muted-foreground mb-1">Effective date</label>
-              <input type="date" value={bulk.effectiveDate} onChange={(e) => set("effectiveDate", e.target.value)} className={inputCls} />
+              <input type="date" value={other.effectiveDate} onChange={(e) => setOtherField("effectiveDate", e.target.value)} className={inputCls} />
             </div>
             <div>
               <label className="block text-xs text-muted-foreground mb-1">Reason</label>
-              <input value={bulk.reason} onChange={(e) => set("reason", e.target.value)} className={inputCls} placeholder="Annual increment" />
+              <input value={other.reason} onChange={(e) => setOtherField("reason", e.target.value)} className={inputCls} placeholder="Annual increment" />
             </div>
           </div>
+          <p className="text-xs text-muted-foreground mt-2">
+            Recorded as a dated increment per employee — earlier months keep the salary they were paid on.
+          </p>
 
           {payChanges.length > 0 && (
             <div className="mt-3 border border-border rounded-md max-h-56 overflow-y-auto">
@@ -1368,35 +1773,38 @@ function BulkEditModal({
         </section>
 
         <section className="pt-4 border-t border-border">
-          <h4 className="text-sm font-medium text-foreground mb-3">Other details</h4>
+          <h4 className="text-sm font-medium text-foreground mb-1">Other details</h4>
+          <p className="text-xs text-muted-foreground mb-3">
+            Applies to all {targets.length} — these are not per-post.
+          </p>
           <div className="space-y-3">
-            <BulkField
+            <RuleField
               label="Location"
-              checked={bulk.setLocation}
-              onToggle={(v) => set("setLocation", v)}
+              checked={other.setLocation}
+              onToggle={(v) => setOtherField("setLocation", v)}
             >
-              <ThemedSelect value={bulk.locationId} onChange={(e) => set("locationId", e.target.value)} className={inputCls}>
+              <ThemedSelect value={other.locationId} onChange={(e) => setOtherField("locationId", e.target.value)} className={inputCls}>
                 <option value="">— Clear —</option>
                 {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
               </ThemedSelect>
-            </BulkField>
-            <BulkField
+            </RuleField>
+            <RuleField
               label="Primary branch"
-              checked={bulk.setBranch}
-              onToggle={(v) => set("setBranch", v)}
+              checked={other.setBranch}
+              onToggle={(v) => setOtherField("setBranch", v)}
             >
-              <ThemedSelect value={bulk.branchId} onChange={(e) => set("branchId", e.target.value)} className={inputCls}>
+              <ThemedSelect value={other.branchId} onChange={(e) => setOtherField("branchId", e.target.value)} className={inputCls}>
                 <option value="">Head Office (default)</option>
                 {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
               </ThemedSelect>
-            </BulkField>
-            <BulkField
+            </RuleField>
+            <RuleField
               label="Joining date"
-              checked={bulk.setJoinDate}
-              onToggle={(v) => set("setJoinDate", v)}
+              checked={other.setJoinDate}
+              onToggle={(v) => setOtherField("setJoinDate", v)}
             >
-              <input type="date" value={bulk.joinDate} onChange={(e) => set("joinDate", e.target.value)} className={inputCls} />
-            </BulkField>
+              <input type="date" value={other.joinDate} onChange={(e) => setOtherField("joinDate", e.target.value)} className={inputCls} />
+            </RuleField>
           </div>
           <p className="text-xs text-muted-foreground mt-3">
             Client, category and shift are dated posting changes and stay one-at-a-time — use Edit on the row.
@@ -1407,7 +1815,7 @@ function BulkEditModal({
   );
 }
 
-function BulkField({
+function RuleField({
   label, checked, onToggle, children,
 }: {
   label: string;
@@ -1786,12 +2194,26 @@ function AssignEmployeesModal({
   // Office Staff and Relievers hold no client posting, so there is no contract,
   // no line and nothing to cap — the slot machinery is client-only.
   const toClient = target.kind === "client";
+  const siteId = target.kind === "client" ? target.siteId : null;
   // Contract → line → how many slots are left. A client can hold several
   // contracts, so the contract has to be chosen before its lines mean anything.
   const clientContracts = toClient ? contractsForClient(target.id) : [];
+  // Every line on the contract. The slot arithmetic below counts committed and
+  // filled across the WHOLE contract, so it has to keep seeing all of them —
+  // narrowing this to the site would compare a site-sized commitment against a
+  // contract-sized headcount and refuse postings that are genuinely free.
   const lines = useMemo(
     () => (contractId ? linesForContract(contractId) : []),
     [contractId, linesForContract],
+  );
+  /**
+   * The lines actually OFFERED. Posting to a site should not let you pick a line
+   * that staffs a different site. A line with no site is contract-wide and stays
+   * on offer everywhere.
+   */
+  const offeredLines = useMemo(
+    () => (siteId ? lines.filter((l) => l.site_id === siteId || l.site_id === null) : lines),
+    [lines, siteId],
   );
   const lineCategoryById = useMemo(() => {
     const m = new Map<string, ContractLineCategory>();
@@ -1866,7 +2288,7 @@ function AssignEmployeesModal({
     if (targets.length === 0) { setErr("Pick at least one employee."); return; }
     if (!startDate) { setErr("Pick a start date."); return; }
     if (toClient && clientContracts.length > 0 && !contractId) { setErr("Choose which contract this posting is under."); return; }
-    if (toClient && lines.length > 0 && !contractLineId) { setErr("Choose a contract line — it sets the category and its headcount limit."); return; }
+    if (toClient && offeredLines.length > 0 && !contractLineId) { setErr("Choose a contract line — it sets the category and its headcount limit."); return; }
     // Re-check against the live figures: the cap also guards the checkboxes, but
     // the committed count can move (an addendum, another operator) between the
     // dialog opening and Assign being pressed.
@@ -1888,13 +2310,15 @@ function AssignEmployeesModal({
     setErr(null);
     setProgress(0);
     try {
-      // The client's default site, resolved once for the whole batch.
-      let siteId: string | null = null;
-      if (toClient) {
+      // The site everyone in this batch is posted to. It comes from the site row
+      // the button was pressed on; only a client with no sites at all falls back
+      // to the default-site lookup, which is all this used to do.
+      let postSiteId: string | null = siteId;
+      if (toClient && !postSiteId) {
         const { data: defSite } = await supabase
           .from("sites").select("id")
           .eq("client_id", target.id).eq("is_default", true).maybeSingle();
-        siteId = (defSite as { id?: string } | null)?.id ?? null;
+        postSiteId = (defSite as { id?: string } | null)?.id ?? null;
       }
 
       // Sequential: each employee needs its own posting row, code and salary seed,
@@ -1961,7 +2385,7 @@ function AssignEmployeesModal({
           guard_id: e.id,
           client_id: target.id,
           contract_line_id: contractLineId || null,
-          site_id: siteId,
+          site_id: postSiteId,
           start_date: startDate,
           shift_code: shift || e.shift || "day",
           reason: "new_hire",
@@ -2009,7 +2433,11 @@ function AssignEmployeesModal({
       error={err}
       onDismissError={() => setErr(null)}
       onClose={onClose}
-      title={`Assign employees to ${target.name}`}
+      title={
+        target.kind === "client" && target.siteName
+          ? `Assign employees to ${target.siteName} · ${target.name}`
+          : `Assign employees to ${target.name}`
+      }
       size="lg"
       footer={
         <div className="flex items-center justify-between gap-2">
@@ -2051,16 +2479,26 @@ function AssignEmployeesModal({
                 value={contractLineId}
                 onChange={(e) => setContractLineId(e.target.value)}
                 className={inputCls}
-                disabled={!contractId || lines.length === 0}
+                disabled={!contractId || offeredLines.length === 0}
               >
                 <option value="">
-                  {!contractId ? "Pick a contract first" : lines.length === 0 ? "This contract has no lines" : "— Select —"}
+                  {!contractId
+                    ? "Pick a contract first"
+                    : offeredLines.length === 0
+                      ? lines.length === 0
+                        ? "This contract has no lines"
+                        : "No lines staff this site"
+                      : "— Select —"}
                 </option>
-                {lines.map((l) => {
+                {offeredLines.map((l) => {
                   const si = slotFor(l.id);
                   return (
                     <option key={l.id} value={l.id}>
-                      {CONTRACT_LINE_CATEGORY_LABEL[l.category]}
+                      {(l.label ?? "").trim() || CONTRACT_LINE_CATEGORY_LABEL[l.category]}
+                      {/* A site routinely bills the same post twice, once per
+                          shift. Without the shift the two options read
+                          identically and the choice is a coin flip. */}
+                      {l.shift_code ? ` (${l.shift_code})` : ""}
                       {l.location ? ` — ${l.location}` : ""}
                       {si ? ` · ${si.filled}/${si.committed} filled` : ""}
                     </option>
@@ -2073,6 +2511,12 @@ function AssignEmployeesModal({
             <p className="text-xs text-warning-700 dark:text-warning-500 mt-2">
               This contract has no category lines, so there is no committed headcount to check against.
               Add lines on the Contracts page to cap postings by category.
+            </p>
+          )}
+          {contractId && lines.length > 0 && offeredLines.length === 0 && (
+            <p className="text-xs text-warning-700 dark:text-warning-500 mt-2">
+              None of this contract's lines staff {target.kind === "client" ? target.siteName : "this site"}.
+              Set the site on a line from the Contracts page, or pick another contract.
             </p>
           )}
           {slot && (
@@ -2164,8 +2608,10 @@ function AssignEmployeesModal({
           <h4 className="text-sm font-medium text-foreground mb-1">Applies to everyone selected</h4>
           <p className="text-xs text-muted-foreground mb-3">
             {toClient
-              ? "This is each person's first posting, so it also issues their permanent guard code and their client number. Pay can be left blank and set later with Bulk edit."
-              : `They move to ${target.name} from the date below. No client posting is created, so no client number is issued. Pay can be left blank and set later with Bulk edit.`}
+              ? `This is each person's first posting${
+                  target.kind === "client" && target.siteName ? `, at ${target.siteName}` : ""
+                }, so it also issues their permanent guard code and their client number. Pay can be left blank and set later with Edit rules.`
+              : `They move to ${target.name} from the date below. No client posting is created, so no client number is issued. Pay can be left blank and set later with Edit rules.`}
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>

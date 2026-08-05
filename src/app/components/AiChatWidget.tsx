@@ -59,7 +59,13 @@ export default function AiChatWidget() {
         let detail = fnErr.message;
         try {
           const ctx = (fnErr as { context?: Response }).context;
-          if (ctx) detail = (await ctx.clone().json())?.error ?? detail;
+          if (ctx) {
+            const body = await ctx.clone().json();
+            // `message` is the human sentence (used by the out-of-AI-credit
+            // 402); `error` is the machine code. Prefer the sentence, or the
+            // user reads "ai_credit_exhausted" and has to guess.
+            detail = body?.message ?? body?.error ?? detail;
+          }
         } catch { /* ignore */ }
         throw new Error(detail);
       }

@@ -20,6 +20,7 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { AI_COST, DEFAULT_PKR_PER_USD, aiCostPkr } from "../_shared/pricing.ts";
 
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -2230,7 +2231,13 @@ type ChatMessage = {
   name?: string;
 };
 
-async function callOpenAI(messages: ChatMessage[]): Promise<ChatMessage> {
+/** Tokens billed for one model call. Summed across a request's tool loop. */
+type Usage = { prompt: number; completion: number };
+
+async function callOpenAI(
+  messages: ChatMessage[],
+  usage: Usage,
+): Promise<ChatMessage> {
   const resp = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -2249,7 +2256,75 @@ async function callOpenAI(messages: ChatMessage[]): Promise<ChatMessage> {
     throw new Error(`OpenAI request failed (${resp.status}): ${text}`);
   }
   const body = await resp.json();
+  // Accumulate rather than overwrite: one user question can trigger several
+  // model calls as tools are run, and the customer is billed for all of them.
+  usage.prompt += Number(body.usage?.prompt_tokens ?? 0);
+  usage.completion += Number(body.usage?.completion_tokens ?? 0);
   return body.choices?.[0]?.message as ChatMessage;
+}
+
+// ---------------------------------------------------------------------------
+// AI credit metering
+// ---------------------------------------------------------------------------
+// The assistant is sold as an included monthly PKR allowance plus optional
+// prepaid top-ups. Charging happens AFTER the answer, because token counts are
+// not knowable in advance; the gate before the request only checks that there
+// is some credit left. The practical effect is that the last question of a
+// month may overdraw slightly, which is the right way round — better than
+// refusing an answer the customer has credit for.
+
+/** PKR per USD, matching the rate the subscription is billed at. */
+function fxRate(): number {
+  const raw = Number(Deno.env.get("PKR_PER_USD"));
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_PKR_PER_USD;
+}
+
+/**
+ * Record what a request cost and take it out of the company's credit.
+ * Never throws: a metering failure must not swallow an answer the user has
+ * already waited for. An unbilled request is logged and moves on.
+ */
+async function meterUsage(
+  admin: SupabaseClient,
+  caller: CallerProfile,
+  threadId: string | null,
+  usage: Usage,
+  enabled: boolean,
+): Promise<void> {
+  // Companies with no self-serve plan are not metered at all — not even
+  // recorded, since an ai_usage row with no ledger entry behind it just looks
+  // like a bug later.
+  if (!enabled) return;
+  if (!caller.company_id) return;
+  if (usage.prompt === 0 && usage.completion === 0) return;
+
+  try {
+    const { usd, pkr } = aiCostPkr(usage.prompt, usage.completion, fxRate());
+
+    const { data: row } = await admin
+      .from("ai_usage")
+      .insert({
+        company_id: caller.company_id,
+        user_id: caller.user_id,
+        thread_id: threadId,
+        model: AI_COST.model,
+        prompt_tokens: usage.prompt,
+        completion_tokens: usage.completion,
+        cost_usd: usd,
+        cost_pkr: pkr,
+      })
+      .select("id")
+      .single();
+
+    await admin.rpc("ai_credit_spend", {
+      p_company: caller.company_id,
+      p_amount: pkr,
+      p_description: `AI assistant · ${usage.prompt + usage.completion} tokens`,
+      p_usage_id: row?.id ?? null,
+    });
+  } catch (e) {
+    console.error("meterUsage failed (non-fatal):", e instanceof Error ? e.message : e);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -2343,6 +2418,40 @@ Deno.serve(async (req) => {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
+  // Service-role client for metering. Credit is company-wide state that an
+  // ordinary user must not be able to write, so it deliberately does not go
+  // through userClient.
+  const meterClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  // Credit gate. Checked before the model is called, so an org with an empty
+  // balance is told to top up instead of running up a bill we cannot collect.
+  //
+  // `enforced` is false for a company that never bought a self-serve plan —
+  // every company that existed before billing was added. Those are invoiced
+  // outside the app and have an allowance of zero, so metering them would
+  // switch their assistant off the day this deploys.
+  let meterEnabled = false;
+  if (caller.company_id) {
+    const { data: status } = await meterClient.rpc("ai_credit_status", {
+      p_company: caller.company_id,
+    });
+    const s = (status ?? {}) as { enforced?: boolean; available?: number };
+    meterEnabled = s.enforced === true;
+    if (meterEnabled && Number(s.available ?? 0) <= 0) {
+      return json({
+        error: "ai_credit_exhausted",
+        message:
+          "Your AI credit for this month is used up. Buy a top-up in Plan & Billing, " +
+          "or wait for your credit to reset on your next renewal.",
+      }, 402);
+    }
+  }
+
+  // Tokens for this whole request, filled in by callOpenAI on each pass.
+  const usage: Usage = { prompt: 0, completion: 0 };
+
   const messages: ChatMessage[] = [
     { role: "system", content: buildSystemPrompt(caller) },
     ...inboundMessages.map((m) => ({
@@ -2358,7 +2467,7 @@ Deno.serve(async (req) => {
 
   try {
     for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
-      const assistant = await callOpenAI(messages);
+      const assistant = await callOpenAI(messages, usage);
       messages.push(assistant);
 
       const toolCalls = assistant.tool_calls;
@@ -2373,6 +2482,7 @@ Deno.serve(async (req) => {
           lastUserContent,
           replyText,
         );
+        await meterUsage(meterClient, caller, threadId, usage, meterEnabled);
         return json({ reply: replyText, thread_id: threadId });
       }
 
@@ -2405,10 +2515,15 @@ Deno.serve(async (req) => {
     const fallback =
       "I needed too many steps to answer that — could you ask it in a smaller piece?";
     threadId = await persistTurn(userClient, caller, threadId, lastUserContent, fallback);
+    await meterUsage(meterClient, caller, threadId, usage, meterEnabled);
     return json({ reply: fallback, thread_id: threadId });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("ai-chat:", msg);
+    // Bill whatever the model did produce before it failed. Those tokens were
+    // spent with OpenAI whether or not the customer got an answer, and leaving
+    // them unbilled is a free-retry loop.
+    await meterUsage(meterClient, caller, threadId, usage, meterEnabled);
     return json({ error: msg }, 500);
   }
 });

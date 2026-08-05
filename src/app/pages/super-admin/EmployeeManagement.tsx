@@ -8,6 +8,7 @@ import { generateIdCardPdf } from "../../lib/idCardPdf";
 import { brandingFromCompany, type PdfBranding } from "../../lib/pdfBranding";
 import EmployeeLifecyclePanel from "../../components/EmployeeLifecyclePanel";
 import Header from "../../components/Header";
+import GuardCapBanner from "../../components/GuardCapBanner";
 import { formatDate } from "../../lib/date";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -1854,6 +1855,9 @@ export default function EmployeeManagement() {
       />
 
       <div className="flex-1 overflow-y-auto p-8">
+        {/* Warns before the database refuses the next guard, so hitting the
+            plan limit is never a surprise mid-form. */}
+        <GuardCapBanner />
         {error && (
           <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />

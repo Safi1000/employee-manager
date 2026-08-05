@@ -1,6 +1,8 @@
 import { createBrowserRouter, Navigate } from "react-router";
 import RoleSelection from "./pages/RoleSelection";
 import Login from "./pages/Login";
+import Signup from "./pages/Signup";
+import SignupComplete from "./pages/SignupComplete";
 import RequireAuth from "./components/RequireAuth";
 import RequirePermission from "./components/RequirePermission";
 import SuperAdminLayout from "./layouts/SuperAdminLayout";
@@ -56,6 +58,8 @@ import DailyReports from "./pages/super-admin/DailyReports";
 import IncidentsHub from "./pages/super-admin/IncidentsHub";
 import LicencesHub from "./pages/super-admin/LicencesHub";
 
+import Billing from "./pages/super-admin/Billing";
+
 import Companies from "./pages/super-super-admin/Companies";
 import CompanyDetail from "./pages/super-super-admin/CompanyDetail";
 
@@ -66,6 +70,11 @@ const guard = (perms: string[], el: React.ReactNode) => (
 export const router = createBrowserRouter([
   { path: "/", Component: RoleSelection },
   { path: "/login", Component: Login },
+  // Self-serve signup. Two steps with Stripe in the middle: /signup takes the
+  // plan and opens Checkout, /signup/complete is where Stripe returns and the
+  // company is actually created — but only if the payment is confirmed.
+  { path: "/signup", Component: Signup },
+  { path: "/signup/complete", Component: SignupComplete },
   {
     path: "/super-super-admin",
     element: (
@@ -156,6 +165,9 @@ export const router = createBrowserRouter([
       { path: "compliance", element: guard(["compliance.view", "compliance.edit"], <Compliance />) },
       { path: "documents", element: guard(["documents.view", "documents.edit"], <Documents />) },
       { path: "settings", element: guard(["settings.view", "settings.edit"], <Settings />) },
+      // Plan, guard cap and AI credit. Readable by anyone who can see settings;
+      // the edge function is what refuses a non-super-admin trying to spend.
+      { path: "billing", element: guard(["settings.view", "settings.edit"], <Billing />) },
       { path: "tasks", element: <Tasks /> },
     ],
   },

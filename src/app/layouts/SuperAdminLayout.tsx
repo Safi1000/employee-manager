@@ -18,6 +18,7 @@ import {
   ReceiptText,
   TrendingUp,
   Settings as SettingsIcon,
+  CreditCard,
   FileText,
   Package,
   Bell,
@@ -109,6 +110,7 @@ export default function SuperAdminLayout() {
   const TASKS: LinkDef = { to: "/super-admin/tasks", label: "Tasks", icon: Trello };
   const USERS: LinkDef = { to: "/super-admin/users", label: "Users & Permissions", icon: Users, perms: ["users.manage"] };
   const SETTINGS: LinkDef = { to: "/super-admin/settings", label: "Settings", icon: SettingsIcon, perms: ["settings.view", "settings.edit"] };
+  const BILLING: LinkDef = { to: "/super-admin/billing", label: "Plan & Billing", icon: CreditCard, perms: ["settings.view", "settings.edit"] };
   // New back-office surfaces (Parts II–VII).
   const TREASURY: LinkDef = { to: "/super-admin/treasury", label: "Treasury & Reserves", icon: Landmark, perms: ["accounting.view", "reports.view", "cashflow.view"] };
   const ASSETS: LinkDef = { to: "/super-admin/assets", label: "Assets & Vehicles", icon: Package, perms: ["inventory.view", "inventory.edit", "accounting.view"] };
@@ -248,6 +250,7 @@ export default function SuperAdminLayout() {
     ACCESS_GOVERNANCE,
     AUDIT_LOG,
     SETTINGS,
+    BILLING,
   ]);
   if (admin) links.push(admin);
 

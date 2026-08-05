@@ -29,6 +29,26 @@ export default function BastionLanding() {
     const onSignIn = (e: Event) => { e.preventDefault(); navigate("/login"); };
     signInLinks.forEach((a) => a.addEventListener("click", onSignIn));
 
+    // "Sign up" carries the calculator's current state across to /signup, so a
+    // visitor who priced 240 guards with Care on lands on a form already set to
+    // 240 guards with Care on. Read at click time rather than bound once: the
+    // header button must reflect the slider even though it sits above it.
+    const signUpLinks = Array.from(
+      shadow.querySelectorAll<HTMLAnchorElement>("a[data-signup]"),
+    );
+    const onSignUp = (e: Event) => {
+      e.preventDefault();
+      const guardsEl = shadow.getElementById("pcNum") as HTMLInputElement | null;
+      const careEl = shadow.getElementById("pcCare") as HTMLInputElement | null;
+      const params = new URLSearchParams();
+      const guards = Number(guardsEl?.value ?? "");
+      if (Number.isFinite(guards) && guards > 0) params.set("guards", String(Math.floor(guards)));
+      if (careEl?.checked) params.set("care", "1");
+      const qs = params.toString();
+      navigate(qs ? `/signup?${qs}` : "/signup");
+    };
+    signUpLinks.forEach((a) => a.addEventListener("click", onSignUp));
+
     const dispose = initBastion(shadow);
 
     const prevTitle = document.title;
@@ -36,6 +56,7 @@ export default function BastionLanding() {
 
     return () => {
       signInLinks.forEach((a) => a.removeEventListener("click", onSignIn));
+      signUpLinks.forEach((a) => a.removeEventListener("click", onSignUp));
       dispose();
       shadow.innerHTML = "";
       document.title = prevTitle;
