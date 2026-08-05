@@ -112,7 +112,6 @@ export const DASHBOARD_WIDGET_KEYS = [
   "stat_active_contracts",
   "stat_open_incidents",
   "stat_licences_expiring",
-  "stat_roster_gaps",
   "bank_overview",
   "top_clients",
   "attendance_trend",
@@ -121,9 +120,14 @@ export const DASHBOARD_WIDGET_KEYS = [
   "expenses_pie",
   "contracts_ending",
   "incidents_recent",
-  "roster_overview",
   "period_close_status",
 ] as const;
+// Dropped with the Deployment Roster page: "stat_roster_gaps" and
+// "roster_overview". Both counted rows in roster_assignments, which nothing has
+// written since daily assignment moved to the supervisor — so they reported
+// every guard-day as a gap (2,982 of them) and "0% covered" on a fully staffed
+// company. A key left over in a company's dashboard_hidden_widgets is ignored,
+// so no cleanup is needed.
 export type DashboardWidgetKey = (typeof DASHBOARD_WIDGET_KEYS)[number];
 
 export const DASHBOARD_WIDGET_LABELS: Record<DashboardWidgetKey, string> = {
@@ -134,7 +138,6 @@ export const DASHBOARD_WIDGET_LABELS: Record<DashboardWidgetKey, string> = {
   stat_active_contracts: "Active Contracts (stat card)",
   stat_open_incidents: "Open Incidents (stat card)",
   stat_licences_expiring: "Licences expiring <30d (stat card)",
-  stat_roster_gaps: "Roster gaps next 7d (stat card)",
   bank_overview: "Bank Account Overview",
   top_clients: "Top 10 Clients",
   attendance_trend: "Attendance Trend (7 days)",
@@ -142,7 +145,6 @@ export const DASHBOARD_WIDGET_LABELS: Record<DashboardWidgetKey, string> = {
   expenses_pie: "Expenses by Category (pie chart)",
   contracts_ending: "Contracts ending soon",
   incidents_recent: "Recent incidents",
-  roster_overview: "Deployment roster (next 7 days)",
   period_close_status: "Period close status",
 };
 
@@ -337,10 +339,14 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
     ],
   },
   {
-    label: "Deployment & Incidents",
+    label: "Daily Reports & Incidents",
     items: [
-      { key: "roster.view", label: "View deployment roster" },
-      { key: "roster.edit", label: "Edit roster / manage posts" },
+      // The KEYS stay roster.* — they are stored on every profile and changing
+      // them would revoke access for everyone until each user was re-saved.
+      // Only the labels move, to name what these actually gate now that the
+      // Deployment Roster page is gone and Daily Reports took its permissions.
+      { key: "roster.view", label: "View daily reports" },
+      { key: "roster.edit", label: "Write daily reports" },
       { key: "incidents.view", label: "View incidents" },
       { key: "incidents.edit", label: "Log / edit incidents" },
     ],

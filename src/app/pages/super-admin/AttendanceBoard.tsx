@@ -13,6 +13,7 @@ import { brandingFromCompany, type PdfBranding } from "../../lib/pdfBranding";
 import { generateClientAttendancePdf, generateGuardAttendancePdf } from "../../lib/attendanceSheetPdf";
 import { exportAttendance, type AttendanceEmployeeRow } from "../../lib/excel";
 import { loadShiftResolver } from "../../lib/shiftOnDate";
+import { useRegion } from "../../lib/region";
 
 // ── Phase 6: Attendance board by client-shift (§8.1-8.10) ─────────────────────
 // Unit of work = client-shift-day. Presume present; operator enters only
@@ -98,6 +99,8 @@ type RosterGuard = {
   employee_code: string;
   client_id: string | null; // null for non-client categories (office staff, …)
   scheduled_shift: string;
+  /** The guard's own region, used to scope synthetic category rows. */
+  branch_id?: string | null;
 };
 
 type ClientShift = {
@@ -124,6 +127,13 @@ type ClientShift = {
   // A synthetic (category, shift) group for a non-client category with no client
   // site — marked like any row, but with no site-based confirmation.
   synthetic?: boolean;
+  /**
+   * Region (branches.id) this row belongs to, for the global region selector.
+   * Taken from the CLIENT for a client-shift; deployments carry no branch_id of
+   * their own. Synthetic category rows have no client, so they carry null and
+   * are filtered on their guards' own branch instead.
+   */
+  branch_id: string | null;
 };
 
 type Vacancy = {
@@ -138,6 +148,7 @@ type Vacancy = {
 
 export default function AttendanceBoard() {
   const { profile, company } = useAuth();
+  const { regionId } = useRegion();
   const branding = brandingFromCompany(company);
   const [date, setDate] = useState(today());
   const [tab, setTab] = useState<"board" | "vacancies">("board");
@@ -175,7 +186,7 @@ export default function AttendanceBoard() {
           .select(
             "guard_id, site_id, client_id, contract_line_id, shift_code, start_date, end_date, " +
               "employees:guard_id(full_name, guard_code, display_number, employee_code, shift, category, join_date, last_working_day, lifecycle_state), " +
-              "sites:site_id(name), clients:client_id(name, employee_id_prefix), contract_lines:contract_line_id(shift_code)",
+              "sites:site_id(name), clients:client_id(name, employee_id_prefix, branch_id), contract_lines:contract_line_id(shift_code)",
           )
           .range(0, 9999)
           // The posting whose DATED segment contains the viewed date — not just
@@ -188,7 +199,7 @@ export default function AttendanceBoard() {
         supabase.from("sites").select("id, client_id, name"),
         supabase.from("attendance_confirmations").select("*").eq("attendance_date", date),
         supabase.from("attendance_records").select("employee_id, status, absent_reason, worked_shift, site_id:worked_for_client_id").eq("attendance_date", date),
-        supabase.from("clients").select("id, name, employee_id_prefix"),
+        supabase.from("clients").select("id, name, employee_id_prefix, branch_id"),
         // The contract's per-shift headcount decides which shifts a client runs.
         supabase
           .from("contracts")
@@ -205,7 +216,7 @@ export default function AttendanceBoard() {
         // Relievers are EXCLUDED — they live on the Relievers tab.
         supabase
           .from("employees")
-          .select("id, full_name, guard_code, display_number, employee_code, shift, category, join_date, last_working_day, lifecycle_state")
+          .select("id, full_name, guard_code, display_number, employee_code, shift, category, join_date, last_working_day, lifecycle_state, branch_id")
           .neq("category", "reliever")
           .neq("category", "client"),
       ]);
@@ -291,6 +302,7 @@ export default function AttendanceBoard() {
           roster: [],
           marks: new Map(),
           confirmation: confMap.get(key) ?? null,
+          branch_id: (d.clients?.branch_id as string | null) ?? null,
         };
         byKey.set(key, row);
       }
@@ -371,6 +383,7 @@ export default function AttendanceBoard() {
             roster: [],
             marks: new Map(),
             confirmation: confMap.get(`${groupKey}|${shift}`) ?? null,
+            branch_id: (c?.branch_id as string | null) ?? null,
           });
         }
       }
@@ -403,6 +416,8 @@ export default function AttendanceBoard() {
           marks: new Map(),
           confirmation: confMap.get(`cat:${e.category}|${sched}`) ?? null,
           synthetic: true,
+          // No client, so no client branch — these are scoped per guard below.
+          branch_id: null,
         };
         byKey.set(key, row);
       }
@@ -414,6 +429,7 @@ export default function AttendanceBoard() {
         employee_code: e.employee_code,
         client_id: null,
         scheduled_shift: sched,
+        branch_id: (e.branch_id as string | null) ?? null,
       });
       const mk = markByGuard.get(`${e.id}|${sched}`);
       if (mk && mk.status !== "present") row.marks.set(e.id, { status: mk.status, absent_reason: mk.absent_reason });
@@ -455,9 +471,39 @@ export default function AttendanceBoard() {
   }, [rows, clientFilter]);
 
   // Rows shown = client filter, then (within it) name/code search over the roster.
+  /**
+   * Rows for the selected region. This board previously ignored the global
+   * region selector entirely — picking ISB/RWP or Kashmir changed nothing here,
+   * while every other screen narrowed.
+   *
+   * A client-shift's region is its CLIENT's branch: deployments carry no
+   * branch_id, and the client is what a branch owns. Office-staff rows have no
+   * client, so they are narrowed to the guards whose own branch matches, and
+   * drop out when that leaves nobody.
+   */
+  const regionRows = useMemo(() => {
+    if (!regionId) return sorted;
+    const out: ClientShift[] = [];
+    for (const r of sorted) {
+      if (!r.synthetic) {
+        if (r.branch_id === regionId) out.push(r);
+        continue;
+      }
+      const roster = r.roster.filter((g) => g.branch_id === regionId);
+      if (roster.length === 0) continue;
+      const keep = new Set(roster.map((g) => g.guard_id));
+      out.push({
+        ...r,
+        roster,
+        marks: new Map([...r.marks].filter(([id]) => keep.has(id))),
+      });
+    }
+    return out;
+  }, [sorted, regionId]);
+
   const visibleRows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return sorted.filter((r) => {
+    return regionRows.filter((r) => {
       if (clientFilter !== "all" && r.client_id !== clientFilter) return false;
       if (!q) return true;
       return r.roster.some((g) =>
@@ -467,7 +513,7 @@ export default function AttendanceBoard() {
         guardDisplayCode(g, r.client_prefix).toLowerCase().includes(q),
       );
     });
-  }, [sorted, clientFilter, search]);
+  }, [regionRows, clientFilter, search]);
 
   /**
    * The flat client-shift rows folded into client → site → shift. The rows are
@@ -643,7 +689,12 @@ export default function AttendanceBoard() {
                       <Building2 className="w-4 h-4 shrink-0 text-brand-600 dark:text-brand-500" strokeWidth={1.5} />
                       <span className="font-medium text-foreground truncate flex-1">{c.clientName}</span>
                       <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">
-                        {c.sites.length} site{c.sites.length === 1 ? "" : "s"} · {rosterTotal} on roster
+                        {/* "1 site" tells nobody anything once the site level is
+                            collapsed away — count the shifts they open onto. */}
+                        {c.sites.length === 1
+                          ? `${allShifts.length} shift${allShifts.length === 1 ? "" : "s"}`
+                          : `${c.sites.length} sites`}{" "}
+                        · {rosterTotal} on roster
                       </span>
                       {pending > 0 ? (
                         <span className="text-xs px-2 py-0.5 rounded-md border bg-warning-50 text-warning-800 dark:text-warning-500 border-warning-200 shrink-0">
@@ -660,10 +711,18 @@ export default function AttendanceBoard() {
                       <div className="border-t border-border">
                         {c.sites.map((st) => {
                           const sKey = `${c.clientId}|${st.siteId}`;
-                          const sOpen = openSites.has(sKey);
+                          // A client with a single site has nothing to choose
+                          // between: the row just repeats the client's name and
+                          // costs a second click to reach the shifts. Open
+                          // straight onto them. Multi-site clients (Nova, MIU,
+                          // Apex) keep the level, since there the site is a real
+                          // choice.
+                          const flat = c.sites.length === 1;
+                          const sOpen = flat || openSites.has(sKey);
                           const sRoster = st.shifts.reduce((n, r) => n + r.roster.length, 0);
                           return (
                             <div key={sKey} className="border-b border-border last:border-0">
+                              {!flat && (
                               <button
                                 type="button"
                                 onClick={() => toggleIn(sKey, setOpenSites)}
@@ -680,13 +739,14 @@ export default function AttendanceBoard() {
                                   {st.shifts.length} shift{st.shifts.length === 1 ? "" : "s"} · {sRoster} on roster
                                 </span>
                               </button>
+                              )}
 
                               {sOpen && (
-                                <div className="overflow-x-auto border-t border-border">
+                                <div className={`overflow-x-auto ${flat ? "" : "border-t border-border"}`}>
                                   <table className="w-full">
                                     <thead>
                                       <tr className="border-b border-border bg-slate-50">
-                                        <th className="text-left px-4 py-2 pl-14 text-xs text-muted-foreground uppercase tracking-wide">Shift</th>
+                                        <th className={`text-left px-4 py-2 ${flat ? "pl-8" : "pl-14"} text-xs text-muted-foreground uppercase tracking-wide`}>Shift</th>
                                         <th className="text-right px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">Contracted</th>
                                         <th className="text-right px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">On roster</th>
                                         <th className="text-left px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">Exceptions</th>
@@ -703,7 +763,7 @@ export default function AttendanceBoard() {
                                             className="hover:bg-accent/50 cursor-pointer transition-colors"
                                             onClick={() => setDrill(r)}
                                           >
-                                            <td className="px-4 py-3 pl-14 text-sm">
+                                            <td className={`px-4 py-3 ${flat ? "pl-8" : "pl-14"} text-sm`}>
                                               <span className="capitalize inline-block px-1.5 py-0.5 rounded bg-secondary text-muted-foreground text-xs">
                                                 {r.shift_code}
                                               </span>

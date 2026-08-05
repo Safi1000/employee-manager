@@ -12,7 +12,6 @@ import {
   FileSignature,
   Siren,
   ShieldAlert,
-  CalendarRange,
   Lock,
   Unlock,
   PieChart as PieIcon,
@@ -158,9 +157,6 @@ export default function SuperAdminDashboard() {
   const [activeContracts, setActiveContracts] = useState(0);
   const [openIncidents, setOpenIncidents] = useState(0);
   const [licencesExpiring, setLicencesExpiring] = useState(0);
-  const [rosterGaps, setRosterGaps] = useState(0);
-  const [rosterFilled, setRosterFilled] = useState(0);
-  const [rosterTotal, setRosterTotal] = useState(0);
   const [expensesPie, setExpensesPie] = useState<ExpensePieRow[]>([]);
   const [contractsEnding, setContractsEnding] = useState<ContractEndingRow[]>([]);
   const [recentIncidents, setRecentIncidents] = useState<IncidentRow[]>([]);
@@ -181,7 +177,6 @@ export default function SuperAdminDashboard() {
         const sevenDaysAgo = daysAgoIso(6);
         const in30 = daysAheadIso(30);
         const in60 = daysAheadIso(60);
-        const next7 = daysAheadIso(7);
         const periodMonthKey = `${mStart.slice(0, 7)}-01`;
 
         const [
@@ -204,8 +199,6 @@ export default function SuperAdminDashboard() {
           contractsEndingRes,
           recentIncRes,
           recentPayRes,
-          rosterRes,
-          rosterEmpsRes,
           empExpRes,
           periodRes,
           periodLastRes,
@@ -274,24 +267,6 @@ export default function SuperAdminDashboard() {
               .select("id, client_id, invoice_id, amount, payment_date")
               .order("payment_date", { ascending: false })
               .limit(8),
-            regionId,
-          ),
-          // roster gaps: scheduled assignments for next 7 days
-          withRegion(
-            supabase
-              .from("roster_assignments")
-              .select("employee_id, assignment_date")
-              .gte("assignment_date", today)
-              .lte("assignment_date", next7),
-            regionId,
-          ),
-          // employees who should be on roster (active client/reliever)
-          withRegion(
-            supabase
-              .from("employees")
-              .select("id")
-              .eq("status", "Active")
-              .in("category", ["client", "reliever"]),
             regionId,
           ),
           // employee licence expiries
@@ -470,14 +445,6 @@ export default function SuperAdminDashboard() {
           if (dates.some((d) => d >= today && d <= in30)) licCount += 1;
         }
         setLicencesExpiring(licCount);
-
-        // Roster gaps: employees x 7 days minus filled assignments
-        const rosterEmps = ((rosterEmpsRes.data ?? []) as { id: string }[]).length;
-        const filledSlots = ((rosterRes.data ?? []) as { employee_id: string; assignment_date: string }[]).length;
-        const totalSlots = rosterEmps * 7;
-        setRosterGaps(Math.max(0, totalSlots - filledSlots));
-        setRosterFilled(filledSlots);
-        setRosterTotal(totalSlots);
 
         // Contracts ending list
         const contractsEndingRaw = (contractsEndingRes.data ?? []) as { id: string; contract_code: string; client_id: string | null; end_date: string }[];
@@ -675,9 +642,6 @@ export default function SuperAdminDashboard() {
               )}
               {can.compliance && show("stat_licences_expiring") && (
                 <StatCard title="Licences expiring <30d" value={licencesExpiring} icon={ShieldAlert} tone={licencesExpiring > 0 ? "warning" : "info"} />
-              )}
-              {can.roster && show("stat_roster_gaps") && (
-                <StatCard title="Roster gaps · next 7d" value={rosterGaps} icon={CalendarRange} tone={rosterGaps > 0 ? "warning" : "info"} />
               )}
             </div>
 
@@ -939,41 +903,11 @@ export default function SuperAdminDashboard() {
               )}
             </div>
 
-            {/* Deployment roster overview (item 13) */}
-            {can.roster && show("roster_overview") && (
-              <div className="bg-white rounded-lg border border-slate-200 p-6 mb-6 md:mb-8">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-base text-slate-900 flex items-center gap-2">
-                    <CalendarRange className="w-4 h-4 text-brand-600" strokeWidth={1.5} />
-                    Deployment roster · next 7 days
-                  </h3>
-                  <Link to="/super-admin/assignments" className="text-xs text-brand-600 hover:text-brand-700">Open assignments →</Link>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="rounded-lg border border-slate-200 p-4">
-                    <div className="text-xs uppercase tracking-wide text-slate-500">Slots filled</div>
-                    <div className="text-2xl text-success-700">{rosterFilled}</div>
-                  </div>
-                  <div className="rounded-lg border border-slate-200 p-4">
-                    <div className="text-xs uppercase tracking-wide text-slate-500">Total slots</div>
-                    <div className="text-2xl text-slate-900">{rosterTotal}</div>
-                  </div>
-                  <div className="rounded-lg border border-slate-200 p-4">
-                    <div className="text-xs uppercase tracking-wide text-slate-500">Gaps</div>
-                    <div className={`text-2xl ${rosterGaps > 0 ? "text-danger-600" : "text-slate-900"}`}>{rosterGaps}</div>
-                  </div>
-                </div>
-                <div className="mt-4 h-2 w-full rounded-full bg-slate-100 overflow-hidden">
-                  <div
-                    className="h-full bg-success-500"
-                    style={{ width: `${rosterTotal > 0 ? Math.round((rosterFilled / rosterTotal) * 100) : 0}%` }}
-                  />
-                </div>
-                <p className="text-xs text-slate-500 mt-2">
-                  {rosterTotal > 0 ? Math.round((rosterFilled / rosterTotal) * 100) : 0}% of guard-days covered across the next week.
-                </p>
-              </div>
-            )}
+            {/* The "Deployment roster · next 7 days" panel stood here. It read
+                roster_assignments, which nothing has written since the roster
+                page was retired, so it announced 2,982 gaps and 0% coverage on
+                a company with 426 guards on the ground. Removed with its stat
+                card rather than left to contradict the Attendance board. */}
 
             {/* Period close status */}
             {can.periodClose && show("period_close_status") && (
