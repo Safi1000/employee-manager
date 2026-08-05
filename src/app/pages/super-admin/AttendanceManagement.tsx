@@ -16,7 +16,6 @@ import {
   type AttendanceStatus,
   type AttendanceRecord,
   type Client,
-  type Location,
   type Branch,
   type Contract,
 } from "../../lib/supabase";
@@ -85,7 +84,6 @@ const STATUSES: AttendanceStatus[] = ["Present", "Absent", "Leave"];
 type AttendanceManagementProps = { relieversOnly?: boolean };
 
 export default function AttendanceManagement({ relieversOnly = false }: AttendanceManagementProps = {}) {
-  const [locations, setLocations] = useState<Location[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [contracts, setContracts] = useState<ContractLeaveRow[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -113,7 +111,6 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
 
   const [date, setDate] = useState<string>(today());
   const [clientFilter, setClientFilter] = useState("all");
-  const [locationFilter, setLocationFilter] = useState("all");
   const [branchFilter, setBranchFilter] = useState("all");
   const [shiftFilter, setShiftFilter] = useState<"all" | "day" | "night">("all");
   // Employee category filter (same set as the Employees tab) — e.g. Office Staff only.
@@ -123,7 +120,6 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   const [filtersOpen, setFiltersOpen] = useState(false);
   const activeFilterCount =
     (clientFilter !== "all" ? 1 : 0) +
-    (locationFilter !== "all" ? 1 : 0) +
     (branchFilter !== "all" ? 1 : 0) +
     (categoryFilter !== "all" ? 1 : 0) +
     (shiftFilter !== "all" ? 1 : 0);
@@ -228,8 +224,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   const toInputRef = useRef<HTMLInputElement>(null);
 
   const loadStaticData = async () => {
-    const [locRes, cliRes, brRes, empRes, ebRes, conRes] = await Promise.all([
-      supabase.from("locations").select("*").order("name"),
+    const [cliRes, brRes, empRes, ebRes, conRes] = await Promise.all([
       supabase.from("clients").select("*").order("name"),
       supabase.from("branches").select("*").order("is_head_office", { ascending: false }).order("name"),
       // The employee roster drives the whole attendance grid, so scoping it to
@@ -246,13 +241,11 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       supabase.from("employee_branches").select("employee_id, branch_id"),
       supabase.from("contracts").select("id, allowed_leaves_per_month, start_date, end_date, is_infinite"),
     ]);
-    if (locRes.error) setError(locRes.error.message);
     if (cliRes.error) setError(cliRes.error.message);
     if (brRes.error) setError(brRes.error.message);
     if (empRes.error) setError(empRes.error.message);
     if (ebRes.error) setError(ebRes.error.message);
     if (conRes.error) setError(conRes.error.message);
-    setLocations(locRes.data ?? []);
     setClients(cliRes.data ?? []);
     setBranches((brRes.data ?? []) as Branch[]);
     setContracts((conRes.data ?? []) as ContractLeaveRow[]);
@@ -330,7 +323,6 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       const emp = employees.find((e) => e.id === r.employee_id);
       if (!emp) continue;
       if (clientFilter !== "all" && emp.client_id !== clientFilter) continue;
-      if (locationFilter !== "all" && emp.location_id !== locationFilter) continue;
       if (shiftFilter !== "all" && emp.shift !== shiftFilter) continue;
       const groupKey = `${r.attendance_date}|${emp.location_id ?? "none"}|${emp.client_id ?? "none"}`;
       const list = (byDate[r.attendance_date] ??= []);
@@ -397,7 +389,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   useEffect(() => {
     if (employees.length === 0) return;
     loadHistory();
-  }, [historyFrom, historyTo, employees, clientFilter, locationFilter, branchFilter, shiftFilter]);
+  }, [historyFrom, historyTo, employees, clientFilter, branchFilter, shiftFilter]);
 
   const filteredEmployees = useMemo(() => {
     const q = empSearch.trim().toLowerCase();
@@ -406,7 +398,6 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       if (relieversOnly && e.category !== "reliever") return false;
       if (!relieversOnly && e.category === "reliever") return false;
       if (clientFilter !== "all" && e.client_id !== clientFilter) return false;
-      if (locationFilter !== "all" && e.location_id !== locationFilter) return false;
       if (branchFilter !== "all") {
         const inPrimary = e.branch_id === branchFilter;
         const inAdditional = (e.additional_branch_ids ?? []).includes(branchFilter);
@@ -418,7 +409,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       if (q && !e.full_name.toLowerCase().includes(q) && !e.employee_code.toLowerCase().includes(q) && !e.display_code.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [employees, clientFilter, locationFilter, branchFilter, shiftFilter, categoryFilter, unmarkedOnly, todayRecords, empSearch, relieversOnly]);
+  }, [employees, clientFilter, branchFilter, shiftFilter, categoryFilter, unmarkedOnly, todayRecords, empSearch, relieversOnly]);
 
   // Why `d` isn't markable for this employee, or null. Employment window ∩
   // contract window — mirrored by the DB trigger in migration 0152, so this is
@@ -1139,16 +1130,6 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                 onChange={setClientFilter}
                 allValue="all"
               />
-              <ThemedSelect
-                value={locationFilter}
-                onChange={(e) => setLocationFilter(e.target.value)}
-                className="px-3 py-2 border border-border rounded-md text-sm"
-              >
-                <option value="all">All Locations</option>
-                {locations.map((l) => (
-                  <option key={l.id} value={l.id}>{l.name}</option>
-                ))}
-              </ThemedSelect>
               <ThemedSelect
                 value={branchFilter}
                 onChange={(e) => setBranchFilter(e.target.value)}

@@ -29,7 +29,6 @@ import {
   activeCountByLine,
   type Employee,
   type EmployeeDocument,
-  type Location,
   type Client,
   type Contract,
   type ContractLine,
@@ -663,7 +662,6 @@ export default function EmployeeManagement() {
   const { profile, company } = useAuth();
   const { regionId } = useRegion();
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
-  const [locations, setLocations] = useState<Location[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [contractLines, setContractLines] = useState<ContractLine[]>([]);
@@ -685,7 +683,6 @@ export default function EmployeeManagement() {
   const [error, setError] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
-  const [locationFilter, setLocationFilter] = useState("all");
   const [clientFilter, setClientFilter] = useState("all");
   const [branchFilter, setBranchFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState<"all" | EmployeeCategory>("all");
@@ -708,7 +705,6 @@ export default function EmployeeManagement() {
   // integer column). null = default load order (newest-first); asc = 001 first.
   const [sortDir, setSortDir] = useState<null | "asc" | "desc">(null);
   const activeFilterCount =
-    (locationFilter !== "all" ? 1 : 0) +
     (clientFilter !== "all" ? 1 : 0) +
     (branchFilter !== "all" ? 1 : 0) +
     (categoryFilter !== "all" ? 1 : 0) +
@@ -802,8 +798,7 @@ export default function EmployeeManagement() {
   const loadData = async () => {
     setLoading(true);
     setError(null);
-    const [locRes, cliRes, brRes, empRes, docRes, ebRes, conRes, clRes, adRes] = await Promise.all([
-      supabase.from("locations").select("*").order("name"),
+    const [cliRes, brRes, empRes, docRes, ebRes, conRes, clRes, adRes] = await Promise.all([
       supabase.from("clients").select("*").order("name"),
       supabase.from("branches").select("*").order("is_head_office", { ascending: false }).order("name"),
       withRegion(
@@ -819,12 +814,10 @@ export default function EmployeeManagement() {
       supabase.from("contract_lines").select("*"),
       supabase.from("contract_addendums").select("*"),
     ]);
-    if (locRes.error) setError(locRes.error.message);
     if (cliRes.error) setError(cliRes.error.message);
     if (brRes.error) setError(brRes.error.message);
     if (empRes.error) setError(empRes.error.message);
     if (docRes.error) setError(docRes.error.message);
-    setLocations(locRes.data ?? []);
     setClients(cliRes.data ?? []);
     setContracts((conRes.data ?? []) as Contract[]);
     setContractLines((clRes.data ?? []) as ContractLine[]);
@@ -973,7 +966,6 @@ export default function EmployeeManagement() {
         !(qDigits.length > 0 && (e.cnic_number ?? "").replace(/\D/g, "").includes(qDigits))
       )
         return false;
-      if (locationFilter !== "all" && e.location_id !== locationFilter) return false;
       if (clientFilter !== "all" && e.client_id !== clientFilter) return false;
       if (branchFilter !== "all") {
         // Null branch_id = "Head Office (default)"; treat it as the HO branch so
@@ -1002,7 +994,7 @@ export default function EmployeeManagement() {
       if (empTab === "inactive" && e.status === "Active") return false;
       return true;
     });
-  }, [employees, search, locationFilter, clientFilter, branchFilter, categoryFilter, shiftFilter, statusFilter, completenessFilter, lifecycleFilter, expiredCardFilter, dupCnicFilter, duplicateCnicIds, missingKeyFilter, empTab, branches]);
+  }, [employees, search, clientFilter, branchFilter, categoryFilter, shiftFilter, statusFilter, completenessFilter, lifecycleFilter, expiredCardFilter, dupCnicFilter, duplicateCnicIds, missingKeyFilter, empTab, branches]);
 
   // Numeric sort on the client-prefixed display code's number (display_number).
   // NUMERIC — orders 001,002…010,011 correctly, never a lexicographic "10<2".
@@ -1996,18 +1988,6 @@ export default function EmployeeManagement() {
             </div>
             {filtersOpen && (
               <div className="mt-3 pt-3 border-t border-border flex flex-wrap gap-2">
-              <ThemedSelect
-                value={locationFilter}
-                onChange={(e) => setLocationFilter(e.target.value)}
-                className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-              >
-                <option value="all">All Locations</option>
-                {locations.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.name}
-                  </option>
-                ))}
-              </ThemedSelect>
               <ClientFilterSelect
                 clients={clients}
                 value={clientFilter}

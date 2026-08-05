@@ -11,7 +11,6 @@ import {
   type Client,
   type Employee,
   type EmployeeDocument,
-  type Location,
 } from "../../lib/supabase";
 import { guardDisplayCode } from "../../lib/guardCode";
 import { useAuth } from "../../lib/auth";
@@ -41,7 +40,6 @@ const formatDate = (iso: string | null) => {
 export default function Documents() {
   const { profile, company } = useAuth();
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
-  const [locations, setLocations] = useState<Location[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const empDisplay = (emp: { client_id?: string | null; display_number?: number | null; guard_code?: string | null; employee_code?: string | null }) =>
     guardDisplayCode(emp, clients.find((c) => c.id === emp.client_id)?.employee_id_prefix ?? null);
@@ -49,7 +47,6 @@ export default function Documents() {
   const [error, setError] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
-  const [locationFilter, setLocationFilter] = useState("all");
   const [clientFilter, setClientFilter] = useState("all");
   const [shiftFilter, setShiftFilter] = useState<"all" | "day" | "night">("all");
 
@@ -64,8 +61,7 @@ export default function Documents() {
   const loadAll = async () => {
     setLoading(true);
     setError(null);
-    const [locRes, cliRes, empRes, docRes] = await Promise.all([
-      supabase.from("locations").select("*").order("name"),
+    const [cliRes, empRes, docRes] = await Promise.all([
       supabase.from("clients").select("*").order("name"),
       supabase
         .from("employees")
@@ -74,7 +70,6 @@ export default function Documents() {
       supabase.from("employee_documents").select("employee_id, uploaded_at"),
     ]);
 
-    if (locRes.error) setError(locRes.error.message);
     if (cliRes.error) setError(cliRes.error.message);
     if (empRes.error) setError(empRes.error.message);
     if (docRes.error) setError(docRes.error.message);
@@ -89,7 +84,6 @@ export default function Documents() {
       agg.set(d.employee_id, cur);
     }
 
-    setLocations(locRes.data ?? []);
     setClients(cliRes.data ?? []);
     setEmployees(
       ((empRes.data ?? []) as any[]).map((e) => {
@@ -121,12 +115,11 @@ export default function Documents() {
         !(e.phone ?? "").toLowerCase().includes(q)
       )
         return false;
-      if (locationFilter !== "all" && e.location_id !== locationFilter) return false;
       if (clientFilter !== "all" && e.client_id !== clientFilter) return false;
       if (shiftFilter !== "all" && e.shift !== shiftFilter) return false;
       return true;
     });
-  }, [employees, search, locationFilter, clientFilter, shiftFilter]);
+  }, [employees, search, clientFilter, shiftFilter]);
 
   type EmpRef = { id: string; employee_code: string; full_name: string };
 
@@ -352,18 +345,6 @@ export default function Documents() {
                   className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                 />
               </div>
-              <ThemedSelect
-                value={locationFilter}
-                onChange={(e) => setLocationFilter(e.target.value)}
-                className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-              >
-                <option value="all">All Locations</option>
-                {locations.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.name}
-                  </option>
-                ))}
-              </ThemedSelect>
               <ClientFilterSelect
                 clients={clients}
                 value={clientFilter}

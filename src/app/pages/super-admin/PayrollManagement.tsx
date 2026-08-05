@@ -12,7 +12,6 @@ import {
   resolveAllowedLeaves,
   resolveEobiAmount,
   type Employee,
-  type Location,
   type Client,
   type BankAccount,
   type Payslip,
@@ -26,7 +25,7 @@ import { useRegion, withRegion } from "../../lib/region";
 import { isSeparatedState, lifecycleStatusLabel } from "../../lib/employmentWindow";
 import { guardDisplayCode } from "../../lib/guardCode";
 
-type EmployeeRow = Employee & { location_name: string | null; client_name: string | null };
+type EmployeeRow = Employee & { client_name: string | null };
 
 type RowState = {
   employee: EmployeeRow;
@@ -104,7 +103,6 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
   };
 
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
-  const [locations, setLocations] = useState<Location[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   // Client-prefixed display code for user-facing ID displays (permanent GGS code
   // is kept in immutable accounting/journal descriptions + payslip filenames).
@@ -148,8 +146,12 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
 
   const [search, setSearch] = useState("");
   const [shiftFilter, setShiftFilter] = useState<"all" | "day" | "night">("all");
-  const [locationFilter, setLocationFilter] = useState("all");
   const [clientFilter, setClientFilter] = useState("all");
+  /** Site within the selected client. Only offered once a client is chosen. */
+  const [siteFilter, setSiteFilter] = useState("all");
+  const [sites, setSites] = useState<{ id: string; client_id: string; name: string }[]>([]);
+  /** guard_id -> site_id of their open posting. The employee row does not carry it. */
+  const [siteByGuard, setSiteByGuard] = useState<Map<string, string>>(new Map());
   const [branchFilter, setBranchFilter] = useState("all");
   const [employeeAddlBranches, setEmployeeAddlBranches] = useState<Map<string, string[]>>(new Map());
   const [statusFilter, setStatusFilter] = useState<"all" | "Cleared" | "Pending">("all");
@@ -294,7 +296,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     const cutoff = firstOfMonth(sixAgo);
     await supabase.from("payslips").delete().lt("period_month", cutoff);
 
-    const [empRes, locRes, cliRes, conRes, bankRes, treaRes, chqRes, brRes] = await Promise.all([
+    const [empRes, siteRes, depRes, cliRes, conRes, bankRes, treaRes, chqRes, brRes] = await Promise.all([
       // Region scopes the payroll roster (each row = an employee). Bank/treasury/
       // cheque reads below stay company-wide — the cash pool isn't region-split.
       withRegion(
@@ -303,11 +305,13 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
         // had genuinely worked, and nothing downstream depended on it.
         supabase
           .from("employees")
-          .select("*, location:location_id(name), client:client_id(name)")
+          .select("*, client:client_id(name)")
           .order("employee_code"),
         regionId,
       ),
-      supabase.from("locations").select("*").order("name"),
+      supabase.from("sites").select("id, client_id, name").order("name"),
+      // Where each guard currently stands, for the Site filter.
+      supabase.from("deployments").select("guard_id, site_id").is("end_date", null),
       supabase.from("clients").select("*").order("name"),
       supabase.from("contracts").select("*"),
       supabase.from("bank_accounts").select("*").order("bank_name"),
@@ -320,11 +324,17 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     setEmployees(
       (empRes.data ?? []).map((e: any) => ({
         ...e,
-        location_name: e.location?.name ?? null,
         client_name: e.client?.name ?? null,
       }))
     );
-    setLocations(locRes.data ?? []);
+    setSites((siteRes.data ?? []) as { id: string; client_id: string; name: string }[]);
+    setSiteByGuard(
+      new Map(
+        ((depRes.data ?? []) as { guard_id: string; site_id: string | null }[])
+          .filter((d) => d.site_id)
+          .map((d) => [d.guard_id, d.site_id as string]),
+      ),
+    );
     setClients(cliRes.data ?? []);
     setContracts((conRes.data ?? []) as Contract[]);
     setBanks((bankRes.data ?? []) as BankAccount[]);
@@ -600,8 +610,9 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       )
         return false;
       if (shiftFilter !== "all" && e.shift !== shiftFilter) return false;
-      if (locationFilter !== "all" && e.location_id !== locationFilter) return false;
       if (clientFilter !== "all" && e.client_id !== clientFilter) return false;
+      // Site comes from the guard's open posting, not the employee row.
+      if (siteFilter !== "all" && siteByGuard.get(e.id) !== siteFilter) return false;
       if (branchFilter !== "all") {
         // Employees created with "Head Office (default)" have a null branch_id;
         // treat them as belonging to the head-office branch so the HO filter shows them.
@@ -637,7 +648,21 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       if (categoryFilter !== "all" && (e.category ?? "client") !== categoryFilter) return false;
       return true;
     });
-  }, [rows, search, shiftFilter, locationFilter, clientFilter, branchFilter, statusFilter, disbursedFilter, empTab, categoryFilter, employeeAddlBranches, relieversOnly, branches]);
+  }, [rows, search, shiftFilter, clientFilter, siteFilter, siteByGuard, branchFilter, statusFilter, disbursedFilter, empTab, categoryFilter, employeeAddlBranches, relieversOnly, branches]);
+
+  /**
+   * Sites belonging to the selected client, pooled across every one of their
+   * contracts — a guard stands at a site, not at a contract, so splitting the
+   * list by contract would only ask the user a question they cannot answer.
+   */
+  const sitesForClient = useMemo(
+    () => (clientFilter === "all" ? [] : sites.filter((s) => s.client_id === clientFilter)),
+    [sites, clientFilter],
+  );
+
+  // A site from the previous client must not survive a client change, or the
+  // list silently empties with a filter the user can no longer see.
+  useEffect(() => { setSiteFilter("all"); }, [clientFilter]);
 
   const selectedRow = useMemo(
     () => rows.find((r) => r.employee.id === selectedId) ?? null,
@@ -1238,7 +1263,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     (shiftFilter !== "all" ? 1 : 0) +
     (statusFilter !== "all" ? 1 : 0) +
     (disbursedFilter !== "all" ? 1 : 0) +
-    (locationFilter !== "all" ? 1 : 0) +
+    (siteFilter !== "all" ? 1 : 0) +
     (clientFilter !== "all" ? 1 : 0) +
     (branchFilter !== "all" ? 1 : 0) +
     (categoryFilter !== "all" ? 1 : 0);
@@ -1452,24 +1477,29 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                     <option value="yes">Disbursed</option>
                     <option value="no">Not Disbursed</option>
                   </ThemedSelect>
-                  <ThemedSelect
-                    value={locationFilter}
-                    onChange={(e) => setLocationFilter(e.target.value)}
-                    className="px-3 py-2 border border-border rounded-md text-sm"
-                  >
-                    <option value="all">All Locations</option>
-                    {locations.map((l) => (
-                      <option key={l.id} value={l.id}>
-                        {l.name}
-                      </option>
-                    ))}
-                  </ThemedSelect>
                   <ClientFilterSelect
                     clients={clients}
                     value={clientFilter}
                     onChange={setClientFilter}
                     allValue="all"
                   />
+                  {/* Site only means something once a client is chosen — every
+                      client's sites in one list would be hundreds of entries with
+                      repeated names. Sites are pooled across ALL of the client's
+                      contracts: a guard stands at a site, not at a contract. */}
+                  {clientFilter !== "all" && (
+                    <ThemedSelect
+                      value={siteFilter}
+                      onChange={(e) => setSiteFilter(e.target.value)}
+                      className="px-3 py-2 border border-border rounded-md text-sm"
+                      title="Filter by site"
+                    >
+                      <option value="all">All Sites</option>
+                      {sitesForClient.map((s) => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </ThemedSelect>
+                  )}
                   <ThemedSelect
                     value={branchFilter}
                     onChange={(e) => setBranchFilter(e.target.value)}
