@@ -1211,14 +1211,31 @@ export default function EmployeeAssignments() {
           departmentLabel={departmentOf(rowTarget)}
           lineOptions={
             rowTarget.client_id
-              ? contractsForClient(rowTarget.client_id)
-                  .filter((c) => c.status === "active")
-                  .flatMap((c) => linesForContract(c.id))
-                  .filter((l) => isPersonnelCategory(l.category))
-                  // Posts with no committed headcount are not choices. The one
-                  // they already hold always stays, or saving would silently
-                  // move them off a line the contract has since emptied.
-                  .filter((l) => l.id === rowTarget.contract_line_id || lineIsOpen(l, todayIso()))
+              ? // Only the posts at the site this employee actually stands at —
+                // a multi-site client's other sites staff their own lines, and
+                // offering those here is how someone ends up filed under a post
+                // that bills a city they have never been to. A line with no site
+                // is contract-wide and belongs to every site.
+                (() => {
+                  const held = rowTarget.contract_line_id;
+                  const atSite = personnelLinesForSite(
+                    rowTarget.client_id,
+                    siteByGuard.get(rowTarget.id) ?? "",
+                  )
+                    // Posts with no committed headcount are not choices. The one
+                    // they already hold always stays, or saving would silently
+                    // move them off a line the contract has since emptied.
+                    .filter((l) => l.id === held || lineIsOpen(l, todayIso()));
+                  // Whatever they hold today stays on the list even when it
+                  // belongs to another site — 58 people are pinned across sites
+                  // right now, and dropping their own post would show them as
+                  // "Not set" and invite an accidental reassignment.
+                  if (held && !atSite.some((l) => l.id === held)) {
+                    const elsewhere = contractLines.find((l) => l.id === held);
+                    if (elsewhere) return [elsewhere, ...atSite];
+                  }
+                  return atSite;
+                })()
               : []
           }
           slotForLine={slotForLine}

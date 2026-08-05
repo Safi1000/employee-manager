@@ -26,6 +26,7 @@ import {
   CONTRACT_LINE_CATEGORY_LABEL,
   isPersonnelCategory,
   effectiveCommittedByCategory,
+  effectiveCommittedForLine,
   activeCountByCategory,
   type Employee,
   type EmployeeDocument,
@@ -4390,10 +4391,15 @@ export function ChangeCategoryModal({
 const SHIFT_DISPLAY_ORDER = ["day", "evening", "night"];
 
 // §7.5: dated shift change. Options are the shifts the guard's SITE actually
-// runs — never a hardcoded list. Closes the current posting (day before the
-// change) and opens a new one on the chosen shift from the change date; nothing
-// is rewritten in place, so past attendance stays on the old shift and only
-// dates from the change date forward are on the new one.
+// runs — never a hardcoded list. The contract decides: a shift is offered only
+// where that site's personnel lines commit headcount to it, so a site billed for
+// nights but committing 0 does not offer nights. shift_definitions are the
+// fallback for contracts that never split their posts by shift at all.
+//
+// Closes the current posting (day before the change) and opens a new one on the
+// chosen shift from the change date; nothing is rewritten in place, so past
+// attendance stays on the old shift and only dates from the change date forward
+// are on the new one.
 export function ChangeShiftModal({
   guard, displayCode, onClose, onDone, onError,
 }: {
@@ -4428,39 +4434,51 @@ export function ChangeShiftModal({
         siteId = (s as { id?: string } | null)?.id ?? null;
       }
 
-      const codes = new Set<string>();
-      if (siteId) {
-        const { data: sd } = await supabase
-          .from("shift_definitions").select("shift_code").eq("site_id", siteId);
-        for (const r of (sd ?? []) as { shift_code: string }[]) codes.add(r.shift_code);
-      }
-
-      // Union with the shifts this site's own PERSONNEL CONTRACT LINES name.
-      // shift_definitions are supposed to be derived from exactly those lines
-      // (ContractEditorModal.persistShiftDefinitions), but plenty of sites
-      // predate that sync or are billed through contract-wide lines, which the
-      // sync skips entirely — it only walks per-site lines. Reading the lines
-      // here rebuilds the same answer the definitions would have held, so a site
-      // that contracts a night post can always be moved to nights. Without it
-      // the dropdown collapsed to the guard's current shift and the modal became
-      // unusable: 68 HS and every Nova site contract day AND night guards, yet
-      // between them held one shift_definition.
+      // What the CONTRACT staffs at THIS site, which is the authority whenever
+      // it says anything at all. Lines carry a site_id (null = contract-wide, so
+      // it applies here too), and committed headcount per shift decides whether
+      // that shift is a real post: a site whose night lines add up to 0 does not
+      // run nights, however many night lines exist to bill from.
+      const today = todayIso();
+      const committedByShift = new Map<string, number>();
       if (guard.client_id) {
         const { data: ct } = await supabase
           .from("contracts").select("id")
           .eq("client_id", guard.client_id).eq("status", "active");
         const contractIds = ((ct ?? []) as { id: string }[]).map((c) => c.id);
         if (contractIds.length > 0) {
-          const { data: cl } = await supabase
-            .from("contract_lines").select("shift_code, category, site_id")
-            .in("contract_id", contractIds);
-          for (const l of (cl ?? []) as Pick<ContractLine, "shift_code" | "category" | "site_id">[]) {
+          const [{ data: cl }, { data: ad }] = await Promise.all([
+            supabase.from("contract_lines")
+              .select("id, contract_id, shift_code, category, site_id, committed_count")
+              .in("contract_id", contractIds),
+            supabase.from("contract_addendums").select("*").in("contract_id", contractIds),
+          ]);
+          const adds = (ad ?? []) as ContractAddendum[];
+          for (const l of (cl ?? []) as ContractLine[]) {
             if (!l.shift_code || !isPersonnelCategory(l.category)) continue;
-            // site_id null = contract-wide, so it applies to this site too.
             if (l.site_id !== null && l.site_id !== siteId) continue;
-            codes.add(l.shift_code);
+            const n = effectiveCommittedForLine(
+              l, adds.filter((a) => a.contract_id === l.contract_id), today,
+            );
+            committedByShift.set(l.shift_code, (committedByShift.get(l.shift_code) ?? 0) + n);
           }
         }
+      }
+
+      const codes = new Set<string>();
+      for (const [code, n] of committedByShift) if (n > 0) codes.add(code);
+
+      if (codes.size === 0 && siteId) {
+        // Nothing the contract splits by shift commits any headcount here, so it
+        // has no opinion on shifts and the site's shift_definitions govern. This
+        // is the common shape, not an edge case: AWT commits 4 guards on ONE
+        // contract-wide line with no shift, and its only shift-carrying lines are
+        // empty placeholders at 0. Testing "does the contract mention a shift"
+        // instead of "does it staff one" would let those placeholders speak for
+        // the site and strand every AWT guard on their current shift.
+        const { data: sd } = await supabase
+          .from("shift_definitions").select("shift_code").eq("site_id", siteId);
+        for (const r of (sd ?? []) as { shift_code: string }[]) codes.add(r.shift_code);
       }
 
       // The current shift is always selectable, so the list is never empty and
