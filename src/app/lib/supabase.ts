@@ -745,6 +745,33 @@ export function effectiveCommittedByCategory(
 }
 
 /**
+ * Effective committed headcount for ONE line on a date: its own committed_count
+ * plus any headcount addendum aimed at that line.
+ *
+ * effectiveCommittedByCategory answers the same question per CATEGORY, which is
+ * the right unit for capping how many people a contract may hold. This one is
+ * for the narrower question of whether a single line is still a post worth
+ * offering: a site can bill Guard on three lines and commit headcount on only
+ * one, and the other two are not posts anybody can be assigned to.
+ *
+ * An addendum with no contract_line_id introduces a NEW line rather than
+ * changing an existing one, so it is not counted against this line.
+ */
+export function effectiveCommittedForLine(
+  line: Pick<ContractLine, "id" | "committed_count">,
+  addendums: ContractAddendum[],
+  onDate: string,
+): number {
+  let n = Number(line.committed_count) || 0;
+  for (const a of addendums) {
+    if (a.contract_line_id !== line.id) continue;
+    if (a.effective_from > onDate) continue;
+    n += addendumHeadcountDelta(a);
+  }
+  return Math.max(0, n);
+}
+
+/**
  * Effective per-line unit rate on a given date. A RATE_CHANGE addendum replaces the
  * rate for its line (or, when it carries a category instead of a line, every line of
  * that category); the latest one effective on/before the date wins. Lines with no

@@ -58,6 +58,7 @@ import {
   CONTRACT_LINE_CATEGORY_LABEL,
   PERSONNEL_LINE_CATEGORIES,
   effectiveCommittedByCategory,
+  effectiveCommittedForLine,
   activeCountByCategory,
   isPersonnelCategory,
 } from "../../lib/supabase";
@@ -431,6 +432,41 @@ export default function EmployeeAssignments() {
     [contractLines],
   );
   /**
+   * Is this line still a post anybody can be assigned to?
+   *
+   * A line can bill for a site without committing any headcount to it — AWT's
+   * contract carries Guard(day) and Guard(night) at 0 committed alongside a
+   * contract-wide Guard line at 4. Offering the two empty ones as choices asks
+   * the user to post a guard into a slot the contract says does not exist.
+   */
+  const lineIsOpen = useCallback(
+    (l: ContractLine, onDate: string) =>
+      effectiveCommittedForLine(
+        l,
+        addendums.filter((a) => a.contract_id === l.contract_id),
+        onDate,
+      ) > 0,
+    [addendums],
+  );
+
+  /**
+   * Committed vs filled for the line's CATEGORY — the same figures the Assign
+   * dialog caps against, so the Department picker quotes identical numbers.
+   */
+  const slotForLine = useCallback(
+    (line: ContractLine, onDate: string) => {
+      const lines = contractLines.filter((l) => l.contract_id === line.contract_id);
+      const lineCategoryById = new Map(lines.map((l) => [l.id, l.category]));
+      const adds = addendums.filter((a) => a.contract_id === line.contract_id);
+      const committed = effectiveCommittedByCategory(lines, adds, onDate).get(line.category) ?? 0;
+      const onContract = employees.filter((e) => e.contract_id === line.contract_id);
+      const filled = activeCountByCategory(onContract, lineCategoryById, onDate).get(line.category) ?? 0;
+      return { committed, filled };
+    },
+    [contractLines, addendums, employees],
+  );
+
+  /**
    * The personnel posts a SITE is staffed with — what "Edit rules" reads to know
    * which roles to offer.
    *
@@ -715,7 +751,7 @@ export default function EmployeeAssignments() {
                               aria-label={`Select all in ${g.label}`}
                             />
                           </th>
-                          {["Code", "Name", "Location", "Branch", "Department", "Shift", "Base", "Per day", "Allowance", "Joined"].map((h) => (
+                          {["Code", "Name", "Branch", "Department", "Shift", "Base", "Per day", "Allowance", "Joined"].map((h) => (
                             <th key={h} className="text-left px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground whitespace-nowrap">
                               {h}
                             </th>
@@ -728,7 +764,7 @@ export default function EmployeeAssignments() {
                       <tbody>
                         {rowsToShow.length === 0 && (
                           <tr>
-                            <td colSpan={12} className="px-4 py-8 text-center text-sm text-muted-foreground">
+                            <td colSpan={11} className="px-4 py-8 text-center text-sm text-muted-foreground">
                               Nobody is posted here yet — use “Assign employees” above.
                             </td>
                           </tr>
@@ -752,7 +788,6 @@ export default function EmployeeAssignments() {
                                 </span>
                               )}
                             </td>
-                            <td className="px-3 py-2 text-sm text-muted-foreground whitespace-nowrap">{e.location_name ?? "—"}</td>
                             <td className="px-3 py-2 text-sm text-muted-foreground whitespace-nowrap">{e.branch_name ?? "—"}</td>
                             <td className="px-3 py-2 text-sm text-muted-foreground whitespace-nowrap">
                               {departmentOf(e) ?? (
@@ -1180,8 +1215,13 @@ export default function EmployeeAssignments() {
                   .filter((c) => c.status === "active")
                   .flatMap((c) => linesForContract(c.id))
                   .filter((l) => isPersonnelCategory(l.category))
+                  // Posts with no committed headcount are not choices. The one
+                  // they already hold always stays, or saving would silently
+                  // move them off a line the contract has since emptied.
+                  .filter((l) => l.id === rowTarget.contract_line_id || lineIsOpen(l, todayIso()))
               : []
           }
+          slotForLine={slotForLine}
           locations={locations}
           branches={branches}
           clients={clients}
@@ -1257,6 +1297,23 @@ export default function EmployeeAssignments() {
     </>
   );
 }
+
+/**
+ * How a contract line reads in a picker. Shared so the Assign dialog and the
+ * Department field on a row offer the identical wording — they are choosing
+ * from the same list, and two spellings of one post read as two posts.
+ *
+ * The shift matters: a site routinely bills the same post twice, once per
+ * shift, and without it the options are indistinguishable.
+ */
+const lineOptionLabel = (
+  l: ContractLine,
+  slot: { filled: number; committed: number } | null,
+) =>
+  ((l.label ?? "").trim() || CONTRACT_LINE_CATEGORY_LABEL[l.category]) +
+  (l.shift_code ? ` (${l.shift_code})` : "") +
+  (l.location ? ` — ${l.location}` : "") +
+  (slot ? ` · ${slot.filled}/${slot.committed} filled` : "");
 
 /** One post at the site, and who is currently filling it. */
 type PostBucket = {
@@ -1842,7 +1899,7 @@ function RuleField({
 function RowEditModal({
   employee, canEdit, displayCode, locations, branches, clients,
   onClose, onSaved, onChangeClient, onChangeCategory, onChangeShift, onError, departmentLabel,
-  lineOptions,
+  lineOptions, slotForLine,
 }: {
   employee: EmployeeRow;
   canEdit: boolean;
@@ -1851,6 +1908,8 @@ function RowEditModal({
   departmentLabel: string | null;
   /** Personnel lines on this client's active contracts, to pin the employee to one. */
   lineOptions: ContractLine[];
+  /** Committed vs filled for a line, so the options read like the Assign dialog. */
+  slotForLine: (line: ContractLine, onDate: string) => { committed: number; filled: number };
   locations: Location[];
   branches: Branch[];
   clients: Client[];
@@ -1877,9 +1936,11 @@ function RowEditModal({
   const [shift, setShift] = useState<string>(employee.shift);
   const [draftCategory, setDraftCategory] = useState<EmployeeCategory>(category);
   const [lineId, setLineId] = useState(employee.contract_line_id ?? "");
-  // Only offer the picker where there is a real choice to make. With one line the
-  // Department is already inferred, and with none there is nothing to pick.
-  const canPickLine = canEdit && category === "client" && lineOptions.length > 1;
+  // Offer the picker whenever the client has a post to pin them to. It used to
+  // need two or more, on the reasoning that a single line is already inferred —
+  // but inferring a Department is not the same as recording one, and a guard
+  // left unpinned drops out of every per-post figure on this page.
+  const canPickLine = canEdit && category === "client" && lineOptions.length > 0;
 
   const save = async () => {
     setSaving(true);
@@ -2023,13 +2084,13 @@ function RowEditModal({
                     <option value="">— Not set —</option>
                     {lineOptions.map((l) => (
                       <option key={l.id} value={l.id}>
-                        {(l.label ?? "").trim() || CONTRACT_LINE_CATEGORY_LABEL[l.category]}
+                        {lineOptionLabel(l, slotForLine(l, todayIso()))}
                       </option>
                     ))}
                   </ThemedSelect>
                   <p className="text-[11px] text-muted-foreground mt-1">
-                    This client's contract has more than one kind of post, so who fills
-                    which has to be set here.
+                    The post this employee fills, from their client's contract. Posts the
+                    contract commits no headcount to are not offered.
                   </p>
                 </>
               ) : (
@@ -2207,14 +2268,21 @@ function AssignEmployeesModal({
     [contractId, linesForContract],
   );
   /**
-   * The lines actually OFFERED. Posting to a site should not let you pick a line
-   * that staffs a different site. A line with no site is contract-wide and stays
-   * on offer everywhere.
+   * The lines actually OFFERED.
+   *
+   * Posting to a site should not let you pick a line that staffs a different
+   * site; a line with no site is contract-wide and stays on offer everywhere.
+   * A line the contract commits no headcount to is dropped outright — it bills
+   * for something, but it is not a post anybody can stand in.
    */
-  const offeredLines = useMemo(
-    () => (siteId ? lines.filter((l) => l.site_id === siteId || l.site_id === null) : lines),
-    [lines, siteId],
-  );
+  const offeredLines = useMemo(() => {
+    const adds = addendums.filter((a) => a.contract_id === contractId);
+    return lines.filter(
+      (l) =>
+        (!siteId || l.site_id === siteId || l.site_id === null) &&
+        effectiveCommittedForLine(l, adds, startDate) > 0,
+    );
+  }, [lines, siteId, addendums, contractId, startDate]);
   const lineCategoryById = useMemo(() => {
     const m = new Map<string, ContractLineCategory>();
     for (const l of lines) m.set(l.id, l.category);
@@ -2487,23 +2555,14 @@ function AssignEmployeesModal({
                     : offeredLines.length === 0
                       ? lines.length === 0
                         ? "This contract has no lines"
-                        : "No lines staff this site"
+                        : "No open posts here"
                       : "— Select —"}
                 </option>
-                {offeredLines.map((l) => {
-                  const si = slotFor(l.id);
-                  return (
-                    <option key={l.id} value={l.id}>
-                      {(l.label ?? "").trim() || CONTRACT_LINE_CATEGORY_LABEL[l.category]}
-                      {/* A site routinely bills the same post twice, once per
-                          shift. Without the shift the two options read
-                          identically and the choice is a coin flip. */}
-                      {l.shift_code ? ` (${l.shift_code})` : ""}
-                      {l.location ? ` — ${l.location}` : ""}
-                      {si ? ` · ${si.filled}/${si.committed} filled` : ""}
-                    </option>
-                  );
-                })}
+                {offeredLines.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {lineOptionLabel(l, slotFor(l.id))}
+                  </option>
+                ))}
               </ThemedSelect>
             </div>
           </div>
@@ -2515,8 +2574,10 @@ function AssignEmployeesModal({
           )}
           {contractId && lines.length > 0 && offeredLines.length === 0 && (
             <p className="text-xs text-warning-700 dark:text-warning-500 mt-2">
-              None of this contract's lines staff {target.kind === "client" ? target.siteName : "this site"}.
-              Set the site on a line from the Contracts page, or pick another contract.
+              This contract has no open post
+              {target.kind === "client" && target.siteName ? ` at ${target.siteName}` : ""} — its
+              lines either staff another site or commit no headcount. Raise a line's committed
+              count, or set its site, from the Contracts page.
             </p>
           )}
           {slot && (
