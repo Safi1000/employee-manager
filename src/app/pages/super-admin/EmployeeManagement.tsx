@@ -25,9 +25,8 @@ import {
   EMERGENCY_CONTACT_RELATIONS,
   CONTRACT_LINE_CATEGORY_LABEL,
   isPersonnelCategory,
-  effectiveCommittedByCategory,
   effectiveCommittedForLine,
-  activeCountByCategory,
+  activeCountByLine,
   type Employee,
   type EmployeeDocument,
   type Location,
@@ -872,32 +871,45 @@ export default function EmployeeManagement() {
   const linesForContract = (contractId: string): ContractLine[] =>
     contractLines.filter((l) => l.contract_id === contractId);
 
-  const lineCategoryById = useMemo(() => {
-    const m = new Map<string, ContractLineCategory>();
-    for (const l of contractLines) m.set(l.id, l.category);
-    return m;
-  }, [contractLines]);
-
-  // Per-category slot picture for a line on a contract, as of today. Excludes a
-  // given employee (so editing an employee already on the line doesn't count
-  // them against themselves).
+  /**
+   * Slot picture for a LINE on a contract, as of today. Excludes a given
+   * employee, so editing someone already on the line doesn't count them against
+   * themselves.
+   *
+   * Per line, not per category. The category pool spans every site a contract
+   * covers, so on Nova's four-site contract "GUARD" totalled 37 committed and
+   * measured everyone at every site against it — a cap that could not be reached
+   * however many people were crammed into one site's post. A line is one post at
+   * one site on one shift, which is the thing being filled.
+   */
   const slotInfo = (contractId: string, lineId: string, excludeEmployeeId?: string) => {
-    const cat = lineCategoryById.get(lineId);
-    if (!cat) return null;
-    const lines = linesForContract(contractId);
+    const line = linesForContract(contractId).find((l) => l.id === lineId);
+    if (!line) return null;
     const adds = addendums.filter((a) => a.contract_id === contractId);
-    const committed = effectiveCommittedByCategory(lines, adds, today()).get(cat) ?? 0;
+    const committed = effectiveCommittedForLine(line, adds, today());
     const contractEmployees = employees.filter(
       (e) => e.contract_id === contractId && e.id !== excludeEmployeeId,
     );
-    const active = activeCountByCategory(contractEmployees, lineCategoryById, today()).get(cat) ?? 0;
-    return { category: cat, committed, active, available: Math.max(0, committed - active), full: active >= committed };
+    const active = activeCountByLine(contractEmployees, today()).get(lineId) ?? 0;
+    return { category: line.category, committed, active, available: Math.max(0, committed - active), full: active >= committed };
   };
 
-  // Returns an error string if assigning to this line would exceed the
-  // category's committed count; null if OK.
-  const validateSlot = (f: FormState, excludeEmployeeId?: string): string | null => {
+  /**
+   * Error string if assigning to this line would exceed its committed count;
+   * null if OK.
+   *
+   * `heldLineId` is the line the employee is already on. Staying put is never
+   * blocked: lines that were over-filled before this was measured per line would
+   * otherwise refuse every save for everyone standing in them, including the
+   * edits that move people out and fix it.
+   */
+  const validateSlot = (
+    f: FormState,
+    excludeEmployeeId?: string,
+    heldLineId?: string | null,
+  ): string | null => {
     if (f.category !== "client" || !f.contract_line_id) return null;
+    if (heldLineId && f.contract_line_id === heldLineId) return null;
     const info = slotInfo(f.contract_id, f.contract_line_id, excludeEmployeeId);
     if (!info) return null;
     // Only blocks when the new assignment would be active now and the line is full.
@@ -1712,7 +1724,7 @@ export default function EmployeeManagement() {
     // full line — a still-active employee already counted on the line, or one
     // being marked Inactive, won't trip it.
     if (editStatus === "Active") {
-      const slotErr = validateSlot(editForm, selectedEmployee.id);
+      const slotErr = validateSlot(editForm, selectedEmployee.id, selectedEmployee.contract_line_id);
       if (slotErr) {
         setError(slotErr);
         return;

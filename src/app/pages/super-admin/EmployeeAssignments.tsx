@@ -1975,10 +1975,45 @@ function RowEditModal({
   // left unpinned drops out of every per-post figure on this page.
   const canPickLine = canEdit && category === "client" && lineOptions.length > 0;
 
+  /**
+   * A post is full when it already holds everyone the contract commits to it.
+   * Moving in would put the site over its own contracted strength, which is the
+   * cap the Assign dialog has always enforced — the Department picker skipped it
+   * and was the way around it.
+   *
+   * The post they ALREADY hold is never full to them: they are one of the people
+   * counted in it, and several lines are over-committed from before this check
+   * existed (Nova Charsadda commits 5 day guards and holds 8). Blocking those
+   * would freeze the field and stop the very corrections that fix them.
+   */
+  const heldLineId = employee.contract_line_id ?? "";
+  const lineIsFull = (l: ContractLine) => {
+    if (l.id === heldLineId) return false;
+    const s = slotForLine(l, todayIso());
+    return s.filled >= s.committed;
+  };
+
   const save = async () => {
     setSaving(true);
     setErr(null);
     try {
+      // Re-check at save: the numbers were read when the modal opened, and
+      // somebody else may have taken the last slot since.
+      if (canPickLine && lineId && lineId !== heldLineId) {
+        const target = lineOptions.find((l) => l.id === lineId);
+        if (target) {
+          const s = slotForLine(target, todayIso());
+          if (s.filled >= s.committed) {
+            throw new Error(
+              `${lineOptionLabel(target, null, siteNoteForLine(target))} is full — the contract ` +
+                `commits ${s.committed} and ${s.filled} ${s.filled === 1 ? "is" : "are"} already ` +
+                `in it. Raise the headcount on the contract, or add an addendum, before moving ` +
+                `anyone in.`,
+            );
+          }
+        }
+      }
+
       const { error } = await supabase
         .from("employees")
         .update({
@@ -2095,14 +2130,16 @@ function RowEditModal({
                   <ThemedSelect value={lineId} onChange={(e) => setLineId(e.target.value)} className={inputCls}>
                     <option value="">— Not set —</option>
                     {lineOptions.map((l) => (
-                      <option key={l.id} value={l.id}>
+                      <option key={l.id} value={l.id} disabled={lineIsFull(l)}>
                         {lineOptionLabel(l, slotForLine(l, todayIso()), siteNoteForLine(l))}
+                        {lineIsFull(l) ? " · FULL" : ""}
                       </option>
                     ))}
                   </ThemedSelect>
                   <p className="text-[11px] text-muted-foreground mt-1">
                     The post this employee fills, from their client's contract. Posts the
-                    contract commits no headcount to are not offered.
+                    contract commits no headcount to are not offered, and a post already
+                    holding everyone it commits cannot be moved into.
                   </p>
                 </>
               ) : (
