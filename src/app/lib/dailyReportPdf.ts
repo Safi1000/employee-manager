@@ -3,22 +3,25 @@ import { formatDate } from "./date";
 import type { Company } from "./supabase";
 import { brandingFromCompany, drawBrandedHeader, drawBrandedFooter, hexToRgb } from "./pdfBranding";
 
-// Daily Operations Report (repurposed Field Ops → Daily Reports): a date-wise,
-// per-post snapshot of who reported, present-vs-required strength, and which
-// posts went silent. Uses the shared branded jsPDF engine — no new library.
+// Daily Operations Report: one line per client for a given day, carrying whatever
+// was written in that client's Details box. The per-post version (required vs
+// present strength, silent-post alerting, exception notes) was dropped — the
+// report is now a client-by-client written note, not a headcount reconciliation.
+// Uses the shared branded jsPDF engine — no new library.
 
 const MARGIN = 14;
 const PAGE_W = 210;
+const PAGE_H = 297;
 const CONTENT_W = PAGE_W - MARGIN * 2;
+const CLIENT_W = 58;
+const DETAILS_W = CONTENT_W - CLIENT_W;
+const LINE_H = 4.2;
+const PAD_Y = 1.6;
+const FOOTER_LIMIT = PAGE_H - 20;
 
 export type DailyReportRow = {
-  post_name?: string | null;
-  region_name?: string | null;
-  reported_today?: boolean | null;
-  strength_present?: number | null;
-  strength_required?: number | null;
-  is_silent?: boolean | null;
-  all_ok?: boolean | null;
+  client_name: string;
+  details: string | null;
 };
 
 export function generateDailyOperationsReportPdf(
@@ -33,41 +36,21 @@ export function generateDailyOperationsReportPdf(
   let y = drawBrandedHeader(doc, b, "Daily Operations Report", `For ${formatDate(reportDate)}`);
   y += 2;
 
-  // Summary strip.
-  const total = rows.length;
-  const reported = rows.filter((x) => x.reported_today).length;
-  const silent = rows.filter((x) => x.is_silent).length;
-  const exceptions = rows.filter((x) => x.reported_today && x.all_ok === false).length;
+  const withDetails = rows.filter((x) => (x.details ?? "").trim().length > 0).length;
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
   doc.setTextColor(71, 85, 105);
-  doc.text(
-    `${total} active posts   ·   ${reported} reported   ·   ${silent} silent   ·   ${exceptions} exceptions`,
-    MARGIN,
-    y,
-  );
+  doc.text(`${rows.length} clients   ·   ${withDetails} with details recorded`, MARGIN, y);
   y += 7;
 
-  // Table header.
-  const cols: Array<{ label: string; w: number; align?: "left" | "center" | "right" }> = [
-    { label: "Post", w: 62 },
-    { label: "Region", w: 40 },
-    { label: "Reported", w: 24, align: "center" },
-    { label: "Present / Req", w: 30, align: "right" },
-    { label: "Status", w: CONTENT_W - 62 - 40 - 24 - 30, align: "center" },
-  ];
   const drawHead = () => {
     doc.setFillColor(r, g, bl);
     doc.rect(MARGIN, y, CONTENT_W, 6, "F");
     doc.setFont("helvetica", "bold");
     doc.setFontSize(8);
     doc.setTextColor(255, 255, 255);
-    let x = MARGIN + 2;
-    cols.forEach((c) => {
-      const tx = c.align === "right" ? x + c.w - 2 : c.align === "center" ? x + c.w / 2 : x;
-      doc.text(c.label, tx, y + 4, { align: c.align ?? "left" });
-      x += c.w;
-    });
+    doc.text("Client", MARGIN + 2, y + 4);
+    doc.text("Details", MARGIN + CLIENT_W + 2, y + 4);
     y += 6;
   };
   drawHead();
@@ -75,42 +58,42 @@ export function generateDailyOperationsReportPdf(
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   rows.forEach((row, i) => {
-    if (y > 282) { doc.addPage(); y = MARGIN; drawHead(); doc.setFont("helvetica", "normal"); doc.setFontSize(8); }
-    if (row.is_silent) {
-      doc.setFillColor(254, 242, 242);
-      doc.rect(MARGIN, y, CONTENT_W, 6, "F");
-    } else if (i % 2 === 1) {
-      doc.setFillColor(248, 250, 252);
-      doc.rect(MARGIN, y, CONTENT_W, 6, "F");
+    // Details is free text of any length, so the row grows to fit it rather than
+    // clipping to one line — the note IS the report, and a truncated note is a
+    // lost one. Client names wrap for the same reason.
+    const detailText = (row.details ?? "").trim() || "—";
+    const detailLines = doc.splitTextToSize(detailText, DETAILS_W - 4) as string[];
+    const nameLines = doc.splitTextToSize(row.client_name, CLIENT_W - 4) as string[];
+    const rowH = Math.max(detailLines.length, nameLines.length) * LINE_H + PAD_Y * 2;
+
+    // A row taller than the page would loop forever if we tried to keep it whole,
+    // so only break when there is a page left to break onto.
+    if (y + rowH > FOOTER_LIMIT && y > MARGIN + 10) {
+      doc.addPage();
+      y = MARGIN;
+      drawHead();
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
     }
-    const status = row.is_silent
-      ? "SILENT"
-      : row.reported_today
-        ? (row.all_ok === false ? "Exception" : "All OK")
-        : "Awaiting";
-    const cells = [
-      row.post_name ?? "—",
-      row.region_name ?? "—",
-      row.reported_today ? "Yes" : "—",
-      `${row.strength_present ?? "—"} / ${row.strength_required ?? "—"}`,
-      status,
-    ];
-    if (row.is_silent) doc.setTextColor(185, 28, 28);
-    else doc.setTextColor(15, 23, 42);
-    let x = MARGIN + 2;
-    cells.forEach((val, ci) => {
-      const c = cols[ci];
-      const tx = c.align === "right" ? x + c.w - 2 : c.align === "center" ? x + c.w / 2 : x;
-      const clipped = doc.splitTextToSize(String(val), c.w - 3)[0] ?? "";
-      doc.text(clipped, tx, y + 4, { align: c.align ?? "left" });
-      x += c.w;
-    });
-    y += 6;
+
+    if (i % 2 === 1) {
+      doc.setFillColor(248, 250, 252);
+      doc.rect(MARGIN, y, CONTENT_W, rowH, "F");
+    }
+    doc.setTextColor(15, 23, 42);
+    doc.setFont("helvetica", "bold");
+    nameLines.forEach((ln, li) => doc.text(ln, MARGIN + 2, y + PAD_Y + 3 + li * LINE_H));
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor((row.details ?? "").trim() ? 15 : 148, (row.details ?? "").trim() ? 23 : 163, (row.details ?? "").trim() ? 42 : 184);
+    detailLines.forEach((ln, li) =>
+      doc.text(ln, MARGIN + CLIENT_W + 2, y + PAD_Y + 3 + li * LINE_H),
+    );
+    y += rowH;
   });
 
   if (rows.length === 0) {
     doc.setTextColor(100, 116, 139);
-    doc.text("No active posts for this date.", MARGIN, y + 4);
+    doc.text("No active clients for this date.", MARGIN, y + 4);
   }
 
   drawBrandedFooter(doc, b, "Daily Operations Report");

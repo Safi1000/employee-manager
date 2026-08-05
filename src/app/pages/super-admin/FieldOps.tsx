@@ -1,133 +1,246 @@
-import ThemedSelect from "../../components/ThemedSelect";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight, Loader2, Lock } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import { useAuth } from "../../lib/auth";
 import { supabase } from "../../lib/supabase";
+import { formatDate } from "../../lib/date";
 import { generateDailyOperationsReportPdf } from "../../lib/dailyReportPdf";
 
-// Operations ▸ Daily Reports (repurposed Field Operations). Date-wise per-post
-// OK reporting with silent-site alerting + branded PDF export and a durable
-// record. The old supervisor-visit / no-show / mobilisation / post-order tabs
-// were dropped in the consolidation (supervisor handles those; not logged here).
+// Operations ▸ Daily Reports. One row per ACTIVE CLIENT for a chosen day, each
+// with a free-text Details box; the branded PDF is built straight from those two
+// columns. The old per-post form (post / required / present / exception note)
+// was removed — this is a written client-by-client note, not a headcount
+// reconciliation, and the headcount already lives on the Attendance board.
+//
+// "Active" is derived: a client with at least one contract in `active` status.
+// There is no active flag on the client record itself.
+//
+// Details are stored per (client, DAY). Nothing needs clearing at midnight: a
+// new day simply has no rows, so every box opens empty. Past days stay readable
+// for the same reason, and are locked — the record of a day that has ended is
+// not edited after the fact.
 
-const FIELD =
-  "px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent";
+const todayIso = () => new Date().toISOString().slice(0, 10);
+
+const shiftDay = (iso: string, days: number) => {
+  const d = new Date(`${iso}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+};
+
+type ClientRow = { id: string; name: string };
 
 export default function FieldOps() {
   const { company } = useAuth();
   const companyId = company?.id ?? "";
   const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
-  const [reportStatus, setReportStatus] = useState<any[]>([]);
-  const [posts, setPosts] = useState<any[]>([]);
-  const [exports, setExports] = useState<any[]>([]);
+  const [date, setDate] = useState(todayIso());
+  const [clients, setClients] = useState<ClientRow[]>([]);
+  /** client_id -> details, for the selected day. */
+  const [details, setDetails] = useState<Map<string, string>>(new Map());
+  /** Clients whose box is mid-save or just saved, for the inline hint. */
+  const [saving, setSaving] = useState<Set<string>>(new Set());
+  const [savedAt, setSavedAt] = useState<Map<string, number>>(new Map());
+
+  const isToday = date === todayIso();
+  // A day that has ended is a record, not a draft. Future days cannot be typed
+  // into either — there is nothing to report on a day that has not happened.
+  const locked = !isToday;
 
   const load = useCallback(async () => {
     if (!companyId) return;
-    const [rs, ps, dx] = await Promise.all([
-      supabase.from("daily_report_status").select("*").eq("company_id", companyId),
-      supabase.from("posts").select("id, name, client_id, branch_id, contract_id, required_guards").eq("company_id", companyId).eq("active", true).order("name"),
-      supabase.from("daily_report_exports").select("*").eq("company_id", companyId).order("created_at", { ascending: false }).limit(8),
+    setLoading(true);
+    setErr(null);
+    const [cli, rep] = await Promise.all([
+      // Active = has at least one active contract. The inner join is what does
+      // the filtering; !inner makes PostgREST drop clients with no match.
+      supabase
+        .from("clients")
+        .select("id, name, contracts!inner(id, status)")
+        .eq("company_id", companyId)
+        .eq("contracts.status", "active")
+        .order("name"),
+      supabase
+        .from("daily_client_reports")
+        .select("client_id, details")
+        .eq("company_id", companyId)
+        .eq("report_date", date),
     ]);
-    setReportStatus(rs.data ?? []);
-    setPosts(ps.data ?? []);
-    setExports(dx.data ?? []);
-  }, [companyId]);
+    if (cli.error) { setErr(cli.error.message); setLoading(false); return; }
+    if (rep.error) { setErr(rep.error.message); setLoading(false); return; }
+
+    // A client with two active contracts comes back twice through the join.
+    const seen = new Map<string, ClientRow>();
+    for (const c of (cli.data ?? []) as any[]) {
+      if (!seen.has(c.id)) seen.set(c.id, { id: c.id, name: c.name });
+    }
+    setClients([...seen.values()]);
+    setDetails(
+      new Map(((rep.data ?? []) as any[]).map((r) => [r.client_id as string, (r.details ?? "") as string])),
+    );
+    setLoading(false);
+  }, [companyId, date]);
 
   useEffect(() => { load(); }, [load]);
 
-  const run = async (p: PromiseLike<{ error: { message: string } | null }>) => {
-    setBusy(true); setErr(null);
-    const { error } = await p;
-    setBusy(false);
-    if (error) { setErr(error.message); return false; }
-    await load();
-    return true;
+  /**
+   * Save one client's note. Called on blur rather than on every keystroke — the
+   * field is a paragraph, not a search box, and a write per character would be
+   * both noisy and racy. An empty note deletes its row, so an accidental entry
+   * can be taken back and the day is not littered with blanks.
+   */
+  const saveOne = async (clientId: string, value: string) => {
+    if (locked) return;
+    setSaving((prev) => new Set(prev).add(clientId));
+    setErr(null);
+    const text = value.trim();
+    const { data: userData } = await supabase.auth.getUser();
+    const { error } = text
+      ? await supabase.from("daily_client_reports").upsert(
+          {
+            company_id: companyId,
+            client_id: clientId,
+            report_date: date,
+            details: text,
+            updated_by: userData.user?.id ?? null,
+          },
+          { onConflict: "company_id,client_id,report_date" },
+        )
+      : await supabase
+          .from("daily_client_reports")
+          .delete()
+          .eq("company_id", companyId)
+          .eq("client_id", clientId)
+          .eq("report_date", date);
+    setSaving((prev) => { const n = new Set(prev); n.delete(clientId); return n; });
+    if (error) { setErr(error.message); return; }
+    setSavedAt((prev) => new Map(prev).set(clientId, Date.now()));
   };
 
-  const silent = reportStatus.filter((r) => r.is_silent);
+  const rowsForPdf = useMemo(
+    () => clients.map((c) => ({ client_name: c.name, details: details.get(c.id) ?? null })),
+    [clients, details],
+  );
+  const filledCount = useMemo(
+    () => clients.filter((c) => (details.get(c.id) ?? "").trim().length > 0).length,
+    [clients, details],
+  );
 
-  // Generate the branded PDF and write a durable export record (counts snapshot).
-  const exportDailyReport = async () => {
-    const today = new Date().toISOString().slice(0, 10);
-    generateDailyOperationsReportPdf(company, today, reportStatus);
-    setBusy(true); setErr(null);
+  const exportPdf = async () => {
+    generateDailyOperationsReportPdf(company, date, rowsForPdf);
+    setBusy(true);
     const { data: userData } = await supabase.auth.getUser();
+    // The export record keeps its original column names; here total_posts counts
+    // the clients listed and `reported` the ones with a note written.
     const { error } = await supabase.from("daily_report_exports").insert({
-      report_date: today,
-      total_posts: reportStatus.length,
-      reported: reportStatus.filter((r) => r.reported_today).length,
-      silent: reportStatus.filter((r) => r.is_silent).length,
-      exceptions: reportStatus.filter((r) => r.reported_today && r.all_ok === false).length,
+      company_id: companyId,
+      report_date: date,
+      total_posts: clients.length,
+      reported: filledCount,
+      silent: clients.length - filledCount,
+      exceptions: 0,
       generated_by: userData.user?.id ?? null,
     });
     setBusy(false);
-    if (error) { setErr(error.message); return; }
-    await load();
+    if (error) setErr(error.message);
   };
 
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-8">
       <Header
         title="Daily Reports"
-        subtitle="Date-wise per-post OK reporting, silent-site alerting and PDF export"
+        subtitle="A written note per active client, day by day, exported as a branded PDF"
       />
 
       {err && <p className="text-sm text-danger-600 mb-3">{err}</p>}
 
       <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <p className="text-xs text-slate-500">
-            Date-wise per-post reporting. {silent.length > 0 && <span className="text-danger-600">{silent.length} silent.</span>}
-          </p>
-          <Button variant="secondary" size="sm" disabled={busy || reportStatus.length === 0} onClick={exportDailyReport}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setDate((d) => shiftDay(d, -1))}
+              className="w-8 h-8 grid place-items-center rounded-md border border-border text-muted-foreground hover:bg-accent"
+              aria-label="Previous day"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <input
+              type="date"
+              value={date}
+              max={todayIso()}
+              onChange={(e) => setDate(e.target.value || todayIso())}
+              className="px-3 py-2 border border-border rounded-md text-sm bg-card"
+            />
+            <button
+              type="button"
+              onClick={() => setDate((d) => shiftDay(d, 1))}
+              disabled={isToday}
+              className="w-8 h-8 grid place-items-center rounded-md border border-border text-muted-foreground hover:bg-accent disabled:opacity-40 disabled:pointer-events-none"
+              aria-label="Next day"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+            {!isToday && (
+              <Button variant="secondary" size="sm" onClick={() => setDate(todayIso())}>
+                Today
+              </Button>
+            )}
+          </div>
+          <Button variant="secondary" size="sm" disabled={busy || clients.length === 0} onClick={exportPdf}>
             Download PDF
           </Button>
         </div>
-        <DailyReportForm companyId={companyId} posts={posts} run={run} busy={busy} />
-        {exports.length > 0 && (
-          <div className="text-xs text-slate-500">
-            <span className="text-slate-400">Recent exports:</span>{" "}
-            {exports.map((e, i) => (
-              <span key={e.id}>
-                {i > 0 && " · "}
-                <span title={`${e.reported}/${e.total_posts} reported, ${e.silent} silent, ${e.exceptions} exceptions`}>
-                  {e.report_date}
-                </span>
-              </span>
-            ))}
-          </div>
-        )}
-        <div className="overflow-x-auto border border-slate-200 rounded-md">
+
+        <p className="text-xs text-muted-foreground">
+          {formatDate(date)} · {clients.length} active client{clients.length === 1 ? "" : "s"} ·{" "}
+          {filledCount} with details
+          {locked && (
+            <span className="ml-2 inline-flex items-center gap-1 text-amber-700 dark:text-amber-500">
+              <Lock className="w-3 h-3" /> past day — read only
+            </span>
+          )}
+        </p>
+
+        <div className="overflow-x-auto border border-border rounded-md">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+            <thead className="bg-slate-50 dark:bg-card text-xs text-muted-foreground uppercase">
               <tr>
-                <th className="text-left px-3 py-2">Post</th>
-                <th className="text-left px-3 py-2">Region</th>
-                <th className="text-center px-3 py-2">Reported today</th>
-                <th className="text-right px-3 py-2">Present / Required</th>
-                <th className="text-center px-3 py-2">Status</th>
+                <th className="text-left px-3 py-2 w-64">Client</th>
+                <th className="text-left px-3 py-2">Details</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
-              {reportStatus.map((r) => (
-                <tr key={r.post_id} className={r.is_silent ? "bg-danger-50" : ""}>
-                  <td className="px-3 py-1.5 text-slate-700">{r.post_name}</td>
-                  <td className="px-3 py-1.5 text-slate-500">{r.region_name ?? "—"}</td>
-                  <td className="px-3 py-1.5 text-center">{r.reported_today ? "✓" : "—"}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums">{r.strength_present ?? "—"} / {r.strength_required ?? "—"}</td>
-                  <td className="px-3 py-1.5 text-center">
-                    {r.is_silent
-                      ? <span className="px-2 py-0.5 rounded-md text-xs border bg-danger-50 text-danger-700 border-danger-200">SILENT</span>
-                      : r.reported_today
-                        ? <span className="px-2 py-0.5 rounded-md text-xs border bg-success-50 text-success-700 border-success-200">{r.all_ok ? "All OK" : "Exception"}</span>
-                        : <span className="text-slate-400 text-xs">awaiting</span>}
+            <tbody className="divide-y divide-border">
+              {clients.map((c) => (
+                <DetailsRow
+                  key={c.id}
+                  client={c}
+                  value={details.get(c.id) ?? ""}
+                  locked={locked}
+                  saving={saving.has(c.id)}
+                  savedAt={savedAt.get(c.id)}
+                  onChange={(v) => setDetails((prev) => new Map(prev).set(c.id, v))}
+                  onCommit={(v) => saveOne(c.id, v)}
+                />
+              ))}
+              {clients.length === 0 && !loading && (
+                <tr>
+                  <td colSpan={2} className="px-3 py-4 text-muted-foreground">
+                    No clients with an active contract.
                   </td>
                 </tr>
-              ))}
-              {reportStatus.length === 0 && <tr><td colSpan={5} className="px-3 py-3 text-slate-500">No active posts.</td></tr>}
+              )}
+              {loading && (
+                <tr>
+                  <td colSpan={2} className="px-3 py-4 text-muted-foreground">
+                    <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> Loading…
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -136,41 +249,52 @@ export default function FieldOps() {
   );
 }
 
-type Run = (p: PromiseLike<{ error: { message: string } | null }>) => Promise<boolean>;
-const box = "border border-slate-200 rounded-md p-3 grid grid-cols-2 md:grid-cols-6 gap-2 items-end bg-slate-50/50";
+/**
+ * One client's line. Keeps its own draft while focused so a reload of the day's
+ * saved values cannot yank half-typed text out from under the cursor, and only
+ * writes on blur.
+ */
+function DetailsRow({
+  client, value, locked, saving, savedAt, onChange, onCommit,
+}: {
+  client: ClientRow;
+  value: string;
+  locked: boolean;
+  saving: boolean;
+  savedAt: number | undefined;
+  onChange: (v: string) => void;
+  onCommit: (v: string) => void;
+}) {
+  const committed = useRef(value);
+  useEffect(() => { committed.current = value; }, [client.id]);
 
-function DailyReportForm({ companyId, posts, run, busy }: { companyId: string; posts: any[]; run: Run; busy: boolean }) {
-  const [postId, setPostId] = useState("");
-  const [required, setRequired] = useState("");
-  const [present, setPresent] = useState("");
-  const [note, setNote] = useState("");
-  const post = posts.find((p) => p.id === postId);
-  const allOk = present !== "" && required !== "" && Number(present) >= Number(required);
-  const submit = async () => {
-    if (!postId) return;
-    const ok = await run(supabase.from("daily_ok_reports").insert({
-      company_id: companyId, post_id: postId, client_id: post?.client_id ?? null,
-      report_date: new Date().toISOString().slice(0, 10),
-      strength_required: Number(required) || post?.required_guards || 0,
-      strength_present: Number(present) || 0, all_ok: allOk, exception_note: allOk ? null : note,
-    }));
-    if (ok) { setPresent(""); setNote(""); }
-  };
   return (
-    <div className={box}>
-      <div className="col-span-2">
-        <label className="text-xs text-slate-500 block mb-1">Post</label>
-        <ThemedSelect className={FIELD + " w-full"} value={postId} onChange={(e) => setPostId(e.target.value)}>
-          <option value="">— post —</option>
-          {posts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </ThemedSelect>
-      </div>
-      <div><label className="text-xs text-slate-500 block mb-1">Required</label>
-        <input className={FIELD + " w-full"} value={required} onChange={(e) => setRequired(e.target.value)} placeholder={post?.required_guards ?? "0"} /></div>
-      <div><label className="text-xs text-slate-500 block mb-1">Present</label>
-        <input className={FIELD + " w-full"} value={present} onChange={(e) => setPresent(e.target.value)} placeholder="0" /></div>
-      <input className={FIELD + " col-span-2 md:col-span-1"} placeholder="Exception note" value={note} onChange={(e) => setNote(e.target.value)} />
-      <Button variant="primary" size="sm" disabled={busy || !postId} onClick={submit}>Submit report</Button>
-    </div>
+    <tr className="align-top">
+      <td className="px-3 py-2 text-foreground font-medium whitespace-nowrap">{client.name}</td>
+      <td className="px-3 py-2">
+        {locked ? (
+          <p className="text-sm text-muted-foreground whitespace-pre-wrap">{value.trim() || "—"}</p>
+        ) : (
+          <div className="flex items-start gap-2">
+            <textarea
+              rows={1}
+              value={value}
+              placeholder="Details for this client today…"
+              onChange={(e) => onChange(e.target.value)}
+              onBlur={(e) => {
+                // Nothing typed since the last save = nothing to write.
+                if (e.target.value === committed.current) return;
+                committed.current = e.target.value;
+                onCommit(e.target.value);
+              }}
+              className="flex-1 px-3 py-2 border border-border rounded-md text-sm bg-card resize-y min-h-[38px]"
+            />
+            <span className="text-[11px] text-muted-foreground pt-2.5 w-12 shrink-0">
+              {saving ? "saving…" : savedAt ? "saved" : ""}
+            </span>
+          </div>
+        )}
+      </td>
+    </tr>
   );
 }
