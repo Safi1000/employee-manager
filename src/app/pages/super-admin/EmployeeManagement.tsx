@@ -24,6 +24,7 @@ import {
   BLOOD_GROUPS,
   EMERGENCY_CONTACT_RELATIONS,
   CONTRACT_LINE_CATEGORY_LABEL,
+  isPersonnelCategory,
   effectiveCommittedByCategory,
   activeCountByCategory,
   type Employee,
@@ -4385,11 +4386,14 @@ export function ChangeCategoryModal({
   );
 }
 
-// §7.5: dated shift change. Options are the guard's SITE's actual
-// shift_definitions (Phase 1) — never a hardcoded list. Closes the current
-// posting (day before the change) and opens a new one on the chosen shift from
-// the change date; nothing is rewritten in place, so past attendance stays on
-// the old shift and only dates from the change date forward are on the new one.
+/** Chronological order of the shift_code enum. Sorting only — not a source of options. */
+const SHIFT_DISPLAY_ORDER = ["day", "evening", "night"];
+
+// §7.5: dated shift change. Options are the shifts the guard's SITE actually
+// runs — never a hardcoded list. Closes the current posting (day before the
+// change) and opens a new one on the chosen shift from the change date; nothing
+// is rewritten in place, so past attendance stays on the old shift and only
+// dates from the change date forward are on the new one.
 export function ChangeShiftModal({
   guard, displayCode, onClose, onDone, onError,
 }: {
@@ -4410,7 +4414,7 @@ export function ChangeShiftModal({
     (async () => {
       setLoadingShifts(true);
       // Resolve the guard's site: their current open posting, else the client's
-      // default site. The shift list is whatever that site's shift_definitions say.
+      // default site.
       let siteId: string | null = null;
       const { data: dep } = await supabase
         .from("deployments").select("site_id")
@@ -4423,22 +4427,61 @@ export function ChangeShiftModal({
           .eq("client_id", guard.client_id).eq("is_default", true).limit(1).maybeSingle();
         siteId = (s as { id?: string } | null)?.id ?? null;
       }
-      let codes: string[] = [];
+
+      const codes = new Set<string>();
       if (siteId) {
         const { data: sd } = await supabase
-          .from("shift_definitions").select("shift_code, start_time")
-          .eq("site_id", siteId).order("start_time", { ascending: true });
-        codes = (sd ?? []).map((r: any) => r.shift_code as string);
+          .from("shift_definitions").select("shift_code").eq("site_id", siteId);
+        for (const r of (sd ?? []) as { shift_code: string }[]) codes.add(r.shift_code);
       }
-      // Ensure the current shift is always present so the list is never empty.
-      if (!codes.includes(guard.shift)) codes = [...codes, guard.shift];
+
+      // Union with the shifts this site's own PERSONNEL CONTRACT LINES name.
+      // shift_definitions are supposed to be derived from exactly those lines
+      // (ContractEditorModal.persistShiftDefinitions), but plenty of sites
+      // predate that sync or are billed through contract-wide lines, which the
+      // sync skips entirely — it only walks per-site lines. Reading the lines
+      // here rebuilds the same answer the definitions would have held, so a site
+      // that contracts a night post can always be moved to nights. Without it
+      // the dropdown collapsed to the guard's current shift and the modal became
+      // unusable: 68 HS and every Nova site contract day AND night guards, yet
+      // between them held one shift_definition.
+      if (guard.client_id) {
+        const { data: ct } = await supabase
+          .from("contracts").select("id")
+          .eq("client_id", guard.client_id).eq("status", "active");
+        const contractIds = ((ct ?? []) as { id: string }[]).map((c) => c.id);
+        if (contractIds.length > 0) {
+          const { data: cl } = await supabase
+            .from("contract_lines").select("shift_code, category, site_id")
+            .in("contract_id", contractIds);
+          for (const l of (cl ?? []) as Pick<ContractLine, "shift_code" | "category" | "site_id">[]) {
+            if (!l.shift_code || !isPersonnelCategory(l.category)) continue;
+            // site_id null = contract-wide, so it applies to this site too.
+            if (l.site_id !== null && l.site_id !== siteId) continue;
+            codes.add(l.shift_code);
+          }
+        }
+      }
+
+      // The current shift is always selectable, so the list is never empty and
+      // the modal can still say what the guard is on today.
+      codes.add(guard.shift);
+      const ordered = [...codes].sort(
+        (a, b) =>
+          (SHIFT_DISPLAY_ORDER.indexOf(a) + 1 || 99) - (SHIFT_DISPLAY_ORDER.indexOf(b) + 1 || 99),
+      );
       if (cancelled) return;
-      setShifts(codes);
-      setNewShift(codes.find((c) => c !== guard.shift) ?? guard.shift);
+      setShifts(ordered);
+      setNewShift(ordered.find((c) => c !== guard.shift) ?? guard.shift);
       setLoadingShifts(false);
     })();
     return () => { cancelled = true; };
   }, [guard.id, guard.client_id, guard.shift]);
+
+  // Only the current shift came back: this site runs one shift, so there is
+  // nowhere to move to. Say so rather than let the user press a button that can
+  // only ever answer "pick a different shift".
+  const noAlternative = !loadingShifts && shifts.length < 2;
 
   const save = async () => {
     if (!newShift) { fail("Select a shift."); return; }
@@ -4461,7 +4504,7 @@ export function ChangeShiftModal({
       footer={
         <div className="flex justify-end gap-2">
           <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
-          <Button size="sm" onClick={save} disabled={saving || loadingShifts}>
+          <Button size="sm" onClick={save} disabled={saving || loadingShifts || noAlternative}>
             {saving && <Loader2 className="w-4 h-4 animate-spin mr-1" />} Change shift
           </Button>
         </div>
@@ -4473,8 +4516,16 @@ export function ChangeShiftModal({
           <span className="font-medium capitalize">{guard.shift}</span> shift. From the effective
           date they move to the new shift; all attendance before that date stays on the old shift.
         </p>
+        {noAlternative && (
+          <p className="text-xs rounded-md border border-amber-200 bg-amber-50 text-amber-800 px-3 py-2">
+            This site only runs the <span className="font-medium capitalize">{guard.shift}</span>{" "}
+            shift, so there is nowhere to move {guard.full_name}. Add a contract line for the other
+            shift under Contracts, or add the shift to the site under Sites &amp; Strength, then
+            try again.
+          </p>
+        )}
         <label className="block"><span className="text-sm text-slate-600">New shift</span>
-          <ThemedSelect value={newShift} onChange={(e) => setNewShift(e.target.value)} className={inputCls} disabled={loadingShifts}>
+          <ThemedSelect value={newShift} onChange={(e) => setNewShift(e.target.value)} className={inputCls} disabled={loadingShifts || noAlternative}>
             {shifts.map((s) => (
               <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}{s === guard.shift ? " (current)" : ""}</option>
             ))}
