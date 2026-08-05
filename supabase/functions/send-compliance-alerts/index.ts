@@ -11,9 +11,15 @@
 //
 // Alert sources:
 //   1. important_dates where (due_date - today) <= advance_notice_days
-//      (mirrors what Compliance.tsx renders as active alerts)
-//   2. clients.contract_end at exactly 60 / 30 / 7 days out
-//      (matches the Compliance / Dashboard contract-end banner windows)
+//      (mirrors what Compliance.tsx renders as active alerts). Identical rows
+//      are collapsed — the same review is often stored several times with
+//      different notice windows, which would otherwise repeat in the digest.
+//   2. contracts.end_date at or under 60 / 30 / 7 days out, once per threshold
+//      (recorded in compliance_alert_log so a missed run still catches up).
+//
+// Source 2 used to read clients.contract_end. That column is unset on every
+// client here, while the real end dates live on the contracts table — so the
+// entire contract-end alert was dead and had never fired for anyone.
 //
 // Email transport: Resend (https://resend.com). RESEND_API_KEY must be set.
 // The `from` address must be on a domain verified in your Resend account —
@@ -56,6 +62,11 @@ type AlertItem = {
   source: "important_date" | "contract_end";
 };
 
+/** A threshold notice that must be recorded — but only once the email is away. */
+type AlertLogEntry = { alert_key: string; threshold: number };
+
+type Collected = { alerts: AlertItem[]; toLog: AlertLogEntry[] };
+
 async function getCallerProfile(jwt: string): Promise<{
   user_id: string;
   company_id: string | null;
@@ -76,6 +87,30 @@ async function getCallerProfile(jwt: string): Promise<{
   };
 }
 
+/**
+ * Does this Authorization header carry a service-role credential?
+ *
+ * Signature verification is the platform's job (verify_jwt is ON for this
+ * function), so this only reads the role claim. It also accepts an exact match
+ * against SUPABASE_SERVICE_ROLE_KEY, which covers key formats that are not JWTs
+ * at all.
+ */
+function isServiceRole(authHeader: string | null): boolean {
+  if (!authHeader?.startsWith("Bearer ")) return false;
+  const token = authHeader.slice(7).trim();
+  if (SUPABASE_SERVICE_ROLE_KEY && token === SUPABASE_SERVICE_ROLE_KEY) return true;
+  const parts = token.split(".");
+  if (parts.length !== 3) return false;
+  try {
+    // base64url → base64, padded.
+    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const payload = JSON.parse(atob(b64.padEnd(Math.ceil(b64.length / 4) * 4, "=")));
+    return payload?.role === "service_role";
+  } catch {
+    return false;
+  }
+}
+
 function diffDaysUTC(target: string, today: string): number {
   // Treat both as UTC midnight to avoid DST off-by-one.
   const a = new Date(`${target}T00:00:00Z`).getTime();
@@ -87,50 +122,105 @@ async function collectAlerts(
   db: SupabaseClient,
   companyId: string,
   today: string,
-): Promise<AlertItem[]> {
+  /** Test runs must not consume a threshold, so they never read or write the log. */
+  useLog = true,
+): Promise<Collected> {
   const alerts: AlertItem[] = [];
+  const toLog: AlertLogEntry[] = [];
 
+  // ── 1. Compliance calendar ────────────────────────────────────────────────
   const { data: dates } = await db
     .from("important_dates")
     .select("title, due_date, category, priority, advance_notice_days")
     .eq("company_id", companyId)
     .gte("due_date", today);
+
+  // Collapse duplicates. The same item is routinely entered several times with
+  // different notice windows (one review here is stored four times at 30/15/7/1
+  // days), and since every row whose window is open matches, the digest listed
+  // it once, then twice, then three times as the date closed in. Keep one entry
+  // per title+date, taking the WIDEST window so it still starts alerting on the
+  // earliest of them.
+  const byItem = new Map<string, { title: string; category: string; priority: string | null; days: number; window: number }>();
   for (const d of dates ?? []) {
-    const days = diffDaysUTC(d.due_date as string, today);
+    const title = d.title as string;
+    const dueDate = d.due_date as string;
+    const key = `${title.trim().toLowerCase()}|${dueDate}`;
+    const days = diffDaysUTC(dueDate, today);
     const window = (d.advance_notice_days as number | null) ?? 7;
-    if (days <= window) {
-      alerts.push({
-        title: d.title as string,
+    const prev = byItem.get(key);
+    if (!prev || window > prev.window) {
+      byItem.set(key, {
+        title,
         category: (d.category as string) ?? "General",
-        daysRemaining: days,
-        priority: d.priority as string | null,
+        priority: (d.priority as string | null) ?? prev?.priority ?? null,
+        days,
+        window: Math.max(window, prev?.window ?? 0),
+      });
+    }
+  }
+  for (const item of byItem.values()) {
+    if (item.days <= item.window) {
+      alerts.push({
+        title: item.title,
+        category: item.category,
+        daysRemaining: item.days,
+        priority: item.priority,
         source: "important_date",
       });
     }
   }
 
-  const { data: clients } = await db
-    .from("clients")
-    .select("name, contract_end")
+  // ── 2. Contracts approaching their end date ───────────────────────────────
+  // Read the CONTRACT's own end_date. This used to read clients.contract_end,
+  // which nobody populates — the alert had never fired once.
+  const { data: contracts } = await db
+    .from("contracts")
+    .select("id, contract_code, end_date, is_infinite, status, clients:client_id(name)")
     .eq("company_id", companyId)
-    .not("contract_end", "is", null)
-    .gte("contract_end", today);
-  for (const c of clients ?? []) {
-    if (!c.contract_end) continue;
-    const days = diffDaysUTC(c.contract_end as string, today);
-    if (CONTRACT_ALERT_DAYS.includes(days)) {
-      alerts.push({
-        title: `${c.name} — contract ending`,
-        category: "Contract",
-        daysRemaining: days,
-        source: "contract_end",
-      });
-    }
+    .eq("status", "active")
+    .not("end_date", "is", null)
+    .gte("end_date", today);
+
+  // Which thresholds have already been announced for this company.
+  const alreadySent = new Set<string>();
+  if (useLog) {
+    const { data: logRows } = await db
+      .from("compliance_alert_log")
+      .select("alert_key, threshold")
+      .eq("company_id", companyId);
+    for (const r of logRows ?? []) alreadySent.add(`${r.alert_key}|${r.threshold}`);
+  }
+
+  for (const c of contracts ?? []) {
+    // An open-ended contract has no end to warn about.
+    if (c.is_infinite) continue;
+    const endDate = c.end_date as string | null;
+    if (!endDate) continue;
+    const days = diffDaysUTC(endDate, today);
+
+    // The tightest threshold this contract has reached. "At or under" rather
+    // than "exactly", so a day the job did not run does not lose the notice.
+    const threshold = [...CONTRACT_ALERT_DAYS].sort((a, b) => a - b).find((t) => days <= t);
+    if (threshold === undefined) continue;
+
+    const alertKey = `contract:${c.id}`;
+    if (useLog && alreadySent.has(`${alertKey}|${threshold}`)) continue;
+
+    const clientName = (c.clients as { name?: string } | null)?.name ?? "Client";
+    const code = c.contract_code ? ` (${c.contract_code})` : "";
+    alerts.push({
+      title: `${clientName}${code} — contract ending`,
+      category: "Contract",
+      daysRemaining: days,
+      source: "contract_end",
+    });
+    if (useLog) toLog.push({ alert_key: alertKey, threshold });
   }
 
   // Most urgent first.
   alerts.sort((a, b) => a.daysRemaining - b.daysRemaining);
-  return alerts;
+  return { alerts, toLog };
 }
 
 function urgencyColor(days: number): string {
@@ -255,7 +345,7 @@ async function sendForCompany(
   }
   const sender = ns?.sender_email?.trim() || DEFAULT_SENDER;
 
-  const alerts = await collectAlerts(db, companyId, today);
+  const { alerts, toLog } = await collectAlerts(db, companyId, today, !isTest);
   if (alerts.length === 0 && !isTest) {
     return { sent: false, reason: "No alerts due today." };
   }
@@ -270,6 +360,19 @@ async function sendForCompany(
     subject,
     html: buildEmailHtml(alerts, today, isTest),
   });
+
+  // Record the thresholds only now. Writing before the send would burn the
+  // notice on an email that never left — and it is announced exactly once, so
+  // there would be no second chance.
+  if (toLog.length > 0) {
+    const { error: logErr } = await db.from("compliance_alert_log").upsert(
+      toLog.map((l) => ({ company_id: companyId, alert_key: l.alert_key, threshold: l.threshold, sent_on: today })),
+      { onConflict: "company_id,alert_key,threshold" },
+    );
+    // The mail is already out; a failed bookkeeping write must not read as a
+    // failed send. Worst case the notice repeats tomorrow.
+    if (logErr) console.error(`compliance_alert_log write failed company=${companyId}:`, logErr.message);
+  }
 
   return { sent: true, recipient };
 }
@@ -312,8 +415,10 @@ Deno.serve(async (req) => {
     try {
       // Synthesize a small preview using the caller's company alerts (if any)
       // so the test email reflects what a real daily digest would look like.
+      // useLog = false: a test must never consume a one-shot threshold, or
+      // pressing "Send test" would silently cancel the real notice.
       const alerts = caller.company_id
-        ? await collectAlerts(db, caller.company_id, today)
+        ? (await collectAlerts(db, caller.company_id, today, false)).alerts
         : [];
       const subject = alerts.length === 0
         ? "[Test] Employee Manager compliance alerts"
@@ -332,7 +437,25 @@ Deno.serve(async (req) => {
     }
   }
 
-  // Cron mode: iterate every company that has a recipient configured.
+  // Cron mode is service-role only. This path used to be open to any anonymous
+  // POST — a nuisance at worst, since it can only mail the configured
+  // recipient. It stopped being harmless once each threshold became a ONE-SHOT
+  // notice: a stranger hitting this endpoint would mark contract warnings as
+  // sent and the real digest would never arrive.
+  //
+  // The check is on the token's CLAIMS, not on a string match against
+  // SUPABASE_SERVICE_ROLE_KEY. Both are legitimate service-role credentials but
+  // they are different strings — the env var carries the project's current key
+  // format while the cron job signs with the legacy JWT held in Vault, so
+  // comparing them rejected the real cron call. The function is deployed with
+  // verify_jwt ON, so the platform has already checked the signature before we
+  // get here; reading the payload is therefore safe, and all that is left is to
+  // confirm the role.
+  if (!isServiceRole(req.headers.get("Authorization"))) {
+    return json({ error: "unauthorized" }, 401);
+  }
+
+  // Iterate every company that has a recipient configured.
   const { data: configured, error: cfgErr } = await db
     .from("notification_settings")
     .select("company_id")

@@ -207,10 +207,10 @@ export default function SuperAdminLayout() {
   ]);
   if (operations) links.push(operations);
 
-  // FINANCE — Opening Balances + Chart of Accounts merged → Accounting Core;
-  // Receivables folded into Bank & Ledgers. Treasury moved out to Profit-Share.
+  // FINANCE — Opening Balances + Chart of Accounts merged → Accounting Core,
+  // which is now hidden too (route kept). Receivables folded into Bank &
+  // Ledgers. Treasury moved out to Profit-Share.
   const finance = buildGroup("Finance", "/super-admin/finance", [
-    ACCOUNTING_CORE,
     BANKS,
     EXPENSES,
     CASHFLOW,
