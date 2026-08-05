@@ -59,7 +59,7 @@ import {
   PERSONNEL_LINE_CATEGORIES,
   effectiveCommittedByCategory,
   effectiveCommittedForLine,
-  activeCountByCategory,
+  activeCountByLine,
   isPersonnelCategory,
 } from "../../lib/supabase";
 import {
@@ -450,20 +450,30 @@ export default function EmployeeAssignments() {
   );
 
   /**
-   * Committed vs filled for the line's CATEGORY — the same figures the Assign
-   * dialog caps against, so the Department picker quotes identical numbers.
+   * Committed vs filled for THIS LINE — the post itself, not its category.
+   *
+   * It used to roll the whole contract's category together, which is meaningless
+   * on a multi-site contract: Nova bills four sites off one contract, so every
+   * Charsadda post quoted the group total. Charsadda's Supervisor (1 committed,
+   * nobody pinned) read "35/3 filled" — 3 being every Nova site's supervisor
+   * lines added up, 35 being every Nova employee sitting on any of them.
+   *
+   * A line already carries its own site and shift, so counting the line answers
+   * the question the picker is actually asking: how many does this post want,
+   * and how many stand in it.
    */
+  const filledToday = useMemo(() => activeCountByLine(employees, todayIso()), [employees]);
   const slotForLine = useCallback(
     (line: ContractLine, onDate: string) => {
-      const lines = contractLines.filter((l) => l.contract_id === line.contract_id);
-      const lineCategoryById = new Map(lines.map((l) => [l.id, l.category]));
       const adds = addendums.filter((a) => a.contract_id === line.contract_id);
-      const committed = effectiveCommittedByCategory(lines, adds, onDate).get(line.category) ?? 0;
-      const onContract = employees.filter((e) => e.contract_id === line.contract_id);
-      const filled = activeCountByCategory(onContract, lineCategoryById, onDate).get(line.category) ?? 0;
+      const committed = effectiveCommittedForLine(line, adds, onDate);
+      const filled =
+        onDate === todayIso()
+          ? filledToday.get(line.id) ?? 0
+          : activeCountByLine(employees, onDate).get(line.id) ?? 0;
       return { committed, filled };
     },
-    [contractLines, addendums, employees],
+    [addendums, employees, filledToday],
   );
 
   /**
@@ -1238,6 +1248,11 @@ export default function EmployeeAssignments() {
                 })()
               : []
           }
+          siteNoteForLine={(l) => {
+            const own = siteByGuard.get(rowTarget.id) ?? "";
+            if (!l.site_id || l.site_id === own) return null;
+            return sites.find((s) => s.id === l.site_id)?.name ?? "another site";
+          }}
           slotForLine={slotForLine}
           locations={locations}
           branches={branches}
@@ -1322,14 +1337,21 @@ export default function EmployeeAssignments() {
  *
  * The shift matters: a site routinely bills the same post twice, once per
  * shift, and without it the options are indistinguishable.
+ *
+ * `siteNote` names the site when the line belongs to a DIFFERENT one than the
+ * list is for. That only happens for a post somebody is already pinned to from
+ * elsewhere, which is kept on offer so it can be seen and corrected — and
+ * without the name it renders as a second, identical copy of the local post.
  */
 const lineOptionLabel = (
   l: ContractLine,
   slot: { filled: number; committed: number } | null,
+  siteNote?: string | null,
 ) =>
   ((l.label ?? "").trim() || CONTRACT_LINE_CATEGORY_LABEL[l.category]) +
   (l.shift_code ? ` (${l.shift_code})` : "") +
   (l.location ? ` — ${l.location}` : "") +
+  (siteNote ? ` — at ${siteNote}` : "") +
   (slot ? ` · ${slot.filled}/${slot.committed} filled` : "");
 
 /** One post at the site, and who is currently filling it. */
@@ -1916,17 +1938,19 @@ function RuleField({
 function RowEditModal({
   employee, canEdit, displayCode, locations, branches, clients,
   onClose, onSaved, onChangeClient, onChangeCategory, onChangeShift, onError, departmentLabel,
-  lineOptions, slotForLine,
+  lineOptions, slotForLine, siteNoteForLine,
 }: {
   employee: EmployeeRow;
   canEdit: boolean;
   displayCode: string;
   /** The contract line this employee fills — shown in place of a free-text department. */
   departmentLabel: string | null;
-  /** Personnel lines on this client's active contracts, to pin the employee to one. */
+  /** Personnel lines at the SITE this employee stands at, to pin them to one. */
   lineOptions: ContractLine[];
   /** Committed vs filled for a line, so the options read like the Assign dialog. */
   slotForLine: (line: ContractLine, onDate: string) => { committed: number; filled: number };
+  /** Site name for a line that belongs to a different site; null for local posts. */
+  siteNoteForLine: (line: ContractLine) => string | null;
   locations: Location[];
   branches: Branch[];
   clients: Client[];
@@ -2101,7 +2125,7 @@ function RowEditModal({
                     <option value="">— Not set —</option>
                     {lineOptions.map((l) => (
                       <option key={l.id} value={l.id}>
-                        {lineOptionLabel(l, slotForLine(l, todayIso()))}
+                        {lineOptionLabel(l, slotForLine(l, todayIso()), siteNoteForLine(l))}
                       </option>
                     ))}
                   </ThemedSelect>
@@ -2300,27 +2324,22 @@ function AssignEmployeesModal({
         effectiveCommittedForLine(l, adds, startDate) > 0,
     );
   }, [lines, siteId, addendums, contractId, startDate]);
-  const lineCategoryById = useMemo(() => {
-    const m = new Map<string, ContractLineCategory>();
-    for (const l of lines) m.set(l.id, l.category);
-    return m;
-  }, [lines]);
-
-  // Committed vs already-filled for a line's CATEGORY, as of the posting start
-  // date. Committed counts every line of that category plus any dated addendum
-  // in effect, mirroring the contract page's own arithmetic; filled counts the
-  // guards active on that category anywhere on the contract.
+  // Committed vs already-filled for THIS LINE, as of the posting start date, and
+  // the cap that follows. Per line, not per category: on a multi-site contract
+  // the category pool spans every site, so posting to Nova Charsadda measured
+  // against all four Nova sites' guards at once and capped at a number that had
+  // nothing to do with Charsadda. A line is one post at one site on one shift,
+  // which is exactly what is being filled here.
   const slotFor = useCallback(
     (lineId: string) => {
-      const cat = lineCategoryById.get(lineId);
-      if (!cat) return null;
+      const line = lines.find((l) => l.id === lineId);
+      if (!line) return null;
       const adds = addendums.filter((a) => a.contract_id === contractId);
-      const committed = effectiveCommittedByCategory(lines, adds, startDate).get(cat) ?? 0;
-      const onContract = allEmployees.filter((e) => e.contract_id === contractId);
-      const filled = activeCountByCategory(onContract, lineCategoryById, startDate).get(cat) ?? 0;
-      return { category: cat, committed, filled, available: Math.max(0, committed - filled) };
+      const committed = effectiveCommittedForLine(line, adds, startDate);
+      const filled = activeCountByLine(allEmployees, startDate).get(lineId) ?? 0;
+      return { category: line.category, committed, filled, available: Math.max(0, committed - filled) };
     },
-    [lineCategoryById, addendums, contractId, lines, startDate, allEmployees],
+    [addendums, contractId, lines, startDate, allEmployees],
   );
 
   const slot = contractLineId ? slotFor(contractLineId) : null;
