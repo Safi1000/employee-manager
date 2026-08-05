@@ -31,6 +31,7 @@ import {
   ArrowLeftRight,
   CheckCircle2,
   MapPin,
+  AlertTriangle,
 } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -126,6 +127,8 @@ type Group = {
   siteBuckets?: SiteBucket[];
   /** Only set for client groups that appear in the reconciliation view. */
   recon?: ReconRow;
+  /** What is missing on this client, if anything — drives the warning tag. */
+  gap?: "contract" | "employees";
 };
 
 /** One site inside a client card, and who is posted to it. */
@@ -327,6 +330,25 @@ export default function EmployeeAssignments() {
     }
     return new Set([...seen].filter(([, only]) => only).map(([id]) => id));
   }, [contracts]);
+  /**
+   * Clients with at least one contract that is live TODAY. "Live" means status
+   * active and the date window still open — an is_infinite contract never
+   * expires, otherwise end_date must not be in the past. A client whose only
+   * contract lapsed has nothing to staff against, which is why an expired
+   * contract counts the same as no contract at all.
+   */
+  const clientsWithLiveContract = useMemo(() => {
+    const today = todayIso();
+    const out = new Set<string>();
+    for (const k of contracts) {
+      if (k.status !== "active") continue;
+      if (k.start_date && k.start_date > today) continue;
+      if (!k.is_infinite && k.end_date && k.end_date < today) continue;
+      out.add(k.client_id);
+    }
+    return out;
+  }, [contracts]);
+
   // A line's own label if it carries one, else its category name — the role the
   // employee is contracted as. This replaces the free-text department field.
   const lineLabelById = useMemo(() => {
@@ -497,6 +519,12 @@ export default function EmployeeAssignments() {
         const orphans = bySite.get("") ?? [];
         if (orphans.length) siteBuckets.push({ id: "", name: "No site recorded", rows: orphans });
       }
+      // A client is worth a card when it has a live contract, people on it, or
+      // both. Missing exactly one of the two is a problem to fix, so the card
+      // stays and says which. Missing BOTH means there is nothing here at all —
+      // no obligation and nobody to pay — so it is dropped below.
+      const hasContract = clientsWithLiveContract.has(c.id);
+      const hasPeople = rows.length > 0;
       return {
         key: `client:${c.id}`,
         label: c.name,
@@ -505,6 +533,7 @@ export default function EmployeeAssignments() {
         rows,
         siteBuckets,
         recon: reconByClient.get(c.id),
+        gap: hasContract && hasPeople ? undefined : hasContract ? "employees" : "contract",
       };
     });
     out.sort((a, b) => a.label.localeCompare(b.label));
@@ -523,10 +552,17 @@ export default function EmployeeAssignments() {
     let visibleGroups = showServicesClients
       ? out
       : out.filter((g) => !(g.clientId && servicesOnlyClientIds.has(g.clientId)));
+    // Dormant clients — no live contract AND nobody posted — are dropped. There
+    // is nothing to do to them here. This is safe precisely because it needs
+    // BOTH to be missing: a new client whose contract is entered but not yet
+    // staffed still gets a card, so "Assign employees" is always reachable.
+    visibleGroups = visibleGroups.filter(
+      (g) => !g.clientId || !(g.gap === "contract" && g.rows.length === 0),
+    );
     if (q) visibleGroups = visibleGroups.filter((g) => g.label.toLowerCase().includes(q));
     if (onlyMismatch) return visibleGroups.filter((g) => g.recon != null && g.recon.variance !== 0);
     return visibleGroups;
-  }, [employees, clients, sites, siteByGuard, search, recon, onlyMismatch, servicesOnlyClientIds, showServicesClients, committedPersonnelByClient]);
+  }, [employees, clients, sites, siteByGuard, search, recon, onlyMismatch, servicesOnlyClientIds, showServicesClients, committedPersonnelByClient, clientsWithLiveContract]);
 
   // Hiding a client must never make its guards unreachable — this page is the only
   // place their posting and pay can be edited. If a Services-only client somehow
@@ -902,6 +938,19 @@ export default function EmployeeAssignments() {
                       {g.rows.length} employee{g.rows.length === 1 ? "" : "s"}
                     </span>
                     {g.hint && <span className="text-xs text-muted-foreground truncate hidden md:inline">· {g.hint}</span>}
+                    {g.gap && (
+                      <span
+                        className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-xs font-medium bg-warning-50 text-warning-800 dark:text-warning-500 border-warning-200"
+                        title={
+                          g.gap === "contract"
+                            ? "This client has people posted to it but no contract that is live today — either it was never entered, or it has expired."
+                            : "This client has a live contract but nobody is posted to it."
+                        }
+                      >
+                        <AlertTriangle className="w-3 h-3" strokeWidth={2} />
+                        {g.gap === "contract" ? "No live contract" : "No employees"}
+                      </span>
+                    )}
                   </button>
                   {g.recon && (
                     <span className="hidden lg:flex items-center gap-3 text-xs text-muted-foreground tabular-nums shrink-0">
