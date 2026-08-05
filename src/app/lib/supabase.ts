@@ -1025,6 +1025,7 @@ export type Employee = {
   join_date: string | null;
   bank_name: string | null;
   bank_account: string | null;
+  account_title: string | null;
   // Sprint 2 HR field expansion (spec section 3.3 + Appendix A.1)
   cnic_number: string | null;
   date_of_birth: string | null;

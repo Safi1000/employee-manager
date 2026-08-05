@@ -102,33 +102,106 @@ export function validateEmail(value: string | null | undefined): string | null {
 
 // --- IBAN: Pakistani 24-char (PK + 2 check + 4 bank + 16 account) ------------
 // Pakistani banks with their 4-letter IBAN bank code (chars 5–8 of the IBAN).
-// Every code below was spot-verified against a real, MOD-97-valid IBAN — see
-// the bank-research notes. Silkbank's code really is SAUD (its legacy Saudi-Pak
-// identity), and Summit Bank now trades as Bank Makramah; both codes are current.
-export const PK_BANKS: readonly { code: string; name: string }[] = [
-  { code: "ABPA", name: "Allied Bank" },
-  { code: "ASCM", name: "Askari Bank" },
-  { code: "BAHL", name: "Bank Al Habib" },
-  { code: "ALFH", name: "Bank Alfalah" },
-  { code: "BKIP", name: "BankIslami" },
-  { code: "BPUN", name: "Bank of Punjab" },
-  { code: "DUIB", name: "Dubai Islamic Bank Pakistan" },
-  { code: "FAYS", name: "Faysal Bank" },
-  { code: "HABB", name: "Habib Bank (HBL)" },
-  { code: "MPBL", name: "Habib Metropolitan Bank" },
-  { code: "JSBL", name: "JS Bank" },
-  { code: "MUCB", name: "MCB Bank" },
-  { code: "MEZN", name: "Meezan Bank" },
+// A non-null code was verified against a real MOD-97-valid IBAN or the bank's own
+// IBAN page (Silkbank = SAUD, its legacy Saudi-Pak identity; Summit now trades as
+// Bank Makramah; U Bank = UMBL; JazzCash/Mobilink = JAZZ). A `null` code means the
+// bank is offered for selection but its IBAN code could not be authoritatively
+// verified — the entered IBAN is still format- and checksum-validated, we just
+// don't assert the bank-code match (a wrong guess would falsely reject a valid
+// salary IBAN, which is worse than skipping the check). Verify before setting one.
+// A `wallet: true` entry is a mobile-money wallet, not a bank: it has no IBAN and
+// its "account number" is an 11-digit Pakistani mobile number (03XXXXXXXXX). These
+// are validated by validateWalletAccount / isPkWallet, not the bank-length logic.
+// `lengths` = the bank's verified valid account-number digit-length(s). Only set
+// for banks whose lengths were confirmed against the ABL IBFT format doc; banks
+// without it skip length validation entirely (stay permissive).
+export const PK_BANKS: readonly { code: string | null; name: string; wallet?: true; lengths?: readonly number[] }[] = [
+  { code: "AIIN", name: "Al Baraka Bank" },
+  { code: "ABPA", name: "Allied Bank", lengths: [13, 20] },
+  { code: null, name: "Apna Microfinance Bank", lengths: [16] },
+  { code: "ASCM", name: "Askari Bank", lengths: [14] },
+  { code: "BAHL", name: "Bank Al Habib", lengths: [17] },
+  { code: "ALFH", name: "Bank Alfalah", lengths: [14, 18] },
+  { code: "KHYB", name: "Bank of Khyber" },
+  { code: "BPUN", name: "Bank of Punjab", lengths: [16, 17] },
+  { code: "BKIP", name: "BankIslami", lengths: [15] },
+  { code: "DUIB", name: "Dubai Islamic Bank Pakistan", lengths: [10] },
+  { code: null, name: "Easypaisa Bank (Telenor Microfinance)", lengths: [15] },
+  { code: "FAYS", name: "Faysal Bank", lengths: [14, 16] },
+  { code: null, name: "FINCA Microfinance Bank" },
+  { code: "FWOM", name: "First Women Bank" },
+  { code: "HABB", name: "Habib Bank (HBL)", lengths: [14] },
+  { code: "MPBL", name: "Habib Metropolitan Bank", lengths: [19] },
+  { code: null, name: "HBL Microfinance Bank" },
+  { code: "JSBL", name: "JS Bank", lengths: [6] },
+  { code: "JAZZ", name: "JazzCash (Mobilink Microfinance Bank)" },
+  { code: null, name: "Khushhali Microfinance Bank" },
+  { code: "MUCB", name: "MCB Bank", lengths: [16] },
+  { code: "MCIB", name: "MCB Islamic Bank" },
+  { code: "MEZN", name: "Meezan Bank", lengths: [14] },
   { code: "NBPA", name: "National Bank of Pakistan" },
-  { code: "SAUD", name: "Silkbank" },
-  { code: "SIND", name: "Sindh Bank" },
-  { code: "SONE", name: "Soneri Bank" },
-  { code: "SCBL", name: "Standard Chartered Pakistan" },
-  { code: "SUMB", name: "Summit Bank (Bank Makramah)" },
-  { code: "UNIL", name: "United Bank (UBL)" },
+  { code: null, name: "NRSP Microfinance Bank" },
+  { code: "SAMB", name: "Samba Bank", lengths: [10] },
+  { code: "SAUD", name: "Silkbank", lengths: [13] },
+  { code: "SIND", name: "Sindh Bank", lengths: [14] },
+  { code: null, name: "Sindh Microfinance Bank" },
+  { code: "SMES", name: "SME Bank" },
+  { code: "SONE", name: "Soneri Bank", lengths: [15] },
+  { code: "SCBL", name: "Standard Chartered Pakistan", lengths: [11, 16] },
+  { code: "SUMB", name: "Summit Bank (Bank Makramah)", lengths: [20] },
+  { code: "UMBL", name: "U Microfinance Bank (U Bank)" },
+  { code: "UNIL", name: "United Bank (UBL)", lengths: [13, 16] },
+  { code: null, name: "Zarai Taraqiati Bank (ZTBL)" },
+  // Mobile wallets — no IBAN, account number is an 11-digit mobile (03XXXXXXXXX).
+  { code: null, name: "Easypaisa (Wallet)", wallet: true },
+  { code: null, name: "JazzCash (Wallet)", wallet: true },
+  { code: null, name: "NayaPay (Wallet)", wallet: true },
+  { code: null, name: "SadaPay (Wallet)", wallet: true },
 ];
 
-// Look up a bank's IBAN code from its display name (as chosen in the dropdown).
+// True when the selected "bank" is actually a mobile wallet (skip IBAN, validate
+// the account number as an 11-digit mobile number instead).
+export function isPkWallet(name: string | null | undefined): boolean {
+  if (isBlank(name)) return false;
+  return PK_BANKS.find((b) => b.name === (name as string).trim())?.wallet === true;
+}
+
+// --- Mobile-wallet account: exactly 11 digits, Pakistani mobile (03XXXXXXXXX) --
+export function validateWalletAccount(
+  value: string | null | undefined,
+  walletName?: string | null,
+): string | null {
+  if (isBlank(value)) return null;
+  const d = digitsOnly(value as string);
+  if (/^03\d{9}$/.test(d)) return null;
+  const who = (walletName ?? "").replace(/\s*\(wallet\)\s*$/i, "").trim() || "Wallet";
+  return `${who} accounts use an 11-digit mobile number (03XXXXXXXXX) — you entered ${d.length} digit${d.length === 1 ? "" : "s"}`;
+}
+
+// Per-bank account-number length check, for verified banks (those with `lengths`).
+// Skips wallets/unlisted banks/blanks and IBAN-shaped values (any letter → it's an
+// IBAN, validated separately). `typing` = live onChange: stay silent until the
+// digit count EXCEEDS every valid length (still mid-typing at/below a valid length);
+// on blur the count must land exactly on one of the valid lengths.
+export function validateBankAccountLength(
+  bankName: string | null | undefined,
+  value: string | null | undefined,
+  typing = false,
+): string | null {
+  if (isBlank(value)) return null;
+  const bank = PK_BANKS.find((b) => b.name === (bankName ?? "").trim());
+  if (!bank?.lengths || bank.lengths.length === 0) return null;
+  const raw = (value as string).trim();
+  if (!/^[0-9\-\s]+$/.test(raw)) return null; // IBAN or other — not a plain account number
+  const n = digitsOnly(raw).length;
+  if (n === 0) return null;
+  if (typing && n <= Math.max(...bank.lengths)) return null; // still mid-typing
+  if (bank.lengths.includes(n)) return null; // lands on a valid length
+  return `${bank.name} accounts are typically ${bank.lengths.join(" or ")} digits — you entered ${n}`;
+}
+
+// Look up a bank's verified IBAN code from its display name. Returns null for an
+// unknown name OR a listed bank whose code is unverified (both skip the check).
 export function pkBankCode(name: string | null | undefined): string | null {
   if (isBlank(name)) return null;
   return PK_BANKS.find((b) => b.name === (name as string).trim())?.code ?? null;

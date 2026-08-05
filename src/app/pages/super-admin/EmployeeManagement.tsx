@@ -57,6 +57,9 @@ import {
   validateFreeText,
   PK_BANKS,
   pkBankCode,
+  isPkWallet,
+  validateWalletAccount,
+  validateBankAccountLength,
 } from "../../lib/validation";
 import { useAuth, hasPermission } from "../../lib/auth";
 import { generateDischargeSheet } from "../../lib/dischargeSheetPdf";
@@ -142,6 +145,7 @@ type FormState = {
   join_date: string;
   bank_name: string;
   bank_account: string;
+  account_title: string;
   // Sprint 2 HR additions
   cnic_number: string;
   date_of_birth: string;
@@ -287,6 +291,7 @@ const emptyForm: FormState = {
   join_date: "",
   bank_name: "",
   bank_account: "",
+  account_title: "",
   cnic_number: "",
   date_of_birth: "",
   father_or_husband_name: "",
@@ -647,6 +652,11 @@ function FieldErrorSummary({
     </div>
   );
 }
+
+// Bank list shaped for the searchable ClientFilterSelect combobox (the same
+// dropdown used elsewhere): id + label are the bank name (stored in bank_name),
+// client_code shows the IBAN code beside verified banks.
+const PK_BANK_OPTIONS = PK_BANKS.map((b) => ({ id: b.name, name: b.name, client_code: b.code }));
 
 export default function EmployeeManagement() {
   const { profile, company } = useAuth();
@@ -1157,7 +1167,7 @@ export default function EmployeeManagement() {
       fileName: "Employees.xlsx",
       sheetName: "Employees",
       title: "Employees",
-      headers: ["Employee ID", "Permanent Code", "Name", "CNIC", "Phone", "Location", "Branch", "Client / Category", "Shift", "Status", "Bank", "Account No.", "IBAN"],
+      headers: ["Employee ID", "Permanent Code", "Name", "CNIC", "Phone", "Location", "Branch", "Client / Category", "Shift", "Status", "Bank", "Account Title", "Account No.", "IBAN"],
       rows: sorted.map((e) => [
         displayCodeFor(e),
         e.guard_code ?? e.employee_code,
@@ -1170,10 +1180,11 @@ export default function EmployeeManagement() {
         e.shift,
         statusLabel(e),
         e.bank_name ?? "",
+        e.account_title ?? "",
         e.bank_account ?? "",
         e.iban ?? "",
       ]),
-      columnWidths: [14, 14, 24, 18, 16, 18, 18, 20, 8, 10, 18, 22, 28],
+      columnWidths: [14, 14, 24, 18, 16, 18, 18, 20, 8, 10, 18, 22, 22, 28],
     });
   };
 
@@ -1327,6 +1338,22 @@ export default function EmployeeManagement() {
     return "Enter a valid account number or IBAN";
   };
 
+  // Wallet-aware account validation. Wallets take an 11-digit mobile number;
+  // everything else keeps the account-or-IBAN rule. `typing` = live onChange:
+  // stay silent until it's clearly wrong (a 12th digit for wallets; banks never
+  // error mid-typing) — the full check runs on blur/submit.
+  const accountFieldError = (bankName: string, v: string, typing = false): string | null => {
+    if (isPkWallet(bankName)) {
+      if (typing && v.replace(/\D/g, "").length <= 11) return null;
+      return validateWalletAccount(v, bankName);
+    }
+    // Verified banks get a length check (over-max errors immediately while typing;
+    // exact-match required on blur). Takes precedence over the generic rule.
+    const lenErr = validateBankAccountLength(bankName, v, typing);
+    if (lenErr) return lenErr;
+    return typing ? null : accountOrIbanError(v);
+  };
+
   // Inline field errors for an employee form (null = OK).
   // CNIC and Join Date are NOT required — both are only format-checked. They are
   // still flagged in the list (isMissingKeyFields) because attendance gating and
@@ -1335,8 +1362,8 @@ export default function EmployeeManagement() {
     full_name: validateFreeText(f.full_name),
     phone: validatePhone(f.phone),
     cnic_number: validateCnic(f.cnic_number),
-    iban: validateIban(f.iban, pkBankCode(f.bank_name)),
-    bank_account: accountOrIbanError(f.bank_account),
+    iban: isPkWallet(f.bank_name) ? null : validateIban(f.iban, pkBankCode(f.bank_name)),
+    bank_account: accountFieldError(f.bank_name, f.bank_account),
     emergency_contact_phone: validatePhone(f.emergency_contact_phone),
     permanent_address: validateFreeText(f.permanent_address),
     current_address: validateFreeText(f.current_address),
@@ -1406,6 +1433,7 @@ export default function EmployeeManagement() {
           join_date: form.join_date || null,
           bank_name: form.bank_name.trim() || null,
           bank_account: form.bank_account.trim() || null,
+          account_title: form.account_title.trim() || null,
           cnic_number: form.cnic_number.trim() || null,
           date_of_birth: form.date_of_birth || null,
           father_or_husband_name: form.father_or_husband_name.trim() || null,
@@ -1595,6 +1623,7 @@ export default function EmployeeManagement() {
       join_date: emp.join_date ?? "",
       bank_name: emp.bank_name ?? "",
       bank_account: emp.bank_account ?? "",
+      account_title: emp.account_title ?? "",
       cnic_number: emp.cnic_number ?? "",
       date_of_birth: emp.date_of_birth ?? "",
       father_or_husband_name: emp.father_or_husband_name ?? "",
@@ -1733,6 +1762,7 @@ export default function EmployeeManagement() {
           join_date: editForm.join_date || null,
           bank_name: editForm.bank_name.trim() || null,
           bank_account: editForm.bank_account.trim() || null,
+          account_title: editForm.account_title.trim() || null,
           cnic_number: editForm.cnic_number.trim() || null,
           date_of_birth: editForm.date_of_birth || null,
           father_or_husband_name: editForm.father_or_husband_name.trim() || null,
@@ -1818,13 +1848,6 @@ export default function EmployeeManagement() {
 
   return (
     <>
-      {/* Shared options for the bank-name type-to-filter inputs in both the Add
-          and Edit modals. One datalist, referenced by list="pk-bank-list". */}
-      <datalist id="pk-bank-list">
-        {PK_BANKS.map((b) => (
-          <option key={b.code} value={b.name} />
-        ))}
-      </datalist>
       <Header
         title="Employee Management"
         subtitle="Workforce roster, branches and document uploads"
@@ -2299,55 +2322,82 @@ export default function EmployeeManagement() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Bank Name</label>
-                <input
-                  type="text"
-                  list="pk-bank-list"
+                <ClientFilterSelect
+                  clients={PK_BANK_OPTIONS}
                   value={form.bank_name}
-                  onChange={(e) => {
-                    const bank_name = e.target.value;
-                    setForm({ ...form, bank_name });
-                    // Re-check the IBAN against the newly-selected bank's code.
-                    setFormErrors((p) => ({ ...p, iban: validateIban(form.iban, pkBankCode(bank_name)) }));
+                  onChange={(v) => {
+                    setForm({ ...form, bank_name: v });
+                    // Re-check IBAN against the new bank (wallets have none) and
+                    // re-check the account number against the new bank/wallet rule.
+                    setFormErrors((p) => ({
+                      ...p,
+                      iban: isPkWallet(v) ? null : validateIban(form.iban, pkBankCode(v)),
+                      bank_account: accountFieldError(v, form.bank_account),
+                    }));
                   }}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                  placeholder="Type to search…"
+                  allValue=""
+                  allLabel="Select bank…"
+                  buttonClassName="w-full"
+                  extraOption={
+                    form.bank_name && !PK_BANK_OPTIONS.some((b) => b.id === form.bank_name)
+                      ? { value: form.bank_name, label: `${form.bank_name} (current)` }
+                      : undefined
+                  }
                 />
               </div>
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Bank Account Number</label>
+                <label className="block text-sm text-slate-700 mb-1">Account Title</label>
+                <input
+                  type="text"
+                  value={form.account_title}
+                  onChange={(e) => setForm({ ...form, account_title: e.target.value })}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  placeholder="Account holder name"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">
+                  {isPkWallet(form.bank_name) ? "Mobile Account Number" : "Bank Account Number"}
+                </label>
                 <input
                   type="text"
                   id="empfield-bank_account"
                   value={form.bank_account}
-                  onChange={(e) => setForm({ ...form, bank_account: e.target.value })}
-                  onBlur={(e) => setFormErrors((p) => ({ ...p, bank_account: accountOrIbanError(e.target.value) }))}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setForm({ ...form, bank_account: v });
+                    setFormErrors((p) => ({ ...p, bank_account: accountFieldError(form.bank_name, v, true) }));
+                  }}
+                  onBlur={(e) => setFormErrors((p) => ({ ...p, bank_account: accountFieldError(form.bank_name, e.target.value) }))}
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                  placeholder="e.g., 0010053029480016"
+                  placeholder={isPkWallet(form.bank_name) ? "03XXXXXXXXX" : "e.g., 0010053029480016"}
                 />
                 {formErrors.bank_account && <p className="text-xs text-danger-600 mt-1">{formErrors.bank_account}</p>}
-                {branchCodeHint(form.bank_account) && (
+                {!isPkWallet(form.bank_name) && branchCodeHint(form.bank_account) && (
                   <p className="text-xs text-slate-500 mt-1">Branch code: {branchCodeHint(form.bank_account)}</p>
                 )}
               </div>
-              <div className="col-span-2">
-                <label className="block text-sm text-slate-700 mb-1">IBAN (24 chars — as issued by the bank)</label>
-                <input
-                  type="text"
-                  maxLength={24}
-                  id="empfield-iban"
-                  value={form.iban}
-                  onChange={(e) => setForm({ ...form, iban: e.target.value.toUpperCase().replace(/\s+/g, "") })}
-                  onBlur={(e) => setFormErrors((p) => ({ ...p, iban: validateIban(e.target.value, pkBankCode(form.bank_name)) }))}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm font-mono"
-                  placeholder="PKxx XXXX XXXX XXXX XXXX XXXX"
-                />
-                {formErrors.iban && <p className="text-xs text-danger-600 mt-1">{formErrors.iban}</p>}
-                {form.iban && form.iban.length !== 24 && (
-                  <p className="text-xs text-warning-700 mt-1">
-                    Pakistani IBANs are 24 characters (currently {form.iban.length}).
-                  </p>
-                )}
-              </div>
+              {!isPkWallet(form.bank_name) && (
+                <div className="col-span-2">
+                  <label className="block text-sm text-slate-700 mb-1">IBAN (24 chars — as issued by the bank)</label>
+                  <input
+                    type="text"
+                    maxLength={24}
+                    id="empfield-iban"
+                    value={form.iban}
+                    onChange={(e) => setForm({ ...form, iban: e.target.value.toUpperCase().replace(/\s+/g, "") })}
+                    onBlur={(e) => setFormErrors((p) => ({ ...p, iban: validateIban(e.target.value, pkBankCode(form.bank_name)) }))}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm font-mono"
+                    placeholder="PKxx XXXX XXXX XXXX XXXX XXXX"
+                  />
+                  {formErrors.iban && <p className="text-xs text-danger-600 mt-1">{formErrors.iban}</p>}
+                  {form.iban && form.iban.length !== 24 && (
+                    <p className="text-xs text-warning-700 mt-1">
+                      Pakistani IBANs are 24 characters (currently {form.iban.length}).
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           </FormSection>
 
@@ -2613,6 +2663,10 @@ export default function EmployeeManagement() {
                 <div>
                   <p className="text-slate-500 mb-1">Bank Name</p>
                   <p className="text-slate-900">{selectedEmployee.bank_name ?? "—"}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500 mb-1">Account Title</p>
+                  <p className="text-slate-900">{selectedEmployee.account_title ?? "—"}</p>
                 </div>
                 <div>
                   <p className="text-slate-500 mb-1">Bank Account</p>
@@ -2911,49 +2965,75 @@ export default function EmployeeManagement() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm text-slate-700 mb-1">Bank Name</label>
-                  <input
-                    type="text"
-                    list="pk-bank-list"
+                  <ClientFilterSelect
+                    clients={PK_BANK_OPTIONS}
                     value={editForm.bank_name}
-                    onChange={(e) => {
-                      const bank_name = e.target.value;
-                      setEditForm({ ...editForm, bank_name });
-                      setEditFormErrors((p) => ({ ...p, iban: validateIban(editForm.iban, pkBankCode(bank_name)) }));
+                    onChange={(v) => {
+                      setEditForm({ ...editForm, bank_name: v });
+                      setEditFormErrors((p) => ({
+                        ...p,
+                        iban: isPkWallet(v) ? null : validateIban(editForm.iban, pkBankCode(v)),
+                        bank_account: accountFieldError(v, editForm.bank_account),
+                      }));
                     }}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                    placeholder="Type to search…"
+                    allValue=""
+                    allLabel="Select bank…"
+                    buttonClassName="w-full"
+                    extraOption={
+                      editForm.bank_name && !PK_BANK_OPTIONS.some((b) => b.id === editForm.bank_name)
+                        ? { value: editForm.bank_name, label: `${editForm.bank_name} (current)` }
+                        : undefined
+                    }
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-700 mb-1">Bank Account Number</label>
+                  <label className="block text-sm text-slate-700 mb-1">Account Title</label>
+                  <input
+                    type="text"
+                    value={editForm.account_title}
+                    onChange={(e) => setEditForm({ ...editForm, account_title: e.target.value })}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    placeholder="Account holder name"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">
+                    {isPkWallet(editForm.bank_name) ? "Mobile Account Number" : "Bank Account Number"}
+                  </label>
                   <input
                     type="text"
                     id="empeditfield-bank_account"
                     value={editForm.bank_account}
-                    onChange={(e) => setEditForm({ ...editForm, bank_account: e.target.value })}
-                    onBlur={(e) => setEditFormErrors((p) => ({ ...p, bank_account: accountOrIbanError(e.target.value) }))}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setEditForm({ ...editForm, bank_account: v });
+                      setEditFormErrors((p) => ({ ...p, bank_account: accountFieldError(editForm.bank_name, v, true) }));
+                    }}
+                    onBlur={(e) => setEditFormErrors((p) => ({ ...p, bank_account: accountFieldError(editForm.bank_name, e.target.value) }))}
                     className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                    placeholder="e.g., 0010053029480016"
+                    placeholder={isPkWallet(editForm.bank_name) ? "03XXXXXXXXX" : "e.g., 0010053029480016"}
                   />
                   {editFormErrors.bank_account && <p className="text-xs text-danger-600 mt-1">{editFormErrors.bank_account}</p>}
-                  {branchCodeHint(editForm.bank_account) && (
+                  {!isPkWallet(editForm.bank_name) && branchCodeHint(editForm.bank_account) && (
                     <p className="text-xs text-slate-500 mt-1">Branch code: {branchCodeHint(editForm.bank_account)}</p>
                   )}
                 </div>
-                <div className="col-span-2">
-                  <label className="block text-sm text-slate-700 mb-1">IBAN (24 chars — as issued by the bank)</label>
-                  <input
-                    type="text"
-                    maxLength={24}
-                    id="empeditfield-iban"
-                    value={editForm.iban}
-                    onChange={(e) => setEditForm({ ...editForm, iban: e.target.value.toUpperCase().replace(/\s+/g, "") })}
-                    onBlur={(e) => setEditFormErrors((p) => ({ ...p, iban: validateIban(e.target.value, pkBankCode(editForm.bank_name)) }))}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm font-mono"
-                    placeholder="PKxx XXXX XXXX XXXX XXXX XXXX"
-                  />
-                  {editFormErrors.iban && <p className="text-xs text-danger-600 mt-1">{editFormErrors.iban}</p>}
-                </div>
+                {!isPkWallet(editForm.bank_name) && (
+                  <div className="col-span-2">
+                    <label className="block text-sm text-slate-700 mb-1">IBAN (24 chars — as issued by the bank)</label>
+                    <input
+                      type="text"
+                      maxLength={24}
+                      id="empeditfield-iban"
+                      value={editForm.iban}
+                      onChange={(e) => setEditForm({ ...editForm, iban: e.target.value.toUpperCase().replace(/\s+/g, "") })}
+                      onBlur={(e) => setEditFormErrors((p) => ({ ...p, iban: validateIban(e.target.value, pkBankCode(editForm.bank_name)) }))}
+                      className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm font-mono"
+                      placeholder="PKxx XXXX XXXX XXXX XXXX XXXX"
+                    />
+                    {editFormErrors.iban && <p className="text-xs text-danger-600 mt-1">{editFormErrors.iban}</p>}
+                  </div>
+                )}
               </div>
             </FormSection>
 
