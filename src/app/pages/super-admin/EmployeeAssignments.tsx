@@ -761,7 +761,7 @@ export default function EmployeeAssignments() {
                               aria-label={`Select all in ${g.label}`}
                             />
                           </th>
-                          {["Code", "Name", "Branch", "Department", "Shift", "Base", "Per day", "Allowance", "Joined"].map((h) => (
+                          {["Code", "Name", "Department", "Shift", "Base", "Per day", "Allowance", "Joined"].map((h) => (
                             <th key={h} className="text-left px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground whitespace-nowrap">
                               {h}
                             </th>
@@ -774,7 +774,7 @@ export default function EmployeeAssignments() {
                       <tbody>
                         {rowsToShow.length === 0 && (
                           <tr>
-                            <td colSpan={11} className="px-4 py-8 text-center text-sm text-muted-foreground">
+                            <td colSpan={10} className="px-4 py-8 text-center text-sm text-muted-foreground">
                               Nobody is posted here yet — use “Assign employees” above.
                             </td>
                           </tr>
@@ -798,7 +798,6 @@ export default function EmployeeAssignments() {
                                 </span>
                               )}
                             </td>
-                            <td className="px-3 py-2 text-sm text-muted-foreground whitespace-nowrap">{e.branch_name ?? "—"}</td>
                             <td className="px-3 py-2 text-sm text-muted-foreground whitespace-nowrap">
                               {departmentOf(e) ?? (
                                 <span title="Not assigned to a contract line">—</span>
@@ -1254,8 +1253,6 @@ export default function EmployeeAssignments() {
             return sites.find((s) => s.id === l.site_id)?.name ?? "another site";
           }}
           slotForLine={slotForLine}
-          locations={locations}
-          branches={branches}
           clients={clients}
           onClose={() => setRowTarget(null)}
           onSaved={async () => { setRowTarget(null); await loadData(); }}
@@ -1936,7 +1933,7 @@ function RuleField({
 // goes through the dated increment panel.
 // ─────────────────────────────────────────────────────────────────────────────
 function RowEditModal({
-  employee, canEdit, displayCode, locations, branches, clients,
+  employee, canEdit, displayCode, clients,
   onClose, onSaved, onChangeClient, onChangeCategory, onChangeShift, onError, departmentLabel,
   lineOptions, slotForLine, siteNoteForLine,
 }: {
@@ -1951,8 +1948,6 @@ function RowEditModal({
   slotForLine: (line: ContractLine, onDate: string) => { committed: number; filled: number };
   /** Site name for a line that belongs to a different site; null for local posts. */
   siteNoteForLine: (line: ContractLine) => string | null;
-  locations: Location[];
-  branches: Branch[];
   clients: Client[];
   onClose: () => void;
   onSaved: () => Promise<void>;
@@ -1961,9 +1956,6 @@ function RowEditModal({
   onChangeShift: () => void;
   onError: (m: string) => void;
 }) {
-  const [locationId, setLocationId] = useState(employee.location_id ?? "");
-  const [branchId, setBranchId] = useState(employee.branch_id ?? "");
-  const [additional, setAdditional] = useState<string[]>([...(employee.additional_branch_ids ?? [])]);
   const [joinDate, setJoinDate] = useState(employee.join_date ?? "");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -1990,8 +1982,6 @@ function RowEditModal({
       const { error } = await supabase
         .from("employees")
         .update({
-          location_id: locationId || null,
-          branch_id: branchId || null,
           join_date: joinDate || null,
           ...(neverPosted ? { shift, category: draftCategory } : {}),
           ...(canPickLine ? { contract_line_id: lineId || null } : {}),
@@ -2011,25 +2001,6 @@ function RowEditModal({
         if (depErr) throw depErr;
       }
 
-      // employee_branches junction: additional visibility only, never the primary.
-      const desired = new Set(additional.filter((id) => id && id !== branchId));
-      const { data: existing, error: e1 } = await supabase
-        .from("employee_branches").select("branch_id").eq("employee_id", employee.id);
-      if (e1) throw e1;
-      const have = new Set((existing ?? []).map((r: any) => r.branch_id as string));
-      const toRemove = [...have].filter((id) => !desired.has(id));
-      const toAdd = [...desired].filter((id) => !have.has(id));
-      if (toRemove.length) {
-        const { error } = await supabase
-          .from("employee_branches").delete().eq("employee_id", employee.id).in("branch_id", toRemove);
-        if (error) throw error;
-      }
-      if (toAdd.length) {
-        const { error } = await supabase
-          .from("employee_branches")
-          .insert(toAdd.map((branch_id) => ({ employee_id: employee.id, branch_id })));
-        if (error) throw error;
-      }
       await onSaved();
     } catch (e: any) {
       const m = e.message ?? String(e);
@@ -2151,63 +2122,15 @@ function RowEditModal({
           )}
         </section>
 
+        {/*
+          Location, primary branch and additional branches used to sit here. They
+          are cost-ownership and visibility settings, not posting details, and
+          they still live on the Employee Management modal — the one place that
+          edits an employee's record as a whole. Joining date stays: it dates the
+          posting this page is about.
+        */}
         <section className="pt-4 border-t border-border">
-          <h4 className="text-sm font-medium text-foreground mb-3">Location &amp; branches</h4>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-muted-foreground mb-1">Location</label>
-              <ThemedSelect value={locationId} disabled={!canEdit} onChange={(e) => setLocationId(e.target.value)} className={canEdit ? inputCls : lockedCls}>
-                <option value="">Select location</option>
-                {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-              </ThemedSelect>
-            </div>
-            <div>
-              <label className="block text-xs text-muted-foreground mb-1">Primary branch</label>
-              <ThemedSelect
-                value={branchId}
-                disabled={!canEdit}
-                onChange={(e) => {
-                  setBranchId(e.target.value);
-                  setAdditional((prev) => prev.filter((id) => id !== e.target.value));
-                }}
-                className={canEdit ? inputCls : lockedCls}
-              >
-                <option value="">Head Office (default)</option>
-                {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </ThemedSelect>
-              <p className="text-[11px] text-muted-foreground mt-1">Payroll routing, P&amp;L attribution and cost ownership.</p>
-            </div>
-            <div className="sm:col-span-2">
-              <label className="block text-xs text-muted-foreground mb-1">Additional branches (visibility)</label>
-              <div className={`flex flex-wrap gap-2 p-2 border border-border rounded-md ${canEdit ? "" : "opacity-60 pointer-events-none"}`}>
-                {branches.filter((b) => b.id !== branchId).map((b) => {
-                  const checked = additional.includes(b.id);
-                  return (
-                    <label
-                      key={b.id}
-                      className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs cursor-pointer border ${
-                        checked ? "border-brand-500 bg-brand-500/10 text-foreground" : "border-border text-muted-foreground hover:border-brand-500/50"
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() =>
-                          setAdditional((prev) => (checked ? prev.filter((id) => id !== b.id) : [...prev, b.id]))
-                        }
-                      />
-                      {b.name}
-                    </label>
-                  );
-                })}
-                {branches.filter((b) => b.id !== branchId).length === 0 && (
-                  <span className="text-xs text-muted-foreground">No other branches available.</span>
-                )}
-              </div>
-              <p className="text-[11px] text-muted-foreground mt-1">
-                Branched users in these branches can see this employee without owning the cost.
-              </p>
-            </div>
             <div>
               <label className="block text-xs text-muted-foreground mb-1">Joining date</label>
               <input
