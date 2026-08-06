@@ -206,7 +206,6 @@ export default function Clients() {
   const [error, setError] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
-  const [branchFilter, setBranchFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("active");
   const [industryFilter, setIndustryFilter] = useState("all");
 
@@ -352,14 +351,13 @@ export default function Clients() {
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
-      if (branchFilter !== "all" && r.branch_id !== branchFilter) return false;
       if (industryFilter !== "all" && (r.industry ?? "") !== industryFilter) return false;
       if (statusFilter === "active" && !activeClientIds.has(r.id)) return false;
       if (statusFilter === "inactive" && activeClientIds.has(r.id)) return false;
       if (q && !r.name.toLowerCase().includes(q) && !r.client_code.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [rows, search, branchFilter, statusFilter, industryFilter, activeClientIds]);
+  }, [rows, search, statusFilter, industryFilter, activeClientIds]);
 
   const resetForm = () => {
     setForm(emptyForm);
@@ -1168,16 +1166,6 @@ export default function Clients() {
               className="w-full pl-10 pr-3 py-2 border border-slate-200 rounded-md text-sm"
             />
           </div>
-          <ThemedSelect
-            value={branchFilter}
-            onChange={(e) => setBranchFilter(e.target.value)}
-            className="px-3 py-2 border border-slate-200 rounded-md text-sm"
-          >
-            <option value="all">All branches</option>
-            {branches.map((b) => (
-              <option key={b.id} value={b.id}>{b.name}</option>
-            ))}
-          </ThemedSelect>
           <ThemedSelect
             value={industryFilter}
             onChange={(e) => setIndustryFilter(e.target.value)}

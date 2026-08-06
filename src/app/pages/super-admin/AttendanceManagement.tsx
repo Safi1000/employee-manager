@@ -111,7 +111,6 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
 
   const [date, setDate] = useState<string>(today());
   const [clientFilter, setClientFilter] = useState("all");
-  const [branchFilter, setBranchFilter] = useState("all");
   const [shiftFilter, setShiftFilter] = useState<"all" | "day" | "night">("all");
   // Employee category filter (same set as the Employees tab) — e.g. Office Staff only.
   const [categoryFilter, setCategoryFilter] = useState<"all" | "client" | "office_staff" | "reliever">("all");
@@ -120,7 +119,6 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   const [filtersOpen, setFiltersOpen] = useState(false);
   const activeFilterCount =
     (clientFilter !== "all" ? 1 : 0) +
-    (branchFilter !== "all" ? 1 : 0) +
     (categoryFilter !== "all" ? 1 : 0) +
     (shiftFilter !== "all" ? 1 : 0);
   const [historyFrom, setHistoryFrom] = useState<string>(daysAgo(13));
@@ -389,7 +387,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   useEffect(() => {
     if (employees.length === 0) return;
     loadHistory();
-  }, [historyFrom, historyTo, employees, clientFilter, branchFilter, shiftFilter]);
+  }, [historyFrom, historyTo, employees, clientFilter, shiftFilter]);
 
   const filteredEmployees = useMemo(() => {
     const q = empSearch.trim().toLowerCase();
@@ -398,18 +396,13 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       if (relieversOnly && e.category !== "reliever") return false;
       if (!relieversOnly && e.category === "reliever") return false;
       if (clientFilter !== "all" && e.client_id !== clientFilter) return false;
-      if (branchFilter !== "all") {
-        const inPrimary = e.branch_id === branchFilter;
-        const inAdditional = (e.additional_branch_ids ?? []).includes(branchFilter);
-        if (!inPrimary && !inAdditional) return false;
-      }
       if (shiftFilter !== "all" && e.shift !== shiftFilter) return false;
       if (categoryFilter !== "all" && e.category !== categoryFilter) return false;
       if (unmarkedOnly && todayRecords[e.id]) return false;
       if (q && !e.full_name.toLowerCase().includes(q) && !e.employee_code.toLowerCase().includes(q) && !e.display_code.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [employees, clientFilter, branchFilter, shiftFilter, categoryFilter, unmarkedOnly, todayRecords, empSearch, relieversOnly]);
+  }, [employees, clientFilter, shiftFilter, categoryFilter, unmarkedOnly, todayRecords, empSearch, relieversOnly]);
 
   // Why `d` isn't markable for this employee, or null. Employment window ∩
   // contract window — mirrored by the DB trigger in migration 0152, so this is
@@ -1130,16 +1123,6 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                 onChange={setClientFilter}
                 allValue="all"
               />
-              <ThemedSelect
-                value={branchFilter}
-                onChange={(e) => setBranchFilter(e.target.value)}
-                className="px-3 py-2 border border-border rounded-md text-sm"
-              >
-                <option value="all">All Branches</option>
-                {branches.map((b) => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
-                ))}
-              </ThemedSelect>
               {!relieversOnly && (
                 <ThemedSelect
                   value={categoryFilter}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Users,
   Calendar,
@@ -518,6 +518,109 @@ export default function SuperAdminDashboard() {
     // Re-fetch region-aware widgets when the global region selector changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [regionId]);
+
+  /**
+   * Re-read just the three sources the activity feed is built from. Cheap
+   * enough to run on every insert, and it resolves client names properly —
+   * which a raw realtime payload cannot do, since it carries a client_id (or
+   * only an invoice_id) and no name.
+   */
+  const refreshFeed = useCallback(async () => {
+    const today = todayIso();
+    const [payRes, incRes, dateRes] = await Promise.all([
+      withRegion(
+        supabase
+          .from("invoice_payments")
+          .select("id, client_id, invoice_id, amount, payment_date")
+          .order("payment_date", { ascending: false })
+          .limit(8),
+        regionId,
+      ),
+      withRegion(
+        supabase
+          .from("incidents")
+          .select("id, incident_code, severity, category, occurred_at, status")
+          .gte("occurred_at", daysAgoIso(30) + "T00:00:00Z")
+          .order("occurred_at", { ascending: false })
+          .limit(8),
+        regionId,
+      ),
+      supabase
+        .from("important_dates")
+        .select("id, title, due_date, category, priority")
+        .gte("due_date", today)
+        .lte("due_date", daysAheadIso(30))
+        .order("due_date"),
+    ]);
+
+    type PayRaw = { id: string; client_id: string | null; invoice_id: string | null; amount: number; payment_date: string };
+    const raw = (payRes.data ?? []) as PayRaw[];
+    const clientIds = new Set(raw.map((p) => p.client_id).filter(Boolean) as string[]);
+    const invoiceIds = raw.filter((p) => !p.client_id && p.invoice_id).map((p) => p.invoice_id as string);
+    const invToClient = new Map<string, string>();
+    if (invoiceIds.length > 0) {
+      const { data: invs } = await supabase.from("invoices").select("id, client_id").in("id", invoiceIds);
+      for (const i of (invs ?? []) as { id: string; client_id: string }[]) {
+        invToClient.set(i.id, i.client_id);
+        clientIds.add(i.client_id);
+      }
+    }
+    const names = new Map<string, string>();
+    if (clientIds.size > 0) {
+      const { data: cls } = await supabase.from("clients").select("id, name").in("id", [...clientIds]);
+      for (const c of (cls ?? []) as { id: string; name: string }[]) names.set(c.id, c.name);
+    }
+    setRecentPayments(
+      raw.map((p) => {
+        const cid = p.client_id ?? (p.invoice_id ? invToClient.get(p.invoice_id) ?? null : null);
+        return {
+          id: p.id,
+          client_name: cid ? names.get(cid) ?? "Unknown client" : "Unallocated",
+          amount: Number(p.amount ?? 0),
+          payment_date: p.payment_date,
+        };
+      }),
+    );
+
+    type IncRaw = { id: string; incident_code: string; severity: string; category: string; occurred_at: string; status: string };
+    setRecentIncidents(
+      ((incRes.data ?? []) as IncRaw[]).map((i) => ({
+        id: i.id,
+        code: i.incident_code,
+        severity: i.severity,
+        category: i.category,
+        occurred_at: i.occurred_at,
+        status: i.status,
+      })),
+    );
+    if (dateRes.data) setAlerts((prev) => {
+      // Contract-end alerts are computed in the main load and have ids prefixed
+      // "contract-"; keep those and refresh only the compliance dates.
+      const contractOnly = prev.filter((a) => a.id.startsWith("contract-"));
+      return [...(dateRes.data as AlertRow[]), ...contractOnly].sort((a, b) =>
+        a.due_date.localeCompare(b.due_date),
+      );
+    });
+  }, [regionId]);
+
+  /**
+   * THIS is what makes the feed live. Without it the panel was a snapshot from
+   * page load that the component rotated on a timer to look busy — the "live"
+   * badge was decoration. Now a payment banked or an incident logged anywhere
+   * pushes into an open dashboard within a second.
+   *
+   * Requires the tables to be in the supabase_realtime publication (0171); the
+   * subscription would otherwise connect fine and receive nothing forever.
+   */
+  useEffect(() => {
+    const channel = supabase
+      .channel("dashboard-activity")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "invoice_payments" }, () => { refreshFeed(); })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "incidents" }, () => { refreshFeed(); })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "important_dates" }, () => { refreshFeed(); })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [refreshFeed]);
 
   const totalBankBalance = useMemo(() => banks.reduce((s, b) => s + b.balance, 0), [banks]);
   const maxBank = useMemo(() => Math.max(1, ...banks.map((b) => b.balance)), [banks]);

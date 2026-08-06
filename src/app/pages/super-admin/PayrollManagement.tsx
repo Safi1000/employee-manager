@@ -124,6 +124,15 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
   // Only loaded in relieversOnly mode (cheap, small dataset).
   const [relieverPerClient, setRelieverPerClient] = useState<Map<string, Map<string | "unattributed", number>>>(new Map());
   const [attPayroll, setAttPayroll] = useState<Map<string, { worked_shifts: number; earned: number; leave_days: number; absent_days: number; rate_effective: number }>>(new Map());
+  /**
+   * employee_id -> leave allowance that replaces contract/client/carry-forward,
+   * for the SELECTED PERIOD ONLY. Reloaded whenever the period changes, so it
+   * can never leak into another month's payroll.
+   */
+  const [leaveOverrides, setLeaveOverrides] = useState<Map<string, { allowed: number; reason: string | null }>>(new Map());
+  const [leaveDraft, setLeaveDraft] = useState<string>("");
+  const [leaveReason, setLeaveReason] = useState<string>("");
+  const [leaveSaving, setLeaveSaving] = useState(false);
   const [attendanceAgg, setAttendanceAgg] = useState<Map<string, { present: number; absent: number; leave: number }>>(
     new Map()
   );
@@ -152,7 +161,6 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
   const [sites, setSites] = useState<{ id: string; client_id: string; name: string }[]>([]);
   /** guard_id -> site_id of their open posting. The employee row does not carry it. */
   const [siteByGuard, setSiteByGuard] = useState<Map<string, string>>(new Map());
-  const [branchFilter, setBranchFilter] = useState("all");
   const [employeeAddlBranches, setEmployeeAddlBranches] = useState<Map<string, string[]>>(new Map());
   const [statusFilter, setStatusFilter] = useState<"all" | "Cleared" | "Pending">("all");
   const [disbursedFilter, setDisbursedFilter] = useState<"all" | "yes" | "no">("all");
@@ -201,7 +209,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     // Server-side aggregation RPCs — raw SELECT was hitting PostgREST's
     // ~1000-row response cap once a company crossed ~30 employees with full
     // month coverage, silently dropping attendance for most people.
-    const [attRes, payRes, advRes, attHistRes, apRes] = await Promise.all([
+    const [attRes, payRes, advRes, attHistRes, apRes, lvRes] = await Promise.all([
       supabase.rpc("attendance_period_counts", { p_start: start, p_end: end }),
       supabase.from("payslips").select("*").eq("period_month", period),
       supabase
@@ -215,7 +223,18 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       }),
       // Phase 9 §10: earnings from verified attendance × salary-history rate per date.
       supabase.rpc("attendance_payroll", { p_start: start, p_end: end }),
+      // One-month, one-employee leave allowance overrides for THIS period only.
+      supabase
+        .from("employee_leave_overrides")
+        .select("employee_id, allowed_leaves, reason")
+        .eq("period_month", period),
     ]);
+    setLeaveOverrides(
+      new Map(
+        ((lvRes.data ?? []) as { employee_id: string; allowed_leaves: number; reason: string | null }[])
+          .map((r) => [r.employee_id, { allowed: Number(r.allowed_leaves), reason: r.reason }]),
+      ),
+    );
     const apMap = new Map<string, { worked_shifts: number; earned: number; leave_days: number; absent_days: number; rate_effective: number }>();
     for (const r of ((apRes.data ?? []) as any[])) {
       apMap.set(r.employee_id, {
@@ -511,7 +530,12 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       const computedAdvance = advancesByEmployee.get(emp.id) ?? 0;
       const baseAllowed = allowedLeavesByEmployee.get(emp.id) ?? 0;
       const carryAllowed = carriedAllowance.get(emp.id);
-      const allowed = carryAllowed ?? baseAllowed;
+      // A manual override for THIS employee in THIS month beats everything —
+      // that is the whole point of it. Contract, client default and any
+      // carry-forward balance are all policy that applies to a group; this is
+      // the one place a single person's month can differ.
+      const overrideAllowed = leaveOverrides.get(emp.id)?.allowed;
+      const allowed = overrideAllowed ?? carryAllowed ?? baseAllowed;
       const defaults: RowState = {
         employee: emp,
         period_month: selectedPeriod,
@@ -591,7 +615,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
         ) + Math.round(merged.allowance);
       return merged;
     });
-  }, [employees, payslipsMap, attendanceAgg, attPayroll, advancesByEmployee, allowedLeavesByEmployee, eobiByEmployee, carriedAllowance, selectedPeriod, rowEdits]);
+  }, [employees, payslipsMap, attendanceAgg, attPayroll, advancesByEmployee, allowedLeavesByEmployee, eobiByEmployee, carriedAllowance, leaveOverrides, selectedPeriod, rowEdits]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -613,15 +637,6 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       if (clientFilter !== "all" && e.client_id !== clientFilter) return false;
       // Site comes from the guard's open posting, not the employee row.
       if (siteFilter !== "all" && siteByGuard.get(e.id) !== siteFilter) return false;
-      if (branchFilter !== "all") {
-        // Employees created with "Head Office (default)" have a null branch_id;
-        // treat them as belonging to the head-office branch so the HO filter shows them.
-        const hoId = branches.find((b) => b.is_head_office)?.id;
-        const effectivePrimary = e.branch_id ?? hoId ?? null;
-        const inPrimary = effectivePrimary === branchFilter;
-        const inAdditional = (employeeAddlBranches.get(e.id) ?? []).includes(branchFilter);
-        if (!inPrimary && !inAdditional) return false;
-      }
       if (statusFilter !== "all" && r.status !== statusFilter) return false;
       if (disbursedFilter !== "all" && (disbursedFilter === "yes" ? !r.disbursed : r.disbursed)) return false;
       // The Fired tab keys off lifecycle_state — the authoritative separation
@@ -648,7 +663,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       if (categoryFilter !== "all" && (e.category ?? "client") !== categoryFilter) return false;
       return true;
     });
-  }, [rows, search, shiftFilter, clientFilter, siteFilter, siteByGuard, branchFilter, statusFilter, disbursedFilter, empTab, categoryFilter, employeeAddlBranches, relieversOnly, branches]);
+  }, [rows, search, shiftFilter, clientFilter, siteFilter, siteByGuard, statusFilter, disbursedFilter, empTab, categoryFilter, employeeAddlBranches, relieversOnly, branches]);
 
   /**
    * Sites belonging to the selected client, pooled across every one of their
@@ -668,6 +683,15 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     () => rows.find((r) => r.employee.id === selectedId) ?? null,
     [rows, selectedId]
   );
+
+  // Load the stored override into the editor whenever the employee or the month
+  // changes — otherwise a figure typed for one guard would sit in the box while
+  // a different guard's row was on screen.
+  useEffect(() => {
+    const existing = selectedId ? leaveOverrides.get(selectedId) : undefined;
+    setLeaveDraft(existing ? String(existing.allowed) : "");
+    setLeaveReason(existing?.reason ?? "");
+  }, [selectedId, selectedPeriod, leaveOverrides]);
 
   const payrollTotals = useMemo(() => {
     let disbursed = 0;
@@ -722,6 +746,50 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     override_leaves: row.override_leaves,
     updated_at: new Date().toISOString(),
   });
+
+  /**
+   * Write (or clear) one employee's leave allowance for the selected month.
+   * Keyed on (employee, period_month), so it applies to this payslip and no
+   * other — next month falls straight back to the contract/client rule with
+   * nothing to undo.
+   */
+  const saveLeaveOverride = async (employeeId: string, raw: string, reason: string) => {
+    setLeaveSaving(true);
+    setError(null);
+    try {
+      const trimmed = raw.trim();
+      if (trimmed === "") {
+        // Empty means "no exception this month" — remove the row rather than
+        // storing a 0, which would mean something quite different.
+        const { error: delErr } = await supabase
+          .from("employee_leave_overrides")
+          .delete()
+          .eq("employee_id", employeeId)
+          .eq("period_month", selectedPeriod);
+        if (delErr) throw delErr;
+      } else {
+        const value = Number(trimmed);
+        if (!Number.isFinite(value) || value < 0) throw new Error("Allowed leaves must be 0 or more.");
+        const { data: userData } = await supabase.auth.getUser();
+        const { error: upErr } = await supabase.from("employee_leave_overrides").upsert(
+          {
+            employee_id: employeeId,
+            period_month: selectedPeriod,
+            allowed_leaves: value,
+            reason: reason.trim() || null,
+            created_by: userData.user?.id ?? null,
+          },
+          { onConflict: "employee_id,period_month" },
+        );
+        if (upErr) throw upErr;
+      }
+      await loadPeriodData(selectedPeriod);
+    } catch (e: any) {
+      setError(friendlyError(e));
+    } finally {
+      setLeaveSaving(false);
+    }
+  };
 
   const savePayslip = async (row: RowState): Promise<void> => {
     const { error: upErr } = await supabase
@@ -1265,7 +1333,6 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     (disbursedFilter !== "all" ? 1 : 0) +
     (siteFilter !== "all" ? 1 : 0) +
     (clientFilter !== "all" ? 1 : 0) +
-    (branchFilter !== "all" ? 1 : 0) +
     (categoryFilter !== "all" ? 1 : 0);
 
   // §28.1: unmarked attendance-days silently earn zero. Surface them loudly and
@@ -1500,16 +1567,6 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                       ))}
                     </ThemedSelect>
                   )}
-                  <ThemedSelect
-                    value={branchFilter}
-                    onChange={(e) => setBranchFilter(e.target.value)}
-                    className="px-3 py-2 border border-slate-200 rounded-md text-sm"
-                  >
-                    <option value="all">All Branches</option>
-                    {branches.map((b) => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
-                    ))}
-                  </ThemedSelect>
                   {!relieversOnly && (
                     <ThemedSelect
                       value={categoryFilter}
@@ -1813,7 +1870,68 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                   <div className="pt-3 border-t border-slate-200 space-y-2">
                     <div className="flex justify-between text-xs">
                       <span className="text-slate-500">Allowed Leaves</span>
-                      <span className="text-slate-700">{selectedRow.allowed_leaves}</span>
+                      <span className="text-slate-700">
+                        {selectedRow.allowed_leaves}
+                        {leaveOverrides.has(selectedRow.employee.id) && (
+                          <span className="ml-1 text-[10px] uppercase tracking-wide text-warning-700 dark:text-warning-500">
+                            overridden
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                    {/* One employee, one month. Deliberately not a contract or
+                        client setting — those apply to everyone on them, and to
+                        every month after. */}
+                    <div className="rounded border border-slate-200 bg-slate-50/60 px-2 py-2 space-y-1.5">
+                      <label className="block text-[11px] text-slate-500">
+                        Override allowed leaves · {formatPeriod(selectedPeriod)} only
+                      </label>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.5"
+                          value={leaveDraft}
+                          placeholder={String(
+                            leaveOverrides.get(selectedRow.employee.id)?.allowed ??
+                              selectedRow.allowed_leaves,
+                          )}
+                          onChange={(e) => setLeaveDraft(e.target.value)}
+                          className="w-20 px-2 py-1 border border-slate-200 rounded text-sm"
+                        />
+                        <input
+                          value={leaveReason}
+                          placeholder="Reason (optional)"
+                          onChange={(e) => setLeaveReason(e.target.value)}
+                          className="flex-1 min-w-0 px-2 py-1 border border-slate-200 rounded text-sm"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={leaveSaving}
+                          onClick={() => saveLeaveOverride(selectedRow.employee.id, leaveDraft, leaveReason)}
+                        >
+                          {leaveSaving && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
+                          Apply
+                        </Button>
+                        {leaveOverrides.has(selectedRow.employee.id) && (
+                          <button
+                            type="button"
+                            disabled={leaveSaving}
+                            onClick={() => { setLeaveDraft(""); setLeaveReason(""); saveLeaveOverride(selectedRow.employee.id, "", ""); }}
+                            className="text-[11px] text-danger-600 hover:underline"
+                          >
+                            Remove override
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-slate-500">
+                        {leaveOverrides.get(selectedRow.employee.id)?.reason
+                          ? `Reason: ${leaveOverrides.get(selectedRow.employee.id)?.reason}`
+                          : "Applies to this employee for this month only. Blank = follow the contract."}
+                      </p>
                     </div>
                     <div className="flex justify-between text-xs">
                       <span className="text-slate-500">Leaves Taken</span>

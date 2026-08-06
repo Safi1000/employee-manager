@@ -1,8 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 
-// Landing-page "Activity feed": a live panel where the newest row slides in at
-// the top on an interval and the oldest drops off. Fed with real events; if
-// there are more than `rows`, it cycles through them so it always feels live.
+// "Activity feed": newest events at the top, older ones below.
+//
+// `cycle` rotates through the items on a timer so the panel always looks busy.
+// That is a LANDING-PAGE device and it is off by default. On a real dashboard
+// it was a lie: with nothing happening, the same eight payments slid back in at
+// the top every 2.6 seconds, each one animating as though it had just arrived.
+// Anyone watching would read it as eight new payments a minute.
+//
+// With `cycle` off the list is simply what is there, and it changes when the
+// data changes — the dashboard subscribes to Postgres changes and pushes new
+// items in as they actually happen.
 
 export type FeedTone = "in" | "out" | "evt";
 
@@ -31,11 +39,14 @@ export default function ActivityFeed({
   rows = 6,
   interval = 2600,
   title = "Activity feed",
+  cycle = false,
 }: {
   items: FeedItem[];
   rows?: number;
   interval?: number;
   title?: string;
+  /** Marketing-only: rotate through items on a timer so the panel looks busy. */
+  cycle?: boolean;
 }) {
   const reduce =
     typeof window !== "undefined" &&
@@ -44,18 +55,19 @@ export default function ActivityFeed({
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
-    if (reduce || items.length <= rows) return;
+    if (!cycle || reduce || items.length <= rows) return;
     const id = setInterval(() => setTick((t) => t + 1), interval);
     return () => clearInterval(id);
-  }, [reduce, items.length, rows, interval]);
+  }, [cycle, reduce, items.length, rows, interval]);
 
   const visible = useMemo(() => {
     if (items.length === 0) return [];
+    if (!cycle) return items.slice(0, rows);
     const out: FeedItem[] = [];
     const n = Math.min(rows, items.length);
     for (let i = 0; i < n; i++) out.push(items[(tick + i) % items.length]);
     return out;
-  }, [items, tick, rows]);
+  }, [items, tick, rows, cycle]);
 
   return (
     <div className="bg-card border border-border rounded-xl overflow-hidden shadow-sm">
@@ -74,7 +86,10 @@ export default function ActivityFeed({
         <ul className="divide-y divide-border">
           {visible.map((it, i) => (
             <li
-              key={i === 0 ? `fresh-${tick}` : `row-${i}`}
+              // Keyed by the item itself when not cycling, so the flash-in
+              // animation fires for a genuinely new top row and NOT on every
+              // timer tick. Cycling mode keeps its old tick-based key.
+              key={cycle ? (i === 0 ? `fresh-${tick}` : `row-${i}`) : it.id}
               className={`flex items-center gap-3 px-5 py-3.5 ${i === 0 && !reduce ? "feed-row-fresh" : ""}`}
             >
               <span className={`w-2 h-2 rounded-full flex-shrink-0 ${DOT[it.tone]}`} />

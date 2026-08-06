@@ -684,7 +684,6 @@ export default function EmployeeManagement() {
 
   const [search, setSearch] = useState("");
   const [clientFilter, setClientFilter] = useState("all");
-  const [branchFilter, setBranchFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState<"all" | EmployeeCategory>("all");
   const [shiftFilter, setShiftFilter] = useState<"all" | "day" | "night" | "evening">("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -706,7 +705,6 @@ export default function EmployeeManagement() {
   const [sortDir, setSortDir] = useState<null | "asc" | "desc">(null);
   const activeFilterCount =
     (clientFilter !== "all" ? 1 : 0) +
-    (branchFilter !== "all" ? 1 : 0) +
     (categoryFilter !== "all" ? 1 : 0) +
     (shiftFilter !== "all" ? 1 : 0) +
     (statusFilter !== "all" ? 1 : 0) +
@@ -854,7 +852,6 @@ export default function EmployeeManagement() {
   }, [regionId]);
 
   // Branches first by Head Office then alpha — used in selects with placeholder.
-  const branchOptions = useMemo(() => branches.slice(), [branches]);
 
   const today = () => new Date().toISOString().slice(0, 10);
 
@@ -967,15 +964,6 @@ export default function EmployeeManagement() {
       )
         return false;
       if (clientFilter !== "all" && e.client_id !== clientFilter) return false;
-      if (branchFilter !== "all") {
-        // Null branch_id = "Head Office (default)"; treat it as the HO branch so
-        // those employees show under the Head Office filter.
-        const hoId = branches.find((b) => b.is_head_office)?.id;
-        const effectivePrimary = e.branch_id ?? hoId ?? null;
-        const inPrimary = effectivePrimary === branchFilter;
-        const inAdditional = (e.additional_branch_ids ?? []).includes(branchFilter);
-        if (!inPrimary && !inAdditional) return false;
-      }
       if (categoryFilter !== "all" && (e.category ?? "client") !== categoryFilter) return false;
       if (shiftFilter !== "all" && e.shift !== shiftFilter) return false;
       if (statusFilter !== "all" && e.status !== statusFilter) return false;
@@ -994,7 +982,7 @@ export default function EmployeeManagement() {
       if (empTab === "inactive" && e.status === "Active") return false;
       return true;
     });
-  }, [employees, search, clientFilter, branchFilter, categoryFilter, shiftFilter, statusFilter, completenessFilter, lifecycleFilter, expiredCardFilter, dupCnicFilter, duplicateCnicIds, missingKeyFilter, empTab, branches]);
+  }, [employees, search, clientFilter, categoryFilter, shiftFilter, statusFilter, completenessFilter, lifecycleFilter, expiredCardFilter, dupCnicFilter, duplicateCnicIds, missingKeyFilter, empTab, branches]);
 
   // Numeric sort on the client-prefixed display code's number (display_number).
   // NUMERIC — orders 001,002…010,011 correctly, never a lexicographic "10<2".
@@ -1994,18 +1982,6 @@ export default function EmployeeManagement() {
                 onChange={setClientFilter}
                 allValue="all"
               />
-              <ThemedSelect
-                value={branchFilter}
-                onChange={(e) => setBranchFilter(e.target.value)}
-                className="px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-              >
-                <option value="all">All Branches</option>
-                {branchOptions.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </ThemedSelect>
               <ThemedSelect
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value as "all" | EmployeeCategory)}

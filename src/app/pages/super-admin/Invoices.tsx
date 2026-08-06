@@ -137,7 +137,6 @@ export default function Invoices() {
 
   const [tab, setTab] = useState<"ledger" | "generate" | "reconciliation">("ledger");
   const [clientFilter, setClientFilter] = useState<string>("");
-  const [branchFilter, setBranchFilter] = useState<string>("all");
   const [monthFilter, setMonthFilter] = useState<string>("all");
 
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -231,11 +230,10 @@ export default function Invoices() {
     for (const c of clients) clientBranch.set(c.id, c.branch_id);
     return invoices.filter((i) => {
       if (clientFilter && i.client_id !== clientFilter) return false;
-      if (branchFilter !== "all" && clientBranch.get(i.client_id) !== branchFilter) return false;
       if (monthFilter !== "all" && billingMonth(i) !== monthFilter) return false;
       return true;
     });
-  }, [invoices, clientFilter, branchFilter, monthFilter, clients]);
+  }, [invoices, clientFilter, monthFilter, clients]);
 
   const summary = useMemo(() => {
     let invoiced = 0;
@@ -988,19 +986,6 @@ export default function Invoices() {
                 value={clientFilter}
                 onChange={setClientFilter}
               />
-            </div>
-            <div className="flex items-center gap-2">
-              <label className="text-sm text-slate-600">Branch:</label>
-              <ThemedSelect
-                value={branchFilter}
-                onChange={(e) => setBranchFilter(e.target.value)}
-                className="px-3 py-1.5 border border-slate-200 rounded-md text-sm"
-              >
-                <option value="all">All Branches</option>
-                {branches.map((b) => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
-                ))}
-              </ThemedSelect>
             </div>
             <div className="flex items-center gap-2">
               <label className="text-sm text-slate-600">Month:</label>

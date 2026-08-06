@@ -131,7 +131,6 @@ export default function Expenses() {
     return Number(c.amount) - used + excludeOwnAmount;
   };
   const [branches, setBranches] = useState<Branch[]>([]);
-  const [branchFilter, setBranchFilter] = useState("all");
   const [advBranchFilter, setAdvBranchFilter] = useState("all");
   const [cashBalance, setCashBalance] = useState(0);
   // Office-staff custodians + their held cash — for attributing cash expenses (0135).
@@ -389,17 +388,9 @@ export default function Expenses() {
       if (clientFilter === "office" && e.client_id !== null) return false;
       if (clientFilter !== "all" && clientFilter !== "office" && e.client_id !== clientFilter) return false;
       if (modeFilter !== "all" && e.payment_mode !== modeFilter) return false;
-      if (branchFilter !== "all") {
-        // Office expenses (no client) live under Head Office.
-        if (!e.client_id) {
-          if (branchFilter !== headOfficeBranchId) return false;
-        } else if (clientBranchMap.get(e.client_id) !== branchFilter) {
-          return false;
-        }
-      }
       return true;
     });
-  }, [expenses, search, monthFilter, categoryFilter, clientFilter, modeFilter, branchFilter, clientBranchMap, headOfficeBranchId]);
+  }, [expenses, search, monthFilter, categoryFilter, clientFilter, modeFilter]);
 
   // Last 18 months of options + "All" for the month select.
   const monthOptions = useMemo(() => {
@@ -1590,16 +1581,6 @@ export default function Expenses() {
                 allValue="all"
                 extraOption={{ value: "office", label: "Office (no client)" }}
               />
-              <ThemedSelect
-                value={branchFilter}
-                onChange={(e) => setBranchFilter(e.target.value)}
-                className="px-3 py-2 border border-slate-200 rounded-md text-sm"
-              >
-                <option value="all">All Branches</option>
-                {branches.map((b) => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
-                ))}
-              </ThemedSelect>
               <ThemedSelect
                 value={modeFilter}
                 onChange={(e) => setModeFilter(e.target.value as "all" | ExpensePaymentMode)}
