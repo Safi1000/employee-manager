@@ -1,26 +1,31 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, MapPin } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ChevronRight, MapPin } from "lucide-react";
 import Header from "../../components/Header";
 import ThemedSelect from "../../components/ThemedSelect";
 import ExportButton from "../../components/ExportButton";
 import { exportTable } from "../../lib/excel";
+import { formatDate } from "../../lib/date";
 import { useAuth } from "../../lib/auth";
-import { useRegion, withRegion } from "../../lib/region";
+import { useRegion } from "../../lib/region";
 import { supabase } from "../../lib/supabase";
 
-// §22 Regional scorecard — one card per region with coverage, incidents,
-// no-shows, receivables, profit and inter-region balance.
+// Regional financials. Three views of one month:
 //
-// Three financial tabs sit alongside it (0178): the same month's profit read on
-// a revenue basis and on a cash basis, and the general-expense breakdown.
+//   Operating Expenses   what it costs to RUN the business, region by region and
+//                        head office included, itemised down to the individual
+//                        expense. Cost of services is excluded — that is the
+//                        cost of a client's guards, not of the business.
+//   Regional Profit      the same month on a revenue basis and on a cash basis.
 //
-// The department KPI traffic-light roll-up used to sit under the cards. It was
-// removed; kpi_department_dashboard is no longer read anywhere in the app.
+// The §22 scorecard cards (headcount, incidents, no-shows, receivables, YTD
+// profit vs prior year) and the department KPI roll-up used to live here. Both
+// were removed; regional_scorecard and kpi_department_dashboard are no longer
+// read anywhere in the app.
 
 const money = (n: any) => Number(n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
 const pkr = (n: any) => `PKR ${money(n)}`;
 
-type TabKey = "scorecard" | "profit-revenue" | "profit-cash" | "general";
+type TabKey = "opex" | "profit-revenue" | "profit-cash";
 
 /** One region's month, both bases at once — see public.regional_pl. */
 type RegionalPl = {
@@ -36,12 +41,19 @@ type RegionalPl = {
   profit_cash: number;
 };
 
-type GeneralExpense = {
+/** One operating-expense line — see public.operating_expense_detail. */
+type OpexRow = {
   branch_id: string | null;
   region_name: string;
   category: string;
+  expense_id: string | null;
+  expense_date: string;
+  description: string | null;
+  client_name: string | null;
+  vendor_name: string | null;
+  payment_mode: string | null;
   amount: number;
-  is_payroll: boolean;
+  is_derived: boolean;
 };
 
 const monthKeyOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -63,13 +75,11 @@ function CountUp({ value, format }: { value: number; format?: (n: number) => str
     }
     let raf = 0;
     let start: number | null = null;
-    const from = 0;
     const dur = 900;
     const tick = (ts: number) => {
       if (start === null) start = ts;
       const p = Math.min((ts - start) / dur, 1);
-      const eased = 1 - Math.pow(1 - p, 3);
-      setN(from + (target - from) * eased);
+      setN(target * (1 - Math.pow(1 - p, 3)));
       if (p < 1) raf = requestAnimationFrame(tick);
       else setN(target);
     };
@@ -81,21 +91,17 @@ function CountUp({ value, format }: { value: number; format?: (n: number) => str
 
 export default function RegionalScorecard() {
   const { company } = useAuth();
-  // This page is a cross-region comparison, so it reads oddly at first that it
-  // honours the global region switch at all. It must: the switch is app chrome
-  // on every screen, and an RMD login is PINNED to its own region — without
-  // this, the one page that exists to show regional profit was showing every
-  // other region's to someone locked out of them.
-  // Consolidated (null) keeps the full comparison.
+  // Honours the global region switch: an RMD login is PINNED to its own region,
+  // and without this the one page showing regional profit was showing them every
+  // other region's. Consolidated (null) keeps the full comparison.
   const { regionId } = useRegion();
   const companyId = company?.id ?? "";
-  const [cards, setCards] = useState<any[]>([]);
 
-  const [tab, setTab] = useState<TabKey>("scorecard");
+  const [tab, setTab] = useState<TabKey>("opex");
   const [period, setPeriod] = useState<string>(monthKeyOf(new Date()));
   const [pl, setPl] = useState<RegionalPl[]>([]);
-  const [general, setGeneral] = useState<GeneralExpense[]>([]);
-  const [loadingFin, setLoadingFin] = useState(false);
+  const [opex, setOpex] = useState<OpexRow[]>([]);
+  const [loading, setLoading] = useState(false);
 
   const periodOptions = useMemo(() => {
     const opts: string[] = [];
@@ -108,46 +114,35 @@ export default function RegionalScorecard() {
     return opts;
   }, []);
 
-  const load = useCallback(async () => {
-    if (!companyId) return;
-    const sc = await withRegion(
-      supabase.from("regional_scorecard").select("*").eq("company_id", companyId),
-      regionId,
-    );
-    setCards(sc.data ?? []);
-  }, [companyId, regionId]);
-  useEffect(() => { load(); }, [load]);
-
-  // Both financial datasets come from the same month, so they load together —
-  // switching between the revenue and cash tabs must not re-query.
+  // Both datasets are the same month, so they load together — switching tabs
+  // must not re-query.
   useEffect(() => {
     if (!companyId) return;
     let cancelled = false;
     (async () => {
-      setLoadingFin(true);
-      const [plRes, geRes] = await Promise.all([
+      setLoading(true);
+      const [plRes, oxRes] = await Promise.all([
         supabase.rpc("regional_pl", { p_month: `${period}-01` }),
-        supabase.rpc("regional_general_expenses", { p_month: `${period}-01` }),
+        supabase.rpc("operating_expense_detail", { p_month: `${period}-01` }),
       ]);
       if (cancelled) return;
       setPl((plRes.data ?? []) as RegionalPl[]);
-      setGeneral((geRes.data ?? []) as GeneralExpense[]);
-      setLoadingFin(false);
+      setOpex((oxRes.data ?? []) as OpexRow[]);
+      setLoading(false);
     })();
     return () => { cancelled = true; };
   }, [companyId, period]);
 
-  // Both RPCs already return branch_id, and a month is at most a handful of
-  // regions, so the switch is applied here rather than pushed into SQL. Totals
-  // are derived from the FILTERED rows, so the total line always agrees with
-  // the rows above it instead of quietly reporting the whole company.
+  // Both RPCs return branch_id and a month is a handful of regions, so the
+  // switch is applied here rather than pushed into SQL. Totals derive from the
+  // FILTERED rows, so the total line always agrees with the rows above it.
   const plRows = useMemo(
     () => (regionId ? pl.filter((r) => r.branch_id === regionId) : pl),
     [pl, regionId],
   );
-  const generalRows = useMemo(
-    () => (regionId ? general.filter((g) => g.branch_id === regionId) : general),
-    [general, regionId],
+  const opexRows = useMemo(
+    () => (regionId ? opex.filter((r) => r.branch_id === regionId) : opex),
+    [opex, regionId],
   );
 
   const plTotals = useMemo(() => {
@@ -168,128 +163,89 @@ export default function RegionalScorecard() {
     return t;
   }, [plRows]);
 
-  // General expenses pivoted to category × region, so one row reads "Utilities
-  // & Rent, and what each region spent on it".
-  const generalPivot = useMemo(() => {
-    const regions = Array.from(new Set(generalRows.map((g) => g.region_name))).sort();
-    const byCategory = new Map<string, { category: string; isPayroll: boolean; per: Map<string, number>; total: number }>();
-    for (const g of generalRows) {
-      let row = byCategory.get(g.category);
-      if (!row) {
-        row = { category: g.category, isPayroll: g.is_payroll, per: new Map(), total: 0 };
-        byCategory.set(g.category, row);
+  // region → category → the individual expenses inside it, with subtotals at
+  // every level so each one can be read without adding anything up by hand.
+  const opexTree = useMemo(() => {
+    const byRegion = new Map<string, {
+      region: string;
+      total: number;
+      categories: Map<string, { category: string; total: number; items: OpexRow[] }>;
+    }>();
+    for (const r of opexRows) {
+      let reg = byRegion.get(r.region_name);
+      if (!reg) {
+        reg = { region: r.region_name, total: 0, categories: new Map() };
+        byRegion.set(r.region_name, reg);
       }
-      const amt = Number(g.amount);
-      row.per.set(g.region_name, (row.per.get(g.region_name) ?? 0) + amt);
-      row.total += amt;
-    }
-    const rows = Array.from(byCategory.values()).sort((a, b) => b.total - a.total);
-    const perRegionTotal = new Map<string, number>();
-    for (const r of rows) {
-      for (const [reg, amt] of r.per) perRegionTotal.set(reg, (perRegionTotal.get(reg) ?? 0) + amt);
-    }
-    const grand = rows.reduce((s, r) => s + r.total, 0);
-    return { regions, rows, perRegionTotal, grand };
-  }, [generalRows]);
-
-  // Auto-gliding, chevron-controllable marquee of region cards.
-  const viewRef = useRef<HTMLDivElement>(null);
-  const trackRef = useRef<HTMLDivElement>(null);
-  const pausedRef = useRef(false);
-  const geomRef = useRef({ set: 0, step: 340 });
-
-  useEffect(() => {
-    const view = viewRef.current;
-    const track = trackRef.current;
-    if (!view || !track || cards.length === 0) return;
-
-    const measure = () => {
-      geomRef.current.set = track.scrollWidth / 2;
-      const card = track.querySelector<HTMLElement>("[data-card]");
-      if (card) geomRef.current.step = card.getBoundingClientRect().width + 16;
-    };
-    measure();
-    window.addEventListener("resize", measure);
-
-    let raf = 0;
-    const reduce = prefersReduced();
-    const loop = () => {
-      const g = geomRef.current;
-      if (!pausedRef.current && !reduce && g.set > view.clientWidth) {
-        view.scrollLeft += 0.4;
-        if (view.scrollLeft >= g.set) view.scrollLeft -= g.set;
+      let cat = reg.categories.get(r.category);
+      if (!cat) {
+        cat = { category: r.category, total: 0, items: [] };
+        reg.categories.set(r.category, cat);
       }
-      raf = requestAnimationFrame(loop);
-    };
-    raf = requestAnimationFrame(loop);
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener("resize", measure);
-    };
-  }, [cards]);
-
-  const nudge = (dir: number) => {
-    const view = viewRef.current;
-    const g = geomRef.current;
-    if (!view) return;
-    pausedRef.current = true;
-    setTimeout(() => { pausedRef.current = false; }, 3200);
-    if (dir < 0 && view.scrollLeft < g.step) view.scrollLeft += g.set;
-    else if (dir > 0 && view.scrollLeft > g.set - g.step) view.scrollLeft -= g.set;
-    view.scrollBy({ left: dir * g.step, behavior: prefersReduced() ? "auto" : "smooth" });
-  };
-
-  const loopCards = cards.length ? [...cards, ...cards] : [];
+      const amt = Number(r.amount);
+      cat.items.push(r);
+      cat.total += amt;
+      reg.total += amt;
+    }
+    const regions = Array.from(byRegion.values())
+      .map((r) => ({
+        ...r,
+        categoryList: Array.from(r.categories.values()).sort((a, b) => b.total - a.total),
+      }))
+      .sort((a, b) => b.total - a.total);
+    return { regions, grand: regions.reduce((s, r) => s + r.total, 0) };
+  }, [opexRows]);
 
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-8">
       <Header
-        title="Regional Scorecard"
-        subtitle="Per-region operating & financial health (§22)"
+        title="Regional Financials"
+        subtitle="Operating expenses and profit, region by region"
         actions={
-          tab === "scorecard" ? undefined : (
-            <ExportButton
-              onExport={() => {
-                if (tab === "general") {
-                  exportTable({
-                    fileName: `Regional General Expenses ${monthLabel(period)}.xlsx`,
-                    sheetName: "General Expenses",
-                    title: `General Expenses by Region — ${monthLabel(period)}`,
-                    headers: ["Category", ...generalPivot.regions, "Total"],
-                    rows: generalPivot.rows.map((r) => [
-                      r.category,
-                      ...generalPivot.regions.map((reg) => Number(r.per.get(reg) ?? 0)),
-                      Number(r.total),
-                    ]),
-                  });
-                  return;
-                }
-                const cash = tab === "profit-cash";
+          <ExportButton
+            onExport={() => {
+              if (tab === "opex") {
                 exportTable({
-                  fileName: `Regional Profit (${cash ? "Cash" : "Revenue"}) ${monthLabel(period)}.xlsx`,
-                  sheetName: "Regional Profit",
-                  title: `Regional Profit — ${cash ? "cash basis" : "revenue basis"} — ${monthLabel(period)}`,
-                  headers: ["Region", cash ? "Cash Received" : "Revenue", cash ? "Payroll Paid" : "Payroll", cash ? "Expenses Paid" : "Expenses", cash ? "Net Cash" : "Profit"],
-                  rows: plRows.map((r) => [
+                  fileName: `Operating Expenses ${monthLabel(period)}.xlsx`,
+                  sheetName: "Operating Expenses",
+                  title: `Operating Expenses by Region — ${monthLabel(period)}`,
+                  headers: ["Region", "Category", "Date", "Description", "Client / Vendor", "Mode", "Amount"],
+                  rows: opexRows.map((r) => [
                     r.region_name,
-                    Number(cash ? r.revenue_cash : r.revenue_accrual),
-                    Number(cash ? r.payroll_cash : r.payroll_accrual),
-                    Number(cash ? r.expenses_cash : r.expenses_accrual),
-                    Number(cash ? r.profit_cash : r.profit_accrual),
+                    r.category,
+                    r.expense_date,
+                    r.description ?? "",
+                    r.client_name ?? r.vendor_name ?? "Office",
+                    r.payment_mode ?? (r.is_derived ? "Payroll" : ""),
+                    Number(r.amount),
                   ]),
                 });
-              }}
-            />
-          )
+                return;
+              }
+              const cash = tab === "profit-cash";
+              exportTable({
+                fileName: `Regional Profit (${cash ? "Cash" : "Revenue"}) ${monthLabel(period)}.xlsx`,
+                sheetName: "Regional Profit",
+                title: `Regional Profit — ${cash ? "cash basis" : "revenue basis"} — ${monthLabel(period)}`,
+                headers: ["Region", cash ? "Cash Received" : "Revenue", cash ? "Payroll Paid" : "Payroll", cash ? "Expenses Paid" : "Expenses", cash ? "Net Cash" : "Profit"],
+                rows: plRows.map((r) => [
+                  r.region_name,
+                  Number(cash ? r.revenue_cash : r.revenue_accrual),
+                  Number(cash ? r.payroll_cash : r.payroll_accrual),
+                  Number(cash ? r.expenses_cash : r.expenses_accrual),
+                  Number(cash ? r.profit_cash : r.profit_accrual),
+                ]),
+              });
+            }}
+          />
         }
       />
 
       <div className="flex flex-wrap items-center gap-2 mb-6 mt-1">
         {([
-          ["scorecard", "Scorecard"],
+          ["opex", "Operating Expenses"],
           ["profit-revenue", "Regional Profit · Revenue"],
           ["profit-cash", "Regional Profit · Cash"],
-          ["general", "General Expenses"],
         ] as const).map(([k, label]) => (
           <button
             key={k}
@@ -304,115 +260,196 @@ export default function RegionalScorecard() {
             {label}
           </button>
         ))}
-        {tab !== "scorecard" && (
-          <div className="flex items-center gap-2 ml-auto">
-            <label className="text-sm text-muted-foreground">Month:</label>
-            <ThemedSelect
-              value={period}
-              onChange={(e) => setPeriod(e.target.value)}
-              className="px-3 py-2 border border-border rounded-md text-sm bg-card"
-            >
-              {periodOptions.map((p) => (
-                <option key={p} value={p}>{monthLabel(p)}</option>
-              ))}
-            </ThemedSelect>
-          </div>
-        )}
+        <div className="flex items-center gap-2 ml-auto">
+          <label className="text-sm text-muted-foreground">Month:</label>
+          <ThemedSelect
+            value={period}
+            onChange={(e) => setPeriod(e.target.value)}
+            className="px-3 py-2 border border-border rounded-md text-sm bg-card"
+          >
+            {periodOptions.map((p) => (
+              <option key={p} value={p}>{monthLabel(p)}</option>
+            ))}
+          </ThemedSelect>
+        </div>
       </div>
 
+      {tab === "opex" && <OperatingExpensesTab tree={opexTree} period={period} loading={loading} />}
       {tab === "profit-revenue" && (
-        <ProfitTab
-          basis="revenue"
-          rows={plRows}
-          totals={plTotals}
-          period={period}
-          loading={loadingFin}
-        />
+        <ProfitTab basis="revenue" rows={plRows} totals={plTotals} period={period} loading={loading} />
       )}
-
       {tab === "profit-cash" && (
-        <ProfitTab
-          basis="cash"
-          rows={plRows}
-          totals={plTotals}
-          period={period}
-          loading={loadingFin}
-        />
+        <ProfitTab basis="cash" rows={plRows} totals={plTotals} period={period} loading={loading} />
       )}
+    </div>
+  );
+}
 
-      {tab === "general" && (
-        <GeneralExpensesTab pivot={generalPivot} period={period} loading={loadingFin} />
-      )}
+/**
+ * Operating expenses, region → category → the individual expenses inside it.
+ *
+ * Regions start expanded and categories collapsed: the question is almost
+ * always "what did this region spend on what", with the individual lines there
+ * to answer "on what exactly" once a category looks wrong.
+ */
+function OperatingExpensesTab({
+  tree, period, loading,
+}: {
+  tree: {
+    regions: {
+      region: string;
+      total: number;
+      categoryList: { category: string; total: number; items: OpexRow[] }[];
+    }[];
+    grand: number;
+  };
+  period: string;
+  loading: boolean;
+}) {
+  const [openCats, setOpenCats] = useState<Set<string>>(new Set());
+  const toggle = (key: string) =>
+    setOpenCats((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
 
-      {tab === "scorecard" && (
-      <>
-      <div className="flex items-center justify-between mb-4 mt-1">
-        <h3 className="text-sm font-semibold uppercase tracking-[0.1em] text-muted-foreground">Regions</h3>
-        {cards.length > 1 && (
-          <div className="flex gap-2">
-            <button type="button" onClick={() => nudge(-1)} aria-label="Previous"
-              className="w-9 h-9 rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground hover:border-brand-500/50 grid place-items-center transition-colors">
-              <ChevronLeft className="w-4 h-4" strokeWidth={2} />
-            </button>
-            <button type="button" onClick={() => nudge(1)} aria-label="Next"
-              className="w-9 h-9 rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground hover:border-brand-500/50 grid place-items-center transition-colors">
-              <ChevronRight className="w-4 h-4" strokeWidth={2} />
-            </button>
+  return (
+    <div className="space-y-6 mb-8">
+      <div className="bg-card border border-border rounded-xl">
+        <div className="p-6 border-b border-border">
+          <h3 className="text-lg text-foreground mb-1">Operating Expenses — {monthLabel(period)}</h3>
+          <p className="text-sm text-muted-foreground">
+            The cost of running the business: rent, utilities, office salaries, travel, stationery and
+            the rest, per region and at head office. Cost of Services is excluded — that is the cost of
+            a client's guards, and it belongs to the client, not the overhead.
+          </p>
+        </div>
+        <div className="p-4">
+          <div className="bg-card p-3 rounded-lg border border-border border-l-4 border-l-danger-500 inline-block min-w-[240px]">
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">
+              Total operating expenses
+            </p>
+            <p className="text-lg tabular-nums text-danger-700 dark:text-danger-500">
+              PKR <CountUp value={tree.grand} format={money} />
+            </p>
           </div>
-        )}
+        </div>
       </div>
 
-      {cards.length === 0 ? (
-        <div className="bg-card border border-border rounded-xl p-10 text-center text-muted-foreground mb-8">No active regions.</div>
-      ) : (
-        <div
-          ref={viewRef}
-          className="overflow-hidden mb-8"
-          style={{ WebkitMaskImage: "linear-gradient(90deg, transparent, #000 2%, #000 98%, transparent)", maskImage: "linear-gradient(90deg, transparent, #000 2%, #000 98%, transparent)" }}
-          onMouseEnter={() => { pausedRef.current = true; }}
-          onMouseLeave={() => { pausedRef.current = false; }}
-        >
-          <div ref={trackRef} className="flex w-max py-1">
-            {loopCards.map((c, i) => {
-              const profitUp = Number(c.profit_ytd ?? 0) >= Number(c.profit_prior_year ?? 0);
-              const accent = profitUp ? "border-l-success-500" : "border-l-danger-500";
+      {loading && (
+        <div className="bg-card border border-border rounded-xl p-10 text-center text-muted-foreground">
+          Loading…
+        </div>
+      )}
+
+      {!loading && tree.regions.length === 0 && (
+        <div className="bg-card border border-border rounded-xl p-10 text-center text-muted-foreground">
+          No operating expenses recorded for {monthLabel(period)}.
+        </div>
+      )}
+
+      {!loading && tree.regions.map((reg) => (
+        <div key={reg.region} className="bg-card border border-border rounded-xl overflow-hidden">
+          <div className="px-5 py-3.5 border-b border-border flex items-center justify-between gap-3 bg-slate-50">
+            <h4 className="flex items-center gap-2 text-foreground font-semibold" style={{ fontFamily: "var(--font-display)" }}>
+              <MapPin className="w-4 h-4 text-brand-600 dark:text-brand-500 shrink-0" strokeWidth={2} />
+              {reg.region}
+              <span className="text-xs font-normal text-muted-foreground">
+                {reg.categoryList.length} categor{reg.categoryList.length === 1 ? "y" : "ies"}
+              </span>
+            </h4>
+            <span className="tabular-nums text-danger-700 dark:text-danger-500 font-medium">
+              {pkr(reg.total)}
+            </span>
+          </div>
+
+          <div className="divide-y divide-border">
+            {reg.categoryList.map((cat) => {
+              const key = `${reg.region}|${cat.category}`;
+              const open = openCats.has(key);
+              const share = reg.total !== 0 ? (cat.total / reg.total) * 100 : 0;
               return (
-                <div
-                  key={i}
-                  data-card={i < cards.length ? "" : undefined}
-                  aria-hidden={i >= cards.length}
-                  className={`w-[320px] flex-shrink-0 mr-4 bg-card border border-border border-l-4 ${accent} rounded-xl p-5 space-y-3 transition-shadow hover:shadow-md`}
-                  style={
-                    i < cards.length && !prefersReduced()
-                      ? { animation: `feed-slide-in 0.5s var(--ease, ease-out) both`, animationDelay: `${i * 70}ms` }
-                      : undefined
-                  }
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <h3 className="flex items-center gap-1.5 font-semibold text-foreground truncate" style={{ fontFamily: "var(--font-display)" }}>
-                      <MapPin className="w-3.5 h-3.5 text-brand-600 dark:text-brand-500 shrink-0" strokeWidth={2} />
-                      {c.region_name}
-                    </h3>
-                    <span className="text-[10px] font-medium uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-secondary text-muted-foreground border border-border shrink-0">{String(c.region_kind)}</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-y-2.5 gap-x-4 text-sm">
-                    <Metric label="Active headcount" value={c.active_headcount} />
-                    <Metric label="Incidents YTD" value={c.incidents_ytd} tone={Number(c.incidents_ytd) > 0 ? "warn" : undefined} />
-                    <Metric label="No-shows 30d" value={c.no_shows_30d} tone={Number(c.no_shows_30d) > 0 ? "warn" : undefined} />
-                    <Metric label="Receivables" value={c.receivables_outstanding} money />
-                    <Metric label="Profit YTD" value={c.profit_ytd} money tone={Number(c.profit_ytd) < 0 ? "bad" : "good"} />
-                    <Metric label="vs prior yr" text={profitUp ? "▲" : "▼"} tone={profitUp ? "good" : "bad"} />
-                    <Metric label="Inter-region net" value={c.inter_region_balance} money />
-                  </div>
+                <div key={key}>
+                  <button
+                    type="button"
+                    onClick={() => toggle(key)}
+                    aria-expanded={open}
+                    className="w-full px-5 py-2.5 flex items-center gap-3 hover:bg-accent/50 transition-colors text-left"
+                  >
+                    <ChevronRight
+                      className={`w-4 h-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`}
+                      strokeWidth={1.75}
+                    />
+                    <span className="text-sm text-foreground flex-1 truncate">
+                      {cat.category}
+                      {/* Office salaries come from payslips, not expenses — say
+                          so, so nobody hunts for a matching expense row. */}
+                      {cat.items.some((i) => i.is_derived) && (
+                        <span className="ml-2 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-secondary text-muted-foreground border border-border">
+                          from payroll
+                        </span>
+                      )}
+                    </span>
+                    <span className="text-xs text-muted-foreground tabular-nums shrink-0 hidden sm:inline">
+                      {share.toFixed(1)}%
+                    </span>
+                    <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+                      {cat.items.length} item{cat.items.length === 1 ? "" : "s"}
+                    </span>
+                    <span className="text-sm tabular-nums text-foreground shrink-0 w-32 text-right">
+                      {pkr(cat.total)}
+                    </span>
+                  </button>
+
+                  {open && (
+                    <div className="bg-slate-50/60 overflow-x-auto">
+                      <table className="w-full text-sm min-w-[620px]">
+                        <thead>
+                          <tr className="text-[11px] text-muted-foreground uppercase tracking-[0.08em] border-y border-border">
+                            <th className="text-left px-5 py-2 pl-12">Date</th>
+                            <th className="text-left px-3 py-2">Description</th>
+                            <th className="text-left px-3 py-2">Client / Vendor</th>
+                            <th className="text-left px-3 py-2">Mode</th>
+                            <th className="text-right px-5 py-2">Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border">
+                          {cat.items.map((it, i) => (
+                            <tr key={it.expense_id ?? `derived-${i}`} className="hover:bg-accent/40 transition-colors">
+                              <td className="px-5 py-2 pl-12 text-muted-foreground tabular-nums whitespace-nowrap">
+                                {formatDate(it.expense_date)}
+                              </td>
+                              <td className="px-3 py-2 text-foreground">
+                                {it.description || <span className="text-muted-foreground">—</span>}
+                              </td>
+                              <td className="px-3 py-2 text-muted-foreground">
+                                {it.client_name ?? it.vendor_name ?? "Office"}
+                              </td>
+                              <td className="px-3 py-2 text-muted-foreground">
+                                {it.payment_mode ?? (it.is_derived ? "Payroll" : "—")}
+                              </td>
+                              <td className="px-5 py-2 text-right tabular-nums text-foreground">
+                                {pkr(it.amount)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr className="border-t border-border text-foreground font-medium">
+                            <td className="px-5 py-2 pl-12" colSpan={4}>{cat.category} total</td>
+                            <td className="px-5 py-2 text-right tabular-nums">{pkr(cat.total)}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
         </div>
-      )}
-
-      </>
-      )}
+      ))}
     </div>
   );
 }
@@ -421,9 +458,8 @@ export default function RegionalScorecard() {
  * Regional profit for one month, on whichever basis was asked for.
  *
  * Both bases come from the same query, so the only thing that changes between
- * the two tabs is which four columns are read and what they are called. That
- * is deliberate: the figures must be two readings of one month, not two
- * separately-derived reports that could drift apart.
+ * the two tabs is which four columns are read and what they are called — two
+ * readings of one month, not two separately-derived reports that could drift.
  */
 function ProfitTab({
   basis, rows, totals, period, loading,
@@ -497,7 +533,7 @@ function ProfitTab({
             {!loading && rows.map((r) => {
               const v = pick(r);
               // Undefined rather than 0% when nothing came in — a region with no
-              // revenue has no margin, and printing "0%" implies it broke even.
+              // revenue has no margin, and "0%" would imply it broke even.
               const margin = v.revenue > 0 ? (v.profit / v.revenue) * 100 : null;
               return (
                 <tr key={r.branch_id ?? "unassigned"} className="hover:bg-accent/50 transition-colors">
@@ -542,100 +578,6 @@ function ProfitTab({
   );
 }
 
-/**
- * General (overhead) expenses: the running cost of the business rather than the
- * cost of delivering a client's guards. Pivoted category × region so one row
- * reads "rent, and what each region spent on it".
- */
-function GeneralExpensesTab({
-  pivot, period, loading,
-}: {
-  pivot: {
-    regions: string[];
-    rows: { category: string; isPayroll: boolean; per: Map<string, number>; total: number }[];
-    perRegionTotal: Map<string, number>;
-    grand: number;
-  };
-  period: string;
-  loading: boolean;
-}) {
-  return (
-    <div className="bg-card border border-border rounded-xl mb-8">
-      <div className="p-6 border-b border-border">
-        <h3 className="text-lg text-foreground mb-1">General Expenses</h3>
-        <p className="text-sm text-muted-foreground">
-          {monthLabel(period)}. Overheads only — rent, utilities, office salaries, travel, stationery
-          and the rest. Anything booked as Cost of Services is excluded, because that is a client's
-          guards rather than the cost of running the business.
-        </p>
-      </div>
-
-      <div className="p-4 border-b border-border">
-        <Tile label="Total general expenses" value={pivot.grand} accent="danger" />
-      </div>
-
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm min-w-[640px]">
-          <thead className="bg-slate-50 text-[11px] text-muted-foreground uppercase tracking-[0.08em] border-b border-border">
-            <tr>
-              <th className="text-left px-4 py-2.5">Category</th>
-              {pivot.regions.map((r) => (
-                <th key={r} className="text-right px-4 py-2.5">{r}</th>
-              ))}
-              <th className="text-right px-4 py-2.5">Total</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {loading && (
-              <tr><td colSpan={pivot.regions.length + 2} className="px-4 py-8 text-center text-muted-foreground">Loading…</td></tr>
-            )}
-            {!loading && pivot.rows.length === 0 && (
-              <tr>
-                <td colSpan={pivot.regions.length + 2} className="px-4 py-8 text-center text-muted-foreground">
-                  No general expenses recorded for {monthLabel(period)}.
-                </td>
-              </tr>
-            )}
-            {!loading && pivot.rows.map((r) => (
-              <tr key={r.category} className="hover:bg-accent/50 transition-colors">
-                <td className="px-4 py-3 text-foreground">
-                  {r.category}
-                  {/* Office salaries live in payslips, not expenses — say so, so
-                      nobody hunts for the matching expense row. */}
-                  {r.isPayroll && (
-                    <span className="ml-2 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-secondary text-muted-foreground border border-border">
-                      from payroll
-                    </span>
-                  )}
-                </td>
-                {pivot.regions.map((reg) => (
-                  <td key={reg} className="px-4 py-3 text-right tabular-nums text-muted-foreground">
-                    {r.per.has(reg) ? pkr(r.per.get(reg)) : "—"}
-                  </td>
-                ))}
-                <td className="px-4 py-3 text-right tabular-nums text-foreground font-medium">{pkr(r.total)}</td>
-              </tr>
-            ))}
-          </tbody>
-          {!loading && pivot.rows.length > 0 && (
-            <tfoot>
-              <tr className="border-t border-border bg-slate-50 text-foreground font-medium">
-                <td className="px-4 py-3">Total</td>
-                {pivot.regions.map((reg) => (
-                  <td key={reg} className="px-4 py-3 text-right tabular-nums">
-                    {pkr(pivot.perRegionTotal.get(reg) ?? 0)}
-                  </td>
-                ))}
-                <td className="px-4 py-3 text-right tabular-nums">{pkr(pivot.grand)}</td>
-              </tr>
-            </tfoot>
-          )}
-        </table>
-      </div>
-    </div>
-  );
-}
-
 function Tile({
   label, value, accent,
 }: {
@@ -655,40 +597,6 @@ function Tile({
       <p className={`text-lg tabular-nums ${text}`}>
         PKR <CountUp value={Number(value)} format={money} />
       </p>
-    </div>
-  );
-}
-
-function Metric({
-  label,
-  value,
-  text,
-  tone,
-  money: isMoney,
-}: {
-  label: string;
-  value?: number;
-  text?: string;
-  tone?: "good" | "bad" | "warn";
-  money?: boolean;
-}) {
-  const color =
-    tone === "good" ? "text-success-700 dark:text-success-500"
-    : tone === "bad" ? "text-danger-700 dark:text-danger-500"
-    : tone === "warn" ? "text-warning-700 dark:text-warning-500"
-    : "text-foreground";
-  return (
-    <div>
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className={`tabular-nums font-medium ${color}`}>
-        {text !== undefined ? (
-          text
-        ) : value === null || value === undefined ? (
-          "—"
-        ) : (
-          <CountUp value={Number(value)} format={isMoney ? money : undefined} />
-        )}
-      </div>
     </div>
   );
 }

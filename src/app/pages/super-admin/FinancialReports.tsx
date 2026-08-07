@@ -28,6 +28,28 @@ import {
   type Branch,
 } from "../../lib/supabase";
 
+/**
+ * One line of the two-tier partner allocation — see public.partnership_allocation.
+ *
+ * row_kind tells you what the line is:
+ *   REGION            a region's profit, what its regional partners took, and
+ *                     the residual that fell through to the equity pool.
+ *   REGIONAL_PARTNER  a regional partner's share of THEIR region.
+ *   EQUITY_PARTNER    an equity partner's share of the pooled residual.
+ *   UNALLOCATED       whatever the equity shares did not add up to.
+ */
+type AllocRow = {
+  row_kind: "REGION" | "REGIONAL_PARTNER" | "EQUITY_PARTNER" | "UNALLOCATED";
+  branch_id: string | null;
+  region_name: string | null;
+  partner_id: string | null;
+  partner_name: string | null;
+  share_pct: number | null;
+  base_amount: number;
+  amount: number;
+  residual: number | null;
+};
+
 type ClientStatementRow = Client & {
   total_invoiced: number;
   payroll_expense: number;
@@ -117,6 +139,17 @@ export default function FinancialReports() {
   const [newPartnerShare, setNewPartnerShare] = useState("");
   const [newPartnerOpening, setNewPartnerOpening] = useState("");
   const [partnerSubmitting, setPartnerSubmitting] = useState(false);
+  // A partner is one of two kinds, and which one changes what their share bites
+  // on — see public.partnership_allocation.
+  const [newPartnerScope, setNewPartnerScope] = useState<"COMPANY" | "BRANCH">("COMPANY");
+  const [newPartnerBranch, setNewPartnerBranch] = useState("");
+
+  // Two-tier allocation. `alloc` is the selected month; `allocOpening` is every
+  // month before it, which the same function answers in ONE call because profit
+  // over a range is the sum of its months and the shares are constant.
+  const [allocBasis, setAllocBasis] = useState<"revenue" | "cash">("revenue");
+  const [alloc, setAlloc] = useState<AllocRow[]>([]);
+  const [allocOpening, setAllocOpening] = useState<AllocRow[]>([]);
 
   const [editPartnerId, setEditPartnerId] = useState<string | null>(null);
   const [editPartnerShare, setEditPartnerShare] = useState("");
@@ -503,6 +536,50 @@ export default function FinancialReports() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
+  // The allocation for the month, and the cumulative one for everything before
+  // it. `1900-01-01` is simply "before any record exists" — the function sums a
+  // range, so one call covers the whole of history.
+  useEffect(() => {
+    if (activeTab !== "partnership") return;
+    let cancelled = false;
+    (async () => {
+      const start = firstOfMonth(partnershipPeriod);
+      const end = lastOfMonth(partnershipPeriod);
+      const prevEnd = (() => {
+        const d = new Date(start);
+        d.setDate(d.getDate() - 1);
+        return d.toISOString().slice(0, 10);
+      })();
+      const [cur, prior] = await Promise.all([
+        supabase.rpc("partnership_allocation", { p_start: start, p_end: end, p_basis: allocBasis }),
+        supabase.rpc("partnership_allocation", { p_start: "1900-01-01", p_end: prevEnd, p_basis: allocBasis }),
+      ]);
+      if (cancelled) return;
+      setAlloc((cur.data ?? []) as AllocRow[]);
+      setAllocOpening((prior.data ?? []) as AllocRow[]);
+    })();
+    return () => { cancelled = true; };
+  }, [activeTab, partnershipPeriod, allocBasis]);
+
+  // partner_id → allocated amount, for whichever allocation was passed in.
+  const allocByPartner = (rows: AllocRow[]) => {
+    const m = new Map<string, number>();
+    for (const r of rows) {
+      if (!r.partner_id) continue;
+      m.set(r.partner_id, (m.get(r.partner_id) ?? 0) + Number(r.amount));
+    }
+    return m;
+  };
+
+  const allocRegions = useMemo(() => alloc.filter((r) => r.row_kind === "REGION"), [alloc]);
+  const allocRegional = useMemo(() => alloc.filter((r) => r.row_kind === "REGIONAL_PARTNER"), [alloc]);
+  const allocEquity = useMemo(() => alloc.filter((r) => r.row_kind === "EQUITY_PARTNER"), [alloc]);
+  const allocUnallocated = useMemo(() => alloc.find((r) => r.row_kind === "UNALLOCATED") ?? null, [alloc]);
+  const residualPool = useMemo(
+    () => allocRegions.reduce((s, r) => s + Number(r.residual ?? 0), 0),
+    [allocRegions],
+  );
+
   const bankToPartnerId = useMemo(() => {
     const m = new Map<string, string | null>();
     for (const b of partnerBanks) m.set(b.id, b.owner_partner_id);
@@ -574,13 +651,19 @@ export default function FinancialReports() {
       d.setDate(d.getDate() - 1);
       return d.toISOString().slice(0, 10);
     })();
+    // Both the month's profit and the accumulated one come from the two-tier
+    // allocation now, NOT from `share × whole-company profit`. The old formula
+    // double-counted: a regional partner was paid on revenue earned in regions
+    // they have no stake in, and an equity partner was paid on profit already
+    // promised to a regional partner.
+    const curr = allocByPartner(alloc);
+    const prior = allocByPartner(allocOpening);
     return partners.map((p) => {
-      const share = Number(p.profit_share_percent) / 100;
       const openingForMonth =
         Number(p.opening_balance) +
-        share * cumulativePLThrough(prevDay) +
+        (prior.get(p.id) ?? 0) +
         cumulativeTxImpact(p.id, prevDay);
-      const profitForMonth = share * monthlyPL(partnershipPeriod);
+      const profitForMonth = curr.get(p.id) ?? 0;
       const adjustmentsForMonth = txImpactInRange(p.id, start, end);
       const remaining = openingForMonth + profitForMonth + adjustmentsForMonth;
       return {
@@ -591,12 +674,20 @@ export default function FinancialReports() {
         remaining,
       };
     });
-  }, [partners, partnershipPeriod, allInvoicesForPl, allPayslipsForPl, allExpensesForPl, allPartnerTxns, bankToPartnerId]);
+  }, [partners, partnershipPeriod, alloc, allocOpening, allPartnerTxns, bankToPartnerId]);
 
-  const totalShare = useMemo(
-    () => partners.reduce((s, p) => s + Number(p.profit_share_percent), 0),
-    [partners]
+  // Shares are only comparable WITHIN a tier: equity shares divide the residual
+  // pool, a region's shares divide that region's profit. Summing all partners
+  // together — which is what this used to do — capped a company at 100% across
+  // two independent pools and blocked legitimate additions.
+  const equityShareTotal = useMemo(
+    () => partners.filter((p) => p.scope !== "BRANCH").reduce((s, p) => s + Number(p.profit_share_percent), 0),
+    [partners],
   );
+  const branchShareTotal = (branchId: string) =>
+    partners
+      .filter((p) => p.scope === "BRANCH" && p.branch_id === branchId)
+      .reduce((s, p) => s + Number(p.profit_share_percent), 0);
 
   const handleAddPartner = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -606,9 +697,22 @@ export default function FinancialReports() {
       setPartnerError("Profit share must be between 0 and 100.");
       return;
     }
-    if (totalShare + share > 100) {
-      setPartnerError(`Total profit share would exceed 100% (currently ${totalShare}%).`);
+    if (newPartnerScope === "BRANCH" && !newPartnerBranch) {
+      setPartnerError("Pick the region this partner has a stake in.");
       return;
+    }
+    // Checked within the tier the partner belongs to, not across both.
+    if (newPartnerScope === "COMPANY") {
+      if (equityShareTotal + share > 100) {
+        setPartnerError(`Equity shares would exceed 100% (currently ${equityShareTotal}%).`);
+        return;
+      }
+    } else {
+      const used = branchShareTotal(newPartnerBranch);
+      if (used + share > 100) {
+        setPartnerError(`This region's shares would exceed 100% (currently ${used}%).`);
+        return;
+      }
     }
     const opening = Number(newPartnerOpening || 0);
     setPartnerSubmitting(true);
@@ -616,6 +720,8 @@ export default function FinancialReports() {
     const { error: insErr } = await supabase.from("partners").insert({
       name: newPartnerName.trim(),
       profit_share_percent: share,
+      scope: newPartnerScope,
+      branch_id: newPartnerScope === "BRANCH" ? newPartnerBranch : null,
       opening_balance: opening,
       opening_balance_locked: opening !== 0,
     });
@@ -652,9 +758,15 @@ export default function FinancialReports() {
       setPartnerError("Profit share must be between 0 and 100.");
       return;
     }
-    const otherShare = totalShare - Number(p.profit_share_percent);
+    // Same tier-local rule as adding: an equity share competes only with other
+    // equity shares, a regional one only with its own region's.
+    const otherShare =
+      (p.scope === "BRANCH" ? branchShareTotal(p.branch_id ?? "") : equityShareTotal) -
+      Number(p.profit_share_percent);
     if (otherShare + share > 100) {
-      setPartnerError(`Total profit share would exceed 100% (other partners already use ${otherShare}%).`);
+      setPartnerError(
+        `${p.scope === "BRANCH" ? "This region's" : "Equity"} shares would exceed 100% (others already use ${otherShare}%).`,
+      );
       return;
     }
     const update: Partial<Partner> = { profit_share_percent: share };
@@ -1096,9 +1208,9 @@ export default function FinancialReports() {
                 <div>
                   <h3 className="text-lg text-slate-900 mb-1">Partnership Report</h3>
                   <p className="text-sm text-slate-500">
-                    For {formatPeriod(partnershipPeriod)} · Total share allocated:{" "}
-                    <span className={totalShare > 100 ? "text-danger-600" : "text-slate-900"}>
-                      {totalShare}%
+                    For {formatPeriod(partnershipPeriod)} · Equity shares allocated:{" "}
+                    <span className={equityShareTotal > 100 ? "text-danger-600" : "text-slate-900"}>
+                      {equityShareTotal}%
                     </span>
                   </p>
                 </div>
@@ -1120,6 +1232,135 @@ export default function FinancialReports() {
                 <div className="text-sm text-danger-600 bg-danger-50 border border-danger-200 px-4 py-2 rounded mb-4">{partnerError}</div>
               )}
 
+              {/* ---- The two-tier split ---- */}
+              <div className="mb-6 border border-slate-200 rounded-lg overflow-hidden">
+                <div className="px-4 py-3 border-b border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm text-slate-900">Profit allocation</h4>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Regional partners take their share of their own region. What is left in every
+                      region — head office included — pools together and is divided between the
+                      equity partners.
+                    </p>
+                  </div>
+                  <div className="flex gap-1 bg-slate-100 rounded-md p-1">
+                    {(["revenue", "cash"] as const).map((b) => (
+                      <button
+                        key={b}
+                        type="button"
+                        onClick={() => setAllocBasis(b)}
+                        className={`px-3 py-1.5 text-xs rounded capitalize transition-colors ${
+                          allocBasis === b ? "bg-white text-brand-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
+                        }`}
+                      >
+                        {b === "revenue" ? "Revenue basis" : "Cash basis"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Regional tier */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-xs text-slate-500 uppercase">
+                        <th className="text-left px-4 py-2.5">Region</th>
+                        <th className="text-right px-4 py-2.5">Region profit</th>
+                        <th className="text-left px-4 py-2.5">Regional partners</th>
+                        <th className="text-right px-4 py-2.5">Taken</th>
+                        <th className="text-right px-4 py-2.5">Falls to pool</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {allocRegions.length === 0 && (
+                        <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">No regions.</td></tr>
+                      )}
+                      {allocRegions.map((r) => {
+                        const mine = allocRegional.filter((p) => p.branch_id === r.branch_id);
+                        return (
+                          <tr key={r.branch_id ?? "unassigned"} className="hover:bg-slate-50">
+                            <td className="px-4 py-3 text-slate-900">{r.region_name}</td>
+                            <td className="px-4 py-3 text-right tabular-nums text-slate-700">
+                              PKR {Math.round(Number(r.base_amount)).toLocaleString()}
+                            </td>
+                            <td className="px-4 py-3 text-xs text-slate-600">
+                              {mine.length === 0 ? (
+                                <span className="text-slate-400">None — whole profit pools</span>
+                              ) : (
+                                mine.map((p) => (
+                                  <div key={p.partner_id}>
+                                    {p.partner_name} · {Number(p.share_pct)}% ={" "}
+                                    <span className="tabular-nums">
+                                      PKR {Math.round(Number(p.amount)).toLocaleString()}
+                                    </span>
+                                  </div>
+                                ))
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-right tabular-nums text-slate-700">
+                              PKR {Math.round(Number(r.amount)).toLocaleString()}
+                            </td>
+                            <td className="px-4 py-3 text-right tabular-nums text-slate-900">
+                              PKR {Math.round(Number(r.residual ?? 0)).toLocaleString()}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t border-slate-200 bg-slate-50 text-slate-900">
+                        <td className="px-4 py-3" colSpan={4}>Residual pool for equity partners</td>
+                        <td className="px-4 py-3 text-right tabular-nums">
+                          PKR {Math.round(residualPool).toLocaleString()}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                {/* Equity tier */}
+                <div className="overflow-x-auto border-t border-slate-200">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-xs text-slate-500 uppercase">
+                        <th className="text-left px-4 py-2.5">Equity partner</th>
+                        <th className="text-right px-4 py-2.5">Share</th>
+                        <th className="text-right px-4 py-2.5">From pool</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {allocEquity.length === 0 && (
+                        <tr><td colSpan={3} className="px-4 py-6 text-center text-slate-500">No equity partners.</td></tr>
+                      )}
+                      {allocEquity.map((p) => (
+                        <tr key={p.partner_id} className="hover:bg-slate-50">
+                          <td className="px-4 py-3 text-slate-900">{p.partner_name}</td>
+                          <td className="px-4 py-3 text-right tabular-nums text-slate-600">{Number(p.share_pct)}%</td>
+                          <td className="px-4 py-3 text-right tabular-nums text-slate-900">
+                            PKR {Math.round(Number(p.amount)).toLocaleString()}
+                          </td>
+                        </tr>
+                      ))}
+                      {/* Surfaced rather than spread: shares totalling 90% show
+                          10% retained instead of quietly inflating everyone. */}
+                      {allocUnallocated && Math.round(Number(allocUnallocated.amount)) !== 0 && (
+                        <tr className="bg-warning-50/50">
+                          <td className="px-4 py-3 text-slate-700">
+                            Unallocated — retained by the company
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums text-slate-600">
+                            {Number(allocUnallocated.share_pct)}%
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums text-slate-900">
+                            PKR {Math.round(Number(allocUnallocated.amount)).toLocaleString()}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
               <form onSubmit={handleAddPartner} className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-6 grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
                 <div className="md:col-span-2">
                   <label className="block text-xs text-slate-700 mb-1">Partner Name</label>
@@ -1132,6 +1373,37 @@ export default function FinancialReports() {
                   />
                 </div>
                 <div>
+                  <label className="block text-xs text-slate-700 mb-1">Kind</label>
+                  <ThemedSelect
+                    value={newPartnerScope}
+                    onChange={(e) => setNewPartnerScope(e.target.value as "COMPANY" | "BRANCH")}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  >
+                    <option value="COMPANY">Equity partner</option>
+                    <option value="BRANCH">Regional partner</option>
+                  </ThemedSelect>
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    {newPartnerScope === "COMPANY"
+                      ? "Shares the pooled residual."
+                      : "Shares one region's profit."}
+                  </p>
+                </div>
+                {newPartnerScope === "BRANCH" && (
+                  <div>
+                    <label className="block text-xs text-slate-700 mb-1">Region</label>
+                    <ThemedSelect
+                      value={newPartnerBranch}
+                      onChange={(e) => setNewPartnerBranch(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                    >
+                      <option value="">Select region</option>
+                      {branches.map((b) => (
+                        <option key={b.id} value={b.id}>{b.name}</option>
+                      ))}
+                    </ThemedSelect>
+                  </div>
+                )}
+                <div>
                   <label className="block text-xs text-slate-700 mb-1">Profit Share %</label>
                   <input
                     type="number"
@@ -1143,6 +1415,13 @@ export default function FinancialReports() {
                     className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
                     placeholder="0"
                   />
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    {newPartnerScope === "COMPANY"
+                      ? `Of the residual pool. ${equityShareTotal}% used.`
+                      : newPartnerBranch
+                        ? `Of that region. ${branchShareTotal(newPartnerBranch)}% used.`
+                        : "Of that region's profit."}
+                  </p>
                 </div>
                 <div>
                   <label className="block text-xs text-slate-700 mb-1">Opening Balance (PKR)</label>
@@ -1194,6 +1473,14 @@ export default function FinancialReports() {
                               {p.opening_balance_locked && (
                                 <Lock className="w-3 h-3 text-slate-400 inline-block ml-2" />
                               )}
+                              {/* Which tier the share belongs to — without this
+                                  the Profit Share column reads as one pool when
+                                  it is really two. */}
+                              <div className="text-[11px] text-slate-500 mt-0.5">
+                                {p.scope === "BRANCH"
+                                  ? `Regional · ${branches.find((b) => b.id === p.branch_id)?.name ?? "no region"}`
+                                  : "Equity"}
+                              </div>
                             </td>
                             <td className="px-4 py-3 text-sm text-right">
                               {editing ? (
@@ -1267,8 +1554,8 @@ export default function FinancialReports() {
 
               <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
                 <div className="bg-slate-50 border border-slate-200 p-3 rounded">
-                  <p className="text-slate-500 text-xs mb-1">Total profit share allocated</p>
-                  <p className={`text-lg ${totalShare > 100 ? "text-danger-600" : "text-slate-900"}`}>{totalShare}%</p>
+                  <p className="text-slate-500 text-xs mb-1">Equity share allocated</p>
+                  <p className={`text-lg ${equityShareTotal > 100 ? "text-danger-600" : "text-slate-900"}`}>{equityShareTotal}%</p>
                 </div>
                 <div className="bg-slate-50 border border-slate-200 p-3 rounded">
                   <p className="text-slate-500 text-xs mb-1">Month P&amp;L</p>

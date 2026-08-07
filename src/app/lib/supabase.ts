@@ -1751,6 +1751,17 @@ export type Partner = {
   opening_balance: number;
   opening_balance_locked: boolean;
   start_month: string | null;
+  /**
+   * Which pool the share bites on. COMPANY = equity partner, sharing what is
+   * left over once every region has paid its own partners. BRANCH = regional
+   * partner, sharing only their region's profit (branch_id names it).
+   *
+   * The two tiers are independent: shares are capped at 100% WITHIN a tier, so
+   * a region's partners and the equity partners are never summed together.
+   */
+  scope: "COMPANY" | "BRANCH";
+  branch_id: string | null;
+  is_active: boolean;
   created_at?: string;
   updated_at?: string;
 };
