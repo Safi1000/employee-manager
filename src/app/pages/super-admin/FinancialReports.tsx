@@ -751,15 +751,15 @@ export default function FinancialReports() {
         <div className="bg-white rounded-lg border border-slate-200">
           <div className="p-4 md:p-6 border-b border-slate-200 overflow-x-auto">
             <div className="flex gap-2 min-w-max">
-              {/* Partnership Report is hidden along with the rest of the
-                  Profit-Share module (Partner Accounts, Participation Rules,
-                  Treasury). It was the last visible surface of a feature set
-                  that is otherwise out of the nav. The tab body and its
-                  computations are left in place, unreachable, so re-adding one
-                  line here brings it back. */}
+              {/* Partnership Report is visible again. Note that the rest of the
+                  Profit-Share module it belongs to (Partner Accounts,
+                  Participation Rules, Treasury) is still out of the nav, so this
+                  tab is currently the only way to reach any of it — partners
+                  themselves are still added from the tab body below. */}
               {([
                 { key: "pl", label: "Profit & Loss" },
                 { key: "clients", label: "Client Statements" },
+                { key: "partnership", label: "Partnership Report" },
               ] as const).map((tab) => (
                 <button
                   key={tab.key}
