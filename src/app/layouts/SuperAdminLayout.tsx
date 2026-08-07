@@ -217,14 +217,19 @@ export default function SuperAdminLayout() {
     EXPENSES,
     CASHFLOW,
     REPORTS,
+    // Unhidden and rehomed. It used to sit in the hidden Profit-Share group,
+    // which is why it disappeared with it; it is a financial report about
+    // regions, so Finance is where it belongs rather than beside partner
+    // profit-share screens that remain hidden.
+    REGIONAL_SCORECARD,
     PERIOD_CLOSE,
   ]);
   if (finance) links.push(finance);
 
   // PROFIT-SHARE — hidden in its entirety. Treasury & Reserves lives here now,
-  // so it is hidden with the group; Regional P&L is gone outright, since it was
-  // the same Treasury screen reached through a tab. Every route still resolves
-  // if opened directly.
+  // so it is hidden with the group. Regional Scorecard used to be listed here
+  // and has been moved to Finance, where it is visible. Every route still
+  // resolves if opened directly.
   const PROFIT_SHARE_HIDDEN = true;
   const profitShare = PROFIT_SHARE_HIDDEN
     ? null
@@ -232,7 +237,6 @@ export default function SuperAdminLayout() {
         TREASURY,
         PARTICIPATION_RULES,
         RMD_STATEMENTS,
-        REGIONAL_SCORECARD,
         PROJECT_FIN,
       ]);
   if (profitShare) links.push(profitShare);
