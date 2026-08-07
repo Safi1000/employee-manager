@@ -97,7 +97,11 @@ export const router = createBrowserRouter([
     children: [
       { index: true, Component: Dashboard },
       // Users & Permissions + Governance merged → Access & Governance (tabs).
-      { path: "access-governance", element: guard(["users.manage", "payroll.approve", "performance.approve", "accounting.edit"], <AccessGovernance />) },
+      // Access & Governance is super-admin only. It hands out permissions and
+      // approval authority, so gating it on the very permissions it grants let
+      // anyone with accounting.edit or payroll.approve widen their own access.
+      // Role, not permission — same guard the Audit Log uses.
+      { path: "access-governance", element: <RequireAuth roles={["super_super_admin", "super_admin"]}><AccessGovernance /></RequireAuth> },
       { path: "users", element: <Navigate to="/super-admin/access-governance?tab=users" replace /> },
       { path: "clients", element: guard(["clients.view", "clients.edit"], <Clients />) },
       { path: "contracts", element: guard(["contracts.view", "contracts.edit"], <Contracts />) },

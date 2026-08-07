@@ -106,6 +106,9 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved }: {
   const [siteShifts, setSiteShifts] = useState<string[]>([]);
   const [cellShifts, setCellShifts] = useState<Map<string, string[]>>(new Map());
   const [pendingStatus, setPendingStatus] = useState<Status>("present");
+  // Leave in all its forms — a non-worked day, so no shift applies to it. The
+  // "Leave" button writes rotation_leave; rest_day is the same kind of day.
+  const statusIsLeave = pendingStatus === "rotation_leave" || pendingStatus === "rest_day";
   const [defaultShift, setDefaultShift] = useState<string>("day");
   // Per-date shift comes from the dated deployment segment for THAT date, so a
   // mid-month shift change pre-highlights the correct chip per day (not the
@@ -572,7 +575,14 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved }: {
                           <span className="text-xs font-medium tabular-nums">{c.day}</span>
                           {win && status && <span className="text-[9px] font-bold uppercase tracking-wider">{STATUS_SHORT[status]}</span>}
                         </div>
-                        {win && siteShifts.length > 0 && (
+                        {/* No shift picker when the day is being marked as
+                            leave. A leave day is not worked, so "which shift"
+                            has no answer — offering day/night there only invited
+                            a meaningless choice that then got written to the
+                            record. Absent keeps its shift: the guard was
+                            rostered on a shift and did not turn up, which is
+                            exactly what the client is told. */}
+                        {win && siteShifts.length > 0 && !statusIsLeave && (
                           <div className="flex flex-wrap gap-0.5">
                             {siteShifts.map((code) => {
                               const chosen = picks.includes(code);

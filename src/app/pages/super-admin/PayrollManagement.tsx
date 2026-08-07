@@ -57,6 +57,10 @@ type RowState = {
   effective_present_days: number;
   effective_absent_days: number;
   extra_leave_absent: number;
+  /** Extra shifts worked on days already counted in present_days. */
+  double_duty_shifts: number;
+  /** How far present+absent+leave ran past the month, before trimming. */
+  days_over_month: number;
 };
 
 const firstOfMonth = (d: Date) => {
@@ -123,7 +127,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
   // Per-reliever per-client present-day counts for the active period.
   // Only loaded in relieversOnly mode (cheap, small dataset).
   const [relieverPerClient, setRelieverPerClient] = useState<Map<string, Map<string | "unattributed", number>>>(new Map());
-  const [attPayroll, setAttPayroll] = useState<Map<string, { worked_shifts: number; earned: number; leave_days: number; absent_days: number; rate_effective: number }>>(new Map());
+  const [attPayroll, setAttPayroll] = useState<Map<string, { worked_shifts: number; present_days: number; double_duty_shifts: number; earned: number; leave_days: number; absent_days: number; rate_effective: number }>>(new Map());
   /**
    * employee_id -> leave allowance that replaces contract/client/carry-forward,
    * for the SELECTED PERIOD ONLY. Reloaded whenever the period changes, so it
@@ -235,10 +239,15 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
           .map((r) => [r.employee_id, { allowed: Number(r.allowed_leaves), reason: r.reason }]),
       ),
     );
-    const apMap = new Map<string, { worked_shifts: number; earned: number; leave_days: number; absent_days: number; rate_effective: number }>();
+    const apMap = new Map<string, { worked_shifts: number; present_days: number; double_duty_shifts: number; earned: number; leave_days: number; absent_days: number; rate_effective: number }>();
     for (const r of ((apRes.data ?? []) as any[])) {
       apMap.set(r.employee_id, {
         worked_shifts: Number(r.worked_shifts) || 0,
+        // present_days = distinct dates worked; double duty is the EXTRA shifts
+        // on top. Older payslips predate the split, so fall back to treating
+        // every worked shift as its own day.
+        present_days: Number(r.present_days ?? r.worked_shifts) || 0,
+        double_duty_shifts: Number(r.double_duty_shifts) || 0,
         earned: Number(r.earned) || 0,
         leave_days: Number(r.leave_days) || 0,
         absent_days: Number(r.absent_days) || 0,
@@ -523,9 +532,13 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       // duty / relief cover, blocked excluded, partial months natural); fall back
       // to the legacy aggregate only when the RPC has no row for this guard.
       const ap = attPayroll.get(emp.id);
+      // present = DAYS stood, double duty = the extra shifts on top. They used
+      // to be one number (worked_shifts), which made "26 present" in a 31-day
+      // month impossible to reconcile when 2 of them were second shifts.
       const att = ap
-        ? { present: ap.worked_shifts, absent: ap.absent_days, leave: ap.leave_days }
+        ? { present: ap.present_days, absent: ap.absent_days, leave: ap.leave_days }
         : (attendanceAgg.get(emp.id) ?? { present: 0, absent: 0, leave: 0 });
+      const doubleDuty = ap?.double_duty_shifts ?? 0;
       const baseSal = Number(existing?.base_salary ?? emp.base_salary ?? 0);
       const computedAdvance = advancesByEmployee.get(emp.id) ?? 0;
       const baseAllowed = allowedLeavesByEmployee.get(emp.id) ?? 0;
@@ -566,11 +579,33 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
         effective_present_days: 0,
         effective_absent_days: 0,
         extra_leave_absent: 0,
+        double_duty_shifts: doubleDuty,
+        days_over_month: 0,
       };
       const edits = rowEdits.get(emp.id) ?? {};
       const merged = { ...defaults, ...edits };
       merged.advance = computedAdvance;
       merged.allowed_leaves = allowed;
+
+      merged.double_duty_shifts = doubleDuty;
+
+      // A month cannot hold more days than it has. present + absent + leave is
+      // a partition of the month's calendar days, so July can never total more
+      // than 31 — anything above that means a date carries two conflicting
+      // statuses (2 employee-months in this data do). Trim the surplus off
+      // LEAVE first and then absent, never off days actually worked, and keep
+      // the excess so the drawer can say so rather than silently altering pay.
+      // Double duty is excluded on purpose: those are extra SHIFTS on days
+      // already counted once, so they cost the month nothing.
+      const capTotal = merged.present_days + merged.absent_days + merged.leave_days;
+      merged.days_over_month = Math.max(0, capTotal - daysThisPeriod);
+      if (merged.days_over_month > 0) {
+        let excess = merged.days_over_month;
+        const trimLeave = Math.min(excess, merged.leave_days);
+        merged.leave_days -= trimLeave;
+        excess -= trimLeave;
+        if (excess > 0) merged.absent_days = Math.max(0, merged.absent_days - excess);
+      }
 
       const rawLeaves = merged.leave_days;
       const rawPresent = merged.present_days;
@@ -1269,6 +1304,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     };
     line("Working Days", String(row.working_days));
     line("Present Days", String(row.present_days));
+    if (row.double_duty_shifts > 0) line("Double Duty (extra shifts)", String(row.double_duty_shifts));
     line("Absent Days", String(row.absent_days));
     line("Leave Days", String(row.leave_days));
     line("Allowed Leaves", String(row.allowed_leaves));
@@ -1789,7 +1825,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                     <p className="text-xs text-muted-foreground font-mono">{empDisplay(selectedRow.employee)} · {selectedRow.employee.guard_code ?? selectedRow.employee.employee_code}</p>
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-center">
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 text-center">
                     <div className="rounded-md border border-border py-1.5">
                       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Working</div>
                       <div className="text-base font-semibold tabular-nums text-foreground">{selectedRow.working_days}</div>
@@ -1797,6 +1833,12 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                     <div className="rounded-md border border-border py-1.5">
                       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Present</div>
                       <div className="text-base font-semibold tabular-nums text-success-600 dark:text-success-500">{selectedRow.present_days}</div>
+                    </div>
+                    {/* Extra shifts on days already counted under Present, so
+                        Present + Absent + Leave still adds up to the month. */}
+                    <div className="rounded-md border border-border py-1.5" title="Extra shifts worked on days already counted as present">
+                      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Double duty</div>
+                      <div className="text-base font-semibold tabular-nums text-brand-600 dark:text-brand-500">{selectedRow.double_duty_shifts}</div>
                     </div>
                     <div className="rounded-md border border-border py-1.5">
                       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Absent</div>
@@ -1807,6 +1849,14 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                       <div className="text-base font-semibold tabular-nums text-warning-600 dark:text-warning-500">{selectedRow.leave_days}</div>
                     </div>
                   </div>
+                  {selectedRow.days_over_month > 0 && (
+                    <p className="text-[11px] text-warning-800 dark:text-warning-500 bg-warning-50 border border-warning-200 rounded px-2 py-1">
+                      Attendance for this month totalled {selectedRow.days_over_month} day
+                      {selectedRow.days_over_month === 1 ? "" : "s"} more than the {selectedRow.working_days} in{" "}
+                      {formatPeriod(selectedPeriod)} — some date carries two statuses. Trimmed from leave/absent
+                      so pay matches the month; fix it on the attendance board.
+                    </p>
+                  )}
 
                   <div className="pt-3 border-t border-slate-200 grid grid-cols-2 gap-2">
                     <div>
@@ -2181,7 +2231,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
 
             <div className="pt-4 border-t border-slate-200">
               <h4 className="text-sm text-slate-900 mb-3">Attendance</h4>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-sm">
                 <div className="bg-slate-50 p-2 rounded">
                   <p className="text-xs text-slate-500">Working</p>
                   <p className="text-slate-900">{payslipData.working_days}</p>
@@ -2189,6 +2239,10 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                 <div className="bg-success-50 p-2 rounded">
                   <p className="text-xs text-success-700">Present</p>
                   <p className="text-success-900">{payslipData.present_days}</p>
+                </div>
+                <div className="bg-brand-50 p-2 rounded">
+                  <p className="text-xs text-brand-700">Double duty</p>
+                  <p className="text-brand-900">{payslipData.double_duty_shifts}</p>
                 </div>
                 <div className="bg-danger-50 p-2 rounded">
                   <p className="text-xs text-danger-700">Absent</p>
