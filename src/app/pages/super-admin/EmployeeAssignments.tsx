@@ -118,7 +118,19 @@ const varianceBadge = (v: number) => {
  */
 type AssignTarget =
   | { kind: "client"; id: string; name: string; siteId: string | null; siteName: string | null }
-  | { kind: "category"; category: "office_staff" | "reliever"; name: string };
+  /**
+   * Office Staff and Relievers hold no client posting, so they name no site.
+   * Office Staff do have a place, though — their REGION — and it is carried
+   * here so posting someone to "Lahore" actually moves them there rather than
+   * dropping them into the category with no location at all.
+   */
+  | {
+      kind: "category";
+      category: "office_staff" | "reliever";
+      name: string;
+      branchId?: string | null;
+      branchName?: string | null;
+    };
 
 /** A group of employees shown as one collapsible card. */
 type Group = {
@@ -638,9 +650,32 @@ export default function EmployeeAssignments() {
     // Always present, empty or not: they are assignment targets in their own
     // right, so hiding them when nobody is in them would leave no way to put the
     // first person there.
+    // Office Staff get a site level too, and their site is the REGION. They
+    // hold no client posting, so there is no deployment row to read a site off
+    // — employees.branch_id is the place they actually sit, and migration 0175
+    // guarantees it is populated (head office by default). The bucket list is
+    // built from every region, not just the occupied ones, so "Assign
+    // employees" is reachable for a region nobody is in yet.
+    let officeBuckets: SiteBucket[] | undefined;
+    if (branches.length > 0) {
+      const byBranch = new Map<string, EmployeeRow[]>();
+      for (const e of office) {
+        const bid = e.branch_id ?? "";
+        const arr = byBranch.get(bid) ?? [];
+        arr.push(e);
+        byBranch.set(bid, arr);
+      }
+      officeBuckets = branches.map((b) => ({
+        id: b.id,
+        name: b.name,
+        rows: byBranch.get(b.id) ?? [],
+      }));
+      const unplaced = byBranch.get("") ?? [];
+      if (unplaced.length) officeBuckets.push({ id: "", name: "No region recorded", rows: unplaced });
+    }
     out.push({
       key: "office", label: "Office Staff", clientId: null, categoryKey: "office_staff",
-      hint: "No client posting", rows: office,
+      hint: "By region", rows: office, siteBuckets: officeBuckets,
     });
     out.push({
       key: "relievers", label: "Relievers", clientId: null, categoryKey: "reliever",
@@ -659,7 +694,7 @@ export default function EmployeeAssignments() {
     if (q) visibleGroups = visibleGroups.filter((g) => g.label.toLowerCase().includes(q));
     if (onlyMismatch) return visibleGroups.filter((g) => g.recon != null && g.recon.variance !== 0);
     return visibleGroups;
-  }, [employees, clients, sites, siteByGuard, search, recon, onlyMismatch, servicesOnlyClientIds, showServicesClients, committedPersonnelByClient, clientsWithLiveContract]);
+  }, [employees, clients, sites, branches, siteByGuard, search, recon, onlyMismatch, servicesOnlyClientIds, showServicesClients, committedPersonnelByClient, clientsWithLiveContract]);
 
   // Hiding a client must never make its guards unreachable — this page is the only
   // place their posting and pay can be edited. If a Services-only client somehow
@@ -1135,24 +1170,36 @@ export default function EmployeeAssignments() {
                                   {b.rows.length} employee{b.rows.length === 1 ? "" : "s"}
                                 </span>
                               </button>
-                              {/* The No-site bucket is not a place: there is
-                                  nothing to post someone TO, so it offers only
-                                  Edit rules to repair the pay of whoever landed
-                                  there. */}
-                              {canEdit && g.clientId && b.id !== "" && (
+                              {/* The No-site / No-region bucket is not a place:
+                                  there is nothing to post someone TO, so it
+                                  offers only Edit rules to repair the pay of
+                                  whoever landed there. For Office Staff the
+                                  bucket is a REGION, so the target carries the
+                                  branch instead of a site. */}
+                              {canEdit && (g.clientId || g.categoryKey) && b.id !== "" && (
                                 <Button
                                   variant="ghost"
                                   size="sm"
                                   disabled={assignable.length === 0}
                                   title={assignable.length === 0 ? "No unassigned employees" : `Post employees to ${b.name}`}
                                   onClick={() =>
-                                    setAssignTo({
-                                      kind: "client",
-                                      id: g.clientId!,
-                                      name: g.label,
-                                      siteId: b.id,
-                                      siteName: b.name,
-                                    })
+                                    setAssignTo(
+                                      g.clientId
+                                        ? {
+                                            kind: "client",
+                                            id: g.clientId,
+                                            name: g.label,
+                                            siteId: b.id,
+                                            siteName: b.name,
+                                          }
+                                        : {
+                                            kind: "category",
+                                            category: g.categoryKey!,
+                                            name: g.label,
+                                            branchId: b.id,
+                                            branchName: b.name,
+                                          },
+                                    )
                                   }
                                 >
                                   <UserPlus className="w-4 h-4 mr-1.5" strokeWidth={1.75} />
@@ -2404,8 +2451,15 @@ function AssignEmployeesModal({
             p_effective_date: startDate,
           });
           if (catErr) throw fail(catErr.message);
-          if (shift) {
-            const { error: shErr } = await supabase.from("employees").update({ shift }).eq("id", e.id);
+          // Office staff are placed by REGION — that is their equivalent of a
+          // site. change_category clears the client mirrors but knows nothing
+          // about branches, so the region the button was pressed on is applied
+          // here. Merged with shift so a single update carries both.
+          const patch: Record<string, unknown> = {};
+          if (shift) patch.shift = shift;
+          if (target.kind === "category" && target.branchId) patch.branch_id = target.branchId;
+          if (Object.keys(patch).length > 0) {
+            const { error: shErr } = await supabase.from("employees").update(patch).eq("id", e.id);
             if (shErr) throw fail(shErr.message);
           }
           if (base != null) {
@@ -2500,7 +2554,9 @@ function AssignEmployeesModal({
       title={
         target.kind === "client" && target.siteName
           ? `Assign employees to ${target.siteName} · ${target.name}`
-          : `Assign employees to ${target.name}`
+          : target.kind === "category" && target.branchName
+            ? `Assign employees to ${target.branchName} · ${target.name}`
+            : `Assign employees to ${target.name}`
       }
       size="lg"
       footer={
@@ -2668,7 +2724,9 @@ function AssignEmployeesModal({
               ? `This is each person's first posting${
                   target.kind === "client" && target.siteName ? `, at ${target.siteName}` : ""
                 }, so it also issues their permanent guard code and their client number. Pay can be left blank and set later with Edit rules.`
-              : `They move to ${target.name} from the date below. No client posting is created, so no client number is issued. Pay can be left blank and set later with Edit rules.`}
+              : `They move to ${target.name}${
+                  target.kind === "category" && target.branchName ? ` · ${target.branchName}` : ""
+                } from the date below. No client posting is created, so no client number is issued. Pay can be left blank and set later with Edit rules.`}
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>

@@ -53,6 +53,111 @@ type AdvanceRow = Advance & {
   bank_name: string | null;
 };
 
+/**
+ * A fixed expense TEMPLATE — what recurs, with no date of its own.
+ *
+ * Cheque is absent from the mode union on purpose: a cheque expense names one
+ * specific pending cheque, which cannot be known months ahead (see 0174).
+ */
+type FixedPaymentMode = "Cash" | "Bank" | "Payable";
+
+type FixedExpense = {
+  id: string;
+  company_id: string;
+  category_id: string | null;
+  pl_category: "cost_of_services" | "operating_expense";
+  client_id: string | null;
+  branch_id: string | null;
+  vendor_id: string | null;
+  description: string | null;
+  amount: number;
+  payment_mode: FixedPaymentMode;
+  bank_account_id: string | null;
+  due_day: number | null;
+  notes: string | null;
+  start_month: string;
+  end_month: string | null;
+  is_active: boolean;
+  category?: { name: string } | null;
+  client?: { name: string } | null;
+  vendor?: { name: string } | null;
+};
+
+/**
+ * One month of one template, raised on the 1st and awaiting a decision.
+ *
+ * It is a SNAPSHOT: editing it changes only this month, and it is never
+ * rewritten from the template afterwards. Until status flips to 'approved' it
+ * has no row in `expenses`, so it has cost nothing and shows up in no report.
+ */
+type FixedInstance = {
+  id: string;
+  fixed_expense_id: string;
+  period_month: string;
+  category_id: string | null;
+  pl_category: "cost_of_services" | "operating_expense";
+  client_id: string | null;
+  branch_id: string | null;
+  vendor_id: string | null;
+  description: string | null;
+  amount: number;
+  payment_mode: FixedPaymentMode;
+  bank_account_id: string | null;
+  due_date: string | null;
+  notes: string | null;
+  status: "pending" | "approved" | "denied";
+  expense_id: string | null;
+  decision_note: string | null;
+  decided_at: string | null;
+  category?: { name: string } | null;
+  client?: { name: string } | null;
+  vendor?: { name: string } | null;
+};
+
+type FixedForm = {
+  category_id: string;
+  pl_category: "cost_of_services" | "operating_expense";
+  client_id: string;
+  branch_id: string;
+  vendor_id: string;
+  description: string;
+  amount: string;
+  payment_mode: FixedPaymentMode;
+  bank_account_id: string;
+  due_day: string;
+  notes: string;
+  start_month: string;
+  end_month: string;
+  is_active: boolean;
+};
+
+const thisMonthKey = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+};
+
+const emptyFixedForm: FixedForm = {
+  category_id: "",
+  pl_category: "operating_expense",
+  client_id: "",
+  branch_id: "",
+  vendor_id: "",
+  description: "",
+  amount: "",
+  payment_mode: "Bank",
+  bank_account_id: "",
+  due_day: "1",
+  notes: "",
+  start_month: thisMonthKey(),
+  end_month: "",
+  is_active: true,
+};
+
+const monthLabel = (key: string) => {
+  const [y, m] = key.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+};
+
 type AdvanceForm = {
   client_id: string;
   employee_id: string;
@@ -111,7 +216,7 @@ const emptyForm: ExpenseForm = {
 export default function Expenses() {
   const { profile, company } = useAuth();
   const { regionId } = useRegion();
-  const [activeTab, setActiveTab] = useState<"expenses" | "advances">("expenses");
+  const [activeTab, setActiveTab] = useState<"expenses" | "fixed" | "advances">("expenses");
   const [expenses, setExpenses] = useState<ExpenseRow[]>([]);
   const [advances, setAdvances] = useState<AdvanceRow[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -181,6 +286,38 @@ export default function Expenses() {
   const [catInput, setCatInput] = useState("");
   const [catEditingId, setCatEditingId] = useState<string | null>(null);
 
+  // ----- Fixed (recurring monthly) expenses -----
+  const [fixedExpenses, setFixedExpenses] = useState<FixedExpense[]>([]);
+  const [fixedInstances, setFixedInstances] = useState<FixedInstance[]>([]);
+  const [fixedMonth, setFixedMonth] = useState<string>(thisMonthKey());
+  const [isFixedFormOpen, setIsFixedFormOpen] = useState(false);
+  const [fixedEditingId, setFixedEditingId] = useState<string | null>(null);
+  const [fixedForm, setFixedForm] = useState<FixedForm>(emptyFixedForm);
+  const [fixedSubmitting, setFixedSubmitting] = useState(false);
+  const [fixedError, setFixedError] = useState<string | null>(null);
+  // The instance being approved / denied / edited, and the custodian who paid
+  // it (Cash only — the same attribution a normal cash expense requires).
+  const [decisionTarget, setDecisionTarget] = useState<{ row: FixedInstance; action: "approve" | "deny" } | null>(null);
+  const [decisionNote, setDecisionNote] = useState("");
+  const [decisionCustodianId, setDecisionCustodianId] = useState("");
+  const [decisionBusy, setDecisionBusy] = useState(false);
+  const [instanceEditing, setInstanceEditing] = useState<FixedInstance | null>(null);
+  const [instanceForm, setInstanceForm] = useState({ amount: "", description: "", notes: "", due_date: "" });
+
+  const fixedMonthOptions = useMemo(() => {
+    const opts: string[] = [];
+    const d = new Date();
+    d.setDate(1);
+    // Six months ahead as well as twelve back: a template can be set up before
+    // its start month, and its future instances should be inspectable.
+    d.setMonth(d.getMonth() + 6);
+    for (let i = 0; i < 18; i += 1) {
+      opts.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+      d.setMonth(d.getMonth() - 1);
+    }
+    return opts;
+  }, []);
+
   const [isVendorModalOpen, setIsVendorModalOpen] = useState(false);
   const [vendorMode, setVendorMode] = useState<"add" | "edit">("add");
   const [vendorName, setVendorName] = useState("");
@@ -249,6 +386,7 @@ export default function Expenses() {
     setBanks((bankRes.data ?? []) as BankAccount[]);
     setCheques((chqRes.data ?? []) as Cheque[]);
     setBranches((brRes.data ?? []) as Branch[]);
+    await loadFixedTemplates();
 
     // Aggregate linked sums per cheque (across payslips/expenses/advances/invoice_payments).
     const [linkedPs, linkedEx, linkedAdv, linkedIp] = await Promise.all([
@@ -420,6 +558,369 @@ export default function Expenses() {
     const perCategory = Array.from(byCategory.values()).sort((a, b) => b.total - a.total);
     return { total, perCategory };
   }, [filtered]);
+
+  // ---------------------------------------------------------------------
+  // Fixed (recurring monthly) expenses
+  // ---------------------------------------------------------------------
+  const loadFixedTemplates = async () => {
+    // Region-scoped like every other list on this page: a fixed expense carries
+    // branch_id, so the global region selector must narrow it the same way it
+    // narrows the expenses it will eventually become.
+    const { data, error: err } = await withRegion(
+      supabase
+        .from("fixed_expenses")
+        .select("*, category:category_id(name), client:client_id(name), vendor:vendor_id(name)")
+        .order("created_at", { ascending: false }),
+      regionId,
+    );
+    if (err) {
+      setError(err.message);
+      return;
+    }
+    setFixedExpenses((data ?? []) as FixedExpense[]);
+  };
+
+  // Raising the month's instances before reading them is what makes them
+  // "appear on the 1st" without depending on anyone being logged in that day.
+  // generate_fixed_expense_instances is idempotent, so calling it on every
+  // month change is free — it inserts only what is genuinely missing, and a
+  // cron run that already fired simply leaves nothing to do.
+  const loadFixedInstances = async (monthKey: string) => {
+    const period = `${monthKey}-01`;
+    const { error: genErr } = await supabase.rpc("generate_fixed_expense_instances", { p_month: period });
+    if (genErr) setError(genErr.message);
+    const { data, error: err } = await withRegion(
+      supabase
+        .from("fixed_expense_instances")
+        .select("*, category:category_id(name), client:client_id(name), vendor:vendor_id(name)")
+        .eq("period_month", period)
+        .order("created_at", { ascending: true }),
+      regionId,
+    );
+    if (err) {
+      setError(err.message);
+      return;
+    }
+    setFixedInstances((data ?? []) as FixedInstance[]);
+  };
+
+  useEffect(() => {
+    loadFixedInstances(fixedMonth);
+    // Templates drive generation, so a newly added one must be able to raise
+    // its instance immediately rather than waiting for the next page load.
+    // regionId is here because the list is region-scoped — switching region has
+    // to re-narrow the raised entries, not just the templates above them.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fixedMonth, fixedExpenses.length, regionId]);
+
+  const openFixedAdd = () => {
+    setFixedEditingId(null);
+    setFixedForm({ ...emptyFixedForm, start_month: fixedMonth });
+    setFixedError(null);
+    setIsFixedFormOpen(true);
+  };
+
+  const openFixedEdit = (f: FixedExpense) => {
+    setFixedEditingId(f.id);
+    setFixedForm({
+      category_id: f.category_id ?? "",
+      pl_category: f.pl_category,
+      client_id: f.client_id ?? "",
+      branch_id: f.branch_id ?? "",
+      vendor_id: f.vendor_id ?? "",
+      description: f.description ?? "",
+      amount: String(f.amount),
+      payment_mode: f.payment_mode,
+      bank_account_id: f.bank_account_id ?? "",
+      due_day: String(f.due_day ?? 1),
+      notes: f.notes ?? "",
+      start_month: f.start_month.slice(0, 7),
+      end_month: f.end_month ? f.end_month.slice(0, 7) : "",
+      is_active: f.is_active,
+    });
+    setFixedError(null);
+    setIsFixedFormOpen(true);
+  };
+
+  const handleSaveFixed = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFixedError(null);
+    const amount = Number(fixedForm.amount);
+    if (!fixedForm.category_id || !amount || amount <= 0) {
+      setFixedError("Pick a category and enter an amount above zero.");
+      return;
+    }
+    if (fixedForm.payment_mode === "Bank" && !fixedForm.bank_account_id) {
+      setFixedError("Select a bank account for Bank payment.");
+      return;
+    }
+    if (fixedForm.payment_mode === "Payable" && !fixedForm.vendor_id) {
+      setFixedError("Select a vendor for a Payable. Add one via Manage Vendors.");
+      return;
+    }
+    if (fixedForm.end_month && fixedForm.end_month < fixedForm.start_month) {
+      setFixedError("The end month cannot be before the start month.");
+      return;
+    }
+    setFixedSubmitting(true);
+    try {
+      const resolvedBranch =
+        fixedForm.branch_id ||
+        (fixedForm.client_id ? clients.find((c) => c.id === fixedForm.client_id)?.branch_id ?? null : null) ||
+        headOfficeBranchId ||
+        null;
+      const payload = {
+        category_id: fixedForm.category_id,
+        pl_category: fixedForm.pl_category,
+        client_id: fixedForm.client_id || null,
+        branch_id: resolvedBranch,
+        vendor_id: fixedForm.payment_mode === "Payable" ? fixedForm.vendor_id || null : null,
+        description: fixedForm.description.trim() || null,
+        amount,
+        payment_mode: fixedForm.payment_mode,
+        bank_account_id: fixedForm.payment_mode === "Bank" ? fixedForm.bank_account_id : null,
+        due_day: fixedForm.payment_mode === "Payable" ? Number(fixedForm.due_day) || 1 : null,
+        notes: fixedForm.notes.trim() || null,
+        start_month: `${fixedForm.start_month}-01`,
+        end_month: fixedForm.end_month ? `${fixedForm.end_month}-01` : null,
+        is_active: fixedForm.is_active,
+      };
+      if (fixedEditingId) {
+        const { error: upErr } = await supabase.from("fixed_expenses").update(payload).eq("id", fixedEditingId);
+        if (upErr) throw upErr;
+      } else {
+        const { error: insErr } = await supabase.from("fixed_expenses").insert(payload);
+        if (insErr) throw insErr;
+      }
+      setIsFixedFormOpen(false);
+      await loadFixedTemplates();
+      await loadFixedInstances(fixedMonth);
+    } catch (err: any) {
+      setFixedError(err.message ?? String(err));
+    } finally {
+      setFixedSubmitting(false);
+    }
+  };
+
+  // Deactivating stops FUTURE months being raised. Instances already raised —
+  // and anything already approved — are left exactly as they are, because they
+  // are a record of what happened, not a projection.
+  const toggleFixedActive = async (f: FixedExpense) => {
+    const { error: upErr } = await supabase
+      .from("fixed_expenses")
+      .update({ is_active: !f.is_active })
+      .eq("id", f.id);
+    if (upErr) {
+      setError(upErr.message);
+      return;
+    }
+    await loadFixedTemplates();
+  };
+
+  const handleDeleteFixed = async (f: FixedExpense) => {
+    const approved = fixedInstances.filter((i) => i.fixed_expense_id === f.id && i.status === "approved").length;
+    const warn = approved
+      ? `\n\n${approved} approved month${approved === 1 ? "" : "s"} in view will lose the link back to this template. The expenses themselves stay.`
+      : "";
+    if (!window.confirm(`Delete the fixed expense "${f.description || f.category?.name || "Untitled"}"?${warn}\n\nStopping it instead (Deactivate) keeps the history intact.`)) return;
+    const { error: delErr } = await supabase.from("fixed_expenses").delete().eq("id", f.id);
+    if (delErr) {
+      setError(delErr.message);
+      return;
+    }
+    await loadFixedTemplates();
+    await loadFixedInstances(fixedMonth);
+  };
+
+  const openInstanceEdit = (row: FixedInstance) => {
+    setInstanceEditing(row);
+    setInstanceForm({
+      amount: String(row.amount),
+      description: row.description ?? "",
+      notes: row.notes ?? "",
+      due_date: row.due_date ?? "",
+    });
+  };
+
+  const handleSaveInstance = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!instanceEditing) return;
+    const amount = Number(instanceForm.amount);
+    if (!amount || amount <= 0) {
+      setError("Enter an amount above zero.");
+      return;
+    }
+    const { error: upErr } = await supabase
+      .from("fixed_expense_instances")
+      .update({
+        amount,
+        description: instanceForm.description.trim() || null,
+        notes: instanceForm.notes.trim() || null,
+        due_date: instanceEditing.payment_mode === "Payable" ? instanceForm.due_date || null : null,
+      })
+      .eq("id", instanceEditing.id);
+    if (upErr) {
+      setError(upErr.message);
+      return;
+    }
+    setInstanceEditing(null);
+    await loadFixedInstances(fixedMonth);
+  };
+
+  const openDecision = (row: FixedInstance, action: "approve" | "deny") => {
+    setDecisionTarget({ row, action });
+    setDecisionNote("");
+    setDecisionCustodianId("");
+    setFixedError(null);
+  };
+
+  /**
+   * Approval is where a fixed expense becomes real money.
+   *
+   * It deliberately walks the SAME path handleAdd does — insert the expense,
+   * move cash or the bank balance, write the bank_transactions line — rather
+   * than a shortcut of its own. An approved fixed expense and a hand-typed one
+   * must be indistinguishable everywhere downstream (P&L, Cash Flow, client
+   * statements), and the only way to guarantee that is to build it identically.
+   *
+   * The instance is stamped LAST. If anything above fails, nothing is marked
+   * approved and the row stays pending for another attempt — the alternative
+   * (stamp first) could leave an approved month with no expense behind it.
+   */
+  const handleDecision = async () => {
+    if (!decisionTarget) return;
+    const { row, action } = decisionTarget;
+    setDecisionBusy(true);
+    setFixedError(null);
+    try {
+      if (action === "deny") {
+        const { error: upErr } = await supabase
+          .from("fixed_expense_instances")
+          .update({
+            status: "denied",
+            decision_note: decisionNote.trim() || null,
+            decided_by: profile?.id ?? null,
+            decided_at: new Date().toISOString(),
+          })
+          .eq("id", row.id);
+        if (upErr) throw upErr;
+      } else {
+        const amount = Number(row.amount);
+        if (row.payment_mode === "Cash" && amount > cashBalance) {
+          throw new Error("Cash balance is insufficient to approve this.");
+        }
+        if (row.payment_mode === "Cash" && !decisionCustodianId) {
+          throw new Error("Select the office-staff member who paid the cash.");
+        }
+        if (row.payment_mode === "Bank") {
+          if (!row.bank_account_id) throw new Error("This fixed expense has no bank account set. Edit it first.");
+          const bank = banks.find((b) => b.id === row.bank_account_id);
+          if (bank && amount > Number(bank.balance)) throw new Error("Selected bank balance is insufficient.");
+        }
+
+        let custodianLocId: string | null = null;
+        if (row.payment_mode === "Cash") {
+          const cid = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
+          const staff = custodians.find((c) => c.employeeId === decisionCustodianId);
+          if (cid && staff) custodianLocId = await ensureCustodianLocation(cid, staff.employeeId, staff.fullName);
+        }
+
+        // Dated to the 1st of the month it belongs to, not the day it happened
+        // to be approved: a February rent approved on the 6th is February's.
+        const { data: inserted, error: insErr } = await supabase
+          .from("expenses")
+          .insert({
+            category_id: row.category_id,
+            pl_category: row.pl_category,
+            client_id: row.client_id,
+            branch_id: row.branch_id,
+            vendor_id: row.payment_mode === "Payable" ? row.vendor_id : null,
+            description: row.description,
+            amount,
+            expense_date: row.period_month,
+            payment_mode: row.payment_mode,
+            custodian_location_id: custodianLocId,
+            bank_account_id: row.payment_mode === "Bank" ? row.bank_account_id : null,
+            due_date: row.payment_mode === "Payable" ? row.due_date : null,
+            payable_status: row.payment_mode === "Payable" ? "Pending" : null,
+            notes: row.notes,
+          })
+          .select()
+          .single();
+        if (insErr) throw insErr;
+        const expId = (inserted as Expense).id;
+
+        const clientName = row.client?.name ?? null;
+        const desc = describeExpense(row.category_id ?? "", clientName, row.description);
+        if (row.payment_mode === "Cash") {
+          await applyCashDelta(-amount);
+          await logExpenseTransaction({
+            bank_account_id: null,
+            amount,
+            cash_delta: -amount,
+            account_delta: 0,
+            description: desc,
+            reference_id: expId,
+          });
+        } else if (row.payment_mode === "Bank" && row.bank_account_id) {
+          await applyBankDelta(row.bank_account_id, -amount);
+          await logExpenseTransaction({
+            bank_account_id: row.bank_account_id,
+            amount,
+            cash_delta: 0,
+            account_delta: -amount,
+            description: desc,
+            reference_id: expId,
+          });
+        }
+
+        const { error: upErr } = await supabase
+          .from("fixed_expense_instances")
+          .update({
+            status: "approved",
+            expense_id: expId,
+            decision_note: decisionNote.trim() || null,
+            decided_by: profile?.id ?? null,
+            decided_at: new Date().toISOString(),
+          })
+          .eq("id", row.id);
+        if (upErr) throw upErr;
+      }
+      setDecisionTarget(null);
+      await Promise.all([loadFixedInstances(fixedMonth), loadAll()]);
+    } catch (err: any) {
+      setFixedError(err.message ?? String(err));
+    } finally {
+      setDecisionBusy(false);
+    }
+  };
+
+  // Reopening a denial is safe: a denied instance never created an expense, so
+  // there is no ledger entry to unwind. Approvals are NOT reversible here —
+  // undoing one means deleting a real expense, which is what the Expenses tab
+  // is for, and doing it silently from a list would leave the cash unrestored.
+  const reopenInstance = async (row: FixedInstance) => {
+    const { error: upErr } = await supabase
+      .from("fixed_expense_instances")
+      .update({ status: "pending", decision_note: null, decided_by: null, decided_at: null })
+      .eq("id", row.id);
+    if (upErr) {
+      setError(upErr.message);
+      return;
+    }
+    await loadFixedInstances(fixedMonth);
+  };
+
+  const fixedTotals = useMemo(() => {
+    let pending = 0, approved = 0, denied = 0;
+    for (const i of fixedInstances) {
+      const amt = Number(i.amount);
+      if (i.status === "pending") pending += amt;
+      else if (i.status === "approved") approved += amt;
+      else denied += amt;
+    }
+    return { pending, approved, denied, count: fixedInstances.length };
+  }, [fixedInstances]);
 
   const applyCashDelta = async (delta: number) => {
     const { data } = await supabase.from("treasury").select("id, cash_balance").limit(1).maybeSingle();
@@ -1371,7 +1872,21 @@ export default function Expenses() {
           <>
             <ExportButton
               onExport={() => {
-                if (activeTab === "advances") {
+                if (activeTab === "fixed") {
+                  // The month's raised entries, decision included — an approved
+                  // one is also in the Expenses export, as a real expense.
+                  exportExpenses(
+                    fixedInstances.map((i) => ({
+                      date: i.period_month,
+                      particulars: `${i.description ?? ""}${i.status === "pending" ? " (pending)" : i.status === "denied" ? " (denied)" : ""}`.trim(),
+                      category: i.category?.name ?? "",
+                      client: i.client?.name ?? "Office",
+                      amount: Number(i.amount),
+                      mode: i.payment_mode,
+                    })),
+                    `Fixed Expenses ${monthLabel(fixedMonth)}.xlsx`,
+                  );
+                } else if (activeTab === "advances") {
                   exportAdvances(
                     filteredAdvances.map((a) => ({
                       date: a.advance_date,
@@ -1443,7 +1958,11 @@ export default function Expenses() {
         )}
 
         <div className="flex items-center gap-2 mb-6">
-          {(["expenses", "advances"] as const).map((t) => (
+          {([
+            ["expenses", "Expenses"],
+            ["fixed", "Fixed Expenses"],
+            ["advances", "Advances"],
+          ] as const).map(([t, label]) => (
             <button
               key={t}
               type="button"
@@ -1454,7 +1973,12 @@ export default function Expenses() {
                   : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
               }`}
             >
-              {t === "expenses" ? "Expenses" : "Advances"}
+              {label}
+              {t === "fixed" && fixedTotals.count > 0 && (
+                <span className="ml-2 text-[11px] opacity-75">
+                  {fixedInstances.filter((i) => i.status === "pending").length} pending
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -1731,6 +2255,219 @@ export default function Expenses() {
         </div>
         )}
 
+        {activeTab === "fixed" && (
+          <div className="space-y-6">
+            {/* ---- This month's raised instances ---- */}
+            <div className="bg-white rounded-lg border border-slate-200">
+              <div className="p-6 border-b border-slate-200 flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <h3 className="text-lg text-slate-900 mb-1">{monthLabel(fixedMonth)}</h3>
+                  <p className="text-sm text-slate-500">
+                    Raised automatically on the 1st. Nothing here has been spent until it is approved.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <label className="text-sm text-slate-600">Month:</label>
+                  <ThemedSelect
+                    value={fixedMonth}
+                    onChange={(e) => setFixedMonth(e.target.value)}
+                    className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                  >
+                    {fixedMonthOptions.map((m) => (
+                      <option key={m} value={m}>{monthLabel(m)}</option>
+                    ))}
+                  </ThemedSelect>
+                  <Button variant="primary" size="md" onClick={openFixedAdd}>
+                    <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                    Add Fixed Expense
+                  </Button>
+                </div>
+              </div>
+
+              <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-3 border-b border-slate-200">
+                <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-warning-500">
+                  <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Awaiting Decision</p>
+                  <p className="text-lg text-warning-900">PKR {fixedTotals.pending.toLocaleString()}</p>
+                </div>
+                <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-success-500">
+                  <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Approved (posted)</p>
+                  <p className="text-lg text-success-900">PKR {fixedTotals.approved.toLocaleString()}</p>
+                </div>
+                <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-slate-400">
+                  <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Denied</p>
+                  <p className="text-lg text-slate-700">PKR {fixedTotals.denied.toLocaleString()}</p>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-slate-200">
+                      <th className="text-left px-6 py-3 text-sm text-slate-500">Description</th>
+                      <th className="text-left px-6 py-3 text-sm text-slate-500">Category</th>
+                      <th className="text-left px-6 py-3 text-sm text-slate-500">Client / Vendor</th>
+                      <th className="text-left px-6 py-3 text-sm text-slate-500">Mode</th>
+                      <th className="text-right px-6 py-3 text-sm text-slate-500">Amount</th>
+                      <th className="text-left px-6 py-3 text-sm text-slate-500">Status</th>
+                      <th className="text-right px-6 py-3 text-sm text-slate-500">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {fixedInstances.length === 0 && (
+                      <tr>
+                        <td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">
+                          {fixedExpenses.filter((f) => f.is_active).length === 0
+                            ? "No fixed expenses set up yet. Add one and it will appear here on the 1st of every month."
+                            : `Nothing raised for ${monthLabel(fixedMonth)} — the active templates all start later or have ended.`}
+                        </td>
+                      </tr>
+                    )}
+                    {fixedInstances.map((row) => (
+                      <tr key={row.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-6 py-4 text-sm text-slate-900">
+                          {row.description || <span className="text-slate-400">—</span>}
+                          {row.due_date && (
+                            <div className="text-xs text-slate-500">Due {formatDate(row.due_date)}</div>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-slate-600">{row.category?.name ?? "—"}</td>
+                        <td className="px-6 py-4 text-sm text-slate-600">
+                          {row.client?.name ?? row.vendor?.name ?? <span className="text-slate-400">Office</span>}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-slate-600">{row.payment_mode}</td>
+                        <td className="px-6 py-4 text-sm text-right text-slate-900">
+                          PKR {Number(row.amount).toLocaleString()}
+                        </td>
+                        <td className="px-6 py-4">
+                          <span
+                            className={`inline-block px-2 py-0.5 rounded-md border text-xs ${
+                              row.status === "approved"
+                                ? "bg-success-50 text-success-700 border-success-200"
+                                : row.status === "denied"
+                                  ? "bg-slate-100 text-slate-600 border-slate-200"
+                                  : "bg-warning-50 text-warning-800 border-warning-200"
+                            }`}
+                          >
+                            {row.status === "approved" ? "Approved" : row.status === "denied" ? "Denied" : "Pending"}
+                          </span>
+                          {row.decision_note && (
+                            <div className="text-xs text-slate-500 mt-1 max-w-[220px]">{row.decision_note}</div>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center justify-end gap-2">
+                            {row.status === "pending" && (
+                              <>
+                                <button
+                                  className="text-sm text-slate-600 hover:text-slate-900"
+                                  onClick={() => openInstanceEdit(row)}
+                                  title="Edit this month's amount or description"
+                                >
+                                  <Pencil className="w-4 h-4" strokeWidth={1.5} />
+                                </button>
+                                <Button variant="secondary" size="sm" onClick={() => openDecision(row, "deny")}>
+                                  Deny
+                                </Button>
+                                <Button variant="primary" size="sm" onClick={() => openDecision(row, "approve")}>
+                                  Approve
+                                </Button>
+                              </>
+                            )}
+                            {row.status === "denied" && (
+                              <Button variant="secondary" size="sm" onClick={() => reopenInstance(row)}>
+                                Reopen
+                              </Button>
+                            )}
+                            {row.status === "approved" && (
+                              <span className="text-xs text-slate-500">Posted to Expenses</span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* ---- The templates themselves ---- */}
+            <div className="bg-white rounded-lg border border-slate-200">
+              <div className="p-6 border-b border-slate-200">
+                <h3 className="text-lg text-slate-900 mb-1">Recurring Definitions</h3>
+                <p className="text-sm text-slate-500">
+                  Each of these raises one entry per month between its start and end.
+                  Deactivating stops future months; months already raised keep whatever was decided.
+                </p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-slate-200">
+                      <th className="text-left px-6 py-3 text-sm text-slate-500">Description</th>
+                      <th className="text-left px-6 py-3 text-sm text-slate-500">Category</th>
+                      <th className="text-left px-6 py-3 text-sm text-slate-500">Client / Vendor</th>
+                      <th className="text-left px-6 py-3 text-sm text-slate-500">Mode</th>
+                      <th className="text-right px-6 py-3 text-sm text-slate-500">Amount</th>
+                      <th className="text-left px-6 py-3 text-sm text-slate-500">Runs</th>
+                      <th className="text-right px-6 py-3 text-sm text-slate-500">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {fixedExpenses.length === 0 && (
+                      <tr>
+                        <td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">
+                          No fixed expenses yet.
+                        </td>
+                      </tr>
+                    )}
+                    {fixedExpenses.map((f) => (
+                      <tr key={f.id} className={`hover:bg-slate-50 transition-colors ${f.is_active ? "" : "opacity-60"}`}>
+                        <td className="px-6 py-4 text-sm text-slate-900">
+                          {f.description || <span className="text-slate-400">—</span>}
+                          {!f.is_active && <span className="ml-2 text-xs text-slate-500">(inactive)</span>}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-slate-600">{f.category?.name ?? "—"}</td>
+                        <td className="px-6 py-4 text-sm text-slate-600">
+                          {f.client?.name ?? f.vendor?.name ?? <span className="text-slate-400">Office</span>}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-slate-600">{f.payment_mode}</td>
+                        <td className="px-6 py-4 text-sm text-right text-slate-900">
+                          PKR {Number(f.amount).toLocaleString()}
+                        </td>
+                        <td className="px-6 py-4 text-xs text-slate-600">
+                          {monthLabel(f.start_month.slice(0, 7))} →{" "}
+                          {f.end_month ? monthLabel(f.end_month.slice(0, 7)) : "ongoing"}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              className="text-sm text-slate-600 hover:text-slate-900"
+                              onClick={() => openFixedEdit(f)}
+                              title="Edit"
+                            >
+                              <Pencil className="w-4 h-4" strokeWidth={1.5} />
+                            </button>
+                            <Button variant="secondary" size="sm" onClick={() => toggleFixedActive(f)}>
+                              {f.is_active ? "Deactivate" : "Activate"}
+                            </Button>
+                            <button
+                              className="text-sm text-danger-600 hover:text-danger-700"
+                              onClick={() => handleDeleteFixed(f)}
+                              title="Delete"
+                            >
+                              <Trash2 className="w-4 h-4" strokeWidth={1.5} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
         {activeTab === "advances" && (
           <div className="bg-white rounded-lg border border-slate-200">
             <div className="p-6 border-b border-slate-200">
@@ -1968,6 +2705,376 @@ export default function Expenses() {
               setReplaceReceipt,
             }
           )}
+      </Modal>
+
+      {/* ---- Fixed expense template: add / edit ---- */}
+      <Modal
+        isOpen={isFixedFormOpen}
+        onClose={() => setIsFixedFormOpen(false)}
+        title={fixedEditingId ? "Edit Fixed Expense" : "Add Fixed Expense"}
+        size="lg"
+      >
+        <form onSubmit={handleSaveFixed} className="space-y-4">
+          {fixedError && (
+            <div className="p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
+              {fixedError}
+            </div>
+          )}
+          <p className="text-xs text-slate-500">
+            This describes what recurs. One entry is raised from it on the 1st of every month between
+            the start and end months, and nothing is spent until that entry is approved.
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Category *</label>
+              <ThemedSelect
+                value={fixedForm.category_id}
+                onChange={(e) => setFixedForm({ ...fixedForm, category_id: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                required
+              >
+                <option value="">Select category</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </ThemedSelect>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">P&amp;L Treatment *</label>
+              <ThemedSelect
+                value={fixedForm.pl_category}
+                onChange={(e) =>
+                  setFixedForm({ ...fixedForm, pl_category: e.target.value as FixedForm["pl_category"] })
+                }
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              >
+                <option value="operating_expense">Operating Expense</option>
+                <option value="cost_of_services">Cost of Services</option>
+              </ThemedSelect>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Description</label>
+            <input
+              type="text"
+              value={fixedForm.description}
+              onChange={(e) => setFixedForm({ ...fixedForm, description: e.target.value })}
+              placeholder="Head office rent"
+              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Amount (PKR) *</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={fixedForm.amount}
+                onChange={(e) => setFixedForm({ ...fixedForm, amount: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                required
+              />
+              <p className="text-[11px] text-slate-500 mt-1">
+                The default each month. Any month's entry can be edited before it is approved.
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Payment Mode *</label>
+              <ThemedSelect
+                value={fixedForm.payment_mode}
+                onChange={(e) =>
+                  setFixedForm({ ...fixedForm, payment_mode: e.target.value as FixedPaymentMode })
+                }
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              >
+                <option value="Bank">Bank</option>
+                <option value="Cash">Cash</option>
+                <option value="Payable">Payable</option>
+              </ThemedSelect>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Cheque is not offered — a cheque expense must name one specific pending cheque,
+                which cannot be known months ahead.
+              </p>
+            </div>
+          </div>
+
+          {fixedForm.payment_mode === "Bank" && (
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Bank Account *</label>
+              <ThemedSelect
+                value={fixedForm.bank_account_id}
+                onChange={(e) => setFixedForm({ ...fixedForm, bank_account_id: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              >
+                <option value="">Select bank account</option>
+                {banks.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.bank_name} — {b.account_number}
+                  </option>
+                ))}
+              </ThemedSelect>
+            </div>
+          )}
+
+          {fixedForm.payment_mode === "Payable" && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Vendor *</label>
+                <ThemedSelect
+                  value={fixedForm.vendor_id}
+                  onChange={(e) => setFixedForm({ ...fixedForm, vendor_id: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                >
+                  <option value="">Select vendor</option>
+                  {vendors.map((v) => (
+                    <option key={v.id} value={v.id}>{v.name}</option>
+                  ))}
+                </ThemedSelect>
+              </div>
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Due on day of month</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="28"
+                  value={fixedForm.due_day}
+                  onChange={(e) => setFixedForm({ ...fixedForm, due_day: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">1–28, so every month has the day.</p>
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Client (optional)</label>
+              <ThemedSelect
+                value={fixedForm.client_id}
+                onChange={(e) => setFixedForm({ ...fixedForm, client_id: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              >
+                <option value="">Office (no client)</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </ThemedSelect>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Region</label>
+              <ThemedSelect
+                value={fixedForm.branch_id}
+                onChange={(e) => setFixedForm({ ...fixedForm, branch_id: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              >
+                <option value="">Auto (client's region, else head office)</option>
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </ThemedSelect>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">First month *</label>
+              <input
+                type="month"
+                value={fixedForm.start_month}
+                onChange={(e) => setFixedForm({ ...fixedForm, start_month: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                required
+              />
+              <p className="text-[11px] text-slate-500 mt-1">
+                Nothing is raised before this, so a new template cannot conjure past months.
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Last month (optional)</label>
+              <input
+                type="month"
+                value={fixedForm.end_month}
+                onChange={(e) => setFixedForm({ ...fixedForm, end_month: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              />
+              <p className="text-[11px] text-slate-500 mt-1">Leave blank to run indefinitely.</p>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Notes</label>
+            <textarea
+              value={fixedForm.notes}
+              onChange={(e) => setFixedForm({ ...fixedForm, notes: e.target.value })}
+              rows={2}
+              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+            />
+          </div>
+
+          <div className="flex items-center gap-3 pt-4 border-t border-slate-200">
+            <Button type="submit" variant="primary" size="md" className="flex-1" disabled={fixedSubmitting}>
+              {fixedSubmitting ? "Saving…" : fixedEditingId ? "Save changes" : "Add fixed expense"}
+            </Button>
+            <Button type="button" variant="secondary" size="md" onClick={() => setIsFixedFormOpen(false)}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ---- Edit ONE month's entry (before approval) ---- */}
+      <Modal
+        isOpen={!!instanceEditing}
+        onClose={() => setInstanceEditing(null)}
+        title={instanceEditing ? `Edit ${monthLabel(fixedMonth)} entry` : "Edit entry"}
+        size="md"
+      >
+        {instanceEditing && (
+          <form onSubmit={handleSaveInstance} className="space-y-4">
+            <p className="text-xs text-slate-500">
+              This changes {monthLabel(fixedMonth)} only. The recurring definition, and every other
+              month, are untouched.
+            </p>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Amount (PKR) *</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={instanceForm.amount}
+                onChange={(e) => setInstanceForm({ ...instanceForm, amount: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Description</label>
+              <input
+                type="text"
+                value={instanceForm.description}
+                onChange={(e) => setInstanceForm({ ...instanceForm, description: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              />
+            </div>
+            {instanceEditing.payment_mode === "Payable" && (
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Due date</label>
+                <input
+                  type="date"
+                  value={instanceForm.due_date}
+                  onChange={(e) => setInstanceForm({ ...instanceForm, due_date: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                />
+              </div>
+            )}
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Notes</label>
+              <textarea
+                value={instanceForm.notes}
+                onChange={(e) => setInstanceForm({ ...instanceForm, notes: e.target.value })}
+                rows={2}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              />
+            </div>
+            <div className="flex items-center gap-3 pt-4 border-t border-slate-200">
+              <Button type="submit" variant="primary" size="md" className="flex-1">
+                Save
+              </Button>
+              <Button type="button" variant="secondary" size="md" onClick={() => setInstanceEditing(null)}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* ---- Approve / deny ---- */}
+      <Modal
+        isOpen={!!decisionTarget}
+        onClose={() => setDecisionTarget(null)}
+        title={decisionTarget?.action === "approve" ? "Approve fixed expense" : "Deny fixed expense"}
+        size="md"
+      >
+        {decisionTarget && (
+          <div className="space-y-4">
+            {fixedError && (
+              <div className="p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
+                {fixedError}
+              </div>
+            )}
+            <div className="p-3 rounded-lg border border-slate-200 bg-slate-50">
+              <p className="text-sm text-slate-900">
+                {decisionTarget.row.description || decisionTarget.row.category?.name || "Fixed expense"}
+              </p>
+              <p className="text-lg text-slate-900 mt-1">
+                PKR {Number(decisionTarget.row.amount).toLocaleString()}
+              </p>
+              <p className="text-xs text-slate-500 mt-1">
+                {monthLabel(fixedMonth)} · {decisionTarget.row.payment_mode}
+                {decisionTarget.row.client?.name ? ` · ${decisionTarget.row.client.name}` : " · Office"}
+              </p>
+            </div>
+
+            <p className="text-xs text-slate-500">
+              {decisionTarget.action === "approve"
+                ? `Approving records a real expense dated ${formatDate(decisionTarget.row.period_month)} and moves the money, exactly as adding it by hand would.`
+                : "Denying records the decision and nothing else — no expense, no money moved. It can be reopened later."}
+            </p>
+
+            {decisionTarget.action === "approve" && decisionTarget.row.payment_mode === "Cash" && (
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Paid By (Office Staff) *</label>
+                <ThemedSelect
+                  value={decisionCustodianId}
+                  onChange={(e) => setDecisionCustodianId(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                >
+                  <option value="">Select who paid</option>
+                  {custodians.map((c) => (
+                    <option key={c.employeeId} value={c.employeeId}>
+                      {c.fullName} — holds PKR {Math.round(c.held).toLocaleString()}
+                    </option>
+                  ))}
+                </ThemedSelect>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">
+                Note {decisionTarget.action === "deny" ? "(why it was denied)" : "(optional)"}
+              </label>
+              <textarea
+                value={decisionNote}
+                onChange={(e) => setDecisionNote(e.target.value)}
+                rows={2}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              />
+            </div>
+
+            <div className="flex items-center gap-3 pt-4 border-t border-slate-200">
+              <Button
+                variant={decisionTarget.action === "approve" ? "primary" : "danger"}
+                size="md"
+                className="flex-1"
+                disabled={decisionBusy}
+                onClick={handleDecision}
+              >
+                {decisionBusy
+                  ? "Working…"
+                  : decisionTarget.action === "approve"
+                    ? "Approve and post"
+                    : "Deny"}
+              </Button>
+              <Button variant="secondary" size="md" onClick={() => setDecisionTarget(null)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       <Modal isOpen={isViewOpen} onClose={() => setIsViewOpen(false)} title="Expense Details" size="lg">

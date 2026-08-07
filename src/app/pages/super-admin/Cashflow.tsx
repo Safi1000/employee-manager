@@ -15,9 +15,14 @@ import {
 } from "recharts";
 import { CHART_TT, CHART_GRID, CHART_LEGEND, CHART_ANIM, CHART_COLORS } from "../../lib/chart";
 import { supabase } from "../../lib/supabase";
-import type { Advance, Expense, InvoicePayment, Payslip, Cheque } from "../../lib/supabase";
+import type { Advance, Expense, InvoicePayment, Payslip, Cheque, Client } from "../../lib/supabase";
 import { useRegion, withRegion } from "../../lib/region";
-import { TrendingUp, TrendingDown, Wallet, ChevronDown, ChevronRight } from "lucide-react";
+import { TrendingUp, TrendingDown, Wallet, ChevronDown, ChevronRight, Download, Loader2 } from "lucide-react";
+import Modal from "../../components/Modal";
+import ThemedSelect from "../../components/ThemedSelect";
+import ExportButton from "../../components/ExportButton";
+import { exportClientStatements } from "../../lib/excel";
+import { formatDate } from "../../lib/date";
 
 // One cash event, already resolved to a cash-basis effective date.
 type CashItem = { date: string; amount: number; group: string; detail: string };
@@ -54,6 +59,33 @@ const currency = (n: number) => `PKR ${Math.round(n).toLocaleString("en-PK")}`;
 
 type PeriodMode = "month" | "range" | "all";
 
+const firstOfMonth = (key: string) => `${key}-01`;
+const lastOfMonth = (key: string) => {
+  const [y, m] = key.split("-").map(Number);
+  return `${key}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
+};
+const formatPeriod = (key: string) => {
+  const [y, m] = key.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+};
+
+/**
+ * One client's month on a CASH basis.
+ *
+ * The revenue-basis twin in Financial Reports reads invoices raised, payroll
+ * accrued to the period and expenses by their expense_date. Every figure here
+ * is the same question asked of money that actually moved: received, not
+ * invoiced; disbursed, not earned; paid, not incurred.
+ */
+type CashStatementRow = {
+  client: Client;
+  received: number;
+  payrollPaid: number;
+  expensesPaid: number;
+  netCash: number;
+  payments: { id: string; date: string; amount: number; mode: string | null }[];
+};
+
 export default function Cashflow() {
   const { regionId } = useRegion();
   const [invoicePayments, setInvoicePayments] = useState<InvoicePayment[]>([]);
@@ -76,6 +108,27 @@ export default function Cashflow() {
   const [openMetric, setOpenMetric] = useState<MetricKey | null>(null);
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
 
+  // ----- Client Statements (cash basis) tab -----
+  const [activeTab, setActiveTab] = useState<"cashflow" | "clients">("cashflow");
+  const [clients, setClients] = useState<Client[]>([]);
+  const [statementPeriod, setStatementPeriod] = useState<string>(todayMonthKey());
+  // client_id → payroll CASH paid in the statement month, split by days worked
+  // (payroll_cash_by_client, migration 0176).
+  const [payrollCashByClient, setPayrollCashByClient] = useState<Map<string, number>>(new Map());
+  const [loadingStatements, setLoadingStatements] = useState(false);
+  const [selectedStatement, setSelectedStatement] = useState<CashStatementRow | null>(null);
+
+  const statementPeriodOptions = useMemo(() => {
+    const opts: string[] = [];
+    const d = new Date();
+    d.setDate(1);
+    for (let i = 0; i < 12; i += 1) {
+      opts.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+      d.setMonth(d.getMonth() - 1);
+    }
+    return opts;
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -86,7 +139,13 @@ export default function Cashflow() {
           // Flow sources all carry branch_id, so the global region selector scopes
           // this projection to the region's own inflows/outflows. Client/employee
           // name lookups stay unfiltered — they're just label maps.
-          withRegion(supabase.from("invoice_payments").select("amount, payment_date, client_id"), regionId),
+          // id + payment_mode are for the Client Statements tab's detail table;
+          // it deliberately reads the SAME rows this page already loaded, so the
+          // two tabs can never disagree about what came in.
+          withRegion(
+            supabase.from("invoice_payments").select("id, amount, payment_date, client_id, payment_mode"),
+            regionId,
+          ),
           withRegion(supabase.from("payslips").select("*").eq("disbursed", true), regionId),
           withRegion(supabase.from("expenses").select("*"), regionId),
           withRegion(
@@ -96,7 +155,7 @@ export default function Cashflow() {
             regionId,
           ),
           withRegion(supabase.from("cheques").select("id, status, cleared_at"), regionId),
-          supabase.from("clients").select("id, name"),
+          supabase.from("clients").select("*").order("name"),
           supabase.from("employees").select("id, full_name"),
         ]);
 
@@ -109,6 +168,7 @@ export default function Cashflow() {
         setExpenses((exRes.data ?? []) as Expense[]);
         setAdvances((advRes.data ?? []) as Advance[]);
         setCheques((chqRes.data ?? []) as Cheque[]);
+        setClients((cliRes.data ?? []) as Client[]);
         setClientNames(new Map((cliRes.data ?? []).map((c: any) => [c.id, c.name])));
         setEmployeeNames(new Map((empRes.data ?? []).map((e: any) => [e.id, e.full_name])));
       } catch (e: any) {
@@ -198,6 +258,100 @@ export default function Cashflow() {
 
     return { revenue, payroll, expenses: expensesItems, advances: advancesItems };
   }, [invoicePayments, payslips, expenses, advances, cheques, clientNames, employeeNames]);
+
+  // Payroll cash for the statement month, split across the clients each guard
+  // actually worked for. Only this needs a round trip — revenue and expenses
+  // are derived below from the rows already loaded above.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoadingStatements(true);
+      const { data } = await supabase.rpc("payroll_cash_by_client", {
+        p_start: firstOfMonth(statementPeriod),
+        p_end: lastOfMonth(statementPeriod),
+      });
+      if (cancelled) return;
+      const m = new Map<string, number>();
+      for (const r of ((data ?? []) as { client_id: string; cost: number }[])) {
+        m.set(r.client_id, Number(r.cost) || 0);
+      }
+      setPayrollCashByClient(m);
+      setLoadingStatements(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [statementPeriod]);
+
+  // One row per client for the statement month, entirely on a cash basis.
+  //
+  // Revenue and expenses reuse allItems — the very same normalized cash events
+  // the tab beside this one totals — so a client statement can never claim cash
+  // the cashflow chart does not show. allItems.expenses is grouped by P&L
+  // category rather than client, though, so the expense side is re-derived here
+  // from the raw rows using identical date rules.
+  const cashStatementRows: CashStatementRow[] = useMemo(() => {
+    const start = firstOfMonth(statementPeriod);
+    const end = lastOfMonth(statementPeriod);
+    const within = (d: string | null) => !!d && d >= start && d <= end;
+
+    const chequeById = new Map<string, Cheque>();
+    for (const c of cheques) chequeById.set(c.id, c);
+    const chequeClearedDay = (chequeId: string | null): string | null => {
+      if (!chequeId) return null;
+      const c = chequeById.get(chequeId);
+      if (!c || c.status !== "cleared") return null;
+      return isoDay(c.cleared_at);
+    };
+
+    const receivedBy = new Map<string, number>();
+    const paymentsBy = new Map<string, CashStatementRow["payments"]>();
+    for (const p of invoicePayments) {
+      const date = isoDay(p.payment_date);
+      if (!within(date) || !p.client_id) continue;
+      const amt = Number(p.amount ?? 0);
+      receivedBy.set(p.client_id, (receivedBy.get(p.client_id) ?? 0) + amt);
+      const arr = paymentsBy.get(p.client_id) ?? [];
+      arr.push({ id: (p as any).id, date: date!, amount: amt, mode: (p as any).payment_mode ?? null });
+      paymentsBy.set(p.client_id, arr);
+    }
+
+    const expensesBy = new Map<string, number>();
+    for (const e of expenses) {
+      if (!e.client_id) continue;
+      let date: string | null = null;
+      if (e.payment_mode === "Cash" || e.payment_mode === "Bank") date = isoDay(e.expense_date);
+      else if (e.payment_mode === "Cheque") date = chequeClearedDay(e.cheque_id);
+      else if (e.payment_mode === "Payable" && e.payable_status === "Paid") date = isoDay(e.paid_at);
+      if (!within(date)) continue;
+      expensesBy.set(e.client_id, (expensesBy.get(e.client_id) ?? 0) + Number(e.amount ?? 0));
+    }
+
+    return clients.map((c) => {
+      const received = receivedBy.get(c.id) ?? 0;
+      const payrollPaid = payrollCashByClient.get(c.id) ?? 0;
+      const expensesPaid = expensesBy.get(c.id) ?? 0;
+      return {
+        client: c,
+        received,
+        payrollPaid,
+        expensesPaid,
+        netCash: received - payrollPaid - expensesPaid,
+        payments: (paymentsBy.get(c.id) ?? []).sort((a, b) => b.date.localeCompare(a.date)),
+      };
+    });
+  }, [clients, invoicePayments, expenses, cheques, payrollCashByClient, statementPeriod]);
+
+  const statementTotals = useMemo(() => {
+    let received = 0, payroll = 0, exp = 0, net = 0;
+    for (const r of cashStatementRows) {
+      received += r.received;
+      payroll += r.payrollPaid;
+      exp += r.expensesPaid;
+      net += r.netCash;
+    }
+    return { received, payroll, expenses: exp, net };
+  }, [cashStatementRows]);
 
   // Apply the period filter to a list.
   const inPeriod = useMemo(() => {
@@ -303,7 +457,29 @@ export default function Cashflow() {
 
   return (
     <>
-      <Header title="Cash Flow" subtitle="Cash inflow vs outflow — filter by month, range or all time" />
+      <Header
+        title="Cash Flow"
+        subtitle="Cash inflow vs outflow — filter by month, range or all time"
+        actions={
+          activeTab === "clients" ? (
+            <ExportButton
+              onExport={() =>
+                exportClientStatements(
+                  cashStatementRows.map((r) => ({
+                    client: `${r.client.name} (${r.client.client_code})`,
+                    totalReceivable: r.received,
+                    payrollExpenses: r.payrollPaid,
+                    otherExpenses: r.expensesPaid,
+                    netIncome: r.netCash,
+                  })),
+                  formatPeriod(statementPeriod),
+                  `Client Statement (Cash) ${formatPeriod(statementPeriod)}.xlsx`,
+                )
+              }
+            />
+          ) : undefined
+        }
+      />
 
       <div className="flex-1 overflow-y-auto p-8">
         {error && (
@@ -312,6 +488,40 @@ export default function Cashflow() {
           </div>
         )}
 
+        <div className="flex items-center gap-2 mb-6">
+          {([
+            { key: "cashflow", label: "Cash Flow" },
+            { key: "clients", label: "Client Statements" },
+          ] as const).map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setActiveTab(t.key)}
+              className={`px-4 py-2 rounded-md text-sm transition-colors ${
+                activeTab === t.key
+                  ? "bg-brand-600 text-[#fff]"
+                  : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === "clients" && (
+          <ClientStatementsTab
+            rows={cashStatementRows}
+            totals={statementTotals}
+            period={statementPeriod}
+            periodOptions={statementPeriodOptions}
+            onPeriodChange={setStatementPeriod}
+            loading={loading || loadingStatements}
+            onView={setSelectedStatement}
+          />
+        )}
+
+        {activeTab === "cashflow" && (
+        <>
         {/* Period filter */}
         <div className="bg-white rounded-lg border border-slate-200 p-4 mb-6 flex flex-wrap items-center gap-3">
           <div className="flex gap-1 bg-slate-100 rounded-md p-1">
@@ -602,8 +812,220 @@ export default function Cashflow() {
             </table>
           </div>
         </div>
+        </>
+        )}
       </div>
+
+      <Modal
+        isOpen={!!selectedStatement}
+        onClose={() => setSelectedStatement(null)}
+        title="Full Client Statement (Cash Basis)"
+        size="lg"
+      >
+        {selectedStatement && (
+          <div className="space-y-4">
+            <div className="pb-4 border-b border-slate-200">
+              <h3 className="text-base text-slate-900">{selectedStatement.client.name}</h3>
+              <p className="text-xs text-slate-500 font-mono">{selectedStatement.client.client_code}</p>
+              <p className="text-xs text-slate-500 mt-1">Month: {formatPeriod(statementPeriod)}</p>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-brand-500">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Cash Received</p>
+                <p className="text-lg text-brand-900">{currency(selectedStatement.received)}</p>
+              </div>
+              <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-danger-500">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Payroll Paid</p>
+                <p className="text-lg text-danger-900">{currency(selectedStatement.payrollPaid)}</p>
+              </div>
+              <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-danger-500">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Expenses Paid</p>
+                <p className="text-lg text-danger-900">{currency(selectedStatement.expensesPaid)}</p>
+              </div>
+              <div
+                className={`p-3 rounded-lg border ${
+                  selectedStatement.netCash >= 0
+                    ? "bg-success-50 border-success-200"
+                    : "bg-danger-50 border-danger-200"
+                }`}
+              >
+                <p className={`text-xs mb-1 ${selectedStatement.netCash >= 0 ? "text-success-700" : "text-danger-700"}`}>
+                  Net Cash
+                </p>
+                <p className={`text-lg ${selectedStatement.netCash >= 0 ? "text-success-900" : "text-danger-900"}`}>
+                  {currency(selectedStatement.netCash)}
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-slate-200">
+              <h4 className="text-sm text-slate-900 mb-3">Payments Received</h4>
+              {selectedStatement.payments.length === 0 ? (
+                <p className="text-sm text-slate-500">No payments received from this client in {formatPeriod(statementPeriod)}.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-slate-200">
+                        <th className="text-left px-3 py-2 text-xs text-slate-500">Date</th>
+                        <th className="text-left px-3 py-2 text-xs text-slate-500">Mode</th>
+                        <th className="text-right px-3 py-2 text-xs text-slate-500">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {selectedStatement.payments.map((p) => (
+                        <tr key={p.id}>
+                          <td className="px-3 py-2 text-xs text-slate-600">{formatDate(p.date)}</td>
+                          <td className="px-3 py-2 text-xs text-slate-600">{p.mode ?? "—"}</td>
+                          <td className="px-3 py-2 text-xs text-right text-success-600">{currency(p.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3 pt-4 border-t border-slate-200">
+              <Button variant="primary" size="md" className="flex-1" onClick={() => window.print()}>
+                <Download className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                Print / Save PDF
+              </Button>
+              <Button variant="secondary" size="md" onClick={() => setSelectedStatement(null)}>
+                Close
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </>
+  );
+}
+
+/**
+ * The cash-basis Client Statements table. Deliberately the same layout as the
+ * revenue-basis one in Financial Reports — same four cards, same columns, same
+ * "View Full Statement" — so the two read as one report shown on two bases.
+ * Only the labels change, because only the basis changed.
+ */
+function ClientStatementsTab({
+  rows, totals, period, periodOptions, onPeriodChange, loading, onView,
+}: {
+  rows: CashStatementRow[];
+  totals: { received: number; payroll: number; expenses: number; net: number };
+  period: string;
+  periodOptions: string[];
+  onPeriodChange: (p: string) => void;
+  loading: boolean;
+  onView: (r: CashStatementRow) => void;
+}) {
+  return (
+    <div className="bg-white rounded-lg border border-slate-200">
+      <div className="p-6 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h3 className="text-lg text-slate-900 mb-1">Client Statements — Cash Basis</h3>
+          <p className="text-sm text-slate-500">
+            For {formatPeriod(period)} ({firstOfMonth(period)} – {lastOfMonth(period)})
+          </p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <label className="text-sm text-slate-600">Month:</label>
+          <ThemedSelect
+            value={period}
+            onChange={(e) => onPeriodChange(e.target.value)}
+            className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+          >
+            {periodOptions.map((p) => (
+              <option key={p} value={p}>{formatPeriod(p)}</option>
+            ))}
+          </ThemedSelect>
+        </div>
+        <span className="text-xs text-slate-500">
+          Net Cash = Cash Received − (Payroll Paid + Expenses Paid)
+        </span>
+      </div>
+
+      <div className="p-4 grid grid-cols-1 md:grid-cols-4 gap-3 border-b border-slate-200">
+        <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-brand-500">
+          <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Cash Received</p>
+          <p className="text-lg text-brand-900">{currency(totals.received)}</p>
+        </div>
+        <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-danger-500">
+          <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Payroll Paid</p>
+          <p className="text-lg text-danger-900">{currency(totals.payroll)}</p>
+        </div>
+        <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-danger-500">
+          <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Expenses Paid</p>
+          <p className="text-lg text-danger-900">{currency(totals.expenses)}</p>
+        </div>
+        <div
+          className={`p-3 rounded-lg border ${
+            totals.net >= 0 ? "bg-success-50 border-success-200" : "bg-danger-50 border-danger-200"
+          }`}
+        >
+          <p className={`text-xs mb-1 ${totals.net >= 0 ? "text-success-700" : "text-danger-700"}`}>Net Cash</p>
+          <p className={`text-lg ${totals.net >= 0 ? "text-success-900" : "text-danger-900"}`}>
+            {currency(totals.net)}
+          </p>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-slate-200">
+              <th className="text-left px-6 py-3 text-sm text-slate-500">Client</th>
+              <th className="text-right px-6 py-3 text-sm text-slate-500">Cash Received</th>
+              <th className="text-right px-6 py-3 text-sm text-slate-500">Payroll Paid</th>
+              <th className="text-right px-6 py-3 text-sm text-slate-500">Expenses Paid</th>
+              <th className="text-right px-6 py-3 text-sm text-slate-500">Net Cash</th>
+              <th className="text-left px-6 py-3 text-sm text-slate-500">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-200">
+            {loading && (
+              <tr>
+                <td colSpan={6} className="px-6 py-10 text-center text-slate-500">
+                  <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
+                </td>
+              </tr>
+            )}
+            {!loading && rows.length === 0 && (
+              <tr>
+                <td colSpan={6} className="px-6 py-10 text-center text-slate-500 text-sm">
+                  No clients yet.
+                </td>
+              </tr>
+            )}
+            {!loading && rows.map((r) => (
+              <tr key={r.client.id} className="hover:bg-slate-50 transition-colors">
+                <td className="px-6 py-4 text-sm text-slate-900">
+                  <div>{r.client.name}</div>
+                  <div className="text-xs text-slate-500 font-mono">{r.client.client_code}</div>
+                </td>
+                <td className="px-6 py-4 text-sm text-brand-600 text-right">{currency(r.received)}</td>
+                <td className="px-6 py-4 text-sm text-danger-600 text-right">{currency(r.payrollPaid)}</td>
+                <td className="px-6 py-4 text-sm text-danger-600 text-right">{currency(r.expensesPaid)}</td>
+                <td className="px-6 py-4 text-sm text-right">
+                  <span className={r.netCash >= 0 ? "text-success-600" : "text-danger-600"}>
+                    {currency(r.netCash)}
+                  </span>
+                </td>
+                <td className="px-6 py-4">
+                  <button
+                    className="text-sm text-brand-600 hover:text-brand-700"
+                    onClick={() => onView(r)}
+                  >
+                    View Full Statement
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
