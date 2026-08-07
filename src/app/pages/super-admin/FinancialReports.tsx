@@ -61,8 +61,23 @@ type ClientStatementRow = Client & {
   total_invoiced: number;
   payroll_expense: number;
   expenses: number;
+  /** This client's share of its region's own unattributed cost. */
+  regional_overhead: number;
+  /** This client's share of head office, pro-rata by revenue. */
+  ho_share: number;
   total_income: number;
   invoices: Invoice[];
+};
+
+/** One row of public.client_statement_loaded. */
+type LoadedStatement = {
+  client_id: string;
+  revenue: number;
+  direct_payroll: number;
+  direct_expenses: number;
+  regional_overhead: number;
+  ho_share: number;
+  net: number;
 };
 
 const monthKeyFromDate = (d: Date) =>
@@ -101,6 +116,7 @@ export default function FinancialReports() {
   // (payroll_cost_by_client, migration 0155).
   const [payrollByClient, setPayrollByClient] = useState<Map<string, number>>(new Map());
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [loadedStatements, setLoadedStatements] = useState<LoadedStatement[]>([]);
   const [loadingClients, setLoadingClients] = useState(true);
 
   const [chartPeriod, setChartPeriod] = useState<string>(previousMonthKey());
@@ -386,7 +402,7 @@ export default function FinancialReports() {
       setLoadingClients(true);
       const start = firstOfMonth(statementPeriod);
       const end = lastOfMonth(statementPeriod);
-      const [cliRes, invRes, psRes, empRes, expRes, costRes] = await Promise.all([
+      const [cliRes, invRes, psRes, empRes, expRes, costRes, loadedRes] = await Promise.all([
         supabase.from("clients").select("*").order("name"),
         supabase.from("invoices").select("*").or(invoicePeriodFilter(start, end)),
         supabase.from("payslips").select("*").eq("period_month", `${statementPeriod}-01`),
@@ -401,6 +417,9 @@ export default function FinancialReports() {
         // partly on each client instead of wholly on whoever they're posted to
         // now — which is what the old employees.client_id grouping did.
         supabase.rpc("payroll_cost_by_client", { p_period_month: `${statementPeriod}-01` }),
+        // Revenue basis: this is the Financial Reports twin of the cash-basis
+        // statement on the Cash Flow page.
+        supabase.rpc("client_statement_loaded", { p_start: start, p_end: end, p_basis: "revenue" }),
       ]);
       setClients((cliRes.data ?? []) as Client[]);
       setInvoices((invRes.data ?? []) as Invoice[]);
@@ -412,53 +431,62 @@ export default function FinancialReports() {
         costMap.set(r.client_id, Number(r.cost) || 0);
       }
       setPayrollByClient(costMap);
+      setLoadedStatements((loadedRes.data ?? []) as LoadedStatement[]);
       setLoadingClients(false);
     };
     loadClientData();
   }, [statementPeriod]);
 
+  // Every figure but the invoice list now comes from client_statement_loaded,
+  // which carries regional and head-office cost down to the client. Computing
+  // it here would mean re-deriving an apportionment that the Partnership Report
+  // already derives in SQL, and the two would drift.
   const clientStatementRows: ClientStatementRow[] = useMemo(() => {
     const filteredClients = statementBranchFilter === "all"
       ? clients
       : clients.filter((c) => c.branch_id === statementBranchFilter);
+    const byId = new Map(loadedStatements.map((r) => [r.client_id, r]));
 
     return filteredClients.map((c) => {
       const clientInvoices = invoices.filter((i) => i.client_id === c.id);
-      const total_invoiced = clientInvoices.reduce((s, i) => s + Number(i.invoice_amount), 0);
-
+      const l = byId.get(c.id);
+      const total_invoiced = Number(l?.revenue ?? 0);
       // Days-weighted share of every payslip that touched this client, so a
       // mid-month transfer bills each client for the days it actually got.
-      const payroll_expense = payrollByClient.get(c.id) ?? 0;
-
-      let expense_sum = 0;
-      for (const ex of expenses) {
-        if (ex.client_id !== c.id) continue;
-        expense_sum += Number(ex.amount);
-      }
+      const payroll_expense = Number(l?.direct_payroll ?? 0);
+      const expense_sum = Number(l?.direct_expenses ?? 0);
+      const regional_overhead = Number(l?.regional_overhead ?? 0);
+      const ho_share = Number(l?.ho_share ?? 0);
 
       return {
         ...c,
         total_invoiced,
         payroll_expense,
         expenses: expense_sum,
-        total_income: total_invoiced - payroll_expense - expense_sum,
+        regional_overhead,
+        ho_share,
+        total_income: Number(l?.net ?? 0),
         invoices: clientInvoices.sort((a, b) => (a.invoice_date < b.invoice_date ? 1 : -1)),
       };
     });
-  }, [clients, invoices, payslips, employees, expenses, payrollByClient, statementBranchFilter]);
+  }, [clients, invoices, loadedStatements, statementBranchFilter]);
 
   const statementTotals = useMemo(() => {
     let invoiced = 0;
     let payroll = 0;
     let exp = 0;
+    let regional = 0;
+    let ho = 0;
     let income = 0;
     for (const r of clientStatementRows) {
       invoiced += r.total_invoiced;
       payroll += r.payroll_expense;
       exp += r.expenses;
+      regional += r.regional_overhead;
+      ho += r.ho_share;
       income += r.total_income;
     }
-    return { invoiced, payroll, expenses: exp, income };
+    return { invoiced, payroll, expenses: exp, regional, ho, income };
   }, [clientStatementRows]);
 
   const viewFullStatement = (client: ClientStatementRow) => {
@@ -832,7 +860,9 @@ export default function FinancialReports() {
                     client: `${r.name} (${r.client_code})`,
                     totalReceivable: r.total_invoiced,
                     payrollExpenses: r.payroll_expense,
-                    otherExpenses: r.expenses,
+                    // Direct plus both apportioned layers, so the exported
+                    // columns still add up to netIncome.
+                    otherExpenses: r.expenses + r.regional_overhead + r.ho_share,
                     netIncome: r.total_income,
                   })),
                   formatPeriod(statementPeriod),
@@ -1099,11 +1129,12 @@ export default function FinancialReports() {
                   </ThemedSelect>
                 </div>
                 <span className="text-xs text-slate-500">
-                  Total Income = Total Invoiced − (Payroll + Expenses)
+                  Total Income = Invoiced − (Payroll + Direct Expenses + Regional Overhead + Head Office).
+                  Overhead is apportioned pro-rata by revenue.
                 </span>
               </div>
 
-              <div className="p-4 grid grid-cols-1 md:grid-cols-4 gap-3 border-b border-slate-200">
+              <div className="p-4 grid grid-cols-2 md:grid-cols-6 gap-3 border-b border-slate-200">
                 <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-brand-500">
                   <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Invoiced</p>
                   <p className="text-lg text-brand-900">
@@ -1117,9 +1148,21 @@ export default function FinancialReports() {
                   </p>
                 </div>
                 <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-danger-500">
-                  <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Other Expenses</p>
+                  <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Direct Expenses</p>
                   <p className="text-lg text-danger-900">
                     PKR {statementTotals.expenses.toLocaleString()}
+                  </p>
+                </div>
+                <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-slate-400">
+                  <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Regional Overhead</p>
+                  <p className="text-lg text-slate-700">
+                    PKR {Math.round(statementTotals.regional).toLocaleString()}
+                  </p>
+                </div>
+                <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-slate-400">
+                  <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Head Office</p>
+                  <p className="text-lg text-slate-700">
+                    PKR {Math.round(statementTotals.ho).toLocaleString()}
                   </p>
                 </div>
                 <div
@@ -1152,7 +1195,9 @@ export default function FinancialReports() {
                       <th className="text-left px-6 py-3 text-sm text-slate-500">Client</th>
                       <th className="text-right px-6 py-3 text-sm text-slate-500">Total Invoiced</th>
                       <th className="text-right px-6 py-3 text-sm text-slate-500">Payroll Expense</th>
-                      <th className="text-right px-6 py-3 text-sm text-slate-500">Expenses</th>
+                      <th className="text-right px-6 py-3 text-sm text-slate-500">Direct Expenses</th>
+                      <th className="text-right px-6 py-3 text-sm text-slate-500">Regional Overhead</th>
+                      <th className="text-right px-6 py-3 text-sm text-slate-500">Head Office</th>
                       <th className="text-right px-6 py-3 text-sm text-slate-500">Total Income</th>
                       <th className="text-left px-6 py-3 text-sm text-slate-500">Actions</th>
                     </tr>
@@ -1160,14 +1205,14 @@ export default function FinancialReports() {
                   <tbody className="divide-y divide-slate-200">
                     {loadingClients && (
                       <tr>
-                        <td colSpan={6} className="px-6 py-10 text-center text-slate-500">
+                        <td colSpan={8} className="px-6 py-10 text-center text-slate-500">
                           <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                         </td>
                       </tr>
                     )}
                     {!loadingClients && clientStatementRows.length === 0 && (
                       <tr>
-                        <td colSpan={6} className="px-6 py-10 text-center text-slate-500 text-sm">
+                        <td colSpan={8} className="px-6 py-10 text-center text-slate-500 text-sm">
                           No clients yet.
                         </td>
                       </tr>
@@ -1187,6 +1232,12 @@ export default function FinancialReports() {
                           </td>
                           <td className="px-6 py-4 text-sm text-danger-600 text-right">
                             PKR {client.expenses.toLocaleString()}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-slate-500 text-right">
+                            PKR {Math.round(client.regional_overhead).toLocaleString()}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-slate-500 text-right">
+                            PKR {Math.round(client.ho_share).toLocaleString()}
                           </td>
                           <td className="px-6 py-4 text-sm text-right">
                             <span className={client.total_income >= 0 ? "text-success-600" : "text-danger-600"}>
@@ -1390,8 +1441,17 @@ export default function FinancialReports() {
                 </div>
               </div>
 
-              <form onSubmit={handleAddPartner} className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-6 grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
-                <div className="md:col-span-2">
+              {/* 12 columns, not 5. With Region hidden the fields are 4+2+2+2
+                  and the button takes the last 2; with it shown the name gives
+                  up two of its own so the row still totals 12. On a 5-column
+                  grid the six cells always overflowed and dropped the button
+                  onto a second row.
+
+                  items-start, not items-end: only some fields carry helper text
+                  under them, so bottom-aligning the cells staggered the inputs.
+                  The button gets an invisible label so it lines up with them. */}
+              <form onSubmit={handleAddPartner} className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-12 gap-3 items-start">
+                <div className={newPartnerScope === "BRANCH" ? "md:col-span-2" : "md:col-span-4"}>
                   <label className="block text-xs text-slate-700 mb-1">Partner Name</label>
                   <input
                     type="text"
@@ -1401,7 +1461,7 @@ export default function FinancialReports() {
                     placeholder="Full name"
                   />
                 </div>
-                <div>
+                <div className="md:col-span-2">
                   <label className="block text-xs text-slate-700 mb-1">Kind</label>
                   <ThemedSelect
                     value={newPartnerScope}
@@ -1418,7 +1478,7 @@ export default function FinancialReports() {
                   </p>
                 </div>
                 {newPartnerScope === "BRANCH" && (
-                  <div>
+                  <div className="md:col-span-2">
                     <label className="block text-xs text-slate-700 mb-1">Region</label>
                     <ThemedSelect
                       value={newPartnerBranch}
@@ -1432,7 +1492,7 @@ export default function FinancialReports() {
                     </ThemedSelect>
                   </div>
                 )}
-                <div>
+                <div className="md:col-span-2">
                   <label className="block text-xs text-slate-700 mb-1">Profit Share %</label>
                   <input
                     type="number"
@@ -1452,7 +1512,7 @@ export default function FinancialReports() {
                         : "Of that region's profit."}
                   </p>
                 </div>
-                <div>
+                <div className="md:col-span-2">
                   <label className="block text-xs text-slate-700 mb-1">Opening Balance (PKR)</label>
                   <input
                     type="number"
@@ -1463,9 +1523,19 @@ export default function FinancialReports() {
                   />
                   <p className="text-[10px] text-slate-500 mt-1">Locks once non-zero is saved.</p>
                 </div>
-                <div>
-                  <Button type="submit" variant="primary" size="sm" disabled={partnerSubmitting || !newPartnerName.trim()}>
-                    <Plus className="w-4 h-4 mr-1" /> Add Partner
+                <div className="md:col-span-2">
+                  {/* Spacer matching the other cells' label, so the button sits
+                      on the same line as the inputs rather than above them. */}
+                  <span className="hidden md:block text-xs mb-1 invisible" aria-hidden="true">Add</span>
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    size="md"
+                    className="w-full"
+                    disabled={partnerSubmitting || !newPartnerName.trim()}
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add Partner
                   </Button>
                 </div>
               </form>
@@ -1617,7 +1687,7 @@ export default function FinancialReports() {
               <p className="text-xs text-slate-500 mt-1">Month: {formatPeriod(statementPeriod)}</p>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-brand-500">
                 <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Invoiced</p>
                 <p className="text-lg text-brand-900">PKR {selectedClient.total_invoiced.toLocaleString()}</p>
@@ -1627,8 +1697,16 @@ export default function FinancialReports() {
                 <p className="text-lg text-danger-900">PKR {selectedClient.payroll_expense.toLocaleString()}</p>
               </div>
               <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-danger-500">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Expenses</p>
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Direct Expenses</p>
                 <p className="text-lg text-danger-900">PKR {selectedClient.expenses.toLocaleString()}</p>
+              </div>
+              <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-slate-400">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Regional Overhead</p>
+                <p className="text-lg text-slate-700">PKR {Math.round(selectedClient.regional_overhead).toLocaleString()}</p>
+              </div>
+              <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-slate-400">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Head Office</p>
+                <p className="text-lg text-slate-700">PKR {Math.round(selectedClient.ho_share).toLocaleString()}</p>
               </div>
               <div className={`p-3 rounded-lg border ${selectedClient.total_income >= 0 ? "bg-success-50 border-success-200" : "bg-danger-50 border-danger-200"}`}>
                 <p className={`text-xs mb-1 ${selectedClient.total_income >= 0 ? "text-success-700" : "text-danger-700"}`}>Total Income</p>

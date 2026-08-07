@@ -82,8 +82,23 @@ type CashStatementRow = {
   received: number;
   payrollPaid: number;
   expensesPaid: number;
+  /** This client's share of its region's own unattributed cost. */
+  regionalOverhead: number;
+  /** This client's share of head office, pro-rata by revenue. */
+  hoShare: number;
   netCash: number;
   payments: { id: string; date: string; amount: number; mode: string | null }[];
+};
+
+/** One row of public.client_statement_loaded, asked on the cash basis. */
+type LoadedStatement = {
+  client_id: string;
+  revenue: number;
+  direct_payroll: number;
+  direct_expenses: number;
+  regional_overhead: number;
+  ho_share: number;
+  net: number;
 };
 
 export default function Cashflow() {
@@ -115,6 +130,7 @@ export default function Cashflow() {
   // client_id → payroll CASH paid in the statement month, split by days worked
   // (payroll_cash_by_client, migration 0176).
   const [payrollCashByClient, setPayrollCashByClient] = useState<Map<string, number>>(new Map());
+  const [loadedStatements, setLoadedStatements] = useState<LoadedStatement[]>([]);
   const [loadingStatements, setLoadingStatements] = useState(false);
   const [selectedStatement, setSelectedStatement] = useState<CashStatementRow | null>(null);
 
@@ -266,16 +282,21 @@ export default function Cashflow() {
     let cancelled = false;
     (async () => {
       setLoadingStatements(true);
-      const { data } = await supabase.rpc("payroll_cash_by_client", {
-        p_start: firstOfMonth(statementPeriod),
-        p_end: lastOfMonth(statementPeriod),
-      });
+      const start = firstOfMonth(statementPeriod);
+      const end = lastOfMonth(statementPeriod);
+      const [payRes, loadedRes] = await Promise.all([
+        supabase.rpc("payroll_cash_by_client", { p_start: start, p_end: end }),
+        // Cash basis: the same apportionment the Financial Reports statement
+        // uses on the revenue basis, asked of money that actually moved.
+        supabase.rpc("client_statement_loaded", { p_start: start, p_end: end, p_basis: "cash" }),
+      ]);
       if (cancelled) return;
       const m = new Map<string, number>();
-      for (const r of ((data ?? []) as { client_id: string; cost: number }[])) {
+      for (const r of ((payRes.data ?? []) as { client_id: string; cost: number }[])) {
         m.set(r.client_id, Number(r.cost) || 0);
       }
       setPayrollCashByClient(m);
+      setLoadedStatements((loadedRes.data ?? []) as LoadedStatement[]);
       setLoadingStatements(false);
     })();
     return () => {
@@ -327,30 +348,37 @@ export default function Cashflow() {
       expensesBy.set(e.client_id, (expensesBy.get(e.client_id) ?? 0) + Number(e.amount ?? 0));
     }
 
+    // The money columns come from client_statement_loaded so the apportionment
+    // matches the revenue-basis statement and the partner allocation exactly.
+    // The payments list stays local: it is the detail behind the received
+    // figure, drawn from the very rows this page already holds.
+    const byId = new Map(loadedStatements.map((r) => [r.client_id, r]));
     return clients.map((c) => {
-      const received = receivedBy.get(c.id) ?? 0;
-      const payrollPaid = payrollCashByClient.get(c.id) ?? 0;
-      const expensesPaid = expensesBy.get(c.id) ?? 0;
+      const l = byId.get(c.id);
       return {
         client: c,
-        received,
-        payrollPaid,
-        expensesPaid,
-        netCash: received - payrollPaid - expensesPaid,
+        received: Number(l?.revenue ?? receivedBy.get(c.id) ?? 0),
+        payrollPaid: Number(l?.direct_payroll ?? payrollCashByClient.get(c.id) ?? 0),
+        expensesPaid: Number(l?.direct_expenses ?? expensesBy.get(c.id) ?? 0),
+        regionalOverhead: Number(l?.regional_overhead ?? 0),
+        hoShare: Number(l?.ho_share ?? 0),
+        netCash: Number(l?.net ?? 0),
         payments: (paymentsBy.get(c.id) ?? []).sort((a, b) => b.date.localeCompare(a.date)),
       };
     });
-  }, [clients, invoicePayments, expenses, cheques, payrollCashByClient, statementPeriod]);
+  }, [clients, invoicePayments, expenses, cheques, payrollCashByClient, loadedStatements, statementPeriod]);
 
   const statementTotals = useMemo(() => {
-    let received = 0, payroll = 0, exp = 0, net = 0;
+    let received = 0, payroll = 0, exp = 0, regional = 0, ho = 0, net = 0;
     for (const r of cashStatementRows) {
       received += r.received;
       payroll += r.payrollPaid;
       exp += r.expensesPaid;
+      regional += r.regionalOverhead;
+      ho += r.hoShare;
       net += r.netCash;
     }
-    return { received, payroll, expenses: exp, net };
+    return { received, payroll, expenses: exp, regional, ho, net };
   }, [cashStatementRows]);
 
   // Apply the period filter to a list.
@@ -469,7 +497,9 @@ export default function Cashflow() {
                     client: `${r.client.name} (${r.client.client_code})`,
                     totalReceivable: r.received,
                     payrollExpenses: r.payrollPaid,
-                    otherExpenses: r.expensesPaid,
+                    // Direct plus both apportioned layers, so the exported
+                    // columns still add up to netIncome.
+                    otherExpenses: r.expensesPaid + r.regionalOverhead + r.hoShare,
                     netIncome: r.netCash,
                   })),
                   formatPeriod(statementPeriod),
@@ -830,7 +860,7 @@ export default function Cashflow() {
               <p className="text-xs text-slate-500 mt-1">Month: {formatPeriod(statementPeriod)}</p>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-brand-500">
                 <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Cash Received</p>
                 <p className="text-lg text-brand-900">{currency(selectedStatement.received)}</p>
@@ -840,8 +870,16 @@ export default function Cashflow() {
                 <p className="text-lg text-danger-900">{currency(selectedStatement.payrollPaid)}</p>
               </div>
               <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-danger-500">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Expenses Paid</p>
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Direct Expenses</p>
                 <p className="text-lg text-danger-900">{currency(selectedStatement.expensesPaid)}</p>
+              </div>
+              <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-slate-400">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Regional Overhead</p>
+                <p className="text-lg text-slate-700">{currency(selectedStatement.regionalOverhead)}</p>
+              </div>
+              <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-slate-400">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Head Office</p>
+                <p className="text-lg text-slate-700">{currency(selectedStatement.hoShare)}</p>
               </div>
               <div
                 className={`p-3 rounded-lg border ${
@@ -913,7 +951,7 @@ function ClientStatementsTab({
   rows, totals, period, periodOptions, onPeriodChange, loading, onView,
 }: {
   rows: CashStatementRow[];
-  totals: { received: number; payroll: number; expenses: number; net: number };
+  totals: { received: number; payroll: number; expenses: number; regional: number; ho: number; net: number };
   period: string;
   periodOptions: string[];
   onPeriodChange: (p: string) => void;
@@ -942,11 +980,12 @@ function ClientStatementsTab({
           </ThemedSelect>
         </div>
         <span className="text-xs text-slate-500">
-          Net Cash = Cash Received − (Payroll Paid + Expenses Paid)
+          Net Cash = Received − (Payroll + Direct Expenses + Regional Overhead + Head Office).
+          Overhead is apportioned pro-rata by cash received.
         </span>
       </div>
 
-      <div className="p-4 grid grid-cols-1 md:grid-cols-4 gap-3 border-b border-slate-200">
+      <div className="p-4 grid grid-cols-2 md:grid-cols-6 gap-3 border-b border-slate-200">
         <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-brand-500">
           <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Cash Received</p>
           <p className="text-lg text-brand-900">{currency(totals.received)}</p>
@@ -956,8 +995,16 @@ function ClientStatementsTab({
           <p className="text-lg text-danger-900">{currency(totals.payroll)}</p>
         </div>
         <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-danger-500">
-          <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Expenses Paid</p>
+          <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Direct Expenses</p>
           <p className="text-lg text-danger-900">{currency(totals.expenses)}</p>
+        </div>
+        <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-slate-400">
+          <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Regional Overhead</p>
+          <p className="text-lg text-slate-700">{currency(totals.regional)}</p>
+        </div>
+        <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-slate-400">
+          <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Head Office</p>
+          <p className="text-lg text-slate-700">{currency(totals.ho)}</p>
         </div>
         <div
           className={`p-3 rounded-lg border ${
@@ -978,7 +1025,9 @@ function ClientStatementsTab({
               <th className="text-left px-6 py-3 text-sm text-slate-500">Client</th>
               <th className="text-right px-6 py-3 text-sm text-slate-500">Cash Received</th>
               <th className="text-right px-6 py-3 text-sm text-slate-500">Payroll Paid</th>
-              <th className="text-right px-6 py-3 text-sm text-slate-500">Expenses Paid</th>
+              <th className="text-right px-6 py-3 text-sm text-slate-500">Direct Expenses</th>
+              <th className="text-right px-6 py-3 text-sm text-slate-500">Regional Overhead</th>
+              <th className="text-right px-6 py-3 text-sm text-slate-500">Head Office</th>
               <th className="text-right px-6 py-3 text-sm text-slate-500">Net Cash</th>
               <th className="text-left px-6 py-3 text-sm text-slate-500">Actions</th>
             </tr>
@@ -986,14 +1035,14 @@ function ClientStatementsTab({
           <tbody className="divide-y divide-slate-200">
             {loading && (
               <tr>
-                <td colSpan={6} className="px-6 py-10 text-center text-slate-500">
+                <td colSpan={8} className="px-6 py-10 text-center text-slate-500">
                   <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                 </td>
               </tr>
             )}
             {!loading && rows.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-6 py-10 text-center text-slate-500 text-sm">
+                <td colSpan={8} className="px-6 py-10 text-center text-slate-500 text-sm">
                   No clients yet.
                 </td>
               </tr>
@@ -1007,6 +1056,8 @@ function ClientStatementsTab({
                 <td className="px-6 py-4 text-sm text-brand-600 text-right">{currency(r.received)}</td>
                 <td className="px-6 py-4 text-sm text-danger-600 text-right">{currency(r.payrollPaid)}</td>
                 <td className="px-6 py-4 text-sm text-danger-600 text-right">{currency(r.expensesPaid)}</td>
+                <td className="px-6 py-4 text-sm text-slate-500 text-right">{currency(r.regionalOverhead)}</td>
+                <td className="px-6 py-4 text-sm text-slate-500 text-right">{currency(r.hoShare)}</td>
                 <td className="px-6 py-4 text-sm text-right">
                   <span className={r.netCash >= 0 ? "text-success-600" : "text-danger-600"}>
                     {currency(r.netCash)}
