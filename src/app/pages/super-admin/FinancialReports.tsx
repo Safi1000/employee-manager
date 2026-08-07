@@ -32,11 +32,16 @@ import {
  * One line of the two-tier partner allocation — see public.partnership_allocation.
  *
  * row_kind tells you what the line is:
- *   REGION            a region's profit, what its regional partners took, and
+ *   REGION            a region's profit before and after head office is
+ *                     apportioned to it, what its regional partners took, and
  *                     the residual that fell through to the equity pool.
  *   REGIONAL_PARTNER  a regional partner's share of THEIR region.
  *   EQUITY_PARTNER    an equity partner's share of the pooled residual.
  *   UNALLOCATED       whatever the equity shares did not add up to.
+ *
+ * own_profit + ho_allocated = base_amount, which is what the shares bite on.
+ * Head office's own row carries ho_allocated = −own_profit, so it nets to zero:
+ * its whole cost has been pushed out to the regions it serves.
  */
 type AllocRow = {
   row_kind: "REGION" | "REGIONAL_PARTNER" | "EQUITY_PARTNER" | "UNALLOCATED";
@@ -45,6 +50,8 @@ type AllocRow = {
   partner_id: string | null;
   partner_name: string | null;
   share_pct: number | null;
+  own_profit: number | null;
+  ho_allocated: number | null;
   base_amount: number;
   amount: number;
   residual: number | null;
@@ -1238,9 +1245,9 @@ export default function FinancialReports() {
                   <div>
                     <h4 className="text-sm text-slate-900">Profit allocation</h4>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      Regional partners take their share of their own region. What is left in every
-                      region — head office included — pools together and is divided between the
-                      equity partners.
+                      Head-office cost is apportioned to the regions first, pro-rata by revenue.
+                      Regional partners then take their share of their region's adjusted profit, and
+                      what is left in every region pools together for the equity partners.
                     </p>
                   </div>
                   <div className="flex gap-1 bg-slate-100 rounded-md p-1">
@@ -1265,7 +1272,9 @@ export default function FinancialReports() {
                     <thead>
                       <tr className="border-b border-slate-200 text-xs text-slate-500 uppercase">
                         <th className="text-left px-4 py-2.5">Region</th>
-                        <th className="text-right px-4 py-2.5">Region profit</th>
+                        <th className="text-right px-4 py-2.5">Own profit</th>
+                        <th className="text-right px-4 py-2.5">Head office share</th>
+                        <th className="text-right px-4 py-2.5">Adjusted profit</th>
                         <th className="text-left px-4 py-2.5">Regional partners</th>
                         <th className="text-right px-4 py-2.5">Taken</th>
                         <th className="text-right px-4 py-2.5">Falls to pool</th>
@@ -1273,18 +1282,38 @@ export default function FinancialReports() {
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {allocRegions.length === 0 && (
-                        <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">No regions.</td></tr>
+                        <tr><td colSpan={7} className="px-4 py-6 text-center text-slate-500">No regions.</td></tr>
                       )}
                       {allocRegions.map((r) => {
                         const mine = allocRegional.filter((p) => p.branch_id === r.branch_id);
+                        // Head office's row is the apportionment itself: its cost
+                        // leaves in full, so it nets to zero and takes no partners.
+                        const isHo = Math.round(Number(r.base_amount)) === 0
+                          && Math.round(Number(r.ho_allocated ?? 0)) === -Math.round(Number(r.own_profit ?? 0))
+                          && Math.round(Number(r.own_profit ?? 0)) !== 0;
                         return (
-                          <tr key={r.branch_id ?? "unassigned"} className="hover:bg-slate-50">
-                            <td className="px-4 py-3 text-slate-900">{r.region_name}</td>
+                          <tr key={r.branch_id ?? "unassigned"} className={`hover:bg-slate-50 ${isHo ? "bg-slate-50/60" : ""}`}>
+                            <td className="px-4 py-3 text-slate-900">
+                              {r.region_name}
+                              {isHo && (
+                                <div className="text-[11px] text-slate-500">Cost spread across the regions</div>
+                              )}
+                            </td>
                             <td className="px-4 py-3 text-right tabular-nums text-slate-700">
+                              PKR {Math.round(Number(r.own_profit ?? 0)).toLocaleString()}
+                            </td>
+                            <td className="px-4 py-3 text-right tabular-nums text-slate-600">
+                              {Math.round(Number(r.ho_allocated ?? 0)) === 0
+                                ? "—"
+                                : `PKR ${Math.round(Number(r.ho_allocated ?? 0)).toLocaleString()}`}
+                            </td>
+                            <td className="px-4 py-3 text-right tabular-nums text-slate-900">
                               PKR {Math.round(Number(r.base_amount)).toLocaleString()}
                             </td>
                             <td className="px-4 py-3 text-xs text-slate-600">
-                              {mine.length === 0 ? (
+                              {isHo ? (
+                                <span className="text-slate-400">—</span>
+                              ) : mine.length === 0 ? (
                                 <span className="text-slate-400">None — whole profit pools</span>
                               ) : (
                                 mine.map((p) => (
@@ -1309,7 +1338,7 @@ export default function FinancialReports() {
                     </tbody>
                     <tfoot>
                       <tr className="border-t border-slate-200 bg-slate-50 text-slate-900">
-                        <td className="px-4 py-3" colSpan={4}>Residual pool for equity partners</td>
+                        <td className="px-4 py-3" colSpan={6}>Residual pool for equity partners</td>
                         <td className="px-4 py-3 text-right tabular-nums">
                           PKR {Math.round(residualPool).toLocaleString()}
                         </td>
