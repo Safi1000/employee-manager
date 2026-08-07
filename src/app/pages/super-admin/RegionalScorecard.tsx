@@ -5,14 +5,17 @@ import ThemedSelect from "../../components/ThemedSelect";
 import ExportButton from "../../components/ExportButton";
 import { exportTable } from "../../lib/excel";
 import { useAuth } from "../../lib/auth";
+import { useRegion, withRegion } from "../../lib/region";
 import { supabase } from "../../lib/supabase";
 
-// §22 Regional scorecard + KPI department dashboard — one card per region with
-// coverage, incidents, no-shows, receivables, profit and inter-region balance,
-// plus the department KPI traffic-light roll-up.
+// §22 Regional scorecard — one card per region with coverage, incidents,
+// no-shows, receivables, profit and inter-region balance.
 //
 // Three financial tabs sit alongside it (0178): the same month's profit read on
 // a revenue basis and on a cash basis, and the general-expense breakdown.
+//
+// The department KPI traffic-light roll-up used to sit under the cards. It was
+// removed; kpi_department_dashboard is no longer read anywhere in the app.
 
 const money = (n: any) => Number(n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
 const pkr = (n: any) => `PKR ${money(n)}`;
@@ -78,9 +81,15 @@ function CountUp({ value, format }: { value: number; format?: (n: number) => str
 
 export default function RegionalScorecard() {
   const { company } = useAuth();
+  // This page is a cross-region comparison, so it reads oddly at first that it
+  // honours the global region switch at all. It must: the switch is app chrome
+  // on every screen, and an RMD login is PINNED to its own region — without
+  // this, the one page that exists to show regional profit was showing every
+  // other region's to someone locked out of them.
+  // Consolidated (null) keeps the full comparison.
+  const { regionId } = useRegion();
   const companyId = company?.id ?? "";
   const [cards, setCards] = useState<any[]>([]);
-  const [kpis, setKpis] = useState<any[]>([]);
 
   const [tab, setTab] = useState<TabKey>("scorecard");
   const [period, setPeriod] = useState<string>(monthKeyOf(new Date()));
@@ -101,13 +110,12 @@ export default function RegionalScorecard() {
 
   const load = useCallback(async () => {
     if (!companyId) return;
-    const [sc, kd] = await Promise.all([
+    const sc = await withRegion(
       supabase.from("regional_scorecard").select("*").eq("company_id", companyId),
-      supabase.from("kpi_department_dashboard").select("*").eq("company_id", companyId).order("period_month", { ascending: false }),
-    ]);
+      regionId,
+    );
     setCards(sc.data ?? []);
-    setKpis(kd.data ?? []);
-  }, [companyId]);
+  }, [companyId, regionId]);
   useEffect(() => { load(); }, [load]);
 
   // Both financial datasets come from the same month, so they load together —
@@ -129,12 +137,25 @@ export default function RegionalScorecard() {
     return () => { cancelled = true; };
   }, [companyId, period]);
 
+  // Both RPCs already return branch_id, and a month is at most a handful of
+  // regions, so the switch is applied here rather than pushed into SQL. Totals
+  // are derived from the FILTERED rows, so the total line always agrees with
+  // the rows above it instead of quietly reporting the whole company.
+  const plRows = useMemo(
+    () => (regionId ? pl.filter((r) => r.branch_id === regionId) : pl),
+    [pl, regionId],
+  );
+  const generalRows = useMemo(
+    () => (regionId ? general.filter((g) => g.branch_id === regionId) : general),
+    [general, regionId],
+  );
+
   const plTotals = useMemo(() => {
     const t = {
       revenue_accrual: 0, payroll_accrual: 0, expenses_accrual: 0, profit_accrual: 0,
       revenue_cash: 0, payroll_cash: 0, expenses_cash: 0, profit_cash: 0,
     };
-    for (const r of pl) {
+    for (const r of plRows) {
       t.revenue_accrual += Number(r.revenue_accrual);
       t.payroll_accrual += Number(r.payroll_accrual);
       t.expenses_accrual += Number(r.expenses_accrual);
@@ -145,14 +166,14 @@ export default function RegionalScorecard() {
       t.profit_cash += Number(r.profit_cash);
     }
     return t;
-  }, [pl]);
+  }, [plRows]);
 
   // General expenses pivoted to category × region, so one row reads "Utilities
   // & Rent, and what each region spent on it".
   const generalPivot = useMemo(() => {
-    const regions = Array.from(new Set(general.map((g) => g.region_name))).sort();
+    const regions = Array.from(new Set(generalRows.map((g) => g.region_name))).sort();
     const byCategory = new Map<string, { category: string; isPayroll: boolean; per: Map<string, number>; total: number }>();
-    for (const g of general) {
+    for (const g of generalRows) {
       let row = byCategory.get(g.category);
       if (!row) {
         row = { category: g.category, isPayroll: g.is_payroll, per: new Map(), total: 0 };
@@ -169,7 +190,7 @@ export default function RegionalScorecard() {
     }
     const grand = rows.reduce((s, r) => s + r.total, 0);
     return { regions, rows, perRegionTotal, grand };
-  }, [general]);
+  }, [generalRows]);
 
   // Auto-gliding, chevron-controllable marquee of region cards.
   const viewRef = useRef<HTMLDivElement>(null);
@@ -249,7 +270,7 @@ export default function RegionalScorecard() {
                   sheetName: "Regional Profit",
                   title: `Regional Profit — ${cash ? "cash basis" : "revenue basis"} — ${monthLabel(period)}`,
                   headers: ["Region", cash ? "Cash Received" : "Revenue", cash ? "Payroll Paid" : "Payroll", cash ? "Expenses Paid" : "Expenses", cash ? "Net Cash" : "Profit"],
-                  rows: pl.map((r) => [
+                  rows: plRows.map((r) => [
                     r.region_name,
                     Number(cash ? r.revenue_cash : r.revenue_accrual),
                     Number(cash ? r.payroll_cash : r.payroll_accrual),
@@ -302,7 +323,7 @@ export default function RegionalScorecard() {
       {tab === "profit-revenue" && (
         <ProfitTab
           basis="revenue"
-          rows={pl}
+          rows={plRows}
           totals={plTotals}
           period={period}
           loading={loadingFin}
@@ -312,7 +333,7 @@ export default function RegionalScorecard() {
       {tab === "profit-cash" && (
         <ProfitTab
           basis="cash"
-          rows={pl}
+          rows={plRows}
           totals={plTotals}
           period={period}
           loading={loadingFin}
@@ -390,36 +411,6 @@ export default function RegionalScorecard() {
         </div>
       )}
 
-      <section>
-        <h3 className="text-sm font-semibold uppercase tracking-[0.1em] text-muted-foreground mb-2">Department KPI roll-up</h3>
-        <div className="overflow-x-auto border border-border rounded-xl bg-card">
-          <table className="w-full text-sm min-w-[560px]">
-            <thead className="bg-slate-50 text-[11px] text-muted-foreground uppercase tracking-[0.08em] border-b border-border">
-              <tr>
-                <th className="text-left px-3 py-2.5">Month</th>
-                <th className="text-left px-3 py-2.5">Department</th>
-                <th className="text-right px-3 py-2.5">Scored</th>
-                <th className="text-right px-3 py-2.5">Green</th>
-                <th className="text-right px-3 py-2.5">Amber</th>
-                <th className="text-right px-3 py-2.5">Red</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {kpis.map((k, i) => (
-                <tr key={i} className="hover:bg-accent/50 transition-colors">
-                  <td className="px-3 py-2 text-muted-foreground tabular-nums">{String(k.period_month).slice(0, 7)}</td>
-                  <td className="px-3 py-2 text-foreground capitalize">{String(k.department).replace(/_/g, " ")}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-foreground">{k.kpis_scored}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-success-700 dark:text-success-500">{k.green}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-warning-700 dark:text-warning-500">{k.amber}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-danger-700 dark:text-danger-500">{k.red}</td>
-                </tr>
-              ))}
-              {kpis.length === 0 && <tr><td colSpan={6} className="px-3 py-4 text-center text-muted-foreground">No KPI scores yet.</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      </section>
       </>
       )}
     </div>
