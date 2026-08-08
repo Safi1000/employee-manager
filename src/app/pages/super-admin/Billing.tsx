@@ -129,7 +129,7 @@ export default function Billing() {
     (guards !== summary.guard_limit || care !== summary.plan_care);
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 p-6">
+    <div className="mx-auto w-full max-w-5xl flex-1 overflow-y-auto space-y-6 p-6">
       <header>
         <h1 className="text-2xl font-bold tracking-tight text-foreground" style={{ fontFamily: "var(--font-display)" }}>
           Plan &amp; billing
