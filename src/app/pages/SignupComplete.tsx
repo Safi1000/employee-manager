@@ -3,6 +3,7 @@ import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
 import { ArrowRight, CheckCircle2, Eye, EyeOff, Loader2, Lock } from "lucide-react";
 import { ROLE_HOMES, useAuth } from "../lib/auth";
 import { completeSignup } from "../lib/billing";
+import { trackSignUp } from "../lib/analytics";
 import ThemeToggle from "../components/ThemeToggle";
 
 // Step 2 of self-serve signup — where Stripe sends the browser back.
@@ -68,6 +69,11 @@ export default function SignupComplete() {
       setSubmitting(false);
       return;
     }
+
+    // The conversion, recorded where the company genuinely comes into
+    // existence. Firing it on arrival at this page instead would count anyone
+    // who reached the form and abandoned it.
+    trackSignUp();
 
     // Sign straight in — they have just typed this password, asking for it
     // again would be pure friction.

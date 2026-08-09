@@ -5,6 +5,7 @@ import Signup from "./pages/Signup";
 import SignupComplete from "./pages/SignupComplete";
 import RequireAuth from "./components/RequireAuth";
 import RequirePermission from "./components/RequirePermission";
+import PublicAnalytics from "./components/PublicAnalytics";
 import SuperAdminLayout from "./layouts/SuperAdminLayout";
 import SuperSuperAdminLayout from "./layouts/SuperSuperAdminLayout";
 
@@ -68,13 +69,22 @@ const guard = (perms: string[], el: React.ReactNode) => (
 );
 
 export const router = createBrowserRouter([
-  { path: "/", Component: RoleSelection },
-  { path: "/login", Component: Login },
-  // Self-serve signup. Two steps with Stripe in the middle: /signup takes the
-  // plan and opens Checkout, /signup/complete is where Stripe returns and the
-  // company is actually created — but only if the payment is confirmed.
-  { path: "/signup", Component: Signup },
-  { path: "/signup/complete", Component: SignupComplete },
+  // Everything public sits under one pathless layout route whose only job is to
+  // switch Google Analytics on. The panels below are deliberately OUTSIDE it:
+  // that boundary is what keeps authenticated URLs — and anything identifying a
+  // tenant, client or employee — from reaching Google. See PublicAnalytics.
+  {
+    element: <PublicAnalytics />,
+    children: [
+      { path: "/", Component: RoleSelection },
+      { path: "/login", Component: Login },
+      // Self-serve signup. Two steps with Stripe in the middle: /signup takes the
+      // plan and opens Checkout, /signup/complete is where Stripe returns and the
+      // company is actually created — but only if the payment is confirmed.
+      { path: "/signup", Component: Signup },
+      { path: "/signup/complete", Component: SignupComplete },
+    ],
+  },
   {
     path: "/super-super-admin",
     element: (

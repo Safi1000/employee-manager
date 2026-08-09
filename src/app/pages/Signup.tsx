@@ -4,6 +4,7 @@ import { ArrowRight, Building2, Check, Loader2, Mail, ShieldCheck, User } from "
 import { ROLE_HOMES, useAuth } from "../lib/auth";
 import { PRICING, computePricing, money, normaliseGuards } from "../lib/pricing";
 import { startCheckout } from "../lib/billing";
+import { trackBeginCheckout } from "../lib/analytics";
 import ThemeToggle from "../components/ThemeToggle";
 
 // Step 1 of self-serve signup.
@@ -68,6 +69,10 @@ export default function Signup() {
       setSubmitting(false);
       return;
     }
+    // Fired only once Stripe has actually given us a URL, so a failed checkout
+    // attempt is not counted as one. Sent before the redirect below; gtag uses
+    // sendBeacon, which survives the page being torn down.
+    trackBeginCheckout({ guards, care, value: quote.total });
     // Hand the browser to Stripe. Deliberately not a router navigate — this
     // leaves the app entirely.
     window.location.href = res.url;
