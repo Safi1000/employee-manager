@@ -104,5 +104,18 @@ export function attendanceWindowError(
   return null;
 }
 
+/**
+ * Whether a separated guard should be dropped from the attendance roster for
+ * `date`, rather than shown as a locked row. They disappear from their
+ * separation date (the last working day) onward; before it they still appear so
+ * their final days can be marked. Non-separated guards are never hidden.
+ * The cutoff mirrors the lock boundary in attendanceWindowError.
+ */
+export function hiddenFromAttendance(emp: WindowEmployee, date: string): boolean {
+  if (!isSeparatedState(emp.lifecycle_state)) return false;
+  const cutoff = emp.termination_date ?? emp.last_working_day;
+  return !!cutoff && date >= cutoff;
+}
+
 /** Short marker for the attendance export's day cells (see exportAttendance). */
 export const SEPARATION_MARK = "X";

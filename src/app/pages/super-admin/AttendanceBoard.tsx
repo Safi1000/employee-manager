@@ -13,6 +13,7 @@ import { brandingFromCompany, type PdfBranding } from "../../lib/pdfBranding";
 import { generateClientAttendancePdf, generateGuardAttendancePdf } from "../../lib/attendanceSheetPdf";
 import { exportAttendance, type AttendanceEmployeeRow } from "../../lib/excel";
 import { loadShiftResolver } from "../../lib/shiftOnDate";
+import { hiddenFromAttendance } from "../../lib/employmentWindow";
 import { useRegion } from "../../lib/region";
 
 // ── Phase 6: Attendance board by client-shift (§8.1-8.10) ─────────────────────
@@ -265,14 +266,18 @@ export default function AttendanceBoard() {
 
     // Build client-shift rows from active deployments, applying the §8.6 window.
     const byKey = new Map<string, ClientShift>();
+    // A guard can hold overlapping deployment segments that all cover `date`;
+    // without this they'd appear several times in the same shift roster.
+    const seenInGroup = new Set<string>();
     for (const d of (deps ?? []) as any[]) {
       const e = d.employees;
       if (!e) continue;
       // Relievers belong to the Relievers tab, never the workforce board.
       if (e.category === "reliever") continue;
-      // employment-window gating (roster membership)
+      // employment-window gating (roster membership). A separated guard drops off
+      // from their last working day onward (inclusive) — fired today = gone today.
       if (e.join_date && e.join_date > date) continue;
-      if (e.last_working_day && e.last_working_day < date) continue;
+      if (hiddenFromAttendance(e, date)) continue;
       if (e.lifecycle_state === "archived") continue;
       if (d.start_date > date) continue;
       // Shift of THIS dated posting segment: explicit shift_code first, then the
@@ -283,6 +288,9 @@ export default function AttendanceBoard() {
       // collapsing into one "null|<shift>" row (and one shared confirmation).
       const groupKey = (d.site_id ?? d.client_id) as string;
       const key = `${groupKey}|${sched}`;
+      // One row per guard per shift-group, even with overlapping segments.
+      if (seenInGroup.has(`${key}|${d.guard_id}`)) continue;
+      seenInGroup.add(`${key}|${d.guard_id}`);
       let row = byKey.get(key);
       if (!row) {
         row = {
@@ -395,7 +403,7 @@ export default function AttendanceBoard() {
     for (const e of (staff ?? []) as any[]) {
       if (e.category === "reliever" || e.category === "client") continue;
       if (e.join_date && e.join_date > date) continue;
-      if (e.last_working_day && e.last_working_day < date) continue;
+      if (hiddenFromAttendance(e, date)) continue;
       if (e.lifecycle_state === "archived") continue;
       const sched = (e.shift ?? "day") as string;
       const key = `cat:${e.category}|${sched}`;

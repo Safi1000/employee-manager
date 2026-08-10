@@ -5,7 +5,7 @@ import ClientFilterSelect from "./ClientFilterSelect";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../lib/auth";
 import { guardDisplayCode } from "../lib/guardCode";
-import { attendanceWindowError } from "../lib/employmentWindow";
+import { attendanceWindowError, hiddenFromAttendance } from "../lib/employmentWindow";
 import { loadShiftResolver, type ShiftResolver } from "../lib/shiftOnDate";
 
 // ── Shared "Bulk Mark by Employee" calendar ──────────────────────────────────
@@ -208,7 +208,9 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved }: {
 
   const options = useMemo(() => {
     const q = search.trim().toLowerCase();
-    let pool = employees;
+    // Drop guards separated before this month starts — no markable day here, so
+    // they shouldn't clutter the picker. A mid-month separation stays selectable.
+    let pool = employees.filter((e) => !hiddenFromAttendance(e, `${month}-01`));
     if (clientFilter !== "all") {
       pool = clientFilter.startsWith("cat:")
         ? pool.filter((e) => !e.client_id && `cat:${e.category}` === clientFilter)
@@ -221,7 +223,7 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved }: {
       guardDisplayCode(e, e.client_prefix).toLowerCase().includes(q) ||
       (e.client_name?.toLowerCase().includes(q) ?? false));
     return pool.slice(0, 100);
-  }, [employees, search, clientFilter]);
+  }, [employees, search, clientFilter, month]);
 
   const loadMonth = async (employeeId: string, monthKey: string) => {
     setLoadingMonth(true);

@@ -14,7 +14,8 @@
       "mcp__claude_ai_Supabase__list_projects",
       "WebSearch",
       "WebFetch(domain:bayfikr.com)",
-      "WebFetch(domain:bank.codes)"
+      "WebFetch(domain:bank.codes)",
+      "Bash(npm run *)"
     ]
   }
 }

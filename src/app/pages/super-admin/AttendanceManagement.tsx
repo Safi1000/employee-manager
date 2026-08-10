@@ -22,7 +22,7 @@ import {
 import { useRegion, withRegion } from "../../lib/region";
 import { hasPermission, useAuth } from "../../lib/auth";
 import { guardDisplayCode } from "../../lib/guardCode";
-import { attendanceWindowError, isSeparatedState, SEPARATION_MARK } from "../../lib/employmentWindow";
+import { attendanceWindowError, isSeparatedState, hiddenFromAttendance, SEPARATION_MARK } from "../../lib/employmentWindow";
 import { formatDate } from "../../lib/date";
 
 type EmployeeLite = {
@@ -393,6 +393,9 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     const q = empSearch.trim().toLowerCase();
     return employees.filter((e) => {
       // Reliever panel only shows relievers; main panel hides them.
+      // Separated guards drop off the roster from their last working day onward
+      // (shown up to it so final days can still be marked) — no locked row.
+      if (hiddenFromAttendance(e, date)) return false;
       if (relieversOnly && e.category !== "reliever") return false;
       if (!relieversOnly && e.category === "reliever") return false;
       if (clientFilter !== "all" && e.client_id !== clientFilter) return false;
@@ -402,7 +405,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       if (q && !e.full_name.toLowerCase().includes(q) && !e.employee_code.toLowerCase().includes(q) && !e.display_code.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [employees, clientFilter, shiftFilter, categoryFilter, unmarkedOnly, todayRecords, empSearch, relieversOnly]);
+  }, [employees, clientFilter, shiftFilter, categoryFilter, unmarkedOnly, todayRecords, empSearch, relieversOnly, date]);
 
   // Why `d` isn't markable for this employee, or null. Employment window ∩
   // contract window — mirrored by the DB trigger in migration 0152, so this is
