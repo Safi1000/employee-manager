@@ -549,6 +549,25 @@ export default function EmployeeAssignments() {
     return byClient;
   }, [contracts, contractLines, addendums]);
 
+  // Committed personnel headcount per SITE — the "required" side of each site
+  // row's assigned/required badge. Mirrors committedPersonnelByClient but scoped
+  // to the lines that name the site (a line with no site_id is contract-wide and
+  // belongs to no single site, so it is not counted here).
+  const requiredBySite = useMemo(() => {
+    const bySite = new Map<string, number>();
+    const activeIds = new Set(
+      contracts
+        .filter((c) => c.status === "active" && c.contract_type === "guard_deployment")
+        .map((c) => c.id),
+    );
+    for (const l of contractLines) {
+      if (!l.site_id || !activeIds.has(l.contract_id) || !isPersonnelCategory(l.category)) continue;
+      const adds = addendums.filter((a) => a.contract_id === l.contract_id);
+      bySite.set(l.site_id, (bySite.get(l.site_id) ?? 0) + effectiveCommittedForLine(l, adds, todayIso()));
+    }
+    return bySite;
+  }, [contracts, contractLines, addendums]);
+
   // ── Grouping: one card per client, then the category / unassigned buckets ──
   const groups = useMemo<Group[]>(() => {
     // Search narrows the CLIENT list, not the people inside it — this page is
@@ -1166,8 +1185,22 @@ export default function EmployeeAssignments() {
                                 />
                                 <MapPin className="w-4 h-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
                                 <span className="text-sm text-foreground truncate">{b.name}</span>
-                                <span className="text-xs text-muted-foreground shrink-0">
-                                  {b.rows.length} employee{b.rows.length === 1 ? "" : "s"}
+                                <span
+                                  className="text-xs text-muted-foreground shrink-0 tabular-nums"
+                                  title={b.id ? "Assigned / required (committed strength) for this site" : undefined}
+                                >
+                                  {(() => {
+                                    if (!b.id) return `${b.rows.length} employee${b.rows.length === 1 ? "" : "s"}`;
+                                    // A single-site client keeps its strength on a contract-wide line
+                                    // (no site_id), so per-site lines read 0 — fall back to the client's
+                                    // own contracted total. Multi-site clients carry per-site strength.
+                                    const realSites = g.siteBuckets?.filter((x) => x.id !== "").length ?? 0;
+                                    const req =
+                                      realSites <= 1
+                                        ? g.recon?.contracted_billed_qty ?? requiredBySite.get(b.id) ?? 0
+                                        : requiredBySite.get(b.id) ?? 0;
+                                    return `${b.rows.length}/${req} assigned`;
+                                  })()}
                                 </span>
                               </button>
                               {/* The No-site / No-region bucket is not a place:
@@ -2823,6 +2856,9 @@ function TransferModal({
   const currentClientName = clients.find((c) => c.id === employee.client_id)?.name ?? "—";
   const clientChanges = movingToClient && clientId !== (employee.client_id ?? "");
   const currentSiteName = sites.find((s) => s.id === currentSiteId)?.name ?? null;
+  // "Another site" only makes sense when the current client has more than one site.
+  const canMoveSite =
+    !!employee.client_id && sites.filter((s) => s.client_id === employee.client_id).length > 1;
 
   const save = async () => {
     if (movingToClient && !clientId) { setErr("Pick the client to transfer to."); return; }
@@ -2935,7 +2971,7 @@ function TransferModal({
             className={inputCls}
           >
             <option value="client">Another client</option>
-            {employee.client_id && <option value="site">Another site</option>}
+            {canMoveSite && <option value="site">Another site</option>}
             <option value="office_staff">Office Staff</option>
             <option value="reliever">Reliever</option>
           </ThemedSelect>
