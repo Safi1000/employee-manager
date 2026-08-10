@@ -1329,8 +1329,11 @@ export default function EmployeeAssignments() {
           employee={transferTarget}
           clients={clients}
           displayCode={displayCodeFor(transferTarget)}
+          sites={sites}
+          currentSiteId={siteByGuard.get(transferTarget.id) ?? ""}
           contractsForClient={contractsForClient}
           linesForContract={linesForContract}
+          linesForSite={personnelLinesForSite}
           onClose={() => setTransferTarget(null)}
           onDone={async (msg) => { setTransferTarget(null); setNotice(msg); await loadData(); }}
           onError={setError}
@@ -2775,16 +2778,19 @@ function AssignEmployeesModal({
 // posting", so a future date would move the guard immediately while the form
 // claimed they stay until then.
 // ─────────────────────────────────────────────────────────────────────────────
-type TransferDest = "client" | "office_staff" | "reliever";
+type TransferDest = "client" | "site" | "office_staff" | "reliever";
 
 function TransferModal({
-  employee, clients, displayCode, contractsForClient, linesForContract, onClose, onDone, onError,
+  employee, clients, displayCode, sites, currentSiteId, contractsForClient, linesForContract, linesForSite, onClose, onDone, onError,
 }: {
   employee: EmployeeRow;
   clients: Client[];
   displayCode: string;
+  sites: { id: string; client_id: string; name: string }[];
+  currentSiteId: string;
   contractsForClient: (clientId: string) => Contract[];
   linesForContract: (contractId: string) => ContractLine[];
+  linesForSite: (clientId: string, siteId: string) => ContractLine[];
   onClose: () => void;
   onDone: (message: string) => Promise<void>;
   onError: (m: string) => void;
@@ -2792,20 +2798,46 @@ function TransferModal({
   const currentCategory = (employee.category ?? "client") as EmployeeCategory;
   const [dest, setDest] = useState<TransferDest>("client");
   const [clientId, setClientId] = useState("");
+  const [siteId, setSiteId] = useState("");
   const [contractLineId, setContractLineId] = useState("");
   const [effectiveDate, setEffectiveDate] = useState(todayIso());
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const lines = clientId
-    ? contractsForClient(clientId).flatMap((c) => linesForContract(c.id))
-    : [];
-  const currentClientName = clients.find((c) => c.id === employee.client_id)?.name ?? "—";
   const movingToClient = dest === "client";
+  const movingToSite = dest === "site";
+  // A site move stays on the current client; a client move uses the picked client.
+  const activeClientId = movingToSite ? (employee.client_id ?? "") : clientId;
+
+  // Sites available to pick. For a site move, the current client's OTHER sites
+  // (you can't move to the site you're already on). For a client move, the target
+  // client's sites. When the client has sites, the contract-line list is scoped to
+  // the picked site (its own lines + contract-wide lines); otherwise the flat list.
+  const allClientSites = activeClientId ? sites.filter((s) => s.client_id === activeClientId) : [];
+  const clientSites = movingToSite ? allClientSites.filter((s) => s.id !== currentSiteId) : allClientSites;
+  const lines = !activeClientId
+    ? []
+    : allClientSites.length > 0
+      ? (siteId ? linesForSite(activeClientId, siteId) : [])
+      : contractsForClient(activeClientId).flatMap((c) => linesForContract(c.id));
+  const currentClientName = clients.find((c) => c.id === employee.client_id)?.name ?? "—";
   const clientChanges = movingToClient && clientId !== (employee.client_id ?? "");
+  const currentSiteName = sites.find((s) => s.id === currentSiteId)?.name ?? null;
 
   const save = async () => {
     if (movingToClient && !clientId) { setErr("Pick the client to transfer to."); return; }
+    if (movingToSite && !employee.client_id) {
+      setErr("This employee isn't posted to a client, so there's no site to move within.");
+      return;
+    }
+    if (movingToSite && clientSites.length === 0) {
+      setErr("This client has no other site to move to.");
+      return;
+    }
+    if ((movingToClient || movingToSite) && clientSites.length > 0 && !siteId) {
+      setErr("Pick the site to transfer to.");
+      return;
+    }
     if (!effectiveDate) { setErr("Pick an effective date."); return; }
     if (effectiveDate > todayIso()) {
       setErr("An effective date in the future is not supported — the transfer takes effect immediately.");
@@ -2818,17 +2850,26 @@ function TransferModal({
     setSaving(true);
     setErr(null);
     try {
+      const onClient = movingToClient || movingToSite;
       const { error: mvErr } = await supabase.rpc("change_category", {
         p_guard_id: employee.id,
-        p_new_category: movingToClient ? "client" : dest,
-        p_new_client_id: movingToClient ? clientId : null,
-        p_contract_line_id: movingToClient ? contractLineId || null : null,
+        p_new_category: onClient ? "client" : dest,
+        // A site move stays on the same client; the RPC re-posts to the new site
+        // from the effective date and closes the old posting the day before, so
+        // past attendance stays under the previous site.
+        p_new_client_id: movingToClient ? clientId : movingToSite ? employee.client_id : null,
+        p_contract_line_id: onClient ? contractLineId || null : null,
         p_effective_date: effectiveDate,
+        p_site_id: onClient ? siteId || null : null,
       });
       if (mvErr) throw mvErr;
 
       let label: string;
-      if (movingToClient) {
+      if (movingToSite) {
+        // Same client, so the display code is unchanged (the sync trigger only
+        // reallocates when the client itself changes) — no new number, no history row.
+        label = `${sites.find((s) => s.id === siteId)?.name ?? "the new site"}`;
+      } else if (movingToClient) {
         // New client, new client-scoped number; the transition is logged so the
         // old code still resolves to this person.
         const { data: newDisp, error: dispErr } = await supabase.rpc("assign_display_number", {
@@ -2887,30 +2928,55 @@ function TransferModal({
           <span className="text-xs text-muted-foreground">Transfer to</span>
           <ThemedSelect
             value={dest}
-            onChange={(e) => setDest(e.target.value as TransferDest)}
+            onChange={(e) => {
+              setDest(e.target.value as TransferDest);
+              setClientId(""); setSiteId(""); setContractLineId("");
+            }}
             className={inputCls}
           >
             <option value="client">Another client</option>
+            {employee.client_id && <option value="site">Another site</option>}
             <option value="office_staff">Office Staff</option>
             <option value="reliever">Reliever</option>
           </ThemedSelect>
         </label>
 
-        {movingToClient && (
+        {(movingToClient || movingToSite) && (
           <>
-            <label className="block">
-              <span className="text-xs text-muted-foreground">Client</span>
-              <ThemedSelect
-                value={clientId}
-                onChange={(e) => { setClientId(e.target.value); setContractLineId(""); }}
-                className={inputCls}
-              >
-                <option value="">— Select —</option>
-                {clients
-                  .filter((c) => c.id !== employee.client_id)
-                  .map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </ThemedSelect>
-            </label>
+            {movingToClient && (
+              <label className="block">
+                <span className="text-xs text-muted-foreground">Client</span>
+                <ThemedSelect
+                  value={clientId}
+                  onChange={(e) => { setClientId(e.target.value); setSiteId(""); setContractLineId(""); }}
+                  className={inputCls}
+                >
+                  <option value="">— Select —</option>
+                  {clients
+                    .filter((c) => c.id !== employee.client_id)
+                    .map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </ThemedSelect>
+              </label>
+            )}
+            {movingToSite && (
+              <p className="text-xs text-muted-foreground">
+                Staying on {currentClientName}
+                {currentSiteName ? `, moving off ${currentSiteName}` : ""}. The display code is unchanged.
+              </p>
+            )}
+            {clientSites.length > 0 && (
+              <label className="block">
+                <span className="text-xs text-muted-foreground">Site</span>
+                <ThemedSelect
+                  value={siteId}
+                  onChange={(e) => { setSiteId(e.target.value); setContractLineId(""); }}
+                  className={inputCls}
+                >
+                  <option value="">— Select —</option>
+                  {clientSites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </ThemedSelect>
+              </label>
+            )}
             <label className="block">
               <span className="text-xs text-muted-foreground">Contract line (optional)</span>
               <ThemedSelect
