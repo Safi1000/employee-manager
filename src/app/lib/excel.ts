@@ -472,7 +472,7 @@ export type AttendanceEmployeeRow = {
 
 // Compact one-letter column badge for a shift code (day → D, night → N,
 // evening → E). Data-driven from the code, mirroring AttendanceBoard's shiftAbbr.
-const shiftAbbr = (code: string): string => (code ? code[0].toUpperCase() : "?");
+export const shiftAbbr = (code: string): string => (code ? code[0].toUpperCase() : "?");
 const titleCase = (code: string): string =>
   code.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
 
@@ -480,7 +480,7 @@ const titleCase = (code: string): string =>
 // from the data. Known shifts sort in this natural order; anything else follows,
 // alphabetically, so a contract with novel shift codes still exports every one.
 const SHIFT_DISPLAY_ORDER = ["day", "night", "evening"];
-const orderShifts = (codes: Iterable<string>): string[] => {
+export const orderShifts = (codes: Iterable<string>): string[] => {
   const uniq = Array.from(new Set(Array.from(codes, (c) => String(c || "day").toLowerCase())));
   return uniq.sort((a, b) => {
     const ia = SHIFT_DISPLAY_ORDER.indexOf(a);
@@ -489,6 +489,19 @@ const orderShifts = (codes: Iterable<string>): string[] => {
     return a < b ? -1 : a > b ? 1 : 0;
   });
 };
+
+// The shift-column set for a sheet, derived from the rows' actual shift codes
+// exactly as exportAttendance does — so the on-screen viewer shows the same
+// columns as the download. An explicit override wins.
+export function deriveAttendanceShifts(rows: AttendanceEmployeeRow[], override?: string[]): string[] {
+  if (override) return override;
+  const codes = new Set<string>();
+  for (const row of rows) {
+    for (const c of row.shiftByDay ?? []) codes.add(String(c || row.shift || "day").toLowerCase());
+    codes.add(String(row.shift || "day").toLowerCase());
+  }
+  return codes.size ? orderShifts(codes) : ["day"];
+}
 
 export function exportAttendance(opts: {
   monthLabel: string; // e.g. "MARCH 2026" or a range label

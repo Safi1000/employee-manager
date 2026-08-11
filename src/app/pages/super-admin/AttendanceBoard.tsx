@@ -9,6 +9,7 @@ import { supabase, fetchAllRows, resolveAllowedLeaves } from "../../lib/supabase
 import { useAuth, hasPermission } from "../../lib/auth";
 import { guardDisplayCode } from "../../lib/guardCode";
 import BulkMarkByEmployeeModal from "../../components/BulkMarkByEmployeeModal";
+import AttendanceSheetModal from "../../components/AttendanceSheetModal";
 import { brandingFromCompany, type PdfBranding } from "../../lib/pdfBranding";
 import { generateClientAttendancePdf, generateGuardAttendancePdf } from "../../lib/attendanceSheetPdf";
 import { exportAttendance, type AttendanceEmployeeRow } from "../../lib/excel";
@@ -162,6 +163,8 @@ export default function AttendanceBoard() {
   /** Expanded client cards, then expanded sites within them. */
   const [openClients, setOpenClients] = useState<Set<string>>(new Set());
   const [openSites, setOpenSites] = useState<Set<string>>(new Set());
+  // Which client/site's monthly attendance sheet is open in the viewer.
+  const [sheetView, setSheetView] = useState<{ clientId: string; clientName: string; siteId?: string; siteName?: string } | null>(null);
   const toggleIn = (k: string, set: (fn: (p: Set<string>) => Set<string>) => void) =>
     set((prev) => {
       const next = new Set(prev);
@@ -684,11 +687,12 @@ export default function AttendanceBoard() {
                 const pending = allShifts.filter((r) => rowStatus(r) !== "confirmed").length;
                 return (
                   <div key={c.clientId} className="bg-card border border-border rounded-lg overflow-hidden">
+                    <div className="flex items-stretch">
                     <button
                       type="button"
                       onClick={() => toggleIn(c.clientId, setOpenClients)}
                       aria-expanded={cOpen}
-                      className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-accent transition-colors"
+                      className="flex-1 min-w-0 flex items-center gap-3 px-4 py-3 text-left hover:bg-accent transition-colors"
                     >
                       <ChevronRight
                         className={`w-4 h-4 shrink-0 text-muted-foreground transition-transform ${cOpen ? "rotate-90" : ""}`}
@@ -714,6 +718,16 @@ export default function AttendanceBoard() {
                         </span>
                       )}
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setSheetView({ clientId: c.clientId, clientName: c.clientName })}
+                      className="px-3 flex items-center gap-1.5 text-xs text-muted-foreground hover:bg-accent border-l border-border shrink-0"
+                      title="View monthly attendance sheet"
+                    >
+                      <FileSpreadsheet className="w-4 h-4" strokeWidth={1.5} />
+                      <span className="hidden md:inline">View attendance</span>
+                    </button>
+                    </div>
 
                     {cOpen && (
                       <div className="border-t border-border">
@@ -731,11 +745,12 @@ export default function AttendanceBoard() {
                           return (
                             <div key={sKey} className="border-b border-border last:border-0">
                               {!flat && (
+                              <div className="flex items-stretch">
                               <button
                                 type="button"
                                 onClick={() => toggleIn(sKey, setOpenSites)}
                                 aria-expanded={sOpen}
-                                className="w-full flex items-center gap-2 px-4 py-2.5 pl-8 text-left hover:bg-accent transition-colors"
+                                className="flex-1 min-w-0 flex items-center gap-2 px-4 py-2.5 pl-8 text-left hover:bg-accent transition-colors"
                               >
                                 <ChevronRight
                                   className={`w-4 h-4 shrink-0 text-muted-foreground transition-transform ${sOpen ? "rotate-90" : ""}`}
@@ -747,6 +762,16 @@ export default function AttendanceBoard() {
                                   {st.shifts.length} shift{st.shifts.length === 1 ? "" : "s"} · {sRoster} on roster
                                 </span>
                               </button>
+                              <button
+                                type="button"
+                                onClick={() => setSheetView({ clientId: c.clientId, clientName: c.clientName, siteId: st.siteId, siteName: st.siteName })}
+                                className="px-3 flex items-center gap-1.5 text-xs text-muted-foreground hover:bg-accent border-l border-border shrink-0"
+                                title="View this site's monthly attendance sheet"
+                              >
+                                <FileSpreadsheet className="w-4 h-4" strokeWidth={1.5} />
+                                <span className="hidden md:inline">View</span>
+                              </button>
+                              </div>
                               )}
 
                               {sOpen && (
@@ -829,6 +854,16 @@ export default function AttendanceBoard() {
         <BulkMarkByEmployeeModal
           onClose={() => setBulkOpen(false)}
           onSaved={load}
+        />
+      )}
+
+      {sheetView && (
+        <AttendanceSheetModal
+          clientId={sheetView.clientId}
+          clientName={sheetView.clientName}
+          siteId={sheetView.siteId}
+          siteName={sheetView.siteName}
+          onClose={() => setSheetView(null)}
         />
       )}
     </>
