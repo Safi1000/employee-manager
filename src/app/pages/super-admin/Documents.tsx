@@ -14,6 +14,8 @@ import {
 } from "../../lib/supabase";
 import { guardDisplayCode } from "../../lib/guardCode";
 import { useAuth } from "../../lib/auth";
+import { saveBlob } from "../../lib/saveFile";
+import { openExternal } from "../../lib/openExternal";
 
 type EmployeeRow = Employee & {
   location_name: string | null;
@@ -278,7 +280,10 @@ export default function Documents() {
         // Since we set "anyone with link" permission on upload, this works
         // without an access token.
         const url = `https://drive.google.com/uc?export=download&id=${doc.drive_file_id}`;
-        window.open(url, "_blank");
+        // System browser on native: it owns the download and can hand the file
+        // to the right app. Navigating the WebView here would strand the user
+        // on a Drive page with no way back into the CRM.
+        await openExternal(url);
         return;
       }
       if (!doc.storage_path) throw new Error("No storage path or Drive ID on this document.");
@@ -286,14 +291,7 @@ export default function Documents() {
         .from(EMPLOYEE_DOCS_BUCKET)
         .download(doc.storage_path);
       if (dlErr) throw dlErr;
-      const url = URL.createObjectURL(data);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = doc.file_name;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      await saveBlob(data, doc.file_name);
     } catch (err: any) {
       setError(err.message ?? String(err));
     }

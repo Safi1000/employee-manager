@@ -73,3 +73,24 @@ export const invoiceMonth = (i: {
 export const invoicePeriodFilter = (startIso: string, endIso: string): string =>
   `and(period_start.gte.${startIso},period_start.lte.${endIso}),` +
   `and(period_start.is.null,invoice_date.gte.${startIso},invoice_date.lte.${endIso})`;
+
+/**
+ * True only for a complete YYYY-MM-DD that names a real calendar day.
+ *
+ * `<input type="date">` reports value="" for every intermediate state while the
+ * user types — and on Firefox/Safari for a half-entered date such as 2026-08-
+ * as well. Feeding that straight into state sends `attendance_date = ''` to
+ * PostgREST, which Postgres rejects with
+ *
+ *     invalid input syntax for type date: ""
+ *
+ * surfacing as a red error banner mid-keystroke. Guard every date-input
+ * onChange with this and simply ignore what fails: the user is still typing,
+ * which is not an error worth showing them.
+ */
+export const isIsoDate = (v: string): boolean => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const d = new Date(`${v}T00:00:00Z`);
+  // Round-trips only when the day actually exists — rejects 2026-02-31.
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+};

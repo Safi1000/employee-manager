@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import { ReactNode, useEffect } from "react";
 import { X, AlertCircle } from "lucide-react";
 
 interface ModalProps {
@@ -20,6 +20,30 @@ interface ModalProps {
 }
 
 export default function Modal({ isOpen, onClose, title, children, size = "md", footer, error, onDismissError }: ModalProps) {
+  // Android back closes the modal rather than navigating away from the page
+  // underneath it — otherwise a user filling in an employee form would lose the
+  // whole form on a back gesture. Claiming the event stops nativeShell from
+  // running history.back(). Escape does the same on desktop.
+  //
+  // Declared before the isOpen early-return would be a hook-order violation, so
+  // the guard lives inside the effect instead.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onBack = (e: Event) => {
+      e.preventDefault();
+      onClose();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("native:back", onBack);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("native:back", onBack);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const sizeStyles = {
@@ -34,7 +58,14 @@ export default function Modal({ isOpen, onClose, title, children, size = "md", f
       {/* Three regions in a bounded flex column: header (fixed), body (the only
           scroller), footer (fixed). min-h-0 lets the body actually shrink and
           scroll instead of pushing the footer off-screen. */}
-      <div className={`relative bg-white rounded-lg shadow-lg ${sizeStyles[size]} w-full mx-3 md:mx-4 max-h-[90vh] flex flex-col`}>
+      {/* dvh, not vh: on mobile browsers and WebViews `vh` is the tallest the
+          viewport ever gets, so a 90vh sheet is taller than the visible area
+          once the URL bar or keyboard is showing — which pushes the footer,
+          and its Save button, off the bottom of the screen. */}
+      <div
+        style={{ marginTop: "var(--safe-top, 0px)", marginBottom: "var(--safe-bottom, 0px)" }}
+        className={`relative bg-white rounded-lg shadow-lg ${sizeStyles[size]} w-full mx-3 md:mx-4 max-h-[90dvh] flex flex-col`}
+      >
         <div className="flex items-center justify-between p-4 md:p-6 border-b border-slate-200 flex-shrink-0">
           <h3 className="text-base md:text-lg text-slate-900 truncate pr-2">{title}</h3>
           <button

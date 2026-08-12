@@ -8,6 +8,7 @@ import {
   buyAiTopup, changePlan, guardCapState, openBillingPortal, useBilling,
 } from "../../lib/billing";
 import { AI_TOPUP_PACKS, PRICING, computePricing, money, normaliseGuards } from "../../lib/pricing";
+import { canSellInApp, WEB_APP_ORIGIN } from "../../lib/platform";
 
 // Billing home for an org's own subscription: what they pay for, how much of it
 // they are using, and the two things they can buy (a bigger plan, more AI
@@ -66,7 +67,17 @@ export default function Billing() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const canManage = profile?.role === "super_admin" || profile?.role === "super_super_admin";
+  // Who is ALLOWED to change the plan — a role question, unchanged.
+  const canManageRole = profile?.role === "super_admin" || profile?.role === "super_super_admin";
+
+  // Whether this BUILD may show a purchase at all. Apple (App Store 3.1.1) and
+  // Google (Play Payments policy) both require their own billing for digital
+  // subscriptions sold inside an app, and both reject apps that route around it
+  // with a web checkout — including one merely linked from the purchase screen.
+  // The native build is therefore read-only about money: the plan, guard count
+  // and renewal date are all still shown (reporting is fine), but upgrading,
+  // topping up and the Stripe portal live on the website only.
+  const canManage = canManageRole && canSellInApp;
 
   // Stripe redirects back here after a top-up. The webhook is what actually
   // grants the credit, and it can land a beat after the browser does — so
@@ -149,6 +160,21 @@ export default function Billing() {
         <div className="flex items-start gap-2 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2.5 text-sm text-danger-700 dark:text-danger-500">
           <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" strokeWidth={1.5} />
           <span>{error}</span>
+        </div>
+      )}
+
+      {/* In the phone app the plan is read-only. Deliberately plain text with no
+          link or button: Apple rejects a purchase screen that routes the user to
+          an outside checkout, and a tappable "upgrade on the web" CTA is exactly
+          that. Naming the address is informational and is allowed. */}
+      {!canSellInApp && canManageRole && summary.has_subscription && (
+        <div className="flex items-start gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm text-muted-foreground">
+          <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" strokeWidth={1.5} />
+          <span>
+            Your plan can be viewed here but not changed from the app. To upgrade, buy AI
+            credit, or update your card, sign in at {WEB_APP_ORIGIN.replace(/^https:\/\//, "")} in
+            a web browser.
+          </span>
         </div>
       )}
 

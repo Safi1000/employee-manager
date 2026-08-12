@@ -1,4 +1,5 @@
 import jsPDF from "jspdf";
+import { savePdf } from "./saveFile";
 import { formatDate } from "./date";
 import type { Company } from "./supabase";
 import { brandingFromCompany, drawBrandedHeader, drawBrandedFooter, hexToRgb } from "./pdfBranding";
@@ -97,5 +98,5 @@ export function generateDailyOperationsReportPdf(
   }
 
   drawBrandedFooter(doc, b, "Daily Operations Report");
-  doc.save(`daily-operations-report-${reportDate}.pdf`);
+  void savePdf(doc, `daily-operations-report-${reportDate}.pdf`);
 }

@@ -1,0 +1,126 @@
+/*
+ * Native shell styling — safe areas, touch behaviour, and the small set of
+ * things a WebView gets wrong that a browser gets right.
+ *
+ * Everything here is scoped to `html.native`, a class set by nativeShell on
+ * Android/iOS only, so the web app is completely untouched by this file.
+ */
+
+/* ── Safe areas ──────────────────────────────────────────────────────────────
+ * The app paints edge-to-edge (contentInset: "never", overlaysWebView: true),
+ * so the notch/Dynamic Island and the home indicator would sit on top of real
+ * UI unless the insets are respected. Exposed as variables rather than applied
+ * globally, because which element needs the padding differs per layout: the
+ * top inset belongs to the fixed header, the bottom to the scroll container.
+ */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+
+html.native body {
+  /* Nothing may render under the notch or behind the home indicator by
+     accident; layouts opt back in deliberately where they want to bleed. */
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
+  box-sizing: border-box;
+}
+
+/* ── Text selection and callouts ─────────────────────────────────────────────
+ * Long-pressing anything in a WebView pops the iOS text-selection magnifier
+ * and "Copy / Look Up" callout, which makes buttons and table rows feel
+ * broken. Turned off app-wide, then restored for the places where copying a
+ * value is the point: CNIC numbers, IBANs, invoice references.
+ */
+html.native {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  /* Kill the grey tap flash; the app has its own :active states. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+html.native input,
+html.native textarea,
+html.native [contenteditable="true"],
+html.native .selectable {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
+/* ── Input zoom ──────────────────────────────────────────────────────────────
+ * iOS Safari auto-zooms when a focused input's font-size is under 16px, and
+ * never zooms back out — the user is left on a form scrolled sideways. 16px is
+ * the floor, not a design choice.
+ */
+html.native input,
+html.native select,
+html.native textarea {
+  font-size: max(16px, 1rem);
+}
+
+/* ── Scrolling ───────────────────────────────────────────────────────────────
+ * `overscroll-behavior: none` on the document stops the whole WebView
+ * rubber-banding when a scroll container hits its end, which is what makes a
+ * fixed header appear to detach from the top of the screen.
+ */
+html.native,
+html.native body {
+  overscroll-behavior: none;
+}
+
+/* Wide tables scroll inside their own container with momentum, rather than
+   dragging the page sideways. */
+html.native .overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+/* ── Touch targets ───────────────────────────────────────────────────────────
+ * Apple's HIG and Android's Material both put the minimum at ~44px. The web UI
+ * has 28-32px icon buttons in table rows that are unusable with a thumb; this
+ * grows the hit area without changing the visual size.
+ */
+html.native button,
+html.native [role="button"],
+html.native a[href] {
+  touch-action: manipulation; /* removes the 300ms double-tap-zoom delay */
+}
+
+html.native button:not(.no-min-target),
+html.native [role="button"]:not(.no-min-target) {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Buttons that sit inline inside text or dense table cells opt out of the
+   minimum via `.no-min-target` and instead get an invisible expanded hit area. */
+html.native .no-min-target {
+  position: relative;
+}
+html.native .no-min-target::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+}
+
+/* ── Keyboard ────────────────────────────────────────────────────────────────
+ * With Keyboard resize: "native" the WebView shrinks when the keyboard opens.
+ * A bottom-docked action bar must ride above it rather than being scrolled off.
+ */
+html.native .keyboard-aware {
+  padding-bottom: calc(var(--safe-bottom) + 0.5rem);
+}
+
+/* ── Pull-to-refresh ─────────────────────────────────────────────────────────
+ * Android WebViews offer a native pull-to-refresh that reloads the whole
+ * bundle and dumps unsaved form state. The app has explicit refresh controls.
+ */
+html.native {
+  overscroll-behavior-y: contain;
+}

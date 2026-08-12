@@ -1,4 +1,5 @@
 import jsPDF from "jspdf";
+import { savePdf } from "./saveFile";
 import type {
   Client,
   Company,
@@ -266,5 +267,5 @@ export function generateInvoicePdf(
     margin,
     doc.internal.pageSize.getHeight() - 30,
   );
-  doc.save(`invoice_${inv.invoice_number ?? inv.id}.pdf`);
+  void savePdf(doc, `invoice_${inv.invoice_number ?? inv.id}.pdf`);
 }

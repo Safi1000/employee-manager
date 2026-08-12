@@ -99,6 +99,20 @@ export default function Sidebar({ title, links }: SidebarProps) {
     }
   }, [open]);
 
+  // Android hardware/gesture back closes the drawer instead of leaving the
+  // screen behind it — the behaviour every Android user expects from a nav
+  // drawer. Claiming the event (preventDefault) is what stops nativeShell from
+  // running history.back() or exiting the app. See lib/nativeShell.ts.
+  useEffect(() => {
+    if (!open) return;
+    const onBack = (e: Event) => {
+      e.preventDefault();
+      setOpen(false);
+    };
+    window.addEventListener("native:back", onBack);
+    return () => window.removeEventListener("native:back", onBack);
+  }, [open]);
+
   const toggleGroup = (basePath: string, isAnyChildActive: boolean) => {
     setExpanded((prev) => {
       // If never toggled, current state = isAnyChildActive (auto-expanded).
@@ -269,11 +283,14 @@ export default function Sidebar({ title, links }: SidebarProps) {
 
   return (
     <>
-      {/* Mobile hamburger (top-left, fixed) */}
+      {/* Mobile hamburger (top-left, fixed). `fixed` positions against the
+          viewport, not the safe-area-padded body, so on a notched phone a plain
+          `top-3` would sit under the status bar / Dynamic Island. */}
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="md:hidden fixed top-3 left-3 z-30 p-2 rounded-md bg-white border border-slate-200 shadow-sm text-slate-700"
+        style={{ top: "calc(var(--safe-top, 0px) + 0.75rem)", left: "calc(var(--safe-left, 0px) + 0.75rem)" }}
+        className="md:hidden fixed z-30 p-2 rounded-md bg-white border border-slate-200 shadow-sm text-slate-700"
         aria-label="Open menu"
       >
         <Menu className="w-5 h-5" strokeWidth={1.5} />
@@ -289,11 +306,12 @@ export default function Sidebar({ title, links }: SidebarProps) {
 
       {/* Mobile drawer */}
       <aside
+        style={{ paddingTop: "var(--safe-top, 0px)", paddingBottom: "var(--safe-bottom, 0px)" }}
         className={`md:hidden fixed inset-y-0 left-0 z-50 w-72 bg-sidebar border-r border-sidebar-border flex flex-col transform transition-transform duration-200 ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="h-16 px-4 flex items-center justify-between border-b border-sidebar-border">
+        <div className="h-16 px-4 flex items-center justify-between border-b border-sidebar-border flex-shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
             <BrandMark />
             <h1 className="text-base font-bold tracking-tight text-foreground truncate">{displayTitle}</h1>

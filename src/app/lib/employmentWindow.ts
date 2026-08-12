@@ -59,6 +59,8 @@ export type WindowEmployee = {
   join_date?: string | null;
   last_working_day?: string | null;
   termination_date?: string | null;
+  /** Written by every exit path, including ones that set no other date. */
+  exit_date?: string | null;
   lifecycle_state?: string | null;
 };
 
@@ -92,6 +94,17 @@ export function attendanceWindowError(
   if (emp.last_working_day && date > emp.last_working_day) {
     return `Employment ended ${formatDate(emp.last_working_day)}.`;
   }
+  // A separated guard carrying NEITHER date. The Lifecycle panel's exit used to
+  // write only exit_date and leave both of the above null (migration 0183 fixes
+  // the function and backfills the records), and with no bound the month export
+  // showed such a guard as ordinarily employed all the way through — no X marks,
+  // no separation note, months after they left.
+  if (isSeparatedState(emp.lifecycle_state) && !emp.termination_date && !emp.last_working_day) {
+    if (emp.exit_date && date >= emp.exit_date) {
+      return `Separated on ${formatDate(emp.exit_date)} — that date and later can't be marked.`;
+    }
+    if (!emp.exit_date) return "No longer employed.";
+  }
 
   if (contract) {
     if (contract.start_date && date < contract.start_date) {
@@ -113,8 +126,17 @@ export function attendanceWindowError(
  */
 export function hiddenFromAttendance(emp: WindowEmployee, date: string): boolean {
   if (!isSeparatedState(emp.lifecycle_state)) return false;
-  const cutoff = emp.termination_date ?? emp.last_working_day;
-  return !!cutoff && date >= cutoff;
+  // exit_date is the third rung because the Lifecycle panel's exit used to write
+  // ONLY that one — no last_working_day, no termination_date (fixed in migration
+  // 0183, which also backfills). Reading it here means a guard separated that way
+  // leaves the roster on the correct day even on a database where the backfill
+  // has not been applied yet.
+  const cutoff = emp.termination_date ?? emp.last_working_day ?? emp.exit_date;
+  // No date at all anywhere: the record says separated, so the guard is off the
+  // roster. Returning false here — the old behaviour — is what kept guards fired
+  // in July on the August board indefinitely. A missing date is bad data, and
+  // showing a separated man as deployed is the worse of the two failures.
+  return cutoff ? date >= cutoff : true;
 }
 
 /** Short marker for the attendance export's day cells (see exportAttendance). */

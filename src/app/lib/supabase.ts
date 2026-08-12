@@ -1,9 +1,25 @@
 import { createClient } from "@supabase/supabase-js";
+import { authStorage } from "./authStorage";
+import { isNative } from "./platform";
 
 const url = import.meta.env.VITE_SUPABASE_URL as string;
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
-export const supabase = createClient(url, anonKey);
+export const supabase = createClient(url, anonKey, {
+  auth: {
+    // Native: Capacitor Preferences (real persisted storage). Web: undefined,
+    // which leaves supabase-js on its localStorage default. See ./authStorage
+    // for why WebView localStorage is not good enough.
+    storage: authStorage,
+    persistSession: true,
+    autoRefreshToken: true,
+    // There is no URL to read a session out of in the native shell — auth
+    // callbacks arrive as deep links and are handled explicitly in
+    // ./nativeShell. Leaving detection on makes supabase-js parse whatever
+    // happens to be in the WebView's address bar at boot.
+    detectSessionInUrl: !isNative,
+  },
+});
 
 // Paginate through a Supabase query in chunks of 1000 (PostgREST's default
 // response cap) until the entire result set is fetched. Pass a builder that
@@ -1145,6 +1161,13 @@ export type Employee = {
   eligible_for_rehire: boolean | null;
   exit_reason: string | null;
   exit_date: string | null;
+  // The separation pair written by record_separation (0128). Distinct from
+  // exit_date, which every exit path sets: last_working_day is the final day
+  // actually worked and stays markable, termination_date is the day the
+  // separation took effect and does not. The employment-window helpers read
+  // these two — see lib/employmentWindow.ts.
+  last_working_day: string | null;
+  termination_date: string | null;
   blacklisted: boolean;
   blacklist_reason: string | null;
   physical_copy_present: boolean;

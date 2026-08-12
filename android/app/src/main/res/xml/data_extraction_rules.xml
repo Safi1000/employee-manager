@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12+ replacement for the older fullBackupContent rules.
+
+  Both backup channels are refused outright:
+
+    cloud-backup   — Google Drive auto-backup. Would ship SharedPreferences,
+                     and with it the stored Supabase refresh token, off the
+                     device to a Google account.
+    device-transfer— direct phone-to-phone migration. Same payload, and the
+                     receiving device has not authenticated to the CRM.
+
+  The app keeps no local data that is worth restoring — every record lives in
+  Supabase — so excluding everything loses the user nothing and means a
+  restored or transferred device always starts at the login screen.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+        <exclude domain="file" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+        <exclude domain="file" />
+    </device-transfer>
+</data-extraction-rules>

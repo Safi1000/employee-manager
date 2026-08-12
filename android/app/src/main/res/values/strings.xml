@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Bastion</string>
+    <string name="title_activity_main">Bastion</string>
+    <string name="package_name">com.techxserve.bastion</string>
+    <string name="custom_url_scheme">com.techxserve.bastion</string>
+</resources>

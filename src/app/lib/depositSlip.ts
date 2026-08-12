@@ -1,4 +1,5 @@
 import jsPDF from "jspdf";
+import { savePdf } from "./saveFile";
 import type { Company } from "./supabase";
 
 // Cash deposit slip PDF. Mirrors the layout conventions of generateInvoicePdf
@@ -92,5 +93,5 @@ export function generateDepositSlipPdf(data: DepositSlipData, company: Company |
     doc.internal.pageSize.getHeight() - 30,
   );
 
-  doc.save(`deposit_slip_${data.slipNumber}.pdf`);
+  void savePdf(doc, `deposit_slip_${data.slipNumber}.pdf`);
 }

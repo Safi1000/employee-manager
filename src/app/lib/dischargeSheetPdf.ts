@@ -1,4 +1,5 @@
 import jsPDF from "jspdf";
+import { savePdf } from "./saveFile";
 import { drawBrandedHeader, drawBrandedFooter, type PdfBranding } from "./pdfBranding";
 
 // Phase 7 §9.4 / Phase 8 §11.2 — branded discharge sheet, generated on separation
@@ -57,6 +58,6 @@ export function generateDischargeSheet(g: {
   doc.text("Authorised signatory", 14, y);
 
   drawBrandedFooter(doc, g.branding);
-  if (!appending) doc.save(`discharge_${g.guard_code ?? g.full_name}.pdf`);
+  if (!appending) void savePdf(doc, `discharge_${g.guard_code ?? g.full_name}.pdf`);
   return doc;
 }

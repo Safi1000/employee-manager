@@ -1,3 +1,4 @@
+import { isIsoDate } from "../../lib/date";
 import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Calendar as CalendarIcon, AlertCircle, Loader2, X, CalendarRange, ChevronLeft, ChevronRight, Search, Clock, MoreHorizontal, SlidersHorizontal, ChevronDown } from "lucide-react";
@@ -819,7 +820,17 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     const clientById = new Map(clients.map((c) => [c.id, c]));
     const contractById = new Map(contracts.map((c) => [c.id, c]));
 
-    const rows: AttendanceEmployeeRow[] = filteredEmployees.map((emp, idx) => {
+    // filteredEmployees is gated on the SELECTED DAY, which is the wrong window
+    // for a month export: sitting on a July date and exporting August carried
+    // guards who had already left in July into the August sheet. Re-gate on the
+    // first of the exported month — a guard separated before the month started
+    // is off the sheet entirely, while one who left mid-month still appears (his
+    // worked days are real) with X from the separation onward.
+    const monthRoster = filteredEmployees.filter(
+      (emp) => !hiddenFromAttendance(emp, monthStart),
+    );
+
+    const rows: AttendanceEmployeeRow[] = monthRoster.map((emp, idx) => {
       const dayMap = byEmp.get(emp.id) ?? new Map<number, { sym: string; ws: string }>();
       const statusByDay: string[] = [];
       const shiftByDay: string[] = [];
@@ -1076,7 +1087,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                 type="date"
                 value={date}
                 max={today()}
-                onChange={(e) => setDate(e.target.value)}
+                onChange={(e) => { if (isIsoDate(e.target.value)) setDate(e.target.value); }}
                 className="pl-10 pr-3 py-2 border border-border rounded-md text-sm bg-input-background focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
               />
             </div>
@@ -1370,7 +1381,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                   ref={fromInputRef}
                   type="date"
                   value={historyFrom}
-                  onChange={(e) => setHistoryFrom(e.target.value)}
+                  onChange={(e) => { if (isIsoDate(e.target.value)) setHistoryFrom(e.target.value); }}
                   className="w-full pl-9 pr-2 py-1.5 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                 />
               </div>
@@ -1385,7 +1396,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                   ref={toInputRef}
                   type="date"
                   value={historyTo}
-                  onChange={(e) => setHistoryTo(e.target.value)}
+                  onChange={(e) => { if (isIsoDate(e.target.value)) setHistoryTo(e.target.value); }}
                   className="w-full pl-9 pr-2 py-1.5 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                 />
               </div>

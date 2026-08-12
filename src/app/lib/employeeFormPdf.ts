@@ -1,4 +1,5 @@
 import jsPDF from "jspdf";
+import { savePdf } from "./saveFile";
 import { formatDate } from "./date";
 import { drawBrandedHeader, drawBrandedFooter, type PdfBranding } from "./pdfBranding";
 import {
@@ -302,6 +303,6 @@ export function generateEmployeeFormPdf(data: FormData): jsPDF {
 
   drawBrandedFooter(doc, branding, `Form signed: ${e.form_signed_on ? formatDate(e.form_signed_on) : "____________"}`);
 
-  if (!appending) doc.save(`employee-form-${e.employee_code || e.id}.pdf`);
+  if (!appending) void savePdf(doc, `employee-form-${e.employee_code || e.id}.pdf`);
   return doc;
 }

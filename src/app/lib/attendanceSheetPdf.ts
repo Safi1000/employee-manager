@@ -1,4 +1,5 @@
 import jsPDF from "jspdf";
+import { savePdf } from "./saveFile";
 import { drawBrandedHeader, drawBrandedFooter, hexToRgb, type PdfBranding } from "./pdfBranding";
 
 // §8.9 / §11.2 — branded attendance PDF templates (not raw data dumps):
@@ -54,7 +55,7 @@ export function generateClientAttendancePdf(branding: PdfBranding, date: string,
     rows.map((r) => [r.client_name, r.site_name, r.shift_code, String(r.contracted), String(r.on_roster), r.status, r.exceptions, r.supervisor]),
     y);
   drawBrandedFooter(doc, branding, `Attendance ${date}`);
-  doc.save(`attendance-by-client-${date}.pdf`);
+  void savePdf(doc, `attendance-by-client-${date}.pdf`);
 }
 
 export function generateGuardAttendancePdf(branding: PdfBranding, date: string, rows: GuardAttRow[]) {
@@ -65,5 +66,5 @@ export function generateGuardAttendancePdf(branding: PdfBranding, date: string, 
     rows.map((r) => [r.full_name, r.code, r.client_name, r.site_name, r.shift_code, r.status]),
     y);
   drawBrandedFooter(doc, branding, `Attendance ${date}`);
-  doc.save(`attendance-by-guard-${date}.pdf`);
+  void savePdf(doc, `attendance-by-guard-${date}.pdf`);
 }

@@ -5,7 +5,7 @@
 
 import { supabase, fetchAllRows, resolveAllowedLeaves, type Contract, type Client } from "./supabase";
 import { loadShiftResolver } from "./shiftOnDate";
-import { attendanceWindowError, isSeparatedState, SEPARATION_MARK } from "./employmentWindow";
+import { attendanceWindowError, hiddenFromAttendance, isSeparatedState, SEPARATION_MARK } from "./employmentWindow";
 import { formatDate } from "./date";
 import type { AttendanceEmployeeRow } from "./excel";
 
@@ -58,7 +58,14 @@ export async function buildAttendanceRows(opts: {
   const monthEnd = `${yStr}-${mStr}-${String(dim).padStart(2, "0")}`;
   const monthLabel = new Date(y, m - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
 
-  const empIds = employees.map((e) => e.id);
+  // A guard separated BEFORE this month is not on this month's sheet at all.
+  // Without this the caller's roster (built for "now") carried anyone who left
+  // in July into the August sheet, where every day rendered as X. Someone who
+  // left mid-month is kept: his worked days that month are real, and the days
+  // after his exit already mark themselves X via attendanceWindowError below.
+  const roster = employees.filter((e) => !hiddenFromAttendance(e, monthStart));
+
+  const empIds = roster.map((e) => e.id);
   if (empIds.length === 0) return { rows: [], daysInMonth: dim, monthLabel };
 
   const records = await fetchAllRows<any>(() =>
@@ -84,7 +91,7 @@ export async function buildAttendanceRows(opts: {
   const clientById = new Map(clients.map((c) => [c.id, c]));
   const contractById = new Map(contracts.map((c) => [c.id, c]));
 
-  const rows: AttendanceEmployeeRow[] = employees.map((emp, idx) => {
+  const rows: AttendanceEmployeeRow[] = roster.map((emp, idx) => {
     const dayMap = byEmp.get(emp.id) ?? new Map<number, { sym: string; ws: string }>();
     const contract = emp.contract_id ? contractById.get(emp.contract_id) ?? null : null;
     const statusByDay: string[] = [];

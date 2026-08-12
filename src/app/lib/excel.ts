@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import { saveBlob, mimeFor } from "./saveFile";
 
 const DEFAULT_COMPANY = "Guards & Guides Security Services (Pvt.) Limited";
 
@@ -17,8 +18,14 @@ function mergeCell(
   merges.push({ s: { r: startRow, c: startCol }, e: { r: endRow, c: endCol } });
 }
 
+// XLSX.writeFile() triggers a browser download, which a native WebView has no
+// concept of — the export button would appear to work and produce nothing. Go
+// through the bytes instead so the same call yields a download on the web and a
+// share sheet on a phone. Fire-and-forget: every caller is a click handler that
+// has never awaited this, and the failure mode (no file) is self-evident.
 function downloadWorkbook(wb: XLSX.WorkBook, fileName: string) {
-  XLSX.writeFile(wb, fileName);
+  const bytes = XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
+  void saveBlob(new Blob([bytes], { type: mimeFor(fileName) }), fileName);
 }
 
 function safeSheetName(name: string) {

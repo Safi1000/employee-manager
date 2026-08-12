@@ -25,7 +25,17 @@
 // Absent VITE_GA_MEASUREMENT_ID the whole module is inert — no script, no
 // requests — which is what keeps local dev and preview deploys out of the data.
 
+import { isNative } from "./platform";
+
 const MEASUREMENT_ID = import.meta.env.VITE_GA_MEASUREMENT_ID as string | undefined;
+
+// The native app never loads GA at all. Three reasons, any one sufficient:
+// the public routes GA is scoped to do not exist in the app build (see
+// routes.tsx), a third-party tracker inside an app is a declarable data
+// collection on both App Store Privacy and Play Data Safety forms, and GA4 web
+// sessions from a WebView pollute the website's acquisition reports with
+// traffic that has no referrer and never converts.
+const trackingAllowed = () => Boolean(MEASUREMENT_ID) && !isNative;
 
 /**
  * Query params allowed through to Google. Campaign tags plus the two the
@@ -47,7 +57,7 @@ declare global {
   }
 }
 
-export const analyticsEnabled = () => Boolean(MEASUREMENT_ID);
+export const analyticsEnabled = () => trackingAllowed();
 
 let injected = false;
 
@@ -55,7 +65,9 @@ let injected = false;
  * Adds the gtag script once. Safe to call on every navigation.
  */
 function ensureTag(): boolean {
-  if (!MEASUREMENT_ID || typeof window === "undefined") return false;
+  // The single choke point every export below funnels through: no tag is ever
+  // injected in the native build, so no gtag call anywhere can fire there.
+  if (!trackingAllowed() || !MEASUREMENT_ID || typeof window === "undefined") return false;
   if (injected) return true;
   injected = true;
 

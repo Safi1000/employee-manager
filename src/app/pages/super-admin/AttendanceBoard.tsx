@@ -1,3 +1,4 @@
+import { isIsoDate } from "../../lib/date";
 import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, Building2, MapPin, Loader2, X, ChevronRight, ChevronLeft, CheckCircle2, Clock, Download, Briefcase, CalendarRange, Search, ChevronDown, FileText, Users, FileSpreadsheet, Loader } from "lucide-react";
 import Header from "../../components/Header";
@@ -15,6 +16,7 @@ import { generateClientAttendancePdf, generateGuardAttendancePdf } from "../../l
 import { exportAttendance, type AttendanceEmployeeRow } from "../../lib/excel";
 import { loadShiftResolver } from "../../lib/shiftOnDate";
 import { hiddenFromAttendance } from "../../lib/employmentWindow";
+import { saveText } from "../../lib/saveFile";
 import { useRegion } from "../../lib/region";
 
 // ── Phase 6: Attendance board by client-shift (§8.1-8.10) ─────────────────────
@@ -188,8 +190,14 @@ export default function AttendanceBoard() {
         supabase
           .from("deployments")
           .select(
-            "guard_id, site_id, client_id, contract_line_id, shift_code, start_date, end_date, " +
-              "employees:guard_id(full_name, guard_code, display_number, employee_code, shift, category, join_date, last_working_day, lifecycle_state), " +
+            // `id` is the last-resort tie-break when two segments start the same
+            // day and are both open/both closed — it just needs to be stable.
+            "id, guard_id, site_id, client_id, contract_line_id, shift_code, start_date, end_date, " +
+              // termination_date and exit_date are read by hiddenFromAttendance.
+              // They were missing here, so the roster's separation cutoff was
+              // computed from an undefined field and a guard separated via the
+              // Lifecycle panel never dropped off the board.
+              "employees:guard_id(full_name, guard_code, display_number, employee_code, shift, category, join_date, last_working_day, termination_date, exit_date, lifecycle_state), " +
               "sites:site_id(name), clients:client_id(name, employee_id_prefix, branch_id), contract_lines:contract_line_id(shift_code)",
           )
           .range(0, 9999)
@@ -220,7 +228,7 @@ export default function AttendanceBoard() {
         // Relievers are EXCLUDED — they live on the Relievers tab.
         supabase
           .from("employees")
-          .select("id, full_name, guard_code, display_number, employee_code, shift, category, join_date, last_working_day, lifecycle_state, branch_id")
+          .select("id, full_name, guard_code, display_number, employee_code, shift, category, join_date, last_working_day, termination_date, exit_date, lifecycle_state, branch_id")
           .neq("category", "reliever")
           .neq("category", "client"),
       ]);
@@ -267,12 +275,40 @@ export default function AttendanceBoard() {
       markByGuard.set(`${a.employee_id}|${ws}`, { status: normalizeStatus(a.status), absent_reason: a.absent_reason ?? null, shift: ws });
     }
 
+    // A guard stands at ONE site on ONE shift on a given date. Overlapping
+    // posting segments break that: an old segment whose end_date still covers
+    // `date` sits beside the current one, and the guard is rendered once per
+    // segment — on two sites and two shifts at the same time.
+    //
+    // Migration 0183 closes the overlaps in the data. This picks the winner at
+    // render time as well, so a board is never wrong while that is pending or if
+    // an overlap is reintroduced: latest start_date wins (the most recent
+    // posting decision), and an OPEN segment beats a closed one starting the
+    // same day, because closing is what supersession looks like here.
+    //
+    // Deliberately keyed on guard alone, not guard+shift: a genuine same-day
+    // double duty is recorded as a second ATTENDANCE row on the date (see
+    // migration 0173), not as a second posting, so collapsing to one posting
+    // does not cost the board any real double-duty case.
+    const bestByGuard = new Map<string, any>();
+    for (const d of (deps ?? []) as any[]) {
+      const prev = bestByGuard.get(d.guard_id);
+      if (!prev) { bestByGuard.set(d.guard_id, d); continue; }
+      const better =
+        d.start_date !== prev.start_date
+          ? d.start_date > prev.start_date
+          : (d.end_date === null) !== (prev.end_date === null)
+            ? d.end_date === null
+            : String(d.id ?? "") > String(prev.id ?? "");
+      if (better) bestByGuard.set(d.guard_id, d);
+    }
+
     // Build client-shift rows from active deployments, applying the §8.6 window.
     const byKey = new Map<string, ClientShift>();
     // A guard can hold overlapping deployment segments that all cover `date`;
     // without this they'd appear several times in the same shift roster.
     const seenInGroup = new Set<string>();
-    for (const d of (deps ?? []) as any[]) {
+    for (const d of bestByGuard.values() as Iterable<any>) {
       const e = d.employees;
       if (!e) continue;
       // Relievers belong to the Relievers tab, never the workforce board.
@@ -594,7 +630,7 @@ export default function AttendanceBoard() {
         title="Attendance"
         subtitle="Daily board by client-shift — presume present, enter only exceptions, confirm per shift"
         actions={
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
+          <input type="date" value={date} onChange={(e) => { if (isIsoDate(e.target.value)) setDate(e.target.value); }}
             className="px-3 py-2 border border-border bg-card rounded-md text-sm text-foreground" />
         }
       />
@@ -1204,11 +1240,9 @@ function VacancyQueue({ vacancies, clientNames, onChanged }: {
 
 // ── Exports (§8.9): two templates — per-client sheet + per-guard sheet ─────────
 function downloadCsv(name: string, lines: string[]) {
-  const blob = new Blob([lines.join("\n")], { type: "text/csv" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  a.click();
+  // saveText is a download on the web and a share sheet in the native shell,
+  // where an <a download> click does nothing at all.
+  void saveText(lines.join("\n"), name);
 }
 
 type ExportClient = { id: string; name: string; prefix: string | null; synthetic: boolean };
@@ -1499,7 +1533,7 @@ function ExportMenu({ rows, date, branding, client }: {
                   <label className="w-10 text-xs text-muted-foreground">From</label>
                   <input
                     type="date" value={rangeStart} max={rangeEnd}
-                    onChange={(e) => setRangeStart(e.target.value)}
+                    onChange={(e) => { if (isIsoDate(e.target.value)) setRangeStart(e.target.value); }}
                     className="flex-1 rounded-md border border-border bg-background px-2 py-1 text-sm"
                   />
                 </div>
@@ -1507,7 +1541,7 @@ function ExportMenu({ rows, date, branding, client }: {
                   <label className="w-10 text-xs text-muted-foreground">To</label>
                   <input
                     type="date" value={rangeEnd} min={rangeStart}
-                    onChange={(e) => setRangeEnd(e.target.value)}
+                    onChange={(e) => { if (isIsoDate(e.target.value)) setRangeEnd(e.target.value); }}
                     className="flex-1 rounded-md border border-border bg-background px-2 py-1 text-sm"
                   />
                 </div>

@@ -1,4 +1,5 @@
 import jsPDF from "jspdf";
+import { savePdf } from "./saveFile";
 import {
   amountInWords,
   CONTRACT_LINE_CATEGORY_LABEL,
@@ -803,7 +804,7 @@ export function generateInvoiceDocument(input: InvoiceDocInput): jsPDF {
         ? renderVariableManual(input)
         : renderFixedFamily(input, group === "VARIABLE");
   if (input.save !== false) {
-    doc.save(`invoice_${input.invoice.invoice_number ?? input.invoice.id}.pdf`);
+    void savePdf(doc, `invoice_${input.invoice.invoice_number ?? input.invoice.id}.pdf`);
   }
   return doc;
 }

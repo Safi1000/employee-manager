@@ -1,4 +1,5 @@
 import jsPDF from "jspdf";
+import { savePdf } from "./saveFile";
 import { formatDate } from "./date";
 
 // §22 — printable Client Service Report: service reviews + complaints history
@@ -72,5 +73,5 @@ export function generateClientServiceReportPdf(data: ReportData) {
   doc.setTextColor(148, 163, 184);
   doc.text("Confidential — internal client relationship record.", MARGIN, 292);
 
-  doc.save(`client-service-report-${clientName.replace(/\s+/g, "-").toLowerCase()}.pdf`);
+  void savePdf(doc, `client-service-report-${clientName.replace(/\s+/g, "-").toLowerCase()}.pdf`);
 }

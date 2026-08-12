@@ -1,4 +1,5 @@
 import jsPDF from "jspdf";
+import { savePdf } from "./saveFile";
 import { formatDate } from "./date";
 import { drawBrandedHeader, drawBrandedFooter, hexToRgb, type PdfBranding } from "./pdfBranding";
 
@@ -80,6 +81,6 @@ export function generateClearanceCertificatePdf(opts: {
   doc.text("Authorised signatory", 120, y + 5);
 
   drawBrandedFooter(doc, opts.branding);
-  if (!appending) doc.save(`clearance-${opts.guard_code}.pdf`);
+  if (!appending) void savePdf(doc, `clearance-${opts.guard_code}.pdf`);
   return doc;
 }

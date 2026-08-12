@@ -1,4 +1,5 @@
 import jsPDF from "jspdf";
+import { savePdf } from "./saveFile";
 import { hexToRgb, imageFormat, type PdfBranding } from "./pdfBranding";
 
 // §11.2 — printable company ID card: guard photo, permanent guard_code,
@@ -80,6 +81,6 @@ export function generateIdCardPdf(opts: {
   doc.setTextColor(148, 163, 184);
   doc.text("If found, please return to the issuing company.", x + 3, y + h - 2.5);
 
-  if (!appending) doc.save(`id-card-${opts.guard_code}.pdf`);
+  if (!appending) void savePdf(doc, `id-card-${opts.guard_code}.pdf`);
   return doc;
 }

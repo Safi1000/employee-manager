@@ -28,3 +28,28 @@ pnpm-debug.log*
 *.njsproj
 *.sln
 *.sw?
+
+# ── native (Capacitor) ───────────────────────────────────────────────────────
+# The android/ and ios/ project folders ARE committed: they hold real
+# configuration (signing setup, manifest permissions, icons, deep-link
+# verification) that must not be regenerated from scratch on a build machine.
+# What is ignored is per-machine and build output only.
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/app/release/
+*.keystore
+*.jks
+keystore.properties
+
+ios/App/Pods/
+ios/App/build/
+ios/App/App/public/
+ios/App/App/capacitor.config.json
+ios/App/output/
+*.mobileprovision
+*.p12
+*.p8

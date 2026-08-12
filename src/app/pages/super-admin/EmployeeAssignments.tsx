@@ -241,6 +241,8 @@ export default function EmployeeAssignments() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
+  // Show separated staff instead of active ones. Off by default.
+  const [showFired, setShowFired] = useState(false);
   const [onlyMismatch, setOnlyMismatch] = useState(false);
   const [showServicesClients, setShowServicesClients] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -574,8 +576,14 @@ export default function EmployeeAssignments() {
     // organised by client, so filtering rows away left half-empty cards that
     // misrepresented a client's headcount.
     const q = search.trim().toLowerCase();
-    const visible = employees.filter(
-      (e) => !isSeparatedState(e.lifecycle_state),
+    // Separated staff are off this page by default — it is a deployment screen,
+    // and a fired guard holds no post. The Fired toggle swaps to showing ONLY
+    // them, still grouped under the client and site they left from, so "who did
+    // we lose at this site, and when" is answerable without leaving the page.
+    const visible = employees.filter((e) =>
+      showFired
+        ? isSeparatedState(e.lifecycle_state)
+        : !isSeparatedState(e.lifecycle_state),
     );
 
     const byClient = new Map<string, EmployeeRow[]>();
@@ -815,7 +823,7 @@ export default function EmployeeAssignments() {
                               aria-label={`Select all in ${g.label}`}
                             />
                           </th>
-                          {["Code", "Name", "Department", "Shift", "Base", "Per day", "Allowance", "Joined"].map((h) => (
+                          {["Code", "Name", "Department", "Shift", "Base", "Per day", "Allowance", showFired ? "Left on" : "Joined"].map((h) => (
                             <th key={h} className="text-left px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground whitespace-nowrap">
                               {h}
                             </th>
@@ -862,7 +870,14 @@ export default function EmployeeAssignments() {
                             <td className="px-3 py-2 text-sm text-muted-foreground tabular-nums whitespace-nowrap">{money(perDayOf(e.base_salary))}</td>
                             <td className="px-3 py-2 text-sm text-muted-foreground tabular-nums whitespace-nowrap">{money(e.allowance)}</td>
                             <td className="px-3 py-2 text-sm text-muted-foreground whitespace-nowrap">
-                              {e.join_date ? formatDate(e.join_date) : "—"}
+                              {/* In Fired mode this column carries the date they
+                                  LEFT, which is the thing being looked up. The
+                                  termination date is the day the separation took
+                                  effect; last_working_day covers older records
+                                  that only ever carried that one. */}
+                              {showFired
+                                ? formatDate(e.termination_date ?? e.last_working_day ?? e.exit_date) || "—"
+                                : e.join_date ? formatDate(e.join_date) : "—"}
                             </td>
                             {/* Sticky column: opaque in every state, or the columns
                                 underneath show through while scrolling sideways. */}
@@ -1000,6 +1015,14 @@ export default function EmployeeAssignments() {
               className="w-full pl-9 pr-4 py-2 border border-border rounded-md text-sm bg-card"
             />
           </div>
+          <label className="flex items-center gap-2 text-sm text-muted-foreground whitespace-nowrap">
+            <input
+              type="checkbox"
+              checked={showFired}
+              onChange={(e) => setShowFired(e.target.checked)}
+            />
+            Fired / left
+          </label>
           <label className="flex items-center gap-2 text-sm text-muted-foreground whitespace-nowrap">
             <input type="checkbox" checked={onlyMismatch} onChange={(e) => setOnlyMismatch(e.target.checked)} />
             Only mismatches

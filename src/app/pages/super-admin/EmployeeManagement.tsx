@@ -1,7 +1,9 @@
 import ThemedSelect from "../../components/ThemedSelect";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { Plus, Search, Upload, AlertCircle, Loader2, X, Trash2, ChevronDown, ChevronRight as ChevronRightIcon, FileText, SlidersHorizontal, Image as ImageIcon, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
+import { Plus, Search, Upload, AlertCircle, Loader2, X, Trash2, ChevronDown, ChevronRight as ChevronRightIcon, FileText, SlidersHorizontal, Image as ImageIcon, ArrowUp, ArrowDown, ArrowUpDown, Camera } from "lucide-react";
+import CameraCapture from "../../components/CameraCapture";
+import DocumentInput from "../../components/DocumentInput";
 import jsPDF from "jspdf";
 import { generateEmployeeFormPdf, type FormApprovals } from "../../lib/employeeFormPdf";
 import { generateIdCardPdf } from "../../lib/idCardPdf";
@@ -2391,40 +2393,19 @@ export default function EmployeeManagement() {
                 checked={form.physical_copy_present}
                 onChange={(v) => setForm({ ...form, physical_copy_present: v })}
               />
-              <div>
-                <label className="block text-sm text-slate-700 mb-1">CNIC</label>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="file"
-                    onChange={(e) => setForm({ ...form, cnic: e.target.files?.[0] })}
-                    className="flex-1 px-4 py-2 border border-slate-200 rounded-md text-sm"
-                  />
-                  <Upload className="w-4 h-4 text-slate-400" strokeWidth={1.5} />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm text-slate-700 mb-1">Police Verification</label>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="file"
-                    onChange={(e) => setForm({ ...form, police_verification: e.target.files?.[0] })}
-                    className="flex-1 px-4 py-2 border border-slate-200 rounded-md text-sm"
-                  />
-                  <Upload className="w-4 h-4 text-slate-400" strokeWidth={1.5} />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm text-slate-700 mb-1">Other Documents</label>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="file"
-                    multiple
-                    onChange={(e) => setForm({ ...form, other: e.target.files ?? undefined })}
-                    className="flex-1 px-4 py-2 border border-slate-200 rounded-md text-sm"
-                  />
-                  <Upload className="w-4 h-4 text-slate-400" strokeWidth={1.5} />
-                </div>
-              </div>
+              <DocumentInput
+                label="CNIC"
+                onChange={(f) => setForm({ ...form, cnic: f as File | undefined })}
+              />
+              <DocumentInput
+                label="Police Verification"
+                onChange={(f) => setForm({ ...form, police_verification: f as File | undefined })}
+              />
+              <DocumentInput
+                label="Other Documents"
+                multiple
+                onChange={(f) => setForm({ ...form, other: f as FileList | undefined })}
+              />
             </div>
           </FormSection>
 
@@ -3056,31 +3037,19 @@ export default function EmployeeManagement() {
               onToggle={() => editSections.toggle("docs")}
             >
               <div className="space-y-3">
-                <div>
-                  <label className="block text-sm text-slate-700 mb-1">CNIC</label>
-                  <input
-                    type="file"
-                    onChange={(e) => setEditForm({ ...editForm, cnic: e.target.files?.[0] })}
-                    className="flex-1 w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm text-slate-700 mb-1">Police Verification</label>
-                  <input
-                    type="file"
-                    onChange={(e) => setEditForm({ ...editForm, police_verification: e.target.files?.[0] })}
-                    className="flex-1 w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm text-slate-700 mb-1">Other Documents</label>
-                  <input
-                    type="file"
-                    multiple
-                    onChange={(e) => setEditForm({ ...editForm, other: e.target.files ?? undefined })}
-                    className="flex-1 w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
-                  />
-                </div>
+                <DocumentInput
+                  label="CNIC"
+                  onChange={(f) => setEditForm({ ...editForm, cnic: f as File | undefined })}
+                />
+                <DocumentInput
+                  label="Police Verification"
+                  onChange={(f) => setEditForm({ ...editForm, police_verification: f as File | undefined })}
+                />
+                <DocumentInput
+                  label="Other Documents"
+                  multiple
+                  onChange={(f) => setEditForm({ ...editForm, other: f as FileList | undefined })}
+                />
               </div>
             </FormSection>
 
@@ -4828,6 +4797,8 @@ function EmployeeHrSection({
   // field auto-expand so the field — and the jump-to-field target — are visible.
   forceOpen?: boolean;
 }) {
+  // Webcam capture for the profile photo, alongside the file upload.
+  const [photoCamOpen, setPhotoCamOpen] = useState(false);
   const lockCls = lockedIdentity ? " bg-slate-50 text-slate-500 cursor-not-allowed" : "";
   const inputCls = "w-full px-3 py-2 border border-slate-200 rounded-md text-sm";
 
@@ -4946,14 +4917,32 @@ function EmployeeHrSection({
                 </div>
               )}
               <div className="flex flex-col gap-1">
-                <label className="text-xs px-2.5 py-1.5 rounded-md border border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer w-max">
-                  {form.photo_url ? "Replace photo" : "Upload photo"}
-                  <input type="file" accept="image/*" className="hidden" onChange={(e) => onPhoto(e.target.files?.[0] ?? null)} />
-                </label>
+                <div className="flex items-center gap-1">
+                  <label className="text-xs px-2.5 py-1.5 rounded-md border border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer w-max">
+                    {form.photo_url ? "Replace photo" : "Upload photo"}
+                    <input type="file" accept="image/*" className="hidden" onChange={(e) => onPhoto(e.target.files?.[0] ?? null)} />
+                  </label>
+                  {/* Front camera: this is a portrait taken at the desk. */}
+                  <button
+                    type="button"
+                    onClick={() => setPhotoCamOpen(true)}
+                    className="text-xs px-2.5 py-1.5 rounded-md border border-slate-200 text-slate-700 hover:bg-slate-50 w-max inline-flex items-center gap-1.5"
+                  >
+                    <Camera className="w-3.5 h-3.5" strokeWidth={1.5} /> Use camera
+                  </button>
+                </div>
                 {form.photo_url && (
                   <button type="button" onClick={() => onPhoto(null)} className="text-xs text-danger-600 hover:underline w-max">Remove</button>
                 )}
               </div>
+              <CameraCapture
+                open={photoCamOpen}
+                onClose={() => setPhotoCamOpen(false)}
+                onCapture={(file) => onPhoto(file)}
+                title="Take employee photo"
+                facing="user"
+                fileName="employee-photo"
+              />
             </div>
           </div>
 
