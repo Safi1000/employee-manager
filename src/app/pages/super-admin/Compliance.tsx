@@ -14,6 +14,7 @@ import {
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
+import MobileCardList from "../../components/MobileCardList";
 import {
   supabase,
   COMPLIANCE_CATEGORIES,
@@ -658,8 +659,81 @@ export default function Compliance() {
             </div>
           )}
 
+          {/* Phone: one card per compliance date. Seven columns, and the thing
+              being read is always the same — is this overdue, and by how long. */}
           {!loading && activeTab === "dates" && (
-            <div className="overflow-x-auto">
+            <MobileCardList
+              rows={datesWithDays}
+              empty='No important dates yet. Tap "Add Important Date" to create one.'
+              rowKey={(item) => item.id}
+              accent={(item) =>
+                item.daysRemaining < 0
+                  ? "border-l-danger-600"
+                  : item.daysRemaining <= item.advance_notice_days
+                    ? "border-l-warning-500"
+                    : undefined
+              }
+              title={(item) => (
+                <span className="flex items-center gap-2">
+                  <CalendarIcon
+                    className={`w-4 h-4 flex-shrink-0 ${
+                      item.priority === "critical"
+                        ? "text-danger-600"
+                        : item.priority === "high"
+                          ? "text-warning-600"
+                          : "text-brand-600"
+                    }`}
+                    strokeWidth={1.5}
+                  />
+                  <span className="min-w-0">{item.title}</span>
+                </span>
+              )}
+              subtitle={(item) => item.notes ?? ""}
+              badge={(item) => (
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs capitalize ${priorityBadge(item.priority)}`}>
+                  {item.priority}
+                </span>
+              )}
+              fields={[
+                { label: "Date", value: (item) => formatDate(item.due_date) },
+                { label: "Category", value: (item) => item.category },
+                {
+                  label: "Days remaining",
+                  value: (item) => {
+                    const overdue = item.daysRemaining < 0;
+                    const inWindow = !overdue && item.daysRemaining <= item.advance_notice_days;
+                    return (
+                      <span className={overdue ? "text-danger-600" : inWindow ? "text-warning-600" : undefined}>
+                        {overdue
+                          ? `${Math.abs(item.daysRemaining)} days overdue`
+                          : item.daysRemaining === 0
+                            ? "Today"
+                            : `${item.daysRemaining} days`}
+                      </span>
+                    );
+                  },
+                },
+                { label: "Advance notice", value: (item) => `${item.advance_notice_days} days` },
+              ]}
+              actions={(item) => (
+                <>
+                  <Button variant="ghost" size="sm" onClick={() => openEditDate(item)}>
+                    <Pencil className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} /> Edit
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteDate(item)}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-danger-700"
+                  >
+                    <Trash2 className="w-4 h-4" strokeWidth={1.5} /> Delete
+                  </button>
+                </>
+              )}
+            />
+          )}
+
+          {!loading && activeTab === "dates" && (
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-slate-200">
@@ -1177,7 +1251,7 @@ function renderDateFields(form: DateForm, setForm: (f: DateForm) => void) {
           placeholder="e.g., Weapon License Renewal"
         />
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="block text-sm text-slate-700 mb-1">Date *</label>
           <input
@@ -1200,7 +1274,7 @@ function renderDateFields(form: DateForm, setForm: (f: DateForm) => void) {
           />
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="block text-sm text-slate-700 mb-1">Category *</label>
           <ThemedSelect
@@ -1259,7 +1333,7 @@ function renderRecFields(form: RecurringForm, setForm: (f: RecurringForm) => voi
           placeholder="e.g., Monthly Tax Filing Reminder"
         />
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="block text-sm text-slate-700 mb-1">Category *</label>
           <ThemedSelect
@@ -1292,7 +1366,7 @@ function renderRecFields(form: RecurringForm, setForm: (f: RecurringForm) => voi
           </ThemedSelect>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="block text-sm text-slate-700 mb-1">Trigger Day *</label>
           <input

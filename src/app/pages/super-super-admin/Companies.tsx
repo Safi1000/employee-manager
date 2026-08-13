@@ -375,7 +375,12 @@ export default function Companies() {
 
       {subCompany && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+          {/* dvh + safe-area margins: see components/Modal.tsx. `fixed`
+              positions against the viewport, not the inset-padded body. */}
+          <div
+            style={{ marginTop: "var(--safe-top, 0px)", marginBottom: "var(--safe-bottom, 0px)" }}
+            className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90dvh] overflow-y-auto"
+          >
             <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
               <div>
                 <h2 className="text-lg text-slate-900">{subCompany.name} — Subscription</h2>
@@ -465,28 +470,30 @@ export default function Companies() {
                   <p className="text-sm text-slate-500">No payments yet.</p>
                 ) : (
                   <div className="border border-slate-200 rounded overflow-hidden">
-                    <table className="w-full">
-                      <thead className="bg-slate-50">
-                        <tr>
-                          <th className="px-3 py-2 text-left text-xs uppercase text-slate-500">Date</th>
-                          <th className="px-3 py-2 text-right text-xs uppercase text-slate-500">Amount</th>
-                          <th className="px-3 py-2 text-right text-xs uppercase text-slate-500">Days</th>
-                          <th className="px-3 py-2 text-left text-xs uppercase text-slate-500">Notes</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-200 text-sm">
-                        {subPayments.map((p) => (
-                          <tr key={p.id}>
-                            <td className="px-3 py-2 text-slate-700">{formatDate(p.payment_date)}</td>
-                            <td className="px-3 py-2 text-right text-slate-900">
-                              PKR {Number(p.amount).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                            </td>
-                            <td className="px-3 py-2 text-right text-slate-700">{p.days_added}</td>
-                            <td className="px-3 py-2 text-slate-600">{p.notes ?? "—"}</td>
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            <th className="px-3 py-2 text-left text-xs uppercase text-slate-500">Date</th>
+                            <th className="px-3 py-2 text-right text-xs uppercase text-slate-500">Amount</th>
+                            <th className="px-3 py-2 text-right text-xs uppercase text-slate-500">Days</th>
+                            <th className="px-3 py-2 text-left text-xs uppercase text-slate-500">Notes</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 text-sm">
+                          {subPayments.map((p) => (
+                            <tr key={p.id}>
+                              <td className="px-3 py-2 text-slate-700">{formatDate(p.payment_date)}</td>
+                              <td className="px-3 py-2 text-right text-slate-900">
+                                PKR {Number(p.amount).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                              </td>
+                              <td className="px-3 py-2 text-right text-slate-700">{p.days_added}</td>
+                              <td className="px-3 py-2 text-slate-600">{p.notes ?? "—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 )}
               </div>

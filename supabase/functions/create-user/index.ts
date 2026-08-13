@@ -91,13 +91,40 @@ Deno.serve(async (req) => {
     if (branchRow.company_id !== company_id) return json({ error: "branch_company_mismatch" }, 400);
   }
 
+  // One account per email address. Checked BEFORE the auth user is created, so
+  // a duplicate is reported plainly instead of surfacing as a raw provider
+  // message from createUser() — and so we never create an auth user only to
+  // delete it again a moment later.
+  //
+  // `email` is already trimmed and lowercased above; the profiles column is
+  // written in that same normalised form, so an exact match is enough here.
+  // The real guarantee is the profiles_email_unique index (migration 0189) —
+  // this check only exists to produce a good error message, because a check
+  // and an insert are not atomic.
+  const { data: existing, error: existErr } = await admin
+    .from("profiles")
+    .select("id, company_id")
+    .eq("email", email)
+    .maybeSingle();
+  if (existErr) return json({ error: "lookup_failed", detail: existErr.message }, 500);
+  if (existing) return json({ error: "email_taken" }, 409);
+
   const { data: created, error: createErr } = await admin.auth.admin.createUser({
     email,
     password,
     email_confirm: true,
     user_metadata: { full_name },
   });
-  if (createErr || !created.user) return json({ error: "create_failed", detail: createErr?.message }, 400);
+  if (createErr || !created.user) {
+    // auth.users has its own uniqueness. If the profiles check above missed it
+    // — an auth user with no profile row, or two admins submitting at once —
+    // report it as the same clear error rather than "create_failed".
+    const msg = (createErr?.message ?? "").toLowerCase();
+    if (msg.includes("already") || msg.includes("exists") || msg.includes("registered")) {
+      return json({ error: "email_taken" }, 409);
+    }
+    return json({ error: "create_failed", detail: createErr?.message }, 400);
+  }
 
   const { error: insErr } = await admin.from("profiles").insert({
     id: created.user.id,
@@ -111,7 +138,13 @@ Deno.serve(async (req) => {
     must_change_password: true,
   });
   if (insErr) {
+    // Roll the auth user back so a failed create leaves nothing behind.
     await admin.auth.admin.deleteUser(created.user.id);
+    // profiles_email_unique (0189) firing here means another request won the
+    // race between our check and this insert. Same cause, same message.
+    if (insErr.code === "23505" && /profiles_email_unique/.test(insErr.message)) {
+      return json({ error: "email_taken" }, 409);
+    }
     return json({ error: "profile_insert_failed", detail: insErr.message }, 500);
   }
 

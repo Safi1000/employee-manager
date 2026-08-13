@@ -37,6 +37,7 @@ import {
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
+import MobileCardList from "../../components/MobileCardList";
 import ThemedSelect from "../../components/ThemedSelect";
 import ExportButton from "../../components/ExportButton";
 import { exportTable } from "../../lib/excel";
@@ -811,7 +812,69 @@ export default function EmployeeAssignments() {
   const renderEmployeeTable = (g: Group, rowsToShow: EmployeeRow[]) => {
     const sel = selectionFor(g.key);
     return (
-                  <div className="overflow-x-auto border-t border-border">
+      <>
+                  {/* Phone: one card per posted employee. Ten columns including
+                      a sticky Edit column is the worst case for a handset, and
+                      the pay figures are exactly what someone asks about while
+                      standing at a site. The bulk-select checkbox rides in the
+                      card header so multi-select still works. */}
+                  <MobileCardList
+                    rows={rowsToShow}
+                    empty="Nobody is posted here yet — use “Assign employees” above."
+                    rowKey={(e) => e.id}
+                    title={(e) => (
+                      <span className="flex items-start gap-2">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 flex-shrink-0"
+                          checked={sel.has(e.id)}
+                          onChange={() => toggleRow(g.key, e.id)}
+                          onClick={(ev) => ev.stopPropagation()}
+                          aria-label={`Select ${e.full_name}`}
+                        />
+                        <span className="min-w-0">{e.full_name}</span>
+                      </span>
+                    )}
+                    subtitle={(e) => displayCodeFor(e)}
+                    badge={(e) =>
+                      isSeparatedState(e.lifecycle_state) ? (
+                        <span className="text-[10px] uppercase tracking-wide text-danger-700 dark:text-danger-500">
+                          {lifecycleStatusLabel(e)}
+                        </span>
+                      ) : null
+                    }
+                    fields={[
+                      { label: "Department", value: (e) => departmentOf(e) ?? "—" },
+                      { label: "Shift", value: (e) => <span className="capitalize">{e.shift}</span> },
+                      { label: "Base", value: (e) => <span className="tabular-nums">{money(e.base_salary)}</span> },
+                      { label: "Per day", value: (e) => <span className="tabular-nums">{money(perDayOf(e.base_salary))}</span> },
+                      { label: "Allowance", value: (e) => <span className="tabular-nums">{money(e.allowance)}</span> },
+                      {
+                        label: showFired ? "Left on" : "Joined",
+                        value: (e) =>
+                          showFired
+                            ? formatDate(e.termination_date ?? e.last_working_day ?? e.exit_date) || "—"
+                            : e.join_date
+                              ? formatDate(e.join_date)
+                              : "—",
+                      },
+                    ]}
+                    actions={(e) => (
+                      <>
+                        <Button variant="ghost" size="sm" onClick={() => setRowTarget(e)}>
+                          {canEdit ? "Edit" : "View"}
+                        </Button>
+                        {canEdit && (
+                          <Button variant="ghost" size="sm" onClick={() => setTransferTarget(e)}>
+                            <ArrowLeftRight className="w-3.5 h-3.5 mr-1" strokeWidth={1.75} />
+                            Transfer
+                          </Button>
+                        )}
+                      </>
+                    )}
+                  />
+
+                  <div className="hidden md:block overflow-x-auto border-t border-border">
                     <table className="w-full">
                       <thead>
                         <tr className="border-b border-border bg-slate-50">
@@ -904,6 +967,7 @@ export default function EmployeeAssignments() {
                       </tbody>
                     </table>
                   </div>
+      </>
     );
   };
 
@@ -1941,8 +2005,10 @@ function EditRulesModal({
             Recorded as a dated increment per employee — earlier months keep the salary they were paid on.
           </p>
 
+          {/* overflow-auto, not a nested overflow-x wrapper — the sticky
+              <thead> below would detach from a second scroll container. */}
           {payChanges.length > 0 && (
-            <div className="mt-3 border border-border rounded-md max-h-56 overflow-y-auto">
+            <div className="mt-3 border border-border rounded-md max-h-56 overflow-auto">
               <table className="w-full text-xs">
                 <thead className="sticky top-0 bg-slate-50">
                   <tr className="text-left text-muted-foreground border-b border-border">

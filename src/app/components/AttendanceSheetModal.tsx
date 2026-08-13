@@ -157,8 +157,13 @@ export default function AttendanceSheetModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      {/* dvh, not vh: `vh` on a mobile WebView is the viewport with the URL bar
+          hidden, so a 92vh sheet is taller than the screen and its bottom row
+          is unreachable. The safe-area margins keep it clear of the notch and
+          the home indicator, which `fixed` positioning ignores. */}
       <div
-        className="bg-card rounded-xl shadow-xl w-full max-w-[95vw] max-h-[92vh] flex flex-col overflow-hidden"
+        style={{ marginTop: "var(--safe-top, 0px)", marginBottom: "var(--safe-bottom, 0px)" }}
+        className="bg-card rounded-xl shadow-xl w-full max-w-[95vw] max-h-[92dvh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3 px-5 py-3 border-b border-border">

@@ -30,6 +30,21 @@ html.native body {
   box-sizing: border-box;
 }
 
+/*
+ * The four layout shells are `h-dvh` — the full visual viewport. On the web
+ * that is exactly right. Natively the body ALSO carries the safe-area padding
+ * above, so a full-viewport child would be pushed down by the top inset and
+ * lose an equal strip off the bottom behind the home indicator. The shell
+ * therefore takes the viewport minus what the insets already consumed.
+ *
+ * `dvh` rather than `vh` throughout: `vh` on a mobile WebView is the height
+ * with the URL bar hidden, so a `100vh` shell is taller than the screen and
+ * the bottom row of every page sits just out of reach.
+ */
+html.native .app-shell {
+  height: calc(100dvh - var(--safe-top) - var(--safe-bottom));
+}
+
 /* ── Text selection and callouts ─────────────────────────────────────────────
  * Long-pressing anything in a WebView pops the iOS text-selection magnifier
  * and "Copy / Look Up" callout, which makes buttons and table rows feel

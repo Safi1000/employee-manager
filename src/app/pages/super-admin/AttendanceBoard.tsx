@@ -1219,20 +1219,22 @@ function VacancyQueue({ vacancies, clientNames, onChanged }: {
       {vacancies.length === 0 ? (
         <div className="px-4 py-8 text-center text-muted-foreground text-sm">No open vacancies.</div>
       ) : (
-        <table className="w-full">
-          <tbody className="divide-y divide-border">
-            {vacancies.map((v) => (
-              <tr key={v.id} className="hover:bg-accent/50 transition-colors">
-                <td className="px-4 py-3 text-sm font-medium text-foreground">{clientNames.get(v.client_id) ?? "—"}</td>
-                <td className="px-4 py-3 text-sm text-muted-foreground">{v.opened_reason}</td>
-                <td className="px-4 py-3 text-xs text-muted-foreground">{new Date(v.opened_at).toLocaleDateString()}</td>
-                <td className="px-4 py-3 text-right">
-                  <button onClick={() => close(v.id)} className="text-xs text-muted-foreground hover:text-danger-600">Dismiss</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <tbody className="divide-y divide-border">
+              {vacancies.map((v) => (
+                <tr key={v.id} className="hover:bg-accent/50 transition-colors">
+                  <td className="px-4 py-3 text-sm font-medium text-foreground">{clientNames.get(v.client_id) ?? "—"}</td>
+                  <td className="px-4 py-3 text-sm text-muted-foreground">{v.opened_reason}</td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground">{new Date(v.opened_at).toLocaleDateString()}</td>
+                  <td className="px-4 py-3 text-right">
+                    <button onClick={() => close(v.id)} className="text-xs text-muted-foreground hover:text-danger-600">Dismiss</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

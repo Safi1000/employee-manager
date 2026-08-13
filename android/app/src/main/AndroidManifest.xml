@@ -1,6 +1,5 @@
-<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8" ?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-
     <!--
       allowBackup is OFF deliberately. Android's auto-backup would copy
       SharedPreferences — which is where the Supabase session and refresh token
@@ -19,7 +18,6 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
-
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
             android:name=".MainActivity"
@@ -27,7 +25,6 @@
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
             android:exported="true">
-
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -52,7 +49,6 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="txs-crm.techxserve.com" />
             </intent-filter>
-
         </activity>
 
         <provider
@@ -60,13 +56,35 @@
             android:authorities="${applicationId}.fileprovider"
             android:exported="false"
             android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths"></meta-data>
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
         </provider>
     </application>
 
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!--
+      Required by @capacitor/network, which the app uses to tell "the save
+      failed" apart from "you are on a lift with no signal".
+    -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!--
+      getUserMedia inside the WebView (components/CameraCapture.tsx — profile
+      photos and document scans) needs the OS permission declared here. The
+      runtime prompt itself is raised by Capacitor's WebChromeClient the first
+      time the camera is opened; without this line that request is denied
+      outright and the modal shows "permission was refused" with no prompt
+      ever having appeared.
+    -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!--
+      required="false" so the app still installs on a device with no camera —
+      a desk terminal or an emulator. Photos are optional everywhere; every
+      slot that offers the camera also offers a file upload.
+    -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 </manifest>

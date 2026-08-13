@@ -268,12 +268,12 @@ export default function SuperAdminLayout() {
   };
 
   return (
-    <div className="flex h-screen bg-slate-50">
+    <div className="app-shell flex h-dvh bg-slate-50">
       <Sidebar
         title={isSsaViewing ? `Viewing: ${company?.name ?? "…"}` : (company?.name ?? "Company Panel")}
         links={links}
       />
-      <div className="flex-1 flex flex-col overflow-hidden pt-12 md:pt-0">
+      <div className="flex-1 flex flex-col overflow-hidden pt-14 md:pt-0">
         {isSsaViewing && (
           <div className="bg-warning-50 border-b border-warning-200 px-6 py-2 flex items-center justify-between text-sm">
             <div className="flex items-center gap-2 text-warning-900">

@@ -454,7 +454,7 @@ export default function Documents() {
       >
         {viewing && (
           <div className="space-y-6">
-            <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
               <div>
                 <p className="text-slate-500 mb-1">Employee ID</p>
                 <p className="text-slate-900 font-mono">{empDisplay(viewing)}</p>

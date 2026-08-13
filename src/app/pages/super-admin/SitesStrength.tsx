@@ -14,6 +14,7 @@ import {
   Building2,
 } from "lucide-react";
 import Header from "../../components/Header";
+import MobileCardList from "../../components/MobileCardList";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import Tabs from "../../components/Tabs";
@@ -312,7 +313,30 @@ export default function SitesStrength() {
         {view === "strength" && (
         <>
         <div className="bg-card border border-border rounded-lg overflow-hidden">
-          <div className="overflow-x-auto">
+          {/* Phone: one card per client. Six numeric columns compare badly on a
+              handset; what matters is the variance, so it leads as the badge
+              and the rest sit underneath as the workings. */}
+          <MobileCardList
+            rows={loading ? [] : filtered}
+            loading={loading}
+            empty="No clients match the current filters."
+            rowKey={(r) => r.client_id}
+            onClick={(r) => loadDetail(r)}
+            title={(r) => r.client_name}
+            badge={(r) => (
+              <span className={`inline-block px-2 py-0.5 rounded-md text-xs border font-medium ${varianceBadge(r.variance)}`}>
+                {r.variance > 0 ? `+${r.variance}` : r.variance}
+              </span>
+            )}
+            fields={[
+              { label: "Sites", value: (r) => <span className="tabular-nums">{r.site_count}</span> },
+              { label: "Contracted", value: (r) => <span className="tabular-nums">{r.contracted_billed_qty}</span> },
+              { label: "On-ground req.", value: (r) => <span className="tabular-nums">{r.required_on_ground}</span> },
+              { label: "Enrolled (active)", value: (r) => <span className="tabular-nums">{r.enrolled_active}</span> },
+            ]}
+          />
+
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border bg-slate-50">
@@ -837,7 +861,7 @@ function ShiftFormModal({
             ))}
           </ThemedSelect>
         </label>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label className="block">
             <span className="text-sm text-muted-foreground">Start</span>
             <input type="time" value={start} onChange={(e) => setStart(e.target.value)} className="mt-1 w-full px-3 py-2 border border-border rounded-md text-sm" />
@@ -932,7 +956,7 @@ function StrengthLineFormModal({
         </div>
       }
     >
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <label className="block">
           <span className="text-sm text-muted-foreground">Category</span>
           <ThemedSelect value={category} onChange={(e) => setCategory(e.target.value as LineCategory)} className={inputCls}>

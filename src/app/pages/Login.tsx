@@ -67,7 +67,7 @@ export default function Login() {
     "w-full pl-10 pr-4 py-2.5 bg-input-background border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-brand-500/60 focus:border-brand-500 transition-all";
 
   return (
-    <div className="grid min-h-screen bg-background lg:grid-cols-[45%_55%]">
+    <div className="grid min-h-dvh bg-background lg:grid-cols-[45%_55%]">
 
       {/* ── Brand panel (always the obsidian "command center" look) ── */}
       <div

@@ -82,7 +82,7 @@ export default function Signup() {
     "w-full pl-10 pr-4 py-2.5 bg-input-background border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-brand-500/60 focus:border-brand-500 transition-all";
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-dvh bg-background">
       <div className="mx-auto grid max-w-6xl gap-8 px-6 py-10 lg:grid-cols-[1fr_400px] lg:py-16">
 
         {/* ── form ── */}
@@ -235,7 +235,7 @@ export default function Signup() {
                 <b className="tabular-nums text-foreground">{money(quote.total)}</b>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 pt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                 <div className="rounded-lg bg-muted/50 p-3">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Per guard</p>
                   <p className="mt-1 text-sm font-bold tabular-nums text-foreground">{money(quote.perGuard)}</p>

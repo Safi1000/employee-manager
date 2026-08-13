@@ -17,6 +17,7 @@ import ContractEditorModal from "../../components/ContractEditorModal";
 import ContractViewModal from "../../components/ContractViewModal";
 import ContractStatusBadge from "../../components/ContractStatusBadge";
 import ClientFilterSelect from "../../components/ClientFilterSelect";
+import MobileCardList from "../../components/MobileCardList";
 import { formatDateUS } from "../../lib/date";
 import {
   supabase,
@@ -270,6 +271,68 @@ export default function Contracts() {
     return Math.round((a - b) / 86400000);
   };
 
+  /**
+   * Everything a contract row displays that is not a raw column: effective end
+   * date after renewals, per-category committed vs active, the guard totals,
+   * and the over-staffing flag.
+   *
+   * Lifted out of the table's map because the phone card list needs the same
+   * numbers. Two copies of this arithmetic would drift, and the failure would
+   * be silent — a contract reading "over by 2" on a laptop and fine on a
+   * phone, with no way to tell which was right.
+   */
+  const deriveContract = (row: (typeof rows)[number]) => {
+    const lines = linesByContract.get(row.id) ?? [];
+    const addendums = addendumsByContract.get(row.id) ?? [];
+    const eff = effectiveContractEnd(row, addendums);
+    const effEndDate = eff.isInfinite ? null : eff.endDate;
+    const renewed = !!addendums.some((a) => a.change_type === "EXTEND_END_DATE");
+    const dleft = daysUntilEnd(effEndDate);
+    const endingSoon = dleft != null && dleft <= 90 && dleft >= 0;
+    const expired = isContractExpired(row, addendums);
+    const contractEmps = employeesByContract.get(row.id) ?? [];
+    const committedByCat = effectiveCommittedByCategory(lines, addendums, today());
+    const activeByCat = activeCountByCategory(contractEmps, lineCategoryById, today());
+    // Headcount totals count PEOPLE only. Weapons and equipment are billed
+    // quantities with nobody to assign to them, so folding them in reads as a
+    // permanent, uncloseable guard shortfall.
+    let totalCommitted = 0;
+    let hardwareCommitted = 0;
+    for (const [cat, n] of committedByCat) {
+      if (isPersonnelCategory(cat)) totalCommitted += n;
+      else hardwareCommitted += n;
+    }
+    let activeGuards = 0;
+    for (const [cat, n] of activeByCat) {
+      if (isPersonnelCategory(cat)) activeGuards += n;
+    }
+    // Guards posted to the client but never pinned to a line still work under
+    // this contract. Attribute them only when this is the client's single
+    // guard-deployment contract — with more than one there is nothing to say
+    // which they belong to, so leave them out rather than double-count.
+    const clientGdContracts = rows.filter(
+      (r) =>
+        r.client_id === row.client_id &&
+        r.contract_type === "guard_deployment" &&
+        r.status === "active",
+    ).length;
+    const looseActive =
+      row.contract_type === "guard_deployment" && clientGdContracts === 1
+        ? looseActiveByClient.get(row.client_id) ?? 0
+        : 0;
+    activeGuards += looseActive;
+    const valuePerMonth = effectiveContractLinesValue(lines, addendums, today());
+    // Exceeded when any category's active exceeds its committed.
+    const overStaffed = [...activeByCat.entries()].some(
+      ([cat, n]) => isPersonnelCategory(cat) && n > (committedByCat.get(cat) ?? 0),
+    );
+    return {
+      eff, effEndDate, renewed, dleft, endingSoon, expired,
+      committedByCat, activeByCat, totalCommitted, hardwareCommitted,
+      activeGuards, looseActive, valuePerMonth, overStaffed,
+    };
+  };
+
   return (
     <>
       <Header
@@ -329,7 +392,140 @@ export default function Contracts() {
         </div>
 
         <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-          <div className="overflow-x-auto">
+          {/* Phone: one card per contract. Eleven columns, several of them
+              per-category breakdowns, is the widest table in the app. The card
+              keeps what someone checks away from a desk — who it is with, when
+              it ends, and whether the posting count is over. */}
+          <MobileCardList
+            rows={loading ? [] : filteredRows}
+            loading={loading}
+            empty="No contracts match the current filters."
+            rowKey={(row) => row.id}
+            accent={(row) => (deriveContract(row).overStaffed ? "border-l-danger-500" : undefined)}
+            title={(row) => row.client_name}
+            subtitle={(row) => `${row.contract_code} · ${CONTRACT_TYPE_LABEL[row.contract_type]}`}
+            badge={(row) => <ContractStatusBadge status={row.status} />}
+            fields={[
+              {
+                label: "Period",
+                full: true,
+                value: (row) => {
+                  const { eff, effEndDate, renewed, endingSoon, expired, dleft } = deriveContract(row);
+                  return (
+                    <>
+                      {formatDateUS(row.start_date)}
+                      {eff.isInfinite ? (
+                        <span className="text-muted-foreground"> → no end date{renewed && " (renewed)"}</span>
+                      ) : (
+                        effEndDate && (
+                          <span className={endingSoon ? "text-warning-700" : expired ? "text-danger-700" : "text-muted-foreground"}>
+                            {" "}→ {formatDateUS(effEndDate)}
+                            {renewed && " (renewed)"}
+                            {endingSoon && ` (${dleft}d)`}
+                          </span>
+                        )
+                      )}
+                    </>
+                  );
+                },
+              },
+              {
+                label: "Guards (active/allotted)",
+                value: (row) => {
+                  const { activeGuards, totalCommitted, overStaffed, looseActive } = deriveContract(row);
+                  if (totalCommitted === 0 && activeGuards === 0) return "—";
+                  return (
+                    <>
+                      <span className={overStaffed ? "text-danger-700 font-medium tabular-nums" : "tabular-nums"}>
+                        {activeGuards} / {totalCommitted}
+                      </span>
+                      {looseActive > 0 && (
+                        <span className="block text-[10px] text-muted-foreground">{looseActive} not on a line</span>
+                      )}
+                      {overStaffed && (
+                        <span className="block text-[10px] text-danger-600">over by {activeGuards - totalCommitted}</span>
+                      )}
+                    </>
+                  );
+                },
+              },
+              {
+                label: "Value / mo",
+                value: (row) => (
+                  <span className="tabular-nums">PKR {deriveContract(row).valuePerMonth.toLocaleString()}</span>
+                ),
+              },
+              {
+                label: "Committed by category",
+                full: true,
+                value: (row) => {
+                  const { committedByCat, activeByCat } = deriveContract(row);
+                  const personnel = CONTRACT_LINE_CATEGORY_ORDER.filter(
+                    (cat) => committedByCat.has(cat) && isPersonnelCategory(cat),
+                  );
+                  const hardware = HARDWARE_LINE_CATEGORIES.filter((cat) => committedByCat.has(cat));
+                  if (committedByCat.size === 0) return <span className="text-muted-foreground">No lines</span>;
+                  return (
+                    <span className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
+                      {personnel.map((cat) => {
+                        const committed = committedByCat.get(cat) ?? 0;
+                        const active = activeByCat.get(cat) ?? 0;
+                        return (
+                          <span key={cat}>
+                            <span className="text-muted-foreground">{CONTRACT_LINE_CATEGORY_LABEL[cat]}:</span>{" "}
+                            <span className={active > committed ? "text-danger-700 font-medium" : "font-medium"}>
+                              {active}/{committed}
+                            </span>
+                          </span>
+                        );
+                      })}
+                      {hardware.map((cat) => (
+                        <span key={cat}>
+                          <span className="text-muted-foreground">{CONTRACT_LINE_CATEGORY_LABEL[cat]}:</span>{" "}
+                          <span className="font-medium">{committedByCat.get(cat) ?? 0}</span>
+                        </span>
+                      ))}
+                      {personnel.length === 0 && (
+                        <span className="text-muted-foreground">No personnel lines</span>
+                      )}
+                    </span>
+                  );
+                },
+              },
+            ]}
+            tags={(row) => {
+              const { expired, overStaffed } = deriveContract(row);
+              if (!expired && !overStaffed) return null;
+              return (
+                <>
+                  {expired && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs bg-warning-50 text-warning-800 border border-warning-200">
+                      <AlertCircle className="w-3 h-3" /> Needs renewal
+                    </span>
+                  )}
+                  {overStaffed && (
+                    <span className="inline-block px-2 py-0.5 rounded-md text-xs bg-danger-50 text-danger-700 border border-danger-200">
+                      Guards exceeded
+                    </span>
+                  )}
+                </>
+              );
+            }}
+            actions={(row) =>
+              row.drive_view_url ? (
+                <a
+                  href={row.drive_view_url}
+                  target="_blank"
+                  rel="noopener"
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-brand-600"
+                >
+                  <FileText className="w-3.5 h-3.5" /> Document
+                </a>
+              ) : null
+            }
+          />
+
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50">
@@ -362,56 +558,11 @@ export default function Contracts() {
                   </tr>
                 )}
                 {!loading && filteredRows.map((row) => {
-                  const lines = linesByContract.get(row.id) ?? [];
-                  const addendums = addendumsByContract.get(row.id) ?? [];
-                  // Effective end (renewal addendums applied) drives ending-soon,
-                  // the displayed end date, and the expired/needs-renewal badge.
-                  const eff = effectiveContractEnd(row, addendums);
-                  const effEndDate = eff.isInfinite ? null : eff.endDate;
-                  const renewed = !!addendums.some((a) => a.change_type === "EXTEND_END_DATE");
-                  const dleft = daysUntilEnd(effEndDate);
-                  const endingSoon = dleft != null && dleft <= 90 && dleft >= 0;
-                  const expired = isContractExpired(row, addendums);
-                  const contractEmps = employeesByContract.get(row.id) ?? [];
-                  // Effective per-category committed = base lines + addendums as of today.
-                  const committedByCat = effectiveCommittedByCategory(lines, addendums, today());
-                  // Per-category ACTIVE from real contract-line assignments (Phase 4).
-                  const activeByCat = activeCountByCategory(contractEmps, lineCategoryById, today());
-                  // Headcount totals count PEOPLE only. Weapons and equipment are
-                  // billed quantities with nobody to assign to them, so folding them
-                  // in read as a permanent, uncloseable guard shortfall.
-                  let totalCommitted = 0;
-                  let hardwareCommitted = 0;
-                  for (const [cat, n] of committedByCat) {
-                    if (isPersonnelCategory(cat)) totalCommitted += n;
-                    else hardwareCommitted += n;
-                  }
-                  let activeGuards = 0;
-                  for (const [cat, n] of activeByCat) {
-                    if (isPersonnelCategory(cat)) activeGuards += n;
-                  }
-                  // Guards posted to the client but never pinned to a line still
-                  // work under this contract. Attribute them only when this is the
-                  // client's single guard-deployment contract — with more than one
-                  // there is nothing to say which they belong to, so leave them out
-                  // rather than double-count.
-                  const clientGdContracts = rows.filter(
-                    (r) =>
-                      r.client_id === row.client_id &&
-                      r.contract_type === "guard_deployment" &&
-                      r.status === "active",
-                  ).length;
-                  const looseActive =
-                    row.contract_type === "guard_deployment" && clientGdContracts === 1
-                      ? looseActiveByClient.get(row.client_id) ?? 0
-                      : 0;
-                  activeGuards += looseActive;
-                  // Monthly value with signed rate-change addendums applied.
-                  const valuePerMonth = effectiveContractLinesValue(lines, addendums, today());
-                  // Exceeded when any category's active exceeds its committed.
-                  const overStaffed = [...activeByCat.entries()].some(
-                    ([cat, n]) => isPersonnelCategory(cat) && n > (committedByCat.get(cat) ?? 0),
-                  );
+                  const {
+                    eff, effEndDate, renewed, dleft, endingSoon, expired,
+                    committedByCat, activeByCat, totalCommitted, hardwareCommitted,
+                    activeGuards, looseActive, valuePerMonth, overStaffed,
+                  } = deriveContract(row);
                   return (
                     <tr key={row.id} className={`hover:bg-slate-50 transition-colors ${overStaffed ? "bg-danger-50/40" : ""}`}>
                       <td className="px-4 py-3 text-xs font-mono text-slate-900">{row.contract_code}</td>

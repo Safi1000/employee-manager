@@ -161,6 +161,13 @@ Deno.serve(async (req) => {
   if (profileErr) {
     await admin.auth.admin.deleteUser(created.user.id);
     await admin.from("companies").delete().eq("id", company.id);
+    // profiles_email_unique (migration 0189) firing here means the address was
+    // claimed between the pre-check above and this insert. Report it as the
+    // same email_in_use the pre-check uses, so the signup screen shows one
+    // message for one problem rather than a 500 the customer cannot act on.
+    if (profileErr.code === "23505" && /profiles_email_unique/.test(profileErr.message)) {
+      return json({ error: "email_in_use" }, 409);
+    }
     return json({ error: "profile_create_failed", detail: profileErr.message }, 500);
   }
 

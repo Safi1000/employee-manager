@@ -1550,104 +1550,106 @@ export default function FinancialReports() {
                     No partners yet. Add the first one above.
                   </div>
                 ) : (
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-slate-200">
-                        <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Partner</th>
-                        <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Profit Share</th>
-                        <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Opening Balance</th>
-                        <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">P&amp;L Share</th>
-                        <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Adjustments</th>
-                        <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Remaining</th>
-                        <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200">
-                      {partnerRows.map(({ partner: p, opening, profit, adjustments, remaining }) => {
-                        const editing = editPartnerId === p.id;
-                        return (
-                          <tr key={p.id} className="hover:bg-slate-50 transition-colors">
-                            <td className="px-4 py-3 text-sm text-slate-900">
-                              {p.name}
-                              {p.opening_balance_locked && (
-                                <Lock className="w-3 h-3 text-slate-400 inline-block ml-2" />
-                              )}
-                              {/* Which tier the share belongs to — without this
-                                  the Profit Share column reads as one pool when
-                                  it is really two. */}
-                              <div className="text-[11px] text-slate-500 mt-0.5">
-                                {p.scope === "BRANCH"
-                                  ? `Regional · ${branches.find((b) => b.id === p.branch_id)?.name ?? "no region"}`
-                                  : "Equity"}
-                              </div>
-                            </td>
-                            <td className="px-4 py-3 text-sm text-right">
-                              {editing ? (
-                                <input
-                                  type="number"
-                                  step="0.001"
-                                  min="0"
-                                  max="100"
-                                  value={editPartnerShare}
-                                  onChange={(e) => setEditPartnerShare(e.target.value)}
-                                  className="w-20 px-2 py-1 border border-slate-200 rounded text-sm text-right"
-                                />
-                              ) : (
-                                <span className="text-brand-600">{Number(p.profit_share_percent)}%</span>
-                              )}
-                            </td>
-                            <td className="px-4 py-3 text-sm text-right text-slate-700">
-                              {editing && !p.opening_balance_locked ? (
-                                <input
-                                  type="number"
-                                  value={editPartnerOpening}
-                                  onChange={(e) => setEditPartnerOpening(e.target.value)}
-                                  placeholder="Lock once entered"
-                                  className="w-32 px-2 py-1 border border-slate-200 rounded text-sm text-right"
-                                />
-                              ) : (
-                                <>PKR {Number(opening).toLocaleString(undefined, { maximumFractionDigits: 2 })}</>
-                              )}
-                            </td>
-                            <td className={`px-4 py-3 text-sm text-right ${profit >= 0 ? "text-success-600" : "text-danger-600"}`}>
-                              PKR {Number(profit).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                            </td>
-                            <td className={`px-4 py-3 text-sm text-right ${adjustments >= 0 ? "text-success-600" : "text-danger-600"}`}>
-                              PKR {Number(adjustments).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                            </td>
-                            <td className={`px-4 py-3 text-sm text-right ${remaining >= 0 ? "text-slate-900" : "text-danger-600"}`}>
-                              PKR {Number(remaining).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                            </td>
-                            <td className="px-4 py-3 text-right">
-                              {editing ? (
-                                <div className="flex gap-1 justify-end">
-                                  <Button variant="primary" size="sm" onClick={() => handleSavePartnerEdit(p)}>Save</Button>
-                                  <Button variant="ghost" size="sm" onClick={() => setEditPartnerId(null)}>Cancel</Button>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-slate-200">
+                          <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Partner</th>
+                          <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Profit Share</th>
+                          <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Opening Balance</th>
+                          <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">P&amp;L Share</th>
+                          <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Adjustments</th>
+                          <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Remaining</th>
+                          <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {partnerRows.map(({ partner: p, opening, profit, adjustments, remaining }) => {
+                          const editing = editPartnerId === p.id;
+                          return (
+                            <tr key={p.id} className="hover:bg-slate-50 transition-colors">
+                              <td className="px-4 py-3 text-sm text-slate-900">
+                                {p.name}
+                                {p.opening_balance_locked && (
+                                  <Lock className="w-3 h-3 text-slate-400 inline-block ml-2" />
+                                )}
+                                {/* Which tier the share belongs to — without this
+                                    the Profit Share column reads as one pool when
+                                    it is really two. */}
+                                <div className="text-[11px] text-slate-500 mt-0.5">
+                                  {p.scope === "BRANCH"
+                                    ? `Regional · ${branches.find((b) => b.id === p.branch_id)?.name ?? "no region"}`
+                                    : "Equity"}
                                 </div>
-                              ) : (
-                                <div className="flex gap-1 justify-end">
-                                  <button
-                                    onClick={() => openEditPartner(p)}
-                                    className="p-1.5 rounded text-slate-600 hover:bg-slate-100"
-                                    title="Edit"
-                                  >
-                                    <Pencil className="w-4 h-4" />
-                                  </button>
-                                  <button
-                                    onClick={() => handleDeletePartner(p)}
-                                    className="p-1.5 rounded text-danger-600 hover:bg-danger-50"
-                                    title="Delete"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                </div>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                              </td>
+                              <td className="px-4 py-3 text-sm text-right">
+                                {editing ? (
+                                  <input
+                                    type="number"
+                                    step="0.001"
+                                    min="0"
+                                    max="100"
+                                    value={editPartnerShare}
+                                    onChange={(e) => setEditPartnerShare(e.target.value)}
+                                    className="w-20 px-2 py-1 border border-slate-200 rounded text-sm text-right"
+                                  />
+                                ) : (
+                                  <span className="text-brand-600">{Number(p.profit_share_percent)}%</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-right text-slate-700">
+                                {editing && !p.opening_balance_locked ? (
+                                  <input
+                                    type="number"
+                                    value={editPartnerOpening}
+                                    onChange={(e) => setEditPartnerOpening(e.target.value)}
+                                    placeholder="Lock once entered"
+                                    className="w-32 px-2 py-1 border border-slate-200 rounded text-sm text-right"
+                                  />
+                                ) : (
+                                  <>PKR {Number(opening).toLocaleString(undefined, { maximumFractionDigits: 2 })}</>
+                                )}
+                              </td>
+                              <td className={`px-4 py-3 text-sm text-right ${profit >= 0 ? "text-success-600" : "text-danger-600"}`}>
+                                PKR {Number(profit).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                              </td>
+                              <td className={`px-4 py-3 text-sm text-right ${adjustments >= 0 ? "text-success-600" : "text-danger-600"}`}>
+                                PKR {Number(adjustments).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                              </td>
+                              <td className={`px-4 py-3 text-sm text-right ${remaining >= 0 ? "text-slate-900" : "text-danger-600"}`}>
+                                PKR {Number(remaining).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                {editing ? (
+                                  <div className="flex gap-1 justify-end">
+                                    <Button variant="primary" size="sm" onClick={() => handleSavePartnerEdit(p)}>Save</Button>
+                                    <Button variant="ghost" size="sm" onClick={() => setEditPartnerId(null)}>Cancel</Button>
+                                  </div>
+                                ) : (
+                                  <div className="flex gap-1 justify-end">
+                                    <button
+                                      onClick={() => openEditPartner(p)}
+                                      className="p-1.5 rounded text-slate-600 hover:bg-slate-100"
+                                      title="Edit"
+                                    >
+                                      <Pencil className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeletePartner(p)}
+                                      className="p-1.5 rounded text-danger-600 hover:bg-danger-50"
+                                      title="Delete"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
               </div>
 

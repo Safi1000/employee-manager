@@ -51,7 +51,10 @@
 
 :host {
   display: block;
+  /* vh first as the fallback for anything that predates dvh; dvh wins where
+     it is supported, and is the one that tracks a mobile URL bar. */
   min-height: 100vh;
+  min-height: 100dvh;
   font-family: var(--body);
   font-weight: 400;
   background: var(--obsidian);

@@ -4,6 +4,7 @@ import { Plus, Search, Upload, AlertCircle, X, Loader2, Trash2, Download, Pencil
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
+import MobileCardList from "../../components/MobileCardList";
 import ExportButton from "../../components/ExportButton";
 import ClientFilterSelect from "../../components/ClientFilterSelect";
 import { exportExpenses, exportAdvances } from "../../lib/excel";
@@ -2119,7 +2120,52 @@ export default function Expenses() {
             </div>
           </div>
 
-          <div className="overflow-x-auto overflow-y-auto max-h-[480px]">
+          {/* Phone: one card per expense. Recording and checking spend is the
+              most common thing anyone does on this page away from a desk. */}
+          <MobileCardList
+            rows={loading ? [] : filtered}
+            loading={loading}
+            empty='No expenses yet. Tap "Add Expense" to create one.'
+            rowKey={(exp) => exp.id}
+            title={(exp) => exp.category_name ?? "—"}
+            subtitle={(exp) => `${formatDate(exp.expense_date)} · ${exp.client_name ?? "Office"}`}
+            badge={(exp) => (
+              <span
+                className={`inline-flex items-center px-2 py-0.5 rounded text-xs ${
+                  exp.payment_mode === "Cash"
+                    ? "bg-success-50 text-success-700"
+                    : exp.payment_mode === "Bank"
+                      ? "bg-brand-50 text-brand-700"
+                      : "bg-warning-50 text-warning-700"
+                }`}
+              >
+                {exp.payment_mode}
+                {exp.payment_mode === "Payable" && exp.payable_status ? ` · ${exp.payable_status}` : ""}
+              </span>
+            )}
+            fields={[
+              {
+                label: "Amount",
+                value: (exp) => <span className="tabular-nums">PKR {Number(exp.amount).toLocaleString()}</span>,
+              },
+              { label: "Description", full: true, value: (exp) => exp.description ?? "—" },
+            ]}
+            actions={(exp) => (
+              <>
+                <Button variant="ghost" size="sm" onClick={() => openView(exp)}>View</Button>
+                <Button variant="ghost" size="sm" onClick={() => openEdit(exp)}>Edit</Button>
+                <button
+                  type="button"
+                  onClick={() => handleDelete(exp)}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-danger-700"
+                >
+                  <Trash2 className="w-4 h-4" strokeWidth={1.5} /> Delete
+                </button>
+              </>
+            )}
+          />
+
+          <div className="hidden md:block overflow-auto max-h-[480px]">
             <table className="w-full">
               <thead className="sticky top-0 z-10 bg-white">
                 <tr className="border-b border-slate-200">
@@ -2534,7 +2580,50 @@ export default function Expenses() {
                 </div>
               </div>
             </div>
-            <div className="overflow-x-auto">
+            {/* Phone: one card per advance. Salary advances get asked for and
+                recorded at a site office more than anywhere else. */}
+            <MobileCardList
+              rows={loading ? [] : filteredAdvances}
+              loading={loading}
+              empty='No advances yet. Tap "Add Advance" to record one.'
+              rowKey={(adv) => adv.id}
+              title={(adv) => adv.employee_name}
+              subtitle={(adv) => `${adv.employee_code} · ${adv.advance_date}`}
+              badge={(adv) => (
+                <span
+                  className={`inline-flex items-center px-2 py-0.5 rounded text-xs ${
+                    adv.payment_mode === "Cash" ? "bg-success-50 text-success-700" : "bg-brand-50 text-brand-700"
+                  }`}
+                >
+                  {adv.payment_mode}
+                  {adv.bank_name ? ` · ${adv.bank_name}` : ""}
+                </span>
+              )}
+              fields={[
+                {
+                  label: "Amount",
+                  value: (adv) => <span className="tabular-nums">PKR {Number(adv.amount).toLocaleString()}</span>,
+                },
+                { label: "Client", value: (adv) => adv.client_name ?? "—" },
+                { label: "Notes", full: true, value: (adv) => adv.notes ?? "—" },
+              ]}
+              actions={(adv) => (
+                <>
+                  <Button variant="ghost" size="sm" onClick={() => openAdvEdit(adv)}>
+                    <Pencil className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} /> Edit
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteAdvance(adv)}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-danger-700"
+                  >
+                    <Trash2 className="w-4 h-4" strokeWidth={1.5} /> Delete
+                  </button>
+                </>
+              )}
+            />
+
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-slate-200">
@@ -3080,7 +3169,7 @@ export default function Expenses() {
       <Modal isOpen={isViewOpen} onClose={() => setIsViewOpen(false)} title="Expense Details" size="lg">
         {selected && (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
               <div>
                 <p className="text-slate-500 mb-1">Date</p>
                 <p className="text-slate-900">{formatDate(selected.expense_date)}</p>
@@ -3427,7 +3516,7 @@ export default function Expenses() {
             </>
           )}
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="block text-sm text-slate-700 mb-1">Amount (PKR) *</label>
             <input
@@ -3563,7 +3652,7 @@ export default function Expenses() {
             </button>
           </div>
         )}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm text-slate-700 mb-1">Category *</label>
             <ThemedSelect

@@ -12,7 +12,8 @@
     "cap:android": "vite build && cap sync android && cap open android",
     "cap:ios": "vite build && cap sync ios && cap open ios",
     "cap:run:android": "vite build && cap sync android && cap run android",
-    "cap:copy": "vite build && cap copy"
+    "cap:copy": "vite build && cap copy",
+    "assets:gen": "node scripts/make-native-assets.mjs"
   },
   "dependencies": {
     "@capacitor/app": "^8.1.1",
@@ -91,6 +92,7 @@
   },
   "devDependencies": {
     "@capacitor/android": "^8.5.0",
+    "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^8.5.0",
     "@capacitor/ios": "^8.5.0",
     "@tailwindcss/vite": "4.1.12",

@@ -17,6 +17,7 @@ import {
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
+import MobileCardList from "../../components/MobileCardList";
 import Field from "../../components/Field";
 import ContractEditorModal from "../../components/ContractEditorModal";
 import { formatDate } from "../../lib/date";
@@ -707,7 +708,7 @@ export default function Clients() {
       )}
 
       <Section isOpen={!!expanded.basic} onToggle={() => setExpanded((prev) => ({ ...prev, basic: !prev.basic }))} title="Basic Information">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="col-span-2">
             <label className="block text-sm text-slate-700 mb-1">Client Name *</label>
             <input
@@ -810,7 +811,7 @@ export default function Clients() {
       </Section>
 
       <Section isOpen={!!expanded.tax} onToggle={() => setExpanded((prev) => ({ ...prev, tax: !prev.tax }))} title="Tax Information">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="block text-sm text-slate-700 mb-1">NTN</label>
             <input
@@ -961,7 +962,7 @@ export default function Clients() {
           />
           {fieldErrors.billing_address && <p className="text-xs text-danger-600 mt-1">{fieldErrors.billing_address}</p>}
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="block text-sm text-slate-700 mb-1">Authorised Signatory</label>
             <input
@@ -1200,7 +1201,62 @@ export default function Clients() {
 
         {/* List */}
         <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-          <div className="overflow-x-auto">
+          {/* Phone: one card per client. Tapping the card opens the detail
+              panel, which is the only thing anyone does with this list on a
+              handset — the counts are context, not the destination. */}
+          <MobileCardList
+            rows={loading ? [] : filteredRows}
+            loading={loading}
+            empty="No clients match the current filters."
+            rowKey={(row) => row.id}
+            title={(row) => row.name}
+            subtitle={(row) => row.client_code}
+            onClick={(row) => {
+              setDetailRow(row);
+              setDetailTab("overview");
+            }}
+            badge={(row) =>
+              activeClientIds.has(row.id) ? (
+                <span className="inline-block px-2 py-0.5 rounded-md text-xs bg-success-50 text-success-700 border border-success-200">
+                  Active
+                </span>
+              ) : (
+                <span className="inline-block px-2 py-0.5 rounded-md text-xs bg-slate-100 text-slate-600 border border-slate-200">
+                  Inactive
+                </span>
+              )
+            }
+            fields={[
+              { label: "Industry", value: (row) => row.industry ?? "—" },
+              { label: "Branch", value: (row) => branches.find((b) => b.id === row.branch_id)?.name ?? "—" },
+              { label: "Employees", value: (row) => <span className="tabular-nums">{row.employees_count}</span> },
+              { label: "Contracts", value: (row) => <span className="tabular-nums">{row.contracts_count}</span> },
+            ]}
+            actions={(row) => (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    populateForm(row);
+                    setEditingId(row.id);
+                    setExpanded({ basic: true, tax: false, billing: false });
+                  }}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-slate-600"
+                >
+                  <Pencil className="w-4 h-4" /> Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDelete(row)}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-danger-600"
+                >
+                  <Trash2 className="w-4 h-4" /> Delete
+                </button>
+              </>
+            )}
+          />
+
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50">
@@ -1396,61 +1452,63 @@ export default function Clients() {
                 {contracts.filter((c) => c.client_id === detailRow.id).length === 0 ? (
                   <p className="text-sm text-slate-500">No contracts yet. Use “Add Contract” above.</p>
                 ) : (
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-200">
-                        <th className="text-left px-2 py-2 text-xs text-slate-500 uppercase">Code</th>
-                        <th className="text-left px-2 py-2 text-xs text-slate-500 uppercase">Type</th>
-                        <th className="text-left px-2 py-2 text-xs text-slate-500 uppercase">Period</th>
-                        <th className="text-left px-2 py-2 text-xs text-slate-500 uppercase">Status</th>
-                        <th className="text-right px-2 py-2 text-xs text-slate-500 uppercase">Guards</th>
-                        <th className="text-right px-2 py-2 text-xs text-slate-500 uppercase">Rate</th>
-                        <th className="text-right px-2 py-2 text-xs text-slate-500 uppercase">Edit</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {contracts.filter((c) => c.client_id === detailRow.id).map((c) => (
-                        <tr key={c.id}>
-                          <td className="px-2 py-2 font-mono text-xs">{c.contract_code}</td>
-                          <td className="px-2 py-2 text-xs">{c.contract_type}</td>
-                          <td className="px-2 py-2 text-xs">{formatDate(c.start_date)}{c.end_date ? ` → ${formatDate(c.end_date)}` : ""}</td>
-                          <td className="px-2 py-2 text-xs capitalize">{c.status}</td>
-                          <td className="px-2 py-2 text-xs text-right">{c.number_of_guards}</td>
-                          <td className="px-2 py-2 text-xs text-right">PKR {Number(c.rate_per_guard_per_month).toLocaleString()}</td>
-                          <td className="px-2 py-2 text-xs text-right">
-                            {canEditContracts ? (
-                              <div className="flex gap-1 justify-end">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setEditingContract(c);
-                                    setContractEditorOpen(true);
-                                  }}
-                                  className="p-1 rounded text-slate-600 hover:bg-slate-100"
-                                  title="Edit contract"
-                                >
-                                  <Pencil className="w-4 h-4" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => deleteContractEntity(c)}
-                                  disabled={deletingContractId === c.id}
-                                  className="p-1 rounded text-danger-600 hover:bg-danger-50 disabled:opacity-50"
-                                  title="Delete contract"
-                                >
-                                  {deletingContractId === c.id
-                                    ? <Loader2 className="w-4 h-4 animate-spin" />
-                                    : <Trash2 className="w-4 h-4" />}
-                                </button>
-                              </div>
-                            ) : (
-                              <span className="text-slate-400">—</span>
-                            )}
-                          </td>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-200">
+                          <th className="text-left px-2 py-2 text-xs text-slate-500 uppercase">Code</th>
+                          <th className="text-left px-2 py-2 text-xs text-slate-500 uppercase">Type</th>
+                          <th className="text-left px-2 py-2 text-xs text-slate-500 uppercase">Period</th>
+                          <th className="text-left px-2 py-2 text-xs text-slate-500 uppercase">Status</th>
+                          <th className="text-right px-2 py-2 text-xs text-slate-500 uppercase">Guards</th>
+                          <th className="text-right px-2 py-2 text-xs text-slate-500 uppercase">Rate</th>
+                          <th className="text-right px-2 py-2 text-xs text-slate-500 uppercase">Edit</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {contracts.filter((c) => c.client_id === detailRow.id).map((c) => (
+                          <tr key={c.id}>
+                            <td className="px-2 py-2 font-mono text-xs">{c.contract_code}</td>
+                            <td className="px-2 py-2 text-xs">{c.contract_type}</td>
+                            <td className="px-2 py-2 text-xs">{formatDate(c.start_date)}{c.end_date ? ` → ${formatDate(c.end_date)}` : ""}</td>
+                            <td className="px-2 py-2 text-xs capitalize">{c.status}</td>
+                            <td className="px-2 py-2 text-xs text-right">{c.number_of_guards}</td>
+                            <td className="px-2 py-2 text-xs text-right">PKR {Number(c.rate_per_guard_per_month).toLocaleString()}</td>
+                            <td className="px-2 py-2 text-xs text-right">
+                              {canEditContracts ? (
+                                <div className="flex gap-1 justify-end">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingContract(c);
+                                      setContractEditorOpen(true);
+                                    }}
+                                    className="p-1 rounded text-slate-600 hover:bg-slate-100"
+                                    title="Edit contract"
+                                  >
+                                    <Pencil className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => deleteContractEntity(c)}
+                                    disabled={deletingContractId === c.id}
+                                    className="p-1 rounded text-danger-600 hover:bg-danger-50 disabled:opacity-50"
+                                    title="Delete contract"
+                                  >
+                                    {deletingContractId === c.id
+                                      ? <Loader2 className="w-4 h-4 animate-spin" />
+                                      : <Trash2 className="w-4 h-4" />}
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-slate-400">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
               </div>
             )}
@@ -1460,26 +1518,28 @@ export default function Clients() {
                 {invoices.filter((i) => i.client_id === detailRow.id).length === 0 ? (
                   <p className="text-sm text-slate-500">No invoices for this client yet.</p>
                 ) : (
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-200">
-                        <th className="text-left px-2 py-2 text-xs text-slate-500 uppercase">Invoice</th>
-                        <th className="text-left px-2 py-2 text-xs text-slate-500 uppercase">Date</th>
-                        <th className="text-right px-2 py-2 text-xs text-slate-500 uppercase">Amount</th>
-                        <th className="text-right px-2 py-2 text-xs text-slate-500 uppercase">Received</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {invoices.filter((i) => i.client_id === detailRow.id).slice(0, 50).map((inv) => (
-                        <tr key={inv.id}>
-                          <td className="px-2 py-2 font-mono text-xs">{inv.invoice_number}</td>
-                          <td className="px-2 py-2 text-xs">{formatDate(inv.invoice_date)}</td>
-                          <td className="px-2 py-2 text-xs text-right">PKR {Number(inv.invoice_amount).toLocaleString()}</td>
-                          <td className="px-2 py-2 text-xs text-right text-success-700">PKR {Number(inv.amount_received).toLocaleString()}</td>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-200">
+                          <th className="text-left px-2 py-2 text-xs text-slate-500 uppercase">Invoice</th>
+                          <th className="text-left px-2 py-2 text-xs text-slate-500 uppercase">Date</th>
+                          <th className="text-right px-2 py-2 text-xs text-slate-500 uppercase">Amount</th>
+                          <th className="text-right px-2 py-2 text-xs text-slate-500 uppercase">Received</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {invoices.filter((i) => i.client_id === detailRow.id).slice(0, 50).map((inv) => (
+                          <tr key={inv.id}>
+                            <td className="px-2 py-2 font-mono text-xs">{inv.invoice_number}</td>
+                            <td className="px-2 py-2 text-xs">{formatDate(inv.invoice_date)}</td>
+                            <td className="px-2 py-2 text-xs text-right">PKR {Number(inv.invoice_amount).toLocaleString()}</td>
+                            <td className="px-2 py-2 text-xs text-right text-success-700">PKR {Number(inv.amount_received).toLocaleString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
               </div>
             )}

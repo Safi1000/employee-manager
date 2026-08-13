@@ -16,6 +16,7 @@ import Header from "../../components/Header";
 import { useRegion, withRegion } from "../../lib/region";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
+import MobileCardList from "../../components/MobileCardList";
 import { formatDateTime } from "../../lib/date";
 import {
   supabase,
@@ -381,7 +382,7 @@ export default function Incidents() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="block text-sm text-slate-700 mb-1">Date & Time *</label>
           <input
@@ -679,7 +680,77 @@ export default function Incidents() {
 
         {/* Table */}
         <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-          <div className="overflow-x-auto">
+          {/* Phone: one card per incident. Eight columns do not fit a handset,
+              and an incident is read one at a time — a supervisor at a site is
+              checking or logging a single event, not scanning a register. */}
+          <MobileCardList
+            rows={loading ? [] : filteredRows}
+            loading={loading}
+            empty="No incidents match the current filters."
+            rowKey={(row) => row.id}
+            title={(row) => row.client_name ?? "—"}
+            subtitle={(row) => {
+              const postName = row.post_id ? posts.find((p) => p.id === row.post_id)?.name : null;
+              return postName ? `${row.incident_code} · ${postName}` : row.incident_code;
+            }}
+            badge={(row) => (
+              <span className={`inline-block px-2 py-0.5 rounded-md text-xs border ${SEVERITY_COLOUR[row.severity]}`}>
+                {INCIDENT_SEVERITY_LABEL[row.severity]}
+              </span>
+            )}
+            fields={[
+              { label: "When", value: (row) => formatDateTime(row.occurred_at) },
+              { label: "Category", value: (row) => INCIDENT_CATEGORY_LABEL[row.category] },
+              {
+                label: "Status",
+                value: (row) => (
+                  <span className={`inline-block px-2 py-0.5 rounded-md text-xs border ${STATUS_COLOUR[row.status]}`}>
+                    {INCIDENT_STATUS_LABEL[row.status]}
+                  </span>
+                ),
+              },
+              {
+                label: "Guards",
+                value: (row) =>
+                  row.guard_names.length === 0 ? (
+                    <span className="text-muted-foreground">—</span>
+                  ) : (
+                    row.guard_names.join(", ")
+                  ),
+                full: true,
+              },
+            ]}
+            actions={(row) => (
+              <>
+                {row.drive_view_url && (
+                  <a
+                    href={row.drive_view_url}
+                    target="_blank"
+                    rel="noopener"
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-brand-600"
+                  >
+                    <FileText className="w-4 h-4" /> Attachment
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={() => openEdit(row)}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-slate-600"
+                >
+                  <Pencil className="w-4 h-4" /> Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDelete(row)}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-danger-600"
+                >
+                  <Trash2 className="w-4 h-4" /> Delete
+                </button>
+              </>
+            )}
+          />
+
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50">

@@ -254,7 +254,7 @@ function BillingTab({ companyId: _companyId, clients }: { companyId: string; cli
         <Button variant="primary" size="sm" disabled={busy || !clientId} onClick={compute}>Compute</Button>
       </div>
       {res && (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Stat label="Billable guard-days" value={res.billable_guard_days} />
           <Stat label="Standard days" value={res.standard_days} />
           <Stat label="Rate / guard / month" value={`PKR ${money(res.rate_per_guard)}`} />

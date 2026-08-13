@@ -728,7 +728,7 @@ function PostsModal({
           </div>
         )}
 
-        <form onSubmit={save} className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-md border border-slate-200">
+        <form onSubmit={save} className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-50 rounded-md border border-slate-200">
           <div>
             <label className="block text-xs text-slate-700 mb-1">Client *</label>
             <ThemedSelect
@@ -798,64 +798,66 @@ function PostsModal({
         </form>
 
         <div className="border border-slate-200 rounded-md overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50">
-              <tr>
-                <th className="text-left px-3 py-2 text-xs text-slate-500 uppercase">Post</th>
-                <th className="text-left px-3 py-2 text-xs text-slate-500 uppercase">Client</th>
-                <th className="text-right px-3 py-2 text-xs text-slate-500 uppercase">Guards</th>
-                <th className="text-left px-3 py-2 text-xs text-slate-500 uppercase">Shift</th>
-                <th className="text-right px-3 py-2 text-xs text-slate-500 uppercase">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {posts.length === 0 && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50">
                 <tr>
-                  <td colSpan={5} className="px-3 py-6 text-center text-slate-500 text-sm">
-                    No posts yet. Add one to get started.
-                  </td>
+                  <th className="text-left px-3 py-2 text-xs text-slate-500 uppercase">Post</th>
+                  <th className="text-left px-3 py-2 text-xs text-slate-500 uppercase">Client</th>
+                  <th className="text-right px-3 py-2 text-xs text-slate-500 uppercase">Guards</th>
+                  <th className="text-left px-3 py-2 text-xs text-slate-500 uppercase">Shift</th>
+                  <th className="text-right px-3 py-2 text-xs text-slate-500 uppercase">Actions</th>
                 </tr>
-              )}
-              {posts.map((p) => (
-                <tr key={p.id} className={p.active ? "" : "bg-slate-50/50 opacity-60"}>
-                  <td className="px-3 py-2">
-                    <div className="text-slate-900 inline-flex items-center gap-1">
-                      <MapPin className="w-3 h-3 text-slate-400" />
-                      {p.name}
-                    </div>
-                    {p.address && <div className="text-xs text-slate-500">{p.address}</div>}
-                  </td>
-                  <td className="px-3 py-2 text-slate-600 text-xs">
-                    {clients.find((c) => c.id === p.client_id)?.name ?? "—"}
-                  </td>
-                  <td className="px-3 py-2 text-right">{p.required_guards}</td>
-                  <td className="px-3 py-2 text-xs">{p.shift_pattern}</td>
-                  <td className="px-3 py-2 text-right">
-                    <div className="flex justify-end gap-1">
-                      <button
-                        onClick={() => toggleActive(p)}
-                        className="text-xs px-2 py-1 rounded border border-slate-200 hover:bg-slate-50"
-                      >
-                        {p.active ? "Deactivate" : "Activate"}
-                      </button>
-                      <button
-                        onClick={() => startEdit(p)}
-                        className="p-1.5 rounded text-slate-600 hover:bg-slate-100"
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => remove(p)}
-                        className="p-1.5 rounded text-danger-600 hover:bg-danger-50"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {posts.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-3 py-6 text-center text-slate-500 text-sm">
+                      No posts yet. Add one to get started.
+                    </td>
+                  </tr>
+                )}
+                {posts.map((p) => (
+                  <tr key={p.id} className={p.active ? "" : "bg-slate-50/50 opacity-60"}>
+                    <td className="px-3 py-2">
+                      <div className="text-slate-900 inline-flex items-center gap-1">
+                        <MapPin className="w-3 h-3 text-slate-400" />
+                        {p.name}
+                      </div>
+                      {p.address && <div className="text-xs text-slate-500">{p.address}</div>}
+                    </td>
+                    <td className="px-3 py-2 text-slate-600 text-xs">
+                      {clients.find((c) => c.id === p.client_id)?.name ?? "—"}
+                    </td>
+                    <td className="px-3 py-2 text-right">{p.required_guards}</td>
+                    <td className="px-3 py-2 text-xs">{p.shift_pattern}</td>
+                    <td className="px-3 py-2 text-right">
+                      <div className="flex justify-end gap-1">
+                        <button
+                          onClick={() => toggleActive(p)}
+                          className="text-xs px-2 py-1 rounded border border-slate-200 hover:bg-slate-50"
+                        >
+                          {p.active ? "Deactivate" : "Activate"}
+                        </button>
+                        <button
+                          onClick={() => startEdit(p)}
+                          className="p-1.5 rounded text-slate-600 hover:bg-slate-100"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => remove(p)}
+                          className="p-1.5 rounded text-danger-600 hover:bg-danger-50"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </Modal>

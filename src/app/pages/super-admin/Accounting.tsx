@@ -2944,7 +2944,7 @@ export default function Accounting() {
               ))}
             </ThemedSelect>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Cheque Number *</label>
               <input
@@ -3089,7 +3089,7 @@ export default function Accounting() {
                   ? `No balance change — ${bankName} was never credited for this cheque.`
                   : `${amount} returns to ${bankName}: the amount was reserved when the cheque was issued and the money never left.`}
               </div>
-              <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                 <div>
                   <p className="text-xs text-slate-500">Amount</p>
                   <p className="text-slate-900">{amount}</p>
@@ -3141,7 +3141,7 @@ export default function Accounting() {
       <Modal isOpen={!!chequeView} onClose={() => setChequeView(null)} title={chequeView ? `Cheque #${chequeView.cheque_number}` : ""} size="lg">
         {chequeView && (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
               <div>
                 <p className="text-xs text-slate-500">Direction / Type</p>
                 <p className="flex gap-1">
@@ -3306,7 +3306,7 @@ export default function Accounting() {
               </p>
             )}
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Branch Code</label>
               <input
@@ -3328,7 +3328,7 @@ export default function Accounting() {
               />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm text-slate-700 mb-1">SWIFT Code</label>
               <input
@@ -3504,7 +3504,7 @@ export default function Accounting() {
                 </ThemedSelect>
               )}
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Deposit Date *</label>
                 <input
@@ -3585,7 +3585,7 @@ export default function Accounting() {
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Account Balance</label>
                 <input
@@ -3940,7 +3940,7 @@ export default function Accounting() {
               </div>
             )}
             {paymentVia === "Cheque" && (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm text-slate-700 mb-1">Cheque Number *</label>
                   <input
@@ -4024,7 +4024,7 @@ export default function Accounting() {
                 </p>
               )}
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Branch Code</label>
                 <input
@@ -4044,7 +4044,7 @@ export default function Accounting() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm text-slate-700 mb-1">SWIFT Code</label>
                 <input
@@ -4264,7 +4264,7 @@ export default function Accounting() {
       <Modal isOpen={isMarkPaidModalOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsMarkPaidModalOpen(false)} title="Mark Payable as Paid" size="md">
         {selectedPayable && (
           <form className="space-y-4" onSubmit={handleMarkPaid}>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Vendor</label>
                 <input
@@ -4390,7 +4390,7 @@ export default function Accounting() {
               ))}
             </ThemedSelect>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm text-slate-700 mb-1">From Date</label>
               <input
@@ -4627,7 +4627,10 @@ function HistoryBody({
         </span>
       </div>
 
-      <div className="max-h-[60vh] overflow-y-auto">
+      {/* overflow-x on the SAME element as overflow-y, not a nested wrapper:
+          the sticky <thead> below positions against its nearest scroll
+          container, so introducing a second one detaches the header. */}
+      <div className="max-h-[60vh] overflow-auto">
         {filtered.length === 0 ? (
           <p className="text-sm text-slate-500 py-6 text-center">{emptyText}</p>
         ) : (

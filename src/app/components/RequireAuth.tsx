@@ -16,7 +16,7 @@ export default function RequireAuth({
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="min-h-dvh flex items-center justify-center bg-slate-50">
         <Loader2 className="w-6 h-6 animate-spin text-slate-500" />
       </div>
     );
@@ -34,7 +34,7 @@ export default function RequireAuth({
       company.subscription_expires_at < today;
     if (company.active === false || expired) {
       return (
-        <div className="min-h-screen flex items-center justify-center bg-slate-50 p-8">
+        <div className="min-h-dvh flex items-center justify-center bg-slate-50 p-8">
           <div className="max-w-md text-center bg-white border border-slate-200 rounded-lg p-8">
             <h1 className="text-xl text-slate-900 mb-2">Access suspended</h1>
             <p className="text-sm text-slate-600 mb-6">

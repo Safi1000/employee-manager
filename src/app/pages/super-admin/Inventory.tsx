@@ -2,6 +2,7 @@ import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Shield, Users as UsersIcon, MapPin, AlertCircle, Loader2, X, Trash2, Package, Building2 } from "lucide-react";
 import Header from "../../components/Header";
+import MobileCardList from "../../components/MobileCardList";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import ClientFilterSelect from "../../components/ClientFilterSelect";
@@ -694,8 +695,61 @@ export default function Inventory() {
             </div>
           </div>
 
+          {/* Phone: cards for all three tabs. Issuance in particular happens at
+              a store or a site gate, phone in hand — "who has this weapon" and
+              "mark it returned" are the two jobs, and neither wants a table. */}
           {activeTab === "weapons" && (
-            <div className="overflow-x-auto">
+            <MobileCardList
+              rows={loading ? [] : weapons.filter((w) => (filtersActive ? issuedItemIds.has(w.id) : true))}
+              loading={loading}
+              empty="No weapons match current filters."
+              rowKey={(weapon) => weapon.id}
+              title={(weapon) => (
+                <span className="flex items-center gap-2">
+                  <Shield className="w-4 h-4 flex-shrink-0 text-danger-600" strokeWidth={1.5} />
+                  <span className="min-w-0">{weapon.item_type}</span>
+                </span>
+              )}
+              subtitle={(weapon) => weapon.serial_number ?? ""}
+              badge={(weapon) => (
+                <span
+                  className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
+                    weapon.status === "Issued"
+                      ? "bg-brand-50 text-brand-700"
+                      : weapon.status === "Available"
+                        ? "bg-success-50 text-success-700"
+                        : "bg-warning-50 text-warning-700"
+                  }`}
+                >
+                  {weapon.status}
+                  {weapon.active_issuance_count > 1 && ` · ${weapon.active_issuance_count}x`}
+                </span>
+              )}
+              fields={[
+                { label: "Location", value: (weapon) => weapon.location_name ?? "—" },
+                { label: "Issued to", value: (weapon) => weapon.issued_to_name ?? "—" },
+                {
+                  label: "Licence expiry",
+                  value: (weapon) => (weapon.license_expiry ? formatDate(weapon.license_expiry) : "—"),
+                },
+              ]}
+              actions={(weapon) => (
+                <>
+                  <Button variant="ghost" size="sm" onClick={() => setViewWeapon(weapon)}>View</Button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteItem(weapon)}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-danger-700"
+                  >
+                    <Trash2 className="w-4 h-4" strokeWidth={1.5} /> Delete
+                  </button>
+                </>
+              )}
+            />
+          )}
+
+          {activeTab === "weapons" && (
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-slate-200">
@@ -779,7 +833,63 @@ export default function Inventory() {
           )}
 
           {activeTab === "uniforms" && (
-            <div className="overflow-x-auto">
+            <MobileCardList
+              rows={loading ? [] : uniforms.filter((u) => (filtersActive ? issuedItemIds.has(u.id) : true))}
+              loading={loading}
+              empty="No uniforms match current filters."
+              rowKey={(u) => u.id}
+              title={(u) => (
+                <span className="flex items-center gap-2">
+                  <UsersIcon className="w-4 h-4 flex-shrink-0 text-brand-600" strokeWidth={1.5} />
+                  <span className="min-w-0">{u.item_type}</span>
+                </span>
+              )}
+              subtitle={(u) => (u.size ? `Size ${u.size}` : "")}
+              badge={(u) => {
+                const stat = uniformStockStatus(u.quantity);
+                return (
+                  <span
+                    className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
+                      stat === "In Stock"
+                        ? "bg-success-50 text-success-700"
+                        : stat === "Low Stock"
+                          ? "bg-warning-50 text-warning-700"
+                          : "bg-danger-50 text-danger-700"
+                    }`}
+                  >
+                    {stat}
+                  </span>
+                );
+              }}
+              fields={[
+                { label: "Quantity", value: (u) => <span className="tabular-nums">{u.quantity}</span> },
+                {
+                  label: "Location",
+                  value: (u) => (
+                    <span className="inline-flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5 text-muted-foreground" strokeWidth={1.5} />
+                      {u.location_name ?? "—"}
+                    </span>
+                  ),
+                },
+              ]}
+              actions={(u) => (
+                <>
+                  <Button variant="ghost" size="sm" onClick={() => openStock(u)}>Manage stock</Button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteItem(u)}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-danger-700"
+                  >
+                    <Trash2 className="w-4 h-4" strokeWidth={1.5} /> Delete
+                  </button>
+                </>
+              )}
+            />
+          )}
+
+          {activeTab === "uniforms" && (
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-slate-200">
@@ -862,7 +972,72 @@ export default function Inventory() {
           )}
 
           {activeTab === "issuance" && (
-            <div className="overflow-x-auto">
+            <MobileCardList
+              rows={loading ? [] : filteredIssuances}
+              loading={loading}
+              empty="No issuances match current filters."
+              rowKey={(r) => r.id}
+              title={(r) => (
+                <span className="flex items-center gap-2">
+                  {r.target_kind === "client" ? (
+                    <Building2 className="w-3.5 h-3.5 flex-shrink-0 text-purple-600" strokeWidth={1.5} />
+                  ) : (
+                    <UsersIcon className="w-3.5 h-3.5 flex-shrink-0 text-brand-600" strokeWidth={1.5} />
+                  )}
+                  <span className="min-w-0">{r.target_name}</span>
+                </span>
+              )}
+              subtitle={(r) => r.target_code}
+              badge={(r) => (
+                <span
+                  className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs capitalize ${
+                    r.item_kind === "weapon" ? "bg-danger-50 text-danger-700" : "bg-brand-50 text-brand-700"
+                  }`}
+                >
+                  {r.item_kind}
+                </span>
+              )}
+              fields={[
+                {
+                  label: "Item",
+                  full: true,
+                  value: (r) => `${r.item_type} (${r.item_kind === "weapon" ? r.serial_number ?? "—" : r.size ?? "—"})`,
+                },
+                { label: "Location", value: (r) => r.location_name ?? "—" },
+                { label: "Issued", value: (r) => r.issue_date },
+                { label: "Returned", value: (r) => r.return_date ?? "—" },
+                {
+                  label: "Condition",
+                  value: (r) =>
+                    r.condition ? (
+                      <span
+                        className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${
+                          r.condition === "Good"
+                            ? "bg-success-50 text-success-700"
+                            : r.condition === "Fair"
+                              ? "bg-warning-50 text-warning-700"
+                              : "bg-danger-50 text-danger-700"
+                        }`}
+                      >
+                        {r.condition}
+                      </span>
+                    ) : (
+                      "—"
+                    ),
+                },
+              ]}
+              actions={(r) =>
+                r.return_date ? (
+                  <span className="px-2 py-1 text-xs text-muted-foreground">Returned</span>
+                ) : (
+                  <Button variant="ghost" size="sm" onClick={() => openReturn(r)}>Mark returned</Button>
+                )
+              }
+            />
+          )}
+
+          {activeTab === "issuance" && (
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-slate-200">
@@ -1040,7 +1215,7 @@ export default function Inventory() {
             </>
           ) : (
             <>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm text-slate-700 mb-1">Size</label>
                   <input
@@ -1066,7 +1241,7 @@ export default function Inventory() {
             </>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Location</label>
               <ThemedSelect
@@ -1369,7 +1544,7 @@ export default function Inventory() {
       >
         {viewWeapon && (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
               <div>
                 <p className="text-slate-500 mb-1">Type</p>
                 <p className="text-slate-900">{viewWeapon.item_type}</p>

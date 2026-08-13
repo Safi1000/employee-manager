@@ -632,7 +632,7 @@ export default function Partners() {
             <input type="text" value={partnerForm.name} onChange={(e) => setPartnerForm({ ...partnerForm, name: e.target.value })}
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Scope</label>
               <ThemedSelect value={partnerForm.scope} onChange={(e) => setPartnerForm({ ...partnerForm, scope: e.target.value as any })}
@@ -660,7 +660,7 @@ export default function Partners() {
               </ThemedSelect>
             </div>
           )}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Default Share %</label>
               <input type="number" min="0" max="100" step="0.01" value={partnerForm.default_share_pct}
@@ -700,7 +700,7 @@ export default function Partners() {
       <Modal isOpen={isDrawingOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsDrawingOpen(false)} title="Record Drawing" size="sm">
         <div className="space-y-4">
           <p className="text-sm text-slate-500">Payment <strong>out</strong> to the partner. Does not hit P&L.</p>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Date *</label>
               <input type="date" value={drawingForm.date} onChange={(e) => setDrawingForm({ ...drawingForm, date: e.target.value })}
@@ -737,7 +737,7 @@ export default function Partners() {
       <Modal isOpen={isContribOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsContribOpen(false)} title="Record Contribution" size="sm">
         <div className="space-y-4">
           <p className="text-sm text-slate-500">Partner's own money put <strong>into</strong> the company. Does not hit P&L.</p>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Date *</label>
               <input type="date" value={contribForm.date} onChange={(e) => setContribForm({ ...contribForm, date: e.target.value })}
@@ -774,7 +774,7 @@ export default function Partners() {
       <Modal isOpen={isAllocOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsAllocOpen(false)} title="Record Profit Allocation" size="sm">
         <div className="space-y-4">
           <p className="text-sm text-slate-500">Post partner's profit share for a period. Use a negative amount for a loss share.</p>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Date *</label>
               <input type="date" value={allocForm.date} onChange={(e) => setAllocForm({ ...allocForm, date: e.target.value })}

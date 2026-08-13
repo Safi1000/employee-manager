@@ -66,5 +66,18 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<!-- Shown verbatim in the iOS permission prompt. App Review rejects a build
+	     whose string does not say what the data is actually used for, and a
+	     missing key crashes the app the moment getUserMedia is called. -->
+	<key>NSCameraUsageDescription</key>
+	<string>Bastion uses the camera to take a guard's profile photo and to photograph documents such as a CNIC in place of a scanner.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Bastion lets you attach an existing photo or scanned document from your library to a guard's record.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Bastion saves exported reports and ID cards to your photo library when you choose to keep a copy.</string>
+	<!-- The app uses only HTTPS/TLS, which is exempt. Declaring it here skips
+	     the export-compliance questionnaire on every single upload. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>

@@ -8,7 +8,7 @@ import { ROLE_HOMES, useAuth } from "../lib/auth";
 // they never download the landing chunk. A full-screen obsidian placeholder
 // matches the landing's background to avoid a white flash while it loads.
 const BastionLanding = lazy(() => import("../landing/BastionLanding"));
-const LandingFallback = <div style={{ minHeight: "100vh", background: "#12140f" }} />;
+const LandingFallback = <div style={{ minHeight: "100dvh", background: "#12140f" }} />;
 
 export default function RoleSelection() {
   const { session, profile, loading } = useAuth();

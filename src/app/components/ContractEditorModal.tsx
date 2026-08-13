@@ -905,7 +905,7 @@ export default function ContractEditorModal({
         )}
 
         <fieldset disabled={locked} className={LOCK_CLS}>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {showClientPicker && (
             <div className="col-span-2">
               <label className="block text-sm text-slate-700 mb-1">Client *</label>
@@ -1367,7 +1367,7 @@ export default function ContractEditorModal({
             attendance read for every employee on this contract. */}
         <div className="border border-slate-200 rounded-md p-3">
           <div className="text-sm font-medium text-slate-700 mb-2">Contract terms</div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-slate-500 mb-1">Allowed Leaves / month</label>
               <input

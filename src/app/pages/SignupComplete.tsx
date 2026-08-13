@@ -42,7 +42,7 @@ export default function SignupComplete() {
 
   if (!token) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-6">
+      <div className="flex min-h-dvh items-center justify-center bg-background px-6">
         <div className="max-w-sm text-center">
           <h1 className="text-xl font-bold text-foreground">Nothing to finish here</h1>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -92,7 +92,7 @@ export default function SignupComplete() {
     "w-full pl-10 pr-10 py-2.5 bg-input-background border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-brand-500/60 focus:border-brand-500 transition-all";
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6 py-12">
+    <div className="flex min-h-dvh flex-col items-center justify-center bg-background px-6 py-12">
       <div className="absolute right-5 top-5"><ThemeToggle /></div>
 
       <div className="mb-8 flex items-center gap-3">

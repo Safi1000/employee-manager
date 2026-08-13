@@ -1,5 +1,18 @@
 apply plugin: 'com.android.application'
 
+// Release signing. The keystore and its passwords live in
+// android/keystore.properties, which is gitignored — losing that file means
+// losing the ability to ship an update to the same Play listing ever again, so
+// it is backed up outside the repo. See docs/MOBILE.md.
+//
+// When the file is absent (any dev machine, CI running only `assembleDebug`)
+// the signing config is simply not created and debug builds carry on working.
+def keystorePropsFile = rootProject.file("keystore.properties")
+def keystoreProps = new Properties()
+if (keystorePropsFile.exists()) {
+    keystoreProps.load(new FileInputStream(keystorePropsFile))
+}
+
 android {
     namespace = "com.techxserve.bastion"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,10 +29,27 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (keystorePropsFile.exists()) {
+            release {
+                storeFile rootProject.file(keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+            }
+        }
+    }
+
     buildTypes {
         release {
+            // Left off: the app is a WebView shell, so there is no Java/Kotlin
+            // of ours to shrink, and R8 on the Capacitor bridge has historically
+            // stripped plugin classes that are only reached by reflection.
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (keystorePropsFile.exists()) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }

@@ -2208,7 +2208,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
               <p className="text-sm text-slate-500">{formatPeriod(payslipData.period_month)}</p>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
               <div>
                 <p className="text-slate-500 mb-1">Employee</p>
                 <p className="text-slate-900">{payslipData.employee.full_name}</p>

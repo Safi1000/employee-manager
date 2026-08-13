@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Loader2, AlertCircle, X, ArrowUpDown, Search, Calendar } from "lucide-react";
 import { Link } from "react-router";
 import Header from "../../components/Header";
+import MobileCardList from "../../components/MobileCardList";
 import { formatDate } from "../../lib/date";
 import {
   supabase,
@@ -289,7 +290,67 @@ export default function Licences() {
 
         {/* Table */}
         <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-          <div className="overflow-x-auto">
+          {/* Phone: one card per expiring item. This is a "what is about to
+              lapse" list, so the days-remaining figure leads and the card's
+              left edge carries the same urgency colour the table row tints. */}
+          <MobileCardList
+            rows={loading ? [] : filteredRows}
+            loading={loading}
+            empty="Nothing matches the current filters. Add expiry dates on Employees, Contracts, or the Compliance Calendar."
+            rowKey={(row) => row.id}
+            // Literal class names, not a string built from colourFor().dot —
+            // Tailwind only emits classes it can see spelled out in source.
+            accent={(row) =>
+              row.days_remaining < 0
+                ? "border-l-danger-600"
+                : row.days_remaining <= 30
+                  ? "border-l-danger-500"
+                  : row.days_remaining <= 90
+                    ? "border-l-warning-500"
+                    : "border-l-success-500"
+            }
+            title={(row) => row.title}
+            subtitle={(row) => row.subtitle}
+            badge={(row) => {
+              const c = colourFor(row.days_remaining);
+              return (
+                <span className="inline-flex items-center gap-1.5">
+                  <span className={`w-2 h-2 rounded-full ${c.dot}`} />
+                  <span className={`text-xs ${c.text}`}>{c.label}</span>
+                </span>
+              );
+            }}
+            fields={[
+              { label: "Category", value: (row) => KIND_LABEL[row.kind] },
+              {
+                label: "Expiry",
+                value: (row) => (
+                  <span className="inline-flex items-center gap-1">
+                    <Calendar className="w-3 h-3 text-muted-foreground" />
+                    {formatDate(row.expiry_date)}
+                  </span>
+                ),
+              },
+              {
+                label: "Days remaining",
+                full: true,
+                value: (row) => (
+                  <span className={colourFor(row.days_remaining).text}>
+                    {row.days_remaining < 0
+                      ? `${Math.abs(row.days_remaining)} days ago`
+                      : `${row.days_remaining} days`}
+                  </span>
+                ),
+              },
+            ]}
+            actions={(row) => (
+              <Link to={row.href} className="px-2 py-1 text-xs text-brand-600">
+                Open
+              </Link>
+            )}
+          />
+
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50">

@@ -571,7 +571,7 @@ export default function ChartOfAccounts() {
               System account — rename is fine; changing type is not recommended.
             </div>
           )}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Account Code *</label>
               <input required type="text" value={form.account_code} onChange={(e) => setForm({ ...form, account_code: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm font-mono" placeholder="e.g., 6400" />
@@ -623,7 +623,7 @@ export default function ChartOfAccounts() {
           <p className="text-xs text-slate-500">
             Post a balanced debit/credit entry. For adjustments, corrections, or entries not captured by the auto-journal triggers.
           </p>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Date *</label>
               <input required type="date" value={manualForm.entry_date} onChange={(e) => setManualForm({ ...manualForm, entry_date: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm" />
@@ -680,28 +680,30 @@ function CoaTypeSection({ type, rows, isSuper, onEdit, onDelete }: {
         <span className="text-xs text-slate-500">{rows.length} account{rows.length === 1 ? "" : "s"}</span>
       </button>
       {open && (
-        <table className="w-full">
-          <tbody className="divide-y divide-slate-100">
-            {rows.map((a) => (
-              <tr key={a.id} className={a.active ? "" : "opacity-50"}>
-                <td className="px-4 py-2 text-xs font-mono text-slate-700 w-20">{a.account_code}</td>
-                <td className="px-4 py-2 text-sm text-slate-900">
-                  {a.account_name}
-                  {a.system_account && <span className="ml-2 text-[10px] uppercase tracking-wide text-slate-400">system</span>}
-                </td>
-                <td className="px-4 py-2 text-xs text-slate-500 capitalize w-20">{a.normal_side}</td>
-                <td className="px-4 py-2 text-right">
-                  {isSuper && (
-                    <div className="flex gap-1 justify-end">
-                      <button onClick={() => onEdit(a)} className="p-1.5 rounded text-slate-600 hover:bg-slate-100" title="Edit"><Pencil className="w-4 h-4" /></button>
-                      {!a.system_account && <button onClick={() => onDelete(a)} className="p-1.5 rounded text-danger-600 hover:bg-danger-50" title="Delete"><Trash2 className="w-4 h-4" /></button>}
-                    </div>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <tbody className="divide-y divide-slate-100">
+              {rows.map((a) => (
+                <tr key={a.id} className={a.active ? "" : "opacity-50"}>
+                  <td className="px-4 py-2 text-xs font-mono text-slate-700 w-20">{a.account_code}</td>
+                  <td className="px-4 py-2 text-sm text-slate-900">
+                    {a.account_name}
+                    {a.system_account && <span className="ml-2 text-[10px] uppercase tracking-wide text-slate-400">system</span>}
+                  </td>
+                  <td className="px-4 py-2 text-xs text-slate-500 capitalize w-20">{a.normal_side}</td>
+                  <td className="px-4 py-2 text-right">
+                    {isSuper && (
+                      <div className="flex gap-1 justify-end">
+                        <button onClick={() => onEdit(a)} className="p-1.5 rounded text-slate-600 hover:bg-slate-100" title="Edit"><Pencil className="w-4 h-4" /></button>
+                        {!a.system_account && <button onClick={() => onDelete(a)} className="p-1.5 rounded text-danger-600 hover:bg-danger-50" title="Delete"><Trash2 className="w-4 h-4" /></button>}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

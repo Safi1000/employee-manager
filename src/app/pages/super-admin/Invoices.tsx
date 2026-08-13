@@ -17,6 +17,7 @@ import {
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
+import MobileCardList from "../../components/MobileCardList";
 import ClientFilterSelect from "../../components/ClientFilterSelect";
 import {
   supabase,
@@ -508,6 +509,32 @@ export default function Invoices() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  /**
+   * Render the invoice PDF from the company's template. Lifted out of the
+   * table's onClick so the phone card list can call the same thing — the row
+   * and the card must never produce different documents.
+   */
+  const downloadInvoicePdf = async (inv: InvoiceRow) => {
+    const cli = clients.find((c) => c.id === inv.client_id) ?? null;
+    const contract = contracts.find((c) => c.id === inv.contract_id) ?? null;
+    const [lineRes, taxRes, clRes] = await Promise.all([
+      supabase.from("invoice_lines").select("*").eq("invoice_id", inv.id).order("sort_order"),
+      supabase.from("invoice_taxes").select("*").eq("invoice_id", inv.id).order("sort_order"),
+      inv.contract_id
+        ? supabase.from("contract_lines").select("*").eq("contract_id", inv.contract_id)
+        : Promise.resolve({ data: [] as ContractLine[] }),
+    ]);
+    generateInvoiceDocument({
+      invoice: inv,
+      client: cli,
+      company: company ?? null,
+      contract,
+      contractLines: (clRes.data ?? []) as ContractLine[],
+      invoiceLines: (lineRes.data ?? []) as InvoiceLine[],
+      taxes: (taxRes.data ?? []) as InvoiceTax[],
+    });
   };
 
   const openEdit = async (row: InvoiceRow) => {
@@ -1005,7 +1032,107 @@ export default function Invoices() {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
+          {/* Phone: one card per invoice. Ten columns of money is the sort of
+              thing someone checks between meetings — what is outstanding, and
+              on which client. Status stays editable in the card, because
+              marking an invoice Delivered is exactly the one-tap job worth
+              doing away from a desk. */}
+          <MobileCardList
+            rows={loading ? [] : filteredInvoices}
+            loading={loading}
+            empty='No invoices yet. Tap "New Invoice" to create one.'
+            rowKey={(inv) => inv.id}
+            title={(inv) => inv.client?.name ?? "—"}
+            subtitle={(inv) => `${inv.invoice_number} · ${monthLabel(billingMonth(inv))}`}
+            badge={(inv) => (
+              <ThemedSelect
+                value={inv.status}
+                onChange={(e) => handleStatusChange(inv, e.target.value as InvoiceStatus)}
+                className={`text-xs rounded-md px-2 py-1 border focus:outline-none focus:ring-2 focus:ring-slate-900 ${
+                  inv.status === "Delivered" || inv.status === "Paid"
+                    ? "bg-success-50 text-success-700 border-success-200"
+                    : inv.status === "Partly-Paid"
+                      ? "bg-brand-50 text-brand-700 border-brand-200"
+                      : "bg-warning-50 text-warning-700 border-warning-200"
+                }`}
+              >
+                <option value="Pending">Pending</option>
+                <option value="Delivered">Delivered</option>
+                <option value="Unpaid">Unpaid</option>
+                <option value="Partly-Paid">Partly-Paid</option>
+                <option value="Paid">Paid</option>
+              </ThemedSelect>
+            )}
+            fields={[
+              {
+                label: "Invoice amount",
+                value: (inv) => (
+                  <span className="tabular-nums text-brand-600">
+                    PKR {Number(inv.invoice_amount).toLocaleString()}
+                  </span>
+                ),
+              },
+              {
+                label: "Withholding",
+                value: (inv) => {
+                  const wht = Number(inv.withholding_tax ?? 0);
+                  return wht > 0 ? (
+                    <span className="tabular-nums text-danger-600">PKR {wht.toLocaleString()}</span>
+                  ) : (
+                    "—"
+                  );
+                },
+              },
+              {
+                label: "Received",
+                value: (inv) => (
+                  <span className="tabular-nums text-success-600">
+                    PKR {Number(inv.amount_received).toLocaleString()}
+                  </span>
+                ),
+              },
+              {
+                label: "Outstanding",
+                value: (inv) => {
+                  const outstanding =
+                    Number(inv.invoice_amount) - Number(inv.withholding_tax ?? 0) - Number(inv.amount_received);
+                  return (
+                    <span className={`tabular-nums ${outstanding > 0 ? "text-warning-600" : "text-success-600"}`}>
+                      PKR {outstanding.toLocaleString()}
+                    </span>
+                  );
+                },
+              },
+            ]}
+            actions={(inv) => (
+              <>
+                {(inv.drive_view_url || inv.attachment_path) && (
+                  <button
+                    type="button"
+                    onClick={() => viewAttachment(inv)}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-brand-600"
+                  >
+                    <FileText className="w-3.5 h-3.5" strokeWidth={1.5} /> Attachment
+                  </button>
+                )}
+                <Button variant="ghost" size="sm" onClick={() => downloadInvoicePdf(inv)}>
+                  <Download className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} /> PDF
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => openEdit(inv)}>
+                  <Pencil className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} /> Edit
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => handleDelete(inv)}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-danger-700"
+                >
+                  <Trash2 className="w-4 h-4" strokeWidth={1.5} /> Delete
+                </button>
+              </>
+            )}
+          />
+
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-200">
@@ -1119,26 +1246,7 @@ export default function Invoices() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={async () => {
-                              const cli = clients.find((c) => c.id === inv.client_id) ?? null;
-                              const contract = contracts.find((c) => c.id === inv.contract_id) ?? null;
-                              const [lineRes, taxRes, clRes] = await Promise.all([
-                                supabase.from("invoice_lines").select("*").eq("invoice_id", inv.id).order("sort_order"),
-                                supabase.from("invoice_taxes").select("*").eq("invoice_id", inv.id).order("sort_order"),
-                                inv.contract_id
-                                  ? supabase.from("contract_lines").select("*").eq("contract_id", inv.contract_id)
-                                  : Promise.resolve({ data: [] as ContractLine[] }),
-                              ]);
-                              generateInvoiceDocument({
-                                invoice: inv,
-                                client: cli,
-                                company: company ?? null,
-                                contract,
-                                contractLines: (clRes.data ?? []) as ContractLine[],
-                                invoiceLines: (lineRes.data ?? []) as InvoiceLine[],
-                                taxes: (taxRes.data ?? []) as InvoiceTax[],
-                              });
-                            }}
+                            onClick={() => downloadInvoicePdf(inv)}
                             title="Download PDF using your company invoice template"
                           >
                             <Download className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
@@ -1276,7 +1384,9 @@ export default function Invoices() {
                 {editPayments.length} payment{editPayments.length === 1 ? "" : "s"}
               </span>
             </div>
-            <div className="rounded-md border border-slate-200 max-h-48 overflow-y-auto">
+            {/* overflow-auto, not a nested overflow-x wrapper — the sticky
+                <thead> would detach from a second scroll container. */}
+            <div className="rounded-md border border-slate-200 max-h-48 overflow-auto">
               {editPayments.length === 0 ? (
                 <div className="p-3 text-sm text-slate-500 text-center">
                   No payments recorded yet. Use "Record Payment" from the invoice list.
@@ -1393,7 +1503,7 @@ export default function Invoices() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Amount (PKR) *</label>
               <input
@@ -1541,7 +1651,7 @@ export default function Invoices() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Amount (PKR) *</label>
               <input
@@ -1747,7 +1857,7 @@ function InvoiceFields({
           </p>
         </div>
       )}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="block text-sm text-slate-700 mb-1">Invoice # *</label>
           <input

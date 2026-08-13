@@ -321,28 +321,30 @@ export default function ProfitDistribution() {
                   </div>
                   {isExpanded && (
                     <div className="border-t border-slate-200 px-4 py-3">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b border-slate-100">
-                            <th className="text-left py-2 text-xs text-slate-500">Beneficiary</th>
-                            <th className="text-right py-2 text-xs text-slate-500">Share %</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-50">
-                          {lines.map((l) => (
-                            <tr key={l.id}>
-                              <td className="py-2 text-slate-900">{l.beneficiary === "PARTNER" ? partnerName(l.partner_id) : "Company Retained"}</td>
-                              <td className="py-2 text-right font-mono">{l.percentage}%</td>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-slate-100">
+                              <th className="text-left py-2 text-xs text-slate-500">Beneficiary</th>
+                              <th className="text-right py-2 text-xs text-slate-500">Share %</th>
                             </tr>
-                          ))}
-                          {retained > 0 && (
-                            <tr className="text-slate-500">
-                              <td className="py-2 italic">Company Retained (remainder)</td>
-                              <td className="py-2 text-right font-mono">{retained.toFixed(2)}%</td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody className="divide-y divide-slate-50">
+                            {lines.map((l) => (
+                              <tr key={l.id}>
+                                <td className="py-2 text-slate-900">{l.beneficiary === "PARTNER" ? partnerName(l.partner_id) : "Company Retained"}</td>
+                                <td className="py-2 text-right font-mono">{l.percentage}%</td>
+                              </tr>
+                            ))}
+                            {retained > 0 && (
+                              <tr className="text-slate-500">
+                                <td className="py-2 italic">Company Retained (remainder)</td>
+                                <td className="py-2 text-right font-mono">{retained.toFixed(2)}%</td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -405,7 +407,7 @@ export default function ProfitDistribution() {
       {/* ── Add/Edit Rule Modal ── */}
       <Modal isOpen={isRuleOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsRuleOpen(false)} title={editRule ? "Edit Distribution Rule" : "Add Distribution Rule"} size="md">
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Level</label>
               <ThemedSelect value={ruleForm.level} onChange={(e) => setRuleForm({ ...ruleForm, level: e.target.value as any, target_id: "" })}
@@ -489,7 +491,7 @@ export default function ProfitDistribution() {
       {/* ── Add/Edit Referral Modal ── */}
       <Modal isOpen={isReferralOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsReferralOpen(false)} title={editReferral ? "Edit Referral Arrangement" : "Add Referral Arrangement"} size="md">
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Referring Partner *</label>
               <ThemedSelect value={refForm.referring_partner_id} onChange={(e) => setRefForm({ ...refForm, referring_partner_id: e.target.value })}
@@ -507,7 +509,7 @@ export default function ProfitDistribution() {
               </ThemedSelect>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Basis</label>
               <ThemedSelect value={refForm.basis} onChange={(e) => setRefForm({ ...refForm, basis: e.target.value as any, client_id: "" })}

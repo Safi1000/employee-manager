@@ -690,41 +690,43 @@ export function CashCustodyPanel() {
                   </div>
                 </div>
               )}
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-slate-200">
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Custodian</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Holder</th>
-                    <th className="text-right px-6 py-3 text-sm text-slate-500">Held Cash</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {custodyRecon.custodians.length === 0 && (
-                    <tr><td colSpan={3} className="px-6 py-8 text-center text-slate-500 text-sm">No custodian locations yet. Add one (Locations → Add) and set its office-staff holder.</td></tr>
-                  )}
-                  {custodyRecon.custodians.map(({ loc, held }) => (
-                    <tr key={loc.id} className="hover:bg-slate-50">
-                      <td className="px-6 py-4 text-sm text-slate-900">{loc.name}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{loc.custodian_employee_id ? staffName(loc.custodian_employee_id) : "—"}</td>
-                      <td className={`px-6 py-4 text-right text-sm font-mono ${held < 0 ? "text-danger-600" : "text-slate-900"}`}>{fmt(held)}</td>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-slate-200">
+                      <th className="text-left px-6 py-3 text-sm text-slate-500">Custodian</th>
+                      <th className="text-left px-6 py-3 text-sm text-slate-500">Holder</th>
+                      <th className="text-right px-6 py-3 text-sm text-slate-500">Held Cash</th>
                     </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t border-slate-200 bg-slate-50">
-                    <td className="px-6 py-3 text-sm font-medium text-slate-700" colSpan={2}>Sum of custodians</td>
-                    <td className="px-6 py-3 text-right text-sm font-mono font-semibold text-slate-900">{fmt(custodyRecon.sumHeld)}</td>
-                  </tr>
-                  <tr className="bg-slate-50">
-                    <td className="px-6 py-2 text-sm text-slate-500" colSpan={2}>Total Cash in Hand (treasury)</td>
-                    <td className="px-6 py-2 text-right text-sm font-mono text-slate-700">{fmt(cashInHand)}</td>
-                  </tr>
-                  <tr className={`${Math.round(custodyRecon.discrepancy) !== 0 ? "bg-warning-50" : "bg-success-50"}`}>
-                    <td className={`px-6 py-2 text-sm font-medium ${Math.round(custodyRecon.discrepancy) !== 0 ? "text-warning-800" : "text-success-700"}`} colSpan={2}>Unattributed (should be 0)</td>
-                    <td className={`px-6 py-2 text-right text-sm font-mono font-bold ${Math.round(custodyRecon.discrepancy) !== 0 ? "text-warning-800" : "text-success-700"}`}>{fmt(custodyRecon.discrepancy)}</td>
-                  </tr>
-                </tfoot>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {custodyRecon.custodians.length === 0 && (
+                      <tr><td colSpan={3} className="px-6 py-8 text-center text-slate-500 text-sm">No custodian locations yet. Add one (Locations → Add) and set its office-staff holder.</td></tr>
+                    )}
+                    {custodyRecon.custodians.map(({ loc, held }) => (
+                      <tr key={loc.id} className="hover:bg-slate-50">
+                        <td className="px-6 py-4 text-sm text-slate-900">{loc.name}</td>
+                        <td className="px-6 py-4 text-sm text-slate-600">{loc.custodian_employee_id ? staffName(loc.custodian_employee_id) : "—"}</td>
+                        <td className={`px-6 py-4 text-right text-sm font-mono ${held < 0 ? "text-danger-600" : "text-slate-900"}`}>{fmt(held)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t border-slate-200 bg-slate-50">
+                      <td className="px-6 py-3 text-sm font-medium text-slate-700" colSpan={2}>Sum of custodians</td>
+                      <td className="px-6 py-3 text-right text-sm font-mono font-semibold text-slate-900">{fmt(custodyRecon.sumHeld)}</td>
+                    </tr>
+                    <tr className="bg-slate-50">
+                      <td className="px-6 py-2 text-sm text-slate-500" colSpan={2}>Total Cash in Hand (treasury)</td>
+                      <td className="px-6 py-2 text-right text-sm font-mono text-slate-700">{fmt(cashInHand)}</td>
+                    </tr>
+                    <tr className={`${Math.round(custodyRecon.discrepancy) !== 0 ? "bg-warning-50" : "bg-success-50"}`}>
+                      <td className={`px-6 py-2 text-sm font-medium ${Math.round(custodyRecon.discrepancy) !== 0 ? "text-warning-800" : "text-success-700"}`} colSpan={2}>Unattributed (should be 0)</td>
+                      <td className={`px-6 py-2 text-right text-sm font-mono font-bold ${Math.round(custodyRecon.discrepancy) !== 0 ? "text-warning-800" : "text-success-700"}`}>{fmt(custodyRecon.discrepancy)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
             </div>
 
             <div className="bg-white rounded-lg border border-slate-200 p-6">
@@ -977,7 +979,7 @@ export function CashCustodyPanel() {
               <p className="text-[11px] text-warning-700 mt-1">Legacy partner holder: {partners.find((p) => p.id === editLoc.custodian_partner_id)?.name ?? "—"}. Pick an office-staff holder to migrate.</p>
             )}
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Opening Balance (PKR)</label>
               <input type="number" value={locForm.opening_balance} onChange={(e) => setLocForm({ ...locForm, opening_balance: e.target.value })}
@@ -1028,7 +1030,7 @@ export function CashCustodyPanel() {
             <input type="date" value={transferForm.date} onChange={(e) => setTransferForm({ ...transferForm, date: e.target.value })}
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-slate-700 mb-1">{transferForm.from_type === "bank" ? "From (bank) *" : "From (office staff) *"}</label>
               {transferForm.from_type === "bank" ? (

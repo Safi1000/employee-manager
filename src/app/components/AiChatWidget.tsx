@@ -140,7 +140,10 @@ export default function AiChatWidget() {
         onClick={() => setOpen(true)}
         title="Open assistant"
         aria-label="Open assistant"
-        className={`fixed bottom-6 right-6 z-40 flex items-center justify-center w-14 h-14 rounded-full bg-brand-600 text-[#fff] shadow-lg hover:bg-brand-700 transition-all duration-200 ease-out ${
+        // Lifted clear of the home indicator / gesture bar, which a plain
+        // bottom-6 sits underneath on a modern phone.
+        style={{ bottom: "calc(var(--safe-bottom, 0px) + 1.5rem)" }}
+        className={`fixed right-6 z-40 flex items-center justify-center w-14 h-14 rounded-full bg-brand-600 text-[#fff] shadow-lg hover:bg-brand-700 transition-all duration-200 ease-out ${
           open
             ? "opacity-0 scale-90 pointer-events-none"
             : "opacity-100 scale-100"
@@ -152,7 +155,13 @@ export default function AiChatWidget() {
       {/* Chat panel. Always mounted so the close animation can play; visibility
           and pointer events are toggled instead of mount/unmount. */}
       <div
-        className={`fixed bottom-6 right-6 z-40 w-[min(420px,calc(100vw-2rem))] h-[min(620px,calc(100vh-3rem))] bg-white border border-slate-200 rounded-xl shadow-xl flex flex-col overflow-hidden origin-bottom-right transition-all duration-200 ease-out ${
+        // `bottom` is offset by the home-indicator inset because `fixed`
+        // positions against the viewport, not the safe-area-padded body — a
+        // plain bottom-6 puts the composer under the gesture bar. dvh rather
+        // than vh so the panel shrinks with the keyboard instead of extending
+        // past the bottom of the screen.
+        style={{ bottom: "calc(var(--safe-bottom, 0px) + 1.5rem)" }}
+        className={`fixed right-6 z-40 w-[min(420px,calc(100vw-2rem))] h-[min(620px,calc(100dvh-3rem-var(--safe-bottom,0px)-var(--safe-top,0px)))] bg-white border border-slate-200 rounded-xl shadow-xl flex flex-col overflow-hidden origin-bottom-right transition-all duration-200 ease-out ${
           open
             ? "opacity-100 scale-100 translate-y-0 pointer-events-auto"
             : "opacity-0 scale-95 translate-y-2 pointer-events-none"

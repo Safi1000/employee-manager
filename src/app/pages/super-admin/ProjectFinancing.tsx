@@ -376,35 +376,37 @@ export default function ProjectFinancing() {
                       {projInvestments.length === 0 ? (
                         <p className="text-sm text-slate-400 text-center py-4">No investors linked yet. Click + to add.</p>
                       ) : (
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="border-b border-slate-100">
-                              <th className="text-left py-2 text-xs text-slate-500">Investor</th>
-                              <th className="text-left py-2 text-xs text-slate-500">Return Type</th>
-                              <th className="text-right py-2 text-xs text-slate-500">Committed</th>
-                              <th className="text-right py-2 text-xs text-slate-500">Capital Outstanding</th>
-                              <th className="text-right py-2 text-xs text-slate-500">Return Owed</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-50">
-                            {projInvestments.map((inv) => {
-                              const { capitalOutstanding, returnBalance } = getInvestorLedger(inv.investor_id, p.id);
-                              return (
-                                <tr key={inv.id}>
-                                  <td className="py-2 text-slate-900">{investorName(inv.investor_id)}</td>
-                                  <td className="py-2">
-                                    <span className={`inline-flex px-2 py-0.5 rounded text-xs ${inv.return_type === "PROFIT_SHARE" ? "bg-success-50 text-success-700" : "bg-warning-50 text-warning-700"}`}>
-                                      {inv.return_type === "PROFIT_SHARE" ? "Profit Share" : "Fixed Finance"}
-                                    </span>
-                                  </td>
-                                  <td className="py-2 text-right font-mono">{fmt(inv.committed_amount)}</td>
-                                  <td className={`py-2 text-right font-mono ${capitalOutstanding > 0 ? "text-brand-700" : "text-slate-500"}`}>{fmt(capitalOutstanding)}</td>
-                                  <td className={`py-2 text-right font-mono ${returnBalance > 0 ? "text-success-700" : "text-slate-500"}`}>{fmt(returnBalance)}</td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="border-b border-slate-100">
+                                <th className="text-left py-2 text-xs text-slate-500">Investor</th>
+                                <th className="text-left py-2 text-xs text-slate-500">Return Type</th>
+                                <th className="text-right py-2 text-xs text-slate-500">Committed</th>
+                                <th className="text-right py-2 text-xs text-slate-500">Capital Outstanding</th>
+                                <th className="text-right py-2 text-xs text-slate-500">Return Owed</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50">
+                              {projInvestments.map((inv) => {
+                                const { capitalOutstanding, returnBalance } = getInvestorLedger(inv.investor_id, p.id);
+                                return (
+                                  <tr key={inv.id}>
+                                    <td className="py-2 text-slate-900">{investorName(inv.investor_id)}</td>
+                                    <td className="py-2">
+                                      <span className={`inline-flex px-2 py-0.5 rounded text-xs ${inv.return_type === "PROFIT_SHARE" ? "bg-success-50 text-success-700" : "bg-warning-50 text-warning-700"}`}>
+                                        {inv.return_type === "PROFIT_SHARE" ? "Profit Share" : "Fixed Finance"}
+                                      </span>
+                                    </td>
+                                    <td className="py-2 text-right font-mono">{fmt(inv.committed_amount)}</td>
+                                    <td className={`py-2 text-right font-mono ${capitalOutstanding > 0 ? "text-brand-700" : "text-slate-500"}`}>{fmt(capitalOutstanding)}</td>
+                                    <td className={`py-2 text-right font-mono ${returnBalance > 0 ? "text-success-700" : "text-slate-500"}`}>{fmt(returnBalance)}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
                       )}
                     </div>
                   )}
@@ -542,7 +544,7 @@ export default function ProjectFinancing() {
               {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </ThemedSelect>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Total Required (PKR)</label>
               <input type="number" min="0" value={projForm.total_required} onChange={(e) => setProjForm({ ...projForm, total_required: e.target.value })}
@@ -554,7 +556,7 @@ export default function ProjectFinancing() {
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Status</label>
               <ThemedSelect value={projForm.status} onChange={(e) => setProjForm({ ...projForm, status: e.target.value as any })}
@@ -638,7 +640,7 @@ export default function ProjectFinancing() {
               {investors.filter((i) => i.is_active).map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
             </ThemedSelect>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Return Type</label>
               <ThemedSelect value={invmtForm.return_type} onChange={(e) => setInvmtForm({ ...invmtForm, return_type: e.target.value as any })}
@@ -672,7 +674,7 @@ export default function ProjectFinancing() {
       {/* ── Record Ledger Entry Modal ── */}
       <Modal isOpen={isLedgerOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsLedgerOpen(false)} title="Record Investor Ledger Entry" size="md">
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Project *</label>
               <ThemedSelect value={ledgerForm.project_id} onChange={(e) => setLedgerForm({ ...ledgerForm, project_id: e.target.value })}
@@ -690,7 +692,7 @@ export default function ProjectFinancing() {
               </ThemedSelect>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Date *</label>
               <input type="date" value={ledgerForm.date} onChange={(e) => setLedgerForm({ ...ledgerForm, date: e.target.value })}

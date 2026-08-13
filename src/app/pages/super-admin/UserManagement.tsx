@@ -2,6 +2,7 @@ import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useState } from "react";
 import { Plus, Search, Loader2, UserPlus, Pencil, Trash2, KeyRound } from "lucide-react";
 import Header from "../../components/Header";
+import MobileCardList from "../../components/MobileCardList";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import {
@@ -149,6 +150,15 @@ export default function UserManagement() {
       setError("Cannot determine your company.");
       return;
     }
+    // Caught here as well as in the edge function and the DB index, purely so
+    // the operator is told before the round trip. The authority is
+    // profiles_email_unique (migration 0189) — `users` only holds the accounts
+    // this admin can see, so it cannot rule on an address in another company.
+    const typed = email.trim().toLowerCase();
+    if (users.some((u) => (u.email ?? "").trim().toLowerCase() === typed)) {
+      setError(`A user with the email ${typed} already exists.`);
+      return;
+    }
     setSubmitting(true);
     setError(null);
     const res = await callCreateUser({
@@ -162,7 +172,13 @@ export default function UserManagement() {
     });
     setSubmitting(false);
     if ("error" in res) {
-      setError(res.error ?? "Failed to create user");
+      // email_taken can come back even when the pre-check passed: the address
+      // may belong to a user in another company, which this admin cannot see.
+      setError(
+        res.error === "email_taken"
+          ? `A user with the email ${email.trim().toLowerCase()} already exists. Emails must be unique across the whole system, including other companies.`
+          : res.error ?? "Failed to create user",
+      );
       return;
     }
     setEmail("");
@@ -319,78 +335,150 @@ export default function UserManagement() {
                 <p className="text-slate-500 text-sm">No users match your filters.</p>
               </div>
             ) : (
-              <table className="w-full min-w-[720px]">
-                <thead>
-                  <tr className="border-b border-slate-200">
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Name</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Email</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Title</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Branch</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Permissions</th>
-                    <th className="text-right px-6 py-3 text-sm text-slate-500">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {filtered.map((u) => (
-                    <tr key={u.id} className="hover:bg-slate-50">
-                      <td className="px-6 py-4 text-sm text-slate-900">{u.full_name ?? "—"}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{u.email ?? "—"}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600">
+              <>
+              {/* Phone: one card per user. The table carries a 720px minimum
+                  width, so on a handset it was pure side-scrolling. */}
+              <MobileCardList
+                rows={filtered}
+                rowKey={(u) => u.id}
+                title={(u) => u.full_name ?? "—"}
+                subtitle={(u) => u.email ?? ""}
+                badge={(u) =>
+                  showImplicitAll(u.role) ? (
+                    <span className="text-xs px-2 py-1 rounded bg-brand-50 text-brand-700">All (implicit)</span>
+                  ) : (u.permissions?.length ?? 0) === 0 ? (
+                    <span className="text-xs text-muted-foreground">No permissions</span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">
+                      {u.permissions.length} feature{u.permissions.length === 1 ? "" : "s"}
+                    </span>
+                  )
+                }
+                fields={[
+                  {
+                    label: "Title",
+                    value: (u) => (
+                      <>
                         {displayLabel(u)}
-                        {showImplicitAll(u.role) && (
-                          <span className="ml-2 text-xs text-brand-600">(admin)</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-slate-600">
-                        {u.branch_id
-                          ? branches.find((b) => b.id === u.branch_id)?.name ?? "—"
-                          : <span className="text-xs text-slate-400">All branches</span>}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-slate-600">
-                        {showImplicitAll(u.role) ? (
-                          <span className="text-xs px-2 py-1 rounded bg-brand-50 text-brand-700">All (implicit)</span>
-                        ) : (u.permissions?.length ?? 0) === 0 ? (
-                          <span className="text-xs text-slate-400">None</span>
-                        ) : (
-                          <span className="text-xs text-slate-700">{u.permissions.length} feature{u.permissions.length === 1 ? "" : "s"}</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="inline-flex gap-1">
-                          <button
-                            onClick={() => openEdit(u)}
-                            className="p-1.5 rounded text-slate-600 hover:bg-slate-100"
-                            title="Edit"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => { setResetPwUserId(u.id); setResetPwValue(""); setResetPwSuccess(false); }}
-                            className="p-1.5 rounded text-warning-600 hover:bg-warning-50"
-                            title="Reset Password"
-                          >
-                            <KeyRound className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(u)}
-                            disabled={u.id === profile?.id || (u.role === "super_admin" && !isSSA)}
-                            className="p-1.5 rounded text-danger-600 hover:bg-danger-50 disabled:opacity-30 disabled:cursor-not-allowed"
-                            title={
-                              u.id === profile?.id
-                                ? "Cannot delete yourself"
-                                : u.role === "super_admin" && !isSSA
-                                  ? "Only a Super Super Admin can delete a Super Admin"
-                                  : "Delete"
-                            }
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
+                        {showImplicitAll(u.role) && <span className="ml-1 text-xs text-brand-600">(admin)</span>}
+                      </>
+                    ),
+                  },
+                  {
+                    label: "Branch",
+                    value: (u) =>
+                      u.branch_id
+                        ? branches.find((b) => b.id === u.branch_id)?.name ?? "—"
+                        : "All branches",
+                  },
+                ]}
+                actions={(u) => (
+                  <>
+                    <button
+                      onClick={() => openEdit(u)}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-slate-600"
+                    >
+                      <Pencil className="w-4 h-4" /> Edit
+                    </button>
+                    <button
+                      onClick={() => { setResetPwUserId(u.id); setResetPwValue(""); setResetPwSuccess(false); }}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-warning-600"
+                    >
+                      <KeyRound className="w-4 h-4" /> Reset password
+                    </button>
+                    <button
+                      onClick={() => handleDelete(u)}
+                      disabled={u.id === profile?.id || (u.role === "super_admin" && !isSSA)}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-danger-600 disabled:opacity-30"
+                      title={
+                        u.id === profile?.id
+                          ? "Cannot delete yourself"
+                          : u.role === "super_admin" && !isSSA
+                            ? "Only a Super Super Admin can delete a Super Admin"
+                            : "Delete"
+                      }
+                    >
+                      <Trash2 className="w-4 h-4" /> Delete
+                    </button>
+                  </>
+                )}
+              />
+
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full min-w-[720px]">
+                  <thead>
+                    <tr className="border-b border-slate-200">
+                      <th className="text-left px-6 py-3 text-sm text-slate-500">Name</th>
+                      <th className="text-left px-6 py-3 text-sm text-slate-500">Email</th>
+                      <th className="text-left px-6 py-3 text-sm text-slate-500">Title</th>
+                      <th className="text-left px-6 py-3 text-sm text-slate-500">Branch</th>
+                      <th className="text-left px-6 py-3 text-sm text-slate-500">Permissions</th>
+                      <th className="text-right px-6 py-3 text-sm text-slate-500">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {filtered.map((u) => (
+                      <tr key={u.id} className="hover:bg-slate-50">
+                        <td className="px-6 py-4 text-sm text-slate-900">{u.full_name ?? "—"}</td>
+                        <td className="px-6 py-4 text-sm text-slate-600">{u.email ?? "—"}</td>
+                        <td className="px-6 py-4 text-sm text-slate-600">
+                          {displayLabel(u)}
+                          {showImplicitAll(u.role) && (
+                            <span className="ml-2 text-xs text-brand-600">(admin)</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-slate-600">
+                          {u.branch_id
+                            ? branches.find((b) => b.id === u.branch_id)?.name ?? "—"
+                            : <span className="text-xs text-slate-400">All branches</span>}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-slate-600">
+                          {showImplicitAll(u.role) ? (
+                            <span className="text-xs px-2 py-1 rounded bg-brand-50 text-brand-700">All (implicit)</span>
+                          ) : (u.permissions?.length ?? 0) === 0 ? (
+                            <span className="text-xs text-slate-400">None</span>
+                          ) : (
+                            <span className="text-xs text-slate-700">{u.permissions.length} feature{u.permissions.length === 1 ? "" : "s"}</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <div className="inline-flex gap-1">
+                            <button
+                              onClick={() => openEdit(u)}
+                              className="p-1.5 rounded text-slate-600 hover:bg-slate-100"
+                              title="Edit"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => { setResetPwUserId(u.id); setResetPwValue(""); setResetPwSuccess(false); }}
+                              className="p-1.5 rounded text-warning-600 hover:bg-warning-50"
+                              title="Reset Password"
+                            >
+                              <KeyRound className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(u)}
+                              disabled={u.id === profile?.id || (u.role === "super_admin" && !isSSA)}
+                              className="p-1.5 rounded text-danger-600 hover:bg-danger-50 disabled:opacity-30 disabled:cursor-not-allowed"
+                              title={
+                                u.id === profile?.id
+                                  ? "Cannot delete yourself"
+                                  : u.role === "super_admin" && !isSSA
+                                    ? "Only a Super Super Admin can delete a Super Admin"
+                                    : "Delete"
+                              }
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              </>
             )}
           </div>
         </div>

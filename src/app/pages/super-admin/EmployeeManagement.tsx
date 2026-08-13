@@ -14,6 +14,7 @@ import GuardCapBanner from "../../components/GuardCapBanner";
 import { formatDate } from "../../lib/date";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
+import MobileCardList from "../../components/MobileCardList";
 import Tabs from "../../components/Tabs";
 import ClientFilterSelect from "../../components/ClientFilterSelect";
 import ExportButton from "../../components/ExportButton";
@@ -362,7 +363,7 @@ function renderPaperFormSections(f: FormState, setF: (f: FormState) => void) {
     <>
       <div className="pt-4 border-t border-slate-200">
         <h4 className="text-sm text-slate-900 mb-4">Personal Details</h4>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {txt("cnic_expiry", "CNIC Expiry", { type: "date" })}
           {txt("education", "Education")}
           <div>
@@ -390,7 +391,7 @@ function renderPaperFormSections(f: FormState, setF: (f: FormState) => void) {
 
       <div className="pt-4 border-t border-slate-200">
         <h4 className="text-sm text-slate-900 mb-4">Second Emergency Contact</h4>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {txt("emergency_contact2_name", "Name")}
           {txt("emergency_contact2_relation", "Relation")}
           {txt("emergency_contact2_phone", "Phone", { type: "tel" })}
@@ -399,7 +400,7 @@ function renderPaperFormSections(f: FormState, setF: (f: FormState) => void) {
 
       <div className="pt-4 border-t border-slate-200">
         <h4 className="text-sm text-slate-900 mb-4">Political / Locality</h4>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {txt("post_office", "Post Office")}
           {txt("police_station", "Police Station")}
           {txt("area_nazim", "Area Nazim")}
@@ -409,7 +410,7 @@ function renderPaperFormSections(f: FormState, setF: (f: FormState) => void) {
 
       <div className="pt-4 border-t border-slate-200">
         <h4 className="text-sm text-slate-900 mb-4">Family</h4>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {txt("spouse_name", "Spouse Name")}
           {txt("next_of_kin_name", "Next of Kin — Name")}
           {txt("next_of_kin_relation", "Next of Kin — Relation")}
@@ -420,7 +421,7 @@ function renderPaperFormSections(f: FormState, setF: (f: FormState) => void) {
 
       <div className="pt-4 border-t border-slate-200">
         <h4 className="text-sm text-slate-900 mb-4">Ex-Service</h4>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <label className="col-span-2 flex items-center gap-2 text-sm text-slate-700">
             <input
               type="checkbox"
@@ -445,12 +446,12 @@ function renderPaperFormSections(f: FormState, setF: (f: FormState) => void) {
 
       <div className="pt-4 border-t border-slate-200">
         <h4 className="text-sm text-slate-900 mb-4">Experience</h4>
-        <div className="grid grid-cols-2 gap-4">{area("weapons_trained", "Weapons Trained On")}</div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">{area("weapons_trained", "Weapons Trained On")}</div>
       </div>
 
       <div className="pt-4 border-t border-slate-200">
         <h4 className="text-sm text-slate-900 mb-4">Internal Office Data</h4>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {txt("interview_date", "Interview Date", { type: "date" })}
           {txt("form_serial_no", "Form Serial No.")}
           {txt("designation", "Designation")}
@@ -480,7 +481,7 @@ function renderPaperFormSections(f: FormState, setF: (f: FormState) => void) {
 
       <div className="pt-4 border-t border-slate-200">
         <h4 className="text-sm text-slate-900 mb-4">Recruitment</h4>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {txt("referral_source", "Referral Source", { placeholder: "e.g. Walk-in, Advert, Referral" })}
           {txt("referred_by_name", "Referred By")}
         </div>
@@ -2057,7 +2058,123 @@ export default function EmployeeManagement() {
             )}
           </div>
 
-          <div className="overflow-x-auto">
+          {/* Phone: one card per employee. A six-column table with a sticky
+              action column does not survive 390 logical pixels, and
+              side-scrolling it means hunting for a column while losing track of
+              which row you are on. A supervisor at a site is looking up ONE
+              guard, so the row is the unit. */}
+          <MobileCardList
+            rows={loading ? [] : sorted}
+            loading={loading}
+            empty='No employees yet. Tap "Add Employee" to create one.'
+            rowKey={(employee) => employee.id}
+            accent={(employee) =>
+              employee.physical_copy_present ? undefined : "border-l-danger-500"
+            }
+            title={(employee) => employee.full_name}
+            subtitle={(employee) => displayCodeFor(employee)}
+            badge={(employee) => (
+              <span
+                className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium border ${
+                  isFired(employee)
+                    ? "bg-danger-50 text-danger-700 dark:text-danger-500 border-danger-200"
+                    : employee.status === "Active"
+                      ? "bg-success-50 text-success-700 dark:text-success-500 border-success-200"
+                      : employee.status === "On Leave"
+                        ? "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200"
+                        : "bg-secondary text-muted-foreground border-border"
+                }`}
+              >
+                {lifecycleStatusLabel(employee)}
+              </span>
+            )}
+            fields={[
+              {
+                label: "Phone",
+                // A tel: link — the point of having this on a phone is being
+                // able to call the man without copying the number out.
+                value: (employee) =>
+                  employee.phone ? (
+                    <a href={`tel:${employee.phone}`} className="text-brand-700 dark:text-brand-500 tabular-nums">
+                      {employee.phone}
+                    </a>
+                  ) : (
+                    "—"
+                  ),
+              },
+              {
+                label: "Client / Category",
+                value: (employee) =>
+                  (employee.category ?? "client") === "client"
+                    ? employee.client_name ?? "—"
+                    : (employee.category ?? "client").replace("_", " "),
+              },
+            ]}
+            tags={(employee) => {
+              const incomplete = !employee.physical_copy_present;
+              const missingKeyFields = [
+                !employee.cnic_number?.trim() ? "CNIC" : null,
+                !employee.join_date ? "Join Date" : null,
+              ].filter(Boolean) as string[];
+              const expired = isCardExpired(employee.cnic_expiry);
+              const dupe = duplicateCnicIds.has(employee.id);
+              if (!incomplete && !expired && !dupe && missingKeyFields.length === 0) return null;
+              const chip = "inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md border";
+              return (
+                <>
+                  {incomplete && (
+                    <span className={`${chip} text-danger-700 dark:text-danger-500 bg-danger-50 border-danger-200`}>
+                      <AlertCircle className="w-3 h-3" strokeWidth={2} /> Incomplete
+                    </span>
+                  )}
+                  {expired && (
+                    <span className={`${chip} text-warning-700 dark:text-warning-500 bg-warning-50 border-warning-200`}>
+                      <AlertCircle className="w-3 h-3" strokeWidth={2} /> Card expired
+                    </span>
+                  )}
+                  {missingKeyFields.length > 0 && (
+                    <span className={`${chip} text-danger-700 dark:text-danger-500 bg-danger-50 border-danger-200`}>
+                      <AlertCircle className="w-3 h-3" strokeWidth={2} /> No {missingKeyFields.join(" / ")}
+                    </span>
+                  )}
+                  {dupe && (
+                    <span className={`${chip} text-warning-700 dark:text-warning-500 bg-warning-50 border-warning-200`}>
+                      <AlertCircle className="w-3 h-3" strokeWidth={2} /> Duplicate CNIC
+                    </span>
+                  )}
+                </>
+              );
+            }}
+            actions={(employee) => (
+              <>
+                <Button variant="ghost" size="sm" onClick={() => openView(employee)}>View</Button>
+                <Button variant="ghost" size="sm" onClick={() => openEdit(employee)}>Edit</Button>
+                {["active", "on_leave"].includes(employee.lifecycle_state) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-danger-600 hover:text-danger-700"
+                    disabled={statusTogglingId === employee.id}
+                    onClick={() => requestStatusToggle(employee)}
+                  >
+                    Fire
+                  </Button>
+                )}
+                {isFired(employee) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={employee.eligible_for_rehire === false}
+                    onClick={() => setRehireTarget(employee)}
+                  >
+                    Rehire
+                  </Button>
+                )}
+              </>
+            )}
+          />
+
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border bg-slate-50">
@@ -2227,7 +2344,7 @@ export default function EmployeeManagement() {
             collapsible={false}
             hasError={Boolean(formErrors.full_name || formErrors.phone)}
           >
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Full Name *</label>
                 <input
@@ -2291,7 +2408,7 @@ export default function EmployeeManagement() {
             collapsible={false}
             hasError={Boolean(formErrors.bank_account || formErrors.iban)}
           >
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Bank Name</label>
                 <ClientFilterSelect
@@ -2497,7 +2614,7 @@ export default function EmployeeManagement() {
             {viewTab === "profile" && (
             <div>
               <h4 className="text-sm text-slate-900 mb-4">Basic Information</h4>
-              <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                 <div>
                   <p className="text-slate-500 mb-1">Display Code</p>
                   <p className="text-slate-900 font-mono">{displayCodeFor(selectedEmployee)}</p>
@@ -2842,7 +2959,7 @@ export default function EmployeeManagement() {
               collapsible={false}
               hasError={Boolean(editFormErrors.full_name || editFormErrors.phone)}
             >
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm text-slate-700 mb-1">Employee ID</label>
                   <input
@@ -2913,7 +3030,7 @@ export default function EmployeeManagement() {
               collapsible={false}
               hasError={Boolean(editFormErrors.bank_account || editFormErrors.iban)}
             >
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm text-slate-700 mb-1">Bank Name</label>
                   <ClientFilterSelect
@@ -3761,7 +3878,7 @@ function SeparationModal({
             {SEPARATION_REASONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
           </ThemedSelect>
         </label>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label className="block"><span className="text-sm text-slate-600">Last working day *</span>
             <input type="date" value={lastWorkingDay} onChange={(e) => setLastWorkingDay(e.target.value)} className={inputCls} />
           </label>
@@ -4000,7 +4117,7 @@ function RehireModal({
             {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </ThemedSelect>
         </label>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label className="block"><span className="text-sm text-slate-600">Base salary (PKR)</span>
             <input type="number" value={baseSalary} onChange={(e) => setBaseSalary(e.target.value)} className={inputCls} placeholder="0" />
           </label>
@@ -4946,7 +5063,7 @@ function EmployeeHrSection({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm text-slate-700 mb-1">CNIC Number</label>
               <input
@@ -5047,7 +5164,7 @@ function EmployeeHrSection({
 
           <div className="pt-3 border-t border-slate-100">
             <h5 className="text-sm text-slate-900 mb-3">Family</h5>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {txt("spouse_name", "Spouse Name")}
               {txt("next_of_kin_name", "Next of Kin — Name")}
               {txt("next_of_kin_relation", "Next of Kin — Relation")}
@@ -5058,7 +5175,7 @@ function EmployeeHrSection({
 
           <div className="pt-3 border-t border-slate-100">
             <h5 className="text-sm text-slate-900 mb-3">Political / Locality</h5>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {txt("post_office", "Post Office")}
               {txt("police_station", "Police Station")}
               {txt("area_nazim", "Area Nazim")}
@@ -5119,7 +5236,7 @@ function EmployeeHrSection({
         open={isOpen("contract")}
         onToggle={() => toggleSection("contract")}
       >
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="block text-sm text-slate-700 mb-1">Contract Type</label>
             <ThemedSelect value={form.employee_contract_type}
@@ -5154,7 +5271,7 @@ function EmployeeHrSection({
         open={isOpen("exservice")}
         onToggle={() => toggleSection("exservice")}
       >
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label className="col-span-2 flex items-center gap-2 text-sm text-slate-700">
             <input type="checkbox" checked={form.is_ex_serviceman}
               onChange={(e) => setForm({ ...form, is_ex_serviceman: e.target.checked })} />
@@ -5182,7 +5299,7 @@ function EmployeeHrSection({
         open={isOpen("experience")}
         onToggle={() => toggleSection("experience")}
       >
-        <div className="grid grid-cols-2 gap-3">{area("weapons_trained", "Weapons Trained On")}</div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{area("weapons_trained", "Weapons Trained On")}</div>
       </FormSection>
 
       {/* ── Internal Office Data (+ folded Licences & Compliance) ─────────── */}
@@ -5192,7 +5309,7 @@ function EmployeeHrSection({
         onToggle={() => toggleSection("office")}
       >
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {txt("interview_date", "Interview Date", { type: "date" })}
             {txt("form_serial_no", "Form Serial No.")}
             {txt("designation", "Designation")}
@@ -5216,7 +5333,7 @@ function EmployeeHrSection({
 
           <div className="pt-3 border-t border-slate-100">
             <h5 className="text-sm text-slate-900 mb-3">Recruitment</h5>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {txt("referral_source", "Referral Source", { placeholder: "e.g. Walk-in, Advert, Referral" })}
               {txt("referred_by_name", "Referred By")}
             </div>
@@ -5225,7 +5342,7 @@ function EmployeeHrSection({
           <div className="pt-3 border-t border-slate-100">
             <h5 className="text-sm text-slate-900 mb-1">Licences & Compliance</h5>
             <p className="text-xs text-slate-500 mb-3">Expiry dates feed the Compliance Calendar.</p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {txt("weapon_licence_number", "Weapon Licence #")}
               {txt("weapon_licence_expiry", "Weapon Licence Expiry", { type: "date" })}
               {txt("guard_service_licence_number", "Guard Service Licence #")}
