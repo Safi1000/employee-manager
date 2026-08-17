@@ -156,7 +156,7 @@ export default function AttendanceSheetModal({
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 md:p-4" onClick={onClose}>
       {/* dvh, not vh: `vh` on a mobile WebView is the viewport with the URL bar
           hidden, so a 92vh sheet is taller than the screen and its bottom row
           is unreachable. The safe-area margins keep it clear of the notch and
@@ -166,23 +166,36 @@ export default function AttendanceSheetModal({
         className="bg-card rounded-xl shadow-xl w-full max-w-[95vw] max-h-[92dvh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-3 px-5 py-3 border-b border-border">
-          <div className="min-w-0 flex-1">
-            <h2 className="font-semibold text-foreground truncate">Attendance — {label}</h2>
-            <p className="text-xs text-muted-foreground">{monthLabel || month}</p>
+        {/* Two stacked rows on a phone (title+close, then the month controls),
+            one row from `sm` up. Packing all four groups into a single
+            non-wrapping flex row squeezed the month picker into the title. */}
+        <div className="border-b border-border px-3 md:px-5 py-2.5 md:py-3">
+          <div className="flex items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <h2 className="font-semibold text-foreground truncate">Attendance — {label}</h2>
+              <p className="text-xs text-muted-foreground">{monthLabel || month}</p>
+            </div>
+            <div className="hidden sm:flex items-center gap-1 shrink-0">
+              <button onClick={() => shiftMonth(-1)} className="p-1.5 rounded hover:bg-accent" title="Previous month"><ChevronLeft className="w-4 h-4" /></button>
+              <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="px-2 py-1 border border-border rounded-md text-sm bg-card" />
+              <button onClick={() => shiftMonth(1)} className="p-1.5 rounded hover:bg-accent" title="Next month"><ChevronRight className="w-4 h-4" /></button>
+            </div>
+            <Button size="sm" variant="secondary" className="hidden sm:inline-flex shrink-0" onClick={download} disabled={loading || rows.length === 0}>
+              <Download className="w-4 h-4 mr-1.5" /> Download Excel
+            </Button>
+            <button onClick={onClose} className="p-1.5 rounded hover:bg-accent shrink-0" title="Close"><X className="w-4 h-4" /></button>
           </div>
-          <div className="flex items-center gap-1">
-            <button onClick={() => shiftMonth(-1)} className="p-1.5 rounded hover:bg-accent" title="Previous month"><ChevronLeft className="w-4 h-4" /></button>
-            <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="px-2 py-1 border border-border rounded-md text-sm bg-card" />
-            <button onClick={() => shiftMonth(1)} className="p-1.5 rounded hover:bg-accent" title="Next month"><ChevronRight className="w-4 h-4" /></button>
+          <div className="mt-2 flex items-center gap-1 sm:hidden">
+            <button onClick={() => shiftMonth(-1)} className="p-1.5 rounded hover:bg-accent shrink-0" title="Previous month"><ChevronLeft className="w-4 h-4" /></button>
+            <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="flex-1 min-w-0 px-2 py-1 border border-border rounded-md text-sm bg-card" />
+            <button onClick={() => shiftMonth(1)} className="p-1.5 rounded hover:bg-accent shrink-0" title="Next month"><ChevronRight className="w-4 h-4" /></button>
+            <Button size="sm" variant="secondary" className="shrink-0" onClick={download} disabled={loading || rows.length === 0} title="Download Excel">
+              <Download className="w-4 h-4" />
+            </Button>
           </div>
-          <Button size="sm" variant="secondary" onClick={download} disabled={loading || rows.length === 0}>
-            <Download className="w-4 h-4 mr-1.5" /> Download Excel
-          </Button>
-          <button onClick={onClose} className="p-1.5 rounded hover:bg-accent" title="Close"><X className="w-4 h-4" /></button>
         </div>
 
-        <div className="flex-1 overflow-auto p-4">
+        <div className="flex-1 overflow-auto p-2 md:p-4">
           {loading ? (
             <div className="flex items-center justify-center py-16 text-muted-foreground">
               <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…

@@ -69,8 +69,12 @@ export default function RegionSelector() {
         className="flex items-center gap-2 px-3 py-1.5 border border-slate-200 rounded-md text-sm bg-white hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-900"
       >
         <Icon className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" strokeWidth={1.5} />
+        {/* "Head Office / All Regions" cannot fit a phone row alongside the
+            menu and theme buttons, and truncating it to "Head Office / All…"
+            reads worse than simply saying less. The long form returns at `sm`. */}
         <span className={`truncate max-w-40 ${region ? "text-slate-900" : "text-slate-500"}`}>
-          {label}
+          <span className="sm:hidden">{isConsolidated ? "All Regions" : region!.name}</span>
+          <span className="hidden sm:inline">{label}</span>
         </span>
         <ChevronDown className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" strokeWidth={1.5} />
       </button>

@@ -108,7 +108,7 @@ export default function ClientRelationships() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 md:p-8">
+    <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
       <Header title="Client Relationships" subtitle="Service reviews, complaints, renewal pipeline (§22)" />
 
       <div className="flex gap-1 border-b border-slate-200 mb-4">

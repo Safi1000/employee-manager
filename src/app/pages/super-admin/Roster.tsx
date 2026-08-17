@@ -291,7 +291,7 @@ export default function Roster() {
         }
       />
 
-      <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-4">
+      <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8 space-y-4">
         {error && (
           <div className="flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" />
@@ -753,7 +753,7 @@ function PostsModal({
               placeholder="e.g., Main Gate"
             />
           </div>
-          <div className="col-span-2">
+          <div className="col-span-full">
             <label className="block text-xs text-slate-700 mb-1">Address</label>
             <input
               type="text"
@@ -784,7 +784,7 @@ function PostsModal({
               <option value="evening">Evening</option>
             </ThemedSelect>
           </div>
-          <div className="col-span-2 flex items-center gap-2">
+          <div className="col-span-full flex items-center gap-2">
             <Button variant="primary" size="sm">
               <Plus className="w-4 h-4 mr-1" />
               {editingId ? "Update post" : "Add post"}

@@ -92,7 +92,7 @@ export default function Performance() {
   const officeStaff = useMemo(() => employees.filter((e) => e.category === "office_staff"), [employees]);
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 md:p-8">
+    <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
       <Header title="Performance & Rewards" subtitle="KPIs, appraisals, bonus pools and guard bonuses" />
 
       <div className="flex gap-1 border-b border-slate-200 mb-4">

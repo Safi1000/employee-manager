@@ -1015,7 +1015,7 @@ export default function EmployeeAssignments() {
         actions={<ExportButton onExport={handleExport} label="Export" />}
       />
 
-      <div className="flex-1 overflow-y-auto p-4 md:p-8">
+      <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
         {error && (
           <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" strokeWidth={2} />
@@ -1300,6 +1300,7 @@ export default function EmployeeAssignments() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
+                                  className="shrink-0"
                                   disabled={assignable.length === 0}
                                   title={assignable.length === 0 ? "No unassigned employees" : `Post employees to ${b.name}`}
                                   onClick={() =>
@@ -1322,14 +1323,15 @@ export default function EmployeeAssignments() {
                                     )
                                   }
                                 >
-                                  <UserPlus className="w-4 h-4 mr-1.5" strokeWidth={1.75} />
-                                  Assign employees
+                                  <UserPlus className="w-4 h-4 sm:mr-1.5" strokeWidth={1.75} />
+                                  <span className="hidden sm:inline">Assign employees</span>
                                 </Button>
                               )}
                               {canEdit && (
                                 <Button
                                   variant="ghost"
                                   size="sm"
+                                  className="shrink-0"
                                   disabled={b.rows.length === 0}
                                   title={`Set pay by post for ${b.name}`}
                                   onClick={() => {
@@ -1337,8 +1339,9 @@ export default function EmployeeAssignments() {
                                     setRulesTarget({ group: g, siteId: b.id, siteName: b.name, rows: b.rows });
                                   }}
                                 >
-                                  <SlidersHorizontal className="w-4 h-4 mr-1.5" strokeWidth={1.75} />
-                                  Edit rules{sSel > 0 ? ` (${sSel})` : ""}
+                                  <SlidersHorizontal className="w-4 h-4 sm:mr-1.5" strokeWidth={1.75} />
+                                  <span className="hidden sm:inline">Edit rules</span>
+                                  {sSel > 0 ? <span className="ml-1">({sSel})</span> : null}
                                 </Button>
                               )}
                             </div>

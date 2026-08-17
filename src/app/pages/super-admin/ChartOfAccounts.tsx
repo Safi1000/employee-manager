@@ -373,7 +373,7 @@ export default function ChartOfAccounts() {
         }
       />
 
-      <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-4">
+      <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8 space-y-4">
         {error && (
           <div className="flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" />
@@ -589,7 +589,7 @@ export default function ChartOfAccounts() {
                 {ACCOUNT_TYPE_ORDER.map((t) => <option key={t} value={t}>{ACCOUNT_TYPE_LABEL[t]}</option>)}
               </ThemedSelect>
             </div>
-            <div className="col-span-2">
+            <div className="col-span-full">
               <label className="block text-sm text-slate-700 mb-1">Account Name *</label>
               <input required type="text" value={form.account_name} onChange={(e) => setForm({ ...form, account_name: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm" />
             </div>
@@ -646,7 +646,7 @@ export default function ChartOfAccounts() {
                 {accounts.filter((a) => a.active).map((a) => <option key={a.id} value={a.id}>{a.account_code} — {a.account_name}</option>)}
               </ThemedSelect>
             </div>
-            <div className="col-span-2">
+            <div className="col-span-full">
               <label className="block text-sm text-slate-700 mb-1">Description</label>
               <input type="text" value={manualForm.description} onChange={(e) => setManualForm({ ...manualForm, description: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm" placeholder="e.g., Opening balance adjustment" />
             </div>

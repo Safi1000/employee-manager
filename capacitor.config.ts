@@ -36,9 +36,16 @@ const config: CapacitorConfig = {
   },
 
   android: {
-    // Ship the release build with WebView debugging OFF; `npm run cap:dev`
-    // flips it back on for a device-attached debug session.
-    webContentsDebuggingEnabled: false,
+    // WebView debugging (chrome://inspect) is OFF in a shipped build — it would
+    // let anyone with a cable read the signed-in user's session out of the
+    // running app. `npm run cap:dev` sets CAP_DEBUG=1 to turn it on for a
+    // device-attached session.
+    //
+    // This must be opt-IN rather than "off only in production": a release build
+    // that accidentally ships with it enabled is a security hole, while a debug
+    // session without it is merely inconvenient. Guessing wrong should cost you
+    // the inconvenience, not the hole.
+    webContentsDebuggingEnabled: process.env.CAP_DEBUG === "1",
     allowMixedContent: false,
   },
 

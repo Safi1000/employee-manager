@@ -111,4 +111,13 @@ export function initNativeShell(): void {
   wireDeepLinks();
   wireKeyboard();
   void syncStatusBar(document.documentElement.classList.contains("dark"));
+
+  // Failsafe. `launchAutoHide` is false, so the splash is dismissed by exactly
+  // one line of app code (AuthProvider, once loading resolves). If that line
+  // never runs — an exception before React mounts, a hung auth call, a future
+  // refactor that drops the effect — the user is left staring at the launch
+  // image with no way forward and nothing in the logs. Eight seconds is well
+  // past AuthProvider's own 4s timeout, so in a healthy boot this never fires;
+  // when it does, showing a broken screen beats showing a frozen one.
+  setTimeout(() => { void hideSplash(); }, 8000);
 }

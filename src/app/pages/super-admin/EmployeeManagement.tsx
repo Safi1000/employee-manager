@@ -422,7 +422,7 @@ function renderPaperFormSections(f: FormState, setF: (f: FormState) => void) {
       <div className="pt-4 border-t border-slate-200">
         <h4 className="text-sm text-slate-900 mb-4">Ex-Service</h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <label className="col-span-2 flex items-center gap-2 text-sm text-slate-700">
+          <label className="col-span-full flex items-center gap-2 text-sm text-slate-700">
             <input
               type="checkbox"
               checked={f.is_ex_serviceman}
@@ -1874,7 +1874,7 @@ export default function EmployeeManagement() {
         }
       />
 
-      <div className="flex-1 overflow-y-auto p-8">
+      <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
         {/* Warns before the database refuses the next guard, so hitting the
             plan limit is never a surprise mid-form. */}
         <GuardCapBanner />
@@ -2467,7 +2467,7 @@ export default function EmployeeManagement() {
                 )}
               </div>
               {!isPkWallet(form.bank_name) && (
-                <div className="col-span-2">
+                <div className="col-span-full">
                   <label className="block text-sm text-slate-700 mb-1">IBAN (24 chars — as issued by the bank)</label>
                   <input
                     type="text"
@@ -3010,7 +3010,7 @@ export default function EmployeeManagement() {
                 {/* Posting and pay live on Workforce ▸ Assignments & Pay, where
                     a whole client's guards can be changed in one go instead of
                     fifty modals. Nothing here duplicates them. */}
-                <div className="col-span-2 flex items-start gap-2 rounded-md border border-border bg-accent/40 px-3 py-2.5 text-sm text-slate-600">
+                <div className="col-span-full flex items-start gap-2 rounded-md border border-border bg-accent/40 px-3 py-2.5 text-sm text-slate-600">
                   <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-slate-400" strokeWidth={2} />
                   <span className="flex-1">
                     Client, location, branch, department, shift, salary, allowance and joining date are
@@ -3087,7 +3087,7 @@ export default function EmployeeManagement() {
                   )}
                 </div>
                 {!isPkWallet(editForm.bank_name) && (
-                  <div className="col-span-2">
+                  <div className="col-span-full">
                     <label className="block text-sm text-slate-700 mb-1">IBAN (24 chars — as issued by the bank)</label>
                     <input
                       type="text"
@@ -5111,7 +5111,7 @@ function EmployeeHrSection({
             {txt("cnic_expiry", "CNIC Expiry", { type: "date" })}
             {txt("education", "Education")}
             {cardExpired && (
-              <div className="col-span-2 flex items-start gap-2 text-xs text-warning-800 bg-warning-50 border border-warning-200 rounded-md px-2.5 py-2">
+              <div className="col-span-full flex items-start gap-2 text-xs text-warning-800 bg-warning-50 border border-warning-200 rounded-md px-2.5 py-2">
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-warning-600" strokeWidth={2} />
                 <span>This CNIC is expired as of {fmtDate(form.cnic_expiry)} — you are adding/editing an employee with an expired card.</span>
               </div>
@@ -5135,7 +5135,7 @@ function EmployeeHrSection({
             {txt("shoe_size", "Shoe Size")}
             {area("special_skills", "Special Skills")}
 
-            <div className="col-span-2">
+            <div className="col-span-full">
               <label className="block text-sm text-slate-700 mb-1">Permanent Address</label>
               <textarea
                 rows={2}
@@ -5147,7 +5147,7 @@ function EmployeeHrSection({
               />
               {errors.permanent_address && <p className="text-xs text-danger-600 mt-1">{errors.permanent_address}</p>}
             </div>
-            <div className="col-span-2">
+            <div className="col-span-full">
               <label className="block text-sm text-slate-700 mb-1">Current Address</label>
               <textarea
                 rows={2}
@@ -5254,7 +5254,7 @@ function EmployeeHrSection({
               onChange={(e) => setForm({ ...form, probation_end_date: e.target.value })}
               className={inputCls} disabled={form.employee_contract_type !== "probation"} />
           </div>
-          <div className="col-span-2">
+          <div className="col-span-full">
             <label className="block text-sm text-slate-700 mb-1">Reporting To (supervisor)</label>
             <ThemedSelect value={form.reporting_to_employee_id}
               onChange={(e) => setForm({ ...form, reporting_to_employee_id: e.target.value })} className={inputCls}>
@@ -5272,7 +5272,7 @@ function EmployeeHrSection({
         onToggle={() => toggleSection("exservice")}
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <label className="col-span-2 flex items-center gap-2 text-sm text-slate-700">
+          <label className="col-span-full flex items-center gap-2 text-sm text-slate-700">
             <input type="checkbox" checked={form.is_ex_serviceman}
               onChange={(e) => setForm({ ...form, is_ex_serviceman: e.target.checked })} />
             <span>Ex-serviceman</span>
@@ -5288,7 +5288,7 @@ function EmployeeHrSection({
               {txt("discharging_officer", "Discharging Officer")}
             </>
           ) : (
-            <p className="col-span-2 text-xs text-slate-500">Tick “Ex-serviceman” to record army service details.</p>
+            <p className="col-span-full text-xs text-slate-500">Tick “Ex-serviceman” to record army service details.</p>
           )}
         </div>
       </FormSection>

@@ -86,7 +86,7 @@ export default function Treasury() {
   const firstBreach = forecast.find((w) => w.is_breach);
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 md:p-8">
+    <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
       <Header title="Treasury & Regional Finance" subtitle="Cash cockpit, reserves, regional P&L, inter-region loans" />
 
       <div className="flex gap-1 border-b border-slate-200 mb-4">

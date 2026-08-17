@@ -896,7 +896,7 @@ export default function FinancialReports() {
         }
       />
 
-      <div className="flex-1 overflow-y-auto p-4 md:p-8">
+      <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
         <div className="bg-white rounded-lg border border-slate-200">
           <div className="p-4 md:p-6 border-b border-slate-200 overflow-x-auto">
             <div className="flex gap-2 min-w-max">

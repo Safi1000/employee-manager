@@ -170,7 +170,7 @@ export default function FieldOps() {
         subtitle="A written note per active client, day by day, exported as a branded PDF"
       />
 
-      <div className="flex-1 overflow-y-auto p-4 md:p-8">
+      <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
         {err && <p className="text-sm text-danger-600 mb-3">{err}</p>}
 
         <div className="space-y-3 pt-2 md:pt-4">
@@ -221,43 +221,39 @@ export default function FieldOps() {
             )}
           </p>
 
-          <div className="overflow-x-auto border border-border rounded-md">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 dark:bg-card text-xs text-muted-foreground uppercase">
-                <tr>
-                  <th className="text-left px-3 py-2 w-64">Client</th>
-                  <th className="text-left px-3 py-2">Details</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {clients.map((c) => (
-                  <DetailsRow
-                    key={c.id}
-                    client={c}
-                    value={details.get(c.id) ?? ""}
-                    locked={locked}
-                    saving={saving.has(c.id)}
-                    savedAt={savedAt.get(c.id)}
-                    onChange={(v) => setDetails((prev) => new Map(prev).set(c.id, v))}
-                    onCommit={(v) => saveOne(c.id, v)}
-                  />
-                ))}
-                {clients.length === 0 && !loading && (
-                  <tr>
-                    <td colSpan={2} className="px-3 py-4 text-muted-foreground">
-                      No clients with an active contract.
-                    </td>
-                  </tr>
-                )}
-                {loading && (
-                  <tr>
-                    <td colSpan={2} className="px-3 py-4 text-muted-foreground">
-                      <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> Loading…
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+          {/* Not a <table>: with only two columns, a fixed 16rem client column
+              left roughly 60px for the details box on a phone. As a grid the
+              name sits above its textarea on mobile and beside it on desktop,
+              and the textarea is always full width. */}
+          <div className="border border-border rounded-md">
+            <div className="hidden md:grid md:grid-cols-[16rem_1fr] bg-slate-50 dark:bg-card text-xs text-muted-foreground uppercase">
+              <div className="px-3 py-2">Client</div>
+              <div className="px-3 py-2">Details</div>
+            </div>
+            <div className="divide-y divide-border">
+              {clients.map((c) => (
+                <DetailsRow
+                  key={c.id}
+                  client={c}
+                  value={details.get(c.id) ?? ""}
+                  locked={locked}
+                  saving={saving.has(c.id)}
+                  savedAt={savedAt.get(c.id)}
+                  onChange={(v) => setDetails((prev) => new Map(prev).set(c.id, v))}
+                  onCommit={(v) => saveOne(c.id, v)}
+                />
+              ))}
+              {clients.length === 0 && !loading && (
+                <div className="px-3 py-4 text-muted-foreground text-sm">
+                  No clients with an active contract.
+                </div>
+              )}
+              {loading && (
+                <div className="px-3 py-4 text-muted-foreground text-sm">
+                  <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> Loading…
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -285,15 +281,17 @@ function DetailsRow({
   useEffect(() => { committed.current = value; }, [client.id]);
 
   return (
-    <tr className="align-top">
-      <td className="px-3 py-2 text-foreground font-medium whitespace-nowrap">{client.name}</td>
-      <td className="px-3 py-2">
+    <div className="md:grid md:grid-cols-[16rem_1fr] md:items-start">
+      <div className="px-3 pt-2 md:py-2 text-foreground font-medium text-sm md:whitespace-nowrap md:truncate">
+        {client.name}
+      </div>
+      <div className="px-3 pb-2 pt-1 md:py-2">
         {locked ? (
           <p className="text-sm text-muted-foreground whitespace-pre-wrap">{value.trim() || "—"}</p>
         ) : (
           <div className="flex items-start gap-2">
             <textarea
-              rows={1}
+              rows={2}
               value={value}
               placeholder="Details for this client today…"
               onChange={(e) => onChange(e.target.value)}
@@ -303,14 +301,14 @@ function DetailsRow({
                 committed.current = e.target.value;
                 onCommit(e.target.value);
               }}
-              className="flex-1 px-3 py-2 border border-border rounded-md text-sm bg-card resize-y min-h-[38px]"
+              className="flex-1 min-w-0 px-3 py-2 border border-border rounded-md text-sm bg-card resize-y min-h-[38px]"
             />
             <span className="text-[11px] text-muted-foreground pt-2.5 w-12 shrink-0">
               {saving ? "saving…" : savedAt ? "saved" : ""}
             </span>
           </div>
         )}
-      </td>
-    </tr>
+      </div>
+    </div>
   );
 }

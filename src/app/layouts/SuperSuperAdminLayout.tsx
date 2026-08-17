@@ -11,7 +11,7 @@ export default function SuperSuperAdminLayout() {
   return (
     <div className="app-shell flex h-dvh bg-slate-50">
       <Sidebar title="Super Super Admin" links={links} />
-      <div className="flex-1 flex flex-col overflow-hidden pt-14 md:pt-0">
+      <div className="flex-1 flex flex-col overflow-hidden">
         <TopBar />
         <Outlet />
       </div>

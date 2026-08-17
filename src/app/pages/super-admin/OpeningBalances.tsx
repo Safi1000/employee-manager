@@ -98,7 +98,7 @@ export default function OpeningBalances() {
   const posted = selBatch && String(selBatch.status) !== "draft";
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 md:p-8">
+    <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
       <Header title="Opening Balances" subtitle="Import & post the opening trial balance (§4.4)" />
       {err && <p className="text-sm text-danger-600 mb-3">{err}</p>}
 

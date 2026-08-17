@@ -348,7 +348,7 @@ export default function Contracts() {
         }
       />
 
-      <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-4">
+      <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8 space-y-4">
         {error && (
           <div className="flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" />

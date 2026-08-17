@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState, ReactNode } fro
 import type { Session } from "@supabase/supabase-js";
 import { supabase, type Company, type Profile, type UserRole } from "./supabase";
 import { applyTheme } from "./theme";
+import { hideSplash } from "./nativeShell";
 
 type AuthCtx = {
   session: Session | null;
@@ -82,6 +83,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return false;
     }
   };
+
+  // Dismiss the native launch screen once auth has settled, so the user is
+  // shown either their dashboard or the login form — never a flash of one
+  // before the other. `launchAutoHide` is false in capacitor.config.ts, which
+  // means nothing else will ever hide it: if this call is lost, the app sits
+  // behind the splash forever. nativeShell keeps an independent failsafe timer
+  // for exactly that reason. A no-op on the web.
+  useEffect(() => {
+    if (!loading) void hideSplash();
+  }, [loading]);
 
   useEffect(() => {
     let mounted = true;

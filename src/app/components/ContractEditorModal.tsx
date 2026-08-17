@@ -907,7 +907,7 @@ export default function ContractEditorModal({
         <fieldset disabled={locked} className={LOCK_CLS}>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {showClientPicker && (
-            <div className="col-span-2">
+            <div className="col-span-full">
               <label className="block text-sm text-slate-700 mb-1">Client *</label>
               {/* Searchable — the client list runs long. An empty selection is
                * caught by the "Select a client." check in handleSubmit, which is
@@ -990,7 +990,7 @@ export default function ContractEditorModal({
             )}
           </div>
 
-          <div className="col-span-2 -mt-1">
+          <div className="col-span-full -mt-1">
             <label className="flex items-center gap-2 text-sm text-slate-700">
               <input
                 type="checkbox"
@@ -1411,7 +1411,7 @@ export default function ContractEditorModal({
                 />
               )}
             </div>
-            <div className="col-span-2">
+            <div className="col-span-full">
               <label className="block text-xs text-slate-500 mb-1">Renewal Terms</label>
               <textarea
                 value={form.renewal_terms}

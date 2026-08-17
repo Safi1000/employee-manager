@@ -20,6 +20,24 @@
   --safe-right: env(safe-area-inset-right, 0px);
 }
 
+/*
+ * Android reports safe-area insets less consistently than iOS: on some devices
+ * and WebView versions `safe-area-inset-top` describes only the display cutout,
+ * so a phone with no notch reports 0px even though the status bar is still
+ * drawn over the page (overlaysWebView is true). The result is the hamburger
+ * and theme toggle sitting on top of the clock.
+ *
+ * 24dp is the standard Android status bar height. `max()` means a device that
+ * DOES report a real inset — a notch, a punch-hole, a taller bar — still wins;
+ * this only establishes a floor for the devices that report nothing.
+ *
+ * If overlaysWebView is ever turned off, delete this: the WebView would then
+ * already start below the status bar and this would add 24px of dead space.
+ */
+html.platform-android {
+  --safe-top: max(env(safe-area-inset-top, 0px), 24px);
+}
+
 html.native body {
   /* Nothing may render under the notch or behind the home indicator by
      accident; layouts opt back in deliberately where they want to bleed. */

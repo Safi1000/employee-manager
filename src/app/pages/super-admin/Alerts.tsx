@@ -56,7 +56,7 @@ export default function Alerts() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 md:p-8">
+    <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
       <Header title="Alerts" subtitle="Blocking, warning and dashboard-tier signals" />
       {err && <p className="text-sm text-danger-600 mb-3">{err}</p>}
 

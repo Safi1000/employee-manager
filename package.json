@@ -13,6 +13,8 @@
     "cap:ios": "vite build && cap sync ios && cap open ios",
     "cap:run:android": "vite build && cap sync android && cap run android",
     "cap:copy": "vite build && cap copy",
+    "//cap:dev": "Android build with chrome://inspect enabled. Debug sessions only — never ship the APK this produces.",
+    "cap:dev": "node scripts/cap-dev.mjs",
     "assets:gen": "node scripts/make-native-assets.mjs"
   },
   "dependencies": {

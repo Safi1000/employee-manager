@@ -548,7 +548,7 @@ export default function Inventory() {
         }
       />
 
-      <div className="flex-1 overflow-y-auto p-8">
+      <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
         <LowStockBanner />
         {error && (
           <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
@@ -1579,7 +1579,7 @@ export default function Inventory() {
                 <p className="text-slate-500 mb-1">License Expiry</p>
                 <p className="text-slate-900">{viewWeapon.license_expiry ? formatDate(viewWeapon.license_expiry) : "—"}</p>
               </div>
-              <div className="col-span-2">
+              <div className="col-span-full">
                 <p className="text-slate-500 mb-1">Notes</p>
                 <p className="text-slate-900">{viewWeapon.notes ?? "—"}</p>
               </div>

@@ -919,7 +919,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         }
       />
 
-      <div className="flex-1 overflow-y-auto p-8">
+      <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
         {/* Phase 6 §8.8: this page is now the CORRECTION-only Timesheet (reached
             from a guard's History tab). Daily marking lives on the Attendance
             board. The Shift Override tab and Mark-All-Present are removed. */}

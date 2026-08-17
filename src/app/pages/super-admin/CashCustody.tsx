@@ -572,10 +572,10 @@ export function CashCustodyPanel() {
         )}
 
         {/* Tab bar */}
-        <div className="flex gap-1 bg-slate-100 rounded-md p-1 mb-6 w-fit">
+        <div className="flex gap-1 bg-slate-100 rounded-md p-1 mb-6 w-fit max-w-full overflow-x-auto">
           {([["position", "Cash Position"], ["reconciliation", "Reconciliation"], ["transactions", "Transactions"], ["locations", "Locations"], ["transfers", "Transfers"]] as const).map(([k, l]) => (
             <button key={k} type="button" onClick={() => setTab(k)}
-              className={`px-3 py-1.5 text-sm rounded transition-colors ${tab === k ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}>
+              className={`shrink-0 whitespace-nowrap px-3 py-1.5 text-sm rounded transition-colors ${tab === k ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}>
               {l}
             </button>
           ))}
@@ -1016,7 +1016,7 @@ export function CashCustodyPanel() {
               : "Move cash from one office-staff custodian to another. Cash in Hand is unchanged — only who holds it."}
           </p>
           {/* From-source toggle */}
-          <div className="flex gap-1 bg-slate-100 rounded-md p-1 w-fit">
+          <div className="flex gap-1 bg-slate-100 rounded-md p-1 w-fit max-w-full overflow-x-auto">
             {([["staff", "From Office Staff"], ["bank", "From Bank"]] as const).map(([k, l]) => (
               <button key={k} type="button"
                 onClick={() => setTransferForm({ ...transferForm, from_type: k, from_location_id: "", from_bank_id: "" })}

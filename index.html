@@ -3,7 +3,14 @@
   <html lang="en">
     <head>
       <meta charset="UTF-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <!--
+        viewport-fit=cover is REQUIRED for env(safe-area-inset-*) to report real
+        numbers. Without it those variables are 0px on every platform, silently,
+        and the whole safe-area system in styles/native.css becomes dead code —
+        the header then renders underneath the status bar clock and the notch.
+        It has no effect in a desktop browser, so it is set unconditionally.
+      -->
+      <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
       <title>Bastion</title>
       <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
       <link rel="apple-touch-icon" href="/favicon.svg" />

@@ -122,7 +122,7 @@ export default function PayrollRuns() {
   const unackedCount = exceptions.filter((e) => !e.acknowledged).length;
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 md:p-8">
+    <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
       <Header
         title="Payroll Runs"
         subtitle="Draft → Review → Approve → Disburse → Complete"

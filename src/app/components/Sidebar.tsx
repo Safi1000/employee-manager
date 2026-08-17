@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { NavLink, useLocation } from "react-router";
-import { LucideIcon, LogOut, Menu, X, KeyRound, ChevronRight, ChevronDown, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { LucideIcon, LogOut, X, KeyRound, ChevronRight, ChevronDown, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import ForcePasswordChange from "./ForcePasswordChange";
 import ChangePasswordModal from "./ChangePasswordModal";
@@ -88,6 +88,17 @@ export default function Sidebar({ title, links }: SidebarProps) {
   useEffect(() => {
     setOpen(false);
   }, [location.pathname]);
+
+  // The mobile menu button lives in TopBar, not here — it belongs in the bar
+  // alongside the other app-level controls rather than floating over the page.
+  // A window event keeps the two decoupled: they are siblings in the layout
+  // tree, so lifting `open` would mean threading state through all four
+  // layouts for one button. Same idiom as the `native:back` handler below.
+  useEffect(() => {
+    const onOpen = () => setOpen(true);
+    window.addEventListener("sidebar:open", onOpen);
+    return () => window.removeEventListener("sidebar:open", onOpen);
+  }, []);
 
   // Lock body scroll when drawer open on mobile
   useEffect(() => {
@@ -283,18 +294,7 @@ export default function Sidebar({ title, links }: SidebarProps) {
 
   return (
     <>
-      {/* Mobile hamburger (top-left, fixed). `fixed` positions against the
-          viewport, not the safe-area-padded body, so on a notched phone a plain
-          `top-3` would sit under the status bar / Dynamic Island. */}
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        style={{ top: "calc(var(--safe-top, 0px) + 0.75rem)", left: "calc(var(--safe-left, 0px) + 0.75rem)" }}
-        className="md:hidden fixed z-30 p-2 rounded-md bg-white border border-slate-200 shadow-sm text-slate-700"
-        aria-label="Open menu"
-      >
-        <Menu className="w-5 h-5" strokeWidth={1.5} />
-      </button>
+      {/* The mobile menu button is rendered by TopBar (see the listener above). */}
 
       {/* Mobile backdrop */}
       {open && (

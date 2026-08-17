@@ -683,7 +683,7 @@ export default function SuperAdminDashboard() {
         })}`}
       />
 
-      <div className="flex-1 overflow-y-auto p-4 md:p-8">
+      <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
         {error && (
           <div className="mb-4 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded text-sm">{error}</div>
         )}

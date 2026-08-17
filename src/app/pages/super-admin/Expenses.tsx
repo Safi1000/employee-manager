@@ -1947,7 +1947,7 @@ export default function Expenses() {
         }
       />
 
-      <div className="flex-1 overflow-y-auto p-8">
+      <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
         {error && (
           <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
@@ -1958,7 +1958,7 @@ export default function Expenses() {
           </div>
         )}
 
-        <div className="flex items-center gap-2 mb-6">
+        <div className="flex items-center gap-2 mb-6 overflow-x-auto">
           {([
             ["expenses", "Expenses"],
             ["fixed", "Fixed Expenses"],
@@ -1968,10 +1968,15 @@ export default function Expenses() {
               key={t}
               type="button"
               onClick={() => setActiveTab(t)}
-              className={`px-4 py-2 rounded-md text-sm transition-colors ${
+              // shrink-0 + nowrap: the "Fixed Expenses" tab carries an extra
+              // "N pending" suffix, which wrapped to a second line on a narrow
+              // screen and made that one button taller than its neighbours.
+              // The active tab also needs a transparent border, or it sits 2px
+              // shorter than the bordered inactive ones.
+              className={`shrink-0 whitespace-nowrap px-4 py-2 rounded-md text-sm border transition-colors ${
                 activeTab === t
-                  ? "bg-brand-600 text-[#fff]"
-                  : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+                  ? "bg-brand-600 text-[#fff] border-transparent"
+                  : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
               }`}
             >
               {label}
@@ -3723,7 +3728,7 @@ export default function Expenses() {
                 : "Leave empty to log as an Office expense (Head Office)."}
             </p>
           </div>
-          <div className="col-span-2">
+          <div className="col-span-full">
             <label className="block text-sm text-slate-700 mb-1">P&amp;L Category *</label>
             <div className="grid grid-cols-2 gap-2">
               {(

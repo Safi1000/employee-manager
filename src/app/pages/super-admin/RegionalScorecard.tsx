@@ -197,7 +197,7 @@ export default function RegionalScorecard() {
   }, [opexRows]);
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 md:p-8">
+    <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
       <Header
         title="Regional Financials"
         subtitle="Operating expenses and profit, region by region"

@@ -1832,7 +1832,7 @@ export default function Accounting() {
         }
       />
 
-      <div className="flex-1 overflow-y-auto p-8">
+      <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
         {error && (
           <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
@@ -2966,7 +2966,7 @@ export default function Accounting() {
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
               />
             </div>
-            <div className="col-span-2">
+            <div className="col-span-full">
               <label className="block text-sm text-slate-700 mb-1">Amount (PKR) *</label>
               <input
                 required
@@ -2978,7 +2978,7 @@ export default function Accounting() {
                 placeholder="0.00"
               />
             </div>
-            <div className="col-span-2">
+            <div className="col-span-full">
               <label className="block text-sm text-slate-700 mb-1">
                 {chequeForm.direction === "incoming"
                   ? "Received From (Payer)"
@@ -3010,7 +3010,7 @@ export default function Accounting() {
                 />
               )}
             </div>
-            <div className="col-span-2">
+            <div className="col-span-full">
               <label className="block text-sm text-slate-700 mb-1">Notes</label>
               <textarea
                 value={chequeForm.notes}
@@ -3019,7 +3019,7 @@ export default function Accounting() {
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
               />
             </div>
-            <div className="col-span-2">
+            <div className="col-span-full">
               <label className="block text-sm text-slate-700 mb-1">Attachment (optional)</label>
               <input
                 type="file"
@@ -3192,13 +3192,13 @@ export default function Accounting() {
                 <p className="text-slate-900">PKR {Number(chequeView.amount).toLocaleString()}</p>
               </div>
               {chequeView.notes && (
-                <div className="col-span-2">
+                <div className="col-span-full">
                   <p className="text-xs text-slate-500">Notes</p>
                   <p className="text-slate-900 whitespace-pre-wrap">{chequeView.notes}</p>
                 </div>
               )}
               {(chequeView.drive_view_url || chequeView.attachment_path) && (
-                <div className="col-span-2">
+                <div className="col-span-full">
                   <p className="text-xs text-slate-500 mb-1">Attachment</p>
                   {chequeViewAttachmentUrl ? (
                     <a

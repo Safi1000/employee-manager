@@ -62,7 +62,7 @@ export default function Receivables() {
   const clientName = (id: string) => clients.find((c) => c.id === id)?.name ?? "—";
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 md:p-8">
+    <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
       <Header title="Receivables" subtitle="Regional aging & DSO, reminder cadence, write-offs, attendance billing" />
 
       <div className="flex gap-1 border-b border-slate-200 mb-4">

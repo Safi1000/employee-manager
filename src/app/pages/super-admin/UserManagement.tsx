@@ -309,7 +309,7 @@ export default function UserManagement() {
         }
       />
 
-      <div className="flex-1 overflow-y-auto p-4 md:p-8">
+      <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
         {error && <div className="text-sm text-danger-600 bg-danger-50 border border-danger-200 px-4 py-2 rounded mb-4">{error}</div>}
 
         <div className="bg-white rounded-lg border border-slate-200">

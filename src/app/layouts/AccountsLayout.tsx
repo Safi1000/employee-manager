@@ -1,5 +1,6 @@
 import { Outlet } from "react-router";
 import Sidebar from "../components/Sidebar";
+import TopBar from "../components/TopBar";
 import {
   LayoutDashboard,
   Calendar,
@@ -20,7 +21,8 @@ export default function AccountsLayout() {
   return (
     <div className="app-shell flex h-dvh bg-slate-50">
       <Sidebar title="Accounts Panel" links={links} />
-      <div className="flex-1 flex flex-col overflow-hidden pt-14 md:pt-0">
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <TopBar />
         <Outlet />
       </div>
     </div>

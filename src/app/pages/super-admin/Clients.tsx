@@ -709,7 +709,7 @@ export default function Clients() {
 
       <Section isOpen={!!expanded.basic} onToggle={() => setExpanded((prev) => ({ ...prev, basic: !prev.basic }))} title="Basic Information">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="col-span-2">
+          <div className="col-span-full">
             <label className="block text-sm text-slate-700 mb-1">Client Name *</label>
             <input
               required
@@ -792,7 +792,7 @@ export default function Clients() {
               </p>
             )}
           </div>
-          <div className="col-span-2">
+          <div className="col-span-full">
             <label className="block text-sm text-slate-700 mb-1">Default Branch *</label>
             <ThemedSelect
               required
@@ -884,15 +884,19 @@ export default function Clients() {
                     tax_profile: f.tax_profile.map((x, i) => (i === idx ? { ...x, ...p } : x)),
                   }));
                 return (
-                  <div key={idx} className="grid grid-cols-12 gap-2 items-center">
+                  // 12 columns of 4/2/3/2/1 works on a desktop and is unreadable
+                  // on a phone, where each cell lands at ~25px. The spans below
+                  // reflow to three mobile rows (name / rate+base / direction+bin)
+                  // in DOM order, so no `order-` juggling is needed.
+                  <div key={idx} className="grid grid-cols-12 gap-2 items-center rounded-md border border-slate-200 p-2 sm:border-0 sm:p-0">
                     <input
                       type="text"
                       value={t.name}
                       onChange={(e) => patch({ name: e.target.value })}
                       placeholder="Tax name (e.g. Sales Tax)"
-                      className="col-span-4 px-2 py-1.5 border border-slate-200 rounded text-sm"
+                      className="col-span-12 sm:col-span-4 px-2 py-1.5 border border-slate-200 rounded text-sm"
                     />
-                    <div className="col-span-2 relative">
+                    <div className="col-span-5 sm:col-span-2 relative">
                       <input
                         type="number"
                         step="0.01"
@@ -906,7 +910,7 @@ export default function Clients() {
                     <ThemedSelect
                       value={t.base}
                       onChange={(e) => patch({ base: e.target.value as TaxBase })}
-                      className="col-span-3 px-2 py-1.5 border border-slate-200 rounded text-sm"
+                      className="col-span-7 sm:col-span-3 px-2 py-1.5 border border-slate-200 rounded text-sm"
                     >
                       {(["WHOLE_INVOICE", "SPECIFIC_COMPONENT", "COMPOUND"] as const).map((b) => (
                         <option key={b} value={b}>{TAX_BASE_LABEL[b]}</option>
@@ -915,7 +919,7 @@ export default function Clients() {
                     <ThemedSelect
                       value={t.direction}
                       onChange={(e) => patch({ direction: e.target.value as TaxDirection })}
-                      className="col-span-2 px-2 py-1.5 border border-slate-200 rounded text-sm"
+                      className="col-span-10 sm:col-span-2 px-2 py-1.5 border border-slate-200 rounded text-sm"
                     >
                       {(["ADDED", "WITHHELD"] as const).map((d) => (
                         <option key={d} value={d}>{TAX_DIRECTION_LABEL[d]}</option>
@@ -924,7 +928,7 @@ export default function Clients() {
                     <button
                       type="button"
                       onClick={() => setForm((f) => ({ ...f, tax_profile: f.tax_profile.filter((_, i) => i !== idx) }))}
-                      className="col-span-1 p-1 rounded text-danger-600 hover:bg-danger-50 justify-self-center"
+                      className="col-span-2 sm:col-span-1 p-1 rounded text-danger-600 hover:bg-danger-50 justify-self-center"
                       title="Remove tax"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -1054,13 +1058,16 @@ export default function Clients() {
                     remit_accounts: f.remit_accounts.map((x, i) => ({ ...x, is_default: i === idx })),
                   }));
                 return (
-                  <div key={idx} className="grid grid-cols-12 gap-2 items-center">
+                  // Reflows to: title / IBAN / bank+default+bin on a phone.
+                  // The IBAN keeps a full row of its own — it is the longest
+                  // value on the form and the one most often mistyped.
+                  <div key={idx} className="grid grid-cols-12 gap-2 items-center rounded-md border border-slate-200 p-2 sm:border-0 sm:p-0">
                     <input
                       type="text"
                       value={r.account_title}
                       onChange={(e) => patch({ account_title: e.target.value })}
                       placeholder="Account title"
-                      className="col-span-3 px-2 py-1.5 border border-slate-200 rounded text-sm"
+                      className="col-span-12 sm:col-span-3 px-2 py-1.5 border border-slate-200 rounded text-sm"
                     />
                     <input
                       type="text"
@@ -1068,22 +1075,22 @@ export default function Clients() {
                       onChange={(e) => patch({ account_number: e.target.value })}
                       onBlur={(e) => validateField(`remit-${idx}`, remitAccountError(e.target.value))}
                       placeholder="Account no. / IBAN"
-                      className="col-span-4 px-2 py-1.5 border border-slate-200 rounded text-sm font-mono"
+                      className="col-span-12 sm:col-span-4 px-2 py-1.5 border border-slate-200 rounded text-sm font-mono"
                     />
                     <input
                       type="text"
                       value={r.bank_name}
                       onChange={(e) => patch({ bank_name: e.target.value })}
                       placeholder="Bank"
-                      className="col-span-3 px-2 py-1.5 border border-slate-200 rounded text-sm"
+                      className="col-span-8 sm:col-span-3 px-2 py-1.5 border border-slate-200 rounded text-sm"
                     />
-                    <label className="col-span-1 flex items-center justify-center" title="Default account">
+                    <label className="col-span-2 sm:col-span-1 flex items-center justify-center" title="Default account">
                       <input type="radio" name="remit_default" checked={r.is_default} onChange={makeDefault} />
                     </label>
                     <button
                       type="button"
                       onClick={() => setForm((f) => ({ ...f, remit_accounts: f.remit_accounts.filter((_, i) => i !== idx) }))}
-                      className="col-span-1 p-1 rounded text-danger-600 hover:bg-danger-50 justify-self-center"
+                      className="col-span-2 sm:col-span-1 p-1 rounded text-danger-600 hover:bg-danger-50 justify-self-center"
                       title="Remove account"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -1144,7 +1151,7 @@ export default function Clients() {
         }
       />
 
-      <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-4">
+      <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8 space-y-4">
         {error && (
           <div className="flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" />

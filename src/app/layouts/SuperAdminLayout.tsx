@@ -273,7 +273,7 @@ export default function SuperAdminLayout() {
         title={isSsaViewing ? `Viewing: ${company?.name ?? "…"}` : (company?.name ?? "Company Panel")}
         links={links}
       />
-      <div className="flex-1 flex flex-col overflow-hidden pt-14 md:pt-0">
+      <div className="flex-1 flex flex-col overflow-hidden">
         {isSsaViewing && (
           <div className="bg-warning-50 border-b border-warning-200 px-6 py-2 flex items-center justify-between text-sm">
             <div className="flex items-center gap-2 text-warning-900">
@@ -294,7 +294,11 @@ export default function SuperAdminLayout() {
           {showRegionBar && (
             <>
               <RegionSelector />
-              <span className="text-xs text-muted-foreground truncate">
+              {/* Hidden below `lg`: the selector button next to it already
+                  names the current scope ("Head Office / All Regions", or the
+                  region), so on a phone this sentence only ever appeared as a
+                  truncated fragment competing for the same row. */}
+              <span className="hidden lg:inline text-xs text-muted-foreground truncate">
                 {locked
                   ? "You see only your region."
                   : region

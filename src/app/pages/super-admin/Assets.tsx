@@ -64,13 +64,13 @@ export default function Assets() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 md:p-8">
+    <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
       <Header title="Assets" subtitle="Fixed-asset register & depreciation, vehicles, ammunition" />
 
-      <div className="flex gap-1 border-b border-slate-200 mb-4">
+      <div className="flex gap-1 border-b border-slate-200 mb-4 overflow-x-auto">
         {([["assets", "Fixed Assets"], ["vehicles", "Vehicles"], ["ammo", `Ammunition${discrepancies.length ? ` (${discrepancies.length}!)` : ""}`]] as [Tab, string][]).map(([t, label]) => (
           <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm border-b-2 -mb-px ${tab === t ? "border-brand-600 text-brand-700" : "border-transparent text-slate-500 hover:text-slate-800"}`}>
+            className={`shrink-0 whitespace-nowrap px-3 md:px-4 py-2 text-sm border-b-2 -mb-px ${tab === t ? "border-brand-600 text-brand-700" : "border-transparent text-slate-500 hover:text-slate-800"}`}>
             {label}
           </button>
         ))}
@@ -81,11 +81,13 @@ export default function Assets() {
       {tab === "assets" && (
         <div className="space-y-4">
           <section className="border border-slate-200 rounded-md p-3">
-            <div className="flex items-center justify-between mb-2">
+            {/* Stacks on a phone. As a single non-wrapping row the date input
+                was pushed into the heading and the button off the card. */}
+            <div className="flex flex-col gap-2 mb-2 sm:flex-row sm:items-center sm:justify-between">
               <h3 className="text-sm text-slate-900">New asset (capitalised)</h3>
               <div className="flex items-center gap-2">
-                <input type="date" className={FIELD} value={depPeriod} onChange={(e) => setDepPeriod(e.target.value)} title="Depreciation period" />
-                <Button variant="secondary" size="sm" disabled={busy}
+                <input type="date" className={FIELD + " flex-1 min-w-0 sm:flex-none"} value={depPeriod} onChange={(e) => setDepPeriod(e.target.value)} title="Depreciation period" />
+                <Button variant="secondary" size="sm" className="shrink-0 whitespace-nowrap" disabled={busy}
                   onClick={() => run(supabase.rpc("run_depreciation", { p_company_id: companyId, p_period: depPeriod }))}>
                   Run depreciation
                 </Button>
