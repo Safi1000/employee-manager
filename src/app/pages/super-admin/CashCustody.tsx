@@ -379,17 +379,11 @@ export function CashCustodyPanel() {
     [cashInHand],
   );
 
-  // Total Cash = Cash in Hand (treasury) + BANK mirror balances ONLY. Custodian/
-  // petty/treasury locations are a BREAKDOWN of Cash in Hand, so adding them would
-  // double-count (Σ custodian held already equals Cash in Hand).
-  const totalCash = useMemo(
-    () =>
-      cashInHand +
-      locationsWithBalance
-        .filter((l) => l.is_active && l.location_type === "BANK")
-        .reduce((s, l) => s + l.balance, 0),
-    [locationsWithBalance, cashInHand],
-  );
+  // Total Cash = Cash in Hand (treasury) ONLY. This page deals with cash; bank
+  // balances live on the Bank Accounts tab and are deliberately not added in here.
+  // Custodian/petty locations are a BREAKDOWN of Cash in Hand (Σ custodian held
+  // already equals it), so they are not added either.
+  const totalCash = useMemo(() => cashInHand, [cashInHand]);
   const totalPartnerOwed = useMemo(
     () => Array.from(partnerStats.values()).filter((s) => s.balance > 0).reduce((s, v) => s + v.balance, 0),
     [partnerStats],
@@ -586,7 +580,7 @@ export function CashCustodyPanel() {
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-2">
               <div className="bg-white rounded-lg border border-slate-200 border-l-4 border-l-brand-500 p-4">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Cash (Cash in Hand + Banks)</p>
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Cash in Hand</p>
                 <p className="text-2xl font-mono text-slate-900">{fmt(totalCash)}</p>
               </div>
               <div className="bg-white rounded-lg border border-slate-200 border-l-4 border-l-warning-500 p-4">
@@ -734,7 +728,7 @@ export function CashCustodyPanel() {
               <p className="text-xs text-slate-500 mb-4">Shows how much of the cash on hand is actually owed to partners vs. truly free.</p>
               <div className="space-y-2">
                 <div className="flex items-center justify-between py-2 border-b border-slate-100">
-                  <span className="text-sm text-slate-700">Total Cash (Cash in Hand + banks)</span>
+                  <span className="text-sm text-slate-700">Total Cash in Hand</span>
                   <span className="text-sm font-mono font-semibold text-slate-900">{fmt(totalCash)}</span>
                 </div>
                 <div className="flex items-center justify-between py-2 border-b border-slate-100">
