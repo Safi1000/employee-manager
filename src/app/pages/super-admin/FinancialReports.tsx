@@ -492,6 +492,43 @@ export default function FinancialReports() {
     return { invoiced, payroll, expenses: exp, regional, ho, income };
   }, [clientStatementRows]);
 
+  // Region → Head Office breakdown. Head office cost is apportioned to regions by
+  // their share of company-wide invoicing; because a client's ho_share is exactly
+  // HO × client_rev/company_rev, a region's allocation is just the sum of its
+  // clients' ho_share — which reconciles to the summary card with no drift.
+  //
+  // Always built from ALL clients for the month (the denominator must be
+  // company-wide for "% of company revenue" to mean anything); the branch filter
+  // only narrows which region ROWS are shown, never the denominator.
+  const hoRegionBreakdown = useMemo(() => {
+    const byId = new Map(loadedStatements.map((r) => [r.client_id, r]));
+    const byBranch = new Map<string, { branchId: string | null; name: string; invoiced: number; ho: number }>();
+    for (const c of clients) {
+      const l = byId.get(c.id);
+      const key = c.branch_id ?? "unassigned";
+      const cur = byBranch.get(key) ?? {
+        branchId: c.branch_id ?? null,
+        name: branches.find((b) => b.id === c.branch_id)?.name ?? "Unassigned",
+        invoiced: 0,
+        ho: 0,
+      };
+      cur.invoiced += Number(l?.revenue ?? 0);
+      cur.ho += Number(l?.ho_share ?? 0);
+      byBranch.set(key, cur);
+    }
+    const all = Array.from(byBranch.values());
+    const companyInvoiced = all.reduce((s, r) => s + r.invoiced, 0);
+    const totalHo = all.reduce((s, r) => s + r.ho, 0);
+    const rows = all
+      // Division by zero guarded: no company invoicing → every region is 0%.
+      .map((r) => ({ ...r, pct: companyInvoiced > 0 ? (r.invoiced / companyInvoiced) * 100 : 0 }))
+      .sort((a, b) => b.ho - a.ho);
+    const shown = statementBranchFilter === "all"
+      ? rows
+      : rows.filter((r) => r.branchId === statementBranchFilter);
+    return { rows: shown, companyInvoiced, totalHo };
+  }, [clients, loadedStatements, branches, statementBranchFilter]);
+
   const viewFullStatement = (client: ClientStatementRow) => {
     setSelectedClient(client);
     setIsClientStatementModalOpen(true);
@@ -1204,7 +1241,6 @@ export default function FinancialReports() {
                       <th className="text-right px-6 py-3 text-sm text-slate-500">Payroll Expense</th>
                       <th className="text-right px-6 py-3 text-sm text-slate-500">Direct Expenses</th>
                       <th className="text-right px-6 py-3 text-sm text-slate-500">Regional Overhead</th>
-                      <th className="text-right px-6 py-3 text-sm text-slate-500">Head Office</th>
                       <th className="text-right px-6 py-3 text-sm text-slate-500">Total Income</th>
                       <th className="text-left px-6 py-3 text-sm text-slate-500">Actions</th>
                     </tr>
@@ -1212,14 +1248,14 @@ export default function FinancialReports() {
                   <tbody className="divide-y divide-slate-200">
                     {loadingClients && (
                       <tr>
-                        <td colSpan={8} className="px-6 py-10 text-center text-slate-500">
+                        <td colSpan={7} className="px-6 py-10 text-center text-slate-500">
                           <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                         </td>
                       </tr>
                     )}
                     {!loadingClients && clientStatementRows.length === 0 && (
                       <tr>
-                        <td colSpan={8} className="px-6 py-10 text-center text-slate-500 text-sm">
+                        <td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">
                           No clients yet.
                         </td>
                       </tr>
@@ -1243,9 +1279,6 @@ export default function FinancialReports() {
                           <td className="px-6 py-4 text-sm text-slate-500 text-right">
                             PKR {Math.round(client.regional_overhead).toLocaleString()}
                           </td>
-                          <td className="px-6 py-4 text-sm text-slate-500 text-right">
-                            PKR {Math.round(client.ho_share).toLocaleString()}
-                          </td>
                           <td className="px-6 py-4 text-sm text-right">
                             <span className={client.total_income >= 0 ? "text-success-600" : "text-danger-600"}>
                               PKR {client.total_income.toLocaleString()}
@@ -1263,6 +1296,64 @@ export default function FinancialReports() {
                       ))}
                   </tbody>
                 </table>
+              </div>
+
+              {/* Region → Head Office breakdown: which region carries how much of
+                  head-office cost, by its share of company-wide invoicing. */}
+              <div className="p-4 border-t border-slate-200">
+                <div className="flex items-baseline justify-between gap-3 mb-1">
+                  <h4 className="text-sm font-semibold text-slate-900">Head Office cost by region</h4>
+                  <span className="text-xs text-slate-500">
+                    Region HO Allocation = (Region Invoiced ÷ Company Invoiced) × Head Office Total
+                  </span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-slate-200">
+                        <th className="text-left px-6 py-3 text-sm text-slate-500">Region</th>
+                        <th className="text-right px-6 py-3 text-sm text-slate-500">Total Invoiced</th>
+                        <th className="text-right px-6 py-3 text-sm text-slate-500">% of Company Revenue</th>
+                        <th className="text-right px-6 py-3 text-sm text-slate-500">Head Office Allocation</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {hoRegionBreakdown.rows.length === 0 ? (
+                        <tr><td colSpan={4} className="px-6 py-6 text-center text-slate-500 text-sm">No regions.</td></tr>
+                      ) : (
+                        hoRegionBreakdown.rows.map((r) => (
+                          <tr key={r.branchId ?? "unassigned"} className="hover:bg-slate-50 transition-colors">
+                            <td className="px-6 py-3 text-sm text-slate-900">{r.name}</td>
+                            <td className="px-6 py-3 text-sm text-brand-600 text-right">PKR {Math.round(r.invoiced).toLocaleString()}</td>
+                            <td className="px-6 py-3 text-sm text-slate-700 text-right">{r.pct.toFixed(1)}%</td>
+                            <td className="px-6 py-3 text-sm text-slate-700 text-right">PKR {Math.round(r.ho).toLocaleString()}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                    {hoRegionBreakdown.rows.length > 0 && (
+                      <tfoot>
+                        <tr className="border-t border-slate-200 font-medium">
+                          <td className="px-6 py-3 text-sm text-slate-900">
+                            {statementBranchFilter === "all" ? "Company total" : "Shown"}
+                          </td>
+                          <td className="px-6 py-3 text-sm text-right text-slate-900">
+                            PKR {Math.round(hoRegionBreakdown.rows.reduce((s, r) => s + r.invoiced, 0)).toLocaleString()}
+                          </td>
+                          <td className="px-6 py-3 text-sm text-right text-slate-900">
+                            {hoRegionBreakdown.rows.reduce((s, r) => s + r.pct, 0).toFixed(1)}%
+                          </td>
+                          <td className="px-6 py-3 text-sm text-right text-slate-900">
+                            PKR {Math.round(hoRegionBreakdown.rows.reduce((s, r) => s + r.ho, 0)).toLocaleString()}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    )}
+                  </table>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-2">
+                  Total Head Office here (PKR {Math.round(hoRegionBreakdown.rows.reduce((s, r) => s + r.ho, 0)).toLocaleString()}) matches the Head Office summary card above.
+                </p>
               </div>
             </div>
           )}

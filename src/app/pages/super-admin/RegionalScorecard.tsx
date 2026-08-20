@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { ChevronRight, MapPin } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { ChevronRight, MapPin, Wallet, Layers, Receipt } from "lucide-react";
 import Header from "../../components/Header";
 import ThemedSelect from "../../components/ThemedSelect";
 import ExportButton from "../../components/ExportButton";
@@ -125,13 +125,19 @@ function CountUp({ value, format }: { value: number; format?: (n: number) => str
 
 export default function RegionalScorecard() {
   const { company } = useAuth();
-  // Honours the global region switch: an RMD login is PINNED to its own region,
-  // and without this the one page showing regional profit was showing them every
-  // other region's. Consolidated (null) keeps the full comparison.
-  const { regionId } = useRegion();
+  // This page deliberately does NOT follow the global region switch: its own
+  // region tabs are the filter, and they always list every company region. The
+  // one exception is a PINNED user (RMD), a hard security boundary — they stay
+  // restricted to their own region regardless.
+  const { regionId, regions, locked } = useRegion();
   const companyId = company?.id ?? "";
 
-  const [tab, setTab] = useState<TabKey>("scorecard");
+  // Only the operating-expenses view is shown now; the other tabs (scorecard,
+  // profit) are hidden, not deleted — their components and render branches stay.
+  const [tab] = useState<TabKey>("opex");
+  // Region filter for the operating-expenses view, in place of the old metric
+  // tabs. "all" stacks every region; a branch key narrows to that one.
+  const [regionTab, setRegionTab] = useState<string>("all");
   const [period, setPeriod] = useState<string>(monthKeyOf(new Date()));
   const [pl, setPl] = useState<RegionalPl[]>([]);
   const [opex, setOpex] = useState<OpexRow[]>([]);
@@ -189,9 +195,24 @@ export default function RegionalScorecard() {
     () => (regionId ? pl.filter((r) => r.branch_id === regionId) : pl),
     [pl, regionId],
   );
+  // All regions' expenses — the global selector is intentionally ignored here.
+  // A pinned user is the only one kept to their own region (security boundary).
   const opexRows = useMemo(
-    () => (regionId ? opex.filter((r) => r.branch_id === regionId) : opex),
-    [opex, regionId],
+    () => (locked && regionId ? opex.filter((r) => r.branch_id === regionId) : opex),
+    [opex, regionId, locked],
+  );
+  // Region tabs list EVERY company region (not just the ones with data this
+  // month), independent of the global selector. A pinned user sees only theirs.
+  const regionTabs = useMemo(() => {
+    const list = locked && regionId ? regions.filter((r) => r.id === regionId) : regions;
+    return list.map((r) => ({ key: r.id, name: r.name }));
+  }, [regions, locked, regionId]);
+  // Fall back to "all" when the picked region has no rows this month, so the
+  // highlight and the filter never point at a tab that isn't there.
+  const activeRegion = regionTabs.some((t) => t.key === regionTab) ? regionTab : "all";
+  const opexRegionRows = useMemo(
+    () => (activeRegion === "all" ? opexRows : opexRows.filter((r) => (r.branch_id ?? "unassigned") === activeRegion)),
+    [opexRows, activeRegion],
   );
   const scRows = useMemo(
     () => (regionId ? scorecard.filter((r) => r.branch_id === regionId) : scorecard),
@@ -243,7 +264,7 @@ export default function RegionalScorecard() {
       total: number;
       categories: Map<string, { category: string; total: number; items: OpexRow[] }>;
     }>();
-    for (const r of opexRows) {
+    for (const r of opexRegionRows) {
       let reg = byRegion.get(r.region_name);
       if (!reg) {
         reg = { region: r.region_name, total: 0, categories: new Map() };
@@ -266,13 +287,13 @@ export default function RegionalScorecard() {
       }))
       .sort((a, b) => b.total - a.total);
     return { regions, grand: regions.reduce((s, r) => s + r.total, 0) };
-  }, [opexRows]);
+  }, [opexRegionRows]);
 
   return (
     <>
       <Header
-        title="Regional Financials"
-        subtitle="Operating expenses and profit, region by region"
+        title="Regional Operating Expenses"
+        subtitle="Operating expenses, region by region"
         actions={
           <ExportButton
             onExport={() => {
@@ -305,7 +326,7 @@ export default function RegionalScorecard() {
                   sheetName: "Operating Expenses",
                   title: `Operating Expenses by Region — ${monthLabel(period)}`,
                   headers: ["Region", "Category", "Date", "Description", "Client / Vendor", "Mode", "Amount"],
-                  rows: opexRows.map((r) => [
+                  rows: opexRegionRows.map((r) => [
                     r.region_name,
                     r.category,
                     r.expense_date,
@@ -337,32 +358,34 @@ export default function RegionalScorecard() {
       />
 
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
-      <div className="flex flex-wrap items-center gap-2 mb-6 mt-1">
-        {([
-          ["scorecard", "Regional Scorecard"],
-          ["opex", "Operating Expenses"],
-          ["profit-revenue", "Regional Profit · Revenue"],
-          ["profit-cash", "Regional Profit · Cash"],
-        ] as const).map(([k, label]) => (
-          <button
-            key={k}
-            type="button"
-            onClick={() => setTab(k)}
-            className={`px-4 py-2 rounded-md text-sm transition-colors ${
-              tab === k
-                ? "bg-brand-600 text-[#fff]"
-                : "bg-card text-muted-foreground border border-border hover:bg-accent"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center gap-3 mb-6 mt-1">
+        {/* Region tabs replace the old metric tabs: pick a region to filter the
+            operating expenses, or "All Regions" to see them stacked. */}
+        <div className="flex flex-wrap items-center gap-1 p-1 rounded-xl bg-muted/60 border border-border">
+          {[{ key: "all", name: "All Regions" }, ...regionTabs].map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setRegionTab(t.key)}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm transition-all ${
+                activeRegion === t.key
+                  ? "bg-brand-600 text-[#fff] shadow-sm shadow-brand-600/25"
+                  : "text-muted-foreground hover:text-foreground hover:bg-card"
+              }`}
+            >
+              {t.key !== "all" && (
+                <MapPin className={`w-3.5 h-3.5 ${activeRegion === t.key ? "text-[#fff]" : "text-brand-500"}`} strokeWidth={2} />
+              )}
+              {t.name}
+            </button>
+          ))}
+        </div>
         <div className="flex items-center gap-2 ml-auto">
-          <label className="text-sm text-muted-foreground">Month:</label>
+          <label className="text-sm text-muted-foreground">Month</label>
           <ThemedSelect
             value={period}
             onChange={(e) => setPeriod(e.target.value)}
-            className="px-3 py-2 border border-border rounded-md text-sm bg-card"
+            className="px-3 py-2 border border-border rounded-lg text-sm bg-card shadow-sm"
           >
             {periodOptions.map((p) => (
               <option key={p} value={p}>{monthLabel(p)}</option>
@@ -539,6 +562,19 @@ function RegionCard({ row, fin, period }: { row: ScorecardRow; fin: RegionFinanc
   );
 }
 
+/** A compact stat chip for the summary hero — icon + label over a value. */
+function MiniStat({ icon, label, value, small }: { icon: ReactNode; label: string; value: string; small?: boolean }) {
+  return (
+    <div className="rounded-xl border border-border bg-card/70 px-3 py-2.5 min-w-0">
+      <div className="flex items-center gap-1.5 text-muted-foreground mb-1">
+        <span className="text-brand-500">{icon}</span>
+        <span className="text-[10px] uppercase tracking-wide truncate">{label}</span>
+      </div>
+      <p className={`${small ? "text-sm mt-0.5" : "text-xl"} tabular-nums text-foreground truncate`} title={value}>{value}</p>
+    </div>
+  );
+}
+
 /**
  * Operating expenses, region → category → the individual expenses inside it.
  *
@@ -568,27 +604,79 @@ function OperatingExpensesTab({
       return next;
     });
 
+  // Categories rolled up across every shown region, for the "where it went"
+  // breakdown — the same category in two regions is one bar, ranked by spend.
+  const catAgg = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const reg of tree.regions)
+      for (const cat of reg.categoryList) m.set(cat.category, (m.get(cat.category) ?? 0) + cat.total);
+    return Array.from(m, ([category, total]) => ({ category, total })).sort((a, b) => b.total - a.total);
+  }, [tree]);
+
   return (
-    <div className="space-y-6 mb-8">
-      <div className="bg-card border border-border rounded-xl">
-        <div className="p-6 border-b border-border">
-          <h3 className="text-lg text-foreground mb-1">Operating Expenses — {monthLabel(period)}</h3>
-          <p className="text-sm text-muted-foreground">
-            The cost of running the business: rent, utilities, office salaries, travel, stationery and
-            the rest, per region and at head office. Cost of Services is excluded — that is the cost of
-            a client's guards, and it belongs to the client, not the overhead.
-          </p>
-        </div>
-        <div className="p-4">
-          <div className="bg-card p-3 rounded-lg border border-border border-l-4 border-l-danger-500 inline-block min-w-[240px]">
-            <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">
-              Total operating expenses
-            </p>
-            <p className="text-lg tabular-nums text-danger-700 dark:text-danger-500">
-              PKR <CountUp value={tree.grand} format={money} />
-            </p>
+    <div className="space-y-5 mb-8">
+      {/* Summary — the headline number, quick counts, and where the money went */}
+      <div className="rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
+        <div className="relative p-6 md:p-7 border-b border-border bg-gradient-to-br from-danger-50/70 via-card to-card dark:from-danger-700/10 dark:via-card dark:to-card">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-5">
+            <div className="min-w-0 flex items-start gap-4">
+              <div className="hidden sm:flex w-12 h-12 rounded-xl bg-danger-100 dark:bg-danger-700/20 items-center justify-center shrink-0">
+                <Wallet className="w-6 h-6 text-danger-600 dark:text-danger-500" strokeWidth={1.75} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">
+                  Total operating expenses · {monthLabel(period)}
+                </p>
+                <p className="text-3xl md:text-4xl tabular-nums text-danger-700 dark:text-danger-500 font-semibold tracking-tight">
+                  PKR <CountUp value={tree.grand} format={money} />
+                </p>
+                <p className="text-xs text-muted-foreground mt-2 max-w-xl leading-relaxed">
+                  The cost of running the business — rent, utilities, office salaries, travel and the rest.
+                  Cost of Services (a client's guards) is excluded; that belongs to the client.
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3 shrink-0">
+              <MiniStat icon={<MapPin className="w-4 h-4" strokeWidth={2} />} label="Regions" value={String(tree.regions.length)} />
+              <MiniStat icon={<Layers className="w-4 h-4" strokeWidth={2} />} label="Categories" value={String(catAgg.length)} />
+              <MiniStat icon={<Receipt className="w-4 h-4" strokeWidth={2} />} label="Largest" value={catAgg[0]?.category ?? "—"} small />
+            </div>
           </div>
         </div>
+        {catAgg.length > 0 && (
+          <div className="p-6 md:p-7">
+            <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-4">Where it went</p>
+            <div className="space-y-3.5">
+              {catAgg.slice(0, 6).map((c, i) => {
+                const share = tree.grand > 0 ? (c.total / tree.grand) * 100 : 0;
+                return (
+                  <div key={c.category} className="group">
+                    <div className="flex items-baseline justify-between gap-3 mb-1.5">
+                      <span className="text-sm text-foreground truncate flex items-center gap-2">
+                        <span className="text-[10px] tabular-nums text-muted-foreground w-4 shrink-0">{i + 1}</span>
+                        {c.category}
+                      </span>
+                      <span className="text-xs tabular-nums text-muted-foreground shrink-0">
+                        <span className="text-foreground">{pkr(c.total)}</span> · {share.toFixed(0)}%
+                      </span>
+                    </div>
+                    <div className="h-2 rounded-full bg-muted overflow-hidden ml-6">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-brand-500 to-brand-700 transition-all duration-500"
+                        style={{ width: `${Math.max(share, 1.5)}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+              {catAgg.length > 6 && (
+                <p className="text-[11px] text-muted-foreground pt-0.5 ml-6">
+                  + {catAgg.length - 6} more categor{catAgg.length - 6 === 1 ? "y" : "ies"}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {loading && (
@@ -604,18 +692,27 @@ function OperatingExpensesTab({
       )}
 
       {!loading && tree.regions.map((reg) => (
-        <div key={reg.region} className="bg-card border border-border rounded-xl overflow-hidden">
-          <div className="px-5 py-3.5 border-b border-border flex items-center justify-between gap-3 bg-slate-50">
-            <h4 className="flex items-center gap-2 text-foreground font-semibold" style={{ fontFamily: "var(--font-display)" }}>
-              <MapPin className="w-4 h-4 text-brand-600 dark:text-brand-500 shrink-0" strokeWidth={2} />
+        <div key={reg.region} className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+          <div className="px-5 py-4 border-b border-border flex items-center justify-between gap-3 bg-muted/40">
+            <h4 className="flex items-center gap-2.5 text-foreground font-semibold" style={{ fontFamily: "var(--font-display)" }}>
+              <span className="w-8 h-8 rounded-lg bg-brand-50 dark:bg-brand-700/20 flex items-center justify-center shrink-0">
+                <MapPin className="w-4 h-4 text-brand-600 dark:text-brand-500" strokeWidth={2} />
+              </span>
               {reg.region}
               <span className="text-xs font-normal text-muted-foreground">
                 {reg.categoryList.length} categor{reg.categoryList.length === 1 ? "y" : "ies"}
               </span>
             </h4>
-            <span className="tabular-nums text-danger-700 dark:text-danger-500 font-medium">
-              {pkr(reg.total)}
-            </span>
+            <div className="flex items-center gap-3 shrink-0">
+              {tree.regions.length > 1 && (
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  {tree.grand > 0 ? ((reg.total / tree.grand) * 100).toFixed(0) : 0}% of total
+                </span>
+              )}
+              <span className="tabular-nums text-danger-700 dark:text-danger-500 font-medium">
+                {pkr(reg.total)}
+              </span>
+            </div>
           </div>
 
           <div className="divide-y divide-border">

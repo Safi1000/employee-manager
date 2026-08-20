@@ -122,7 +122,7 @@ export default function SuperAdminLayout() {
   const OPENING_BAL: LinkDef = { to: "/super-admin/opening-balances", label: "Opening Balances", icon: BookOpen, perms: ["accounting.edit", "coa.view"] };
   // Renamed with the page: the §22 scorecard cards were scrapped, and what is
   // left is operating expenses and profit per region. Route unchanged.
-  const REGIONAL_SCORECARD: LinkDef = { to: "/super-admin/regional-scorecard", label: "Regional Financials", icon: PieChart, perms: ["reports.view", "accounting.view"] };
+  const REGIONAL_SCORECARD: LinkDef = { to: "/super-admin/regional-scorecard", label: "Regional Operating Expenses", icon: PieChart, perms: ["reports.view", "accounting.view"] };
   const CLIENT_REL: LinkDef = { to: "/super-admin/client-relationships", label: "Client Relationships", icon: Users2, perms: ["clients.view", "clients.edit"] };
 
   // Consolidation restructure — merged / renamed / moved homes.

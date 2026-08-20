@@ -87,12 +87,17 @@ type CashStatementRow = {
   /** This client's share of head office, pro-rata by revenue. */
   hoShare: number;
   netCash: number;
+  /** Region the client sits in, for the Head-Office-by-region breakdown. */
+  branchId: string | null;
+  regionName: string;
   payments: { id: string; date: string; amount: number; mode: string | null }[];
 };
 
 /** One row of public.client_statement_loaded, asked on the cash basis. */
 type LoadedStatement = {
   client_id: string;
+  branch_id: string | null;
+  region_name: string;
   revenue: number;
   direct_payroll: number;
   direct_expenses: number;
@@ -363,6 +368,8 @@ export default function Cashflow() {
         regionalOverhead: Number(l?.regional_overhead ?? 0),
         hoShare: Number(l?.ho_share ?? 0),
         netCash: Number(l?.net ?? 0),
+        branchId: l?.branch_id ?? c.branch_id ?? null,
+        regionName: l?.region_name ?? "Unassigned",
         payments: (paymentsBy.get(c.id) ?? []).sort((a, b) => b.date.localeCompare(a.date)),
       };
     });
@@ -958,6 +965,26 @@ function ClientStatementsTab({
   loading: boolean;
   onView: (r: CashStatementRow) => void;
 }) {
+  // Region → Head Office breakdown. A client's ho_share is HO × client_received /
+  // company_received, so a region's allocation is just the sum of its clients'
+  // ho_share — reconciling to the Head Office summary card with no drift.
+  const hoByRegion = useMemo(() => {
+    const byRegion = new Map<string, { key: string; name: string; received: number; ho: number }>();
+    for (const r of rows) {
+      const key = r.branchId ?? "unassigned";
+      const cur = byRegion.get(key) ?? { key, name: r.regionName, received: 0, ho: 0 };
+      cur.received += r.received;
+      cur.ho += r.hoShare;
+      byRegion.set(key, cur);
+    }
+    const all = Array.from(byRegion.values());
+    const companyReceived = all.reduce((s, x) => s + x.received, 0);
+    // Division by zero guarded: nothing received → every region is 0%.
+    return all
+      .map((x) => ({ ...x, pct: companyReceived > 0 ? (x.received / companyReceived) * 100 : 0 }))
+      .sort((a, b) => b.ho - a.ho);
+  }, [rows]);
+
   return (
     <div className="bg-white rounded-lg border border-slate-200">
       <div className="p-6 flex flex-wrap items-end justify-between gap-3">
@@ -1027,7 +1054,6 @@ function ClientStatementsTab({
               <th className="text-right px-6 py-3 text-sm text-slate-500">Payroll Paid</th>
               <th className="text-right px-6 py-3 text-sm text-slate-500">Direct Expenses</th>
               <th className="text-right px-6 py-3 text-sm text-slate-500">Regional Overhead</th>
-              <th className="text-right px-6 py-3 text-sm text-slate-500">Head Office</th>
               <th className="text-right px-6 py-3 text-sm text-slate-500">Net Cash</th>
               <th className="text-left px-6 py-3 text-sm text-slate-500">Actions</th>
             </tr>
@@ -1035,14 +1061,14 @@ function ClientStatementsTab({
           <tbody className="divide-y divide-slate-200">
             {loading && (
               <tr>
-                <td colSpan={8} className="px-6 py-10 text-center text-slate-500">
+                <td colSpan={7} className="px-6 py-10 text-center text-slate-500">
                   <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                 </td>
               </tr>
             )}
             {!loading && rows.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-6 py-10 text-center text-slate-500 text-sm">
+                <td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">
                   No clients yet.
                 </td>
               </tr>
@@ -1057,7 +1083,6 @@ function ClientStatementsTab({
                 <td className="px-6 py-4 text-sm text-danger-600 text-right">{currency(r.payrollPaid)}</td>
                 <td className="px-6 py-4 text-sm text-danger-600 text-right">{currency(r.expensesPaid)}</td>
                 <td className="px-6 py-4 text-sm text-slate-500 text-right">{currency(r.regionalOverhead)}</td>
-                <td className="px-6 py-4 text-sm text-slate-500 text-right">{currency(r.hoShare)}</td>
                 <td className="px-6 py-4 text-sm text-right">
                   <span className={r.netCash >= 0 ? "text-success-600" : "text-danger-600"}>
                     {currency(r.netCash)}
@@ -1075,6 +1100,56 @@ function ClientStatementsTab({
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* Region → Head Office breakdown: which region carries how much of
+          head-office cost, by its share of company-wide cash received. */}
+      <div className="p-4 border-t border-slate-200">
+        <div className="flex items-baseline justify-between gap-3 mb-1">
+          <h4 className="text-sm font-semibold text-slate-900">Head Office cost by region</h4>
+          <span className="text-xs text-slate-500">
+            Region HO Allocation = (Region Received ÷ Company Received) × Head Office Total
+          </span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-slate-200">
+                <th className="text-left px-6 py-3 text-sm text-slate-500">Region</th>
+                <th className="text-right px-6 py-3 text-sm text-slate-500">Cash Received</th>
+                <th className="text-right px-6 py-3 text-sm text-slate-500">% of Company Received</th>
+                <th className="text-right px-6 py-3 text-sm text-slate-500">Head Office Allocation</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200">
+              {hoByRegion.length === 0 ? (
+                <tr><td colSpan={4} className="px-6 py-6 text-center text-slate-500 text-sm">No regions.</td></tr>
+              ) : (
+                hoByRegion.map((r) => (
+                  <tr key={r.key} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-6 py-3 text-sm text-slate-900">{r.name}</td>
+                    <td className="px-6 py-3 text-sm text-brand-600 text-right">{currency(r.received)}</td>
+                    <td className="px-6 py-3 text-sm text-slate-700 text-right">{r.pct.toFixed(1)}%</td>
+                    <td className="px-6 py-3 text-sm text-slate-700 text-right">{currency(r.ho)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+            {hoByRegion.length > 0 && (
+              <tfoot>
+                <tr className="border-t border-slate-200 font-medium">
+                  <td className="px-6 py-3 text-sm text-slate-900">Company total</td>
+                  <td className="px-6 py-3 text-sm text-right text-slate-900">{currency(hoByRegion.reduce((s, r) => s + r.received, 0))}</td>
+                  <td className="px-6 py-3 text-sm text-right text-slate-900">{hoByRegion.reduce((s, r) => s + r.pct, 0).toFixed(1)}%</td>
+                  <td className="px-6 py-3 text-sm text-right text-slate-900">{currency(hoByRegion.reduce((s, r) => s + r.ho, 0))}</td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+        <p className="text-[11px] text-slate-500 mt-2">
+          Total Head Office here ({currency(hoByRegion.reduce((s, r) => s + r.ho, 0))}) matches the Head Office summary card above.
+        </p>
       </div>
     </div>
   );
