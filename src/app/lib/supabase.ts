@@ -1784,6 +1784,12 @@ export type Partner = {
    */
   scope: "COMPANY" | "BRANCH";
   branch_id: string | null;
+  /**
+   * Regional partners only. How their take is figured: 'cash' = % of the
+   * region's Net Cash, 'revenue' = % of its Total Income. null keeps the
+   * legacy % of adjusted region profit.
+   */
+  basis: "cash" | "revenue" | null;
   is_active: boolean;
   created_at?: string;
   updated_at?: string;

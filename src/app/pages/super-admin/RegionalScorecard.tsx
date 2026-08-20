@@ -25,7 +25,41 @@ import { supabase } from "../../lib/supabase";
 const money = (n: any) => Number(n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
 const pkr = (n: any) => `PKR ${money(n)}`;
 
-type TabKey = "opex" | "profit-revenue" | "profit-cash";
+type TabKey = "scorecard" | "opex" | "profit-revenue" | "profit-cash";
+
+/** One region's scorecard — see the public.regional_scorecard view. */
+type ScorecardRow = {
+  branch_id: string | null;
+  region_name: string;
+  active_headcount: number;
+  incidents_ytd: number;
+  no_shows_30d: number;
+  receivables_outstanding: number;
+  profit_ytd: number;
+  profit_prior_year: number;
+};
+
+/** One client's fully-loaded statement — see public.client_statement_loaded.
+ *  Summed per branch it gives the three distinct cost buckets a region carries. */
+type ClientStmtRow = {
+  branch_id: string | null;
+  revenue: number;
+  direct_payroll: number;
+  direct_expenses: number;
+  regional_overhead: number;
+  ho_share: number;
+  net: number;
+};
+
+/** The three cost types kept apart, per region, for the selected month. */
+type RegionFinance = {
+  revenue: number;
+  clientLinked: number;   // cost of services booked to clients
+  regionSpecific: number; // office staff salary + office running costs
+  shared: number;         // head office, apportioned
+  net: number;
+};
+const ZERO_FINANCE: RegionFinance = { revenue: 0, clientLinked: 0, regionSpecific: 0, shared: 0, net: 0 };
 
 /** One region's month, both bases at once — see public.regional_pl. */
 type RegionalPl = {
@@ -97,10 +131,12 @@ export default function RegionalScorecard() {
   const { regionId } = useRegion();
   const companyId = company?.id ?? "";
 
-  const [tab, setTab] = useState<TabKey>("opex");
+  const [tab, setTab] = useState<TabKey>("scorecard");
   const [period, setPeriod] = useState<string>(monthKeyOf(new Date()));
   const [pl, setPl] = useState<RegionalPl[]>([]);
   const [opex, setOpex] = useState<OpexRow[]>([]);
+  const [scorecard, setScorecard] = useState<ScorecardRow[]>([]);
+  const [clientStmt, setClientStmt] = useState<ClientStmtRow[]>([]);
   const [loading, setLoading] = useState(false);
 
   const periodOptions = useMemo(() => {
@@ -121,13 +157,26 @@ export default function RegionalScorecard() {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      const [plRes, oxRes] = await Promise.all([
-        supabase.rpc("regional_pl", { p_month: `${period}-01` }),
-        supabase.rpc("operating_expense_detail", { p_month: `${period}-01` }),
+      const monthStart = `${period}-01`;
+      const [yy, mm] = period.split("-").map(Number);
+      const monthEnd = `${period}-${String(new Date(yy, mm, 0).getDate()).padStart(2, "0")}`;
+      const [plRes, oxRes, scRes, csRes] = await Promise.all([
+        supabase.rpc("regional_pl", { p_month: monthStart }),
+        supabase.rpc("operating_expense_detail", { p_month: monthStart }),
+        // View keys off current_date, not the picked month, so it is the same
+        // every period — refetched with the rest rather than special-cased.
+        supabase.from("regional_scorecard").select(
+          "branch_id, region_name, active_headcount, incidents_ytd, no_shows_30d, receivables_outstanding, profit_ytd, profit_prior_year",
+        ).eq("company_id", companyId).order("region_name"),
+        // Reused wholesale from the P&L / partner-basis work: the same statement
+        // that separates client-linked cost, regional overhead and HO share.
+        supabase.rpc("client_statement_loaded", { p_start: monthStart, p_end: monthEnd, p_basis: "revenue" }),
       ]);
       if (cancelled) return;
       setPl((plRes.data ?? []) as RegionalPl[]);
       setOpex((oxRes.data ?? []) as OpexRow[]);
+      setScorecard((scRes.data ?? []) as ScorecardRow[]);
+      setClientStmt((csRes.data ?? []) as ClientStmtRow[]);
       setLoading(false);
     })();
     return () => { cancelled = true; };
@@ -144,6 +193,29 @@ export default function RegionalScorecard() {
     () => (regionId ? opex.filter((r) => r.branch_id === regionId) : opex),
     [opex, regionId],
   );
+  const scRows = useMemo(
+    () => (regionId ? scorecard.filter((r) => r.branch_id === regionId) : scorecard),
+    [scorecard, regionId],
+  );
+
+  // The month's client statements summed per region, into the three cost types.
+  // Keyed by branch so each region card can look its own figures up in O(1);
+  // a region with no clients simply isn't in the map and reads as all-zero.
+  const finByBranch = useMemo(() => {
+    const m = new Map<string, RegionFinance>();
+    for (const r of clientStmt) {
+      const key = r.branch_id ?? "unassigned";
+      const a = m.get(key) ?? { ...ZERO_FINANCE };
+      a.revenue += Number(r.revenue);
+      a.clientLinked += Number(r.direct_payroll) + Number(r.direct_expenses);
+      a.regionSpecific += Number(r.regional_overhead);
+      a.shared += Number(r.ho_share);
+      a.net += Number(r.net);
+      m.set(key, a);
+    }
+    return m;
+  }, [clientStmt]);
+  const finance = (branchId: string | null) => finByBranch.get(branchId ?? "unassigned") ?? ZERO_FINANCE;
 
   const plTotals = useMemo(() => {
     const t = {
@@ -197,13 +269,36 @@ export default function RegionalScorecard() {
   }, [opexRows]);
 
   return (
-    <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
+    <>
       <Header
         title="Regional Financials"
         subtitle="Operating expenses and profit, region by region"
         actions={
           <ExportButton
             onExport={() => {
+              if (tab === "scorecard") {
+                exportTable({
+                  fileName: `Regional Scorecard ${monthLabel(period)}.xlsx`,
+                  sheetName: "Regional Scorecard",
+                  title: `Regional Scorecard — ${monthLabel(period)}`,
+                  headers: [
+                    "Region", "Headcount", "Incidents (YTD)", "No-shows (30d)", "Receivables",
+                    "Revenue (month)", "Client-Linked Costs", "Region-Specific Expenses", "Shared / Allocated", "Net (month)",
+                  ],
+                  rows: scRows.map((r) => {
+                    const f = finance(r.branch_id);
+                    return [
+                      r.region_name,
+                      Number(r.active_headcount),
+                      Number(r.incidents_ytd),
+                      Number(r.no_shows_30d),
+                      Number(r.receivables_outstanding),
+                      f.revenue, f.clientLinked, f.regionSpecific, f.shared, f.net,
+                    ];
+                  }),
+                });
+                return;
+              }
               if (tab === "opex") {
                 exportTable({
                   fileName: `Operating Expenses ${monthLabel(period)}.xlsx`,
@@ -241,8 +336,10 @@ export default function RegionalScorecard() {
         }
       />
 
+      <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
       <div className="flex flex-wrap items-center gap-2 mb-6 mt-1">
         {([
+          ["scorecard", "Regional Scorecard"],
           ["opex", "Operating Expenses"],
           ["profit-revenue", "Regional Profit · Revenue"],
           ["profit-cash", "Regional Profit · Cash"],
@@ -274,6 +371,7 @@ export default function RegionalScorecard() {
         </div>
       </div>
 
+      {tab === "scorecard" && <ScorecardTab rows={scRows} finance={finance} period={period} loading={loading} />}
       {tab === "opex" && <OperatingExpensesTab tree={opexTree} period={period} loading={loading} />}
       {tab === "profit-revenue" && (
         <ProfitTab basis="revenue" rows={plRows} totals={plTotals} period={period} loading={loading} />
@@ -281,6 +379,162 @@ export default function RegionalScorecard() {
       {tab === "profit-cash" && (
         <ProfitTab basis="cash" rows={plRows} totals={plTotals} period={period} loading={loading} />
       )}
+      </div>
+    </>
+  );
+}
+
+/**
+ * Regional scorecard — one card per region, in two clearly-separated zones:
+ *
+ *   Operations   headcount, incidents, no-shows, receivables — a current
+ *                snapshot from the regional_scorecard view (not the picked month).
+ *   Money        the selected month's revenue and its THREE distinct cost types,
+ *                kept apart because they answer different questions:
+ *                  · Client-linked      cost of the guards a client pays for
+ *                  · Region-specific    this region's own office staff + running
+ *                                       costs, tied to no client — the figure the
+ *                                       old flat scorecard buried
+ *                  · Shared / allocated head office, apportioned down
+ *                These reconcile: revenue − the three = net.
+ */
+function ScorecardTab({
+  rows, finance, period, loading,
+}: {
+  rows: ScorecardRow[];
+  finance: (branchId: string | null) => RegionFinance;
+  period: string;
+  loading: boolean;
+}) {
+  if (loading) {
+    return (
+      <div className="bg-card border border-border rounded-xl p-10 text-center text-muted-foreground mb-8">
+        Loading…
+      </div>
+    );
+  }
+  if (rows.length === 0) {
+    return (
+      <div className="bg-card border border-border rounded-xl p-10 text-center text-muted-foreground mb-8">
+        No regions.
+      </div>
+    );
+  }
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
+      {rows.map((r) => (
+        <RegionCard key={r.branch_id ?? "unassigned"} row={r} fin={finance(r.branch_id)} period={period} />
+      ))}
+    </div>
+  );
+}
+
+/** A stat in the Operations zone — label above, value below. */
+function Stat({ label, value, tone }: { label: string; value: string; tone?: "danger" }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[10px] uppercase tracking-wide text-muted-foreground truncate">{label}</p>
+      <p className={`text-base tabular-nums ${tone === "danger" ? "text-danger-700 dark:text-danger-500" : "text-foreground"}`}>
+        {value}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * One region. The three cost lines are colour-coded — amber for the
+ * region-specific expenses this redesign is about, slate for client-linked,
+ * indigo for the allocated head-office share — so which bucket a number sits in
+ * is never ambiguous, and a share bar under each shows its weight at a glance.
+ */
+function RegionCard({ row, fin, period }: { row: ScorecardRow; fin: RegionFinance; period: string }) {
+  const ytdDelta = Number(row.profit_ytd) - Number(row.profit_prior_year);
+  const costTotal = fin.clientLinked + fin.regionSpecific + fin.shared;
+  const pct = (n: number) => (costTotal > 0 ? (n / costTotal) * 100 : 0);
+  const CostLine = ({ label, value, hint, bar, text }: {
+    label: string; value: number; hint: string; bar: string; text: string;
+  }) => (
+    <div>
+      <div className="flex items-baseline justify-between gap-3">
+        <span className={`inline-flex items-center gap-1.5 text-sm ${text}`}>
+          <span className={`w-2 h-2 rounded-full ${bar}`} />
+          {label}
+        </span>
+        <span className="text-sm tabular-nums text-foreground shrink-0">− {pkr(value)}</span>
+      </div>
+      <div className="flex items-center gap-2 mt-1 pl-3.5">
+        <div className="h-1 flex-1 rounded-full bg-muted overflow-hidden">
+          <div className={`h-full ${bar}`} style={{ width: `${pct(value)}%` }} />
+        </div>
+        <span className="text-[10px] text-muted-foreground shrink-0">{hint}</span>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="bg-card border border-border rounded-xl overflow-hidden flex flex-col">
+      {/* Header — region + the month's net */}
+      <div className="px-5 py-3.5 border-b border-border flex items-center justify-between gap-3 bg-slate-50">
+        <h4 className="flex items-center gap-2 text-foreground font-semibold" style={{ fontFamily: "var(--font-display)" }}>
+          <MapPin className="w-4 h-4 text-brand-600 dark:text-brand-500 shrink-0" strokeWidth={2} />
+          {row.region_name}
+        </h4>
+        <div className="text-right">
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Net · {monthLabel(period)}</p>
+          <p className={`text-base tabular-nums font-medium ${fin.net >= 0 ? "text-success-700 dark:text-success-500" : "text-danger-700 dark:text-danger-500"}`}>
+            {pkr(fin.net)}
+          </p>
+        </div>
+      </div>
+
+      {/* Operations — current snapshot */}
+      <div className="px-5 py-3.5 border-b border-border">
+        <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">Operations · current</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <Stat label="Headcount" value={money(row.active_headcount)} />
+          <Stat label="Incidents YTD" value={money(row.incidents_ytd)} />
+          <Stat label="No-shows 30d" value={money(row.no_shows_30d)} />
+          <Stat label="Receivables" value={pkr(row.receivables_outstanding)} tone="danger" />
+        </div>
+      </div>
+
+      {/* Money — the selected month, revenue then the three cost types */}
+      <div className="px-5 py-3.5 space-y-2.5 flex-1">
+        <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Money · {monthLabel(period)}</p>
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="text-sm text-brand-700 dark:text-brand-500">Revenue</span>
+          <span className="text-sm tabular-nums text-brand-700 dark:text-brand-500">{pkr(fin.revenue)}</span>
+        </div>
+        <CostLine
+          label="Client-linked" value={fin.clientLinked}
+          hint={`${pct(fin.clientLinked).toFixed(0)}%`}
+          bar="bg-slate-400" text="text-muted-foreground"
+        />
+        <CostLine
+          label="Region-specific" value={fin.regionSpecific}
+          hint={`${pct(fin.regionSpecific).toFixed(0)}%`}
+          bar="bg-amber-500" text="text-amber-700 dark:text-amber-500"
+        />
+        <CostLine
+          label="Shared / allocated" value={fin.shared}
+          hint={`${pct(fin.shared).toFixed(0)}%`}
+          bar="bg-indigo-400" text="text-muted-foreground"
+        />
+        <div className="flex items-baseline justify-between gap-3 pt-2 border-t border-border">
+          <span className="text-sm text-foreground font-medium">Net</span>
+          <span className={`text-sm tabular-nums font-medium ${fin.net >= 0 ? "text-success-700 dark:text-success-500" : "text-danger-700 dark:text-danger-500"}`}>
+            {pkr(fin.net)}
+          </span>
+        </div>
+      </div>
+
+      {/* Footer — the view's YTD profit vs last year, kept but de-emphasised */}
+      <div className="px-5 py-2.5 border-t border-border bg-slate-50/60 flex items-center justify-between gap-3">
+        <span className="text-[11px] text-muted-foreground">Profit YTD {pkr(row.profit_ytd)}</span>
+        <span className={`text-[11px] tabular-nums ${ytdDelta >= 0 ? "text-success-700 dark:text-success-500" : "text-danger-700 dark:text-danger-500"}`}>
+          {ytdDelta >= 0 ? "▲" : "▼"} {pkr(Math.abs(ytdDelta))} vs last yr
+        </span>
+      </div>
     </div>
   );
 }

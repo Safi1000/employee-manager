@@ -166,6 +166,8 @@ export default function FinancialReports() {
   // on — see public.partnership_allocation.
   const [newPartnerScope, setNewPartnerScope] = useState<"COMPANY" | "BRANCH">("COMPANY");
   const [newPartnerBranch, setNewPartnerBranch] = useState("");
+  // Regional partners only: what the share bites on. "" = legacy adjusted profit.
+  const [newPartnerBasis, setNewPartnerBasis] = useState<"" | "cash" | "revenue">("");
 
   // Two-tier allocation. `alloc` is the selected month; `allocOpening` is every
   // month before it, which the same function answers in ONE call because profit
@@ -177,6 +179,7 @@ export default function FinancialReports() {
   const [editPartnerId, setEditPartnerId] = useState<string | null>(null);
   const [editPartnerShare, setEditPartnerShare] = useState("");
   const [editPartnerOpening, setEditPartnerOpening] = useState("");
+  const [editPartnerBasis, setEditPartnerBasis] = useState<"" | "cash" | "revenue">("");
 
   const chartPeriodOptions = useMemo(() => {
     const opts: string[] = [];
@@ -757,6 +760,7 @@ export default function FinancialReports() {
       profit_share_percent: share,
       scope: newPartnerScope,
       branch_id: newPartnerScope === "BRANCH" ? newPartnerBranch : null,
+      basis: newPartnerScope === "BRANCH" && newPartnerBasis ? newPartnerBasis : null,
       opening_balance: opening,
       opening_balance_locked: opening !== 0,
     });
@@ -768,6 +772,7 @@ export default function FinancialReports() {
     setNewPartnerName("");
     setNewPartnerShare("");
     setNewPartnerOpening("");
+    setNewPartnerBasis("");
     await loadPartnership();
   };
 
@@ -785,6 +790,7 @@ export default function FinancialReports() {
     setEditPartnerId(p.id);
     setEditPartnerShare(String(p.profit_share_percent));
     setEditPartnerOpening(p.opening_balance_locked ? "" : String(p.opening_balance));
+    setEditPartnerBasis(p.basis ?? "");
   };
 
   const handleSavePartnerEdit = async (p: Partner) => {
@@ -805,6 +811,7 @@ export default function FinancialReports() {
       return;
     }
     const update: Partial<Partner> = { profit_share_percent: share };
+    if (p.scope === "BRANCH") update.basis = editPartnerBasis || null;
     if (!p.opening_balance_locked && editPartnerOpening !== "") {
       update.opening_balance = Number(editPartnerOpening);
       update.opening_balance_locked = true;
@@ -1492,6 +1499,21 @@ export default function FinancialReports() {
                     </ThemedSelect>
                   </div>
                 )}
+                {newPartnerScope === "BRANCH" && (
+                  <div className="md:col-span-2">
+                    <label className="block text-xs text-slate-700 mb-1">Basis</label>
+                    <ThemedSelect
+                      value={newPartnerBasis}
+                      onChange={(e) => setNewPartnerBasis(e.target.value as "" | "cash" | "revenue")}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                    >
+                      <option value="">Adjusted profit</option>
+                      <option value="cash">Cash (Net Cash)</option>
+                      <option value="revenue">Revenue (Total Income)</option>
+                    </ThemedSelect>
+                    <p className="text-[10px] text-slate-500 mt-1">What the share is a % of.</p>
+                  </div>
+                )}
                 <div className="md:col-span-2">
                   <label className="block text-xs text-slate-700 mb-1">Profit Share %</label>
                   <input
@@ -1584,17 +1606,37 @@ export default function FinancialReports() {
                               </td>
                               <td className="px-4 py-3 text-sm text-right">
                                 {editing ? (
-                                  <input
-                                    type="number"
-                                    step="0.001"
-                                    min="0"
-                                    max="100"
-                                    value={editPartnerShare}
-                                    onChange={(e) => setEditPartnerShare(e.target.value)}
-                                    className="w-20 px-2 py-1 border border-slate-200 rounded text-sm text-right"
-                                  />
+                                  <div className="flex flex-col items-end gap-1">
+                                    <input
+                                      type="number"
+                                      step="0.001"
+                                      min="0"
+                                      max="100"
+                                      value={editPartnerShare}
+                                      onChange={(e) => setEditPartnerShare(e.target.value)}
+                                      className="w-20 px-2 py-1 border border-slate-200 rounded text-sm text-right"
+                                    />
+                                    {p.scope === "BRANCH" && (
+                                      <ThemedSelect
+                                        value={editPartnerBasis}
+                                        onChange={(e) => setEditPartnerBasis(e.target.value as "" | "cash" | "revenue")}
+                                        className="w-32 px-2 py-1 border border-slate-200 rounded text-xs"
+                                      >
+                                        <option value="">Adjusted profit</option>
+                                        <option value="cash">Cash</option>
+                                        <option value="revenue">Revenue</option>
+                                      </ThemedSelect>
+                                    )}
+                                  </div>
                                 ) : (
-                                  <span className="text-brand-600">{Number(p.profit_share_percent)}%</span>
+                                  <>
+                                    <span className="text-brand-600">{Number(p.profit_share_percent)}%</span>
+                                    {p.scope === "BRANCH" && p.basis && (
+                                      <div className="text-[10px] text-slate-500">
+                                        {p.basis === "cash" ? "Net Cash" : "Total Income"}
+                                      </div>
+                                    )}
+                                  </>
                                 )}
                               </td>
                               <td className="px-4 py-3 text-sm text-right text-slate-700">
