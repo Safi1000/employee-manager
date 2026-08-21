@@ -756,8 +756,11 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     let advance = 0;
     for (const r of filtered) {
       advance += r.advance;
-      if (r.disbursed) disbursed += r.net_salary;
-      else notDisbursed += r.net_salary;
+      // Disbursed = cash actually paid out (Amount Paid); Not Disbursed = what's
+      // still owed (Balance). Both hold for partial payments, not just the flag.
+      const paid = Math.round(r.amount_paid || 0);
+      disbursed += paid;
+      notDisbursed += Math.max(0, Math.round(r.net_salary) - paid);
     }
     return { disbursed, notDisbursed, advance };
   }, [filtered]);
@@ -2301,20 +2304,19 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                       {selectedRow.status === "Cleared" ? "Mark Pending" : "Mark Cleared"}
                     </Button>
                     <Button
-                      variant={selectedRow.amount_paid > 0 ? "secondary" : "primary"}
+                      variant="primary"
                       size="sm"
-                      disabled={savingId === selectedRow.employee.id}
+                      // Salaries can't be un-disbursed, so a fully-paid row's
+                      // button is a disabled "Disbursed" marker — never a reversal.
+                      disabled={
+                        savingId === selectedRow.employee.id ||
+                        Math.round(selectedRow.amount_paid || 0) >= Math.round(selectedRow.net_salary)
+                      }
                       onClick={() => {
-                        // Fully paid (paid ≥ net) → Un-disburse (return all paid).
-                        // Otherwise validate the Payment Amount against the Balance
-                        // and open the date modal to pay it.
+                        // Validate the Payment Amount against the Balance, then open
+                        // the date modal to pay it.
                         const paidSoFar = Math.round(selectedRow.amount_paid || 0);
                         const balance = Math.round(selectedRow.net_salary) - paidSoFar;
-                        const fullyPaid = selectedRow.amount_paid > 0 && balance <= 0;
-                        if (fullyPaid) {
-                          settlePayment(selectedRow, 0);
-                          return;
-                        }
                         const payNow = Math.round(Number(paymentAmountDraft) || 0);
                         if (payNow <= 0) {
                           setRowError("Enter a Payment Amount greater than 0.");
@@ -2329,9 +2331,8 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                         setRowDisburseTarget(selectedRow);
                       }}
                     >
-                      {selectedRow.amount_paid > 0 &&
-                      selectedRow.amount_paid >= Math.round(selectedRow.net_salary)
-                        ? "Un-disburse"
+                      {Math.round(selectedRow.amount_paid || 0) >= Math.round(selectedRow.net_salary)
+                        ? "Disbursed"
                         : selectedRow.amount_paid > 0
                           ? "Pay balance"
                           : "Disburse"}
@@ -2545,17 +2546,20 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
         size="md"
       >
         {(() => {
-          const candidates = filtered.filter((r) => !r.disbursed && r.net_salary > 0);
-          const total = candidates.reduce((s, r) => s + r.net_salary, 0);
+          // Pay each row its outstanding Balance (Net − Amount Paid), matching
+          // what handleBulkDisburse actually moves — never the full Net Salary.
+          const remainingOf = (r: RowState) => Math.round(r.net_salary) - Math.round(r.amount_paid || 0);
+          const candidates = filtered.filter((r) => remainingOf(r) > 0);
+          const total = candidates.reduce((s, r) => s + remainingOf(r), 0);
           return (
             <div className="space-y-4">
               <div className="bg-slate-50 border border-slate-200 rounded-md p-3 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-slate-600">Visible non-disbursed rows</span>
+                  <span className="text-slate-600">Rows with an unpaid balance</span>
                   <span className="text-slate-900">{candidates.length}</span>
                 </div>
                 <div className="flex justify-between mt-1">
-                  <span className="text-slate-600">Total to disburse</span>
+                  <span className="text-slate-600">Total balance to disburse</span>
                   <span className="text-slate-900">PKR {total.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between mt-1">
