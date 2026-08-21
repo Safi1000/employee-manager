@@ -54,7 +54,7 @@ const computeBalance = (opening: number, entries: AccountEntry[]): { balance: nu
 
 const PAYMENT_METHODS = ["CASH", "BANK_TRANSFER", "FUEL_CARD", "CHEQUE"] as const;
 
-export default function Partners() {
+export default function Partners({ embedded = false }: { embedded?: boolean } = {}) {
   const { profile } = useAuth();
   const companyId = profile?.view_as_company ?? profile?.company_id ?? null;
 
@@ -319,18 +319,32 @@ export default function Partners() {
 
   return (
     <>
-      <Header
-        title="Partner Accounts"
-        subtitle="Running ledger per partner — drawings, contributions, profit allocations"
-        actions={
-          <Button variant="primary" size="md" onClick={openAddPartner}>
-            <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
-            Add Partner
-          </Button>
-        }
-      />
+      {!embedded && (
+        <Header
+          title="Partner Accounts"
+          subtitle="Running ledger per partner — drawings, contributions, profit allocations"
+          actions={
+            <Button variant="primary" size="md" onClick={openAddPartner}>
+              <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
+              Add Partner
+            </Button>
+          }
+        />
+      )}
 
-      <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
+      <div className={embedded ? "" : "flex-1 overflow-y-auto px-3 py-4 md:p-8"}>
+        {embedded && (
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <div>
+              <h3 className="text-lg text-slate-900">RMD Statements</h3>
+              <p className="text-sm text-slate-500">Running ledger per partner — drawings, contributions, profit allocations</p>
+            </div>
+            <Button variant="primary" size="md" onClick={openAddPartner}>
+              <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
+              Add Partner
+            </Button>
+          </div>
+        )}
         {error && (
           <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />

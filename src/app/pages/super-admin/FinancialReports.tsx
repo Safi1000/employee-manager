@@ -11,6 +11,7 @@ import {
 } from "../../lib/excel";
 import Modal from "../../components/Modal";
 import Button from "../../components/Button";
+import Partners from "./Partners";
 import {
   supabase,
   fetchAllRows,
@@ -101,7 +102,7 @@ const formatPeriod = (periodMonth: string) => {
 };
 
 export default function FinancialReports() {
-  const [activeTab, setActiveTab] = useState<"pl" | "clients" | "partnership">("pl");
+  const [activeTab, setActiveTab] = useState<"pl" | "clients" | "partnership" | "rmd">("pl");
   const [branches, setBranches] = useState<Branch[]>([]);
   const [plBranchFilter, setPlBranchFilter] = useState<string>("all");
   const [statementBranchFilter, setStatementBranchFilter] = useState<string>("all");
@@ -869,6 +870,7 @@ export default function FinancialReports() {
         title="Financial Reports"
         subtitle="P&L and client statements"
         actions={
+          activeTab === "rmd" ? undefined : (
           <ExportButton
             onExport={() => {
               if (activeTab === "pl") {
@@ -937,6 +939,7 @@ export default function FinancialReports() {
               }
             }}
           />
+          )
         }
       />
 
@@ -953,6 +956,7 @@ export default function FinancialReports() {
                 { key: "pl", label: "Profit & Loss" },
                 { key: "clients", label: "Client Statements" },
                 { key: "partnership", label: "Partnership Report" },
+                { key: "rmd", label: "RMD Statements" },
               ] as const).map((tab) => (
                 <button
                   key={tab.key}
@@ -1808,6 +1812,12 @@ export default function FinancialReports() {
               <p className="mt-4 text-xs text-slate-500">
                 Remaining balance carries forward: this month's remaining becomes next month's opening. Use the month selector to step through history.
               </p>
+            </div>
+          )}
+
+          {activeTab === "rmd" && (
+            <div className="p-4 md:p-6">
+              <Partners embedded />
             </div>
           )}
         </div>
