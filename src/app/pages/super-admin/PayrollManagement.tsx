@@ -216,11 +216,9 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     const [attRes, payRes, advRes, attHistRes, apRes, lvRes] = await Promise.all([
       supabase.rpc("attendance_period_counts", { p_start: start, p_end: end }),
       supabase.from("payslips").select("*").eq("period_month", period),
-      supabase
-        .from("advances")
-        .select("employee_id, amount")
-        .gte("advance_date", start)
-        .lte("advance_date", end),
+      // Outstanding advance balance (Σ advances − Σ recovered on prior payslips),
+      // so a partly-recovered advance carries forward instead of vanishing.
+      supabase.rpc("employee_advance_outstanding", { p_period_start: start }),
       supabase.rpc("attendance_leave_history", {
         p_window_start: carryWindowStartIso,
         p_until: start,
@@ -297,7 +295,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     setPayslipsMap(pMap);
     const advMap = new Map<string, number>();
     (advRes.data ?? []).forEach((a: any) => {
-      advMap.set(a.employee_id, (advMap.get(a.employee_id) ?? 0) + Number(a.amount));
+      advMap.set(a.employee_id, Number(a.outstanding) || 0);
     });
     setAdvancesByEmployee(advMap);
     // attendance_leave_history returns one row per (employee, month) with cnt.
@@ -634,20 +632,26 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       const earnedWorked = ap ? ap.earned : perDay * rawPresent;
       const paidLeavePay = perDay * countableLeaves;
       const earned = Math.round(earnedWorked + paidLeavePay);
-      merged.final_salary = Math.max(0, Math.round(earned + merged.bonus - merged.deductions));
-      // Income tax: 1% of (final_salary - 50000) when > 50000.
-      merged.income_tax = merged.final_salary > 50000
-        ? Math.round((merged.final_salary - 50000) * 0.01)
+      // Salary earned from attendance, before allowance. Income tax is figured on
+      // THIS so the allowance itself stays untaxed.
+      const earnedSalary = Math.max(0, Math.round(earned + merged.bonus - merged.deductions));
+      // Income tax: 1% of (earned salary - 50000) when > 50000.
+      merged.income_tax = earnedSalary > 50000
+        ? Math.round((earnedSalary - 50000) * 0.01)
         : 0;
       // EOBI: flat amount from the employee's contract, falling back to their client.
       merged.eobi = eobiByEmployee.get(emp.id) ?? 0;
-      // Allowance is always disbursed alongside salary, untaxed, regardless of
-      // attendance — so it's added flat on top of the (clamped) net.
-      merged.net_salary =
-        Math.max(
-          0,
-          Math.round(merged.final_salary - merged.income_tax - merged.eobi - merged.advance),
-        ) + Math.round(merged.allowance);
+      // Allowance is part of Final Salary now — the reports (which read
+      // final_salary) count it, and the advance recovers from it too. It is no
+      // longer "always paid".
+      merged.final_salary = earnedSalary + Math.round(merged.allowance);
+      // Recover as much of the OUTSTANDING advance (computedAdvance) as this
+      // month's pay can bear; the rest carries to next month. Stored advance =
+      // what was ACTUALLY recovered, so next month's outstanding stays correct.
+      // If the advance swallows the whole pay, net is zero.
+      const deductible = Math.max(0, merged.final_salary - merged.income_tax - merged.eobi);
+      merged.advance = Math.min(computedAdvance, deductible);
+      merged.net_salary = Math.max(0, deductible - merged.advance);
       return merged;
     });
   }, [employees, payslipsMap, attendanceAgg, attPayroll, advancesByEmployee, allowedLeavesByEmployee, eobiByEmployee, carriedAllowance, leaveOverrides, selectedPeriod, rowEdits]);
@@ -1319,14 +1323,14 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     line("Earned (Per Day × Paid Days)", `PKR ${Math.round((row.per_day_salary ?? 0) * row.effective_present_days).toLocaleString()}`);
     line("Bonus", `PKR ${row.bonus.toLocaleString()}`);
     line("Deductions", `PKR ${row.deductions.toLocaleString()}`);
+    if (row.allowance > 0) line("Allowance", `+ PKR ${Math.round(row.allowance).toLocaleString()}`);
     y += 4;
     doc.setFontSize(12);
-    line("Final Salary (Earned + Bonus − Deductions)", `PKR ${row.final_salary.toLocaleString()}`);
+    line("Final Salary (Earned + Bonus − Deductions + Allowance)", `PKR ${row.final_salary.toLocaleString()}`);
     doc.setFontSize(11);
     if (row.income_tax > 0) line("Income Tax (1% over PKR 50,000)", `− PKR ${Math.round(row.income_tax).toLocaleString()}`);
     if (row.eobi > 0) line("EOBI", `− PKR ${Math.round(row.eobi).toLocaleString()}`);
     line("Advance", `− PKR ${row.advance.toLocaleString()}`);
-    if (row.allowance > 0) line("Allowance (always paid)", `+ PKR ${Math.round(row.allowance).toLocaleString()}`);
     y += 6;
     doc.setFontSize(14);
     line("Net Salary", `PKR ${row.net_salary.toLocaleString()}`);
@@ -2022,8 +2026,27 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                   </div>
 
                   <div className="pt-3 border-t border-slate-200 space-y-2">
+                    {/* Allowance sits ABOVE Final Salary and is part of it — the
+                        reports read final_salary, so this makes it count. */}
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500">Allowance</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-success-700">+ PKR</span>
+                        <input
+                          type="number"
+                          min={0}
+                          value={selectedRow.allowance}
+                          onChange={(e) =>
+                            updateEdit(selectedRow.employee.id, {
+                              allowance: Math.max(0, Number(e.target.value) || 0),
+                            })
+                          }
+                          className="w-24 px-2 py-1 border border-slate-200 rounded text-sm text-right"
+                        />
+                      </div>
+                    </div>
                     <div className="flex justify-between">
-                      <span className="text-slate-500">Final Salary</span>
+                      <span className="text-slate-500">Final Salary (incl. allowance)</span>
                       <span className="text-slate-900">PKR {selectedRow.final_salary.toLocaleString()}</span>
                     </div>
                     {selectedRow.income_tax > 0 && (
@@ -2041,23 +2064,6 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                     <div className="flex justify-between">
                       <span className="text-slate-500">Advance</span>
                       <span className="text-danger-700">− PKR {Math.round(selectedRow.advance).toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-slate-500">Allowance (always paid)</span>
-                      <div className="flex items-center gap-1">
-                        <span className="text-success-700">+ PKR</span>
-                        <input
-                          type="number"
-                          min={0}
-                          value={selectedRow.allowance}
-                          onChange={(e) =>
-                            updateEdit(selectedRow.employee.id, {
-                              allowance: Math.max(0, Number(e.target.value) || 0),
-                            })
-                          }
-                          className="w-24 px-2 py-1 border border-slate-200 rounded text-sm text-right"
-                        />
-                      </div>
                     </div>
                     <div className="flex justify-between pt-1 border-t border-slate-100">
                       <span className="text-base text-slate-900">Net Salary</span>
@@ -2310,8 +2316,14 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                   <span className="text-slate-600">Deductions</span>
                   <span className="text-danger-600">− PKR {payslipData.deductions.toLocaleString()}</span>
                 </div>
+                {payslipData.allowance > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Allowance</span>
+                    <span className="text-success-600">+ PKR {Math.round(payslipData.allowance).toLocaleString()}</span>
+                  </div>
+                )}
                 <div className="flex justify-between pt-2 border-t border-slate-200">
-                  <span className="text-slate-700">Final Salary</span>
+                  <span className="text-slate-700">Final Salary (incl. allowance)</span>
                   <span className="text-slate-900">PKR {payslipData.final_salary.toLocaleString()}</span>
                 </div>
                 {payslipData.income_tax > 0 && (
