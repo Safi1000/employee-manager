@@ -1851,6 +1851,8 @@ export type Payslip = {
   allowance: number;
   final_salary: number;
   net_salary: number;
+  /** Cumulative cash actually handed over. Balance = net_salary − amount_paid. */
+  amount_paid: number;
   payment_mode: PaymentMode;
   bank_account_id: string | null;
   cheque_id: string | null;

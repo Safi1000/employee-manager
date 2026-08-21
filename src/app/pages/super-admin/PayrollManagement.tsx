@@ -44,6 +44,8 @@ type RowState = {
   allowance: number;
   final_salary: number;
   net_salary: number;
+  /** Cumulative cash actually paid out for this payslip (persisted). */
+  amount_paid: number;
   payment_mode: PaymentMode;
   bank_account_id: string | null;
   cheque_id: string | null;
@@ -149,6 +151,9 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
   const [bulkDisburseDate, setBulkDisburseDate] = useState<string>(todayISO());
   const [rowDisburseTarget, setRowDisburseTarget] = useState<RowState | null>(null);
   const [rowDisburseDate, setRowDisburseDate] = useState<string>(todayISO());
+  // Cumulative amount to pay this payslip, as typed in the drawer. The disburse
+  // action moves the DELTA (draft − already paid); Balance = net − draft.
+  const [amountPaidDraft, setAmountPaidDraft] = useState<string>("");
   const [bulkMode, setBulkMode] = useState<PaymentMode>("Cash");
   const [bulkBankId, setBulkBankId] = useState<string>("");
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
@@ -564,6 +569,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
         allowance: Number(existing?.allowance ?? emp.allowance ?? 0),
         final_salary: 0,
         net_salary: 0,
+        amount_paid: Number(existing?.amount_paid ?? 0),
         payment_mode: (existing?.payment_mode ?? "Cash") as PaymentMode,
         bank_account_id: existing?.bank_account_id ?? null,
         cheque_id: existing?.cheque_id ?? null,
@@ -723,6 +729,19 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     [rows, selectedId]
   );
 
+  // Amount Paid defaults to the full Net Salary for an unpaid payslip, or to
+  // whatever has already been paid for a partial one. Re-seeded only when the
+  // employee or month changes — a live attendance edit must NOT reset it, so
+  // Balance keeps reflecting the new Net against the fixed amount already paid.
+  useEffect(() => {
+    if (!selectedId) { setAmountPaidDraft(""); return; }
+    const r = rows.find((x) => x.employee.id === selectedId);
+    if (!r) return;
+    const paid = Number(r.amount_paid || 0);
+    setAmountPaidDraft(String(paid > 0 ? Math.round(paid) : Math.round(r.net_salary)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, selectedPeriod]);
+
   // Load the stored override into the editor whenever the employee or the month
   // changes — otherwise a figure typed for one guard would sit in the box while
   // a different guard's row was on screen.
@@ -770,6 +789,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     allowance: row.allowance,
     final_salary: row.final_salary,
     net_salary: row.net_salary,
+    amount_paid: row.amount_paid ?? 0,
     payment_mode: row.payment_mode,
     bank_account_id:
       row.payment_mode === "Bank"
@@ -837,6 +857,56 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     if (upErr) throw upErr;
   };
 
+  const firstOfNextMonth = (periodMonth: string) => {
+    const [y, m] = periodMonth.split("-").map(Number);
+    return firstOfMonth(new Date(y, m, 1)); // m is 1-based, so index m = next month
+  };
+  const overpayNote = (periodMonth: string) =>
+    `Payroll overpayment carry-forward · ${formatPeriod(periodMonth)}`;
+
+  /**
+   * Keep a single "advance" row that carries this period's overpayment (paid −
+   * net, when positive) into next month, where employee_advance_outstanding
+   * picks it up and deducts it. Idempotent: one marker row per (employee,
+   * period), reconciled to the current overpaid amount — so it nets with any
+   * manual advance the employee has rather than double-counting, and re-saving
+   * never stacks duplicates. Deleting/zeroing it reverses its journal entry.
+   */
+  const syncOverpayAdvance = async (
+    employeeId: string,
+    periodMonth: string,
+    overpay: number,
+  ): Promise<void> => {
+    const note = overpayNote(periodMonth);
+    const target = Math.max(0, Math.round(overpay));
+    const { data: existingRows } = await supabase
+      .from("advances")
+      .select("id, amount")
+      .eq("employee_id", employeeId)
+      .eq("notes", note);
+    const existing = (existingRows ?? [])[0] as { id: string; amount: number } | undefined;
+    if (target <= 0) {
+      if (existing) await supabase.from("advances").delete().eq("id", existing.id);
+      return;
+    }
+    if (existing) {
+      if (Math.round(Number(existing.amount)) !== target) {
+        await supabase
+          .from("advances")
+          .update({ amount: target, advance_date: firstOfNextMonth(periodMonth) })
+          .eq("id", existing.id);
+      }
+    } else {
+      await supabase.from("advances").insert({
+        employee_id: employeeId,
+        amount: target,
+        advance_date: firstOfNextMonth(periodMonth),
+        payment_mode: "Cash",
+        notes: note,
+      });
+    }
+  };
+
   // Item 4: a friendlier message when a write is blocked by the period-close
   // guard (raised as a Postgres P0001 exception from enforce_period_lock).
   const friendlyError = (err: any): string => {
@@ -867,7 +937,23 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     setSavingId(row.employee.id);
     setError(null);
     try {
-      await savePayslip(row);
+      // Save records edits; it does NOT move money (that's Disburse's job). But
+      // it re-derives the disbursed flag from what's ALREADY been paid against
+      // the current Net: Balance 0 (or overpaid) ⇒ Disbursed, otherwise leave it
+      // Pending. This is how a payslip that Net dropped to match its paid amount
+      // flips to Disbursed, and how one that Net rose past its paid amount stops
+      // pretending to be fully paid.
+      const paid = Math.round(row.amount_paid || 0);
+      const net = Math.round(row.net_salary);
+      const disbursed = paid > 0 && paid >= net;
+      await savePayslip({
+        ...row,
+        disbursed,
+        disbursed_at: disbursed ? row.disbursed_at ?? new Date().toISOString() : null,
+        status: disbursed ? "Cleared" : row.status,
+      });
+      // Overpaid (paid > net, e.g. attendance later cut Net) carries to next month.
+      await syncOverpayAdvance(row.employee.id, row.period_month, paid - net);
       setRowEdits((prev) => {
         const next = new Map(prev);
         next.delete(row.employee.id);
@@ -923,7 +1009,14 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     }
   };
 
-  const toggleDisbursed = async (row: RowState, dateOverride?: string) => {
+  /**
+   * Settle a payslip to a target cumulative Amount Paid, moving only the DELTA
+   * (target − already paid) through cash/bank. Paying more moves money out;
+   * setting a lower target (down to 0 = un-disburse) returns it. Disbursed is
+   * derived: fully paid (paid ≥ net) ⇒ Disbursed, else Pending. Any overpayment
+   * (paid > net) is carried to next month as an advance.
+   */
+  const settlePayment = async (row: RowState, targetPaid: number, dateOverride?: string) => {
     // Item 3: synchronous re-entry guard — blocks rapid double/triple clicks
     // from firing this twice before the first finishes.
     if (disburseLockRef.current) return;
@@ -932,157 +1025,113 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     setError(null);
     setRowError(null);
     try {
-      if (!row.disbursed) {
-        const disburseIso = dateOverride
-          ? new Date(`${dateOverride}T12:00:00`).toISOString()
-          : new Date().toISOString();
+      const already = Math.round(row.amount_paid || 0);
+      const target = Math.max(0, Math.round(targetPaid));
+      const net = Math.round(row.net_salary);
+      const pay = target - already; // > 0 pays out; < 0 returns to the company
+      if (pay === 0) {
+        setRowError("Amount Paid is unchanged — nothing to settle.");
+        return;
+      }
+      const disburseIso = dateOverride
+        ? new Date(`${dateOverride}T12:00:00`).toISOString()
+        : new Date().toISOString();
 
-        // ---- Phase 1: validate only (no mutations yet) ----
-        if (row.net_salary <= 0) {
-          setRowError("Net salary must be greater than 0 to disburse.");
+      // ---- Phase 1: validate funds for the money actually moving now ----
+      let bank: (typeof banks)[number] | undefined;
+      if (row.payment_mode === "Bank") {
+        if (!row.bank_account_id) {
+          setRowError("Select a bank account before disbursing.");
           return;
         }
-        let bank: (typeof banks)[number] | undefined;
-        if (row.payment_mode === "Bank") {
-          if (!row.bank_account_id) {
-            setRowError("Select a bank account before disbursing.");
-            return;
-          }
-          bank = banks.find((b) => b.id === row.bank_account_id);
-          if (!bank) {
-            setRowError("Bank account not found.");
-            return;
-          }
-          if (row.net_salary > Number(bank.balance)) {
-            setRowError("Selected bank account balance is insufficient.");
-            return;
-          }
-        } else if (row.payment_mode === "Cheque") {
+        bank = banks.find((b) => b.id === row.bank_account_id);
+        if (!bank) {
+          setRowError("Bank account not found.");
+          return;
+        }
+        if (pay > 0 && pay > Number(bank.balance)) {
+          setRowError("Selected bank account balance is insufficient for this payment.");
+          return;
+        }
+      } else if (row.payment_mode === "Cheque") {
+        if (pay > 0) {
           if (!row.cheque_id) {
             setRowError("Select a cheque before disbursing.");
             return;
           }
-          const ownPrev = row.payslip_id ? row.net_salary : 0;
+          const ownPrev = row.payslip_id ? Number(row.net_salary) : 0;
           const remaining = chequeRemaining(row.cheque_id, ownPrev);
-          if (row.net_salary > remaining + 0.005) {
-            setRowError(`Net salary (PKR ${row.net_salary.toLocaleString()}) exceeds the cheque's remaining capacity (PKR ${remaining.toLocaleString()}).`);
-            return;
-          }
-        } else {
-          if (row.net_salary > cashBalance) {
-            setRowError("Cash balance is insufficient.");
+          if (pay > remaining + 0.005) {
+            setRowError(`Payment (PKR ${pay.toLocaleString()}) exceeds the cheque's remaining capacity (PKR ${remaining.toLocaleString()}).`);
             return;
           }
         }
+      } else {
+        if (pay > 0 && pay > cashBalance) {
+          setRowError("Cash balance is insufficient for this payment.");
+          return;
+        }
+      }
 
-        // ---- Phase 2: atomically claim the disbursement (item 3) ----
-        // Ensure the payslip row exists, then flip disbursed false→true only if
-        // it isn't already disbursed. Only the winner proceeds to move money,
-        // so concurrent clicks / tabs can never pay the same salary twice.
-        let payslipId = row.payslip_id;
-        if (!payslipId) {
-          const { data: up, error: upErr } = await supabase
-            .from("payslips")
-            .upsert(buildPayslipPayload({ ...row, disbursed: false, disbursed_at: null }), {
-              onConflict: "employee_id,period_month",
-            })
-            .select("id")
-            .single();
-          if (upErr) throw upErr;
-          payslipId = (up as { id: string }).id;
-        }
-        const { data: claimRows, error: claimErr } = await supabase
+      // ---- Phase 2: claim optimistically on the paid amount ----
+      // Update only if amount_paid still equals our baseline, so concurrent
+      // clicks / tabs can never apply the same delta twice (the triple-pay guard,
+      // now delta-aware for partial payments).
+      let payslipId = row.payslip_id;
+      if (!payslipId) {
+        const { data: up, error: upErr } = await supabase
           .from("payslips")
-          .update({
-            disbursed: true,
-            disbursed_at: disburseIso,
-            status: "Cleared",
-            updated_at: new Date().toISOString(),
+          .upsert(buildPayslipPayload({ ...row, amount_paid: already }), {
+            onConflict: "employee_id,period_month",
           })
-          .eq("id", payslipId)
-          .eq("disbursed", false)
-          .select("id");
-        if (claimErr) throw claimErr;
-        if (!claimRows || claimRows.length === 0) {
-          setRowError("This salary is already disbursed for this month.");
+          .select("id, amount_paid")
+          .single();
+        if (upErr) throw upErr;
+        payslipId = (up as { id: string }).id;
+        if (Math.round(Number((up as { amount_paid: number }).amount_paid)) !== already) {
+          setRowError("This payslip changed in another tab — reloading.");
           await loadAll();
           return;
         }
+      }
+      const newDisbursed = target > 0 && target >= net;
+      const { data: claimRows, error: claimErr } = await supabase
+        .from("payslips")
+        .update({
+          amount_paid: target,
+          disbursed: newDisbursed,
+          disbursed_at: newDisbursed ? disburseIso : null,
+          status: newDisbursed ? "Cleared" : row.status,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", payslipId)
+        .eq("amount_paid", already)
+        .select("id");
+      if (claimErr) throw claimErr;
+      if (!claimRows || claimRows.length === 0) {
+        setRowError("This payslip changed in another tab — reloading.");
+        await loadAll();
+        return;
+      }
 
-        // ---- Phase 3: move the money; release the claim if anything fails ----
-        try {
-          if (row.payment_mode === "Bank" && bank) {
-            const { error: bErr } = await supabase
-              .from("bank_accounts")
-              .update({
-                balance: Number(bank.balance) - row.net_salary,
-                updated_at: new Date().toISOString(),
-              })
-              .eq("id", bank.id);
-            if (bErr) throw bErr;
-            await supabase.from("bank_transactions").insert({
-              bank_account_id: bank.id,
-              kind: "payroll",
-              amount: row.net_salary,
-              cash_delta: 0,
-              account_delta: -row.net_salary,
-              description: `Payroll ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
-            });
-          } else if (row.payment_mode === "Cheque") {
-            // Cheque-paid: cheque clearance handles the bank side; nothing here.
-          } else {
-            const { data: trea } = await supabase
-              .from("treasury")
-              .select("id, cash_balance")
-              .limit(1)
-              .maybeSingle();
-            if (trea) {
-              await supabase
-                .from("treasury")
-                .update({
-                  cash_balance: Number(trea.cash_balance) - row.net_salary,
-                  updated_at: new Date().toISOString(),
-                })
-                .eq("id", trea.id);
-            }
-            await supabase.from("bank_transactions").insert({
-              bank_account_id: null,
-              kind: "payroll",
-              amount: row.net_salary,
-              cash_delta: -row.net_salary,
-              account_delta: 0,
-              description: `Payroll (cash) ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
-            });
-          }
-          // Persist any other edited values alongside the disbursed flag.
-          await savePayslip({ ...row, disbursed: true, disbursed_at: disburseIso, status: "Cleared" });
-        } catch (moneyErr) {
-          // Release the claim so the row can be retried after the issue is fixed.
-          await supabase.from("payslips").update({ disbursed: false, disbursed_at: null }).eq("id", payslipId);
-          throw moneyErr;
-        }
-      } else {
-        if (row.payment_mode === "Bank" && row.bank_account_id) {
-          const bank = banks.find((b) => b.id === row.bank_account_id);
-          if (bank) {
-            await supabase
-              .from("bank_accounts")
-              .update({
-                balance: Number(bank.balance) + row.net_salary,
-                updated_at: new Date().toISOString(),
-              })
-              .eq("id", bank.id);
-          }
+      // ---- Phase 3: move `pay`; roll the claim back if anything fails ----
+      try {
+        if (row.payment_mode === "Bank" && bank) {
+          const { error: bErr } = await supabase
+            .from("bank_accounts")
+            .update({ balance: Number(bank.balance) - pay, updated_at: new Date().toISOString() })
+            .eq("id", bank.id);
+          if (bErr) throw bErr;
           await supabase.from("bank_transactions").insert({
-            bank_account_id: row.bank_account_id,
+            bank_account_id: bank.id,
             kind: "payroll",
-            amount: row.net_salary,
+            amount: Math.abs(pay),
             cash_delta: 0,
-            account_delta: row.net_salary,
-            description: `Reverse payroll ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
+            account_delta: -pay,
+            description: `${pay < 0 ? "Reverse payroll" : "Payroll"} ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
           });
         } else if (row.payment_mode === "Cheque") {
-          // Cheque-paid: do not touch bank balance. Un-disburse only flips the flag.
+          // Cheque-paid: cheque clearance handles the bank side; nothing here.
         } else {
           const { data: trea } = await supabase
             .from("treasury")
@@ -1092,26 +1141,46 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
           if (trea) {
             await supabase
               .from("treasury")
-              .update({
-                cash_balance: Number(trea.cash_balance) + row.net_salary,
-                updated_at: new Date().toISOString(),
-              })
+              .update({ cash_balance: Number(trea.cash_balance) - pay, updated_at: new Date().toISOString() })
               .eq("id", trea.id);
           }
           await supabase.from("bank_transactions").insert({
             bank_account_id: null,
             kind: "payroll",
-            amount: row.net_salary,
-            cash_delta: row.net_salary,
+            amount: Math.abs(pay),
+            cash_delta: -pay,
             account_delta: 0,
-            description: `Reverse payroll (cash) ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
+            description: `${pay < 0 ? "Reverse payroll (cash)" : "Payroll (cash)"} ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
           });
         }
-        await savePayslip({ ...row, disbursed: false, disbursed_at: null });
+        // Persist any other drawer edits (bonus, allowance, payment mode…) too.
+        await savePayslip({
+          ...row,
+          amount_paid: target,
+          disbursed: newDisbursed,
+          disbursed_at: newDisbursed ? disburseIso : null,
+          status: newDisbursed ? "Cleared" : row.status,
+        });
+      } catch (moneyErr) {
+        // Release the claim so the row can be retried after the issue is fixed.
+        await supabase
+          .from("payslips")
+          .update({
+            amount_paid: already,
+            disbursed: row.disbursed,
+            disbursed_at: row.disbursed_at,
+            status: row.status,
+          })
+          .eq("id", payslipId);
+        throw moneyErr;
       }
+
+      // Overpaid portion (target − net, when positive) carries to next month.
+      await syncOverpayAdvance(row.employee.id, row.period_month, target - net);
       await loadAll();
     } catch (err: any) {
       setRowError(friendlyError(err));
+      await loadAll();
     } finally {
       setSavingId(null);
       disburseLockRef.current = false;
@@ -1121,16 +1190,20 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
   const handleBulkDisburse = async () => {
     if (disburseLockRef.current) return;
     setError(null);
-    const candidates = filtered.filter((r) => !r.disbursed && r.net_salary > 0);
+    // Pay each row its remaining Balance (Net − already paid) and top it up to
+    // fully paid. Rows already settled (or overpaid) have no balance and are
+    // skipped, so a partially-paid row only gets its shortfall, never double pay.
+    const remainingOf = (r: RowState) => Math.round(r.net_salary) - Math.round(r.amount_paid || 0);
+    const candidates = filtered.filter((r) => remainingOf(r) > 0);
     if (candidates.length === 0) {
-      setError("No pending rows in the current filter to disburse.");
+      setError("No unpaid balances in the current filter to disburse.");
       return;
     }
     if (bulkMode === "Bank" && !bulkBankId) {
       setError("Select a bank account for bulk disbursement.");
       return;
     }
-    const total = candidates.reduce((s, r) => s + r.net_salary, 0);
+    const total = candidates.reduce((s, r) => s + remainingOf(r), 0);
     if (bulkMode === "Cash") {
       if (total > cashBalance) {
         setError(`Cash balance (PKR ${cashBalance.toLocaleString()}) is insufficient for PKR ${total.toLocaleString()}.`);
@@ -1154,9 +1227,11 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     const bulkDisburseIso = new Date(`${bulkDisburseDate}T12:00:00`).toISOString();
     try {
       for (const row of candidates) {
-        const net = row.net_salary;
-        // Item 3: atomically claim this payslip before moving money; skip if it
-        // was already disbursed (e.g. concurrently in another tab).
+        const net = Math.round(row.net_salary);
+        const already = Math.round(row.amount_paid || 0);
+        const remaining = net - already; // money moving now for this row
+        // Item 3: atomically claim this payslip before moving money; skip if its
+        // paid amount changed (e.g. concurrently in another tab).
         let payslipId = row.payslip_id;
         if (!payslipId) {
           const { data: up, error: upErr } = await supabase
@@ -1166,6 +1241,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                 ...row,
                 payment_mode: bulkMode,
                 bank_account_id: bulkMode === "Bank" ? bulkBankId : null,
+                amount_paid: already,
                 disbursed: false,
                 disbursed_at: null,
               }),
@@ -1179,6 +1255,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
         const { data: claimRows, error: claimErr } = await supabase
           .from("payslips")
           .update({
+            amount_paid: net,
             disbursed: true,
             disbursed_at: bulkDisburseIso,
             status: "Cleared",
@@ -1187,7 +1264,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
             updated_at: new Date().toISOString(),
           })
           .eq("id", payslipId)
-          .eq("disbursed", false)
+          .eq("amount_paid", already)
           .select("id");
         if (claimErr) throw claimErr;
         if (!claimRows || claimRows.length === 0) continue;
@@ -1198,22 +1275,22 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
             .eq("id", bulkBankId)
             .single();
           if (!bankNow) throw new Error("Bank account not found mid-bulk.");
-          if (net > Number(bankNow.balance)) {
+          if (remaining > Number(bankNow.balance)) {
             throw new Error(`Bank balance exhausted at ${row.employee.employee_code}.`);
           }
           await supabase
             .from("bank_accounts")
             .update({
-              balance: Number(bankNow.balance) - net,
+              balance: Number(bankNow.balance) - remaining,
               updated_at: new Date().toISOString(),
             })
             .eq("id", bulkBankId);
           await supabase.from("bank_transactions").insert({
             bank_account_id: bulkBankId,
             kind: "payroll",
-            amount: net,
+            amount: remaining,
             cash_delta: 0,
-            account_delta: -net,
+            account_delta: -remaining,
             description: `Payroll ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
           });
         } else {
@@ -1223,21 +1300,21 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
             .limit(1)
             .maybeSingle();
           if (!trea) throw new Error("Treasury row missing.");
-          if (net > Number(trea.cash_balance)) {
+          if (remaining > Number(trea.cash_balance)) {
             throw new Error(`Cash exhausted at ${row.employee.employee_code}.`);
           }
           await supabase
             .from("treasury")
             .update({
-              cash_balance: Number(trea.cash_balance) - net,
+              cash_balance: Number(trea.cash_balance) - remaining,
               updated_at: new Date().toISOString(),
             })
             .eq("id", trea.id);
           await supabase.from("bank_transactions").insert({
             bank_account_id: null,
             kind: "payroll",
-            amount: net,
-            cash_delta: -net,
+            amount: remaining,
+            cash_delta: -remaining,
             account_delta: 0,
             description: `Payroll (cash) ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
           });
@@ -1246,6 +1323,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
           ...row,
           payment_mode: bulkMode,
           bank_account_id: bulkMode === "Bank" ? bulkBankId : null,
+          amount_paid: net,
           disbursed: true,
           disbursed_at: new Date(`${bulkDisburseDate}T12:00:00`).toISOString(),
           status: "Cleared",
@@ -1749,6 +1827,15 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                             </td>
                             <td className="px-4 py-3 text-sm text-slate-900">
                               PKR {row.net_salary.toLocaleString()}
+                              {(() => {
+                                const bal = Math.round(row.net_salary) - Math.round(row.amount_paid || 0);
+                                if (Math.round(row.amount_paid || 0) === 0 || bal === 0) return null;
+                                return (
+                                  <div className={`text-[11px] font-medium ${bal > 0 ? "text-warning-700" : "text-danger-700"}`}>
+                                    {bal > 0 ? `PKR ${bal.toLocaleString()} owed` : `PKR ${Math.abs(bal).toLocaleString()} overpaid`}
+                                  </div>
+                                );
+                              })()}
                             </td>
                             <td className="px-4 py-3">
                               {/* §28.1: Status + Disbursed merged into a single chip. The
@@ -2071,6 +2158,48 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                     </div>
                   </div>
 
+                  {/* Amount Paid vs Balance — the fix for stale disbursements.
+                      Amount Paid is the cumulative cash handed over; Balance is
+                      Net − Amount Paid. Editing here sets the target for the
+                      Disburse action (which moves only the delta). */}
+                  {(() => {
+                    const paid = Math.max(0, Math.round(Number(amountPaidDraft) || 0));
+                    const balance = Math.round(selectedRow.net_salary) - paid;
+                    // Balance against what's ACTUALLY been paid (stored), which is
+                    // what flags a disbursement gone stale after an attendance edit.
+                    const storedBalance = Math.round(selectedRow.net_salary) - Math.round(selectedRow.amount_paid || 0);
+                    return (
+                      <div className="pt-3 border-t border-slate-200 space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-500 text-sm">Amount Paid</span>
+                          <div className="flex items-center gap-1">
+                            <span className="text-slate-400 text-sm">PKR</span>
+                            <input
+                              type="number"
+                              min={0}
+                              value={amountPaidDraft}
+                              onChange={(e) => setAmountPaidDraft(e.target.value)}
+                              className="w-28 px-2 py-1 border border-slate-200 rounded text-sm text-right"
+                            />
+                          </div>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-500 text-sm">Balance <span className="text-slate-400">(Net − Paid)</span></span>
+                          <span className={`text-sm font-medium ${balance > 0 ? "text-warning-700" : balance < 0 ? "text-danger-700" : "text-success-700"}`}>
+                            PKR {balance.toLocaleString()}
+                          </span>
+                        </div>
+                        {selectedRow.amount_paid > 0 && storedBalance !== 0 && (
+                          <p className={`text-[11px] rounded px-2 py-1 border ${storedBalance > 0 ? "text-warning-800 dark:text-warning-500 bg-warning-50 border-warning-200" : "text-danger-700 bg-danger-50 border-danger-200"}`}>
+                            {storedBalance > 0
+                              ? `PKR ${storedBalance.toLocaleString()} still owed — PKR ${Math.round(selectedRow.amount_paid).toLocaleString()} was paid but Net is now higher. Pay the balance or adjust.`
+                              : `PKR ${Math.abs(storedBalance).toLocaleString()} overpaid — PKR ${Math.round(selectedRow.amount_paid).toLocaleString()} was paid but Net dropped. Save to carry it to next month as an advance.`}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
+
                   <div className="pt-3 border-t border-slate-200 space-y-2">
                     <label className="block text-xs text-slate-500">Payment Mode</label>
                     <ThemedSelect
@@ -2158,18 +2287,29 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                       {selectedRow.status === "Cleared" ? "Mark Pending" : "Mark Cleared"}
                     </Button>
                     <Button
-                      variant={selectedRow.disbursed ? "secondary" : "primary"}
+                      variant={selectedRow.amount_paid > 0 ? "secondary" : "primary"}
                       size="sm"
+                      disabled={savingId === selectedRow.employee.id}
                       onClick={() => {
-                        if (!selectedRow.disbursed) {
+                        // Fully paid (paid ≥ net) → Un-disburse (return all paid).
+                        // Otherwise open the date modal to pay the entered amount.
+                        const fullyPaid =
+                          selectedRow.amount_paid > 0 &&
+                          selectedRow.amount_paid >= Math.round(selectedRow.net_salary);
+                        if (fullyPaid) {
+                          settlePayment(selectedRow, 0);
+                        } else {
                           setRowDisburseDate(todayISO());
                           setRowDisburseTarget(selectedRow);
-                        } else {
-                          toggleDisbursed(selectedRow);
                         }
                       }}
                     >
-                      {selectedRow.disbursed ? "Un-disburse" : "Disburse"}
+                      {selectedRow.amount_paid > 0 &&
+                      selectedRow.amount_paid >= Math.round(selectedRow.net_salary)
+                        ? "Un-disburse"
+                        : selectedRow.amount_paid > 0
+                          ? "Pay balance"
+                          : "Disburse"}
                     </Button>
                   </div>
 
@@ -2497,13 +2637,31 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
         title="Disbursement Date"
         size="sm"
       >
-        {rowDisburseTarget && (
+        {rowDisburseTarget && (() => {
+          const already = Math.round(rowDisburseTarget.amount_paid || 0);
+          const target = Math.max(0, Math.round(Number(amountPaidDraft) || 0));
+          const payNow = target - already;
+          const balAfter = Math.round(rowDisburseTarget.net_salary) - target;
+          return (
           <div className="space-y-4">
             <p className="text-sm text-slate-600">
-              Disbursing payroll for{" "}
-              <span className="text-slate-900">{rowDisburseTarget.employee.full_name}</span>{" "}
-              ({empDisplay(rowDisburseTarget.employee)}) · PKR {rowDisburseTarget.net_salary.toLocaleString()}
+              Paying{" "}
+              <span className="text-slate-900 font-medium">{rowDisburseTarget.employee.full_name}</span>{" "}
+              ({empDisplay(rowDisburseTarget.employee)})
             </p>
+            <div className="rounded-md border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm space-y-1">
+              <div className="flex justify-between"><span className="text-slate-500">Net Salary</span><span className="text-slate-900">PKR {Math.round(rowDisburseTarget.net_salary).toLocaleString()}</span></div>
+              {already > 0 && (
+                <div className="flex justify-between"><span className="text-slate-500">Already paid</span><span className="text-slate-900">PKR {already.toLocaleString()}</span></div>
+              )}
+              <div className="flex justify-between font-medium"><span className="text-slate-700">Paying now</span><span className={payNow < 0 ? "text-warning-700" : "text-slate-900"}>PKR {payNow.toLocaleString()}</span></div>
+              <div className="flex justify-between border-t border-slate-200 pt-1">
+                <span className="text-slate-500">Balance after</span>
+                <span className={balAfter > 0 ? "text-warning-700" : balAfter < 0 ? "text-danger-700" : "text-success-700"}>
+                  PKR {balAfter.toLocaleString()}{balAfter < 0 ? " (overpaid → next month)" : balAfter > 0 ? " (still owed)" : ""}
+                </span>
+              </div>
+            </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Disbursement Date *</label>
               <input
@@ -2524,13 +2682,14 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                 className="flex-1"
                 disabled={!rowDisburseDate}
                 onClick={async () => {
-                  const target = rowDisburseTarget;
+                  const tgt = rowDisburseTarget;
                   const date = rowDisburseDate;
+                  const paidTo = Math.max(0, Math.round(Number(amountPaidDraft) || 0));
                   setRowDisburseTarget(null);
-                  await toggleDisbursed(target, date);
+                  await settlePayment(tgt, paidTo, date);
                 }}
               >
-                Confirm & Disburse
+                {payNow < 0 ? "Confirm & Adjust" : "Confirm & Disburse"}
               </Button>
               <Button
                 variant="secondary"
@@ -2541,7 +2700,8 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
               </Button>
             </div>
           </div>
-        )}
+          );
+        })()}
       </Modal>
     </>
   );
