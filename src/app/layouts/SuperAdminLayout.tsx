@@ -217,7 +217,8 @@ export default function SuperAdminLayout() {
   const finance = buildGroup("Finance", "/super-admin/finance", [
     BANKS,
     EXPENSES,
-    CASHFLOW,
+    // Cash Flow is now merged into Financial Reports as a top-level tab, so its
+    // own nav link is hidden (CASHFLOW LinkDef and the /cashflow route are kept).
     REPORTS,
     // Unhidden and rehomed. It used to sit in the hidden Profit-Share group,
     // which is why it disappeared with it; it is a financial report about

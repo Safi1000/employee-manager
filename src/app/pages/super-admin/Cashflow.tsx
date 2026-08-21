@@ -536,34 +536,39 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
         />
       )}
 
-      <div className={embedded ? "" : "flex-1 overflow-y-auto px-3 py-4 md:p-8"}>
-        {embedded && exportBtn && <div className="flex justify-end mb-4">{exportBtn}</div>}
+      {/* Embedded in Financial Reports: same white-card + bordered tab-header
+          frame as that page's tabs, so the two top tabs read as one report. */}
+      <div className={embedded ? "bg-white rounded-lg border border-slate-200" : "flex-1 overflow-y-auto px-3 py-4 md:p-8"}>
         {error && (
-          <div className="mb-4 p-3 rounded-md border border-danger-200 bg-danger-50 text-danger-700 text-sm">
+          <div className={`${embedded ? "m-4 md:m-6 mb-0" : "mb-4"} p-3 rounded-md border border-danger-200 bg-danger-50 text-danger-700 text-sm`}>
             {error}
           </div>
         )}
 
-        <div className="flex items-center gap-2 mb-6">
-          {([
-            { key: "cashflow", label: "Cash Flow" },
-            { key: "clients", label: "Client Statements" },
-          ] as const).map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setActiveTab(t.key)}
-              className={`px-4 py-2 rounded-md text-sm transition-colors ${
-                activeTab === t.key
-                  ? "bg-brand-600 text-[#fff]"
-                  : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+        <div className={embedded ? "p-4 md:p-6 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3" : "flex items-center gap-2 mb-6"}>
+          <div className="flex items-center gap-2">
+            {([
+              { key: "cashflow", label: "Cash Flow" },
+              { key: "clients", label: "Client Statements" },
+            ] as const).map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setActiveTab(t.key)}
+                className={`px-4 py-2 rounded-md text-sm whitespace-nowrap transition-colors ${
+                  activeTab === t.key
+                    ? "bg-brand-600 text-[#fff]"
+                    : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          {embedded && exportBtn}
         </div>
 
+        <div className={embedded ? "p-4 md:p-6" : ""}>
         {activeTab === "clients" && (
           <ClientStatementsTab
             rows={cashStatementRows}
@@ -573,6 +578,7 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
             onPeriodChange={setStatementPeriod}
             loading={loading || loadingStatements}
             onView={setSelectedStatement}
+            bare={embedded}
           />
         )}
 
@@ -626,191 +632,76 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
           </span>
         </div>
 
-        {/* Summary cards (clickable → breakdown) */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
-          <SummaryTile
-            label="Revenue"
-            value={currency(totals.revenue)}
-            icon={<Wallet className="w-5 h-5 text-success-600" />}
-            accent="emerald"
-            subtitle="Payments received"
-            active={openMetric === "revenue"}
-            onClick={() => toggleMetric("revenue")}
-          />
-          <SummaryTile
-            label="Total Payroll"
-            value={currency(totals.payroll)}
-            icon={<TrendingDown className="w-5 h-5 text-slate-700" />}
-            accent="slate"
-            subtitle="Disbursed net salaries"
-            active={openMetric === "payroll"}
-            onClick={() => toggleMetric("payroll")}
-          />
-          <SummaryTile
-            label="Total Expenses"
-            value={currency(totals.expenses)}
-            icon={<TrendingDown className="w-5 h-5 text-danger-600" />}
-            accent="rose"
-            subtitle="Cash/Bank + paid payables"
-            active={openMetric === "expenses"}
-            onClick={() => toggleMetric("expenses")}
-          />
-          <SummaryTile
-            label="Total Advances"
-            value={currency(totals.advances)}
-            icon={<TrendingDown className="w-5 h-5 text-warning-600" />}
-            accent="rose"
-            subtitle="By advance / clear date"
-            active={openMetric === "advances"}
-            onClick={() => toggleMetric("advances")}
-          />
-          <SummaryTile
-            label="Net"
-            value={currency(totals.net)}
-            icon={<TrendingUp className="w-5 h-5 text-slate-700" />}
-            accent={totals.net >= 0 ? "emerald" : "rose"}
-            subtitle="Revenue − Payroll − Exp − Adv"
-          />
-        </div>
-
-        {/* Breakdown panel for the selected card */}
-        {openMetric && (
-          <div className="bg-white rounded-lg border border-slate-200 mb-6">
-            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
-              <h3 className="text-base text-slate-900">
-                {METRICS.find((m) => m.key === openMetric)?.label} breakdown
-                <span className="text-slate-400 text-sm"> · {periodLabel}</span>
-              </h3>
-              <span className="text-sm text-slate-700">{currency(totals[openMetric])}</span>
-            </div>
-            <div className="divide-y divide-slate-100">
-              {breakdown.length === 0 && (
-                <div className="px-6 py-6 text-sm text-slate-500 text-center">
-                  No {openMetric} in this period.
-                </div>
-              )}
-              {breakdown.map((g) => {
-                const expanded = openGroups.has(g.name);
-                return (
-                  <div key={g.name}>
-                    <button
-                      type="button"
-                      onClick={() => toggleGroup(g.name)}
-                      className="w-full px-6 py-3 flex items-center justify-between hover:bg-slate-50 text-left"
-                    >
-                      <span className="flex items-center gap-2 text-sm text-slate-800">
-                        {expanded ? (
-                          <ChevronDown className="w-4 h-4 text-slate-400" />
-                        ) : (
-                          <ChevronRight className="w-4 h-4 text-slate-400" />
-                        )}
-                        {g.name}
-                        <span className="text-xs text-slate-400">
-                          ({g.items.length} {g.items.length === 1 ? "item" : "items"})
-                        </span>
-                      </span>
-                      <span className="text-sm text-slate-700">{currency(g.total)}</span>
-                    </button>
-                    {expanded && (
-                      <div className="bg-slate-50/60">
-                        {g.items.map((it, idx) => (
-                          <div
-                            key={idx}
-                            className="px-6 py-2 pl-12 flex items-center justify-between text-sm border-t border-slate-100"
-                          >
-                            <span className="text-slate-600">
-                              <span className="text-slate-400 font-mono text-xs mr-3">{it.date}</span>
-                              {it.detail}
-                            </span>
-                            <span className="text-slate-700">{currency(it.amount)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
+        {/* Cash Flow Statement — same layout as the Profit & Loss statement */}
         <div className="bg-white rounded-lg border border-slate-200 mb-6">
-          <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+          <div className="p-6 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-base text-slate-900">{mode === "month" ? "Daily Cashflow" : "Monthly Cashflow"}</h2>
-              <p className="text-xs text-slate-500 mt-1">
-                Cash-basis: revenue = payments received, payroll = disbursed net salaries,
-                expenses = Cash/Bank + paid payables, advances by advance/clear date.
+              <h3 className="text-lg text-slate-900 mb-1">Cash Flow Statement</h3>
+              <p className="text-sm text-slate-500">
+                For {periodLabel} · cash-basis: revenue = received, payroll = disbursed, expenses = paid.
               </p>
             </div>
             <Button variant="secondary" size="sm" onClick={() => window.print()}>
               Download Report (PDF)
             </Button>
           </div>
-
           <div className="p-6">
             {loading ? (
-              <div className="h-[350px] flex items-center justify-center text-slate-500 text-sm">
-                Loading cashflow…
-              </div>
-            ) : rows.length === 0 ? (
-              <div className="h-[350px] flex items-center justify-center text-slate-500 text-sm">
-                No data for {periodLabel}.
-              </div>
+              <div className="py-12 text-center text-slate-500 text-sm">Loading…</div>
             ) : (
-              <ResponsiveContainer width="100%" height={350}>
-                <LineChart data={rows}>
-                  <CartesianGrid {...CHART_GRID} />
-                  <XAxis dataKey="label" tick={{ fill: "var(--color-slate-500)", fontSize: 12 }} axisLine={{ stroke: "var(--border)" }} tickLine={{ stroke: "var(--border)" }} />
-                  <YAxis tick={{ fill: "var(--color-slate-500)", fontSize: 12 }} axisLine={{ stroke: "var(--border)" }} tickLine={{ stroke: "var(--border)" }} />
-                  <Tooltip {...CHART_TT} formatter={(v: number) => currency(Number(v))} />
-                  <Legend {...CHART_LEGEND} />
-                  <Line {...CHART_ANIM} type="monotone" dataKey="revenue" stroke="var(--color-success-500)" strokeWidth={2} name="Revenue" />
-                  <Line {...CHART_ANIM} type="monotone" dataKey="expenses" stroke="var(--color-danger-500)" strokeWidth={2} name="Expenses" />
-                  <Line {...CHART_ANIM} type="monotone" dataKey="payroll" stroke="var(--color-info-600)" strokeWidth={2} name="Payroll" />
-                </LineChart>
-              </ResponsiveContainer>
+              <div className="space-y-6">
+                {/* Cash Inflows */}
+                <div>
+                  <h4 className="text-sm text-slate-900 mb-3 pb-2 border-b border-slate-200">Cash Inflows</h4>
+                  <div className="space-y-2 mb-3">
+                    <div className="flex justify-between items-center pl-4">
+                      <span className="text-sm text-slate-600">Payments Received</span>
+                      <span className="text-sm text-success-600">{currency(totals.revenue)}</span>
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center pl-4 pt-2 border-t border-slate-200">
+                    <span className="text-sm text-slate-900">Total Cash Inflows</span>
+                    <span className="text-sm text-success-600">{currency(totals.revenue)}</span>
+                  </div>
+                </div>
+
+                {/* Cash Outflows */}
+                <div>
+                  <h4 className="text-sm text-slate-900 mb-3 pb-2 border-b border-slate-200">Cash Outflows</h4>
+                  <div className="space-y-2 mb-3">
+                    {[
+                      { name: "Payroll Paid (disbursed net salaries)", amount: totals.payroll },
+                      { name: "Expenses Paid (Cash/Bank + paid payables)", amount: totals.expenses },
+                      { name: "Advances", amount: totals.advances },
+                    ].map((item) => (
+                      <div key={item.name} className="flex justify-between items-center pl-4">
+                        <span className="text-sm text-slate-600">{item.name}</span>
+                        <span className="text-sm text-danger-600">{currency(item.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex justify-between items-center pl-4 pt-2 border-t border-slate-200">
+                    <span className="text-sm text-slate-900">Total Cash Outflows</span>
+                    <span className="text-sm text-danger-600">
+                      {currency(totals.payroll + totals.expenses + totals.advances)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Net Cash Flow */}
+                <div className="pt-4 border-t-2 border-slate-300">
+                  <div className="flex justify-between items-center">
+                    <span className="text-base text-slate-900">Net Cash Flow</span>
+                    <span className={`text-lg ${totals.net >= 0 ? "text-success-600" : "text-danger-600"}`}>
+                      {currency(totals.net)}
+                    </span>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          <div className="bg-white rounded-lg border border-slate-200 p-6">
-            <h3 className="text-base mb-6 text-slate-900">Revenue vs Expenses</h3>
-            {loading ? (
-              <div className="h-[300px] flex items-center justify-center text-slate-500 text-sm">Loading…</div>
-            ) : (
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={rows}>
-                  <CartesianGrid {...CHART_GRID} />
-                  <XAxis dataKey="label" tick={{ fill: "var(--color-slate-500)", fontSize: 12 }} axisLine={{ stroke: "var(--border)" }} tickLine={{ stroke: "var(--border)" }} />
-                  <YAxis tick={{ fill: "var(--color-slate-500)", fontSize: 12 }} axisLine={{ stroke: "var(--border)" }} tickLine={{ stroke: "var(--border)" }} />
-                  <Tooltip {...CHART_TT} formatter={(v: number) => currency(Number(v))} />
-                  <Legend {...CHART_LEGEND} />
-                  <Bar {...CHART_ANIM} dataKey="revenue" fill="var(--color-success-500)" radius={[6, 6, 0, 0]} name="Revenue" />
-                  <Bar {...CHART_ANIM} dataKey="expenses" fill="var(--color-danger-500)" radius={[6, 6, 0, 0]} name="Expenses" />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-
-          <div className="bg-white rounded-lg border border-slate-200 p-6">
-            <h3 className="text-base mb-6 text-slate-900">Payroll Impact</h3>
-            {loading ? (
-              <div className="h-[300px] flex items-center justify-center text-slate-500 text-sm">Loading…</div>
-            ) : (
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={rows}>
-                  <CartesianGrid {...CHART_GRID} />
-                  <XAxis dataKey="label" tick={{ fill: "var(--color-slate-500)", fontSize: 12 }} axisLine={{ stroke: "var(--border)" }} tickLine={{ stroke: "var(--border)" }} />
-                  <YAxis tick={{ fill: "var(--color-slate-500)", fontSize: 12 }} axisLine={{ stroke: "var(--border)" }} tickLine={{ stroke: "var(--border)" }} />
-                  <Tooltip {...CHART_TT} formatter={(v: number) => currency(Number(v))} />
-                  <Bar {...CHART_ANIM} dataKey="payroll" fill="var(--color-info-600)" radius={[6, 6, 0, 0]} name="Payroll Cost" />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        </div>
 
         <div className="bg-white rounded-lg border border-slate-200">
           <div className="p-6 border-b border-slate-200">
@@ -870,6 +761,7 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
         </div>
         </>
         )}
+        </div>
       </div>
 
       <Modal
@@ -974,7 +866,7 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
  * Only the labels change, because only the basis changed.
  */
 function ClientStatementsTab({
-  rows, totals, period, periodOptions, onPeriodChange, loading, onView,
+  rows, totals, period, periodOptions, onPeriodChange, loading, onView, bare = false,
 }: {
   rows: CashStatementRow[];
   totals: { received: number; payroll: number; expenses: number; regional: number; ho: number; net: number };
@@ -983,6 +875,7 @@ function ClientStatementsTab({
   onPeriodChange: (p: string) => void;
   loading: boolean;
   onView: (r: CashStatementRow) => void;
+  bare?: boolean;
 }) {
   // Region → Head Office breakdown. A client's ho_share is HO × client_received /
   // company_received, so a region's allocation is just the sum of its clients'
@@ -1005,8 +898,8 @@ function ClientStatementsTab({
   }, [rows]);
 
   return (
-    <div className="bg-white rounded-lg border border-slate-200">
-      <div className="p-6 flex flex-wrap items-end justify-between gap-3">
+    <div className={bare ? "" : "bg-white rounded-lg border border-slate-200"}>
+      <div className={`${bare ? "pb-6" : "p-6"} flex flex-wrap items-end justify-between gap-3`}>
         <div>
           <h3 className="text-lg text-slate-900 mb-1">Client Statements — Cash Basis</h3>
           <p className="text-sm text-slate-500">
