@@ -834,7 +834,16 @@ export default function FinancialReports() {
   return (
     <>
       <Header
-        title="Financial Reports"
+        title={
+          <ThemedSelect
+            value={topTab}
+            onChange={(e) => setTopTab(e.target.value as "financial" | "cashflow")}
+            className="!text-lg md:!text-xl !font-bold tracking-tight text-foreground !bg-transparent !border-0 !ring-0 !shadow-none gap-1 -ml-2 px-2 py-1 rounded-md hover:!bg-accent"
+          >
+            <option value="financial">Financial Report</option>
+            <option value="cashflow">Cash Flow</option>
+          </ThemedSelect>
+        }
         subtitle="P&L, client statements and cash flow"
         actions={
           topTab === "cashflow" || activeTab === "rmd" ? undefined : (
@@ -911,27 +920,6 @@ export default function FinancialReports() {
       />
 
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
-        {/* Top-level switch: the Financial Report and Cash Flow pages, merged. */}
-        <div className="flex items-center gap-2 mb-6">
-          {([
-            { key: "financial", label: "Financial Report" },
-            { key: "cashflow", label: "Cash Flow" },
-          ] as const).map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setTopTab(t.key)}
-              className={`px-4 py-2 rounded-md text-sm transition-colors ${
-                topTab === t.key
-                  ? "bg-brand-600 text-[#fff]"
-                  : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-
         {topTab === "cashflow" && <Cashflow embedded />}
 
         {topTab === "financial" && (

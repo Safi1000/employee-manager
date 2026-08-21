@@ -1,7 +1,8 @@
 import { ReactNode } from "react";
 
 interface HeaderProps {
-  title: string;
+  /** A string renders as the page heading; a node (e.g. a dropdown) replaces it. */
+  title: ReactNode;
   /** Optional small subtitle rendered under the title. */
   subtitle?: string;
   actions?: ReactNode;

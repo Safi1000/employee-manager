@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import { supabase } from "../../lib/supabase";
-import type { Advance, Expense, InvoicePayment, Payslip, Cheque, Client, ExpenseCategory, ClientType } from "../../lib/supabase";
+import type { Advance, Expense, InvoicePayment, Payslip, Cheque, Client, ExpenseCategory, ClientType, Branch } from "../../lib/supabase";
 import { useRegion, withRegion } from "../../lib/region";
 import { Download, Loader2 } from "lucide-react";
 import Modal from "../../components/Modal";
@@ -12,7 +12,7 @@ import { exportClientStatements } from "../../lib/excel";
 import { formatDate } from "../../lib/date";
 
 // One cash event, already resolved to a cash-basis effective date.
-type CashItem = { date: string; amount: number; group: string; detail: string };
+type CashItem = { date: string; amount: number; group: string; detail: string; branchId: string | null };
 
 type MetricKey = "revenue" | "payroll" | "expenses" | "advances";
 
@@ -101,6 +101,11 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
   const [advances, setAdvances] = useState<Advance[]>([]);
   const [cheques, setCheques] = useState<Cheque[]>([]);
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [branchFilter, setBranchFilter] = useState<string>("all");
+  // employee_id → branch, so advances (which carry only employee_id) can be
+  // scoped by the branch dropdown. Payroll branch rides on the payslip join.
+  const [employeeBranch, setEmployeeBranch] = useState<Map<string, string | null>>(new Map());
   // client_id → type + employee category on payslips power the cash-basis P&L
   // split (security vs guard revenue, guard vs office payroll). Kept as the raw
   // rows so the same money the cashflow totals also feeds the P&L breakdown.
@@ -110,7 +115,7 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
   const [error, setError] = useState<string | null>(null);
 
   // Period filter (item 1).
-  const [mode, setMode] = useState<PeriodMode>("all");
+  const [mode] = useState<PeriodMode>("month");
   const [selMonth, setSelMonth] = useState<string>(todayMonthKey());
   const [fromDate, setFromDate] = useState<string>("");
   const [toDate, setToDate] = useState<string>("");
@@ -151,7 +156,7 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
       setLoading(true);
       setError(null);
       try {
-        const [payRes, psRes, exRes, advRes, chqRes, cliRes, empRes, catRes] = await Promise.all([
+        const [payRes, psRes, exRes, advRes, chqRes, cliRes, empRes, catRes, brRes] = await Promise.all([
           // Flow sources all carry branch_id, so the global region selector scopes
           // this projection to the region's own inflows/outflows. Client/employee
           // name lookups stay unfiltered — they're just label maps.
@@ -174,11 +179,12 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
           ),
           withRegion(supabase.from("cheques").select("id, status, cleared_at"), regionId),
           supabase.from("clients").select("*").order("name"),
-          supabase.from("employees").select("id, full_name"),
+          supabase.from("employees").select("id, full_name, branch_id"),
           supabase.from("expense_categories").select("*"),
+          supabase.from("branches").select("*").order("is_head_office", { ascending: false }).order("name"),
         ]);
 
-        for (const r of [payRes, psRes, exRes, advRes, chqRes, cliRes, empRes, catRes]) {
+        for (const r of [payRes, psRes, exRes, advRes, chqRes, cliRes, empRes, catRes, brRes]) {
           if (r.error) throw r.error;
         }
         if (cancelled) return;
@@ -188,9 +194,11 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
         setAdvances((advRes.data ?? []) as Advance[]);
         setCheques((chqRes.data ?? []) as Cheque[]);
         setCategories((catRes.data ?? []) as ExpenseCategory[]);
+        setBranches((brRes.data ?? []) as Branch[]);
         setClients((cliRes.data ?? []) as Client[]);
         setClientNames(new Map((cliRes.data ?? []).map((c: any) => [c.id, c.name])));
         setEmployeeNames(new Map((empRes.data ?? []).map((e: any) => [e.id, e.full_name])));
+        setEmployeeBranch(new Map((empRes.data ?? []).map((e: any) => [e.id, e.branch_id ?? null])));
       } catch (e: any) {
         if (!cancelled) setError(e.message ?? "Failed to load cashflow data.");
       } finally {
@@ -218,6 +226,10 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
     };
     const clientName = (id: string | null) => (id && clientNames.get(id)) || "Unassigned";
     const employeeName = (id: string | null) => (id && employeeNames.get(id)) || "Unknown employee";
+    // Branch resolution for the branch dropdown. Office expenses (no client) are
+    // Head Office's, matching how the accrual P&L attributes them.
+    const headOfficeId = branches.find((b) => b.is_head_office)?.id ?? null;
+    const clientBranch = new Map(clients.map((c) => [c.id, c.branch_id ?? null]));
 
     const revenue: CashItem[] = [];
     for (const p of invoicePayments) {
@@ -228,6 +240,7 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
         amount: Number(p.amount ?? 0),
         group: clientName(p.client_id),
         detail: clientName(p.client_id),
+        branchId: p.client_id ? clientBranch.get(p.client_id) ?? null : null,
       });
     }
 
@@ -244,6 +257,7 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
         amount: Number(p.net_salary ?? 0),
         group: name,
         detail: `${name} · ${monthLabel(monthKey(isoDay(p.period_month) ?? date))}`,
+        branchId: (p as unknown as { employee?: { branch_id?: string | null } }).employee?.branch_id ?? employeeBranch.get(p.employee_id) ?? null,
       });
     }
 
@@ -264,6 +278,7 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
         amount: Number(e.amount ?? 0),
         group: cat,
         detail: e.description?.trim() || cat,
+        branchId: e.client_id ? clientBranch.get(e.client_id) ?? null : headOfficeId,
       });
     }
 
@@ -273,11 +288,11 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
         a.payment_mode === "Cheque" ? chequeClearedDay(a.cheque_id) : isoDay(a.advance_date);
       if (!date) continue;
       const name = employeeName(a.employee_id);
-      advancesItems.push({ date, amount: Number(a.amount ?? 0), group: name, detail: name });
+      advancesItems.push({ date, amount: Number(a.amount ?? 0), group: name, detail: name, branchId: employeeBranch.get(a.employee_id) ?? null });
     }
 
     return { revenue, payroll, expenses: expensesItems, advances: advancesItems };
-  }, [invoicePayments, payslips, expenses, advances, cheques, clientNames, employeeNames]);
+  }, [invoicePayments, payslips, expenses, advances, cheques, clientNames, employeeNames, clients, branches, employeeBranch]);
 
   // Payroll cash for the statement month, split across the clients each guard
   // actually worked for. Only this needs a round trip — revenue and expenses
@@ -409,14 +424,18 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
     };
   }, [mode, selMonth, fromDate, toDate]);
 
+  const branchOk = useMemo(
+    () => (bid: string | null) => branchFilter === "all" || bid === branchFilter,
+    [branchFilter],
+  );
   const filtered = useMemo(
     () => ({
-      revenue: allItems.revenue.filter((i) => inPeriod(i.date)),
-      payroll: allItems.payroll.filter((i) => inPeriod(i.date)),
-      expenses: allItems.expenses.filter((i) => inPeriod(i.date)),
-      advances: allItems.advances.filter((i) => inPeriod(i.date)),
+      revenue: allItems.revenue.filter((i) => inPeriod(i.date) && branchOk(i.branchId)),
+      payroll: allItems.payroll.filter((i) => inPeriod(i.date) && branchOk(i.branchId)),
+      expenses: allItems.expenses.filter((i) => inPeriod(i.date) && branchOk(i.branchId)),
+      advances: allItems.advances.filter((i) => inPeriod(i.date) && branchOk(i.branchId)),
     }),
-    [allItems, inPeriod],
+    [allItems, inPeriod, branchOk],
   );
 
   const sum = (items: CashItem[]) => items.reduce((s, i) => s + i.amount, 0);
@@ -441,7 +460,9 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
       return c && c.status === "cleared" ? isoDay(c.cleared_at) : null;
     };
     const clientType = new Map(clients.map((c) => [c.id, (c.client_type ?? "security_services") as ClientType]));
+    const clientBranch = new Map(clients.map((c) => [c.id, c.branch_id ?? null]));
     const catName = new Map(categories.map((c) => [c.id, c.name]));
+    const headOfficeId = branches.find((b) => b.is_head_office)?.id ?? null;
 
     // --- Revenue (cash received), split by client type ---
     let securityRevenue = 0;
@@ -449,6 +470,7 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
     for (const p of invoicePayments) {
       const date = isoDay(p.payment_date);
       if (!date || !inPeriod(date)) continue;
+      if (!branchOk(p.client_id ? clientBranch.get(p.client_id) ?? null : null)) continue;
       const amt = Number(p.amount ?? 0);
       if ((p.client_id ? clientType.get(p.client_id) : "security_services") === "guard_deployment") guardRevenue += amt;
       else securityRevenue += amt;
@@ -462,8 +484,10 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
       const date =
         p.payment_mode === "Cheque" ? clearedDay(p.cheque_id) : isoDay(p.disbursed_at ?? p.period_month);
       if (!date || !inPeriod(date)) continue;
+      const emp = (p as unknown as { employee?: { category?: string | null; branch_id?: string | null } }).employee;
+      if (!branchOk(emp?.branch_id ?? employeeBranch.get(p.employee_id) ?? null)) continue;
       const amt = Number(p.net_salary ?? 0);
-      if ((p as unknown as { employee?: { category?: string | null } }).employee?.category === "office_staff") officePayroll += amt;
+      if (emp?.category === "office_staff") officePayroll += amt;
       else guardPayroll += amt;
     }
 
@@ -477,6 +501,8 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
       else if (e.payment_mode === "Cheque") date = clearedDay(e.cheque_id);
       else if (e.payment_mode === "Payable" && e.payable_status === "Paid") date = isoDay(e.paid_at);
       if (!date || !inPeriod(date)) continue;
+      // Office expenses (no client) are Head Office's, same as the accrual P&L.
+      if (!branchOk(e.client_id ? clientBranch.get(e.client_id) ?? null : headOfficeId)) continue;
       const name = (e.category_id ? catName.get(e.category_id) : "") ?? "";
       const amt = Number(e.amount ?? 0);
       if (name === "Taxes") { taxes += amt; continue; }
@@ -505,7 +531,7 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
       officePayroll, opUtilities, opInsurance, opLicenses, opOther, totalOpex,
       operatingProfit, ebt, taxes, netProfit,
     };
-  }, [invoicePayments, payslips, expenses, cheques, clients, categories, inPeriod]);
+  }, [invoicePayments, payslips, expenses, cheques, clients, categories, branches, employeeBranch, inPeriod, branchOk]);
 
   // Aggregation for charts + table. In single-month mode, group by day; otherwise by month.
   const rows: MonthRow[] = useMemo(() => {
@@ -658,49 +684,29 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
 
         {activeTab === "cashflow" && (
         <>
-        {/* Period filter */}
+        {/* Branch + Month filters — same controls as the accrual P&L. */}
         <div className="bg-white rounded-lg border border-slate-200 p-4 mb-6 flex flex-wrap items-center gap-3">
-          <div className="flex gap-1 bg-slate-100 rounded-md p-1">
-            {(["month", "range", "all"] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setMode(m)}
-                className={`px-3 py-1.5 text-sm rounded capitalize transition-colors ${
-                  mode === m ? "bg-white text-brand-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                {m === "all" ? "All time" : m === "month" ? "Month" : "Date range"}
-              </button>
+          <label className="text-sm text-slate-600">Branch:</label>
+          <ThemedSelect
+            value={branchFilter}
+            onChange={(e) => setBranchFilter(e.target.value)}
+            className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+          >
+            <option value="all">All Branches</option>
+            {branches.map((b) => (
+              <option key={b.id} value={b.id}>{b.name}</option>
             ))}
-          </div>
-
-          {mode === "month" && (
-            <input
-              type="month"
-              value={selMonth}
-              onChange={(e) => setSelMonth(e.target.value)}
-              className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600"
-            />
-          )}
-          {mode === "range" && (
-            <div className="flex items-center gap-2">
-              <input
-                type="date"
-                value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
-                className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600"
-              />
-              <span className="text-slate-400 text-sm">to</span>
-              <input
-                type="date"
-                value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
-                className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600"
-              />
-            </div>
-          )}
-
+          </ThemedSelect>
+          <label className="text-sm text-slate-600">Month:</label>
+          <ThemedSelect
+            value={selMonth}
+            onChange={(e) => setSelMonth(e.target.value)}
+            className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+          >
+            {statementPeriodOptions.map((p) => (
+              <option key={p} value={p}>{formatPeriod(p)}</option>
+            ))}
+          </ThemedSelect>
           <span className="text-xs text-slate-500 ml-auto">
             Showing: <span className="text-slate-700">{periodLabel}</span>
           </span>
