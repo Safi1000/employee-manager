@@ -18,7 +18,7 @@ export default function Maintenance() {
         zIndex: 2147483647,
       }}
     >
-      ab mera kela time hai shayan
+      fku2
     </div>
   );
 }
