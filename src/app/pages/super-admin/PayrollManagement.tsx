@@ -151,9 +151,10 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
   const [bulkDisburseDate, setBulkDisburseDate] = useState<string>(todayISO());
   const [rowDisburseTarget, setRowDisburseTarget] = useState<RowState | null>(null);
   const [rowDisburseDate, setRowDisburseDate] = useState<string>(todayISO());
-  // Cumulative amount to pay this payslip, as typed in the drawer. The disburse
-  // action moves the DELTA (draft − already paid); Balance = net − draft.
-  const [amountPaidDraft, setAmountPaidDraft] = useState<string>("");
+  // The amount being paid RIGHT NOW (not cumulative). Disburse adds it to the
+  // stored Amount Paid and moves exactly this much. Defaults to the outstanding
+  // Balance so paying in full stays one click; capped at Balance on submit.
+  const [paymentAmountDraft, setPaymentAmountDraft] = useState<string>("");
   const [bulkMode, setBulkMode] = useState<PaymentMode>("Cash");
   const [bulkBankId, setBulkBankId] = useState<string>("");
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
@@ -729,18 +730,16 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     [rows, selectedId]
   );
 
-  // Amount Paid defaults to the full Net Salary for an unpaid payslip, or to
-  // whatever has already been paid for a partial one. Re-seeded only when the
-  // employee or month changes — a live attendance edit must NOT reset it, so
-  // Balance keeps reflecting the new Net against the fixed amount already paid.
+  // Payment Amount defaults to the outstanding Balance (Net − already paid), so
+  // paying in full is one click. Re-seeded when the employee/month changes OR
+  // when a payment actually lands (amount_paid changes) — but NOT on a live
+  // attendance edit, which moves net_salary while amount_paid stays put.
   useEffect(() => {
-    if (!selectedId) { setAmountPaidDraft(""); return; }
-    const r = rows.find((x) => x.employee.id === selectedId);
-    if (!r) return;
-    const paid = Number(r.amount_paid || 0);
-    setAmountPaidDraft(String(paid > 0 ? Math.round(paid) : Math.round(r.net_salary)));
+    if (!selectedId || !selectedRow) { setPaymentAmountDraft(""); return; }
+    const balance = Math.round(selectedRow.net_salary) - Math.round(selectedRow.amount_paid || 0);
+    setPaymentAmountDraft(String(Math.max(0, balance)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, selectedPeriod]);
+  }, [selectedId, selectedPeriod, selectedRow?.amount_paid]);
 
   // Load the stored override into the editor whenever the employee or the month
   // changes — otherwise a figure typed for one guard would sit in the box while
@@ -2158,43 +2157,58 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                     </div>
                   </div>
 
-                  {/* Amount Paid vs Balance — the fix for stale disbursements.
-                      Amount Paid is the cumulative cash handed over; Balance is
-                      Net − Amount Paid. Editing here sets the target for the
-                      Disburse action (which moves only the delta). */}
+                  {/* Amount Paid (locked, cumulative) + Balance + the Payment
+                      Amount being made now. Disburse adds Payment Amount to
+                      Amount Paid and moves exactly that much. */}
                   {(() => {
-                    const paid = Math.max(0, Math.round(Number(amountPaidDraft) || 0));
-                    const balance = Math.round(selectedRow.net_salary) - paid;
-                    // Balance against what's ACTUALLY been paid (stored), which is
-                    // what flags a disbursement gone stale after an attendance edit.
-                    const storedBalance = Math.round(selectedRow.net_salary) - Math.round(selectedRow.amount_paid || 0);
+                    const paidSoFar = Math.round(selectedRow.amount_paid || 0);
+                    const balance = Math.round(selectedRow.net_salary) - paidSoFar;
+                    const payNow = Math.round(Number(paymentAmountDraft) || 0);
+                    const exceeds = payNow > Math.max(0, balance) + 0.5;
                     return (
                       <div className="pt-3 border-t border-slate-200 space-y-2">
                         <div className="flex justify-between items-center">
-                          <span className="text-slate-500 text-sm">Amount Paid</span>
-                          <div className="flex items-center gap-1">
-                            <span className="text-slate-400 text-sm">PKR</span>
-                            <input
-                              type="number"
-                              min={0}
-                              value={amountPaidDraft}
-                              onChange={(e) => setAmountPaidDraft(e.target.value)}
-                              className="w-28 px-2 py-1 border border-slate-200 rounded text-sm text-right"
-                            />
-                          </div>
+                          <span className="text-slate-500 text-sm">Amount Paid <span className="text-slate-400">(so far)</span></span>
+                          <span className="text-sm font-medium text-slate-900 tabular-nums">PKR {paidSoFar.toLocaleString()}</span>
                         </div>
                         <div className="flex justify-between items-center">
                           <span className="text-slate-500 text-sm">Balance <span className="text-slate-400">(Net − Paid)</span></span>
-                          <span className={`text-sm font-medium ${balance > 0 ? "text-warning-700" : balance < 0 ? "text-danger-700" : "text-success-700"}`}>
+                          <span className={`text-sm font-medium tabular-nums ${balance > 0 ? "text-warning-700" : balance < 0 ? "text-danger-700" : "text-success-700"}`}>
                             PKR {balance.toLocaleString()}
                           </span>
                         </div>
-                        {selectedRow.amount_paid > 0 && storedBalance !== 0 && (
-                          <p className={`text-[11px] rounded px-2 py-1 border ${storedBalance > 0 ? "text-warning-800 dark:text-warning-500 bg-warning-50 border-warning-200" : "text-danger-700 bg-danger-50 border-danger-200"}`}>
-                            {storedBalance > 0
-                              ? `PKR ${storedBalance.toLocaleString()} still owed — PKR ${Math.round(selectedRow.amount_paid).toLocaleString()} was paid but Net is now higher. Pay the balance or adjust.`
-                              : `PKR ${Math.abs(storedBalance).toLocaleString()} overpaid — PKR ${Math.round(selectedRow.amount_paid).toLocaleString()} was paid but Net dropped. Save to carry it to next month as an advance.`}
+                        {selectedRow.amount_paid > 0 && balance !== 0 && (
+                          <p className={`text-[11px] rounded px-2 py-1 border ${balance > 0 ? "text-warning-800 dark:text-warning-500 bg-warning-50 border-warning-200" : "text-danger-700 bg-danger-50 border-danger-200"}`}>
+                            {balance > 0
+                              ? `PKR ${balance.toLocaleString()} still owed — PKR ${paidSoFar.toLocaleString()} paid but Net is now higher. Pay the balance below.`
+                              : `PKR ${Math.abs(balance).toLocaleString()} overpaid — PKR ${paidSoFar.toLocaleString()} paid but Net dropped. Save to carry it to next month as an advance.`}
                           </p>
+                        )}
+                        {/* Payment Amount — the money to move now. Sits directly
+                            above Payment Mode. Capped at Balance. */}
+                        {balance > 0 && (
+                          <div className="pt-1">
+                            <label className="flex justify-between items-center mb-1">
+                              <span className="text-slate-500 text-sm">Payment Amount <span className="text-slate-400">(pay now)</span></span>
+                              <span className="text-[11px] text-brand-600 cursor-pointer hover:underline" onClick={() => setPaymentAmountDraft(String(balance))}>Pay full balance</span>
+                            </label>
+                            <div className="flex items-center gap-1">
+                              <span className="text-slate-400 text-sm">PKR</span>
+                              <input
+                                type="number"
+                                min={0}
+                                max={balance}
+                                value={paymentAmountDraft}
+                                onChange={(e) => setPaymentAmountDraft(e.target.value)}
+                                className={`w-full px-2 py-1 border rounded text-sm text-right ${exceeds ? "border-danger-400 bg-danger-50" : "border-slate-200"}`}
+                              />
+                            </div>
+                            {exceeds && (
+                              <p className="text-[11px] text-danger-700 mt-1">
+                                Payment Amount cannot exceed the Balance of PKR {balance.toLocaleString()}.
+                              </p>
+                            )}
+                          </div>
                         )}
                       </div>
                     );
@@ -2292,16 +2306,27 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                       disabled={savingId === selectedRow.employee.id}
                       onClick={() => {
                         // Fully paid (paid ≥ net) → Un-disburse (return all paid).
-                        // Otherwise open the date modal to pay the entered amount.
-                        const fullyPaid =
-                          selectedRow.amount_paid > 0 &&
-                          selectedRow.amount_paid >= Math.round(selectedRow.net_salary);
+                        // Otherwise validate the Payment Amount against the Balance
+                        // and open the date modal to pay it.
+                        const paidSoFar = Math.round(selectedRow.amount_paid || 0);
+                        const balance = Math.round(selectedRow.net_salary) - paidSoFar;
+                        const fullyPaid = selectedRow.amount_paid > 0 && balance <= 0;
                         if (fullyPaid) {
                           settlePayment(selectedRow, 0);
-                        } else {
-                          setRowDisburseDate(todayISO());
-                          setRowDisburseTarget(selectedRow);
+                          return;
                         }
+                        const payNow = Math.round(Number(paymentAmountDraft) || 0);
+                        if (payNow <= 0) {
+                          setRowError("Enter a Payment Amount greater than 0.");
+                          return;
+                        }
+                        if (payNow > balance + 0.5) {
+                          setRowError(`Payment Amount cannot exceed the Balance of PKR ${balance.toLocaleString()}.`);
+                          return;
+                        }
+                        setRowError(null);
+                        setRowDisburseDate(todayISO());
+                        setRowDisburseTarget(selectedRow);
                       }}
                     >
                       {selectedRow.amount_paid > 0 &&
@@ -2639,8 +2664,10 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       >
         {rowDisburseTarget && (() => {
           const already = Math.round(rowDisburseTarget.amount_paid || 0);
-          const target = Math.max(0, Math.round(Number(amountPaidDraft) || 0));
-          const payNow = target - already;
+          // paymentAmountDraft is the amount paid NOW; it accumulates onto
+          // Amount Paid, so the new cumulative target is already + payNow.
+          const payNow = Math.max(0, Math.round(Number(paymentAmountDraft) || 0));
+          const target = already + payNow;
           const balAfter = Math.round(rowDisburseTarget.net_salary) - target;
           return (
           <div className="space-y-4">
@@ -2684,12 +2711,12 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                 onClick={async () => {
                   const tgt = rowDisburseTarget;
                   const date = rowDisburseDate;
-                  const paidTo = Math.max(0, Math.round(Number(amountPaidDraft) || 0));
+                  const paidTo = already + Math.max(0, Math.round(Number(paymentAmountDraft) || 0));
                   setRowDisburseTarget(null);
                   await settlePayment(tgt, paidTo, date);
                 }}
               >
-                {payNow < 0 ? "Confirm & Adjust" : "Confirm & Disburse"}
+                Confirm &amp; Disburse
               </Button>
               <Button
                 variant="secondary"
