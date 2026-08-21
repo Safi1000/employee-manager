@@ -730,14 +730,12 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
     [rows, selectedId]
   );
 
-  // Payment Amount defaults to the outstanding Balance (Net − already paid), so
-  // paying in full is one click. Re-seeded when the employee/month changes OR
-  // when a payment actually lands (amount_paid changes) — but NOT on a live
-  // attendance edit, which moves net_salary while amount_paid stays put.
+  // Payment Amount starts BLANK — the bank is only ever deducted by the exact
+  // amount the user types, never auto-filled to the full balance. Cleared when
+  // the employee/month changes or a payment lands, so a figure typed for one
+  // guard can't linger on another.
   useEffect(() => {
-    if (!selectedId || !selectedRow) { setPaymentAmountDraft(""); return; }
-    const balance = Math.round(selectedRow.net_salary) - Math.round(selectedRow.amount_paid || 0);
-    setPaymentAmountDraft(String(Math.max(0, balance)));
+    setPaymentAmountDraft("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, selectedPeriod, selectedRow?.amount_paid]);
 
@@ -1097,6 +1095,11 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
         }
       }
       const newDisbursed = target > 0 && target >= net;
+      // Only payment-tracking columns are written here — never the figure columns
+      // (net_salary, final_salary, advance, …) that enforce_payroll_run_lock
+      // guards. That lets a payment be recorded against an approved/locked run
+      // (which is legitimate) AND means no payslip write happens AFTER the money
+      // moves, so a lock rejection can never strand cash outside a payslip.
       const { data: claimRows, error: claimErr } = await supabase
         .from("payslips")
         .update({
@@ -1104,6 +1107,12 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
           disbursed: newDisbursed,
           disbursed_at: newDisbursed ? disburseIso : null,
           status: newDisbursed ? "Cleared" : row.status,
+          payment_mode: row.payment_mode,
+          bank_account_id:
+            row.payment_mode === "Bank" || row.payment_mode === "Cheque"
+              ? row.bank_account_id
+              : null,
+          cheque_id: row.payment_mode === "Cheque" ? row.cheque_id : null,
           updated_at: new Date().toISOString(),
         })
         .eq("id", payslipId)
@@ -1155,14 +1164,10 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
             description: `${pay < 0 ? "Reverse payroll (cash)" : "Payroll (cash)"} ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
           });
         }
-        // Persist any other drawer edits (bonus, allowance, payment mode…) too.
-        await savePayslip({
-          ...row,
-          amount_paid: target,
-          disbursed: newDisbursed,
-          disbursed_at: newDisbursed ? disburseIso : null,
-          status: newDisbursed ? "Cleared" : row.status,
-        });
+        // The claim above already persisted amount_paid / disbursed / routing.
+        // We deliberately do NOT re-save the full payslip here — that would
+        // rewrite the locked figure columns and be rejected AFTER the cash has
+        // already moved. Drawer figure edits are saved separately via Save.
       } catch (moneyErr) {
         // Release the claim so the row can be retried after the issue is fixed.
         await supabase
@@ -1321,15 +1326,9 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
             description: `Payroll (cash) ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
           });
         }
-        await savePayslip({
-          ...row,
-          payment_mode: bulkMode,
-          bank_account_id: bulkMode === "Bank" ? bulkBankId : null,
-          amount_paid: net,
-          disbursed: true,
-          disbursed_at: new Date(`${bulkDisburseDate}T12:00:00`).toISOString(),
-          status: "Cleared",
-        });
+        // The claim above already persisted amount_paid / disbursed / routing.
+        // Re-saving the full payslip here would rewrite the locked figure columns
+        // and be rejected AFTER cash moved (stranding it) — so we don't.
       }
       setIsBulkDisburseOpen(false);
       await loadAll();
@@ -2202,6 +2201,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                                 min={0}
                                 max={balance}
                                 value={paymentAmountDraft}
+                                placeholder={`0 — up to ${balance.toLocaleString()}`}
                                 onChange={(e) => setPaymentAmountDraft(e.target.value)}
                                 className={`w-full px-2 py-1 border rounded text-sm text-right ${exceeds ? "border-danger-400 bg-danger-50" : "border-slate-200"}`}
                               />
