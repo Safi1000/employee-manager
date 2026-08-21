@@ -136,6 +136,10 @@ export default function Cashflow() {
   // (payroll_cash_by_client, migration 0176).
   const [payrollCashByClient, setPayrollCashByClient] = useState<Map<string, number>>(new Map());
   const [loadedStatements, setLoadedStatements] = useState<LoadedStatement[]>([]);
+  // Regional Overhead is an INVOICED-basis figure (pro-rata by Total Invoiced),
+  // so it comes from the revenue-basis call — the same value Financial Reports
+  // shows. Keyed by client so both pages display an identical number.
+  const [revOverheadByClient, setRevOverheadByClient] = useState<Map<string, number>>(new Map());
   const [loadingStatements, setLoadingStatements] = useState(false);
   const [selectedStatement, setSelectedStatement] = useState<CashStatementRow | null>(null);
 
@@ -289,11 +293,14 @@ export default function Cashflow() {
       setLoadingStatements(true);
       const start = firstOfMonth(statementPeriod);
       const end = lastOfMonth(statementPeriod);
-      const [payRes, loadedRes] = await Promise.all([
+      const [payRes, loadedRes, loadedRevRes] = await Promise.all([
         supabase.rpc("payroll_cash_by_client", { p_start: start, p_end: end }),
         // Cash basis: the same apportionment the Financial Reports statement
         // uses on the revenue basis, asked of money that actually moved.
         supabase.rpc("client_statement_loaded", { p_start: start, p_end: end, p_basis: "cash" }),
+        // Revenue basis, for the Regional Overhead column ONLY — it is an
+        // invoiced-basis figure and must match Financial Reports exactly.
+        supabase.rpc("client_statement_loaded", { p_start: start, p_end: end, p_basis: "revenue" }),
       ]);
       if (cancelled) return;
       const m = new Map<string, number>();
@@ -302,6 +309,11 @@ export default function Cashflow() {
       }
       setPayrollCashByClient(m);
       setLoadedStatements((loadedRes.data ?? []) as LoadedStatement[]);
+      const ro = new Map<string, number>();
+      for (const r of ((loadedRevRes.data ?? []) as LoadedStatement[])) {
+        ro.set(r.client_id, Number(r.regional_overhead) || 0);
+      }
+      setRevOverheadByClient(ro);
       setLoadingStatements(false);
     })();
     return () => {
@@ -365,7 +377,9 @@ export default function Cashflow() {
         received: Number(l?.revenue ?? receivedBy.get(c.id) ?? 0),
         payrollPaid: Number(l?.direct_payroll ?? payrollCashByClient.get(c.id) ?? 0),
         expensesPaid: Number(l?.direct_expenses ?? expensesBy.get(c.id) ?? 0),
-        regionalOverhead: Number(l?.regional_overhead ?? 0),
+        // Invoiced-basis (revenue) overhead so it equals the Financial Reports
+        // column exactly; the cash-basis net below is unchanged.
+        regionalOverhead: revOverheadByClient.get(c.id) ?? 0,
         hoShare: Number(l?.ho_share ?? 0),
         netCash: Number(l?.net ?? 0),
         branchId: l?.branch_id ?? c.branch_id ?? null,
@@ -373,7 +387,7 @@ export default function Cashflow() {
         payments: (paymentsBy.get(c.id) ?? []).sort((a, b) => b.date.localeCompare(a.date)),
       };
     });
-  }, [clients, invoicePayments, expenses, cheques, payrollCashByClient, loadedStatements, statementPeriod]);
+  }, [clients, invoicePayments, expenses, cheques, payrollCashByClient, loadedStatements, revOverheadByClient, statementPeriod]);
 
   const statementTotals = useMemo(() => {
     let received = 0, payroll = 0, exp = 0, regional = 0, ho = 0, net = 0;
