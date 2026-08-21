@@ -106,7 +106,7 @@ type LoadedStatement = {
   net: number;
 };
 
-export default function Cashflow() {
+export default function Cashflow({ embedded = false }: { embedded?: boolean } = {}) {
   const { regionId } = useRegion();
   const [invoicePayments, setInvoicePayments] = useState<InvoicePayment[]>([]);
   const [payslips, setPayslips] = useState<Payslip[]>([]);
@@ -504,35 +504,40 @@ export default function Cashflow() {
     { key: "advances", label: "Advances" },
   ];
 
+  // Extracted so it can live either in the page Header (standalone) or in a
+  // small toolbar (when embedded as a tab inside Financial Reports).
+  const exportBtn = activeTab === "clients" ? (
+    <ExportButton
+      onExport={() =>
+        exportClientStatements(
+          cashStatementRows.map((r) => ({
+            client: `${r.client.name} (${r.client.client_code})`,
+            totalReceivable: r.received,
+            payrollExpenses: r.payrollPaid,
+            // Direct plus both apportioned layers, so the exported
+            // columns still add up to netIncome.
+            otherExpenses: r.expensesPaid + r.regionalOverhead + r.hoShare,
+            netIncome: r.netCash,
+          })),
+          formatPeriod(statementPeriod),
+          `Client Statement (Cash) ${formatPeriod(statementPeriod)}.xlsx`,
+        )
+      }
+    />
+  ) : null;
+
   return (
     <>
-      <Header
-        title="Cash Flow"
-        subtitle="Cash inflow vs outflow — filter by month, range or all time"
-        actions={
-          activeTab === "clients" ? (
-            <ExportButton
-              onExport={() =>
-                exportClientStatements(
-                  cashStatementRows.map((r) => ({
-                    client: `${r.client.name} (${r.client.client_code})`,
-                    totalReceivable: r.received,
-                    payrollExpenses: r.payrollPaid,
-                    // Direct plus both apportioned layers, so the exported
-                    // columns still add up to netIncome.
-                    otherExpenses: r.expensesPaid + r.regionalOverhead + r.hoShare,
-                    netIncome: r.netCash,
-                  })),
-                  formatPeriod(statementPeriod),
-                  `Client Statement (Cash) ${formatPeriod(statementPeriod)}.xlsx`,
-                )
-              }
-            />
-          ) : undefined
-        }
-      />
+      {!embedded && (
+        <Header
+          title="Cash Flow"
+          subtitle="Cash inflow vs outflow — filter by month, range or all time"
+          actions={exportBtn}
+        />
+      )}
 
-      <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
+      <div className={embedded ? "" : "flex-1 overflow-y-auto px-3 py-4 md:p-8"}>
+        {embedded && exportBtn && <div className="flex justify-end mb-4">{exportBtn}</div>}
         {error && (
           <div className="mb-4 p-3 rounded-md border border-danger-200 bg-danger-50 text-danger-700 text-sm">
             {error}

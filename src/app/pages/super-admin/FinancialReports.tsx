@@ -12,6 +12,7 @@ import {
 import Modal from "../../components/Modal";
 import Button from "../../components/Button";
 import Partners from "./Partners";
+import Cashflow from "./Cashflow";
 import {
   supabase,
   fetchAllRows,
@@ -103,6 +104,9 @@ const formatPeriod = (periodMonth: string) => {
 
 export default function FinancialReports() {
   const [activeTab, setActiveTab] = useState<"pl" | "clients" | "partnership" | "rmd">("pl");
+  // Top-level switch merging the Financial Report and Cash Flow pages under one
+  // roof — Cash Flow is rendered from its own (embedded) component.
+  const [topTab, setTopTab] = useState<"financial" | "cashflow">("financial");
   const [branches, setBranches] = useState<Branch[]>([]);
   const [plBranchFilter, setPlBranchFilter] = useState<string>("all");
   const [statementBranchFilter, setStatementBranchFilter] = useState<string>("all");
@@ -868,9 +872,9 @@ export default function FinancialReports() {
     <>
       <Header
         title="Financial Reports"
-        subtitle="P&L and client statements"
+        subtitle="P&L, client statements and cash flow"
         actions={
-          activeTab === "rmd" ? undefined : (
+          topTab === "cashflow" || activeTab === "rmd" ? undefined : (
           <ExportButton
             onExport={() => {
               if (activeTab === "pl") {
@@ -944,6 +948,30 @@ export default function FinancialReports() {
       />
 
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
+        {/* Top-level switch: the Financial Report and Cash Flow pages, merged. */}
+        <div className="flex items-center gap-2 mb-6">
+          {([
+            { key: "financial", label: "Financial Report" },
+            { key: "cashflow", label: "Cash Flow" },
+          ] as const).map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setTopTab(t.key)}
+              className={`px-4 py-2 rounded-md text-sm transition-colors ${
+                topTab === t.key
+                  ? "bg-brand-600 text-[#fff]"
+                  : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {topTab === "cashflow" && <Cashflow embedded />}
+
+        {topTab === "financial" && (
         <div className="bg-white rounded-lg border border-slate-200">
           <div className="p-4 md:p-6 border-b border-slate-200 overflow-x-auto">
             <div className="flex gap-2 min-w-max">
@@ -1822,6 +1850,7 @@ export default function FinancialReports() {
             </div>
           )}
         </div>
+        )}
       </div>
 
       <Modal isOpen={isClientStatementModalOpen} onClose={() => setIsClientStatementModalOpen(false)} title="Full Client Statement" size="lg">
