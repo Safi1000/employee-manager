@@ -672,7 +672,8 @@ export default function Expenses() {
         null;
       const payload = {
         category_id: fixedForm.category_id,
-        pl_category: fixedForm.pl_category,
+        // Locked: always derived from the client, never a manual choice.
+        pl_category: (fixedForm.client_id ? "cost_of_services" : "operating_expense") as FixedForm["pl_category"],
         client_id: fixedForm.client_id || null,
         branch_id: resolvedBranch,
         vendor_id: fixedForm.payment_mode === "Payable" ? fixedForm.vendor_id || null : null,
@@ -1105,7 +1106,8 @@ export default function Expenses() {
         .from("expenses")
         .insert({
           category_id: form.category_id,
-          pl_category: form.pl_category,
+          // Locked: always derived from the client, never a manual choice.
+          pl_category: form.client_id ? "cost_of_services" : "operating_expense",
           client_id: form.client_id || null,
           branch_id: resolvedBranch,
           vendor_id: vendorId,
@@ -1357,7 +1359,8 @@ export default function Expenses() {
         .from("expenses")
         .update({
           category_id: editForm.category_id,
-          pl_category: editForm.pl_category,
+          // Locked: always derived from the client, never a manual choice.
+          pl_category: editForm.client_id ? "cost_of_services" : "operating_expense",
           client_id: editForm.client_id || null,
           branch_id: resolvedEditBranch,
           vendor_id: vendorId,
@@ -2838,14 +2841,15 @@ export default function Expenses() {
               <label className="block text-sm text-slate-700 mb-1">P&amp;L Treatment *</label>
               <ThemedSelect
                 value={fixedForm.pl_category}
-                onChange={(e) =>
-                  setFixedForm({ ...fixedForm, pl_category: e.target.value as FixedForm["pl_category"] })
-                }
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                disabled
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm bg-slate-50 text-slate-500 cursor-not-allowed"
               >
                 <option value="operating_expense">Operating Expense</option>
                 <option value="cost_of_services">Cost of Services</option>
               </ThemedSelect>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Set from the Client below: a client → Cost of Services, Office → Operating Expense.
+              </p>
             </div>
           </div>
 
@@ -2947,16 +2951,23 @@ export default function Expenses() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Client (optional)</label>
-              <ThemedSelect
+              <ClientFilterSelect
+                clients={clients}
                 value={fixedForm.client_id}
-                onChange={(e) => setFixedForm({ ...fixedForm, client_id: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-              >
-                <option value="">Office (no client)</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </ThemedSelect>
+                allValue=""
+                allLabel="Office (no client)"
+                buttonClassName="w-full"
+                onChange={(id) => {
+                  const c = id ? clients.find((x) => x.id === id) : null;
+                  // Locks the P&L treatment and auto-fills the region.
+                  setFixedForm({
+                    ...fixedForm,
+                    client_id: id,
+                    branch_id: c?.branch_id ?? fixedForm.branch_id,
+                    pl_category: id ? "cost_of_services" : "operating_expense",
+                  });
+                }}
+              />
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Region</label>
@@ -3659,6 +3670,59 @@ export default function Expenses() {
         )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
+            <label className="block text-sm text-slate-700 mb-1">Client (optional)</label>
+            <ClientFilterSelect
+              clients={clients}
+              value={state.client_id}
+              allValue=""
+              allLabel="Office (no client)"
+              buttonClassName="w-full"
+              filterFn={(c) => !state.branch_id || c.branch_id === state.branch_id}
+              onChange={(id) => {
+                const c = id ? clients.find((x) => x.id === id) : null;
+                // Picking a client auto-fills its branch and LOCKS the P&L
+                // category: a client makes it Cost of Services, Office makes it
+                // Operating Expense. It can no longer be overridden by hand.
+                setState({
+                  ...state,
+                  client_id: id,
+                  branch_id: c?.branch_id ?? state.branch_id,
+                  pl_category: id ? "cost_of_services" : "operating_expense",
+                });
+              }}
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              {state.branch_id
+                ? "Showing clients in the selected branch only."
+                : "Leave empty to log as an Office expense (Head Office)."}
+            </p>
+          </div>
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Branch (optional)</label>
+            <ThemedSelect
+              value={state.branch_id}
+              onChange={(e) => {
+                const newBranch = e.target.value;
+                // If current client doesn't match the new branch, clear it — and
+                // with it, drop the P&L category back to Operating Expense.
+                const cur = clients.find((c) => c.id === state.client_id);
+                const keepClient = !newBranch || !cur || cur.branch_id === newBranch;
+                setState({
+                  ...state,
+                  branch_id: newBranch,
+                  client_id: keepClient ? state.client_id : "",
+                  pl_category: keepClient ? state.pl_category : "operating_expense",
+                });
+              }}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+            >
+              <option value="">Head Office (default)</option>
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </ThemedSelect>
+          </div>
+          <div>
             <label className="block text-sm text-slate-700 mb-1">Category *</label>
             <ThemedSelect
               required
@@ -3674,60 +3738,6 @@ export default function Expenses() {
               ))}
             </ThemedSelect>
           </div>
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Branch (optional)</label>
-            <ThemedSelect
-              value={state.branch_id}
-              onChange={(e) => {
-                const newBranch = e.target.value;
-                // If current client doesn't match the new branch, clear it.
-                const cur = clients.find((c) => c.id === state.client_id);
-                const keepClient = !newBranch || !cur || cur.branch_id === newBranch;
-                setState({ ...state, branch_id: newBranch, client_id: keepClient ? state.client_id : "" });
-              }}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
-            >
-              <option value="">Head Office (default)</option>
-              {branches.map((b) => (
-                <option key={b.id} value={b.id}>{b.name}</option>
-              ))}
-            </ThemedSelect>
-          </div>
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Client (optional)</label>
-            <ThemedSelect
-              value={state.client_id}
-              onChange={(e) => {
-                const id = e.target.value;
-                const c = id ? clients.find((x) => x.id === id) : null;
-                // Auto-fill branch from the picked client (don't clobber explicit branch if same).
-                // Also default the P&L category: client-tagged expenses are
-                // Cost of Services; office expenses are Operating.
-                setState({
-                  ...state,
-                  client_id: id,
-                  branch_id: c?.branch_id ?? state.branch_id,
-                  pl_category: id ? "cost_of_services" : "operating_expense",
-                });
-              }}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
-            >
-              <option value="">Office (no client)</option>
-              {(state.branch_id
-                ? clients.filter((c) => c.branch_id === state.branch_id)
-                : clients
-              ).map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </ThemedSelect>
-            <p className="text-xs text-slate-500 mt-1">
-              {state.branch_id
-                ? "Showing clients in the selected branch only."
-                : "Leave empty to log as an Office expense (Head Office)."}
-            </p>
-          </div>
           <div className="col-span-full">
             <label className="block text-sm text-slate-700 mb-1">P&amp;L Category *</label>
             <div className="grid grid-cols-2 gap-2">
@@ -3736,31 +3746,34 @@ export default function Expenses() {
                   { value: "cost_of_services", label: "Cost of Services", hint: "Tied to a client / contract (guard payroll, equipment, transport)" },
                   { value: "operating_expense", label: "Operating Expense", hint: "Head-office overhead (rent, office salaries, utilities)" },
                 ] as const
-              ).map((opt) => (
-                <label
-                  key={opt.value}
-                  className={`flex flex-col items-start gap-1 px-3 py-2 border rounded-md cursor-pointer text-sm ${
-                    state.pl_category === opt.value
-                      ? "border-slate-900 bg-slate-50"
-                      : "border-slate-200 hover:border-slate-300"
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name={`pl_category_${submitLabel}`}
-                      checked={state.pl_category === opt.value}
-                      onChange={() => setState({ ...state, pl_category: opt.value })}
-                    />
-                    <span>{opt.label}</span>
+              ).map((opt) => {
+                const active = state.pl_category === opt.value;
+                // Locked: derived from the Client field, never clicked directly.
+                return (
+                  <div
+                    key={opt.value}
+                    aria-disabled="true"
+                    className={`flex flex-col items-start gap-1 px-3 py-2 border rounded-md text-sm cursor-not-allowed ${
+                      active ? "border-slate-900 bg-slate-50" : "border-slate-200 opacity-60"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name={`pl_category_${submitLabel}`}
+                        checked={active}
+                        readOnly
+                        disabled
+                      />
+                      <span>{opt.label}</span>
+                    </div>
+                    <span className="text-xs text-slate-500 ml-6">{opt.hint}</span>
                   </div>
-                  <span className="text-xs text-slate-500 ml-6">{opt.hint}</span>
-                </label>
-              ))}
+                );
+              })}
             </div>
             <p className="text-xs text-slate-500 mt-1">
-              Drives the P&amp;L split between Gross Profit and Operating Profit.
-              Defaults from the client selection above; override if needed.
+              Set automatically from the Client: a client → Cost of Services, Office → Operating Expense. Not editable.
             </p>
           </div>
           <div>
