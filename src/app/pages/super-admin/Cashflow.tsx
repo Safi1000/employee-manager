@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import { supabase } from "../../lib/supabase";
-import type { Advance, Expense, InvoicePayment, Payslip, Cheque, Client } from "../../lib/supabase";
+import type { Advance, Expense, InvoicePayment, Payslip, Cheque, Client, ExpenseCategory, ClientType } from "../../lib/supabase";
 import { useRegion, withRegion } from "../../lib/region";
 import { Download, Loader2 } from "lucide-react";
 import Modal from "../../components/Modal";
@@ -100,6 +100,10 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [advances, setAdvances] = useState<Advance[]>([]);
   const [cheques, setCheques] = useState<Cheque[]>([]);
+  const [categories, setCategories] = useState<ExpenseCategory[]>([]);
+  // client_id → type + employee category on payslips power the cash-basis P&L
+  // split (security vs guard revenue, guard vs office payroll). Kept as the raw
+  // rows so the same money the cashflow totals also feeds the P&L breakdown.
   const [clientNames, setClientNames] = useState<Map<string, string>>(new Map());
   const [employeeNames, setEmployeeNames] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -147,7 +151,7 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
       setLoading(true);
       setError(null);
       try {
-        const [payRes, psRes, exRes, advRes, chqRes, cliRes, empRes] = await Promise.all([
+        const [payRes, psRes, exRes, advRes, chqRes, cliRes, empRes, catRes] = await Promise.all([
           // Flow sources all carry branch_id, so the global region selector scopes
           // this projection to the region's own inflows/outflows. Client/employee
           // name lookups stay unfiltered — they're just label maps.
@@ -158,7 +162,9 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
             supabase.from("invoice_payments").select("id, amount, payment_date, client_id, payment_mode"),
             regionId,
           ),
-          withRegion(supabase.from("payslips").select("*").eq("disbursed", true), regionId),
+          // employee.category rides along so the P&L can split guard (Cost of
+          // Services) from office-staff (Operating Expense) payroll.
+          withRegion(supabase.from("payslips").select("*, employee:employee_id(category, branch_id)").eq("disbursed", true), regionId),
           withRegion(supabase.from("expenses").select("*"), regionId),
           withRegion(
             supabase
@@ -169,9 +175,10 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
           withRegion(supabase.from("cheques").select("id, status, cleared_at"), regionId),
           supabase.from("clients").select("*").order("name"),
           supabase.from("employees").select("id, full_name"),
+          supabase.from("expense_categories").select("*"),
         ]);
 
-        for (const r of [payRes, psRes, exRes, advRes, chqRes, cliRes, empRes]) {
+        for (const r of [payRes, psRes, exRes, advRes, chqRes, cliRes, empRes, catRes]) {
           if (r.error) throw r.error;
         }
         if (cancelled) return;
@@ -180,6 +187,7 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
         setExpenses((exRes.data ?? []) as Expense[]);
         setAdvances((advRes.data ?? []) as Advance[]);
         setCheques((chqRes.data ?? []) as Cheque[]);
+        setCategories((catRes.data ?? []) as ExpenseCategory[]);
         setClients((cliRes.data ?? []) as Client[]);
         setClientNames(new Map((cliRes.data ?? []).map((c: any) => [c.id, c.name])));
         setEmployeeNames(new Map((empRes.data ?? []).map((e: any) => [e.id, e.full_name])));
@@ -420,6 +428,85 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
     return { revenue, payroll, expenses: exp, advances: adv, net: revenue - payroll - exp - adv };
   }, [filtered]);
 
+  // Cash-basis Profit & Loss — the exact same statement Financial Reports shows
+  // on the accrual basis (Revenue → Cost of Services → Gross Profit → Operating
+  // Expenses → Operating Profit → EBT → Tax → Net Profit), but every figure is
+  // money that actually moved in the selected period: revenue = received,
+  // payroll = disbursed net salary, expenses = paid. Advances are a balance-sheet
+  // movement, not a P&L item, so they stay out of this card (still in the table).
+  const cashPl = useMemo(() => {
+    const chequeById = new Map(cheques.map((c) => [c.id, c]));
+    const clearedDay = (id: string | null): string | null => {
+      const c = id ? chequeById.get(id) : null;
+      return c && c.status === "cleared" ? isoDay(c.cleared_at) : null;
+    };
+    const clientType = new Map(clients.map((c) => [c.id, (c.client_type ?? "security_services") as ClientType]));
+    const catName = new Map(categories.map((c) => [c.id, c.name]));
+
+    // --- Revenue (cash received), split by client type ---
+    let securityRevenue = 0;
+    let guardRevenue = 0;
+    for (const p of invoicePayments) {
+      const date = isoDay(p.payment_date);
+      if (!date || !inPeriod(date)) continue;
+      const amt = Number(p.amount ?? 0);
+      if ((p.client_id ? clientType.get(p.client_id) : "security_services") === "guard_deployment") guardRevenue += amt;
+      else securityRevenue += amt;
+    }
+    const totalRevenue = securityRevenue + guardRevenue;
+
+    // --- Payroll cash paid, split by employee category ---
+    let guardPayroll = 0;
+    let officePayroll = 0;
+    for (const p of payslips) {
+      const date =
+        p.payment_mode === "Cheque" ? clearedDay(p.cheque_id) : isoDay(p.disbursed_at ?? p.period_month);
+      if (!date || !inPeriod(date)) continue;
+      const amt = Number(p.net_salary ?? 0);
+      if ((p as unknown as { employee?: { category?: string | null } }).employee?.category === "office_staff") officePayroll += amt;
+      else guardPayroll += amt;
+    }
+
+    // --- Expenses cash paid, bucketed by category name / pl_category (same map
+    // as the accrual P&L so the two statements read identically) ---
+    let cosStatutory = 0, cosTransport = 0, cosEquipment = 0, cosOther = 0;
+    let opUtilities = 0, opInsurance = 0, opLicenses = 0, opOther = 0, taxes = 0;
+    for (const e of expenses) {
+      let date: string | null = null;
+      if (e.payment_mode === "Cash" || e.payment_mode === "Bank") date = isoDay(e.expense_date);
+      else if (e.payment_mode === "Cheque") date = clearedDay(e.cheque_id);
+      else if (e.payment_mode === "Payable" && e.payable_status === "Paid") date = isoDay(e.paid_at);
+      if (!date || !inPeriod(date)) continue;
+      const name = (e.category_id ? catName.get(e.category_id) : "") ?? "";
+      const amt = Number(e.amount ?? 0);
+      if (name === "Taxes") { taxes += amt; continue; }
+      if (name === "Equipment & Supplies") { cosEquipment += amt; continue; }
+      if (name === "Transportation & Fuel") { cosTransport += amt; continue; }
+      if (name === "EOBI" || name === "IESSI" || name === "PESSI") { cosStatutory += amt; continue; }
+      if (name === "Weapons & Ammunition" || name === "Uniform") { cosOther += amt; continue; }
+      if (name === "Utilities & Rent") { opUtilities += amt; continue; }
+      if (name === "Insurance") { opInsurance += amt; continue; }
+      if (name === "Licenses") { opLicenses += amt; continue; }
+      if (e.pl_category === "cost_of_services") cosOther += amt;
+      else opOther += amt;
+    }
+
+    const totalCos = guardPayroll + cosStatutory + cosTransport + cosEquipment + cosOther;
+    const grossProfit = totalRevenue - totalCos;
+    const totalOpex = officePayroll + opUtilities + opInsurance + opLicenses + opOther;
+    const operatingProfit = grossProfit - totalOpex;
+    const ebt = operatingProfit;
+    const netProfit = ebt - taxes;
+
+    return {
+      securityRevenue, guardRevenue, totalRevenue,
+      guardPayroll, cosStatutory, cosTransport, cosEquipment, cosOther, totalCos,
+      grossProfit,
+      officePayroll, opUtilities, opInsurance, opLicenses, opOther, totalOpex,
+      operatingProfit, ebt, taxes, netProfit,
+    };
+  }, [invoicePayments, payslips, expenses, cheques, clients, categories, inPeriod]);
+
   // Aggregation for charts + table. In single-month mode, group by day; otherwise by month.
   const rows: MonthRow[] = useMemo(() => {
     const isDaily = mode === "month";
@@ -637,29 +724,35 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
               <div className="py-12 text-center text-slate-500 text-sm">Loading…</div>
             ) : (
               <div className="space-y-6">
-                {/* Cash Inflows */}
+                {/* Revenue */}
                 <div>
-                  <h4 className="text-sm text-slate-900 mb-3 pb-2 border-b border-slate-200">Cash Inflows</h4>
+                  <h4 className="text-sm text-slate-900 mb-3 pb-2 border-b border-slate-200">Revenue (Cash Received)</h4>
                   <div className="space-y-2 mb-3">
                     <div className="flex justify-between items-center pl-4">
-                      <span className="text-sm text-slate-600">Payments Received</span>
-                      <span className="text-sm text-success-600">{currency(totals.revenue)}</span>
+                      <span className="text-sm text-slate-600">Security Services Revenue</span>
+                      <span className="text-sm text-success-600">{currency(cashPl.securityRevenue)}</span>
+                    </div>
+                    <div className="flex justify-between items-center pl-4">
+                      <span className="text-sm text-slate-600">Guard Deployment Revenue</span>
+                      <span className="text-sm text-success-600">{currency(cashPl.guardRevenue)}</span>
                     </div>
                   </div>
                   <div className="flex justify-between items-center pl-4 pt-2 border-t border-slate-200">
-                    <span className="text-sm text-slate-900">Total Cash Inflows</span>
-                    <span className="text-sm text-success-600">{currency(totals.revenue)}</span>
+                    <span className="text-sm text-slate-900">Total Revenue</span>
+                    <span className="text-sm text-success-600">{currency(cashPl.totalRevenue)}</span>
                   </div>
                 </div>
 
-                {/* Cash Outflows */}
+                {/* Cost of Services */}
                 <div>
-                  <h4 className="text-sm text-slate-900 mb-3 pb-2 border-b border-slate-200">Cash Outflows</h4>
+                  <h4 className="text-sm text-slate-900 mb-3 pb-2 border-b border-slate-200">Cost of Services (Cash Paid)</h4>
                   <div className="space-y-2 mb-3">
                     {[
-                      { name: "Payroll Paid (disbursed net salaries)", amount: totals.payroll },
-                      { name: "Expenses Paid (Cash/Bank + paid payables)", amount: totals.expenses },
-                      { name: "Advances", amount: totals.advances },
+                      { name: "Guard Payroll & Salaries", amount: cashPl.guardPayroll },
+                      { name: "Guard Statutory (EOBI / IESSI / PESSI)", amount: cashPl.cosStatutory },
+                      { name: "Transportation & Fuel", amount: cashPl.cosTransport },
+                      { name: "Equipment & Supplies", amount: cashPl.cosEquipment },
+                      { name: "Other Cost of Services", amount: cashPl.cosOther },
                     ].map((item) => (
                       <div key={item.name} className="flex justify-between items-center pl-4">
                         <span className="text-sm text-slate-600">{item.name}</span>
@@ -668,21 +761,80 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
                     ))}
                   </div>
                   <div className="flex justify-between items-center pl-4 pt-2 border-t border-slate-200">
-                    <span className="text-sm text-slate-900">Total Cash Outflows</span>
-                    <span className="text-sm text-danger-600">
-                      {currency(totals.payroll + totals.expenses + totals.advances)}
+                    <span className="text-sm text-slate-900">Total Cost of Services</span>
+                    <span className="text-sm text-danger-600">{currency(cashPl.totalCos)}</span>
+                  </div>
+                </div>
+
+                {/* Gross Profit */}
+                <div className="pt-4 border-t-2 border-slate-300">
+                  <div className="flex justify-between items-center">
+                    <span className="text-base text-slate-900">Gross Profit</span>
+                    <span className={`text-lg ${cashPl.grossProfit >= 0 ? "text-success-600" : "text-danger-600"}`}>
+                      {currency(cashPl.grossProfit)}
                     </span>
                   </div>
                 </div>
 
-                {/* Net Cash Flow */}
+                {/* Operating Expenses */}
+                <div>
+                  <h4 className="text-sm text-slate-900 mb-3 pb-2 border-b border-slate-200">Operating Expenses (Cash Paid)</h4>
+                  <div className="space-y-2 mb-3">
+                    {[
+                      { name: "Office Salaries (non-billable staff)", amount: cashPl.officePayroll },
+                      { name: "Utilities & Rent (HQ)", amount: cashPl.opUtilities },
+                      { name: "Insurance", amount: cashPl.opInsurance },
+                      { name: "Licences (company-level)", amount: cashPl.opLicenses },
+                      { name: "Other Operating Expenses", amount: cashPl.opOther },
+                    ].map((item) => (
+                      <div key={item.name} className="flex justify-between items-center pl-4">
+                        <span className="text-sm text-slate-600">{item.name}</span>
+                        <span className="text-sm text-danger-600">{currency(item.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex justify-between items-center pl-4 pt-2 border-t border-slate-200">
+                    <span className="text-sm text-slate-900">Total Operating Expenses</span>
+                    <span className="text-sm text-danger-600">{currency(cashPl.totalOpex)}</span>
+                  </div>
+                </div>
+
+                {/* Operating Profit */}
                 <div className="pt-4 border-t-2 border-slate-300">
                   <div className="flex justify-between items-center">
-                    <span className="text-base text-slate-900">Net Cash Flow</span>
-                    <span className={`text-lg ${totals.net >= 0 ? "text-success-600" : "text-danger-600"}`}>
-                      {currency(totals.net)}
+                    <span className="text-base text-slate-900">Operating Profit</span>
+                    <span className={`text-lg ${cashPl.operatingProfit >= 0 ? "text-success-600" : "text-danger-600"}`}>
+                      {currency(cashPl.operatingProfit)}
                     </span>
                   </div>
+                </div>
+
+                {/* EBT / Tax */}
+                <div className="pt-2 space-y-2">
+                  <div className="flex justify-between items-center pl-4">
+                    <span className="text-sm text-slate-600">Earnings Before Tax (EBT)</span>
+                    <span className={`text-sm ${cashPl.ebt >= 0 ? "text-slate-900" : "text-danger-600"}`}>
+                      {currency(cashPl.ebt)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center pl-4">
+                    <span className="text-sm text-slate-600">Income Tax (paid)</span>
+                    <span className="text-sm text-danger-600">{currency(cashPl.taxes)}</span>
+                  </div>
+                </div>
+
+                {/* Net Profit */}
+                <div className="pt-4 border-t-2 border-slate-300">
+                  <div className="flex justify-between items-center">
+                    <span className="text-base text-slate-900">Net Profit (Cash)</span>
+                    <span className={`text-xl ${cashPl.netProfit >= 0 ? "text-success-600" : "text-danger-600"}`}>
+                      {currency(cashPl.netProfit)}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-2">
+                    Advances paid this period ({currency(totals.advances)}) are a balance-sheet movement, not a P&amp;L
+                    item, so they sit in the breakdown table below rather than in this statement.
+                  </p>
                 </div>
               </div>
             )}
