@@ -952,11 +952,12 @@ export default function FinancialReports() {
                   Participation Rules, Treasury) is still out of the nav, so this
                   tab is currently the only way to reach any of it — partners
                   themselves are still added from the tab body below. */}
+              {/* Partnership Report and RMD Statements tabs are hidden, not
+                  deleted — their tab-content blocks below remain, just not
+                  reachable from the tab bar. */}
               {([
                 { key: "pl", label: "Profit & Loss" },
                 { key: "clients", label: "Client Statements" },
-                { key: "partnership", label: "Partnership Report" },
-                { key: "rmd", label: "RMD Statements" },
               ] as const).map((tab) => (
                 <button
                   key={tab.key}
