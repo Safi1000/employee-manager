@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { ChevronRight, MapPin, Wallet, Layers, Receipt } from "lucide-react";
+import { ChevronRight, MapPin, Wallet, Layers, Receipt, Building2 } from "lucide-react";
 import Header from "../../components/Header";
 import ThemedSelect from "../../components/ThemedSelect";
 import ExportButton from "../../components/ExportButton";
@@ -195,14 +195,73 @@ export default function RegionalScorecard() {
     () => (regionId ? pl.filter((r) => r.branch_id === regionId) : pl),
     [pl, regionId],
   );
+  // Head Office branch(es): their own overhead is apportioned into the
+  // client-bearing regions, so we drop it from the direct display and re-add it
+  // as each region's "Head Office (allocated)" expense line.
+  const hoBranchIds = useMemo(
+    () => new Set(regions.filter((r) => r.is_head_office).map((r) => r.id)),
+    [regions],
+  );
+
+  // Head-Office-cost-by-region: each region's share of company invoicing and the
+  // HO cost that share carries. Straight off the same client statement the
+  // Financial Reports / Cash Flow pages use, so the numbers match exactly.
+  const hoByRegion = useMemo(() => {
+    const m = new Map<string, { branchId: string; name: string; invoiced: number; ho: number }>();
+    for (const r of clientStmt) {
+      if (!r.branch_id || hoBranchIds.has(r.branch_id)) continue;
+      const cur = m.get(r.branch_id) ?? {
+        branchId: r.branch_id,
+        name: regions.find((x) => x.id === r.branch_id)?.name ?? "Region",
+        invoiced: 0,
+        ho: 0,
+      };
+      cur.invoiced += Number(r.revenue);
+      cur.ho += Number(r.ho_share);
+      m.set(r.branch_id, cur);
+    }
+    const all = Array.from(m.values());
+    const companyInvoiced = all.reduce((s, x) => s + x.invoiced, 0);
+    const totalHo = all.reduce((s, x) => s + x.ho, 0);
+    // Division by zero guarded: no invoicing → every region 0%.
+    const rows = all
+      .map((x) => ({ ...x, pct: companyInvoiced > 0 ? (x.invoiced / companyInvoiced) * 100 : 0 }))
+      .sort((a, b) => b.ho - a.ho);
+    return { rows, companyInvoiced, totalHo };
+  }, [clientStmt, hoBranchIds, regions]);
+
+  // Operating expenses with the apportioned Head Office share added on. The Head
+  // Office region stays exactly as before (its own opex + tab); each client-
+  // bearing region additionally gains a synthetic "Head Office (allocated)" line,
+  // so its total and the grand total include the apportioned share.
+  const opexLoaded = useMemo(() => {
+    const own = opex;
+    const hoLines: OpexRow[] = hoByRegion.rows
+      .filter((r) => r.ho > 0)
+      .map((r) => ({
+        branch_id: r.branchId,
+        region_name: r.name,
+        category: "Head Office (allocated)",
+        expense_id: null,
+        expense_date: `${period}-01`,
+        description: "Apportioned by share of company revenue",
+        client_name: null,
+        vendor_name: null,
+        payment_mode: null,
+        amount: r.ho,
+        is_derived: false,
+      }));
+    return [...own, ...hoLines];
+  }, [opex, hoBranchIds, hoByRegion, period]);
+
   // All regions' expenses — the global selector is intentionally ignored here.
   // A pinned user is the only one kept to their own region (security boundary).
   const opexRows = useMemo(
-    () => (locked && regionId ? opex.filter((r) => r.branch_id === regionId) : opex),
-    [opex, regionId, locked],
+    () => (locked && regionId ? opexLoaded.filter((r) => r.branch_id === regionId) : opexLoaded),
+    [opexLoaded, regionId, locked],
   );
-  // Region tabs list EVERY company region (not just the ones with data this
-  // month), independent of the global selector. A pinned user sees only theirs.
+  // Region tabs list EVERY company region (Head Office included, as before),
+  // independent of the global selector. A pinned user sees only theirs.
   const regionTabs = useMemo(() => {
     const list = locked && regionId ? regions.filter((r) => r.id === regionId) : regions;
     return list.map((r) => ({ key: r.id, name: r.name }));
@@ -395,7 +454,15 @@ export default function RegionalScorecard() {
       </div>
 
       {tab === "scorecard" && <ScorecardTab rows={scRows} finance={finance} period={period} loading={loading} />}
-      {tab === "opex" && <OperatingExpensesTab tree={opexTree} period={period} loading={loading} />}
+      {tab === "opex" && (
+        <OperatingExpensesTab
+          tree={opexTree}
+          period={period}
+          loading={loading}
+          hoByRegion={hoByRegion}
+          showHoBreakdown={activeRegion === "all"}
+        />
+      )}
       {tab === "profit-revenue" && (
         <ProfitTab basis="revenue" rows={plRows} totals={plTotals} period={period} loading={loading} />
       )}
@@ -583,7 +650,7 @@ function MiniStat({ icon, label, value, small }: { icon: ReactNode; label: strin
  * to answer "on what exactly" once a category looks wrong.
  */
 function OperatingExpensesTab({
-  tree, period, loading,
+  tree, period, loading, hoByRegion, showHoBreakdown,
 }: {
   tree: {
     regions: {
@@ -595,6 +662,12 @@ function OperatingExpensesTab({
   };
   period: string;
   loading: boolean;
+  hoByRegion: {
+    rows: { branchId: string; name: string; invoiced: number; ho: number; pct: number }[];
+    companyInvoiced: number;
+    totalHo: number;
+  };
+  showHoBreakdown: boolean;
 }) {
   const [openCats, setOpenCats] = useState<Set<string>>(new Set());
   const toggle = (key: string) =>
@@ -678,6 +751,51 @@ function OperatingExpensesTab({
           </div>
         )}
       </div>
+
+      {/* Head Office cost by region — moved here from the client statements; the
+          same allocation is folded into each region's expenses above. */}
+      {!loading && showHoBreakdown && hoByRegion.rows.length > 0 && (
+        <div className="rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-border flex flex-wrap items-baseline justify-between gap-2">
+            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-brand-600 dark:text-brand-500" strokeWidth={2} />
+              Head Office cost by region
+            </h3>
+            <span className="text-xs text-muted-foreground">
+              Allocation = (Region Invoiced ÷ Company Invoiced) × Head Office Total
+            </span>
+          </div>
+          <div className="p-6 space-y-4">
+            {hoByRegion.rows.map((r) => (
+              <div key={r.branchId}>
+                <div className="flex items-baseline justify-between gap-3 mb-1.5">
+                  <span className="text-sm text-foreground flex items-center gap-2 min-w-0">
+                    <MapPin className="w-3.5 h-3.5 text-brand-500 shrink-0" strokeWidth={2} />
+                    <span className="truncate">{r.name}</span>
+                  </span>
+                  <span className="text-xs tabular-nums text-muted-foreground shrink-0">
+                    Invoiced {pkr(r.invoiced)} · <span className="text-foreground">{r.pct.toFixed(1)}%</span> · HO{" "}
+                    <span className="text-amber-700 dark:text-amber-500">{pkr(r.ho)}</span>
+                  </span>
+                </div>
+                <div className="h-2 rounded-full bg-muted overflow-hidden">
+                  <div className="h-full rounded-full bg-gradient-to-r from-amber-500 to-amber-600" style={{ width: `${Math.max(r.pct, 1.5)}%` }} />
+                </div>
+              </div>
+            ))}
+            <div className="flex items-center justify-between gap-3 pt-3 border-t border-border text-sm">
+              <span className="text-foreground font-medium">Company total</span>
+              <span className="tabular-nums text-muted-foreground shrink-0">
+                Invoiced {pkr(hoByRegion.companyInvoiced)} · 100% · HO{" "}
+                <span className="text-foreground font-medium">{pkr(hoByRegion.totalHo)}</span>
+              </span>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Each region's Head Office allocation is added to its expenses above and counted in the total.
+            </p>
+          </div>
+        </div>
+      )}
 
       {loading && (
         <div className="bg-card border border-border rounded-xl p-10 text-center text-muted-foreground">
