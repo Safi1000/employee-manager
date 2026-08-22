@@ -40,6 +40,15 @@ export async function loadCustodianOptions(companyId: string): Promise<Custodian
       supabase.from("bank_transactions").select("cash_delta, reference_id").eq("kind", "withdraw_to_cash").not("reference_id", "is", null),
     ]);
 
+  // Payroll paid in cash by a custodian — cash they physically hand out
+  // (reference_id = custodian cash_location, cash_delta negative). Fetched
+  // separately so the two bank_transactions reads stay independent.
+  const { data: payrollCash } = await supabase
+    .from("bank_transactions")
+    .select("cash_delta, reference_id")
+    .eq("kind", "payroll")
+    .not("reference_id", "is", null);
+
   // Most-recent active custodian location per employee.
   const locByEmployee = new Map<string, { id: string; opening: number }>();
   for (const l of (locs ?? []) as any[]) {
@@ -67,6 +76,10 @@ export async function loadCustodianOptions(companyId: string): Promise<Custodian
   }
   for (const w of (bankWd ?? []) as any[]) {
     if (w.reference_id && heldByLoc.has(w.reference_id)) heldByLoc.set(w.reference_id, (heldByLoc.get(w.reference_id) ?? 0) + Number(w.cash_delta ?? 0));
+  }
+  // cash_delta is already signed (negative = paid out, positive = reversal).
+  for (const pr of (payrollCash ?? []) as any[]) {
+    if (pr.reference_id && heldByLoc.has(pr.reference_id)) heldByLoc.set(pr.reference_id, (heldByLoc.get(pr.reference_id) ?? 0) + Number(pr.cash_delta ?? 0));
   }
 
   return ((staff ?? []) as any[]).map((s) => {

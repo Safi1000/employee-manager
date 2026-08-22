@@ -22,6 +22,8 @@ import {
   type Contract,
 } from "../../lib/supabase";
 import { useRegion, withRegion } from "../../lib/region";
+import { useAuth } from "../../lib/auth";
+import { loadCustodianOptions, ensureCustodianLocation, type CustodianOption } from "../../lib/custodian";
 import { isSeparatedState, lifecycleStatusLabel } from "../../lib/employmentWindow";
 import { guardDisplayCode } from "../../lib/guardCode";
 
@@ -145,6 +147,14 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
   const [advancesByEmployee, setAdvancesByEmployee] = useState<Map<string, number>>(new Map());
   const [priorLeavesByMonth, setPriorLeavesByMonth] = useState<Map<string, Map<string, number>>>(new Map());
   const [cashBalance, setCashBalance] = useState(0);
+  const { profile } = useAuth();
+  const companyId = profile?.view_as_company ?? profile?.company_id ?? null;
+  // Office-staff custodians (who physically holds/pays cash) — same list Cash
+  // Custody & Expenses use. Required when a salary is paid in Cash so the payment
+  // decrements that person's tracked cash and shows in the Cash Custody ledger.
+  const [custodians, setCustodians] = useState<CustodianOption[]>([]);
+  const [cashCustodianId, setCashCustodianId] = useState<string>("");     // drawer (per-row) payment
+  const [bulkCashCustodianId, setBulkCashCustodianId] = useState<string>(""); // bulk disburse
 
   const [isBulkDisburseOpen, setIsBulkDisburseOpen] = useState(false);
   const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -417,6 +427,12 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
   useEffect(() => {
     if (!loading) loadPeriodData(selectedPeriod);
   }, [selectedPeriod]);
+
+  // Load the custodian list once we know the company (for cash payment attribution).
+  useEffect(() => {
+    if (!companyId) return;
+    loadCustodianOptions(companyId).then(setCustodians).catch(() => { /* attribution optional */ });
+  }, [companyId]);
 
   // Item 1: persist the period + selected payslip so navigation resumes here.
   useEffect(() => {
@@ -736,6 +752,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
   // guard can't linger on another.
   useEffect(() => {
     setPaymentAmountDraft("");
+    setCashCustodianId("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, selectedPeriod, selectedRow?.amount_paid]);
 
@@ -1039,6 +1056,10 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
 
       // ---- Phase 1: validate funds for the money actually moving now ----
       let bank: (typeof banks)[number] | undefined;
+      // Cash payments are attributed to the office-staff custodian who hands out
+      // the cash (same model as Expenses / Cash Custody). Resolved here so a
+      // failure aborts before any money moves.
+      let custodianLocId: string | null = null;
       if (row.payment_mode === "Bank") {
         if (!row.bank_account_id) {
           setRowError("Select a bank account before disbursing.");
@@ -1071,6 +1092,18 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
           setRowError("Cash balance is insufficient for this payment.");
           return;
         }
+        // Require a custodian for cash and resolve (create-on-first-use) their
+        // cash_location so the payment can be attributed to them.
+        if (!cashCustodianId) {
+          setRowError("Select who is paying this cash (custodian).");
+          return;
+        }
+        const staff = custodians.find((c) => c.employeeId === cashCustodianId);
+        if (!companyId || !staff) {
+          setRowError("Custodian not found — reload and try again.");
+          return;
+        }
+        custodianLocId = await ensureCustodianLocation(companyId, staff.employeeId, staff.fullName);
       }
 
       // ---- Phase 2: claim optimistically on the paid amount ----
@@ -1161,6 +1194,9 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
             amount: Math.abs(pay),
             cash_delta: -pay,
             account_delta: 0,
+            // reference_id = custodian cash_location → Cash Custody attributes this
+            // as "Cash paid" against that custodian, decreasing their held cash.
+            reference_id: custodianLocId,
             description: `${pay < 0 ? "Reverse payroll (cash)" : "Payroll (cash)"} ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
           });
         }
@@ -1211,11 +1247,23 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       return;
     }
     const total = candidates.reduce((s, r) => s + remainingOf(r), 0);
+    let bulkCustodianLocId: string | null = null;
     if (bulkMode === "Cash") {
       if (total > cashBalance) {
         setError(`Cash balance (PKR ${cashBalance.toLocaleString()}) is insufficient for PKR ${total.toLocaleString()}.`);
         return;
       }
+      // Attribute all these cash payments to one custodian (who hands out the cash).
+      if (!bulkCashCustodianId) {
+        setError("Select who is paying this cash (custodian) for the bulk disbursement.");
+        return;
+      }
+      const staff = custodians.find((c) => c.employeeId === bulkCashCustodianId);
+      if (!companyId || !staff) {
+        setError("Custodian not found — reload and try again.");
+        return;
+      }
+      bulkCustodianLocId = await ensureCustodianLocation(companyId, staff.employeeId, staff.fullName);
     } else {
       const bank = banks.find((b) => b.id === bulkBankId);
       if (!bank) {
@@ -1323,6 +1371,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
             amount: remaining,
             cash_delta: -remaining,
             account_delta: 0,
+            reference_id: bulkCustodianLocId,
             description: `Payroll (cash) ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
           });
         }
@@ -2233,6 +2282,26 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                       <option value="Bank">Bank</option>
                       <option value="Cheque">Cheque</option>
                     </ThemedSelect>
+                    {selectedRow.payment_mode === "Cash" && (
+                      <div>
+                        <label className="block text-xs text-slate-500 mb-1">Paid By (custodian) *</label>
+                        <ThemedSelect
+                          value={cashCustodianId}
+                          onChange={(e) => setCashCustodianId(e.target.value)}
+                          className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                        >
+                          <option value="">Select who is paying this cash…</option>
+                          {custodians.map((c) => (
+                            <option key={c.employeeId} value={c.employeeId}>
+                              {c.fullName} — holds PKR {Math.round(c.held).toLocaleString()}
+                            </option>
+                          ))}
+                        </ThemedSelect>
+                        <p className="text-[11px] text-slate-500 mt-1">
+                          The office-staff member physically handing out this cash. Their tracked cash decreases and it logs in Cash Custody.
+                        </p>
+                      </div>
+                    )}
                     {selectedRow.payment_mode === "Bank" && (
                       <ThemedSelect
                         value={selectedRow.bank_account_id ?? ""}
@@ -2615,9 +2684,24 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
               )}
 
               {bulkMode === "Cash" && (
-                <p className="text-xs text-slate-500">
-                  Current cash balance: PKR {cashBalance.toLocaleString()}.
-                </p>
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">Paid By (custodian) *</label>
+                  <ThemedSelect
+                    value={bulkCashCustodianId}
+                    onChange={(e) => setBulkCashCustodianId(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  >
+                    <option value="">Select who is paying this cash…</option>
+                    {custodians.map((c) => (
+                      <option key={c.employeeId} value={c.employeeId}>
+                        {c.fullName} — holds PKR {Math.round(c.held).toLocaleString()}
+                      </option>
+                    ))}
+                  </ThemedSelect>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Current cash balance: PKR {cashBalance.toLocaleString()}. This custodian's tracked cash decreases and each payment logs in Cash Custody.
+                  </p>
+                </div>
               )}
 
               <div>

@@ -1,5 +1,5 @@
 import ThemedSelect from "../../components/ThemedSelect";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { Plus, Building2, Download, AlertCircle, X, Loader2, ArrowDownUp, History, Trash2, Ban, CheckCircle2, RotateCcw, FileText, Pencil, ArrowLeftRight, Search, Power } from "lucide-react";
 import Header from "../../components/Header";
@@ -172,6 +172,13 @@ export default function Accounting() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Cash Custody exposes its "Add Location" / "Record Transfer" actions here so
+  // they can live in the page Header row, same placement as the Bank Accounts
+  // buttons. Wiring only — the panel still owns the handlers/modals.
+  const custodyApiRef = useRef<{ addLocation: () => void; recordTransfer: () => void; openTransactions: () => void } | null>(null);
+  // Cash Custody summary figures, reported up by the panel so the cards render
+  // above the tab bar (same slot as the Bank Accounts cards).
+  const [custodySummary, setCustodySummary] = useState<{ totalCash: number; totalPartnerOwed: number; freeCash: number } | null>(null);
   const [isBankModalOpen, setIsBankModalOpen] = useState(false);
   const [isStatementModalOpen, setIsStatementModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
@@ -1800,6 +1807,22 @@ export default function Accounting() {
                 </Button>
               </>
             )}
+            {activeTab === "cash-custody" && (
+              <>
+                <Button variant="secondary" size="md" onClick={() => custodyApiRef.current?.openTransactions()}>
+                  <History className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                  Transactions
+                </Button>
+                <Button variant="secondary" size="md" onClick={() => custodyApiRef.current?.recordTransfer()}>
+                  <ArrowLeftRight className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                  Record Transfer
+                </Button>
+                <Button variant="primary" size="md" onClick={() => custodyApiRef.current?.addLocation()}>
+                  <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                  Add Location
+                </Button>
+              </>
+            )}
             {activeTab === "receivables" && (
               <Button
                 variant="secondary"
@@ -1947,6 +1970,23 @@ export default function Accounting() {
               <p className="text-xl text-success-900">
                 PKR {payableTotals.paid.toLocaleString()}
               </p>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "cash-custody" && custodySummary && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-success-500">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Cash in Hand</p>
+              <p className="text-2xl text-success-900">PKR {Math.round(custodySummary.totalCash).toLocaleString()}</p>
+            </div>
+            <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-warning-500">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Owed to Partners (Undrawn)</p>
+              <p className="text-2xl text-warning-900">PKR {Math.round(custodySummary.totalPartnerOwed).toLocaleString()}</p>
+            </div>
+            <div className="bg-[#14160f] text-[#fff] p-4 rounded-lg">
+              <p className="text-xs text-slate-300 mb-1">Free Company Cash</p>
+              <p className={`text-2xl ${custodySummary.freeCash < 0 ? "text-danger-400" : "text-[#fff]"}`}>PKR {Math.round(custodySummary.freeCash).toLocaleString()}</p>
             </div>
           </div>
         )}
@@ -2752,7 +2792,7 @@ export default function Accounting() {
 
           {activeTab === "cash-custody" && (
             <div className="p-6">
-              <CashCustodyPanel />
+              <CashCustodyPanel onReady={(api) => { custodyApiRef.current = api; }} onSummary={setCustodySummary} />
             </div>
           )}
         </div>

@@ -12,7 +12,7 @@ import {
 import Modal from "../../components/Modal";
 import Button from "../../components/Button";
 import Partners from "./Partners";
-import Cashflow from "./Cashflow";
+import Cashflow from "./CashFlow";
 import {
   supabase,
   fetchAllRows,
@@ -835,14 +835,31 @@ export default function FinancialReports() {
     <>
       <Header
         title={
-          <ThemedSelect
-            value={topTab}
-            onChange={(e) => setTopTab(e.target.value as "financial" | "cashflow")}
-            className="!text-lg md:!text-xl !font-bold tracking-tight text-foreground !bg-transparent !border-0 !ring-0 !shadow-none gap-1 -ml-2 px-2 py-1 rounded-md hover:!bg-accent"
-          >
-            <option value="financial">Financial Report</option>
-            <option value="cashflow">Cash Flow</option>
-          </ThemedSelect>
+          <span className="inline-flex items-center gap-4">
+            Financial Reports
+            {/* Basis toggle — compact segmented control (white active thumb on a
+                grey track), vertically centered beside the heading. Revenue Basis =
+                accrual Financial Report, Cash Basis = Cash Flow. */}
+            <span className="inline-flex items-center rounded-lg bg-slate-100 p-0.5">
+              {([
+                { key: "financial", label: "Revenue Basis" },
+                { key: "cashflow", label: "Cash Basis" },
+              ] as const).map((t) => (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => setTopTab(t.key)}
+                  className={`px-3 py-1 text-[11px] font-semibold rounded-md transition-colors ${
+                    topTab === t.key
+                      ? "bg-white text-brand-700 shadow-sm"
+                      : "text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </span>
+          </span>
         }
         subtitle="P&L, client statements and cash flow"
         actions={

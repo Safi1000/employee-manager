@@ -21,7 +21,7 @@ import Accounting from "./pages/super-admin/Accounting";
 import FinancialReports from "./pages/super-admin/FinancialReports";
 import Expenses from "./pages/super-admin/Expenses";
 import Invoices from "./pages/super-admin/Invoices";
-import Cashflow from "./pages/super-admin/Cashflow";
+import Cashflow from "./pages/super-admin/CashFlow";
 import Inventory from "./pages/super-admin/Inventory";
 import Compliance from "./pages/super-admin/Compliance";
 import Documents from "./pages/super-admin/Documents";

@@ -683,56 +683,51 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
         )}
 
         {activeTab === "cashflow" && (
-        <>
-        {/* Branch + Month filters — same controls as the accrual P&L. */}
-        <div className="bg-white rounded-lg border border-slate-200 p-4 mb-6 flex flex-wrap items-center gap-3">
-          <label className="text-sm text-slate-600">Branch:</label>
-          <ThemedSelect
-            value={branchFilter}
-            onChange={(e) => setBranchFilter(e.target.value)}
-            className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
-          >
-            <option value="all">All Branches</option>
-            {branches.map((b) => (
-              <option key={b.id} value={b.id}>{b.name}</option>
-            ))}
-          </ThemedSelect>
-          <label className="text-sm text-slate-600">Month:</label>
-          <ThemedSelect
-            value={selMonth}
-            onChange={(e) => setSelMonth(e.target.value)}
-            className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
-          >
-            {statementPeriodOptions.map((p) => (
-              <option key={p} value={p}>{formatPeriod(p)}</option>
-            ))}
-          </ThemedSelect>
-          <span className="text-xs text-slate-500 ml-auto">
-            Showing: <span className="text-slate-700">{periodLabel}</span>
-          </span>
-        </div>
-
-        {/* Cash Flow Statement — same layout as the Profit & Loss statement */}
-        <div className="bg-white rounded-lg border border-slate-200 mb-6">
-          <div className="p-6 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="text-lg text-slate-900 mb-1">Cash Flow Statement</h3>
-              <p className="text-sm text-slate-500">
-                For {periodLabel} · cash-basis: revenue = received, payroll = disbursed, expenses = paid.
-              </p>
+          <div>
+            {/* Same header shape as the Financial Report P&L: title + subtitle on
+                the left, Branch + Month on the right. Only the figures (and the
+                cash-basis note) differ, so toggling never re-arranges the page. */}
+            <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h3 className="text-lg text-slate-900 mb-1">Cash Flow Statement</h3>
+                <p className="text-sm text-slate-500">
+                  For {formatPeriod(selMonth)} ({firstOfMonth(selMonth)} – {lastOfMonth(selMonth)}) · cash basis
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <label className="text-sm text-slate-600">Branch:</label>
+                <ThemedSelect
+                  value={branchFilter}
+                  onChange={(e) => setBranchFilter(e.target.value)}
+                  className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                >
+                  <option value="all">All Branches</option>
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </ThemedSelect>
+                <label className="text-sm text-slate-600">Month:</label>
+                <ThemedSelect
+                  value={selMonth}
+                  onChange={(e) => setSelMonth(e.target.value)}
+                  className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                >
+                  {statementPeriodOptions.map((p) => (
+                    <option key={p} value={p}>{formatPeriod(p)}</option>
+                  ))}
+                </ThemedSelect>
+              </div>
             </div>
-            <Button variant="secondary" size="sm" onClick={() => window.print()}>
-              Download Report (PDF)
-            </Button>
-          </div>
-          <div className="p-6">
+
             {loading ? (
-              <div className="py-12 text-center text-slate-500 text-sm">Loading…</div>
+              <div className="py-12 text-center text-slate-500">
+                <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
+              </div>
             ) : (
               <div className="space-y-6">
                 {/* Revenue */}
                 <div>
-                  <h4 className="text-sm text-slate-900 mb-3 pb-2 border-b border-slate-200">Revenue (Cash Received)</h4>
+                  <h4 className="text-sm text-slate-900 mb-3 pb-2 border-b border-slate-200">Revenue</h4>
                   <div className="space-y-2 mb-3">
                     <div className="flex justify-between items-center pl-4">
                       <span className="text-sm text-slate-600">Security Services Revenue</span>
@@ -751,7 +746,7 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
 
                 {/* Cost of Services */}
                 <div>
-                  <h4 className="text-sm text-slate-900 mb-3 pb-2 border-b border-slate-200">Cost of Services (Cash Paid)</h4>
+                  <h4 className="text-sm text-slate-900 mb-3 pb-2 border-b border-slate-200">Cost of Services</h4>
                   <div className="space-y-2 mb-3">
                     {[
                       { name: "Guard Payroll & Salaries", amount: cashPl.guardPayroll },
@@ -784,7 +779,7 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
 
                 {/* Operating Expenses */}
                 <div>
-                  <h4 className="text-sm text-slate-900 mb-3 pb-2 border-b border-slate-200">Operating Expenses (Cash Paid)</h4>
+                  <h4 className="text-sm text-slate-900 mb-3 pb-2 border-b border-slate-200">Operating Expenses</h4>
                   <div className="space-y-2 mb-3">
                     {[
                       { name: "Office Salaries (non-billable staff)", amount: cashPl.officePayroll },
@@ -824,7 +819,7 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
                     </span>
                   </div>
                   <div className="flex justify-between items-center pl-4">
-                    <span className="text-sm text-slate-600">Income Tax (paid)</span>
+                    <span className="text-sm text-slate-600">Income Tax</span>
                     <span className="text-sm text-danger-600">{currency(cashPl.taxes)}</span>
                   </div>
                 </div>
@@ -832,79 +827,15 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
                 {/* Net Profit */}
                 <div className="pt-4 border-t-2 border-slate-300">
                   <div className="flex justify-between items-center">
-                    <span className="text-base text-slate-900">Net Profit (Cash)</span>
+                    <span className="text-base text-slate-900">Net Profit</span>
                     <span className={`text-xl ${cashPl.netProfit >= 0 ? "text-success-600" : "text-danger-600"}`}>
                       {currency(cashPl.netProfit)}
                     </span>
                   </div>
-                  <p className="text-[11px] text-slate-400 mt-2">
-                    Advances paid this period ({currency(totals.advances)}) are a balance-sheet movement, not a P&amp;L
-                    item, so they sit in the breakdown table below rather than in this statement.
-                  </p>
                 </div>
               </div>
             )}
           </div>
-        </div>
-
-
-        <div className="bg-white rounded-lg border border-slate-200">
-          <div className="p-6 border-b border-slate-200">
-            <h3 className="text-base text-slate-900">{mode === "month" ? "Daily" : "Monthly"} Breakdown · {periodLabel}</h3>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-slate-50 text-slate-600 text-xs uppercase tracking-wide">
-                  <th className="px-6 py-3 text-left">{mode === "month" ? "Day" : "Month"}</th>
-                  <th className="px-6 py-3 text-right">Revenue</th>
-                  <th className="px-6 py-3 text-right">Payroll</th>
-                  <th className="px-6 py-3 text-right">Expenses</th>
-                  <th className="px-6 py-3 text-right">Advances</th>
-                  <th className="px-6 py-3 text-right">Net</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr key={r.key} className="border-t border-slate-100 hover:bg-slate-50">
-                    <td className="px-6 py-3 text-slate-900">{r.label}</td>
-                    <td className="px-6 py-3 text-right text-success-600">{currency(r.revenue)}</td>
-                    <td className="px-6 py-3 text-right text-slate-700">{currency(r.payroll)}</td>
-                    <td className="px-6 py-3 text-right text-danger-600">{currency(r.expenses)}</td>
-                    <td className="px-6 py-3 text-right text-warning-600">{currency(r.advances)}</td>
-                    <td
-                      className={`px-6 py-3 text-right ${
-                        r.net >= 0 ? "text-success-600" : "text-danger-600"
-                      }`}
-                    >
-                      {currency(r.net)}
-                    </td>
-                  </tr>
-                ))}
-                {rows.length === 0 && !loading && (
-                  <tr>
-                    <td colSpan={6} className="px-6 py-6 text-center text-slate-500">
-                      No data available.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-              {rows.length > 0 && (
-                <tfoot>
-                  <tr className="border-t border-slate-200 bg-slate-50 text-slate-900">
-                    <td className="px-6 py-3">Total</td>
-                    <td className="px-6 py-3 text-right">{currency(totals.revenue)}</td>
-                    <td className="px-6 py-3 text-right">{currency(totals.payroll)}</td>
-                    <td className="px-6 py-3 text-right">{currency(totals.expenses)}</td>
-                    <td className="px-6 py-3 text-right">{currency(totals.advances)}</td>
-                    <td className="px-6 py-3 text-right">{currency(totals.net)}</td>
-                  </tr>
-                </tfoot>
-              )}
-            </table>
-          </div>
-        </div>
-        </>
         )}
         </div>
       </div>

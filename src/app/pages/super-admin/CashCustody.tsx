@@ -1,6 +1,6 @@
 import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Pencil, Trash2, AlertCircle, X, Loader2, ArrowRightLeft, Wallet, Building2 } from "lucide-react";
+import { Pencil, Trash2, AlertCircle, X, Loader2, Wallet, Building2 } from "lucide-react";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import { supabase } from "../../lib/supabase";
@@ -81,7 +81,12 @@ const LEDGER_KIND_LABEL: Record<LedgerEntry["kind"], string> = {
 // the real cash_locations on the Cash Position tab.
 const CASH_IN_HAND_ID = "__cash_in_hand__";
 
-export function CashCustodyPanel() {
+export function CashCustodyPanel({ onReady, onSummary }: {
+  onReady?: (api: { addLocation: () => void; recordTransfer: () => void; openTransactions: () => void }) => void;
+  // Push the three summary figures up so the page can render the cards above the
+  // tab bar (same slot as the Bank Accounts cards). Presentation only.
+  onSummary?: (s: { totalCash: number; totalPartnerOwed: number; freeCash: number }) => void;
+} = {}) {
   const { profile } = useAuth();
   const companyId = profile?.view_as_company ?? profile?.company_id ?? null;
   // Only a (super) admin may delete a custodian added by mistake.
@@ -90,9 +95,12 @@ export function CashCustodyPanel() {
   // company-wide roles (no branch) see everyone. SSA viewing a company is company-wide.
   const branchScope = profile?.role === "super_super_admin" ? null : (profile?.branch_id ?? null);
 
-  const [tab, setTab] = useState<"locations" | "transfers" | "position" | "reconciliation" | "transactions">("position");
+  const [tab, setTab] = useState<"locations" | "transfers" | "position" | "reconciliation">("position");
+  // Transactions is a header-button modal (mirrors the Bank Accounts "Transaction Log"), not a sub-tab.
+  const [isTxOpen, setIsTxOpen] = useState(false);
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);
   const [ledgerStaffFilter, setLedgerStaffFilter] = useState<string>("all");
+  const [ledgerMonth, setLedgerMonth] = useState<string>("all");
   const [locations, setLocations] = useState<CashLocation[]>([]);
   const [transfers, setTransfers] = useState<CustodyTransfer[]>([]);
   const [partners, setPartners] = useState<Partner[]>([]);
@@ -108,6 +116,8 @@ export function CashCustodyPanel() {
   const [chequeInByLoc, setChequeInByLoc] = useState<Map<string, number>>(new Map());
   // Bank→custodian withdrawals attributed to each custodian location.
   const [withdrawInByLoc, setWithdrawInByLoc] = useState<Map<string, number>>(new Map());
+  // Payroll paid in cash by each custodian (signed cash_delta; negative = paid out).
+  const [payrollCashByLoc, setPayrollCashByLoc] = useState<Map<string, number>>(new Map());
   const [partnerStats, setPartnerStats] = useState<Map<string, PartnerStats>>(new Map());
   const [investorLiabilities, setInvestorLiabilities] = useState<number>(0);
   const [loading, setLoading] = useState(true);
@@ -139,7 +149,7 @@ export function CashCustodyPanel() {
       const [
         { data: locs }, { data: tx }, { data: pts }, { data: brs },
         { data: bnks }, { data: treas }, { data: pEntries }, { data: iEntries },
-        { data: staff }, { data: cashPays }, { data: cashExps }, { data: cashCheques }, { data: bankWd },
+        { data: staff }, { data: cashPays }, { data: cashExps }, { data: cashCheques }, { data: bankWd }, { data: payrollCash },
       ] = await Promise.all([
         supabase.from("cash_locations").select("*").eq("company_id", companyId).order("name"),
         supabase.from("custody_transfers").select("*").eq("company_id", companyId).order("date", { ascending: false }).limit(100),
@@ -154,6 +164,9 @@ export function CashCustodyPanel() {
         supabase.from("expenses").select("id, amount, custodian_location_id, expense_date, description").not("custodian_location_id", "is", null),
         supabase.from("cheques").select("id, amount, custodian_location_id, cheque_date, cheque_number").eq("cheque_type", "cash").eq("status", "cleared").not("custodian_location_id", "is", null),
         supabase.from("bank_transactions").select("id, cash_delta, reference_id, description, created_at").eq("kind", "withdraw_to_cash").not("reference_id", "is", null),
+        // Payroll cash payments handed out by a custodian (reference_id = custodian
+        // cash_location, cash_delta negative). Shows as "Cash paid" in the ledger.
+        supabase.from("bank_transactions").select("id, cash_delta, reference_id, description, created_at").eq("kind", "payroll").not("reference_id", "is", null),
       ]);
       const partnerList = ((pts ?? []) as Partner[]).filter((p) => p.is_active);
       setLocations((locs ?? []) as CashLocation[]);
@@ -185,6 +198,13 @@ export function CashCustodyPanel() {
         wdBy.set(w.reference_id, (wdBy.get(w.reference_id) ?? 0) + Number(w.cash_delta ?? 0));
       }
       setWithdrawInByLoc(wdBy);
+      // Payroll cash paid out by each custodian (signed cash_delta, negative = out).
+      const prBy = new Map<string, number>();
+      for (const pr of (payrollCash ?? []) as any[]) {
+        if (!pr.reference_id || !custodianIdSet.has(pr.reference_id)) continue;
+        prBy.set(pr.reference_id, (prBy.get(pr.reference_id) ?? 0) + Number(pr.cash_delta ?? 0));
+      }
+      setPayrollCashByLoc(prBy);
       setTransfers((tx ?? []) as CustodyTransfer[]);
 
       // Custodian transaction ledger (Transactions tab): every cash movement that
@@ -247,6 +267,15 @@ export function CashCustodyPanel() {
         raw.push({
           id: `w-${w.id}`, date: String(w.created_at ?? "").slice(0, 10), locationId: w.reference_id, employeeId: empByLoc.get(w.reference_id) ?? null,
           kind: "bank_to_cash", detail: w.description || "Bank withdrawal to cash", cashIn: Number(w.cash_delta ?? 0), cashOut: 0,
+        });
+      }
+      // Payroll cash paid out by a custodian (cash_delta negative = paid, positive = reversal).
+      for (const pr of (payrollCash ?? []) as any[]) {
+        if (!pr.reference_id || !custodianLocIds.has(pr.reference_id)) continue;
+        const cd = Number(pr.cash_delta ?? 0);
+        raw.push({
+          id: `pr-${pr.id}`, date: String(pr.created_at ?? "").slice(0, 10), locationId: pr.reference_id, employeeId: empByLoc.get(pr.reference_id) ?? null,
+          kind: cd < 0 ? "cash_paid" : "cash_received", detail: pr.description || "Payroll (cash)", cashIn: cd > 0 ? cd : 0, cashOut: cd < 0 ? -cd : 0,
         });
       }
       // Running held-cash per custodian (seed with each custodian's opening
@@ -333,14 +362,26 @@ export function CashCustodyPanel() {
   // received (attributed) − cash expenses paid (attributed). This is the TRUE cash
   // that office-staff member currently holds (0135). Not applied to BANK locations.
   const heldCash = (loc: CashLocation): number =>
-    computeLocationBalance(loc) + (cashInByLoc.get(loc.id) ?? 0) - (cashOutByLoc.get(loc.id) ?? 0) + (chequeInByLoc.get(loc.id) ?? 0) + (withdrawInByLoc.get(loc.id) ?? 0);
+    computeLocationBalance(loc) + (cashInByLoc.get(loc.id) ?? 0) - (cashOutByLoc.get(loc.id) ?? 0) + (chequeInByLoc.get(loc.id) ?? 0) + (withdrawInByLoc.get(loc.id) ?? 0) + (payrollCashByLoc.get(loc.id) ?? 0);
 
   const staffName = (id: string | null) => (id ? officeStaff.find((s) => s.id === id)?.full_name ?? "—" : "—");
 
-  // Transactions tab: the ledger, optionally narrowed to one office-staff member.
+  // Month options for the transaction log — the months that actually have entries
+  // (YYYY-MM), newest first, labeled like the Bank Accounts log ("Aug 2026").
+  const ledgerMonthOptions = useMemo(() => {
+    const keys = Array.from(new Set(ledger.map((e) => (e.date ?? "").slice(0, 7)).filter(Boolean))).sort().reverse();
+    return keys.map((key) => {
+      const [y, m] = key.split("-");
+      return { key, label: new Date(Number(y), Number(m) - 1, 1).toLocaleDateString(undefined, { month: "short", year: "numeric" }) };
+    });
+  }, [ledger]);
+
+  // Transactions log: the ledger, optionally narrowed to one office-staff member and/or month.
   const filteredLedger = useMemo(
-    () => (ledgerStaffFilter === "all" ? ledger : ledger.filter((e) => e.employeeId === ledgerStaffFilter)),
-    [ledger, ledgerStaffFilter],
+    () => ledger.filter((e) =>
+      (ledgerStaffFilter === "all" || e.employeeId === ledgerStaffFilter) &&
+      (ledgerMonth === "all" || (e.date ?? "").slice(0, 7) === ledgerMonth)),
+    [ledger, ledgerStaffFilter, ledgerMonth],
   );
   const ledgerTotals = useMemo(() => {
     let cin = 0, cout = 0;
@@ -364,7 +405,7 @@ export function CashCustodyPanel() {
     const discrepancy = cashInHand - sumHeld; // >0 = cash not yet attributed to a custodian
     return { custodians, sumHeld, discrepancy };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locationsWithBalance, cashInByLoc, cashOutByLoc, chequeInByLoc, withdrawInByLoc, cashInHand]);
+  }, [locationsWithBalance, cashInByLoc, cashOutByLoc, chequeInByLoc, withdrawInByLoc, payrollCashByLoc, cashInHand]);
 
   // Cash in Hand (company treasury) as its own Position row alongside real locations.
   const cashInHandRow: LocationWithBalance = {
@@ -390,6 +431,12 @@ export function CashCustodyPanel() {
   );
   const freeCash = totalCash - totalPartnerOwed - investorLiabilities;
 
+  // Report the summary figures to the page (cards live above the tab bar).
+  useEffect(() => {
+    onSummary?.({ totalCash, totalPartnerOwed, freeCash });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [totalCash, totalPartnerOwed, freeCash]);
+
   // Partners shown in the summary (branch-scoped logins see only their branch),
   // owner (COMPANY) first then regional partners by name.
   const summaryPartners = useMemo(() => {
@@ -405,6 +452,14 @@ export function CashCustodyPanel() {
     setLocForm({ name: "", location_type: "CUSTODIAN", custodian_partner_id: "", custodian_employee_id: "", branch_id: "", opening_balance: "0", is_active: true });
     setIsLocOpen(true);
   };
+
+  // Expose the two header actions so the Banks & Ledgers page can render them in
+  // its Header row (same placement as the Bank Accounts buttons). Purely wiring —
+  // the handlers and their behaviour are unchanged.
+  useEffect(() => {
+    onReady?.({ addLocation: openAddLoc, recordTransfer: () => setIsTransferOpen(true), openTransactions: () => setIsTxOpen(true) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onReady]);
 
   const openEditLoc = (l: CashLocation) => {
     setEditLoc(l);
@@ -471,6 +526,7 @@ export function CashCustodyPanel() {
       (cashOutByLoc.get(loc.id) ?? 0) !== 0 ||
       (chequeInByLoc.get(loc.id) ?? 0) !== 0 ||
       (withdrawInByLoc.get(loc.id) ?? 0) !== 0 ||
+      (payrollCashByLoc.get(loc.id) ?? 0) !== 0 ||
       transfers.some((t) => t.from_location_id === loc.id || t.to_location_id === loc.id);
     if (hasHistory) {
       setError(`"${loc.name}" has cash movements recorded and can't be deleted. Deactivate it instead (Edit → uncheck Active).`);
@@ -542,20 +598,6 @@ export function CashCustodyPanel() {
 
   return (
     <>
-      <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
-        <p className="text-sm text-slate-500">Track who holds company cash — banks, petty cash, and custodians</p>
-        <div className="flex gap-2">
-          <Button variant="secondary" size="md" onClick={() => { setIsTransferOpen(true); }}>
-            <ArrowRightLeft className="w-4 h-4 mr-2" strokeWidth={1.5} />
-            Record Transfer
-          </Button>
-          <Button variant="primary" size="md" onClick={openAddLoc}>
-            <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
-            Add Location
-          </Button>
-        </div>
-      </div>
-
       <div>
         {error && (
           <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
@@ -565,11 +607,12 @@ export function CashCustodyPanel() {
           </div>
         )}
 
-        {/* Tab bar */}
-        <div className="flex gap-1 bg-slate-100 rounded-md p-1 mb-6 w-fit max-w-full overflow-x-auto">
-          {([["position", "Cash Position"], ["reconciliation", "Reconciliation"], ["transactions", "Transactions"], ["locations", "Locations"], ["transfers", "Transfers"]] as const).map(([k, l]) => (
+        {/* Tab bar — same brand-button style as the other Banks & Ledgers
+            sections (e.g. the Cheques / Cash Deposits toggle). */}
+        <div className="flex gap-2 flex-wrap mb-6">
+          {([["position", "Cash Position"], ["reconciliation", "Reconciliation"], ["locations", "Locations"], ["transfers", "Transfers"]] as const).map(([k, l]) => (
             <button key={k} type="button" onClick={() => setTab(k)}
-              className={`shrink-0 whitespace-nowrap px-3 py-1.5 text-sm rounded transition-colors ${tab === k ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}>
+              className={`px-4 py-2 rounded-md text-sm transition-colors ${tab === k ? "bg-brand-600 text-[#fff]" : "text-slate-600 hover:bg-slate-100"}`}>
               {l}
             </button>
           ))}
@@ -578,46 +621,50 @@ export function CashCustodyPanel() {
         {/* ── POSITION TAB ── */}
         {tab === "position" && (
           <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-2">
-              <div className="bg-white rounded-lg border border-slate-200 border-l-4 border-l-brand-500 p-4">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Cash in Hand</p>
-                <p className="text-2xl font-mono text-slate-900">{fmt(totalCash)}</p>
+            {/* Cash Holdings — a table, same sectioning as the Bank Accounts list. */}
+            <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
+              <div className="p-4 border-b border-slate-200">
+                <h3 className="text-base text-slate-900">Cash Holdings</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Where company cash sits right now — treasury, banks, and custodians.</p>
               </div>
-              <div className="bg-white rounded-lg border border-slate-200 border-l-4 border-l-warning-500 p-4">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Owed to Partners (Undrawn)</p>
-                <p className="text-2xl font-mono text-slate-700">{fmt(totalPartnerOwed)}</p>
-              </div>
-              <div className={`bg-white rounded-lg border border-slate-200 border-l-4 ${freeCash >= 0 ? "border-l-success-500" : "border-l-danger-500"} p-4`}>
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Free Company Cash</p>
-                <p className={`text-2xl font-mono ${freeCash < 0 ? "text-danger-700" : "text-success-700"}`}>{fmt(freeCash)}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {positionRows.map((loc) => (
-                <div key={loc.id} className="bg-white rounded-lg border border-slate-200 p-4">
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      {typeIcon(loc.location_type)}
-                      <div>
-                        <p className="text-sm font-medium text-slate-900">{loc.name}</p>
-                        <p className="text-xs text-slate-500">{loc.id === CASH_IN_HAND_ID ? "Cash / Treasury" : typeLabel(loc.location_type)}</p>
-                      </div>
-                    </div>
-                  </div>
-                  {(loc.custodian_employee_id || loc.custodian_partner_id) && (
-                    <p className="text-xs text-slate-500 mb-2">
-                      Holder: {loc.custodian_employee_id ? staffName(loc.custodian_employee_id) : partners.find((p) => p.id === loc.custodian_partner_id)?.name ?? "—"}
-                    </p>
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-slate-200">
+                    <th className="text-left px-6 py-3 text-sm text-slate-500">Location</th>
+                    <th className="text-left px-6 py-3 text-sm text-slate-500">Type</th>
+                    <th className="text-left px-6 py-3 text-sm text-slate-500">Holder</th>
+                    <th className="text-right px-6 py-3 text-sm text-slate-500">Balance</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {positionRows.length === 0 && (
+                    <tr><td colSpan={4} className="px-6 py-8 text-center text-slate-500 text-sm">No cash locations.</td></tr>
                   )}
-                  {(() => {
+                  {positionRows.map((loc) => {
                     // Treasury total + BANK use loc.balance; custodian/petty show HELD
                     // cash (opening + transfers + attributed cash in − cash out).
                     const shown = loc.id === CASH_IN_HAND_ID || loc.location_type === "BANK" ? loc.balance : heldCash(loc);
-                    return <p className={`text-xl font-mono ${shown < 0 ? "text-danger-600" : "text-slate-900"}`}>{fmt(shown)}</p>;
-                  })()}
-                </div>
-              ))}
+                    const holder = loc.custodian_employee_id
+                      ? staffName(loc.custodian_employee_id)
+                      : loc.custodian_partner_id
+                        ? partners.find((p) => p.id === loc.custodian_partner_id)?.name ?? "—"
+                        : "—";
+                    return (
+                      <tr key={loc.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-2">
+                            {typeIcon(loc.location_type)}
+                            <span className="text-sm text-slate-900">{loc.name}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-slate-600">{loc.id === CASH_IN_HAND_ID ? "Cash / Treasury" : typeLabel(loc.location_type)}</td>
+                        <td className="px-6 py-4 text-sm text-slate-600">{holder}</td>
+                        <td className={`px-6 py-4 text-right text-sm font-mono ${shown < 0 ? "text-danger-600" : "text-slate-900"}`}>{fmt(shown)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
 
             {/* ── Partners Summary (Phase 3) ── */}
@@ -884,74 +931,77 @@ export function CashCustodyPanel() {
           </div>
         )}
 
-        {/* ── TRANSACTIONS TAB ── */}
-        {tab === "transactions" && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div>
-                <h3 className="text-base text-slate-900">Cash Custody Transactions</h3>
-                <p className="text-xs text-slate-500 mt-0.5">Every cash movement through a custodian — cheques cashed, bank withdrawals, transfers, client cash received, and expenses paid.</p>
-              </div>
-              <div>
-                <label className="block text-[11px] uppercase tracking-wide text-slate-500 mb-1">Office Staff</label>
-                <ThemedSelect value={ledgerStaffFilter} onChange={(e) => setLedgerStaffFilter(e.target.value)}
-                  className="px-3 py-2 border border-slate-200 rounded-md text-sm min-w-[200px]">
-                  <option value="all">All custodians</option>
-                  {custodianStaff.map((s) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
-                </ThemedSelect>
-              </div>
+      </div>
+
+      {/* ── Transactions Modal — mirrors the Bank Accounts "Transaction Log":
+          same modal chrome, a flex-wrap filter row (Cash Custody's own "All
+          custodians" filter in the Account/Month slot), entry count, and the
+          px-3 py-2 text-xs table with colored Δ. Opened from the header button. */}
+      <Modal isOpen={isTxOpen} onClose={() => setIsTxOpen(false)} title="Transaction Log" size="lg">
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-3 items-center pb-3 border-b border-slate-200">
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-slate-500">Custodian</label>
+              <ThemedSelect value={ledgerStaffFilter} onChange={(e) => setLedgerStaffFilter(e.target.value)}
+                className="px-3 py-1.5 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
+                <option value="all">All custodians</option>
+                {custodianStaff.map((s) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
+              </ThemedSelect>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="bg-white rounded-lg border border-slate-200 border-l-4 border-l-success-500 p-4">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Cash In</p>
-                <p className="text-xl font-mono text-success-700">{fmt(ledgerTotals.cin)}</p>
-              </div>
-              <div className="bg-white rounded-lg border border-slate-200 border-l-4 border-l-danger-500 p-4">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Cash Out</p>
-                <p className="text-xl font-mono text-danger-700">{fmt(ledgerTotals.cout)}</p>
-              </div>
-              <div className="bg-white rounded-lg border border-slate-200 border-l-4 border-l-brand-500 p-4">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Net {ledgerStaffFilter === "all" ? "" : "(Held)"}</p>
-                <p className={`text-xl font-mono ${ledgerTotals.net < 0 ? "text-danger-600" : "text-slate-900"}`}>{fmt(ledgerTotals.net)}</p>
-              </div>
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-slate-500">Month</label>
+              <ThemedSelect value={ledgerMonth} onChange={(e) => setLedgerMonth(e.target.value)}
+                className="px-3 py-1.5 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
+                <option value="all">All</option>
+                {ledgerMonthOptions.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
+              </ThemedSelect>
             </div>
-            <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
+            <span className="ml-auto text-xs text-slate-500">{filteredLedger.length} entr{filteredLedger.length === 1 ? "y" : "ies"}</span>
+          </div>
+
+          {/* Same table chrome as the Bank Accounts Transaction Log (HistoryBody):
+              sticky header, plain-text Kind, colored Δ, labeled Before → After. */}
+          <div className="max-h-[60vh] overflow-auto">
+            {filteredLedger.length === 0 ? (
+              <p className="text-sm text-slate-500 py-6 text-center">No transactions yet.</p>
+            ) : (
               <table className="w-full">
-                <thead>
+                <thead className="sticky top-0 bg-white">
                   <tr className="border-b border-slate-200">
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Date</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Kind</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Custodian</th>
-                    <th className="text-right px-6 py-3 text-sm text-slate-500">Δ</th>
-                    <th className="text-right px-6 py-3 text-sm text-slate-500">Before → After</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Description</th>
+                    <th className="text-left px-3 py-2 text-xs text-slate-500">Date</th>
+                    <th className="text-left px-3 py-2 text-xs text-slate-500">Kind</th>
+                    <th className="text-left px-3 py-2 text-xs text-slate-500">Custodian</th>
+                    <th className="text-right px-3 py-2 text-xs text-slate-500">Δ</th>
+                    <th className="text-right px-3 py-2 text-xs text-slate-500">Before → After</th>
+                    <th className="text-left px-3 py-2 text-xs text-slate-500">Description</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {filteredLedger.length === 0 && (
-                    <tr><td colSpan={6} className="px-6 py-10 text-center text-slate-500 text-sm">No transactions yet.</td></tr>
-                  )}
                   {filteredLedger.map((e) => {
                     const delta = e.cashIn - e.cashOut;
                     return (
-                      <tr key={e.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-6 py-4 text-sm text-slate-900 whitespace-nowrap">{e.date}</td>
-                        <td className="px-6 py-4 text-sm">
-                          <span className={`inline-flex px-2 py-0.5 rounded text-xs ${e.cashIn > 0 ? "bg-success-50 text-success-700" : "bg-danger-50 text-danger-700"}`}>{LEDGER_KIND_LABEL[e.kind]}</span>
+                      <tr key={e.id}>
+                        <td className="px-3 py-2 text-xs text-slate-600 whitespace-nowrap">{e.date}</td>
+                        <td className="px-3 py-2 text-xs text-slate-700">{LEDGER_KIND_LABEL[e.kind]}</td>
+                        <td className="px-3 py-2 text-xs text-slate-700">{staffName(e.employeeId)}</td>
+                        <td className={`px-3 py-2 text-right text-xs font-mono ${delta >= 0 ? "text-success-700" : "text-danger-700"}`}>{delta >= 0 ? "+" : ""}{Math.round(delta).toLocaleString()}</td>
+                        <td className="px-3 py-2 text-right text-xs font-mono text-slate-700 whitespace-nowrap">
+                          <span className="text-slate-400">Cash </span>{Math.round(e.before).toLocaleString()} → {Math.round(e.after).toLocaleString()}
                         </td>
-                        <td className="px-6 py-4 text-sm text-slate-600">{staffName(e.employeeId)}</td>
-                        <td className={`px-6 py-4 text-right text-sm font-mono ${delta >= 0 ? "text-success-700" : "text-danger-700"}`}>{delta >= 0 ? "+" : ""}{Math.round(delta).toLocaleString()}</td>
-                        <td className="px-6 py-4 text-right text-sm font-mono text-slate-700 whitespace-nowrap">{Math.round(e.before).toLocaleString()} → {Math.round(e.after).toLocaleString()}</td>
-                        <td className="px-6 py-4 text-sm text-slate-500">{e.detail}</td>
+                        <td className="px-3 py-2 text-xs text-slate-600">{e.detail}</td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
-            </div>
+            )}
           </div>
-        )}
-      </div>
+
+          <div className="flex items-center gap-3 pt-4 border-t border-slate-200">
+            <Button variant="secondary" size="md" className="ml-auto" onClick={() => setIsTxOpen(false)}>Close</Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* ── Add/Edit Location Modal ── */}
       <Modal isOpen={isLocOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsLocOpen(false)} title={editLoc ? "Edit Custodian" : "Add Custodian"} size="md">
