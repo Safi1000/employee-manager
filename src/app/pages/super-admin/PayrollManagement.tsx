@@ -1565,6 +1565,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
               onClick={() => {
                 setBulkMode("Cash");
                 setBulkBankId("");
+                setBulkCashCustodianId("");
                 setIsBulkDisburseOpen(true);
               }}
             >
@@ -2393,6 +2394,10 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                         }
                         if (payNow > balance + 0.5) {
                           setRowError(`Payment Amount cannot exceed the Balance of PKR ${balance.toLocaleString()}.`);
+                          return;
+                        }
+                        if (selectedRow.payment_mode === "Cash" && !cashCustodianId) {
+                          setRowError("Select who is paying this cash (custodian).");
                           return;
                         }
                         setRowError(null);
