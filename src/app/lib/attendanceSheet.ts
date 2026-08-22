@@ -116,6 +116,7 @@ export async function buildAttendanceRows(opts: {
     const payDays = p + Math.min(l, allowed);
     return {
       serial: idx + 1,
+      empId: emp.id,
       name: emp.full_name,
       designation: "",
       empCode: emp.display_code,

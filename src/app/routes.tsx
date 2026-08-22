@@ -41,7 +41,6 @@ import Partners from "./pages/super-admin/Partners";
 import ProfitDistribution from "./pages/super-admin/ProfitDistribution";
 import ProjectFinancing from "./pages/super-admin/ProjectFinancing";
 import Treasury from "./pages/super-admin/Treasury";
-import PayrollRuns from "./pages/super-admin/PayrollRuns";
 import FieldOps from "./pages/super-admin/FieldOps";
 import ComplianceCases from "./pages/super-admin/ComplianceCases";
 import Assets from "./pages/super-admin/Assets";
@@ -52,7 +51,6 @@ import OpeningBalances from "./pages/super-admin/OpeningBalances";
 import RegionalScorecard from "./pages/super-admin/RegionalScorecard";
 import ClientRelationships from "./pages/super-admin/ClientRelationships";
 // Consolidation restructure — merged / renamed homes.
-import PayrollHub from "./pages/super-admin/PayrollHub";
 import AssetsIssuance from "./pages/super-admin/AssetsIssuance";
 import AccountingCore from "./pages/super-admin/AccountingCore";
 import AccessGovernance from "./pages/super-admin/AccessGovernance";
@@ -159,9 +157,9 @@ export const router = createRouter([
       // Month calendar retained as a CORRECTION-only Timesheet (§8.8), reached
       // from the guard's record (History tab), not the daily flow.
       { path: "attendance/timesheet", element: guard(["attendance.view", "attendance.edit"], <AttendanceManagement />) },
-      // Payroll + Payroll Runs merged into one Payroll home (tabs: Payslips | Runs).
-      { path: "payroll", element: guard(["payroll.view", "payroll.edit"], <PayrollHub />) },
-      { path: "payroll-runs", element: <Navigate to="/super-admin/payroll?tab=runs" replace /> },
+      // Payroll Runs page removed — payroll is the per-employee Payslips view only.
+      { path: "payroll", element: guard(["payroll.view", "payroll.edit"], <PayrollManagement />) },
+      { path: "payroll-runs", element: <Navigate to="/super-admin/payroll" replace /> },
       { path: "performance", element: guard(["payroll.view", "performance.approve"], <Performance />) },
       // Recruitment page deleted — intake is set on the employee form itself.
       { path: "recruitment", element: <Navigate to="/super-admin/employees" replace /> },

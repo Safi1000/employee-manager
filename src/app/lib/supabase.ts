@@ -289,6 +289,7 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
       { key: "attendance.edit", label: "Mark / edit attendance" },
       { key: "attendance.bulk_mark", label: "Bulk-mark attendance per employee (calendar)" },
       { key: "attendance.backdate", label: "Backdate attendance past the marking cutoff" },
+      { key: "attendance.ops_verify", label: "OPS-verify a finished month's attendance" },
     ],
   },
   {

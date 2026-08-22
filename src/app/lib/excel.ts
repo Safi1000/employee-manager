@@ -457,6 +457,9 @@ export function exportBankStatement(
 // ---------- Attendance Format ----------
 export type AttendanceEmployeeRow = {
   serial: number;
+  /** Stable employee id — used by the on-screen Monthly Board to key OPS-Verify
+   * flags/overrides per employee+date. Not emitted to the Excel export. */
+  empId?: string;
   name: string;
   designation: string;
   empCode: string;

@@ -4,7 +4,7 @@
 // button that hands the identical rows to exportAttendance. View without downloading.
 
 import { useEffect, useMemo, useState } from "react";
-import { X, Download, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { X, Download, Loader2, ChevronLeft, ChevronRight, ShieldCheck, AlertTriangle, Lock } from "lucide-react";
 import Button from "./Button";
 import { supabase } from "../lib/supabase";
 import { guardDisplayCode } from "../lib/guardCode";
@@ -20,13 +20,23 @@ const statusClass = (s: string): string =>
         : s === "X" ? "text-muted-foreground/60"
           : "";
 
+type OverrideRow = {
+  id: string; employee_id: string; attendance_date: string;
+  reason: string; before_value: string | null; after_value: string | null;
+  created_by: string | null; created_at: string;
+};
+
 export default function AttendanceSheetModal({
-  clientId, clientName, siteId, siteName, onClose,
+  clientId, clientName, siteId, siteName, companyId, canOpsVerify = false, currentUserId = null, currentUserRole = null, onClose,
 }: {
   clientId: string;
   clientName: string;
   siteId?: string | null;
   siteName?: string | null;
+  companyId?: string | null;
+  canOpsVerify?: boolean;
+  currentUserId?: string | null;
+  currentUserRole?: string | null;
   onClose: () => void;
 }) {
   const [month, setMonth] = useState(todayMonth());
@@ -36,7 +46,25 @@ export default function AttendanceSheetModal({
   const [daysInMonth, setDaysInMonth] = useState(30);
   const [monthLabel, setMonthLabel] = useState("");
 
+  // OPS Verify state (per client + month).
+  const [verifiedAt, setVerifiedAt] = useState<string | null>(null); // ISO or null (= not verified)
+  const [overrides, setOverrides] = useState<OverrideRow[]>([]);
+  const [opsMsg, setOpsMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [opsBusy, setOpsBusy] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  // Override modal target: which employee+date cell is being overridden.
+  const [ovTarget, setOvTarget] = useState<{ empId: string; empName: string; date: string; current: string; shift: string } | null>(null);
+
   const label = siteName ? `${clientName} — ${siteName}` : clientName;
+  const monthStartDate = `${month}-01`;
+  // Month has ended when its last calendar day is strictly before today.
+  const monthEnded = useMemo(() => {
+    const [y, m] = month.split("-").map(Number);
+    const lastDay = new Date(y, m, 0);
+    const today = new Date();
+    lastDay.setHours(0, 0, 0, 0); today.setHours(0, 0, 0, 0);
+    return lastDay < today;
+  }, [month]);
 
   useEffect(() => {
     let cancelled = false;
@@ -97,7 +125,83 @@ export default function AttendanceSheetModal({
       }
     })();
     return () => { cancelled = true; };
-  }, [clientId, siteId, month]);
+    // reloadKey: re-fetch the grid after a cell is marked via override.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientId, siteId, month, reloadKey]);
+
+  // Load OPS-Verify state (verification stamp + override log) for this client+month.
+  useEffect(() => {
+    let cancelled = false;
+    setOpsMsg(null);
+    (async () => {
+      const [{ data: ver }, { data: ovs }] = await Promise.all([
+        supabase.from("attendance_month_verifications")
+          .select("verified_at").eq("client_id", clientId).eq("period_month", monthStartDate).maybeSingle(),
+        supabase.from("attendance_overrides")
+          .select("id, employee_id, attendance_date, reason, before_value, after_value, created_by, created_at")
+          .eq("client_id", clientId)
+          .gte("attendance_date", monthStartDate).lte("attendance_date", `${month}-31`)
+          .order("created_at", { ascending: false }),
+      ]);
+      if (cancelled) return;
+      setVerifiedAt((ver as any)?.verified_at ?? null);
+      setOverrides((ovs ?? []) as OverrideRow[]);
+    })();
+    return () => { cancelled = true; };
+  }, [clientId, month, monthStartDate, reloadKey]);
+
+  // Set of "empId|date" that has at least one override (an unmarked day so covered
+  // is treated as resolved for OPS Verify).
+  const overriddenKeys = useMemo(() => new Set(overrides.map((o) => `${o.employee_id}|${o.attendance_date}`)), [overrides]);
+
+  const dayDate = (dayIdx: number) => `${month}-${String(dayIdx + 1).padStart(2, "0")}`;
+
+  // Unmarked days = empty status cells (X / P / A / L are all fine). Flagged =
+  // unmarked AND not yet overridden. Keyed per row+day for grid highlighting.
+  const { flaggedKeys, outstanding } = useMemo(() => {
+    const flagged = new Set<string>();
+    const list: { empId: string; empName: string; date: string }[] = [];
+    for (const row of rows) {
+      if (!row.empId) continue;
+      for (let i = 0; i < daysInMonth; i += 1) {
+        if ((row.statusByDay[i] ?? "") !== "") continue;          // marked or X (not applicable)
+        const date = dayDate(i);
+        if (overriddenKeys.has(`${row.empId}|${date}`)) continue;  // resolved via override
+        flagged.add(`${row.empId}|${i}`);
+        list.push({ empId: row.empId, empName: row.name, date });
+      }
+    }
+    return { flaggedKeys: flagged, outstanding: list };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, daysInMonth, overriddenKeys, month]);
+
+  const runOpsVerify = async () => {
+    setOpsMsg(null);
+    if (!monthEnded) { setOpsMsg({ kind: "err", text: "This month hasn't ended yet — OPS Verify is available once the last day has passed." }); return; }
+    if (outstanding.length > 0) {
+      const preview = outstanding.slice(0, 8).map((o) => `${o.empName} (${o.date})`).join(", ");
+      setOpsMsg({ kind: "err", text: `${outstanding.length} unmarked day(s) still outstanding: ${preview}${outstanding.length > 8 ? "…" : ""}. Mark or override them, then verify again.` });
+      return;
+    }
+    setOpsBusy(true);
+    const { error } = await supabase.from("attendance_month_verifications")
+      .insert({ client_id: clientId, period_month: monthStartDate, verified_by: currentUserId });
+    setOpsBusy(false);
+    if (error) { setOpsMsg({ kind: "err", text: error.message }); return; }
+    setReloadKey((k) => k + 1);
+    setOpsMsg({ kind: "ok", text: "Month OPS-Verified. Attendance for this client is now locked for the month." });
+  };
+
+  const unVerify = async () => {
+    if (!window.confirm("Un-verify this month? Attendance edits will be unlocked again. The override audit log is kept.")) return;
+    setOpsBusy(true);
+    const { error } = await supabase.from("attendance_month_verifications")
+      .delete().eq("client_id", clientId).eq("period_month", monthStartDate);
+    setOpsBusy(false);
+    if (error) { setOpsMsg({ kind: "err", text: error.message }); return; }
+    setReloadKey((k) => k + 1);
+    setOpsMsg(null);
+  };
 
   const shifts = useMemo(() => deriveAttendanceShifts(rows), [rows]);
   const S = shifts.length;
@@ -172,7 +276,14 @@ export default function AttendanceSheetModal({
         <div className="border-b border-border px-3 md:px-5 py-2.5 md:py-3">
           <div className="flex items-center gap-3">
             <div className="min-w-0 flex-1">
-              <h2 className="font-semibold text-foreground truncate">Attendance — {label}</h2>
+              <h2 className="font-semibold text-foreground truncate flex items-center gap-2">
+                Monthly Board — {label}
+                {verifiedAt && (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-success-700 dark:text-success-500 bg-success-50 dark:bg-success-900/20 px-1.5 py-0.5 rounded" title={`OPS-Verified ${new Date(verifiedAt).toLocaleString()} — month locked`}>
+                    <ShieldCheck className="w-3 h-3" /> OPS Verified <Lock className="w-3 h-3" />
+                  </span>
+                )}
+              </h2>
               <p className="text-xs text-muted-foreground">{monthLabel || month}</p>
             </div>
             <div className="hidden sm:flex items-center gap-1 shrink-0">
@@ -180,6 +291,17 @@ export default function AttendanceSheetModal({
               <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="px-2 py-1 border border-border rounded-md text-sm bg-card" />
               <button onClick={() => shiftMonth(1)} className="p-1.5 rounded hover:bg-accent" title="Next month"><ChevronRight className="w-4 h-4" /></button>
             </div>
+            {canOpsVerify && (
+              verifiedAt ? (
+                <Button size="sm" variant="secondary" className="hidden sm:inline-flex shrink-0" onClick={unVerify} disabled={opsBusy}>
+                  <Lock className="w-4 h-4 mr-1.5" /> Un-verify
+                </Button>
+              ) : (
+                <Button size="sm" variant="primary" className="hidden sm:inline-flex shrink-0" onClick={runOpsVerify} disabled={opsBusy || loading}>
+                  {opsBusy ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <ShieldCheck className="w-4 h-4 mr-1.5" />} OPS Verify
+                </Button>
+              )
+            )}
             <Button size="sm" variant="secondary" className="hidden sm:inline-flex shrink-0" onClick={download} disabled={loading || rows.length === 0}>
               <Download className="w-4 h-4 mr-1.5" /> Download Excel
             </Button>
@@ -192,7 +314,28 @@ export default function AttendanceSheetModal({
             <Button size="sm" variant="secondary" className="shrink-0" onClick={download} disabled={loading || rows.length === 0} title="Download Excel">
               <Download className="w-4 h-4" />
             </Button>
+            {canOpsVerify && (
+              verifiedAt ? (
+                <Button size="sm" variant="secondary" className="shrink-0" onClick={unVerify} disabled={opsBusy} title="Un-verify"><Lock className="w-4 h-4" /></Button>
+              ) : (
+                <Button size="sm" variant="primary" className="shrink-0" onClick={runOpsVerify} disabled={opsBusy || loading} title="OPS Verify"><ShieldCheck className="w-4 h-4" /></Button>
+              )
+            )}
           </div>
+          {opsMsg && (
+            <div className={`mt-2 flex items-start gap-2 px-3 py-2 rounded-md text-xs ${opsMsg.kind === "ok" ? "bg-success-50 text-success-700 border border-success-200 dark:bg-success-900/20 dark:text-success-400" : "bg-danger-50 text-danger-700 border border-danger-200"}`}>
+              {opsMsg.kind === "ok" ? <ShieldCheck className="w-4 h-4 mt-0.5 shrink-0" /> : <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />}
+              <span className="flex-1">{opsMsg.text}</span>
+              <button onClick={() => setOpsMsg(null)}><X className="w-3.5 h-3.5" /></button>
+            </div>
+          )}
+          {!verifiedAt && canOpsVerify && !loading && rows.length > 0 && (
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              {outstanding.length === 0
+                ? monthEnded ? "All days marked. Ready to OPS Verify." : "All days marked — verify once the month has ended."
+                : `${outstanding.length} unmarked day(s) highlighted below. Mark them, or click a cell to override with a reason.`}
+            </p>
+          )}
         </div>
 
         <div className="flex-1 overflow-auto p-2 md:p-4">
@@ -240,11 +383,26 @@ export default function AttendanceSheetModal({
                       const st = row.statusByDay[i] ?? "";
                       const ds = String(row.shiftByDay?.[i] ?? row.shift ?? "day").toLowerCase();
                       const si = shiftIndex.get(ds) ?? 0;
-                      return shifts.map((_c, s) => (
-                        <td key={`${i}-${s}`} className={`border border-border px-1 py-0.5 text-center font-medium ${statusClass(s === si ? st : "")}`}>
-                          {s === si ? st : ""}
-                        </td>
-                      ));
+                      const date = dayDate(i);
+                      const flagged = row.empId ? flaggedKeys.has(`${row.empId}|${i}`) : false;
+                      const overridden = row.empId ? overriddenKeys.has(`${row.empId}|${date}`) : false;
+                      return shifts.map((_c, s) => {
+                        const isStatusCell = s === si;
+                        // Flagged (unresolved unmarked) = red; overridden = amber dot.
+                        const cellBg = isStatusCell && flagged ? "bg-danger-100 dark:bg-danger-900/30 cursor-pointer"
+                          : isStatusCell && overridden ? "bg-warning-100 dark:bg-warning-900/30 cursor-pointer"
+                            : isStatusCell && row.empId ? "cursor-pointer hover:bg-accent" : "";
+                        return (
+                          <td
+                            key={`${i}-${s}`}
+                            onClick={isStatusCell && row.empId ? () => setOvTarget({ empId: row.empId!, empName: row.name, date, current: st, shift: ds }) : undefined}
+                            title={isStatusCell && flagged ? "Unmarked — click to override with a reason" : isStatusCell && overridden ? "Overridden — click to view history" : isStatusCell && row.empId ? "Click to override" : undefined}
+                            className={`border border-border px-1 py-0.5 text-center font-medium ${cellBg} ${statusClass(isStatusCell ? st : "")}`}
+                          >
+                            {isStatusCell ? (st || (flagged ? "•" : overridden ? "⊘" : "")) : ""}
+                          </td>
+                        );
+                      });
                     })}
                     <td className="border border-border px-1.5 py-0.5 text-center tabular-nums">{row.presents}</td>
                     <td className="border border-border px-1.5 py-0.5 text-center tabular-nums">{row.absents}</td>
@@ -276,8 +434,158 @@ export default function AttendanceSheetModal({
             <div className="mt-3 text-[11px] text-muted-foreground space-y-0.5">
               {shifts.map((c) => <span key={c} className="inline-block mr-3">{shiftAbbr(c)} = {c} shift</span>)}
               <div>P / A / L = present / absent / leave · X = not markable (separated / before joining / off-contract) · pay days = presents + allowed leaves − excess</div>
+              {canOpsVerify && <div><span className="inline-block w-3 h-3 align-middle rounded-sm bg-danger-100 dark:bg-danger-900/30 mr-1" /> unmarked (blocks OPS Verify) · <span className="inline-block w-3 h-3 align-middle rounded-sm bg-warning-100 dark:bg-warning-900/30 mr-1" /> overridden · click any cell to override</div>}
             </div>
           )}
+        </div>
+      </div>
+
+      {ovTarget && (
+        <OverrideModal
+          target={ovTarget}
+          clientId={clientId}
+          currentUserId={currentUserId}
+          currentUserRole={currentUserRole}
+          locked={!!verifiedAt}
+          history={overrides.filter((o) => o.employee_id === ovTarget.empId && o.attendance_date === ovTarget.date)}
+          onClose={() => setOvTarget(null)}
+          onSaved={() => { setOvTarget(null); setReloadKey((k) => k + 1); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Status tokens stored in attendance_records (Phase-6 model — lowercase), mapped
+// to the P/A/L letters the sheet renders.
+const OV_STATUSES: { key: "present" | "absent" | "leave"; label: string; letter: string; activeBtn: string }[] = [
+  { key: "present", label: "Present", letter: "P", activeBtn: "bg-success-600 text-white border-success-600" },
+  { key: "absent", label: "Absent", letter: "A", activeBtn: "bg-danger-600 text-white border-danger-600" },
+  { key: "leave", label: "Leave", letter: "L", activeBtn: "bg-warning-600 text-white border-warning-600" },
+];
+const letterToStatus = (l: string) => OV_STATUSES.find((s) => s.letter === l)?.key ?? null;
+
+// Override a cell: PICK the status (Present / Absent / Leave), give a required
+// reason, and it marks the day (attendance_records) + writes a permanent audit
+// row. Prior overrides for this exact employee+date are listed below.
+function OverrideModal({
+  target, clientId, currentUserId, currentUserRole, locked, history, onClose, onSaved,
+}: {
+  target: { empId: string; empName: string; date: string; current: string; shift: string };
+  clientId: string;
+  currentUserId: string | null;
+  currentUserRole: string | null;
+  locked: boolean;
+  history: OverrideRow[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const wasUnmarked = target.current === "";
+  const [status, setStatus] = useState<"present" | "absent" | "leave" | null>(letterToStatus(target.current));
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const save = async () => {
+    if (locked) { setErr("This month is OPS-verified and locked. Un-verify it to change attendance."); return; }
+    if (!status) { setErr("Choose Present, Absent, or Leave."); return; }
+    if (!reason.trim()) { setErr("A reason is required to override."); return; }
+    setBusy(true); setErr(null);
+    // 1. Mark the day (upsert keyed on employee+date+worked_shift, per the model).
+    const { error: mErr } = await supabase.from("attendance_records").upsert({
+      employee_id: target.empId,
+      attendance_date: target.date,
+      status,
+      absent_reason: status === "absent" ? "awol" : null,
+      scheduled_shift: target.shift,
+      worked_shift: target.shift,
+      entry_type: "normal",
+      source: "manual",
+      marked_by_role: currentUserRole ?? "hr",
+      marked_by_user_id: currentUserId,
+      marked_at: new Date().toISOString(),
+      supervisor_override: true,
+      override_reason: reason.trim(),
+    }, { onConflict: "employee_id,attendance_date,worked_shift" });
+    if (mErr) { setBusy(false); setErr(mErr.message); return; }
+    // 2. Permanent audit record (before → after + reason).
+    const { error: aErr } = await supabase.from("attendance_overrides").insert({
+      client_id: clientId,
+      employee_id: target.empId,
+      attendance_date: target.date,
+      reason: reason.trim(),
+      before_value: wasUnmarked ? "unmarked" : target.current,
+      after_value: OV_STATUSES.find((s) => s.key === status)?.letter ?? status,
+      created_by: currentUserId,
+    });
+    setBusy(false);
+    if (aErr) { setErr(aErr.message); return; }
+    onSaved();
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-3" onClick={onClose}>
+      <div className="bg-card rounded-xl shadow-xl w-full max-w-md flex flex-col max-h-[85dvh]" onClick={(e) => e.stopPropagation()}>
+        <div className="border-b border-border px-4 py-3 flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 text-warning-600" />
+          <div className="min-w-0 flex-1">
+            <h3 className="font-semibold text-sm text-foreground truncate">Override — {target.empName}</h3>
+            <p className="text-xs text-muted-foreground">{target.date} · {target.shift} shift · currently {wasUnmarked ? "unmarked" : target.current}</p>
+          </div>
+          <button onClick={onClose} className="p-1 rounded hover:bg-accent"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="p-4 space-y-3 overflow-auto">
+          {locked && (
+            <p className="text-xs text-danger-600 flex items-center gap-1"><Lock className="w-3.5 h-3.5" /> Month is OPS-verified and locked. Un-verify to edit.</p>
+          )}
+          <div>
+            <label className="block text-xs text-muted-foreground mb-1">Mark this day as</label>
+            <div className="flex gap-2">
+              {OV_STATUSES.map((s) => (
+                <button
+                  key={s.key} type="button" disabled={locked}
+                  onClick={() => setStatus(s.key)}
+                  className={`flex-1 px-3 py-2 rounded-md text-sm border transition-colors disabled:opacity-50 ${status === s.key ? s.activeBtn : "border-border text-foreground hover:bg-accent"}`}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs text-muted-foreground mb-1">Reason (required)</label>
+            <textarea
+              value={reason} onChange={(e) => setReason(e.target.value)} rows={3} disabled={locked}
+              placeholder="Why is this day being set manually? e.g. guard confirmed present via WhatsApp, records lost, etc."
+              className="w-full px-3 py-2 border border-border rounded-md text-sm bg-card focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50"
+            />
+          </div>
+          {err && <p className="text-xs text-danger-600">{err}</p>}
+          <div className="flex gap-2">
+            <Button size="sm" variant="primary" className="flex-1" onClick={save} disabled={busy || locked || !status || !reason.trim()}>
+              {busy ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : "Confirm Override"}
+            </Button>
+            <Button size="sm" variant="secondary" className="flex-1" onClick={onClose}>Cancel</Button>
+          </div>
+
+          <div className="pt-2 border-t border-border">
+            <p className="text-xs font-medium text-foreground mb-1.5">Override History</p>
+            {history.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No prior overrides for this day.</p>
+            ) : (
+              <ul className="space-y-2">
+                {history.map((o) => (
+                  <li key={o.id} className="text-xs bg-secondary/50 rounded-md px-2.5 py-1.5">
+                    <div className="text-foreground">{o.reason}</div>
+                    <div className="text-muted-foreground mt-0.5">
+                      {new Date(o.created_at).toLocaleString()}
+                      {(o.before_value || o.after_value) && <> · {o.before_value ?? "?"} → {o.after_value ?? "?"}</>}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       </div>
     </div>

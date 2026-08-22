@@ -179,6 +179,7 @@ export default function AttendanceBoard() {
   const [search, setSearch] = useState("");
   // Bulk Mark by Employee (calendar) — same permission gate as the Relievers tab.
   const canBulk = hasPermission(profile, "attendance.bulk_mark");
+  const canOpsVerify = hasPermission(profile, "attendance.ops_verify");
   const [bulkOpen, setBulkOpen] = useState(false);
 
   const load = async () => {
@@ -758,10 +759,10 @@ export default function AttendanceBoard() {
                       type="button"
                       onClick={() => setSheetView({ clientId: c.clientId, clientName: c.clientName })}
                       className="px-3 flex items-center gap-1.5 text-xs text-muted-foreground hover:bg-accent border-l border-border shrink-0"
-                      title="View monthly attendance sheet"
+                      title="Open the Monthly Board"
                     >
                       <FileSpreadsheet className="w-4 h-4" strokeWidth={1.5} />
-                      <span className="hidden md:inline">View attendance</span>
+                      <span className="hidden md:inline">Monthly Board</span>
                     </button>
                     </div>
 
@@ -802,10 +803,10 @@ export default function AttendanceBoard() {
                                 type="button"
                                 onClick={() => setSheetView({ clientId: c.clientId, clientName: c.clientName, siteId: st.siteId, siteName: st.siteName })}
                                 className="px-3 flex items-center gap-1.5 text-xs text-muted-foreground hover:bg-accent border-l border-border shrink-0"
-                                title="View this site's monthly attendance sheet"
+                                title="Open this site's Monthly Board"
                               >
                                 <FileSpreadsheet className="w-4 h-4" strokeWidth={1.5} />
-                                <span className="hidden md:inline">View</span>
+                                <span className="hidden md:inline">Monthly Board</span>
                               </button>
                               </div>
                               )}
@@ -899,6 +900,10 @@ export default function AttendanceBoard() {
           clientName={sheetView.clientName}
           siteId={sheetView.siteId}
           siteName={sheetView.siteName}
+          companyId={company?.id ?? null}
+          canOpsVerify={canOpsVerify}
+          currentUserId={profile?.id ?? null}
+          currentUserRole={profile?.role ?? null}
           onClose={() => setSheetView(null)}
         />
       )}
