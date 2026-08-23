@@ -17,6 +17,7 @@ import EmployeeAssignments from "./pages/super-admin/EmployeeAssignments";
 import AttendanceManagement from "./pages/super-admin/AttendanceManagement";
 import AttendanceBoard from "./pages/super-admin/AttendanceBoard";
 import PayrollManagement from "./pages/super-admin/PayrollManagement";
+import PayrollRun from "./pages/super-admin/PayrollRun";
 import Accounting from "./pages/super-admin/Accounting";
 import FinancialReports from "./pages/super-admin/FinancialReports";
 import Expenses from "./pages/super-admin/Expenses";
@@ -159,6 +160,7 @@ export const router = createRouter([
       { path: "attendance/timesheet", element: guard(["attendance.view", "attendance.edit"], <AttendanceManagement />) },
       // Payroll Runs page removed — payroll is the per-employee Payslips view only.
       { path: "payroll", element: guard(["payroll.view", "payroll.edit"], <PayrollManagement />) },
+      { path: "payroll-run", element: guard(["payroll.view", "payroll.edit"], <PayrollRun />) },
       { path: "payroll-runs", element: <Navigate to="/super-admin/payroll" replace /> },
       { path: "performance", element: guard(["payroll.view", "performance.approve"], <Performance />) },
       // Recruitment page deleted — intake is set on the employee form itself.

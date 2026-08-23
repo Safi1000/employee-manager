@@ -89,9 +89,20 @@ const daysInMonth = (periodMonth: string) => {
   return new Date(y, m, 0).getDate();
 };
 
-type PayrollManagementProps = { relieversOnly?: boolean };
+type PayrollManagementProps = {
+  relieversOnly?: boolean;
+  // Embed mode for the Payroll Run page: scope the roster to one client, force a
+  // month, and hide page chrome + all payment/disburse UI ("through Net Salary"
+  // only). Calculation and Save logic are unchanged — this is a pure UI trim.
+  clientScopeId?: string | null;
+  throughNet?: boolean;
+  periodOverride?: string;
+};
 
-export default function PayrollManagement({ relieversOnly = false }: PayrollManagementProps = {}) {
+export default function PayrollManagement({ relieversOnly = false, clientScopeId = null, throughNet = false, periodOverride }: PayrollManagementProps = {}) {
+  // `embedded` = rendered inside the Payroll Run page: no page Header, filters,
+  // totals cards, or bulk actions — just the client's roster + the payslip drawer.
+  const embedded = throughNet || !!clientScopeId;
   const { regionId } = useRegion();
   const today = new Date();
   const currentPeriod = firstOfMonth(today);
@@ -696,6 +707,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       )
         return false;
       if (shiftFilter !== "all" && e.shift !== shiftFilter) return false;
+      if (clientScopeId && e.client_id !== clientScopeId) return false;
       if (clientFilter !== "all" && e.client_id !== clientFilter) return false;
       // Site comes from the guard's open posting, not the employee row.
       if (siteFilter !== "all" && siteByGuard.get(e.id) !== siteFilter) return false;
@@ -725,7 +737,13 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
       if (categoryFilter !== "all" && (e.category ?? "client") !== categoryFilter) return false;
       return true;
     });
-  }, [rows, search, shiftFilter, clientFilter, siteFilter, siteByGuard, statusFilter, disbursedFilter, empTab, categoryFilter, employeeAddlBranches, relieversOnly, branches]);
+  }, [rows, search, shiftFilter, clientFilter, clientScopeId, siteFilter, siteByGuard, statusFilter, disbursedFilter, empTab, categoryFilter, employeeAddlBranches, relieversOnly, branches]);
+
+  // Payroll Run drives the month from outside — keep the embed in sync.
+  useEffect(() => {
+    if (periodOverride && periodOverride !== selectedPeriod) setSelectedPeriod(periodOverride);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [periodOverride]);
 
   /**
    * Sites belonging to the selected client, pooled across every one of their
@@ -1513,7 +1531,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
 
   return (
     <>
-      {totalUnmarkedDays > 0 && !warningDismissed && (
+      {!embedded && totalUnmarkedDays > 0 && !warningDismissed && (
         <div className="bg-danger-50 border-b border-danger-200 px-4 md:px-8 py-2 text-sm text-danger-700 dark:text-danger-500 flex items-center justify-between gap-3">
           <span>
             <strong>{totalUnmarkedDays.toLocaleString()}</strong> unmarked attendance-day
@@ -1537,6 +1555,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
         message={bulkSubmitting ? "Disbursing payslips…" : "Clearing payslips…"}
         detail="This may take a moment for large batches. Please don't close this tab."
       />
+      {!embedded && (
       <Header
         title={relieversOnly ? "Reliever Payroll" : "Payroll Management"}
         subtitle={
@@ -1574,9 +1593,10 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
           </div>
         }
       />
+      )}
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        <div className="px-8 pt-8 pb-0">
+        <div className={embedded ? "px-0 pt-0 pb-0" : "px-8 pt-8 pb-0"}>
         {error && (
           <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
@@ -1587,6 +1607,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
           </div>
         )}
 
+        {!embedded && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <div className="bg-card p-5 rounded-xl border border-border border-l-4 border-l-success-500">
             <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Total Disbursed</p>
@@ -1618,9 +1639,10 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
             </p>
           </div>
         </div>
+        )}
         </div>
 
-        <div className="px-8 pb-8">
+        <div className={embedded ? "px-0 pb-0" : "px-8 pb-8"}>
         <div className="flex flex-col lg:flex-row gap-6 items-start">
           <div className="flex-1 min-w-0 w-full">
             <div className="bg-card rounded-xl border border-border">
@@ -2211,8 +2233,9 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
 
                   {/* Amount Paid (locked, cumulative) + Balance + the Payment
                       Amount being made now. Disburse adds Payment Amount to
-                      Amount Paid and moves exactly that much. */}
-                  {(() => {
+                      Amount Paid and moves exactly that much. Hidden in the
+                      Payroll Run embed ("through Net Salary" only). */}
+                  {!throughNet && (() => {
                     const paidSoFar = Math.round(selectedRow.amount_paid || 0);
                     const balance = Math.round(selectedRow.net_salary) - paidSoFar;
                     const payNow = Math.round(Number(paymentAmountDraft) || 0);
@@ -2267,6 +2290,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                     );
                   })()}
 
+                  {!throughNet && (
                   <div className="pt-3 border-t border-slate-200 space-y-2">
                     <label className="block text-xs text-slate-500">Payment Mode</label>
                     <ThemedSelect
@@ -2355,6 +2379,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                       </>
                     )}
                   </div>
+                  )}
 
                   {rowError && (
                     <div className="flex items-start gap-2 p-2 bg-danger-50 text-danger-700 border border-danger-200 rounded text-xs">
@@ -2365,6 +2390,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                       </button>
                     </div>
                   )}
+                  {!throughNet && (
                   <div className="grid grid-cols-2 gap-2 pt-3 border-t border-slate-200">
                     <Button
                       variant={selectedRow.status === "Cleared" ? "secondary" : "primary"}
@@ -2412,6 +2438,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                           : "Disburse"}
                     </Button>
                   </div>
+                  )}
 
                   <div className="flex gap-2 pt-2">
                     <Button
@@ -2423,6 +2450,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                     >
                       {savingId === selectedRow.employee.id ? "Saving…" : "Save"}
                     </Button>
+                    {!throughNet && (
                     <Button
                       variant="primary"
                       size="sm"
@@ -2431,6 +2459,7 @@ export default function PayrollManagement({ relieversOnly = false }: PayrollMana
                     >
                       Payslip
                     </Button>
+                    )}
                   </div>
                 </div>
               ) : null}
