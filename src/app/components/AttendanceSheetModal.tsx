@@ -48,6 +48,9 @@ export default function AttendanceSheetModal({
 
   // OPS Verify state (per client + month).
   const [verifiedAt, setVerifiedAt] = useState<string | null>(null); // ISO or null (= not verified)
+  // Payroll Run phase for this client/category + month. Un-verify is only allowed
+  // while the phase is Draft (no row); once in Review/Finance Verify it's locked.
+  const [runPhase, setRunPhase] = useState<"review" | "finance_verify" | null>(null);
   const [overrides, setOverrides] = useState<OverrideRow[]>([]);
   const [opsMsg, setOpsMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [opsBusy, setOpsBusy] = useState(false);
@@ -56,6 +59,12 @@ export default function AttendanceSheetModal({
   const [ovTarget, setOvTarget] = useState<{ empId: string; empName: string; date: string; current: string; shift: string } | null>(null);
 
   const label = siteName ? `${clientName} — ${siteName}` : clientName;
+  // Synthetic (non-client) groups from the attendance board carry id 'cat:<category>'
+  // — office_staff / armed / gunman have no client. Scope everything by category
+  // for those; by real client uuid otherwise.
+  const synthetic = clientId.startsWith("cat:");
+  const category = synthetic ? clientId.slice(4) : null;
+  const realClientId = synthetic ? null : clientId;
   const monthStartDate = `${month}-01`;
   // Month has ended when its last calendar day is strictly before today.
   const monthEnded = useMemo(() => {
@@ -72,14 +81,21 @@ export default function AttendanceSheetModal({
       setLoading(true);
       setErr(null);
       try {
+        const empQuery = supabase
+          .from("employees")
+          .select("id, full_name, display_number, guard_code, employee_code, contract_id, client_id, join_date, last_working_day, termination_date, lifecycle_state, shift")
+          .neq("lifecycle_state", "archived");
         const [{ data: client }, { data: contracts }, { data: emps }] = await Promise.all([
-          supabase.from("clients").select("id, name, employee_id_prefix, allowed_leaves_per_month").eq("id", clientId).single(),
-          supabase.from("contracts").select("id, allowed_leaves_per_month").eq("client_id", clientId),
-          supabase
-            .from("employees")
-            .select("id, full_name, display_number, guard_code, employee_code, contract_id, client_id, join_date, last_working_day, termination_date, lifecycle_state, shift")
-            .eq("client_id", clientId)
-            .neq("lifecycle_state", "archived"),
+          // Synthetic groups have no real client row.
+          synthetic
+            ? Promise.resolve({ data: null })
+            : supabase.from("clients").select("id, name, employee_id_prefix, allowed_leaves_per_month").eq("id", clientId).single(),
+          synthetic
+            ? Promise.resolve({ data: [] })
+            : supabase.from("contracts").select("id, allowed_leaves_per_month").eq("client_id", clientId),
+          synthetic
+            ? empQuery.eq("category", category as string)
+            : empQuery.eq("client_id", clientId),
         ]);
 
         let list = (emps ?? []) as any[];
@@ -134,18 +150,21 @@ export default function AttendanceSheetModal({
     let cancelled = false;
     setOpsMsg(null);
     (async () => {
-      const [{ data: ver }, { data: ovs }] = await Promise.all([
-        supabase.from("attendance_month_verifications")
-          .select("verified_at").eq("client_id", clientId).eq("period_month", monthStartDate).maybeSingle(),
-        supabase.from("attendance_overrides")
-          .select("id, employee_id, attendance_date, reason, before_value, after_value, created_by, created_at")
-          .eq("client_id", clientId)
-          .gte("attendance_date", monthStartDate).lte("attendance_date", `${month}-31`)
-          .order("created_at", { ascending: false }),
+      const verBase = supabase.from("attendance_month_verifications").select("verified_at").eq("period_month", monthStartDate);
+      const ovBase = supabase.from("attendance_overrides")
+        .select("id, employee_id, attendance_date, reason, before_value, after_value, created_by, created_at")
+        .gte("attendance_date", monthStartDate).lte("attendance_date", `${month}-31`)
+        .order("created_at", { ascending: false });
+      const phBase = supabase.from("payroll_run_phases").select("phase").eq("period_month", monthStartDate);
+      const [{ data: ver }, { data: ovs }, { data: ph }] = await Promise.all([
+        (synthetic ? verBase.eq("category", category as string) : verBase.eq("client_id", clientId)).maybeSingle(),
+        synthetic ? ovBase.eq("category", category as string) : ovBase.eq("client_id", clientId),
+        (synthetic ? phBase.eq("category", category as string) : phBase.eq("client_id", clientId)).maybeSingle(),
       ]);
       if (cancelled) return;
       setVerifiedAt((ver as any)?.verified_at ?? null);
       setOverrides((ovs ?? []) as OverrideRow[]);
+      setRunPhase((ph as any)?.phase ?? null);
     })();
     return () => { cancelled = true; };
   }, [clientId, month, monthStartDate, reloadKey]);
@@ -153,6 +172,10 @@ export default function AttendanceSheetModal({
   // Set of "empId|date" that has at least one override (an unmarked day so covered
   // is treated as resolved for OPS Verify).
   const overriddenKeys = useMemo(() => new Set(overrides.map((o) => `${o.employee_id}|${o.attendance_date}`)), [overrides]);
+
+  // Un-verify is locked once payroll has moved past Draft for this scope+month.
+  const phaseLocked = runPhase !== null;
+  const unverifyLockMsg = `Locked — payroll is in ${runPhase === "finance_verify" ? "Finance Verify" : "Review"} for this month. Move it back to Draft to un-verify.`;
 
   const dayDate = (dayIdx: number) => `${month}-${String(dayIdx + 1).padStart(2, "0")}`;
 
@@ -185,7 +208,7 @@ export default function AttendanceSheetModal({
     }
     setOpsBusy(true);
     const { error } = await supabase.from("attendance_month_verifications")
-      .insert({ client_id: clientId, period_month: monthStartDate, verified_by: currentUserId });
+      .insert({ client_id: realClientId, category, period_month: monthStartDate, verified_by: currentUserId });
     setOpsBusy(false);
     if (error) { setOpsMsg({ kind: "err", text: error.message }); return; }
     setReloadKey((k) => k + 1);
@@ -195,8 +218,8 @@ export default function AttendanceSheetModal({
   const unVerify = async () => {
     if (!window.confirm("Un-verify this month? Attendance edits will be unlocked again. The override audit log is kept.")) return;
     setOpsBusy(true);
-    const { error } = await supabase.from("attendance_month_verifications")
-      .delete().eq("client_id", clientId).eq("period_month", monthStartDate);
+    const delQ = supabase.from("attendance_month_verifications").delete().eq("period_month", monthStartDate);
+    const { error } = await (synthetic ? delQ.eq("category", category as string) : delQ.eq("client_id", clientId));
     setOpsBusy(false);
     if (error) { setOpsMsg({ kind: "err", text: error.message }); return; }
     setReloadKey((k) => k + 1);
@@ -293,7 +316,7 @@ export default function AttendanceSheetModal({
             </div>
             {canOpsVerify && (
               verifiedAt ? (
-                <Button size="sm" variant="secondary" className="hidden sm:inline-flex shrink-0" onClick={unVerify} disabled={opsBusy}>
+                <Button size="sm" variant="secondary" className="hidden sm:inline-flex shrink-0" onClick={unVerify} disabled={opsBusy || phaseLocked} title={phaseLocked ? unverifyLockMsg : "Remove OPS verification"}>
                   <Lock className="w-4 h-4 mr-1.5" /> Un-verify
                 </Button>
               ) : (
@@ -316,7 +339,7 @@ export default function AttendanceSheetModal({
             </Button>
             {canOpsVerify && (
               verifiedAt ? (
-                <Button size="sm" variant="secondary" className="shrink-0" onClick={unVerify} disabled={opsBusy} title="Un-verify"><Lock className="w-4 h-4" /></Button>
+                <Button size="sm" variant="secondary" className="shrink-0" onClick={unVerify} disabled={opsBusy || phaseLocked} title={phaseLocked ? unverifyLockMsg : "Un-verify"}><Lock className="w-4 h-4" /></Button>
               ) : (
                 <Button size="sm" variant="primary" className="shrink-0" onClick={runOpsVerify} disabled={opsBusy || loading} title="OPS Verify"><ShieldCheck className="w-4 h-4" /></Button>
               )
@@ -335,6 +358,9 @@ export default function AttendanceSheetModal({
                 ? monthEnded ? "All days marked. Ready to OPS Verify." : "All days marked — verify once the month has ended."
                 : `${outstanding.length} unmarked day(s) highlighted below. Mark them, or click a cell to override with a reason.`}
             </p>
+          )}
+          {verifiedAt && canOpsVerify && phaseLocked && (
+            <p className="mt-2 text-[11px] text-warning-700 dark:text-warning-500 flex items-center gap-1"><Lock className="w-3 h-3" /> {unverifyLockMsg}</p>
           )}
         </div>
 
@@ -443,7 +469,8 @@ export default function AttendanceSheetModal({
       {ovTarget && (
         <OverrideModal
           target={ovTarget}
-          clientId={clientId}
+          clientId={realClientId}
+          category={category}
           currentUserId={currentUserId}
           currentUserRole={currentUserRole}
           locked={!!verifiedAt}
@@ -469,10 +496,11 @@ const letterToStatus = (l: string) => OV_STATUSES.find((s) => s.letter === l)?.k
 // reason, and it marks the day (attendance_records) + writes a permanent audit
 // row. Prior overrides for this exact employee+date are listed below.
 function OverrideModal({
-  target, clientId, currentUserId, currentUserRole, locked, history, onClose, onSaved,
+  target, clientId, category, currentUserId, currentUserRole, locked, history, onClose, onSaved,
 }: {
   target: { empId: string; empName: string; date: string; current: string; shift: string };
-  clientId: string;
+  clientId: string | null;
+  category: string | null;
   currentUserId: string | null;
   currentUserRole: string | null;
   locked: boolean;
@@ -511,6 +539,7 @@ function OverrideModal({
     // 2. Permanent audit record (before → after + reason).
     const { error: aErr } = await supabase.from("attendance_overrides").insert({
       client_id: clientId,
+      category,
       employee_id: target.empId,
       attendance_date: target.date,
       reason: reason.trim(),

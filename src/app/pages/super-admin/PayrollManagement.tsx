@@ -95,14 +95,20 @@ type PayrollManagementProps = {
   // month, and hide page chrome + all payment/disburse UI ("through Net Salary"
   // only). Calculation and Save logic are unchanged — this is a pure UI trim.
   clientScopeId?: string | null;
+  // Scope the roster to a client-less category group (office_staff, reliever, …).
+  categoryScope?: string | null;
   throughNet?: boolean;
   periodOverride?: string;
+  // Payroll Run "inline" layout: trimmed columns (Name/Attendance/Base/Net) and the
+  // Salary Calculation panel rendered inline below the table rather than as a side
+  // panel. Same calc/Save/rowEdits — layout only.
+  runInline?: boolean;
 };
 
-export default function PayrollManagement({ relieversOnly = false, clientScopeId = null, throughNet = false, periodOverride }: PayrollManagementProps = {}) {
+export default function PayrollManagement({ relieversOnly = false, clientScopeId = null, categoryScope = null, throughNet = false, periodOverride, runInline = false }: PayrollManagementProps = {}) {
   // `embedded` = rendered inside the Payroll Run page: no page Header, filters,
-  // totals cards, or bulk actions — just the client's roster + the payslip drawer.
-  const embedded = throughNet || !!clientScopeId;
+  // totals cards, or bulk actions — just the scoped roster + the payslip drawer.
+  const embedded = throughNet || !!clientScopeId || !!categoryScope;
   const { regionId } = useRegion();
   const today = new Date();
   const currentPeriod = firstOfMonth(today);
@@ -694,10 +700,16 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
       const e = r.employee;
-      // Reliever panel only shows reliever-category staff; the main payroll
-      // panel hides them so they aren't double-managed.
-      if (relieversOnly && e.category !== "reliever") return false;
-      if (!relieversOnly && e.category === "reliever") return false;
+      // A category-scoped embed (Payroll Run) filters purely by category and
+      // ignores the reliever include/exclude rules the standalone panels use.
+      if (categoryScope) {
+        if ((e.category ?? "client") !== categoryScope) return false;
+      } else {
+        // Reliever panel only shows reliever-category staff; the main payroll
+        // panel hides them so they aren't double-managed.
+        if (relieversOnly && e.category !== "reliever") return false;
+        if (!relieversOnly && e.category === "reliever") return false;
+      }
       if (
         q &&
         !e.full_name.toLowerCase().includes(q) &&
@@ -737,7 +749,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       if (categoryFilter !== "all" && (e.category ?? "client") !== categoryFilter) return false;
       return true;
     });
-  }, [rows, search, shiftFilter, clientFilter, clientScopeId, siteFilter, siteByGuard, statusFilter, disbursedFilter, empTab, categoryFilter, employeeAddlBranches, relieversOnly, branches]);
+  }, [rows, search, shiftFilter, clientFilter, clientScopeId, categoryScope, siteFilter, siteByGuard, statusFilter, disbursedFilter, empTab, categoryFilter, employeeAddlBranches, relieversOnly, branches]);
 
   // Payroll Run drives the month from outside — keep the embed in sync.
   useEffect(() => {
@@ -1643,9 +1655,10 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         </div>
 
         <div className={embedded ? "px-0 pb-0" : "px-8 pb-8"}>
-        <div className="flex flex-col lg:flex-row gap-6 items-start">
+        <div className={`flex flex-col gap-6 items-start ${runInline ? "" : "lg:flex-row"}`}>
           <div className="flex-1 min-w-0 w-full">
-            <div className="bg-card rounded-xl border border-border">
+            <div className={runInline ? "" : "bg-card rounded-xl border border-border"}>
+              {!runInline && (
               <div className="p-4 border-b border-border">
                 <div className="flex items-center gap-2 flex-wrap">
                   <div className="w-[220px] min-w-[180px] relative">
@@ -1774,20 +1787,23 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                   </div>
                 )}
               </div>
+              )}
 
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-slate-200">
                       <th className="text-left px-4 py-3 text-xs text-slate-500">Employee</th>
+                      {!runInline && (
                       <th className="text-left px-4 py-3 text-xs text-slate-500">
                         {relieversOnly ? "Worked for" : "Client"}
                       </th>
+                      )}
                       <th className="text-left px-4 py-3 text-xs text-slate-500">Attendance</th>
                       <th className="text-left px-4 py-3 text-xs text-slate-500">Base</th>
                       <th className="text-left px-4 py-3 text-xs text-slate-500">Net Salary</th>
-                      <th className="text-left px-4 py-3 text-xs text-slate-500">Status</th>
-                      <th className="text-left px-4 py-3 text-xs text-slate-500">Actions</th>
+                      {!runInline && <th className="text-left px-4 py-3 text-xs text-slate-500">Status</th>}
+                      {!runInline && <th className="text-left px-4 py-3 text-xs text-slate-500">Actions</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -1842,6 +1858,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                 <span className="block text-[11px] text-slate-400">{e.guard_code ?? e.employee_code}</span>
                               </div>
                             </td>
+                            {!runInline && (
                             <td className="px-4 py-3 text-sm text-slate-700">
                               {relieversOnly ? (() => {
                                 const breakdown = relieverPerClient.get(e.id);
@@ -1869,6 +1886,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                 e.client_name ?? <span className="text-slate-400">—</span>
                               )}
                             </td>
+                            )}
                             <td className="px-4 py-3 text-xs text-slate-600">
                               {(() => {
                                 const unmarked = Math.max(
@@ -1910,6 +1928,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                 );
                               })()}
                             </td>
+                            {!runInline && (
                             <td className="px-4 py-3">
                               {/* §28.1: Status + Disbursed merged into a single chip. The
                                   status toggle stays interactive; a disbursed dot rides on it. */}
@@ -1935,6 +1954,8 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                 {row.status}{row.disbursed ? " · Disbursed" : ""}
                               </button>
                             </td>
+                            )}
+                            {!runInline && (
                             <td className="px-4 py-3">
                               <Button
                                 variant="ghost"
@@ -1947,6 +1968,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                 Payslip
                               </Button>
                             </td>
+                            )}
                           </tr>
                         );
                       })}
@@ -1958,8 +1980,8 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
 
           {selectedRow && (
           <div
-            className="w-full lg:w-[400px] flex-shrink-0 lg:sticky lg:top-4 lg:overflow-y-auto"
-            style={{ maxHeight: drawerMaxH }}
+            className={runInline ? "w-full" : "w-full lg:w-[400px] flex-shrink-0 lg:sticky lg:top-4 lg:overflow-y-auto"}
+            style={runInline ? undefined : { maxHeight: drawerMaxH }}
           >
             <div className="bg-card rounded-xl border border-border p-4">
               <div className="flex items-center justify-between mb-4">
