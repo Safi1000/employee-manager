@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronRight, ShieldAlert, ShieldCheck, Loader2, AlertCircle, ArrowRight, Building2, Users } from "lucide-react";
+import { ChevronRight, ShieldAlert, ShieldCheck, Loader2, AlertCircle, ArrowRight, Building2, Users, Lock } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
+import Modal from "../../components/Modal";
 import PayrollManagement from "./PayrollManagement";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
@@ -18,7 +19,14 @@ import { useRegion } from "../../lib/region";
 //     0191 client scope, 0193 category scope).
 //   • Review embeds the existing Payslips page, scoped + "through Net Salary".
 
-const monthNow = () => new Date().toISOString().slice(0, 7);
+// Default to the previous month — payroll is processed after a month ends (in
+// August you disburse July's salary). Matches Payroll Management's default.
+const monthNow = () => {
+  const d = new Date();
+  d.setDate(1);
+  d.setMonth(d.getMonth() - 1);
+  return d.toISOString().slice(0, 7);
+};
 const fmtMonth = (ym: string) => {
   const [y, m] = ym.split("-").map(Number);
   return new Date(y, m - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
@@ -37,6 +45,15 @@ type Scope = {
   category: string | null;
   verifiable: boolean;      // false for relievers (no OPS-verify surface)
 };
+type Totals = { disbursed: number; notDisbursed: number; advance: number; disbursedCount: number; notDisbursedCount: number };
+const ZERO_TOTALS: Totals = { disbursed: 0, notDisbursed: 0, advance: 0, disbursedCount: 0, notDisbursedCount: 0 };
+const addTotals = (a: Totals, b: Totals): Totals => ({
+  disbursed: a.disbursed + b.disbursed,
+  notDisbursed: a.notDisbursed + b.notDisbursed,
+  advance: a.advance + b.advance,
+  disbursedCount: a.disbursedCount + b.disbursedCount,
+  notDisbursedCount: a.notDisbursedCount + b.notDisbursedCount,
+});
 
 export default function PayrollRun() {
   const { profile } = useAuth();
@@ -52,17 +69,25 @@ export default function PayrollRun() {
   const [scopes, setScopes] = useState<Scope[]>([]);
   const [verified, setVerified] = useState<Set<string>>(new Set());       // scope keys OPS-verified this month
   const [phaseByKey, setPhaseByKey] = useState<Map<string, Phase>>(new Map());
+  const [financeVerified, setFinanceVerified] = useState<Set<string>>(new Set()); // permanently Finance Verified keys
   const [expanded, setExpanded] = useState<string | null>(null);
+  // Finance Verify is irreversible → confirm first. { scope } = one, { all:true } = bulk.
+  const [confirmFV, setConfirmFV] = useState<{ scope?: Scope; all?: boolean } | null>(null);
+  // Per-scope payslip totals for the month, keyed like `verified`/`phaseByKey`.
+  // Same columns PayrollManagement sums (payslips.net_salary/amount_paid/advance),
+  // so the cards match the embedded page for saved payslips.
+  const [totalsByKey, setTotalsByKey] = useState<Map<string, Totals>>(new Map());
 
   const load = async () => {
     setLoading(true); setErr(null);
     try {
-      const [{ data: cls }, { data: catEmps }, { data: vers }, { data: phs }] = await Promise.all([
+      const [{ data: cls }, { data: catEmps }, { data: vers }, { data: phs }, { data: ps }] = await Promise.all([
         supabase.from("clients").select("id, name").order("name"),
         // Client-less staff → category groups (office_staff, reliever, armed, gunman).
         supabase.from("employees").select("category").is("client_id", null).neq("category", "client").neq("lifecycle_state", "archived"),
         supabase.from("attendance_month_verifications").select("client_id, category").eq("period_month", period),
-        supabase.from("payroll_run_phases").select("client_id, category, phase").eq("period_month", period),
+        supabase.from("payroll_run_phases").select("client_id, category, phase, finance_verified_at").eq("period_month", period),
+        supabase.from("payslips").select("net_salary, amount_paid, advance, disbursed, employee_id").eq("period_month", period),
       ]);
       const clientScopes: Scope[] = ((cls ?? []) as any[]).map((c) => ({ key: c.id, name: c.name, clientId: c.id, category: null, verifiable: true }));
       const cats = Array.from(new Set(((catEmps ?? []) as any[]).map((e) => e.category).filter(Boolean))).sort();
@@ -70,6 +95,31 @@ export default function PayrollRun() {
       setScopes([...clientScopes, ...catScopes]);
       setVerified(new Set(((vers ?? []) as any[]).map((v) => (v.client_id ?? `cat:${v.category}`))));
       setPhaseByKey(new Map(((phs ?? []) as any[]).map((p) => [(p.client_id ?? `cat:${p.category}`), p.phase as Phase])));
+      setFinanceVerified(new Set(((phs ?? []) as any[]).filter((p) => p.finance_verified_at).map((p) => (p.client_id ?? `cat:${p.category}`))));
+
+      // Aggregate this month's payslips by scope. Map each payslip's employee to a
+      // scope key (client_id, else `cat:<category>`), then sum the same figures
+      // PayrollManagement shows so the cards agree with the embedded page.
+      const rows = (ps ?? []) as any[];
+      const empIds = Array.from(new Set(rows.map((r) => r.employee_id)));
+      const empScope = new Map<string, string>();
+      if (empIds.length) {
+        const { data: emps } = await supabase.from("employees").select("id, client_id, category").in("id", empIds);
+        for (const e of (emps ?? []) as any[]) empScope.set(e.id, e.client_id ?? `cat:${e.category}`);
+      }
+      const totals = new Map<string, Totals>();
+      for (const r of rows) {
+        const key = empScope.get(r.employee_id);
+        if (!key) continue;
+        const cur = totals.get(key) ?? { ...ZERO_TOTALS };
+        const paid = Math.round(r.amount_paid || 0);
+        cur.disbursed += paid;
+        cur.notDisbursed += Math.max(0, Math.round(r.net_salary || 0) - paid);
+        cur.advance += Math.round(r.advance || 0);
+        if (r.disbursed) cur.disbursedCount += 1; else cur.notDisbursedCount += 1;
+        totals.set(key, cur);
+      }
+      setTotalsByKey(totals);
     } catch (e: any) { setErr(e.message ?? String(e)); }
     finally { setLoading(false); }
   };
@@ -79,6 +129,13 @@ export default function PayrollRun() {
   const draftScopes = useMemo(() => scopes.filter((s) => !phaseByKey.has(s.key)), [scopes, phaseByKey]);
   const reviewScopes = useMemo(() => scopes.filter((s) => phaseByKey.get(s.key) === "review"), [scopes, phaseByKey]);
   const financeScopes = useMemo(() => scopes.filter((s) => phaseByKey.get(s.key) === "finance_verify"), [scopes, phaseByKey]);
+
+  // Review-tab cards: the expanded client's totals, else the sum across every
+  // client currently in Review this month. Same source for both, so they agree.
+  const reviewCardTotals = useMemo(() => {
+    if (expanded) return totalsByKey.get(expanded) ?? ZERO_TOTALS;
+    return reviewScopes.reduce((acc, s) => addTotals(acc, totalsByKey.get(s.key) ?? ZERO_TOTALS), { ...ZERO_TOTALS });
+  }, [expanded, reviewScopes, totalsByKey]);
 
   // Live OPS-verified check for one scope+month (re-queried at every transition).
   const isVerifiedNow = async (s: Scope): Promise<boolean> => {
@@ -124,6 +181,34 @@ export default function PayrollRun() {
     const { error } = await (s.clientId ? q.eq("client_id", s.clientId) : q.eq("category", s.category as string));
     setBusyKey(null);
     if (error) { setErr(error.message); return; }
+    await load();
+  };
+
+  // Finance Verify — PERMANENT sign-off. Stamps finance_verified_at; a DB trigger
+  // then freezes the row (no Back to Review, no delete). Locks OPS un-verify too.
+  const financeVerify = async (s: Scope) => {
+    setBusyKey(s.key); setErr(null);
+    const q = supabase.from("payroll_run_phases")
+      .update({ finance_verified_at: new Date().toISOString(), finance_verified_by: profile?.id ?? null })
+      .eq("period_month", period);
+    const { error } = await (s.clientId ? q.eq("client_id", s.clientId) : q.eq("category", s.category as string));
+    setBusyKey(null);
+    if (error) { setErr(error.message); return; }
+    await load();
+  };
+
+  const financeVerifyAll = async () => {
+    const pending = financeScopes.filter((s) => !financeVerified.has(s.key));
+    if (pending.length === 0) return;
+    setBusyKey("__all__"); setErr(null);
+    for (const s of pending) {
+      const q = supabase.from("payroll_run_phases")
+        .update({ finance_verified_at: new Date().toISOString(), finance_verified_by: profile?.id ?? null })
+        .eq("period_month", period);
+      const { error } = await (s.clientId ? q.eq("client_id", s.clientId) : q.eq("category", s.category as string));
+      if (error) { setBusyKey(null); setErr(error.message); await load(); return; }
+    }
+    setBusyKey(null);
     await load();
   };
 
@@ -204,6 +289,30 @@ export default function PayrollRun() {
             {/* ── REVIEW ── */}
             {tab === "review" && (
               <div className="space-y-3">
+                {/* Summary cards — scoped to the expanded client, else all Review clients. */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-2">
+                  <div className="bg-card p-5 rounded-xl border border-border border-l-4 border-l-success-500">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Total Disbursed</p>
+                    <p className="text-2xl font-semibold tabular-nums text-success-700 dark:text-success-500" style={{ fontFamily: "var(--font-display)" }}>
+                      PKR {reviewCardTotals.disbursed.toLocaleString()}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">{reviewCardTotals.disbursedCount} payslip{reviewCardTotals.disbursedCount === 1 ? "" : "s"}</p>
+                  </div>
+                  <div className="bg-card p-5 rounded-xl border border-border border-l-4 border-l-warning-500">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Total Not Disbursed</p>
+                    <p className="text-2xl font-semibold tabular-nums text-warning-700 dark:text-warning-500" style={{ fontFamily: "var(--font-display)" }}>
+                      PKR {reviewCardTotals.notDisbursed.toLocaleString()}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">{reviewCardTotals.notDisbursedCount} payslip{reviewCardTotals.notDisbursedCount === 1 ? "" : "s"}</p>
+                  </div>
+                  <div className="bg-card p-5 rounded-xl border border-border border-l-4 border-l-danger-500">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Total Advance</p>
+                    <p className="text-2xl font-semibold tabular-nums text-danger-700 dark:text-danger-500" style={{ fontFamily: "var(--font-display)" }}>
+                      PKR {reviewCardTotals.advance.toLocaleString()}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">for {fmtMonth(month)}{expanded ? "" : " · all Review clients"}</p>
+                  </div>
+                </div>
                 {reviewScopes.length === 0 && <p className="text-sm text-muted-foreground py-8 text-center">Nothing in Review. Move a scope from Draft.</p>}
                 {reviewScopes.map((s) => {
                   const open = expanded === s.key;
@@ -241,27 +350,74 @@ export default function PayrollRun() {
             {/* ── FINANCE VERIFY ── */}
             {tab === "finance_verify" && (
               <div className="space-y-3">
-                <div className="text-xs text-muted-foreground bg-secondary/50 rounded-md px-3 py-2">
-                  Finance Verify rules aren't defined yet — this phase currently confirms a scope has cleared Review. Define the finance checks/sign-off separately to make it do more.
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <p className="text-xs text-muted-foreground bg-secondary/50 rounded-md px-3 py-2 flex-1 min-w-0">
+                    Finance Verify is permanent — it locks OPS un-verify and all phase movement for that client/month and reveals it on Payroll Management. It cannot be reversed.
+                  </p>
+                  {financeScopes.some((s) => !financeVerified.has(s.key)) && (
+                    <Button size="sm" variant="primary" disabled={busyKey === "__all__"} onClick={() => setConfirmFV({ all: true })}>
+                      {busyKey === "__all__" ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Mark All as Finance Verified</>}
+                    </Button>
+                  )}
                 </div>
                 {financeScopes.length === 0 && <p className="text-sm text-muted-foreground py-8 text-center">Nothing awaiting Finance Verify.</p>}
-                {financeScopes.map((s) => (
-                  <div key={s.key} className="bg-card rounded-xl border border-border p-4 flex items-center gap-2 flex-wrap">
-                    <ShieldCheck className="w-5 h-5 text-brand-600 shrink-0" strokeWidth={1.5} />
+                {financeScopes.map((s) => {
+                  const locked = financeVerified.has(s.key);
+                  return (
+                  <div key={s.key} className={`rounded-xl border p-4 flex items-center gap-2 flex-wrap ${locked ? "bg-success-50/40 dark:bg-success-900/10 border-success-300 dark:border-success-800" : "bg-card border-border"}`}>
+                    <ShieldCheck className={`w-5 h-5 shrink-0 ${locked ? "text-success-600" : "text-brand-600"}`} strokeWidth={1.5} />
                     <p className="text-sm font-medium text-foreground min-w-0 flex-1 truncate">{s.name}</p>
-                    {s.verifiable && !verified.has(s.key) && (
+                    {!locked && s.verifiable && !verified.has(s.key) && (
                       <span className="inline-flex items-center gap-1 text-[11px] font-medium text-warning-700 dark:text-warning-500 bg-warning-50 dark:bg-warning-900/20 border border-warning-200 px-1.5 py-0.5 rounded" title="OPS verification is no longer present for this month.">
                         <ShieldAlert className="w-3 h-3" /> OPS unverified
                       </span>
                     )}
-                    <Button size="sm" variant="ghost" disabled={busyKey === s.key} onClick={() => setPhase(s, "review")}>Back to Review</Button>
+                    {locked ? (
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-success-700 dark:text-success-500">
+                        <Lock className="w-3.5 h-3.5" /> Locked — Finance Verified, cannot be reversed
+                      </span>
+                    ) : (
+                      <>
+                        <Button size="sm" variant="ghost" disabled={busyKey === s.key || busyKey === "__all__"} onClick={() => setPhase(s, "review")}>Back to Review</Button>
+                        <Button size="sm" variant="primary" disabled={busyKey === s.key || busyKey === "__all__"} onClick={() => setConfirmFV({ scope: s })}>
+                          {busyKey === s.key ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Finance Verify</>}
+                        </Button>
+                      </>
+                    )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </>
         )}
       </div>
+
+      {confirmFV && (() => {
+        const pendingCount = financeScopes.filter((s) => !financeVerified.has(s.key)).length;
+        const target = confirmFV.all ? `${pendingCount} client${pendingCount === 1 ? "" : "s"}` : confirmFV.scope?.name;
+        return (
+          <Modal isOpen onClose={() => setConfirmFV(null)} title="Finance Verify — permanent" size="sm">
+            <div className="space-y-4">
+              <div className="flex items-start gap-3 rounded-lg border border-danger-200 bg-danger-50 dark:bg-danger-900/15 p-3">
+                <ShieldAlert className="w-5 h-5 text-danger-600 shrink-0 mt-0.5" strokeWidth={2} />
+                <div className="text-sm text-danger-800 dark:text-danger-300">
+                  <p className="font-semibold">This action cannot be reversed.</p>
+                  <p className="mt-1 text-danger-700 dark:text-danger-400">
+                    Finance Verifying <span className="font-medium">{target}</span> for {fmtMonth(month)} permanently locks OPS un-verify and all phase movement (no Back to Review or Back to Draft), and moves it to the Payroll Management page for payment.
+                  </p>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="ghost" onClick={() => setConfirmFV(null)}>Cancel</Button>
+                <Button variant="primary" onClick={() => { const c = confirmFV; setConfirmFV(null); if (c.all) financeVerifyAll(); else if (c.scope) financeVerify(c.scope); }}>
+                  {confirmFV.all ? "Yes, Finance Verify all" : "Yes, Finance Verify"}
+                </Button>
+              </div>
+            </div>
+          </Modal>
+        );
+      })()}
     </>
   );
 }

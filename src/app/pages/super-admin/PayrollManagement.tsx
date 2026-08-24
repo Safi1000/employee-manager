@@ -1,6 +1,7 @@
 import ThemedSelect from "../../components/ThemedSelect";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Search, Download, AlertCircle, X, Loader2, SlidersHorizontal, ChevronDown } from "lucide-react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { Search, Download, AlertCircle, X, Loader2, SlidersHorizontal, ChevronDown, Lock } from "lucide-react";
 import jsPDF from "jspdf";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -98,6 +99,11 @@ type PayrollManagementProps = {
   // Scope the roster to a client-less category group (office_staff, reliever, …).
   categoryScope?: string | null;
   throughNet?: boolean;
+  // Inverse of throughNet: hide the earnings breakdown, show only Net Salary +
+  // the payment slice (Amount Paid, Balance, Payment Mode, Paid-By, Mark
+  // Cleared/Disbursed, Save/Payslip). Used by the Payroll Management page for
+  // Finance-Verified clients. Same calc/save/disburse logic — a display slice.
+  afterNet?: boolean;
   periodOverride?: string;
   // Payroll Run "inline" layout: trimmed columns (Name/Attendance/Base/Net) and the
   // Salary Calculation panel rendered inline below the table rather than as a side
@@ -105,10 +111,11 @@ type PayrollManagementProps = {
   runInline?: boolean;
 };
 
-export default function PayrollManagement({ relieversOnly = false, clientScopeId = null, categoryScope = null, throughNet = false, periodOverride, runInline = false }: PayrollManagementProps = {}) {
-  // `embedded` = rendered inside the Payroll Run page: no page Header, filters,
-  // totals cards, or bulk actions — just the scoped roster + the payslip drawer.
-  const embedded = throughNet || !!clientScopeId || !!categoryScope;
+export default function PayrollManagement({ relieversOnly = false, clientScopeId = null, categoryScope = null, throughNet = false, afterNet = false, periodOverride, runInline = false }: PayrollManagementProps = {}) {
+  // `embedded` = rendered inside the Payroll Run / Payroll Management client list:
+  // no page Header, filters, totals cards, or bulk actions — just the scoped
+  // roster + the payslip drawer.
+  const embedded = throughNet || afterNet || !!clientScopeId || !!categoryScope;
   const { regionId } = useRegion();
   const today = new Date();
   const currentPeriod = firstOfMonth(today);
@@ -210,6 +217,12 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   // warning). Measure it instead of guessing a vh offset.
   const scrollRef = useRef<HTMLDivElement>(null);
   const [drawerMaxH, setDrawerMaxH] = useState<number | undefined>(undefined);
+  // runInline: the calc panel is teleported (portal) into this cell, rendered as
+  // an accordion row directly under the selected employee — no JSX duplication.
+  const [accordionHost, setAccordionHost] = useState<HTMLElement | null>(null);
+  // Stable ref callback so React only fires it on mount/unmount (not every render),
+  // avoiding a setState render loop.
+  const hostRefCb = useCallback((el: HTMLElement | null) => setAccordionHost(el), []);
   // Employee category filter (same set as the Employees tab) — e.g. Office Staff only.
   const [categoryFilter, setCategoryFilter] = useState<"all" | "client" | "office_staff" | "reliever">("all");
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -809,6 +822,31 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     }
     return { disbursed, notDisbursed, advance };
   }, [filtered]);
+
+  // afterNet = the Payroll Management page for a Finance-Verified client. Persist
+  // the payable with a default so it's saved before any payment: create a payslip
+  // for every employee that has none yet, from the computed figures (amount_paid
+  // stays 0 / Pending). One batched upsert, once per period per mounted scope.
+  const autoSavedPeriodRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!afterNet || loading) return;
+    if (autoSavedPeriodRef.current === selectedPeriod) return;
+    autoSavedPeriodRef.current = selectedPeriod;
+    const missing = filtered.filter((r) => !r.payslip_id);
+    if (missing.length === 0) return;
+    (async () => {
+      try {
+        const { error: upErr } = await supabase
+          .from("payslips")
+          .upsert(missing.map((r) => buildPayslipPayload(r)), { onConflict: "employee_id,period_month" });
+        if (upErr) throw upErr;
+        await loadPeriodData(selectedPeriod);
+      } catch (e: any) {
+        setError(e.message ?? String(e));
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [afterNet, loading, selectedPeriod, filtered]);
 
   const updateEdit = (employeeId: string, patch: Partial<RowState>) => {
     setRowEdits((prev) => {
@@ -1525,6 +1563,159 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     };
   }, [selectedId, warningDismissed]);
 
+  // ── Payroll Management page shell (Finance-Verified clients only) ──────────
+  // The standalone /payroll page lists ONLY clients Finance-Verified for the
+  // month, PayrollRun-style: each row expands to the scoped roster in `afterNet`
+  // mode (Net Salary + payment slice). The heavy table/drawer below is reused via
+  // the embed. Relievers payroll (relieversOnly) keeps the classic full table.
+  const isPageShell = !embedded && !relieversOnly;
+  type ShellTotals = { disbursed: number; notDisbursed: number; advance: number; disbursedCount: number; notDisbursedCount: number };
+  const ZERO_SHELL: ShellTotals = { disbursed: 0, notDisbursed: 0, advance: 0, disbursedCount: 0, notDisbursedCount: 0 };
+  const [fvScopes, setFvScopes] = useState<{ key: string; name: string; clientId: string | null; category: string | null }[]>([]);
+  const [fvTotals, setFvTotals] = useState<Map<string, ShellTotals>>(new Map());
+  const [fvExpanded, setFvExpanded] = useState<string | null>(null);
+  const [fvLoading, setFvLoading] = useState(true);
+  const catLabelShell = (cat: string) => {
+    const t = cat.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    return cat === "reliever" ? "Relievers" : t;
+  };
+  useEffect(() => {
+    if (!isPageShell) return;
+    let cancelled = false;
+    (async () => {
+      setFvLoading(true);
+      const { data: phs } = await supabase.from("payroll_run_phases")
+        .select("client_id, category").eq("period_month", selectedPeriod).not("finance_verified_at", "is", null);
+      const rows = (phs ?? []) as any[];
+      const clientIds = rows.filter((r) => r.client_id).map((r) => r.client_id);
+      const nameById = new Map<string, string>();
+      if (clientIds.length) {
+        const { data: cls } = await supabase.from("clients").select("id, name").in("id", clientIds);
+        for (const c of (cls ?? []) as any[]) nameById.set(c.id, c.name);
+      }
+      const scopes = rows
+        .map((r) => ({
+          key: r.client_id ?? `cat:${r.category}`,
+          name: r.client_id ? nameById.get(r.client_id) ?? "Client" : catLabelShell(r.category),
+          clientId: (r.client_id ?? null) as string | null,
+          category: (r.category ?? null) as string | null,
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      const { data: ps } = await supabase.from("payslips").select("net_salary, amount_paid, advance, disbursed, employee_id").eq("period_month", selectedPeriod);
+      const psRows = (ps ?? []) as any[];
+      const empIds = Array.from(new Set(psRows.map((r) => r.employee_id)));
+      const empScope = new Map<string, string>();
+      if (empIds.length) {
+        const { data: emps } = await supabase.from("employees").select("id, client_id, category").in("id", empIds);
+        for (const e of (emps ?? []) as any[]) empScope.set(e.id, e.client_id ?? `cat:${e.category}`);
+      }
+      const totals = new Map<string, ShellTotals>();
+      for (const r of psRows) {
+        const key = empScope.get(r.employee_id);
+        if (!key) continue;
+        const cur = totals.get(key) ?? { ...ZERO_SHELL };
+        const paid = Math.round(r.amount_paid || 0);
+        cur.disbursed += paid;
+        cur.notDisbursed += Math.max(0, Math.round(r.net_salary || 0) - paid);
+        cur.advance += Math.round(r.advance || 0);
+        if (r.disbursed) cur.disbursedCount += 1; else cur.notDisbursedCount += 1;
+        totals.set(key, cur);
+      }
+      if (cancelled) return;
+      setFvScopes(scopes);
+      setFvTotals(totals);
+      setFvLoading(false);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPeriod, regionId, isPageShell]);
+
+  const shellCardTotals = useMemo(() => {
+    if (fvExpanded) return fvTotals.get(fvExpanded) ?? ZERO_SHELL;
+    return fvScopes.reduce((acc, s) => {
+      const t = fvTotals.get(s.key) ?? ZERO_SHELL;
+      return {
+        disbursed: acc.disbursed + t.disbursed,
+        notDisbursed: acc.notDisbursed + t.notDisbursed,
+        advance: acc.advance + t.advance,
+        disbursedCount: acc.disbursedCount + t.disbursedCount,
+        notDisbursedCount: acc.notDisbursedCount + t.notDisbursedCount,
+      };
+    }, { ...ZERO_SHELL });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fvExpanded, fvScopes, fvTotals]);
+
+  if (isPageShell) {
+    return (
+      <>
+        <Header title="Payroll Management" subtitle="Finance-Verified clients — disburse & mark paid" />
+        <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              Month
+              <ThemedSelect value={selectedPeriod} onChange={(e) => { setSelectedPeriod(e.target.value); setFvExpanded(null); }}
+                className="px-2 py-1.5 border border-border rounded-md text-sm bg-card">
+                {periodOptions.map((p) => <option key={p} value={p}>{formatPeriod(p)}</option>)}
+              </ThemedSelect>
+            </label>
+          </div>
+
+          {error && (
+            <div className="mb-4 flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
+              <AlertCircle className="w-4 h-4 mt-0.5" strokeWidth={2} />
+              <div className="flex-1">{error}</div>
+              <button onClick={() => setError(null)}><X className="w-4 h-4" /></button>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div className="bg-card p-5 rounded-xl border border-border border-l-4 border-l-success-500">
+              <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Total Disbursed</p>
+              <p className="text-2xl font-semibold tabular-nums text-success-700 dark:text-success-500" style={{ fontFamily: "var(--font-display)" }}>PKR {shellCardTotals.disbursed.toLocaleString()}</p>
+              <p className="text-xs text-muted-foreground mt-1">{shellCardTotals.disbursedCount} payslip{shellCardTotals.disbursedCount === 1 ? "" : "s"}</p>
+            </div>
+            <div className="bg-card p-5 rounded-xl border border-border border-l-4 border-l-warning-500">
+              <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Total Not Disbursed</p>
+              <p className="text-2xl font-semibold tabular-nums text-warning-700 dark:text-warning-500" style={{ fontFamily: "var(--font-display)" }}>PKR {shellCardTotals.notDisbursed.toLocaleString()}</p>
+              <p className="text-xs text-muted-foreground mt-1">{shellCardTotals.notDisbursedCount} payslip{shellCardTotals.notDisbursedCount === 1 ? "" : "s"}</p>
+            </div>
+            <div className="bg-card p-5 rounded-xl border border-border border-l-4 border-l-danger-500">
+              <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Total Advance</p>
+              <p className="text-2xl font-semibold tabular-nums text-danger-700 dark:text-danger-500" style={{ fontFamily: "var(--font-display)" }}>PKR {shellCardTotals.advance.toLocaleString()}</p>
+              <p className="text-xs text-muted-foreground mt-1">for {formatPeriod(selectedPeriod)}{fvExpanded ? "" : " · all Finance-Verified clients"}</p>
+            </div>
+          </div>
+
+          {fvLoading ? (
+            <div className="flex items-center justify-center py-20 text-muted-foreground"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…</div>
+          ) : fvScopes.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-12 text-center">No Finance-Verified clients for {formatPeriod(selectedPeriod)}. Finance-verify a client in Payroll Run to disburse it here.</p>
+          ) : (
+            <div className="space-y-3">
+              {fvScopes.map((s) => {
+                const open = fvExpanded === s.key;
+                return (
+                  <div key={s.key} className="bg-card rounded-xl border border-border overflow-hidden">
+                    <button type="button" onClick={() => setFvExpanded(open ? null : s.key)} className="w-full flex items-center gap-2 p-4 text-left">
+                      <ChevronDown className={`w-4 h-4 shrink-0 text-muted-foreground transition-transform ${open ? "" : "-rotate-90"}`} />
+                      <span className="text-sm font-medium text-foreground truncate flex-1">{s.name}</span>
+                      <span className="text-xs text-muted-foreground tabular-nums">PKR {(fvTotals.get(s.key)?.disbursed ?? 0).toLocaleString()} paid</span>
+                    </button>
+                    {open && (
+                      <div className="border-t border-border">
+                        <PayrollManagement clientScopeId={s.clientId} categoryScope={s.category} afterNet runInline periodOverride={selectedPeriod} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </>
+    );
+  }
+
   const activeFilterCount =
     (shiftFilter !== "all" ? 1 : 0) +
     (statusFilter !== "all" ? 1 : 0) +
@@ -1826,12 +2017,12 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                       filtered.map((row) => {
                         const e = row.employee;
                         return (
+                          <Fragment key={e.id}>
                           <tr
-                            key={e.id}
                             className={`transition-colors cursor-pointer border-b border-border ${
                               selectedId === e.id ? "bg-brand-500/10" : "hover:bg-accent/50"
                             }`}
-                            onClick={() => { setSelectedId(e.id); setRowError(null); }}
+                            onClick={() => { setSelectedId((prev) => (runInline && prev === e.id ? null : e.id)); setRowError(null); }}
                           >
                             <td className="px-4 py-3">
                               <div className="text-sm text-slate-900 flex items-center gap-2">
@@ -1970,6 +2161,15 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                             </td>
                             )}
                           </tr>
+                          {runInline && selectedId === e.id && (
+                            <tr>
+                              <td colSpan={4} className="px-4 pb-4 pt-0 bg-accent/10 border-b border-border">
+                                {/* Salary Calculation is portaled in here, directly under the row. */}
+                                <div ref={hostRefCb} />
+                              </td>
+                            </tr>
+                          )}
+                          </Fragment>
                         );
                       })}
                   </tbody>
@@ -1978,7 +2178,8 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
             </div>
           </div>
 
-          {selectedRow && (
+          {selectedRow && (() => {
+          const panel = (
           <div
             className={runInline ? "w-full" : "w-full lg:w-[400px] flex-shrink-0 lg:sticky lg:top-4 lg:overflow-y-auto"}
             style={runInline ? undefined : { maxHeight: drawerMaxH }}
@@ -2011,6 +2212,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                     <p className="text-xs text-muted-foreground font-mono">{empDisplay(selectedRow.employee)} · {selectedRow.employee.guard_code ?? selectedRow.employee.employee_code}</p>
                   </div>
 
+                  {!afterNet && (<>
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 text-center">
                     <div className="rounded-md border border-border py-1.5">
                       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Working</div>
@@ -2206,10 +2408,12 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                       </p>
                     )}
                   </div>
+                  </>)}
 
                   <div className="pt-3 border-t border-slate-200 space-y-2">
                     {/* Allowance sits ABOVE Final Salary and is part of it — the
                         reports read final_salary, so this makes it count. */}
+                    {!afterNet && (<>
                     <div className="flex justify-between items-center">
                       <span className="text-slate-500">Allowance</span>
                       <div className="flex items-center gap-1">
@@ -2247,6 +2451,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                       <span className="text-slate-500">Advance</span>
                       <span className="text-danger-700">− PKR {Math.round(selectedRow.advance).toLocaleString()}</span>
                     </div>
+                    </>)}
                     <div className="flex justify-between pt-1 border-t border-slate-100">
                       <span className="text-base text-slate-900">Net Salary</span>
                       <span className="text-lg text-slate-900">PKR {selectedRow.net_salary.toLocaleString()}</span>
@@ -2314,16 +2519,22 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
 
                   {!throughNet && (
                   <div className="pt-3 border-t border-slate-200 space-y-2">
+                    {afterNet && selectedRow.disbursed && (
+                      <p className="text-[11px] text-success-700 bg-success-50 border border-success-200 rounded px-2 py-1 flex items-center gap-1">
+                        <Lock className="w-3 h-3" /> Disbursed — this payslip is paid and locked. Salary and payment details can no longer be changed.
+                      </p>
+                    )}
                     <label className="block text-xs text-slate-500">Payment Mode</label>
                     <ThemedSelect
                       value={selectedRow.payment_mode}
+                      disabled={afterNet && selectedRow.disbursed}
                       onChange={(e) =>
                         updateEdit(selectedRow.employee.id, {
                           payment_mode: e.target.value as PaymentMode,
                           cheque_id: null,
                         })
                       }
-                      className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                      className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed"
                     >
                       <option value="Cash">Cash</option>
                       <option value="Bank">Bank</option>
@@ -2413,7 +2624,11 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                     </div>
                   )}
                   {!throughNet && (
-                  <div className="grid grid-cols-2 gap-2 pt-3 border-t border-slate-200">
+                  <div className={`grid ${afterNet ? "grid-cols-1" : "grid-cols-2"} gap-2 pt-3 border-t border-slate-200`}>
+                    {/* Mark Cleared is redundant on Payroll Management — the row is
+                        already Cleared after the three-phase verification, so the
+                        only action left here is disbursing payment. */}
+                    {!afterNet && (
                     <Button
                       variant={selectedRow.status === "Cleared" ? "secondary" : "primary"}
                       size="sm"
@@ -2421,6 +2636,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                     >
                       {selectedRow.status === "Cleared" ? "Mark Pending" : "Mark Cleared"}
                     </Button>
+                    )}
                     <Button
                       variant="primary"
                       size="sm"
@@ -2468,7 +2684,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                       size="sm"
                       className="flex-1"
                       onClick={() => handleSaveRow(selectedRow)}
-                      disabled={savingId === selectedRow.employee.id}
+                      disabled={savingId === selectedRow.employee.id || (afterNet && selectedRow.disbursed)}
                     >
                       {savingId === selectedRow.employee.id ? "Saving…" : "Save"}
                     </Button>
@@ -2487,7 +2703,10 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
               ) : null}
             </div>
           </div>
-          )}
+          );
+          // runInline: teleport the panel into the accordion cell under the row.
+          return runInline ? (accordionHost ? createPortal(panel, accordionHost) : null) : panel;
+          })()}
         </div>
         </div>
       </div>

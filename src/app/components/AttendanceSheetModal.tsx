@@ -51,6 +51,7 @@ export default function AttendanceSheetModal({
   // Payroll Run phase for this client/category + month. Un-verify is only allowed
   // while the phase is Draft (no row); once in Review/Finance Verify it's locked.
   const [runPhase, setRunPhase] = useState<"review" | "finance_verify" | null>(null);
+  const [financeVerified, setFinanceVerified] = useState(false);
   const [overrides, setOverrides] = useState<OverrideRow[]>([]);
   const [opsMsg, setOpsMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [opsBusy, setOpsBusy] = useState(false);
@@ -155,7 +156,7 @@ export default function AttendanceSheetModal({
         .select("id, employee_id, attendance_date, reason, before_value, after_value, created_by, created_at")
         .gte("attendance_date", monthStartDate).lte("attendance_date", `${month}-31`)
         .order("created_at", { ascending: false });
-      const phBase = supabase.from("payroll_run_phases").select("phase").eq("period_month", monthStartDate);
+      const phBase = supabase.from("payroll_run_phases").select("phase, finance_verified_at").eq("period_month", monthStartDate);
       const [{ data: ver }, { data: ovs }, { data: ph }] = await Promise.all([
         (synthetic ? verBase.eq("category", category as string) : verBase.eq("client_id", clientId)).maybeSingle(),
         synthetic ? ovBase.eq("category", category as string) : ovBase.eq("client_id", clientId),
@@ -165,6 +166,7 @@ export default function AttendanceSheetModal({
       setVerifiedAt((ver as any)?.verified_at ?? null);
       setOverrides((ovs ?? []) as OverrideRow[]);
       setRunPhase((ph as any)?.phase ?? null);
+      setFinanceVerified(!!(ph as any)?.finance_verified_at);
     })();
     return () => { cancelled = true; };
   }, [clientId, month, monthStartDate, reloadKey]);
@@ -175,7 +177,9 @@ export default function AttendanceSheetModal({
 
   // Un-verify is locked once payroll has moved past Draft for this scope+month.
   const phaseLocked = runPhase !== null;
-  const unverifyLockMsg = `Locked — payroll is in ${runPhase === "finance_verify" ? "Finance Verify" : "Review"} for this month. Move it back to Draft to un-verify.`;
+  const unverifyLockMsg = financeVerified
+    ? "Locked — this month is Finance Verified and can no longer be reversed."
+    : `Locked — payroll is in ${runPhase === "finance_verify" ? "Finance Verify" : "Review"} for this month. Move it back to Draft to un-verify.`;
 
   const dayDate = (dayIdx: number) => `${month}-${String(dayIdx + 1).padStart(2, "0")}`;
 
