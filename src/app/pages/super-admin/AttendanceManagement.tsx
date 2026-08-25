@@ -96,6 +96,10 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   const [todayRecords, setTodayRecords] = useState<Record<string, AttendanceStatus>>({});
   // For relievers: per-day client attribution. Mirrors todayRecords.
   const [todayWorkedFor, setTodayWorkedFor] = useState<Record<string, string | null>>({});
+  // The worked_shift of the row the daily page is showing for each employee, so a
+  // mark/unmark hits that exact row (and doesn't create a duplicate or wipe a
+  // sibling shift on a multi-shift day). Absent = mark a fresh row on dayShift.
+  const [todayShift, setTodayShift] = useState<Record<string, string>>({});
   const [history, setHistory] = useState<HistoryRow[]>([]);
 
   const [loading, setLoading] = useState(true);
@@ -287,20 +291,41 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   const loadRecordsForDate = async (d: string) => {
     const { data, error: err } = await supabase
       .from("attendance_records")
-      .select("employee_id, status, worked_for_client_id")
+      .select("employee_id, status, worked_for_client_id, worked_shift")
       .eq("attendance_date", d);
     if (err) {
       setError(err.message);
       return;
     }
+    // A date can carry more than one shift row (a guard on two shifts). The daily
+    // page marks ONE shift — the dated-segment shift (dayShift) — so it must also
+    // READ that same shift's row, otherwise it would show a sibling shift's status
+    // while a mark quietly overwrote a different row. Pick the dayShift row per
+    // employee (fall back to any row for legacy data), keeping daily in step with
+    // the month calendar and board, which key per worked_shift.
+    const rowsByEmp = new Map<string, any[]>();
+    (data ?? []).forEach((r: any) => {
+      const list = rowsByEmp.get(r.employee_id);
+      if (list) list.push(r);
+      else rowsByEmp.set(r.employee_id, [r]);
+    });
+    const shiftForDate = (empId: string): string =>
+      (shiftResolver ? shiftResolver(empId, d) : null) ??
+      employees.find((e) => e.id === empId)?.shift ??
+      "day";
     const statusMap: Record<string, AttendanceStatus> = {};
     const clientMap: Record<string, string | null> = {};
-    (data ?? []).forEach((r: any) => {
-      statusMap[r.employee_id] = r.status;
-      clientMap[r.employee_id] = r.worked_for_client_id ?? null;
-    });
+    const shiftMap: Record<string, string> = {};
+    for (const [empId, rows] of rowsByEmp) {
+      const want = shiftForDate(empId);
+      const chosen = rows.find((r) => r.worked_shift === want) ?? rows[0];
+      statusMap[empId] = chosen.status;
+      clientMap[empId] = chosen.worked_for_client_id ?? null;
+      shiftMap[empId] = chosen.worked_shift ?? want;
+    }
     setTodayRecords(statusMap);
     setTodayWorkedFor(clientMap);
+    setTodayShift(shiftMap);
   };
 
   const loadHistory = async () => {
@@ -470,12 +495,16 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       setError(`${employee?.full_name ?? "This employee"}: ${windowErr}`);
       return;
     }
-    const shift = dayShift(employeeId);
+    // Update the row the page is showing (if any); otherwise a fresh mark lands
+    // on the dated-segment shift. Keeps daily on the same worked_shift row the
+    // month calendar / board key on — no duplicate, no sibling-shift clobber.
+    const shift = todayShift[employeeId] ?? dayShift(employeeId);
     setSaving((s) => ({ ...s, [employeeId]: true }));
     setError(null);
     const prevStatus = todayRecords[employeeId];
     const prevClient = todayWorkedFor[employeeId] ?? null;
     setTodayRecords((m) => ({ ...m, [employeeId]: status }));
+    setTodayShift((m) => ({ ...m, [employeeId]: shift }));
     setTodayWorkedFor((m) => ({
       ...m,
       [employeeId]: status === "Present" ? workedForClientId ?? null : null,
@@ -517,6 +546,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     const prevStatus = todayRecords[employeeId];
     if (!prevStatus) return;
     const prevClient = todayWorkedFor[employeeId] ?? null;
+    const prevShift = todayShift[employeeId] ?? dayShift(employeeId); // capture before optimistic clear
     setSaving((s) => ({ ...s, [employeeId]: true }));
     setError(null);
     // optimistic removal
@@ -530,11 +560,14 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       delete n[employeeId];
       return n;
     });
+    // Delete only the shift the page manages — a multi-shift day's sibling row
+    // (e.g. a night mark made on the board/calendar) must survive a daily unmark.
     const { error: delErr } = await supabase
       .from("attendance_records")
       .delete()
       .eq("employee_id", employeeId)
-      .eq("attendance_date", date);
+      .eq("attendance_date", date)
+      .eq("worked_shift", prevShift);
     setSaving((s) => {
       const n = { ...s };
       delete n[employeeId];
@@ -622,7 +655,9 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         return true;
       })
       .map((e) => {
-        const shift = dayShift(e.id);
+        // Update the row already on screen (if any) rather than spawning a second
+        // shift row — same rule as the per-row mark.
+        const shift = todayShift[e.id] ?? dayShift(e.id);
         return {
           employee_id: e.id,
           attendance_date: date,
@@ -693,7 +728,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     const toRestore = entries
       .filter(([, prev]) => prev !== null)
       .map(([employee_id, prev]) => {
-        const shift = dayShift(employee_id);
+        const shift = todayShift[employee_id] ?? dayShift(employee_id);
         return {
           employee_id,
           attendance_date: lastBulk.date,
@@ -718,16 +753,29 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       }
     }
     if (toDelete.length > 0) {
-      const { error: dErr } = await supabase
-        .from("attendance_records")
-        .delete()
-        .eq("attendance_date", lastBulk.date)
-        .in("employee_id", toDelete);
-      if (dErr) {
-        setError(dErr.message);
-        setUndoing(false);
-        await loadRecordsForDate(date);
-        return;
+      // Delete ONLY the shift mark-all created for each employee, so a sibling
+      // shift row (from the board/calendar) survives the undo. Grouped by shift
+      // value → at most a couple of queries, not one per employee.
+      const byShift = new Map<string, string[]>();
+      for (const empId of toDelete) {
+        const sh = todayShift[empId] ?? dayShift(empId);
+        const list = byShift.get(sh);
+        if (list) list.push(empId);
+        else byShift.set(sh, [empId]);
+      }
+      for (const [sh, emps] of byShift) {
+        const { error: dErr } = await supabase
+          .from("attendance_records")
+          .delete()
+          .eq("attendance_date", lastBulk.date)
+          .in("employee_id", emps)
+          .eq("worked_shift", sh);
+        if (dErr) {
+          setError(dErr.message);
+          setUndoing(false);
+          await loadRecordsForDate(date);
+          return;
+        }
       }
     }
     // One audit entry for the undo (attendance_bulk_events, 0069). Best-effort.
