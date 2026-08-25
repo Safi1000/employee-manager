@@ -289,21 +289,16 @@ export default function PayrollRun() {
             {/* ── REVIEW ── */}
             {tab === "review" && (
               <div className="space-y-3">
-                {/* Summary cards — scoped to the expanded client, else all Review clients. */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-2">
+                {/* Summary cards — scoped to the expanded client, else all Review
+                    clients. Review doesn't disburse, so we show what's payable:
+                    Total Salaries (net) and Total Advance. */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-2">
                   <div className="bg-card p-5 rounded-xl border border-border border-l-4 border-l-success-500">
-                    <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Total Disbursed</p>
+                    <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Total Salaries</p>
                     <p className="text-2xl font-semibold tabular-nums text-success-700 dark:text-success-500" style={{ fontFamily: "var(--font-display)" }}>
-                      PKR {reviewCardTotals.disbursed.toLocaleString()}
+                      PKR {(reviewCardTotals.disbursed + reviewCardTotals.notDisbursed).toLocaleString()}
                     </p>
-                    <p className="text-xs text-muted-foreground mt-1">{reviewCardTotals.disbursedCount} payslip{reviewCardTotals.disbursedCount === 1 ? "" : "s"}</p>
-                  </div>
-                  <div className="bg-card p-5 rounded-xl border border-border border-l-4 border-l-warning-500">
-                    <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Total Not Disbursed</p>
-                    <p className="text-2xl font-semibold tabular-nums text-warning-700 dark:text-warning-500" style={{ fontFamily: "var(--font-display)" }}>
-                      PKR {reviewCardTotals.notDisbursed.toLocaleString()}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">{reviewCardTotals.notDisbursedCount} payslip{reviewCardTotals.notDisbursedCount === 1 ? "" : "s"}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{reviewCardTotals.disbursedCount + reviewCardTotals.notDisbursedCount} payslip{reviewCardTotals.disbursedCount + reviewCardTotals.notDisbursedCount === 1 ? "" : "s"}</p>
                   </div>
                   <div className="bg-card p-5 rounded-xl border border-border border-l-4 border-l-danger-500">
                     <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Total Advance</p>
