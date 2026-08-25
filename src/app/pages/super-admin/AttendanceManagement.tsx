@@ -138,10 +138,15 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
 
   // ---- Bulk-mark calendar modal (shared BulkMarkByEmployeeModal) ----
   const [isBulkOpen, setIsBulkOpen] = useState(false);
+  // Preselected employee when the calendar is opened from a specific row's
+  // "Monthly Board" link (null = the modal's own picker chooses).
+  const [bulkEmpId, setBulkEmpId] = useState<string | null>(null);
 
   // Open the shared Bulk-Mark-by-Employee calendar (BulkMarkByEmployeeModal owns
   // its own employee picker, filters, month state and marking logic).
-  const openBulkMark = () => setIsBulkOpen(true);
+  const openBulkMark = () => { setBulkEmpId(null); setIsBulkOpen(true); };
+  // Open it focused on one employee's month (from their attendance row).
+  const openMonthlyBoard = (empId: string) => { setBulkEmpId(empId); setIsBulkOpen(true); };
 
   // ---- Inline employee calendar (read-only swap of metrics area) ----
   const [viewEmployee, setViewEmployee] = useState<EmployeeLite | null>(null);
@@ -1356,6 +1361,16 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                                 <MoreHorizontal className="w-4 h-4" />
                               </button>
                             )}
+                            {canBulk && (
+                              <button
+                                type="button"
+                                onClick={() => openMonthlyBoard(employee.id)}
+                                className="p-1.5 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                                title="Monthly Board — mark this employee's whole month"
+                              >
+                                <CalendarRange className="w-4 h-4" />
+                              </button>
+                            )}
                             {isSaving && <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />}
                           </div>
                         </td>
@@ -1585,7 +1600,9 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       {/* Bulk Mark by Employee — the shared calendar (same UI/logic as the board). */}
       {isBulkOpen && (
         <BulkMarkByEmployeeModal
-          onClose={() => setIsBulkOpen(false)}
+          initialEmployeeId={bulkEmpId ?? undefined}
+          initialMonth={date.slice(0, 7)}
+          onClose={() => { setIsBulkOpen(false); setBulkEmpId(null); }}
           onSaved={async () => { await loadRecordsForDate(date); }}
         />
       )}

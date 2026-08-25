@@ -82,9 +82,13 @@ type BulkEmp = {
 
 type BulkContract = { id: string; start_date: string | null; end_date: string | null; is_infinite: boolean | null };
 
-export default function BulkMarkByEmployeeModal({ onClose, onSaved }: {
+export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmployeeId, initialMonth }: {
   onClose: () => void;
   onSaved: () => Promise<void>;
+  // Preselect an employee + month so the Attendance page can open this calendar
+  // straight onto one guard's month (a per-row "Monthly Board" link).
+  initialEmployeeId?: string;
+  initialMonth?: string;
 }) {
   const { profile } = useAuth();
   const [employees, setEmployees] = useState<BulkEmp[]>([]);
@@ -92,8 +96,8 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved }: {
   const [loadingEmps, setLoadingEmps] = useState(true);
   const [search, setSearch] = useState("");
   const [clientFilter, setClientFilter] = useState<string>("all");
-  const [empId, setEmpId] = useState("");
-  const [month, setMonth] = useState(today().slice(0, 7));
+  const [empId, setEmpId] = useState(initialEmployeeId ?? "");
+  const [month, setMonth] = useState(initialMonth ?? today().slice(0, 7));
   const [existing, setExisting] = useState<Map<string, Status>>(new Map());
   // Shift(s) actually worked on each already-marked date (from the saved
   // worked_shift), so a marked cell pre-highlights the shift it was saved under
