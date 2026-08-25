@@ -35,8 +35,10 @@ const STATUS_CELL_CLASS: Record<Status, string> = {
   absent: "bg-danger-50 text-danger-700 dark:text-danger-500 border-danger-200",
   rotation_leave: "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200",
   rest_day: "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200",
-  double_duty: "bg-brand-50 text-brand-700 border-brand-200",
-  relief_cover: "bg-brand-50 text-brand-700 border-brand-200",
+  // Double Duty uses `info` (steel blue) — `brand` is the same amber as `warning`
+  // (Leave) in this theme, so they were indistinguishable on the calendar.
+  double_duty: "bg-info-50 text-info-700 dark:text-info-500 border-info-200",
+  relief_cover: "bg-info-50 text-info-700 dark:text-info-500 border-info-200",
   blocked: "bg-slate-100 text-slate-500 border-slate-200",
 };
 // The only four statuses this view offers (Leave = rotation_leave). Double Duty
@@ -45,7 +47,7 @@ const BULK_STATUS_OPTIONS: { status: Status; label: string; activeBtn: string }[
   { status: "present", label: "Present", activeBtn: "bg-success-600 text-white border-success-600" },
   { status: "absent", label: "Absent", activeBtn: "bg-danger-600 text-white border-danger-600" },
   { status: "rotation_leave", label: "Leave", activeBtn: "bg-warning-500 text-white border-warning-500" },
-  { status: "double_duty", label: "Double Duty", activeBtn: "bg-brand-600 text-white border-brand-600" },
+  { status: "double_duty", label: "Double Duty", activeBtn: "bg-info-600 text-white border-info-600" },
 ];
 
 const VALID_STATUS = new Set<string>(["present", "absent", "rotation_leave", "rest_day", "double_duty", "relief_cover", "blocked"]);
@@ -621,7 +623,7 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved }: {
             {selected.size > 0 && (
               <div className="space-y-3 pt-2 border-t border-slate-200">
                 {pendingStatus === "double_duty" && (
-                  <p className="text-[11px] text-brand-700 bg-brand-50 border border-brand-200 rounded px-2.5 py-1.5">
+                  <p className="text-[11px] text-info-700 dark:text-info-500 bg-info-50 border border-info-200 rounded px-2.5 py-1.5">
                     Double duty — tap more than one shift (e.g. D and N) in a date cell to record both.
                   </p>
                 )}
