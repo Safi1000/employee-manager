@@ -1026,6 +1026,14 @@ function ShiftDrillModal({
     if (!supervisor.trim()) { setSupError("Supervisor name is required to confirm."); return; }
     setSupError(null);
     if (needsOverride && !override.trim()) { fail("Backdated — a supervisor override reason is required."); return; }
+    // Double duty = two shifts in one day, so it must have two shifts selected.
+    const ddShort = shift.roster.filter(
+      (g) => marks.get(g.guard_id)?.status === "double_duty" && new Set(getWorked(g)).size < 2,
+    );
+    if (ddShort.length > 0) {
+      fail(`Double duty needs two shifts — pick a second shift for ${ddShort.length} guard${ddShort.length === 1 ? "" : "s"} marked double duty.`);
+      return;
+    }
     setSaving(true);
     setErr(null);
     try {

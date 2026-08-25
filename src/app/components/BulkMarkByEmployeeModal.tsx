@@ -395,6 +395,15 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved }: {
       setBulkError(`Nothing written — all selected day(s) are blocked (closed payroll period, archived, or out of employment window).`);
       return;
     }
+    // Double duty means two shifts worked in one day — enforce two picks per date.
+    if (isDouble) {
+      const short = gate.days.filter((d) => shiftsFor(d).length < 2);
+      if (short.length > 0) {
+        setSubmitting(false);
+        setBulkError(`Double duty needs two shifts on each day — tap a second shift (e.g. D and N) on ${short.length} selected day(s).`);
+        return;
+      }
+    }
     const nowIso = new Date().toISOString();
     const rows = gate.days.flatMap((d) => {
       const picks = shiftsFor(d);
