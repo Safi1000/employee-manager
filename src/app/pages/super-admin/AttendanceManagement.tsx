@@ -1,7 +1,7 @@
 import { isIsoDate } from "../../lib/date";
 import ThemedSelect from "../../components/ThemedSelect";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Calendar as CalendarIcon, AlertCircle, Loader2, X, CalendarRange, ChevronLeft, ChevronRight, Search, Clock, MoreHorizontal, SlidersHorizontal, ChevronDown } from "lucide-react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Calendar as CalendarIcon, AlertCircle, Loader2, X, CalendarRange, ChevronLeft, ChevronRight, Search, Clock, MoreHorizontal, SlidersHorizontal, ChevronDown, Check } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -100,6 +100,14 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   // mark/unmark hits that exact row (and doesn't create a duplicate or wipe a
   // sibling shift on a multi-shift day). Absent = mark a fresh row on dayShift.
   const [todayShift, setTodayShift] = useState<Record<string, string>>({});
+  // Who marked each employee today (marked_by_user_id) → resolved to a name via
+  // profilesById, so the daily list can show "reported by <name>".
+  const [todayMarkedBy, setTodayMarkedBy] = useState<Record<string, string | null>>({});
+  const [profilesById, setProfilesById] = useState<Record<string, string>>({});
+  // Supervisor sign-off per client/site group for the selected date. Keyed by the
+  // same group_key we write ("daily:<clientId>" / "daily:cat:<category>").
+  const [confirmedGroups, setConfirmedGroups] = useState<Record<string, { by: string; at: string }>>({});
+  const [confirmingKey, setConfirmingKey] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryRow[]>([]);
 
   const [loading, setLoading] = useState(true);
@@ -232,7 +240,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   const toInputRef = useRef<HTMLInputElement>(null);
 
   const loadStaticData = async () => {
-    const [cliRes, brRes, empRes, ebRes, conRes] = await Promise.all([
+    const [cliRes, brRes, empRes, ebRes, conRes, profRes] = await Promise.all([
       supabase.from("clients").select("*").order("name"),
       supabase.from("branches").select("*").order("is_head_office", { ascending: false }).order("name"),
       // The employee roster drives the whole attendance grid, so scoping it to
@@ -248,6 +256,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       ),
       supabase.from("employee_branches").select("employee_id, branch_id"),
       supabase.from("contracts").select("id, allowed_leaves_per_month, start_date, end_date, is_infinite"),
+      supabase.from("profiles").select("id, full_name, email"),
     ]);
     if (cliRes.error) setError(cliRes.error.message);
     if (brRes.error) setError(brRes.error.message);
@@ -257,6 +266,11 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     setClients(cliRes.data ?? []);
     setBranches((brRes.data ?? []) as Branch[]);
     setContracts((conRes.data ?? []) as ContractLeaveRow[]);
+    const pmap: Record<string, string> = {};
+    for (const p of (profRes.data ?? []) as { id: string; full_name: string | null; email: string | null }[]) {
+      pmap[p.id] = p.full_name ?? p.email ?? "—";
+    }
+    setProfilesById(pmap);
     const addlMap = new Map<string, string[]>();
     for (const r of (ebRes.data ?? []) as { employee_id: string; branch_id: string }[]) {
       const arr = addlMap.get(r.employee_id) ?? [];
@@ -291,12 +305,24 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   const loadRecordsForDate = async (d: string) => {
     const { data, error: err } = await supabase
       .from("attendance_records")
-      .select("employee_id, status, worked_for_client_id, worked_shift")
+      .select("employee_id, status, worked_for_client_id, worked_shift, marked_by_user_id")
       .eq("attendance_date", d);
     if (err) {
       setError(err.message);
       return;
     }
+    // Supervisor sign-offs for this date (namespaced group_key so they never
+    // collide with the Attendance board's per-shift confirmation rows).
+    const { data: confs } = await supabase
+      .from("attendance_confirmations")
+      .select("group_key, supervisor_name, confirmed_at")
+      .eq("attendance_date", d)
+      .like("group_key", "daily:%");
+    const confMap: Record<string, { by: string; at: string }> = {};
+    for (const c of (confs ?? []) as { group_key: string; supervisor_name: string; confirmed_at: string }[]) {
+      confMap[c.group_key] = { by: c.supervisor_name, at: c.confirmed_at };
+    }
+    setConfirmedGroups(confMap);
     // A date can carry more than one shift row (a guard on two shifts). The daily
     // page marks ONE shift — the dated-segment shift (dayShift) — so it must also
     // READ that same shift's row, otherwise it would show a sibling shift's status
@@ -316,16 +342,19 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     const statusMap: Record<string, AttendanceStatus> = {};
     const clientMap: Record<string, string | null> = {};
     const shiftMap: Record<string, string> = {};
+    const markedByMap: Record<string, string | null> = {};
     for (const [empId, rows] of rowsByEmp) {
       const want = shiftForDate(empId);
       const chosen = rows.find((r) => r.worked_shift === want) ?? rows[0];
       statusMap[empId] = chosen.status;
       clientMap[empId] = chosen.worked_for_client_id ?? null;
       shiftMap[empId] = chosen.worked_shift ?? want;
+      markedByMap[empId] = chosen.marked_by_user_id ?? null;
     }
     setTodayRecords(statusMap);
     setTodayWorkedFor(clientMap);
     setTodayShift(shiftMap);
+    setTodayMarkedBy(markedByMap);
   };
 
   const loadHistory = async () => {
@@ -505,6 +534,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     const prevClient = todayWorkedFor[employeeId] ?? null;
     setTodayRecords((m) => ({ ...m, [employeeId]: status }));
     setTodayShift((m) => ({ ...m, [employeeId]: shift }));
+    setTodayMarkedBy((m) => ({ ...m, [employeeId]: profile?.id ?? null }));
     setTodayWorkedFor((m) => ({
       ...m,
       [employeeId]: status === "Present" ? workedForClientId ?? null : null,
@@ -519,6 +549,9 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
           scheduled_shift: shift,
           worked_shift: shift,
           worked_for_client_id: status === "Present" ? workedForClientId ?? null : null,
+          // Record who reported this mark, so the daily list can show it.
+          marked_by_user_id: profile?.id ?? null,
+          marked_at: new Date().toISOString(),
         },
         { onConflict: "employee_id,attendance_date,worked_shift" }
       );
@@ -666,6 +699,8 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
           worked_shift: shift,
           worked_for_client_id:
             e.category === "reliever" ? todayWorkedFor[e.id] ?? null : null,
+          marked_by_user_id: profile?.id ?? null,
+          marked_at: new Date().toISOString(),
         };
       });
     if (payload.length === 0) {
@@ -687,6 +722,11 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       optimistic[r.employee_id] = "Present";
     });
     setTodayRecords(optimistic);
+    setTodayMarkedBy((m) => {
+      const n = { ...m };
+      payload.forEach((r) => { n[r.employee_id] = profile?.id ?? null; });
+      return n;
+    });
     const { error: upErr } = await supabase
       .from("attendance_records")
       .upsert(payload, { onConflict: "employee_id,attendance_date,worked_shift" });
@@ -804,6 +844,63 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     });
     return { p, a, l, unm };
   }, [filteredEmployees, todayRecords]);
+
+  // ── Report → confirm, grouped by client/site ──────────────────────────────
+  // Each client (or a "no client" category bucket) is a group. A group is
+  // "X/Y reported" — X employees marked of Y in the group — and a supervisor
+  // signs it off once all are reported.
+  const groupKeyOf = (e: EmployeeLite): string =>
+    e.client_id ? `daily:${e.client_id}` : `daily:cat:${e.category}`;
+  const catLabel = (c: string) => c.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
+
+  const groupedEmployees = useMemo(() => {
+    const groups = new Map<string, { key: string; clientId: string | null; category: string; label: string; employees: EmployeeLite[] }>();
+    for (const e of filteredEmployees) {
+      const key = groupKeyOf(e);
+      let g = groups.get(key);
+      if (!g) {
+        g = {
+          key,
+          clientId: e.client_id,
+          category: e.category,
+          label: e.client_name ?? `${catLabel(e.category)} (no client)`,
+          employees: [],
+        };
+        groups.set(key, g);
+      }
+      g.employees.push(e);
+    }
+    return [...groups.values()].sort((a, b) => a.label.localeCompare(b.label));
+  }, [filteredEmployees]);
+
+  // Confirm one client/site group for the selected date (supervisor sign-off).
+  const confirmGroup = async (g: { key: string; clientId: string | null; category: string }) => {
+    if (!profile) return;
+    setConfirmingKey(g.key);
+    setError(null);
+    const nowIso = new Date().toISOString();
+    const supName = profile.full_name ?? profile.email ?? "—";
+    const { error: cErr } = await supabase.from("attendance_confirmations").upsert(
+      {
+        group_key: g.key,
+        shift_code: "all",
+        attendance_date: date,
+        client_id: g.clientId,
+        category: g.clientId ? null : g.category,
+        supervisor_name: supName,
+        source: "manual",
+        confirmed_by: profile.id,
+        confirmed_at: nowIso,
+      },
+      { onConflict: "company_id,group_key,shift_code,attendance_date" },
+    );
+    setConfirmingKey(null);
+    if (cErr) {
+      setError(cErr.message);
+      return;
+    }
+    setConfirmedGroups((m) => ({ ...m, [g.key]: { by: supName, at: nowIso } }));
+  };
 
   // `month` is a YYYY-MM key chosen in the export dialog — the export is no
   // longer tied to whichever day the timesheet happens to be showing.
@@ -1262,7 +1359,57 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                   </tr>
                 )}
                 {!loading &&
-                  filteredEmployees.map((employee) => {
+                  groupedEmployees.map((g) => {
+                    const reported = g.employees.filter((e) => todayRecords[e.id]).length;
+                    const total = g.employees.length;
+                    const allReported = total > 0 && reported === total;
+                    const conf = confirmedGroups[g.key];
+                    return (
+                      <Fragment key={g.key}>
+                        <tr className="bg-slate-100/70 border-t border-border">
+                          <td colSpan={6} className="px-6 py-2.5">
+                            <div className="flex flex-wrap items-center gap-3">
+                              <span className="text-sm font-semibold text-foreground">{g.label}</span>
+                              <span
+                                className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border ${
+                                  allReported
+                                    ? "bg-success-50 text-success-700 border-success-200"
+                                    : "bg-warning-50 text-warning-800 border-warning-200"
+                                }`}
+                              >
+                                {allReported ? "All reported" : `${reported}/${total} reported`}
+                              </span>
+                              {conf ? (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-success-700 dark:text-success-500 ml-auto">
+                                  <Check className="w-3.5 h-3.5" strokeWidth={2} />
+                                  Confirmed by {conf.by}
+                                </span>
+                              ) : (
+                                canBulk && (
+                                  <button
+                                    type="button"
+                                    disabled={!allReported || confirmingKey === g.key}
+                                    onClick={() => confirmGroup(g)}
+                                    title={
+                                      allReported
+                                        ? "Supervisor: confirm this group's attendance for the day"
+                                        : "All employees must be reported before this can be confirmed"
+                                    }
+                                    className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md border border-brand-500 text-brand-700 hover:bg-brand-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    {confirmingKey === g.key ? (
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    ) : (
+                                      <Check className="w-3.5 h-3.5" strokeWidth={2} />
+                                    )}
+                                    Confirm
+                                  </button>
+                                )
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                        {g.employees.map((employee) => {
                     const current = todayRecords[employee.id];
                     const isSaving = !!saving[employee.id];
                     // Gate marking before the assignment takes effect. Only
@@ -1293,6 +1440,11 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                           >
                             {employee.full_name}
                           </button>
+                          {current && todayMarkedBy[employee.id] && (
+                            <span className="block text-[11px] text-muted-foreground mt-0.5">
+                              reported by {profilesById[todayMarkedBy[employee.id]!] ?? "—"}
+                            </span>
+                          )}
                         </td>
                         <td className="px-6 py-4 text-sm text-slate-600">
                           {employee.category === "reliever" ? (
@@ -1423,6 +1575,9 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                           </div>
                         </td>
                       </tr>
+                    );
+                        })}
+                      </Fragment>
                     );
                   })}
               </tbody>

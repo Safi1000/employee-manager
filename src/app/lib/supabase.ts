@@ -1393,18 +1393,25 @@ export type EmployeeIdentityAmendment = {
 // Phase 4: an employee consumes a slot on a line only while Active AND within
 // its assignment window. Inactive/On-Leave/ended assignments free the slot.
 export function assignmentActiveOn(
-  emp: Pick<Employee, "status" | "assignment_effective_from" | "assignment_effective_to">,
+  emp: Pick<Employee, "status" | "assignment_effective_from" | "assignment_effective_to"> & { last_working_day?: string | null },
   onDate: string,
 ): boolean {
-  if (emp.status !== "Active") return false;
   if (emp.assignment_effective_from && emp.assignment_effective_from > onDate) return false;
   if (emp.assignment_effective_to && emp.assignment_effective_to < onDate) return false;
-  return true;
+  if (emp.status === "Active") return true;
+  // A separated guard still OCCUPIED his post through his last working day — the
+  // slot is not free on dates on/before it. Without this, firing a guard effective
+  // (say) the 15th made his slot read as free on the 10th too, so a replacement
+  // could be back-dated into days the outgoing guard was still working, pushing the
+  // client over its contracted strength on those dates. last_working_day is set
+  // only on separation, so a merely Inactive / On-Leave guard still frees the slot.
+  if (emp.last_working_day && onDate <= emp.last_working_day) return true;
+  return false;
 }
 
 // Count active assignments per contract_line on a date.
 export function activeCountByLine(
-  employees: Pick<Employee, "status" | "contract_line_id" | "assignment_effective_from" | "assignment_effective_to">[],
+  employees: (Pick<Employee, "status" | "contract_line_id" | "assignment_effective_from" | "assignment_effective_to"> & { last_working_day?: string | null })[],
   onDate: string,
 ): Map<string, number> {
   const m = new Map<string, number>();
@@ -1419,7 +1426,7 @@ export function activeCountByLine(
 // Active assignments tallied by CATEGORY, given a line→category lookup. Slot
 // validation is per-category (all lines of a category share the committed pool).
 export function activeCountByCategory(
-  employees: Pick<Employee, "status" | "contract_line_id" | "assignment_effective_from" | "assignment_effective_to">[],
+  employees: (Pick<Employee, "status" | "contract_line_id" | "assignment_effective_from" | "assignment_effective_to"> & { last_working_day?: string | null })[],
   lineCategoryById: Map<string, ContractLineCategory>,
   onDate: string,
 ): Map<ContractLineCategory, number> {

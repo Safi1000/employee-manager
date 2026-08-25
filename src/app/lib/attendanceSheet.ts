@@ -48,8 +48,13 @@ export async function buildAttendanceRows(opts: {
   employees: SheetEmployee[];
   contracts: Contract[];
   clients: Client[];
+  // When supplied, a day's mark is shown ONLY if this returns true for it. The
+  // Monthly Board uses this to display exclusively supervisor-confirmed
+  // attendance — an unconfirmed mark (bulk-marked, reported, awaiting) renders
+  // as blank, exactly as if it were never entered.
+  confirmedOnly?: (empId: string, iso: string, workedShift: string) => boolean;
 }): Promise<{ rows: AttendanceEmployeeRow[]; daysInMonth: number; monthLabel: string }> {
-  const { month, employees, contracts, clients } = opts;
+  const { month, employees, contracts, clients, confirmedOnly } = opts;
   const [yStr, mStr] = month.split("-");
   const y = Number(yStr);
   const m = Number(mStr);
@@ -98,8 +103,10 @@ export async function buildAttendanceRows(opts: {
     const shiftByDay: string[] = [];
     let p = 0, a = 0, l = 0;
     for (let d = 1; d <= dim; d += 1) {
-      const cell = dayMap.get(d);
+      let cell = dayMap.get(d);
       const iso = `${yStr}-${mStr}-${String(d).padStart(2, "0")}`;
+      // Hide any mark the supervisor hasn't confirmed — it reads as unmarked.
+      if (cell && confirmedOnly && !confirmedOnly(emp.id, iso, cell.ws)) cell = undefined;
       // No record AND not employed that day → "X" (separated / pre-join / off-contract),
       // otherwise blank. A real record always wins — history is reported as-is.
       const sym = cell?.sym ?? (attendanceWindowError(emp, contract, iso) ? SEPARATION_MARK : "");

@@ -100,14 +100,17 @@ export default function AttendanceSheetModal({
         ]);
 
         let list = (emps ?? []) as any[];
-        // Narrow to one site by the guard's current open posting.
-        if (siteId) {
+        // Guard → current site (open posting). Used both to narrow to one site
+        // AND to match each guard against the right per-site supervisor
+        // confirmation below.
+        const siteByGuard = new Map<string, string | null>();
+        if (!synthetic) {
           const { data: deps } = await supabase
             .from("deployments").select("guard_id, site_id").eq("client_id", clientId).is("end_date", null);
-          const siteByGuard = new Map<string, string | null>();
-          for (const d of (deps ?? []) as any[]) siteByGuard.set(d.guard_id, d.site_id);
-          list = list.filter((e) => siteByGuard.get(e.id) === siteId);
+          for (const d of (deps ?? []) as any[]) siteByGuard.set(d.guard_id, d.site_id ?? null);
         }
+        // Narrow to one site by the guard's current open posting.
+        if (siteId) list = list.filter((e) => siteByGuard.get(e.id) === siteId);
 
         const prefix = (client as any)?.employee_id_prefix ?? null;
         const employees: SheetEmployee[] = list
@@ -125,11 +128,36 @@ export default function AttendanceSheetModal({
           }))
           .sort((a, b) => a.full_name.localeCompare(b.full_name));
 
+        // Monthly Board shows ONLY supervisor-confirmed attendance. Load the
+        // month's confirmations for this client/category and gate every mark on
+        // a matching (site, shift, date). A confirmation with site_id null is
+        // client-wide / a category group — it matches any of the client's sites.
+        const [cy, cm] = month.split("-").map(Number);
+        const monthEndDate = `${month}-${String(new Date(cy, cm, 0).getDate()).padStart(2, "0")}`;
+        const confQ = supabase
+          .from("attendance_confirmations")
+          .select("site_id, shift_code, attendance_date")
+          .gte("attendance_date", monthStartDate)
+          .lte("attendance_date", monthEndDate);
+        const { data: confs } = await (synthetic ? confQ.eq("category", category as string) : confQ.eq("client_id", clientId));
+        const anySite = new Set<string>(); // `${shift}|${date}`
+        const bySite = new Set<string>(); // `${site}|${shift}|${date}`
+        for (const c of (confs ?? []) as any[]) {
+          if (c.site_id) bySite.add(`${c.site_id}|${c.shift_code}|${c.attendance_date}`);
+          else anySite.add(`${c.shift_code}|${c.attendance_date}`);
+        }
+        const confirmedOnly = (empId: string, iso: string, ws: string): boolean => {
+          if (anySite.has(`${ws}|${iso}`)) return true;
+          const site = siteByGuard.get(empId) ?? null;
+          return site ? bySite.has(`${site}|${ws}|${iso}`) : false;
+        };
+
         const built = await buildAttendanceRows({
           month,
           employees,
           contracts: (contracts ?? []) as any[],
           clients: client ? ([client] as any[]) : [],
+          confirmedOnly,
         });
         if (cancelled) return;
         setRows(built.rows);
@@ -364,8 +392,8 @@ export default function AttendanceSheetModal({
           {!verifiedAt && canOpsVerify && !loading && rows.length > 0 && (
             <p className="mt-2 text-[11px] text-muted-foreground">
               {outstanding.length === 0
-                ? monthEnded ? "All days marked. Ready to OPS Verify." : "All days marked — verify once the month has ended."
-                : `${outstanding.length} unmarked day(s) highlighted below. Mark them, or click a cell to override with a reason.`}
+                ? monthEnded ? "All days confirmed. Ready to OPS Verify." : "All days confirmed — verify once the month has ended."
+                : `${outstanding.length} unconfirmed day(s) highlighted below. Confirm those shifts on the Attendance board — attendance only appears here once the supervisor confirms it.`}
             </p>
           )}
           {verifiedAt && canOpsVerify && phaseLocked && (
@@ -420,21 +448,27 @@ export default function AttendanceSheetModal({
                       const si = shiftIndex.get(ds) ?? 0;
                       const date = dayDate(i);
                       const flagged = row.empId ? flaggedKeys.has(`${row.empId}|${i}`) : false;
-                      const overridden = row.empId ? overriddenKeys.has(`${row.empId}|${date}`) : false;
+                      // A confirmed day only shows a real P/A/L here (unconfirmed =
+                      // blank). Override is the ONE way to change such a day, and
+                      // only once the month has ended (and while it isn't yet
+                      // OPS-verified). Before month-end the board stays read-only;
+                      // editing happens on the Attendance board until it locks.
+                      const canOverride = !!row.empId && monthEnded && !verifiedAt && (st === "P" || st === "A" || st === "L");
                       return shifts.map((_c, s) => {
                         const isStatusCell = s === si;
-                        // Flagged (unresolved unmarked) = red; overridden = amber dot.
-                        const cellBg = isStatusCell && flagged ? "bg-danger-100 dark:bg-danger-900/30 cursor-pointer"
-                          : isStatusCell && overridden ? "bg-warning-100 dark:bg-warning-900/30 cursor-pointer"
-                            : isStatusCell && row.empId ? "cursor-pointer hover:bg-accent" : "";
+                        const overridable = isStatusCell && canOverride;
+                        const cellBg = isStatusCell && flagged ? "bg-danger-100 dark:bg-danger-900/30"
+                          : overridable ? "cursor-pointer hover:bg-accent" : "";
                         return (
                           <td
                             key={`${i}-${s}`}
-                            onClick={isStatusCell && row.empId ? () => setOvTarget({ empId: row.empId!, empName: row.name, date, current: st, shift: ds }) : undefined}
-                            title={isStatusCell && flagged ? "Unmarked — click to override with a reason" : isStatusCell && overridden ? "Overridden — click to view history" : isStatusCell && row.empId ? "Click to override" : undefined}
+                            onClick={overridable ? () => setOvTarget({ empId: row.empId!, empName: row.name, date, current: st, shift: ds }) : undefined}
+                            title={isStatusCell && flagged ? "Not confirmed — confirm this shift on the Attendance board to show it here"
+                              : overridable ? "Confirmed & month ended — click to override"
+                              : undefined}
                             className={`border border-border px-1 py-0.5 text-center font-medium ${cellBg} ${statusClass(isStatusCell ? st : "")}`}
                           >
-                            {isStatusCell ? (st || (flagged ? "•" : overridden ? "⊘" : "")) : ""}
+                            {isStatusCell ? st : ""}
                           </td>
                         );
                       });
@@ -469,7 +503,13 @@ export default function AttendanceSheetModal({
             <div className="mt-3 text-[11px] text-muted-foreground space-y-0.5">
               {shifts.map((c) => <span key={c} className="inline-block mr-3">{shiftAbbr(c)} = {c} shift</span>)}
               <div>P / A / L = present / absent / leave · X = not markable (separated / before joining / off-contract) · pay days = presents + allowed leaves − excess</div>
-              {canOpsVerify && <div><span className="inline-block w-3 h-3 align-middle rounded-sm bg-danger-100 dark:bg-danger-900/30 mr-1" /> unmarked (blocks OPS Verify) · <span className="inline-block w-3 h-3 align-middle rounded-sm bg-warning-100 dark:bg-warning-900/30 mr-1" /> overridden · click any cell to override</div>}
+              <div className="text-muted-foreground">
+                Shows only attendance the supervisor has confirmed on the Attendance board; unconfirmed days stay blank.
+                {monthEnded
+                  ? " The month has ended — a confirmed day is now locked everywhere else and can be changed only by clicking it here to override."
+                  : " Until the month ends, this view is read-only — edit on the Attendance board."}
+              </div>
+              {canOpsVerify && <div><span className="inline-block w-3 h-3 align-middle rounded-sm bg-danger-100 dark:bg-danger-900/30 mr-1" /> not yet confirmed (blocks OPS Verify)</div>}
             </div>
           )}
         </div>

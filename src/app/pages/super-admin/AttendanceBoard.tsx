@@ -127,6 +127,10 @@ type ClientShift = {
   roster: RosterGuard[];
   // existing attendance rows for this shift-day (exceptions already entered)
   marks: Map<string, { status: Status; absent_reason: AbsentReason | null }>;
+  // Every roster guard who has ANY attendance mark today (present included) →
+  // who reported it (marked_by_user_id). Drives the "X/Y reported" progress and
+  // the "reported by <name>" label. `marks` is exceptions-only; this is not.
+  reported: Map<string, string | null>;
   confirmation: { supervisor_name: string; confirmed_at: string } | null;
   // A synthetic (category, shift) group for a non-client category with no client
   // site — marked like any row, but with no site-based confirmation.
@@ -159,6 +163,7 @@ export default function AttendanceBoard() {
   const [rows, setRows] = useState<ClientShift[]>([]);
   const [vacancies, setVacancies] = useState<Vacancy[]>([]);
   const [clientNames, setClientNames] = useState<Map<string, string>>(new Map());
+  const [profilesById, setProfilesById] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [drill, setDrill] = useState<ClientShift | null>(null);
@@ -186,7 +191,7 @@ export default function AttendanceBoard() {
     setLoading(true);
     setError(null);
     // Active deployments on the date + guard + site + client + contract line shift.
-    const [{ data: deps, error: depErr }, { data: cls }, { data: siteRows }, { data: confs }, { data: att }, { data: cliRows }, { data: cons }, { data: vac }, { data: staff }] =
+    const [{ data: deps, error: depErr }, { data: cls }, { data: siteRows }, { data: confs }, { data: att }, { data: cliRows }, { data: cons }, { data: vac }, { data: staff }, { data: profs }] =
       await Promise.all([
         supabase
           .from("deployments")
@@ -211,7 +216,7 @@ export default function AttendanceBoard() {
         supabase.from("contract_lines").select("site_id, shift_code, billed_qty").not("site_id", "is", null),
         supabase.from("sites").select("id, client_id, name"),
         supabase.from("attendance_confirmations").select("*").eq("attendance_date", date),
-        supabase.from("attendance_records").select("employee_id, status, absent_reason, worked_shift, site_id:worked_for_client_id").eq("attendance_date", date),
+        supabase.from("attendance_records").select("employee_id, status, absent_reason, worked_shift, marked_by_user_id, site_id:worked_for_client_id").eq("attendance_date", date),
         supabase.from("clients").select("id, name, employee_id_prefix, branch_id"),
         // The contract's per-shift headcount decides which shifts a client runs.
         supabase
@@ -232,10 +237,12 @@ export default function AttendanceBoard() {
           .select("id, full_name, guard_code, display_number, employee_code, shift, category, join_date, last_working_day, termination_date, exit_date, lifecycle_state, branch_id")
           .neq("category", "reliever")
           .neq("category", "client"),
+        supabase.from("profiles").select("id, full_name, email"),
       ]);
     if (depErr) { setError(depErr.message); setLoading(false); return; }
 
     setClientNames(new Map((cliRows ?? []).map((c: any) => [c.id, c.name])));
+    setProfilesById(new Map((profs ?? []).map((p: any) => [p.id, p.full_name ?? p.email ?? "—"])));
     setVacancies((vac ?? []) as Vacancy[]);
 
     // contracted strength per (site, shift)
@@ -269,11 +276,11 @@ export default function AttendanceBoard() {
     const confMap = new Map<string, { supervisor_name: string; confirmed_at: string }>();
     for (const c of (confs ?? []) as any[]) confMap.set(`${c.group_key}|${c.shift_code}`, { supervisor_name: c.supervisor_name, confirmed_at: c.confirmed_at });
     // marks per guard (attendance rows already entered for this date)
-    const markByGuard = new Map<string, { status: Status; absent_reason: AbsentReason | null; shift: string }>();
+    const markByGuard = new Map<string, { status: Status; absent_reason: AbsentReason | null; shift: string; marked_by: string | null }>();
     for (const a of (att ?? []) as any[]) {
       // Legacy rows may lack worked_shift — key defensively so nothing is dropped.
       const ws = a.worked_shift ?? a.scheduled_shift ?? "day";
-      markByGuard.set(`${a.employee_id}|${ws}`, { status: normalizeStatus(a.status), absent_reason: a.absent_reason ?? null, shift: ws });
+      markByGuard.set(`${a.employee_id}|${ws}`, { status: normalizeStatus(a.status), absent_reason: a.absent_reason ?? null, shift: ws, marked_by: a.marked_by_user_id ?? null });
     }
 
     // A guard stands at ONE site on ONE shift on a given date. Overlapping
@@ -349,6 +356,7 @@ export default function AttendanceBoard() {
             0,
           roster: [],
           marks: new Map(),
+          reported: new Map(),
           confirmation: confMap.get(key) ?? null,
           branch_id: (d.clients?.branch_id as string | null) ?? null,
         };
@@ -364,7 +372,10 @@ export default function AttendanceBoard() {
         scheduled_shift: sched,
       });
       const mk = markByGuard.get(`${d.guard_id}|${sched}`);
-      if (mk && mk.status !== "present") row.marks.set(d.guard_id, { status: mk.status, absent_reason: mk.absent_reason });
+      if (mk) {
+        row.reported.set(d.guard_id, mk.marked_by);
+        if (mk.status !== "present") row.marks.set(d.guard_id, { status: mk.status, absent_reason: mk.absent_reason });
+      }
     }
 
     // A shift the contract commits to must appear even with nobody posted to it
@@ -430,6 +441,7 @@ export default function AttendanceBoard() {
             contracted: site ? contracted.get(`${site.id}|${shift}`) ?? committed : committed,
             roster: [],
             marks: new Map(),
+            reported: new Map(),
             confirmation: confMap.get(`${groupKey}|${shift}`) ?? null,
             branch_id: (c?.branch_id as string | null) ?? null,
           });
@@ -462,6 +474,7 @@ export default function AttendanceBoard() {
           contracted: 0,
           roster: [],
           marks: new Map(),
+          reported: new Map(),
           confirmation: confMap.get(`cat:${e.category}|${sched}`) ?? null,
           synthetic: true,
           // No client, so no client branch — these are scoped per guard below.
@@ -480,7 +493,10 @@ export default function AttendanceBoard() {
         branch_id: (e.branch_id as string | null) ?? null,
       });
       const mk = markByGuard.get(`${e.id}|${sched}`);
-      if (mk && mk.status !== "present") row.marks.set(e.id, { status: mk.status, absent_reason: mk.absent_reason });
+      if (mk) {
+        row.reported.set(e.id, mk.marked_by);
+        if (mk.status !== "present") row.marks.set(e.id, { status: mk.status, absent_reason: mk.absent_reason });
+      }
     }
 
     setRows([...byKey.values()]);
@@ -625,6 +641,23 @@ export default function AttendanceBoard() {
       : s === "reported" ? "bg-warning-50 text-warning-800 border-warning-200"
         : "bg-slate-100 text-slate-600 border-slate-200";
 
+  // "X/Y reported" pill for a client/site header — green once all roster
+  // members have a mark (present/absent/leave), amber while some are still bare.
+  const reportedBadge = (x: number, y: number) => {
+    const all = y > 0 && x === y;
+    return (
+      <span className={`text-xs px-2 py-0.5 rounded-md border shrink-0 ${
+        all ? "bg-success-50 text-success-700 dark:text-success-500 border-success-200"
+            : "bg-warning-50 text-warning-800 dark:text-warning-500 border-warning-200"
+      }`}>
+        {all ? "All reported" : `${x}/${y} reported`}
+      </span>
+    );
+  };
+  // Distinct reporter names for one shift row (from marked_by_user_id).
+  const reporterNames = (r: ClientShift): string[] =>
+    [...new Set([...r.reported.values()].map((id) => (id ? profilesById.get(id) ?? "—" : null)).filter(Boolean) as string[])];
+
   return (
     <>
       <Header
@@ -721,6 +754,7 @@ export default function AttendanceBoard() {
                 const cOpen = openClients.has(c.clientId);
                 const allShifts = c.sites.flatMap((st) => st.shifts);
                 const rosterTotal = allShifts.reduce((n, r) => n + r.roster.length, 0);
+                const reportedTotal = allShifts.reduce((n, r) => n + r.reported.size, 0);
                 const pending = allShifts.filter((r) => rowStatus(r) !== "confirmed").length;
                 return (
                   <div key={c.clientId} className="bg-card border border-border rounded-lg overflow-hidden">
@@ -745,6 +779,7 @@ export default function AttendanceBoard() {
                           : `${c.sites.length} sites`}{" "}
                         · {rosterTotal} on roster
                       </span>
+                      {reportedBadge(reportedTotal, rosterTotal)}
                       {pending > 0 ? (
                         <span className="text-xs px-2 py-0.5 rounded-md border bg-warning-50 text-warning-800 dark:text-warning-500 border-warning-200 shrink-0">
                           {pending} to confirm
@@ -779,6 +814,7 @@ export default function AttendanceBoard() {
                           const flat = c.sites.length === 1;
                           const sOpen = flat || openSites.has(sKey);
                           const sRoster = st.shifts.reduce((n, r) => n + r.roster.length, 0);
+                          const sReported = st.shifts.reduce((n, r) => n + r.reported.size, 0);
                           return (
                             <div key={sKey} className="border-b border-border last:border-0">
                               {!flat && (
@@ -798,6 +834,7 @@ export default function AttendanceBoard() {
                                 <span className="text-xs text-muted-foreground shrink-0">
                                   {st.shifts.length} shift{st.shifts.length === 1 ? "" : "s"} · {sRoster} on roster
                                 </span>
+                                {reportedBadge(sReported, sRoster)}
                               </button>
                               <button
                                 type="button"
@@ -819,6 +856,7 @@ export default function AttendanceBoard() {
                                         <th className={`text-left px-4 py-2 ${flat ? "pl-8" : "pl-14"} text-xs text-muted-foreground uppercase tracking-wide`}>Shift</th>
                                         <th className="text-right px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">Contracted</th>
                                         <th className="text-right px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">On roster</th>
+                                        <th className="text-left px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">Reported</th>
                                         <th className="text-left px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">Exceptions</th>
                                         <th className="text-left px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">Status</th>
                                         <th className="px-4 py-2"></th>
@@ -840,6 +878,29 @@ export default function AttendanceBoard() {
                                             </td>
                                             <td className="px-4 py-3 text-sm text-right text-muted-foreground">{r.contracted || "—"}</td>
                                             <td className="px-4 py-3 text-sm text-right text-muted-foreground">{r.roster.length}</td>
+                                            <td className="px-4 py-3 text-sm">
+                                              {(() => {
+                                                const x = r.reported.size, y = r.roster.length;
+                                                const all = y > 0 && x === y;
+                                                const names = reporterNames(r);
+                                                return (
+                                                  <>
+                                                    <span className={`inline-block px-2 py-0.5 rounded-md text-xs border ${
+                                                      all ? "bg-success-50 text-success-700 dark:text-success-500 border-success-200"
+                                                          : x > 0 ? "bg-warning-50 text-warning-800 dark:text-warning-500 border-warning-200"
+                                                                  : "bg-slate-100 text-slate-500 border-slate-200"
+                                                    }`}>
+                                                      {all ? "All" : `${x}/${y}`}
+                                                    </span>
+                                                    {names.length > 0 && (
+                                                      <span className="block text-[11px] text-muted-foreground mt-0.5 truncate max-w-[160px]" title={`Reported by ${names.join(", ")}`}>
+                                                        by {names.slice(0, 2).join(", ")}{names.length > 2 ? "…" : ""}
+                                                      </span>
+                                                    )}
+                                                  </>
+                                                );
+                                              })()}
+                                            </td>
                                             <td className="px-4 py-3 text-sm text-muted-foreground">{exceptionSummary(r)}</td>
                                             <td className="px-4 py-3">
                                               <span className={`inline-block px-2 py-0.5 rounded-md text-xs border capitalize ${badge(rst)}`}>{rst}</span>
@@ -881,6 +942,8 @@ export default function AttendanceBoard() {
           shift={drill}
           date={date}
           role={profile?.role ?? "hr"}
+          userId={profile?.id ?? null}
+          profilesById={profilesById}
           onClose={() => setDrill(null)}
           onDone={async () => { setDrill(null); await load(); }}
           onError={setError}
@@ -913,9 +976,10 @@ export default function AttendanceBoard() {
 
 // ── Drill-in: roster with presume-present + exception marking + Confirm ───────
 function ShiftDrillModal({
-  shift, date, role, onClose, onDone, onError,
+  shift, date, role, userId, profilesById, onClose, onDone, onError,
 }: {
-  shift: ClientShift; date: string; role: string;
+  shift: ClientShift; date: string; role: string; userId: string | null;
+  profilesById: Map<string, string>;
   onClose: () => void; onDone: () => Promise<void>; onError: (m: string) => void;
 }) {
   // per-guard exception (undefined = presumed present)
@@ -1064,6 +1128,8 @@ function ShiftDrillModal({
           source,
           worked_for_client_id: g.client_id,
           marked_by_role: role,
+          marked_by_user_id: userId,
+          marked_at: new Date().toISOString(),
           supervisor_override: needsOverride,
           override_reason: needsOverride ? override.trim() : null,
         }));
@@ -1163,6 +1229,11 @@ function ShiftDrillModal({
                 <div className="min-w-0 flex-1">
                   <p className="text-sm text-slate-900 truncate">{g.full_name}</p>
                   <p className="text-xs text-slate-400 font-mono">{guardDisplayCode(g, shift.client_prefix)}</p>
+                  {shift.reported.has(g.guard_id) && (
+                    <p className="text-[11px] text-success-700 dark:text-success-500 truncate">
+                      ✓ reported{(() => { const uid = shift.reported.get(g.guard_id); const n = uid ? profilesById.get(uid) : null; return n ? ` by ${n}` : ""; })()}
+                    </p>
+                  )}
                 </div>
                 <ThemedSelect
                   value={mk?.status ?? "present"}
