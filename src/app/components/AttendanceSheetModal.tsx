@@ -311,7 +311,12 @@ export default function AttendanceSheetModal({
                   </span>
                 )}
               </h2>
-              <p className="text-xs text-muted-foreground">{monthLabel || month}</p>
+              <p className="text-xs text-muted-foreground">
+                {monthLabel || month}
+                {verifiedAt && (
+                  <span className="text-success-700 dark:text-success-500"> · OPS verified {new Date(verifiedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}</span>
+                )}
+              </p>
             </div>
             <div className="hidden sm:flex items-center gap-1 shrink-0">
               <button onClick={() => shiftMonth(-1)} className="p-1.5 rounded hover:bg-accent" title="Previous month"><ChevronLeft className="w-4 h-4" /></button>

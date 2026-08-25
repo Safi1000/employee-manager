@@ -1,7 +1,7 @@
 import ThemedSelect from "../../components/ThemedSelect";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Search, Download, AlertCircle, X, Loader2, SlidersHorizontal, ChevronDown, Lock } from "lucide-react";
+import { Search, Download, AlertCircle, X, Loader2, SlidersHorizontal, ChevronDown, Lock, Check } from "lucide-react";
 import jsPDF from "jspdf";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -104,6 +104,9 @@ type PayrollManagementProps = {
   // Cleared/Disbursed, Save/Payslip). Used by the Payroll Management page for
   // Finance-Verified clients. Same calc/save/disburse logic — a display slice.
   afterNet?: boolean;
+  // Called by an afterNet embed after it saves/disburses, so the parent shell can
+  // refresh its per-client totals (drives the green "all disbursed" colour-coding).
+  onDataChanged?: () => void;
   periodOverride?: string;
   // Payroll Run "inline" layout: trimmed columns (Name/Attendance/Base/Net) and the
   // Salary Calculation panel rendered inline below the table rather than as a side
@@ -111,7 +114,7 @@ type PayrollManagementProps = {
   runInline?: boolean;
 };
 
-export default function PayrollManagement({ relieversOnly = false, clientScopeId = null, categoryScope = null, throughNet = false, afterNet = false, periodOverride, runInline = false }: PayrollManagementProps = {}) {
+export default function PayrollManagement({ relieversOnly = false, clientScopeId = null, categoryScope = null, throughNet = false, afterNet = false, onDataChanged, periodOverride, runInline = false }: PayrollManagementProps = {}) {
   // `embedded` = rendered inside the Payroll Run / Payroll Management client list:
   // no page Header, filters, totals cards, or bulk actions — just the scoped
   // roster + the payslip drawer.
@@ -1055,6 +1058,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         return next;
       });
       await loadPeriodData(selectedPeriod);
+      onDataChanged?.();
     } catch (err: any) {
       setError(err.message ?? String(err));
     } finally {
@@ -1299,6 +1303,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       // Overpaid portion (target − net, when positive) carries to next month.
       await syncOverpayAdvance(row.employee.id, row.period_month, target - net);
       await loadAll();
+      onDataChanged?.();
     } catch (err: any) {
       setRowError(friendlyError(err));
       await loadAll();
@@ -1463,6 +1468,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       setIsBulkDisburseOpen(false);
       setSelectedEmpIds(new Set());
       await loadAll();
+      onDataChanged?.();
     } catch (err: any) {
       setError(friendlyError(err));
       await loadAll();
@@ -1589,6 +1595,8 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   const [fvTotals, setFvTotals] = useState<Map<string, ShellTotals>>(new Map());
   const [fvExpanded, setFvExpanded] = useState<string | null>(null);
   const [fvLoading, setFvLoading] = useState(true);
+  // Bumped by a child embed after it disburses, to re-pull the per-client totals.
+  const [fvReloadKey, setFvReloadKey] = useState(0);
   const catLabelShell = (cat: string) => {
     const t = cat.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
     return cat === "reliever" ? "Relievers" : t;
@@ -1642,7 +1650,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPeriod, regionId, isPageShell]);
+  }, [selectedPeriod, regionId, isPageShell, fvReloadKey]);
 
   const shellCardTotals = useMemo(() => {
     if (fvExpanded) return fvTotals.get(fvExpanded) ?? ZERO_SHELL;
@@ -1708,16 +1716,31 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
             <div className="space-y-3">
               {fvScopes.map((s) => {
                 const open = fvExpanded === s.key;
+                const t = fvTotals.get(s.key);
+                const done = (t?.disbursedCount ?? 0) + (t?.notDisbursedCount ?? 0);
+                // Fully disbursed = at least one payslip and none left unpaid.
+                const fullyDisbursed = !!t && t.disbursedCount > 0 && t.notDisbursedCount === 0;
+                const partiallyDisbursed = !!t && t.disbursedCount > 0 && t.notDisbursedCount > 0;
                 return (
-                  <div key={s.key} className="bg-card rounded-xl border border-border overflow-hidden">
+                  <div key={s.key} className={`rounded-xl border overflow-hidden ${fullyDisbursed ? "bg-success-50 dark:bg-success-900/15 border-success-300 dark:border-success-800" : "bg-card border-border"}`}>
                     <button type="button" onClick={() => setFvExpanded(open ? null : s.key)} className="w-full flex items-center gap-2 p-4 text-left">
                       <ChevronDown className={`w-4 h-4 shrink-0 text-muted-foreground transition-transform ${open ? "" : "-rotate-90"}`} />
-                      <span className="text-sm font-medium text-foreground truncate flex-1">{s.name}</span>
-                      <span className="text-xs text-muted-foreground tabular-nums">PKR {(fvTotals.get(s.key)?.disbursed ?? 0).toLocaleString()} paid</span>
+                      <span className={`text-sm font-medium truncate flex-1 ${fullyDisbursed ? "text-success-800 dark:text-success-400" : "text-foreground"}`}>{s.name}</span>
+                      {fullyDisbursed && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-success-100 text-success-800 dark:bg-success-900/30 dark:text-success-400">
+                          <Check className="w-3 h-3" strokeWidth={2.5} /> All disbursed
+                        </span>
+                      )}
+                      {partiallyDisbursed && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-warning-50 text-warning-800 dark:bg-warning-900/20 dark:text-warning-500">
+                          {t!.disbursedCount}/{done} disbursed
+                        </span>
+                      )}
+                      <span className="text-xs text-muted-foreground tabular-nums">PKR {(t?.disbursed ?? 0).toLocaleString()} paid</span>
                     </button>
                     {open && (
                       <div className="border-t border-border">
-                        <PayrollManagement clientScopeId={s.clientId} categoryScope={s.category} afterNet runInline periodOverride={selectedPeriod} />
+                        <PayrollManagement clientScopeId={s.clientId} categoryScope={s.category} afterNet runInline periodOverride={selectedPeriod} onDataChanged={() => setFvReloadKey((k) => k + 1)} />
                       </div>
                     )}
                   </div>
@@ -2053,7 +2076,11 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                           <Fragment key={e.id}>
                           <tr
                             className={`transition-colors cursor-pointer border-b border-border ${
-                              selectedId === e.id ? "bg-brand-500/10" : "hover:bg-accent/50"
+                              selectedId === e.id
+                                ? "bg-brand-500/10"
+                                : afterNet && row.disbursed
+                                  ? "bg-success-50 dark:bg-success-900/15 hover:bg-success-100 dark:hover:bg-success-900/25"
+                                  : "hover:bg-accent/50"
                             }`}
                             onClick={() => { setSelectedId((prev) => (runInline && prev === e.id ? null : e.id)); setRowError(null); }}
                           >
@@ -2091,6 +2118,11 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                 >
                                   {lifecycleStatusLabel(e)}
                                 </span>
+                                {afterNet && row.disbursed && (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-success-100 text-success-800 dark:bg-success-900/30 dark:text-success-400">
+                                    <Check className="w-3 h-3" strokeWidth={2.5} /> Disbursed
+                                  </span>
+                                )}
                               </div>
                               <div className="text-xs text-slate-500 font-mono">
                                 {empDisplay(e)}

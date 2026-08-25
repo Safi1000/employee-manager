@@ -31,6 +31,9 @@ const fmtMonth = (ym: string) => {
   const [y, m] = ym.split("-").map(Number);
   return new Date(y, m - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
 };
+// System date + time a verification happened, e.g. "24 Aug 2026, 5:49 PM".
+const fmtStamp = (iso?: string) =>
+  iso ? new Date(iso).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true }) : "";
 // office_staff → "Office Staff", reliever → "Relievers" (pluralised for the group).
 const catLabel = (cat: string) => {
   const t = cat.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -68,8 +71,10 @@ export default function PayrollRun() {
 
   const [scopes, setScopes] = useState<Scope[]>([]);
   const [verified, setVerified] = useState<Set<string>>(new Set());       // scope keys OPS-verified this month
+  const [verifiedAt, setVerifiedAt] = useState<Map<string, string>>(new Map()); // key → OPS verified timestamp
   const [phaseByKey, setPhaseByKey] = useState<Map<string, Phase>>(new Map());
   const [financeVerified, setFinanceVerified] = useState<Set<string>>(new Set()); // permanently Finance Verified keys
+  const [financeVerifiedAt, setFinanceVerifiedAt] = useState<Map<string, string>>(new Map()); // key → Finance verified timestamp
   const [expanded, setExpanded] = useState<string | null>(null);
   // Finance Verify is irreversible → confirm first. { scope } = one, { all:true } = bulk.
   const [confirmFV, setConfirmFV] = useState<{ scope?: Scope; all?: boolean } | null>(null);
@@ -85,7 +90,7 @@ export default function PayrollRun() {
         supabase.from("clients").select("id, name").order("name"),
         // Client-less staff → category groups (office_staff, reliever, armed, gunman).
         supabase.from("employees").select("category").is("client_id", null).neq("category", "client").neq("lifecycle_state", "archived"),
-        supabase.from("attendance_month_verifications").select("client_id, category").eq("period_month", period),
+        supabase.from("attendance_month_verifications").select("client_id, category, verified_at").eq("period_month", period),
         supabase.from("payroll_run_phases").select("client_id, category, phase, finance_verified_at").eq("period_month", period),
         supabase.from("payslips").select("net_salary, amount_paid, advance, disbursed, employee_id").eq("period_month", period),
       ]);
@@ -94,8 +99,10 @@ export default function PayrollRun() {
       const catScopes: Scope[] = cats.map((cat) => ({ key: `cat:${cat}`, name: catLabel(cat), clientId: null, category: cat, verifiable: cat !== "reliever" }));
       setScopes([...clientScopes, ...catScopes]);
       setVerified(new Set(((vers ?? []) as any[]).map((v) => (v.client_id ?? `cat:${v.category}`))));
+      setVerifiedAt(new Map(((vers ?? []) as any[]).filter((v) => v.verified_at).map((v) => [(v.client_id ?? `cat:${v.category}`), v.verified_at as string])));
       setPhaseByKey(new Map(((phs ?? []) as any[]).map((p) => [(p.client_id ?? `cat:${p.category}`), p.phase as Phase])));
       setFinanceVerified(new Set(((phs ?? []) as any[]).filter((p) => p.finance_verified_at).map((p) => (p.client_id ?? `cat:${p.category}`))));
+      setFinanceVerifiedAt(new Map(((phs ?? []) as any[]).filter((p) => p.finance_verified_at).map((p) => [(p.client_id ?? `cat:${p.category}`), p.finance_verified_at as string])));
 
       // Aggregate this month's payslips by scope. Map each payslip's employee to a
       // scope key (client_id, else `cat:<category>`), then sum the same figures
@@ -268,7 +275,7 @@ export default function PayrollRun() {
                         {!s.verifiable ? (
                           <p className="text-xs text-muted-foreground">Not OPS-gated (no attendance verification for this group)</p>
                         ) : ok ? (
-                          <p className="text-xs text-success-700 dark:text-success-500 flex items-center gap-1"><ShieldCheck className="w-3.5 h-3.5" /> OPS-verified for {fmtMonth(month)}</p>
+                          <p className="text-xs text-success-700 dark:text-success-500 flex items-center gap-1"><ShieldCheck className="w-3.5 h-3.5" /> OPS-verified for {fmtMonth(month)}{verifiedAt.get(s.key) ? ` · ${fmtStamp(verifiedAt.get(s.key))}` : ""}</p>
                         ) : (
                           <p className="text-xs text-warning-700 dark:text-warning-500 flex items-center gap-1"><ShieldAlert className="w-3.5 h-3.5" /> Verify OPS first — not verified for {fmtMonth(month)}</p>
                         )}
@@ -317,7 +324,12 @@ export default function PayrollRun() {
                         <button type="button" onClick={() => setExpanded(open ? null : s.key)} className="flex items-center gap-2 min-w-0 flex-1 text-left">
                           <ChevronRight className={`w-4 h-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`} />
                           <ScopeIcon s={s} />
-                          <span className="text-sm font-medium text-foreground truncate">{s.name}</span>
+                          <span className="min-w-0">
+                            <span className="text-sm font-medium text-foreground truncate block">{s.name}</span>
+                            {verifiedAt.get(s.key) && (
+                              <span className="text-[11px] text-muted-foreground block">OPS verified: {fmtStamp(verifiedAt.get(s.key))}</span>
+                            )}
+                          </span>
                           {/* Rule 10: OPS verification revoked while past Draft — warn, don't auto-revert. */}
                           {s.verifiable && !verified.has(s.key) && (
                             <span className="inline-flex items-center gap-1 text-[11px] font-medium text-warning-700 dark:text-warning-500 bg-warning-50 dark:bg-warning-900/20 border border-warning-200 px-1.5 py-0.5 rounded" title="OPS verification is no longer present for this month.">
@@ -361,7 +373,15 @@ export default function PayrollRun() {
                   return (
                   <div key={s.key} className={`rounded-xl border p-4 flex items-center gap-2 flex-wrap ${locked ? "bg-success-50/40 dark:bg-success-900/10 border-success-300 dark:border-success-800" : "bg-card border-border"}`}>
                     <ShieldCheck className={`w-5 h-5 shrink-0 ${locked ? "text-success-600" : "text-brand-600"}`} strokeWidth={1.5} />
-                    <p className="text-sm font-medium text-foreground min-w-0 flex-1 truncate">{s.name}</p>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-foreground truncate">{s.name}</p>
+                      {verifiedAt.get(s.key) && (
+                        <p className="text-[11px] text-muted-foreground">OPS verified: {fmtStamp(verifiedAt.get(s.key))}</p>
+                      )}
+                      {locked && financeVerifiedAt.get(s.key) && (
+                        <p className="text-[11px] text-success-700 dark:text-success-500">Finance verified: {fmtStamp(financeVerifiedAt.get(s.key))}</p>
+                      )}
+                    </div>
                     {!locked && s.verifiable && !verified.has(s.key) && (
                       <span className="inline-flex items-center gap-1 text-[11px] font-medium text-warning-700 dark:text-warning-500 bg-warning-50 dark:bg-warning-900/20 border border-warning-200 px-1.5 py-0.5 rounded" title="OPS verification is no longer present for this month.">
                         <ShieldAlert className="w-3 h-3" /> OPS unverified
