@@ -242,6 +242,8 @@ export default function EmployeeAssignments() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
+  /** Per-client search (keyed by group key) — filters that client's sites + people. */
+  const [groupSearch, setGroupSearch] = useState<Record<string, string>>({});
   // Show separated staff instead of active ones. Off by default.
   const [showFired, setShowFired] = useState(false);
   const [onlyMismatch, setOnlyMismatch] = useState(false);
@@ -528,6 +530,19 @@ export default function EmployeeAssignments() {
       return prefix ? `${prefix}-${String(e.display_number).padStart(3, "0")}` : fallback;
     },
     [clientById],
+  );
+  // True if an employee matches a per-client search query (name or any code).
+  const empMatches = useCallback(
+    (e: EmployeeRow, q: string) => {
+      if (!q) return true;
+      return (
+        (e.full_name ?? "").toLowerCase().includes(q) ||
+        (e.guard_code ?? "").toLowerCase().includes(q) ||
+        (e.employee_code ?? "").toLowerCase().includes(q) ||
+        displayCodeFor(e).toLowerCase().includes(q)
+      );
+    },
+    [displayCodeFor],
   );
 
   // Committed PERSONNEL headcount per client, across their active contracts.
@@ -1245,15 +1260,56 @@ export default function EmployeeAssignments() {
                   )}
                 </div>
 
-                {open && (
-                  g.siteBuckets ? (
-                    /* Client → site → employees. The site level only appears for
-                       clients that have sites; a guard's site comes from their
-                       open posting, not the employee row. */
-                    <div className="border-t border-border">
-                      {g.siteBuckets.map((b) => {
+                {open && (() => {
+                  const q = (groupSearch[g.key] ?? "").trim().toLowerCase();
+                  const searchBar = (
+                    <div className="border-t border-border px-4 py-2.5 bg-muted/30">
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" strokeWidth={1.75} />
+                        <input
+                          value={groupSearch[g.key] ?? ""}
+                          onChange={(ev) => setGroupSearch((prev) => ({ ...prev, [g.key]: ev.target.value }))}
+                          placeholder={g.siteBuckets ? "Search sites or employees in this client…" : "Search employees…"}
+                          className="w-full pl-8 pr-3 py-1.5 text-sm bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-brand-500/30"
+                        />
+                      </div>
+                    </div>
+                  );
+                  // Flat client (no sites): just filter the people.
+                  if (!g.siteBuckets) {
+                    const rows = q ? g.rows.filter((r) => empMatches(r, q)) : g.rows;
+                    return (
+                      <>
+                        {searchBar}
+                        {rows.length === 0
+                          ? <p className="px-4 py-6 text-sm text-muted-foreground text-center">No employees match “{groupSearch[g.key]}”.</p>
+                          : renderEmployeeTable(g, rows)}
+                      </>
+                    );
+                  }
+                  // Client with sites: keep a site if its NAME matches, or it has a
+                  // matching person; then show only the matching people inside it.
+                  const buckets = g.siteBuckets
+                    .map((b) => {
+                      const siteMatch = !q || b.name.toLowerCase().includes(q);
+                      const rows = siteMatch ? b.rows : b.rows.filter((r) => empMatches(r, q));
+                      return { b, rows, show: !q || siteMatch || rows.length > 0 };
+                    })
+                    .filter((x) => x.show);
+                  return (
+                    <>
+                      {searchBar}
+                      {/* Client → site → employees. The site level only appears for
+                          clients that have sites; a guard's site comes from their
+                          open posting, not the employee row. */}
+                      <div className="border-t border-border">
+                        {buckets.length === 0 && (
+                          <p className="px-4 py-6 text-sm text-muted-foreground text-center">No sites or employees match “{groupSearch[g.key]}”.</p>
+                        )}
+                        {buckets.map(({ b, rows: bRows }) => {
                         const sKey = `${g.key}|${b.id}`;
-                        const sOpen = openSites.has(sKey);
+                        // Auto-open a site while searching so matches show without a click.
+                        const sOpen = openSites.has(sKey) || (!!q && bRows.length > 0);
                         // How many of THIS site's people are ticked — the buttons
                         // must not count a selection made on a sibling site.
                         const sSel = b.rows.filter((r) => sel.has(r.id)).length;
@@ -1345,15 +1401,14 @@ export default function EmployeeAssignments() {
                                 </Button>
                               )}
                             </div>
-                            {sOpen && renderEmployeeTable(g, b.rows)}
+                            {sOpen && renderEmployeeTable(g, bRows)}
                           </div>
                         );
                       })}
-                    </div>
-                  ) : (
-                    renderEmployeeTable(g, g.rows)
-                  )
-                )}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             );
           })}

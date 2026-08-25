@@ -1076,7 +1076,9 @@ function ShiftDrillModal({
           shift_code: shift.shift_code,
           attendance_date: date, supervisor_name: supervisor.trim(), source,
         },
-        { onConflict: "group_key,shift_code,attendance_date" },
+        // Must match the unique index, which is scoped by company_id (filled by
+        // the fill_company_id BEFORE-INSERT trigger, so it isn't in the payload).
+        { onConflict: "company_id,group_key,shift_code,attendance_date" },
       );
       if (cErr) throw cErr;
       await onDone();
