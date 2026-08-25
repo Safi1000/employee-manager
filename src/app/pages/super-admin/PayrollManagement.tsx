@@ -193,6 +193,16 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   const [bulkBankId, setBulkBankId] = useState<string>("");
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
   const [bulkClearing, setBulkClearing] = useState(false);
+  // afterNet (Payroll Management per-client): checkbox selection for "Disburse
+  // selected". Empty = nothing selected. Scoped to this mounted client instance.
+  const [selectedEmpIds, setSelectedEmpIds] = useState<Set<string>>(new Set());
+  const toggleSelectEmp = (id: string) =>
+    setSelectedEmpIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1305,9 +1315,12 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     // fully paid. Rows already settled (or overpaid) have no balance and are
     // skipped, so a partially-paid row only gets its shortfall, never double pay.
     const remainingOf = (r: RowState) => Math.round(r.net_salary) - Math.round(r.amount_paid || 0);
-    const candidates = filtered.filter((r) => remainingOf(r) > 0);
+    // In afterNet (Payroll Management), disburse only the checked employees.
+    const candidates = filtered.filter(
+      (r) => remainingOf(r) > 0 && (!afterNet || selectedEmpIds.has(r.employee.id)),
+    );
     if (candidates.length === 0) {
-      setError("No unpaid balances in the current filter to disburse.");
+      setError(afterNet ? "Select at least one employee with an unpaid balance." : "No unpaid balances in the current filter to disburse.");
       return;
     }
     if (bulkMode === "Bank" && !bulkBankId) {
@@ -1448,6 +1461,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         // and be rejected AFTER cash moved (stranding it) — so we don't.
       }
       setIsBulkDisburseOpen(false);
+      setSelectedEmpIds(new Set());
       await loadAll();
     } catch (err: any) {
       setError(friendlyError(err));
@@ -1980,10 +1994,29 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
               </div>
               )}
 
+              {afterNet && (() => {
+                const selectable = filtered.filter((r) => Math.round(r.net_salary) - Math.round(r.amount_paid || 0) > 0);
+                const allSelected = selectable.length > 0 && selectable.every((r) => selectedEmpIds.has(r.employee.id));
+                return (
+                  <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border flex-wrap">
+                    <Button size="sm" variant="secondary" disabled={selectable.length === 0}
+                      onClick={() => setSelectedEmpIds(allSelected ? new Set() : new Set(selectable.map((r) => r.employee.id)))}>
+                      {allSelected ? "Clear all" : "Mark all"}
+                    </Button>
+                    <Button size="sm" variant="primary" disabled={selectedEmpIds.size === 0}
+                      onClick={() => { setBulkMode("Cash"); setBulkCashCustodianId(""); setBulkBankId(""); setBulkDisburseDate(todayISO()); setError(null); setIsBulkDisburseOpen(true); }}>
+                      Disburse selected{selectedEmpIds.size > 0 ? ` (${selectedEmpIds.size})` : ""}
+                    </Button>
+                    <span className="text-xs text-muted-foreground ml-auto">{selectable.length} payable</span>
+                  </div>
+                );
+              })()}
+
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-slate-200">
+                      {afterNet && <th className="w-10 px-4 py-3"></th>}
                       <th className="text-left px-4 py-3 text-xs text-slate-500">Employee</th>
                       {!runInline && (
                       <th className="text-left px-4 py-3 text-xs text-slate-500">
@@ -2024,6 +2057,21 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                             }`}
                             onClick={() => { setSelectedId((prev) => (runInline && prev === e.id ? null : e.id)); setRowError(null); }}
                           >
+                            {afterNet && (() => {
+                              const payable = Math.round(row.net_salary) - Math.round(row.amount_paid || 0) > 0;
+                              return (
+                                <td className="px-4 py-3" onClick={(ev) => ev.stopPropagation()}>
+                                  <input
+                                    type="checkbox"
+                                    className="rounded border-slate-300"
+                                    checked={selectedEmpIds.has(e.id)}
+                                    disabled={!payable}
+                                    title={payable ? "Select for disbursement" : "Already fully disbursed"}
+                                    onChange={() => toggleSelectEmp(e.id)}
+                                  />
+                                </td>
+                              );
+                            })()}
                             <td className="px-4 py-3">
                               <div className="text-sm text-slate-900 flex items-center gap-2">
                                 {e.full_name}
@@ -2163,7 +2211,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                           </tr>
                           {runInline && selectedId === e.id && (
                             <tr>
-                              <td colSpan={4} className="px-4 pb-4 pt-0 bg-accent/10 border-b border-border">
+                              <td colSpan={afterNet ? 5 : 4} className="px-4 pb-4 pt-0 bg-accent/10 border-b border-border">
                                 {/* Salary Calculation is portaled in here, directly under the row. */}
                                 <div ref={hostRefCb} />
                               </td>
@@ -2886,14 +2934,16 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         error={error}
         onDismissError={() => setError(null)}
         onClose={() => setIsBulkDisburseOpen(false)}
-        title="Mark All as Disbursed"
+        title={afterNet ? "Disburse Selected" : "Mark All as Disbursed"}
         size="md"
       >
         {(() => {
           // Pay each row its outstanding Balance (Net − Amount Paid), matching
           // what handleBulkDisburse actually moves — never the full Net Salary.
           const remainingOf = (r: RowState) => Math.round(r.net_salary) - Math.round(r.amount_paid || 0);
-          const candidates = filtered.filter((r) => remainingOf(r) > 0);
+          const candidates = filtered.filter(
+            (r) => remainingOf(r) > 0 && (!afterNet || selectedEmpIds.has(r.employee.id)),
+          );
           const total = candidates.reduce((s, r) => s + remainingOf(r), 0);
           return (
             <div className="space-y-4">
@@ -2911,8 +2961,9 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                   <span className="text-slate-900">{formatPeriod(selectedPeriod)}</span>
                 </div>
                 <p className="text-xs text-slate-500 mt-2">
-                  Only employees currently visible under the active filters will be
-                  disbursed.
+                  {afterNet
+                    ? "Only the employees you selected will be disbursed."
+                    : "Only employees currently visible under the active filters will be disbursed."}
                 </p>
               </div>
 
