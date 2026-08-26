@@ -1082,6 +1082,8 @@ export type Employee = {
   bank_branch_code: string | null;
   /** Optional alternate number. Not the emergency contact (0198). */
   secondary_phone: string | null;
+  /** Applicant-stated preferred posting area, from the intake form (0199). */
+  preferred_location: string | null;
   // Sprint 2 HR field expansion (spec section 3.3 + Appendix A.1)
   cnic_number: string | null;
   date_of_birth: string | null;

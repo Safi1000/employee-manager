@@ -132,6 +132,7 @@ type FormState = {
   full_name: string;
   phone: string;
   secondary_phone: string;
+  preferred_location: string;
   location_id: string;
   client_id: string;
   contract_id: string;
@@ -280,6 +281,7 @@ const emptyForm: FormState = {
   full_name: "",
   phone: "",
   secondary_phone: "",
+  preferred_location: "",
   location_id: "",
   client_id: "",
   contract_id: "",
@@ -653,6 +655,7 @@ const hasEmergencyContact = (e: {
 // paper copies are on file is tracked as its own column in the table, and says
 // nothing about whether the record's own data is filled in.
 const missingRequiredFields = (e: {
+  lifecycle_state: string;
   join_date: string | null;
   full_name: string | null;
   phone: string | null;
@@ -668,8 +671,19 @@ const missingRequiredFields = (e: {
   emergency_contact_phone: string | null;
   emergency_contact2_name: string | null;
   emergency_contact2_phone: string | null;
-}): string[] =>
-  [
+}): string[] => {
+  // An applicant / waiting-list entry is not an employee yet — they filled in
+  // the short intake form, which asks for a name and a number and nothing else.
+  // Measuring them against the employee required set would mark every candidate
+  // Incomplete for fields nobody has any way to answer. The full set applies
+  // from the moment they are actually hired.
+  if (e.lifecycle_state === "applicant" || e.lifecycle_state === "waitlisted") {
+    return [
+      !e.full_name?.trim() ? "Full Name" : null,
+      !e.phone?.trim() ? "Phone" : null,
+    ].filter(Boolean) as string[];
+  }
+  return [
     !e.full_name?.trim() ? "Full Name" : null,
     !e.phone?.trim() ? "Phone" : null,
     !e.cnic_number?.trim() ? "CNIC" : null,
@@ -686,6 +700,7 @@ const missingRequiredFields = (e: {
     // Mirrors the form rule: a mobile wallet has no branch code to give.
     !isPkWallet(e.bank_name ?? "") && !e.bank_branch_code?.trim() ? "Branch Code" : null,
   ].filter(Boolean) as string[];
+};
 
 // Human labels for the validated employee fields, keyed by their form key. Used
 // by the in-modal error summary so a failed save names the exact fields.
@@ -703,6 +718,7 @@ const EMPLOYEE_FIELD_LABELS: Record<string, string> = {
   bank_account: "Bank Account Number",
   bank_branch_code: "Branch Code",
   secondary_phone: "Secondary Phone Number",
+  preferred_location: "Preferred Location",
   emergency_contact_name: "Emergency Contact",
   emergency_contact_phone: "Emergency Contact Phone",
   emergency_contact2_phone: "Second Emergency Contact Phone",
@@ -800,6 +816,10 @@ export default function EmployeeManagement() {
   // Terminated is the hard exits — separated and explicitly not rehireable, plus
   // archived records, which are a dead end by definition.
   const [empTab, setEmpTab] = useState<"active" | "waitlist" | "terminated">("active");
+  // Which half of the Waiting List is showing. Two sub-tabs rather than two
+  // stacked lists: the rehire list is usually the longer of the two, and
+  // stacking buried the fresh candidates below it.
+  const [waitlistTab, setWaitlistTab] = useState<"rehire" | "fresh">("rehire");
   const [filtersOpen, setFiltersOpen] = useState(false);
   // Sort by the NUMERIC part of the client-prefixed display code (= display_number
   // integer column). null = default load order (newest-first); asc = 001 first.
@@ -845,6 +865,7 @@ export default function EmployeeManagement() {
     "full_name",
     "client_id",
     "phone",
+    "preferred_location",
     "bank_name",
     "account_title",
     "bank_account",
@@ -1333,7 +1354,19 @@ export default function EmployeeManagement() {
   // gating downstream treats a record without it as unusable. Records created
   // before this rule can still be missing them; those surface via
   // isMissingKeyFields in the list, and are forced to be filled on the next edit.
-  const computeEmployeeErrors = (f: FormState): Record<string, string | null> => ({
+  const computeEmployeeErrors = (f: FormState): Record<string, string | null> => {
+    // Applicants and waiting-list entries fill in a short intake form. Requiring
+    // a CNIC, bank details or an emergency contact from someone who has not been
+    // hired would make them unsaveable, so the required set is reduced to what
+    // the intake form actually asks for. Everything else is still format-checked
+    // if it happens to be filled.
+    if (f.lifecycle_intake) return {
+      full_name: f.full_name.trim() ? validateFreeText(f.full_name) : "Full Name is required.",
+      phone: f.phone.trim() ? validatePhone(f.phone) : "Phone Number is required.",
+      preferred_location: validateFreeText(f.preferred_location),
+      current_address: validateFreeText(f.current_address),
+    };
+    return {
     full_name: f.full_name.trim() ? validateFreeText(f.full_name) : "Full Name is required.",
     phone: f.phone.trim() ? validatePhone(f.phone) : "Phone Number is required.",
     cnic_number: f.cnic_number.trim() ? validateCnic(f.cnic_number) : "CNIC Number is required.",
@@ -1366,7 +1399,8 @@ export default function EmployeeManagement() {
     secondary_phone: f.secondary_phone.trim() ? validatePhone(f.secondary_phone) : null,
     permanent_address: validateFreeText(f.permanent_address),
     current_address: validateFreeText(f.current_address),
-  });
+    };
+  };
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1409,6 +1443,7 @@ export default function EmployeeManagement() {
           full_name: form.full_name.trim(),
           phone: form.phone.trim() || null,
           secondary_phone: form.secondary_phone.trim() || null,
+          preferred_location: form.preferred_location.trim() || null,
           location_id: form.location_id || null,
           // "" is not a uuid — and since the client picker moved to Assignments &
           // Pay, client_id is ALWAYS "" here. Coalesce or Postgres rejects the row.
@@ -1601,6 +1636,7 @@ export default function EmployeeManagement() {
       full_name: emp.full_name,
       phone: emp.phone ?? "",
       secondary_phone: emp.secondary_phone ?? "",
+      preferred_location: emp.preferred_location ?? "",
       location_id: emp.location_id ?? "",
       client_id: emp.client_id ?? "",
       contract_id: emp.contract_id ?? "",
@@ -1731,6 +1767,7 @@ export default function EmployeeManagement() {
           full_name: editForm.full_name.trim(),
           phone: editForm.phone.trim() || null,
           secondary_phone: editForm.secondary_phone.trim() || null,
+          preferred_location: editForm.preferred_location.trim() || null,
           location_id: editForm.location_id || null,
           ...(postingChanged ? { display_number: null } : {}),
           client_id: editForm.category === "client" ? (editForm.client_id || null) : null,
@@ -1849,6 +1886,9 @@ export default function EmployeeManagement() {
   // of them (rehire-eligible leavers, then never-hired candidates); every other
   // tab shows one. Taking `rows` as a parameter is what lets the same table and
   // the same mobile cards serve both without a second copy.
+  const waitlistRehire = useMemo(() => sorted.filter(isRehireCandidate), [sorted]);
+  const waitlistFresh = useMemo(() => sorted.filter((e) => !isRehireCandidate(e)), [sorted]);
+
   const renderEmployeeList = (
     rows: EmployeeRow[],
     emptyText = 'No employees yet. Click "Add Employee" to create one.',
@@ -2328,41 +2368,37 @@ export default function EmployeeManagement() {
           {/* The Waiting List is two populations that happen to share a tab:
               people the company has employed before and would take back, and
               people it has never employed. They are ranked and approached
-              differently, so they are shown as separate sections rather than
-              one merged list. */}
+              differently, so each gets its own sub-tab — stacked sections meant
+              scrolling past the whole rehire list to reach the fresh candidates. */}
           {empTab === "waitlist" ? (
             <>
-              <div className="px-3 pt-5 pb-1 md:px-6 bg-secondary/40 border-y border-border">
-                <h3 className="text-sm font-semibold text-foreground">
-                  Eligible for rehire{" "}
-                  <span className="text-muted-foreground font-normal">
-                    ({sorted.filter(isRehireCandidate).length})
-                  </span>
-                </h3>
-                <p className="text-xs text-muted-foreground mt-0.5 mb-3">
-                  Previously employed — resigned or separated on terms that allow a return.
-                </p>
+              <div className="px-3 pt-4 md:px-6 flex gap-2 flex-wrap">
+                {([
+                  ["rehire", "Eligible for rehire", waitlistRehire.length],
+                  ["fresh", "Eligible for hire", waitlistFresh.length],
+                ] as const).map(([value, label, count]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setWaitlistTab(value)}
+                    className={`px-4 py-2 rounded-md text-sm transition-colors ${
+                      waitlistTab === value
+                        ? "bg-brand-600 text-[#fff]"
+                        : "text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    {label} ({count})
+                  </button>
+                ))}
               </div>
-              {renderEmployeeList(
-                sorted.filter(isRehireCandidate),
-                "Nobody has left on rehireable terms yet.",
-              )}
-              <div className="px-3 pt-5 pb-1 md:px-6 bg-secondary/40 border-y border-border mt-4">
-                <h3 className="text-sm font-semibold text-foreground">
-                  Eligible for hire{" "}
-                  <span className="text-muted-foreground font-normal">
-                    ({sorted.filter((e) => !isRehireCandidate(e)).length})
-                  </span>
-                </h3>
-                <p className="text-xs text-muted-foreground mt-0.5 mb-3">
-                  Never employed — applicants and waiting-list entries. Add one with
-                  “Add Employee”, setting Recruitment Intake to Applicant or Waiting list.
-                </p>
-              </div>
-              {renderEmployeeList(
-                sorted.filter((e) => !isRehireCandidate(e)),
-                "No applicants or waiting-list entries yet.",
-              )}
+              <p className="px-3 md:px-6 pt-2 pb-1 text-xs text-muted-foreground">
+                {waitlistTab === "rehire"
+                  ? "Previously employed — resigned or separated on terms that allow a return."
+                  : "Never employed — applicants and waiting-list entries. Add one with “Add Employee”, setting Recruitment Intake to Applicant or Waiting list."}
+              </p>
+              {waitlistTab === "rehire"
+                ? renderEmployeeList(waitlistRehire, "Nobody has left on rehireable terms yet.")
+                : renderEmployeeList(waitlistFresh, "No applicants or waiting-list entries yet.")}
             </>
           ) : (
             renderEmployeeList(sorted)
@@ -2427,6 +2463,21 @@ export default function EmployeeManagement() {
                 />
                 {formErrors.secondary_phone && <p className="text-xs text-danger-600 mt-1">{formErrors.secondary_phone}</p>}
               </div>
+              {form.lifecycle_intake && (
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">Preferred Location</label>
+                  <input
+                    type="text"
+                    id="empfield-preferred_location"
+                    value={form.preferred_location}
+                    onChange={(e) => setForm({ ...form, preferred_location: e.target.value })}
+                    onBlur={(e) => setFormErrors((p) => ({ ...p, preferred_location: validateFreeText(e.target.value) }))}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    placeholder="Where would they like to be posted?"
+                  />
+                  {formErrors.preferred_location && <p className="text-xs text-danger-600 mt-1">{formErrors.preferred_location}</p>}
+                </div>
+              )}
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Recruitment Intake</label>
                 <ThemedSelect
@@ -2447,6 +2498,84 @@ export default function EmployeeManagement() {
             </div>
           </FormSection>
 
+          {form.lifecycle_intake ? (
+            <>
+          {/* An applicant / waiting-list entry is not an employee yet: there is no
+              posting, no bank account to pay into and no CNIC on file. Asking for
+              those at intake produced a form nobody could complete, so the short
+              form asks only what a candidate can actually answer. The full
+              employee form appears the moment Recruitment Intake is "Active hire",
+              and again when they are promoted out of the waiting list. */}
+          <FormSection label="Candidate Details" collapsible={false}>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Current Address</label>
+                <textarea
+                  rows={2}
+                  id="empfield-current_address"
+                  value={form.current_address}
+                  onChange={(e) => setForm({ ...form, current_address: e.target.value })}
+                  onBlur={(e) => setFormErrors((p) => ({ ...p, current_address: validateFreeText(e.target.value) }))}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                />
+                {formErrors.current_address && <p className="text-xs text-danger-600 mt-1">{formErrors.current_address}</p>}
+              </div>
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Experience</label>
+                <textarea
+                  rows={2}
+                  value={form.weapons_trained}
+                  onChange={(e) => setForm({ ...form, weapons_trained: e.target.value })}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  placeholder="Weapons trained on, previous postings…"
+                />
+              </div>
+            </div>
+          </FormSection>
+
+          <FormSection label="Ex-Service" collapsible={false}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="col-span-full flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={form.is_ex_serviceman}
+                  onChange={(e) => setForm({ ...form, is_ex_serviceman: e.target.checked })}
+                />
+                <span>Ex-serviceman</span>
+              </label>
+              {form.is_ex_serviceman ? (
+                <>
+                  {([
+                    ["army_number", "Army Number", "text"],
+                    ["service_unit", "Unit", "text"],
+                    ["service_rank", "Rank", "text"],
+                    ["service_trade", "Trade", "text"],
+                    ["service_join_date", "Join Date", "date"],
+                    ["service_discharge_date", "Discharge Date", "date"],
+                    ["discharging_officer", "Discharging Officer", "text"],
+                  ] as const).map(([key, label, type]) => (
+                    <div key={key}>
+                      <label className="block text-sm text-slate-700 mb-1">{label}</label>
+                      <input
+                        type={type}
+                        value={form[key]}
+                        onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+                        className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                      />
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <p className="col-span-full text-xs text-slate-500">
+                  Tick “Ex-serviceman” to record army service details.
+                </p>
+              )}
+            </div>
+          </FormSection>
+
+            </>
+          ) : (
+            <>
           {/* Posting and pay (client, branch, shift, salary, joining date) are set
               on Workforce ▸ Assignments & Pay, where the whole client can be
               edited at once. A new hire lands in that page's "Unassigned" group. */}
@@ -2598,6 +2727,9 @@ export default function EmployeeManagement() {
               />
             </div>
           </FormSection>
+
+            </>
+          )}
 
           {addSubmitAttempted && <FieldErrorSummary errors={formErrors} idPrefix="empfield-" />}
 
