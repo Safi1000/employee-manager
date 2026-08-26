@@ -1,7 +1,7 @@
 import ThemedSelect from "../../components/ThemedSelect";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { Plus, Search, Upload, AlertCircle, Loader2, X, Trash2, ChevronDown, ChevronRight as ChevronRightIcon, FileText, SlidersHorizontal, Image as ImageIcon, ArrowUp, ArrowDown, ArrowUpDown, Camera } from "lucide-react";
+import { Plus, Search, Upload, AlertCircle, Loader2, Check, X, Trash2, ChevronDown, ChevronRight as ChevronRightIcon, FileText, SlidersHorizontal, Image as ImageIcon, ArrowUp, ArrowDown, ArrowUpDown, Camera } from "lucide-react";
 import CameraCapture from "../../components/CameraCapture";
 import DocumentInput from "../../components/DocumentInput";
 import jsPDF from "jspdf";
@@ -505,8 +505,8 @@ function renderPaperFormSections(f: FormState, setF: (f: FormState) => void) {
             Physical Copy Present
             <span className="block text-xs opacity-80">
               {f.physical_copy_present
-                ? "Profile marked complete."
-                : "Profile is incomplete until the physical copies are on file."}
+                ? "Signed paper file is on hand."
+                : "Signed paper file is not on file yet."}
             </span>
           </span>
         </label>
@@ -599,6 +599,50 @@ const computePerDay = (baseStr: string): string => {
 const isMissingKeyFields = (e: { cnic_number: string | null; join_date: string | null }): boolean =>
   !e.cnic_number?.trim() || !e.join_date;
 
+// A contact is only usable when it has both a name and a number, and either of
+// the two slots satisfies the requirement. Shared by the form validation and the
+// list's Incomplete flag so the badge and the save rule can never disagree.
+const hasEmergencyContact = (e: {
+  emergency_contact_name: string | null;
+  emergency_contact_phone: string | null;
+  emergency_contact2_name: string | null;
+  emergency_contact2_phone: string | null;
+}): boolean =>
+  Boolean(
+    (e.emergency_contact_name?.trim() && e.emergency_contact_phone?.trim()) ||
+    (e.emergency_contact2_name?.trim() && e.emergency_contact2_phone?.trim()),
+  );
+
+// The required set enforced by computeEmployeeErrors on both Add and Edit. A
+// record satisfying all of it is complete; missing any one of them shows
+// "Incomplete" in the list. Records created before these rules can still be
+// short, which is exactly what the badge is for.
+//
+// Note this is deliberately NOT tied to physical_copy_present — whether the
+// paper copies are on file is tracked as its own column in the table, and says
+// nothing about whether the record's own data is filled in.
+const missingRequiredFields = (e: {
+  full_name: string | null;
+  phone: string | null;
+  cnic_number: string | null;
+  date_of_birth: string | null;
+  father_or_husband_name: string | null;
+  cnic_expiry: string | null;
+  emergency_contact_name: string | null;
+  emergency_contact_phone: string | null;
+  emergency_contact2_name: string | null;
+  emergency_contact2_phone: string | null;
+}): string[] =>
+  [
+    !e.full_name?.trim() ? "Full Name" : null,
+    !e.phone?.trim() ? "Phone" : null,
+    !e.cnic_number?.trim() ? "CNIC" : null,
+    !e.date_of_birth ? "Date of Birth" : null,
+    !e.father_or_husband_name?.trim() ? "Father / Husband Name" : null,
+    !e.cnic_expiry ? "CNIC Expiry" : null,
+    !hasEmergencyContact(e) ? "Emergency Contact" : null,
+  ].filter(Boolean) as string[];
+
 // Human labels for the validated employee fields, keyed by their form key. Used
 // by the in-modal error summary so a failed save names the exact fields.
 const EMPLOYEE_FIELD_LABELS: Record<string, string> = {
@@ -606,9 +650,14 @@ const EMPLOYEE_FIELD_LABELS: Record<string, string> = {
   client_id: "Client",
   phone: "Phone Number",
   cnic_number: "CNIC Number",
+  date_of_birth: "Date of Birth",
+  father_or_husband_name: "Father / Husband Name",
+  cnic_expiry: "CNIC Expiry",
   iban: "IBAN",
   bank_account: "Bank Account",
+  emergency_contact_name: "Emergency Contact",
   emergency_contact_phone: "Emergency Contact Phone",
+  emergency_contact2_phone: "Second Emergency Contact Phone",
   permanent_address: "Permanent Address",
   current_address: "Current Address",
 };
@@ -690,7 +739,7 @@ export default function EmployeeManagement() {
   const [categoryFilter, setCategoryFilter] = useState<"all" | EmployeeCategory>("all");
   const [shiftFilter, setShiftFilter] = useState<"all" | "day" | "night" | "evening">("all");
   const [statusFilter, setStatusFilter] = useState("all");
-  // Profile completeness (physical copies on file) filter.
+  // Profile completeness (all required fields filled) filter.
   const [completenessFilter, setCompletenessFilter] = useState<"all" | "complete" | "incomplete">("all");
   // §12 recruitment pipeline / lifecycle-state filter.
   const [lifecycleFilter, setLifecycleFilter] = useState<"all" | EmployeeLifecycleState>("all");
@@ -743,11 +792,10 @@ export default function EmployeeManagement() {
   const [selectedDocs, setSelectedDocs] = useState<DocumentWithUrl[]>([]);
   const [codeHistory, setCodeHistory] = useState<EmployeeCodeHistory[]>([]);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
-  // Phase 3: tabbed record + computed completeness tiers + approval workflow.
-  const [viewTab, setViewTab] = useState<"profile" | "compliance" | "history">("profile");
-  const [completeness, setCompleteness] = useState<{
-    tier1: boolean; tier2: boolean; tier3: boolean; tier4: boolean | null; armed: boolean;
-  } | null>(null);
+  // Phase 3: tabbed record. The guard_completeness tiers that used to sit above
+  // the tabs are gone — completeness is now the required-field set shown in the
+  // list (missingRequiredFields).
+  const [viewTab, setViewTab] = useState<"profile" | "history">("profile");
 
   const [form, setForm] = useState<FormState>(emptyForm);
   const [formErrors, setFormErrors] = useState<Record<string, string | null>>({});
@@ -770,9 +818,14 @@ export default function EmployeeManagement() {
     "bank_account",
     "iban",
     "cnic_number",
+    "date_of_birth",
+    "father_or_husband_name",
+    "cnic_expiry",
     "permanent_address",
     "current_address",
+    "emergency_contact_name",
     "emergency_contact_phone",
+    "emergency_contact2_phone",
   ];
   const scrollToFirstError = (errs: Record<string, string | null>) => {
     const firstKey = EMPLOYEE_FIELD_ORDER.find((k) => errs[k]);
@@ -970,8 +1023,8 @@ export default function EmployeeManagement() {
       if (categoryFilter !== "all" && (e.category ?? "client") !== categoryFilter) return false;
       if (shiftFilter !== "all" && e.shift !== shiftFilter) return false;
       if (statusFilter !== "all" && e.status !== statusFilter) return false;
-      if (completenessFilter === "complete" && !e.physical_copy_present) return false;
-      if (completenessFilter === "incomplete" && e.physical_copy_present) return false;
+      if (completenessFilter === "complete" && missingRequiredFields(e).length > 0) return false;
+      if (completenessFilter === "incomplete" && missingRequiredFields(e).length === 0) return false;
       if (lifecycleFilter !== "all") {
         // Match every state behind the chosen option, not just its representative
         // key, so "Fired" catches both terminated and fired records.
@@ -1351,17 +1404,32 @@ export default function EmployeeManagement() {
     return typing ? null : accountOrIbanError(v);
   };
 
-  // Inline field errors for an employee form (null = OK).
-  // CNIC and Join Date are NOT required — both are only format-checked. They are
-  // still flagged in the list (isMissingKeyFields) because attendance gating and
-  // payroll depend on them, but nothing blocks a save without them.
+  // Inline field errors for an employee form (null = OK). Shared by Add and Edit,
+  // so the same rules apply whichever way a record is written.
+  // The identity block — CNIC, DOB, Father/Husband Name, CNIC Expiry — is
+  // REQUIRED: it is what the record is verified against, and payroll/attendance
+  // gating downstream treats a record without it as unusable. Records created
+  // before this rule can still be missing them; those surface via
+  // isMissingKeyFields in the list, and are forced to be filled on the next edit.
   const computeEmployeeErrors = (f: FormState): Record<string, string | null> => ({
-    full_name: validateFreeText(f.full_name),
-    phone: validatePhone(f.phone),
-    cnic_number: validateCnic(f.cnic_number),
+    full_name: f.full_name.trim() ? validateFreeText(f.full_name) : "Full Name is required.",
+    phone: f.phone.trim() ? validatePhone(f.phone) : "Phone Number is required.",
+    cnic_number: f.cnic_number.trim() ? validateCnic(f.cnic_number) : "CNIC Number is required.",
+    date_of_birth: f.date_of_birth ? null : "Date of Birth is required.",
+    father_or_husband_name: f.father_or_husband_name.trim()
+      ? validateFreeText(f.father_or_husband_name)
+      : "Father / Husband Name is required.",
+    cnic_expiry: f.cnic_expiry ? null : "CNIC Expiry is required.",
     iban: isPkWallet(f.bank_name) ? null : validateIban(f.iban, pkBankCode(f.bank_name)),
     bank_account: accountFieldError(f.bank_name, f.bank_account),
+    // At least ONE usable emergency contact — a name with no number can't be
+    // called, so a contact only counts when both halves are there. Either slot
+    // satisfies it; the second is still optional on its own.
+    emergency_contact_name: hasEmergencyContact(f)
+      ? null
+      : "At least one emergency contact (name and phone) is required.",
     emergency_contact_phone: validatePhone(f.emergency_contact_phone),
+    emergency_contact2_phone: validatePhone(f.emergency_contact2_phone),
     permanent_address: validateFreeText(f.permanent_address),
     current_address: validateFreeText(f.current_address),
   });
@@ -1373,7 +1441,6 @@ export default function EmployeeManagement() {
     // these surface inline under the field + in the summary + auto-scroll, so the
     // user never gets a message hidden behind the modal.
     const errs = computeEmployeeErrors(form);
-    if (!form.full_name.trim()) errs.full_name = "Full Name is required.";
     // CNIC must be unique across employees (compared on digits, so formatting
     // differences don't slip a duplicate through). Enforced on ADD only.
     const cnicDigits = form.cnic_number.replace(/\D/g, "");
@@ -1517,12 +1584,7 @@ export default function EmployeeManagement() {
     setSelectedDocs([]);
     setCodeHistory([]);
     setViewTab("profile");
-    setCompleteness(null);
     setIsViewModalOpen(true);
-    // Phase 3E: computed completeness tiers (never manually flagged).
-    supabase
-      .rpc("guard_completeness", { p_employee_id: emp.id })
-      .then(({ data }) => data && setCompleteness(data as typeof completeness));
     supabase
       .from("employee_code_history")
       .select("*")
@@ -2111,7 +2173,7 @@ export default function EmployeeManagement() {
               },
             ]}
             tags={(employee) => {
-              const incomplete = !employee.physical_copy_present;
+              const incomplete = missingRequiredFields(employee).length > 0;
               const missingKeyFields = [
                 !employee.cnic_number?.trim() ? "CNIC" : null,
                 !employee.join_date ? "Join Date" : null,
@@ -2182,6 +2244,7 @@ export default function EmployeeManagement() {
                   <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Name</th>
                   <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Phone</th>
                   <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Client / Category</th>
+                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Physical Copy</th>
                   <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Status</th>
                   <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground sticky right-0 z-10 bg-slate-50 border-l border-border">Actions</th>
                 </tr>
@@ -2189,7 +2252,7 @@ export default function EmployeeManagement() {
               <tbody>
                 {loading && (
                   <tr>
-                    <td colSpan={6} className="px-6 py-10 text-center text-slate-500">
+                    <td colSpan={7} className="px-6 py-10 text-center text-slate-500">
                       <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
                       Loading…
                     </td>
@@ -2197,16 +2260,18 @@ export default function EmployeeManagement() {
                 )}
                 {!loading && filtered.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-6 py-10 text-center text-slate-500 text-sm">
+                    <td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">
                       No employees yet. Click "Add Employee" to create one.
                     </td>
                   </tr>
                 )}
                 {!loading &&
                   sorted.map((employee) => {
-                    // Profile completeness is driven by the "Physical Copy Present"
-                    // flag: incomplete → red row, complete → green row.
-                    const incomplete = !employee.physical_copy_present;
+                    // Completeness is the required-field set (see
+                    // missingRequiredFields) — all present → clean row, any one
+                    // missing → red row + Incomplete badge naming what's short.
+                    const missingRequired = missingRequiredFields(employee);
+                    const incomplete = missingRequired.length > 0;
                     // CNIC and Join Date are mandatory on the form now, so any
                     // record still missing them predates the rule and needs
                     // fixing — attendance and payroll both depend on them.
@@ -2218,7 +2283,7 @@ export default function EmployeeManagement() {
                     <tr
                       key={employee.id}
                       className="group border-b border-border transition-colors hover:bg-accent"
-                      title={incomplete ? "Incomplete profile — physical document copies not on file" : "Complete profile"}
+                      title={incomplete ? `Incomplete profile — missing ${missingRequired.join(", ")}` : "Complete profile"}
                     >
                       <td className={`px-6 py-3.5 text-sm font-mono border-l-2 ${incomplete ? "border-l-danger-500" : "border-l-transparent"}`}>
                         <span className={incomplete ? "text-danger-600 dark:text-danger-500" : "text-foreground"}>{displayCodeFor(employee)}</span>
@@ -2228,7 +2293,10 @@ export default function EmployeeManagement() {
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{employee.full_name}</span>
                           {incomplete && (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-danger-700 dark:text-danger-500 bg-danger-50 border border-danger-200 px-1.5 py-0.5 rounded-md">
+                            <span
+                              className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-danger-700 dark:text-danger-500 bg-danger-50 border border-danger-200 px-1.5 py-0.5 rounded-md"
+                              title={`Missing ${missingRequired.join(", ")}`}
+                            >
                               <AlertCircle className="w-3 h-3" strokeWidth={2} />
                               Incomplete
                             </span>
@@ -2263,6 +2331,21 @@ export default function EmployeeManagement() {
                         ) : (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs bg-secondary text-secondary-foreground border border-border capitalize">
                             {(employee.category ?? "client").replace("_", " ")}
+                          </span>
+                        )}
+                      </td>
+                      {/* Whether the signed paper file is physically on hand.
+                          Tracked on its own now: it is about the folder in the
+                          cabinet, not about whether the record's fields are
+                          filled in (that is the Incomplete badge). */}
+                      <td className="px-6 py-3.5">
+                        {employee.physical_copy_present ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium border bg-success-50 text-success-700 dark:text-success-500 border-success-200">
+                            <Check className="w-3 h-3" strokeWidth={2} /> Present
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium border bg-secondary text-muted-foreground border-border">
+                            <X className="w-3 h-3" strokeWidth={2} /> Not on file
                           </span>
                         )}
                       </td>
@@ -2493,7 +2576,6 @@ export default function EmployeeManagement() {
           <EmployeeHrSection
             form={form}
             setForm={setForm}
-            employees={employees}
             errors={formErrors}
             onFieldBlur={(k, err) => setFormErrors((p) => ({ ...p, [k]: err }))}
             idPrefix="empfield-"
@@ -2547,40 +2629,12 @@ export default function EmployeeManagement() {
       >
         {selectedEmployee && (
           <div className="space-y-6">
-            {/* Phase 3E/3D: computed completeness tiers + approval workflow,
-                always visible above the tabs. */}
             <div className="space-y-3">
-              <div className="flex flex-wrap gap-2">
-                {([
-                  ["Created", completeness?.tier1, false],
-                  ["Deployable", completeness?.tier2, false],
-                  ["Payable", completeness?.tier3, false],
-                  ["Armed post", completeness?.tier4 ?? false, !completeness?.armed],
-                ] as const).map(([label, ok, na]) => (
-                  <span
-                    key={label}
-                    className={`px-2.5 py-1 rounded-full text-xs border font-medium ${
-                      na
-                        ? "bg-slate-50 text-slate-400 border-slate-200"
-                        : ok
-                          ? "bg-success-50 text-success-700 border-success-200"
-                          : "bg-slate-50 text-slate-500 border-slate-200"
-                    }`}
-                  >
-                    {na ? "–" : ok ? "✓" : "○"} {label}
-                  </span>
-                ))}
-              </div>
               <div className="flex flex-wrap items-center gap-2">
-                {/* Phase 7 §9: separation / rehire on the record. */}
+                {/* Phase 7 §9: separation stays on the record. Rehire and Archive
+                    are driven from the Employees list row, not from here. */}
                 {["active", "on_leave"].includes(selectedEmployee.lifecycle_state) && (
                   <Button size="sm" variant="secondary" onClick={() => setSeparationTarget(selectedEmployee)}>Record separation</Button>
-                )}
-                {["left", "fired", "absconded"].includes(selectedEmployee.lifecycle_state) && (
-                  <Button size="sm" variant="secondary"
-                    disabled={selectedEmployee.eligible_for_rehire === false}
-                    title={selectedEmployee.eligible_for_rehire === false ? "Not eligible for rehire" : ""}
-                    onClick={() => setRehireTarget(selectedEmployee)}>Rehire</Button>
                 )}
                 <div className="flex-1" />
                 <button
@@ -2592,20 +2646,12 @@ export default function EmployeeManagement() {
                 >
                   <FileText className="w-4 h-4" strokeWidth={1.5} />
                 </button>
-                <button
-                  type="button"
-                  onClick={() => handleArchive(selectedEmployee)}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-sm text-danger-700 hover:bg-danger-50 border border-danger-200"
-                >
-                  <Trash2 className="w-4 h-4" strokeWidth={1.5} /> Archive
-                </button>
               </div>
               <Tabs
                 value={viewTab}
                 onChange={setViewTab}
                 items={[
                   { value: "profile", label: "Profile" },
-                  { value: "compliance", label: "Compliance" },
                   { value: "history", label: "History" },
                 ]}
               />
@@ -2758,6 +2804,8 @@ export default function EmployeeManagement() {
             </div>
             )}
 
+            {viewTab === "profile" && <FilledDetails employee={selectedEmployee} />}
+
             {viewTab === "profile" && codeHistory.length > 0 && (
               <div>
                 <h4 className="text-sm text-slate-900 mb-2">Employee ID History</h4>
@@ -2776,7 +2824,7 @@ export default function EmployeeManagement() {
               </div>
             )}
 
-            {viewTab === "compliance" && (
+            {viewTab === "profile" && (
             <div className="pt-4 border-t border-slate-200">
               <h4 className="text-sm text-slate-900 mb-4">Documents</h4>
               {selectedDocs.length === 0 ? (
@@ -3108,8 +3156,6 @@ export default function EmployeeManagement() {
             <EmployeeHrSection
               form={editForm}
               setForm={setEditForm}
-              employees={employees}
-              excludeEmployeeId={selectedEmployee?.id}
               errors={editFormErrors}
               onFieldBlur={(k, err) => setEditFormErrors((p) => ({ ...p, [k]: err }))}
               lockedIdentity={!!selectedEmployee?.identity_verified}
@@ -4890,8 +4936,6 @@ function EmployeeChildTables({ employeeId }: { employeeId: string }) {
 function EmployeeHrSection({
   form,
   setForm,
-  employees,
-  excludeEmployeeId,
   errors,
   onFieldBlur,
   lockedIdentity = false,
@@ -4900,8 +4944,6 @@ function EmployeeHrSection({
 }: {
   form: FormState;
   setForm: (f: FormState) => void;
-  employees: EmployeeRow[];
-  excludeEmployeeId?: string;
   // Inline validation wiring (shared by the add + edit forms).
   errors: Record<string, string | null>;
   onFieldBlur: (key: string, err: string | null) => void;
@@ -4945,14 +4987,14 @@ function EmployeeHrSection({
     </div>
   );
 
-  const personalHasError = Boolean(errors.cnic_number || errors.permanent_address || errors.current_address);
-  const emergencyHasError = Boolean(errors.emergency_contact_phone);
-  const cardExpired = isCardExpired(form.cnic_expiry);
-
-  const supervisorOptions = useMemo(
-    () => employees.filter((e) => e.id !== excludeEmployeeId && e.status === "Active"),
-    [employees, excludeEmployeeId],
+  const personalHasError = Boolean(
+    errors.cnic_number || errors.date_of_birth || errors.father_or_husband_name ||
+    errors.cnic_expiry || errors.permanent_address || errors.current_address,
   );
+  const emergencyHasError = Boolean(
+    errors.emergency_contact_name || errors.emergency_contact_phone || errors.emergency_contact2_phone,
+  );
+  const cardExpired = isCardExpired(form.cnic_expiry);
 
   // Collapsible sections (Licences & Compliance folded into Internal Office
   // Data). Shared by the Add and Edit modals via this one component. Nothing is
@@ -4960,7 +5002,6 @@ function EmployeeHrSection({
   const HR_SECTIONS = [
     { id: "personal", label: "Personal Information" },
     { id: "emergency", label: "Emergency Contact" },
-    { id: "contract", label: "Contract & Reporting" },
     { id: "exservice", label: "Ex-Service" },
     { id: "experience", label: "Experience" },
     { id: "office", label: "Internal Office Data" },
@@ -5083,22 +5124,35 @@ function EmployeeHrSection({
               <label className="block text-sm text-slate-700 mb-1">Date of Birth</label>
               <input
                 type="date"
+                id={idPrefix + "date_of_birth"}
                 disabled={lockedIdentity}
                 value={form.date_of_birth}
                 onChange={(e) => setForm({ ...form, date_of_birth: e.target.value })}
+                onBlur={(e) => onFieldBlur("date_of_birth", e.target.value ? null : "Date of Birth is required.")}
                 className={"w-full px-3 py-2 border border-slate-200 rounded-md text-sm" + lockCls}
               />
+              {errors.date_of_birth && <p className="text-xs text-danger-600 mt-1">{errors.date_of_birth}</p>}
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Father / Husband Name</label>
               <input
                 type="text"
+                id={idPrefix + "father_or_husband_name"}
                 disabled={lockedIdentity}
                 value={form.father_or_husband_name}
                 onChange={(e) => setForm({ ...form, father_or_husband_name: e.target.value })}
+                onBlur={(e) =>
+                  onFieldBlur(
+                    "father_or_husband_name",
+                    e.target.value.trim() ? validateFreeText(e.target.value) : "Father / Husband Name is required.",
+                  )
+                }
                 className={"w-full px-3 py-2 border border-slate-200 rounded-md text-sm" + lockCls}
                 placeholder="As per CNIC"
               />
+              {errors.father_or_husband_name && (
+                <p className="text-xs text-danger-600 mt-1">{errors.father_or_husband_name}</p>
+              )}
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Blood Group</label>
@@ -5108,7 +5162,18 @@ function EmployeeHrSection({
               </ThemedSelect>
             </div>
 
-            {txt("cnic_expiry", "CNIC Expiry", { type: "date" })}
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">CNIC Expiry</label>
+              <input
+                type="date"
+                id={idPrefix + "cnic_expiry"}
+                value={form.cnic_expiry}
+                onChange={(e) => setForm({ ...form, cnic_expiry: e.target.value })}
+                onBlur={(e) => onFieldBlur("cnic_expiry", e.target.value ? null : "CNIC Expiry is required.")}
+                className={inputCls}
+              />
+              {errors.cnic_expiry && <p className="text-xs text-danger-600 mt-1">{errors.cnic_expiry}</p>}
+            </div>
             {txt("education", "Education")}
             {cardExpired && (
               <div className="col-span-full flex items-start gap-2 text-xs text-warning-800 bg-warning-50 border border-warning-200 rounded-md px-2.5 py-2">
@@ -5198,7 +5263,7 @@ function EmployeeHrSection({
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Name</label>
-                <input type="text" value={form.emergency_contact_name}
+                <input type="text" id={idPrefix + "emergency_contact_name"} value={form.emergency_contact_name}
                   onChange={(e) => setForm({ ...form, emergency_contact_name: e.target.value })} className={inputCls} />
               </div>
               <div>
@@ -5218,56 +5283,31 @@ function EmployeeHrSection({
                 {errors.emergency_contact_phone && <p className="text-xs text-danger-600 mt-1">{errors.emergency_contact_phone}</p>}
               </div>
             </div>
+            {errors.emergency_contact_name && (
+              <p className="text-xs text-danger-600 mt-2">{errors.emergency_contact_name}</p>
+            )}
           </div>
           <div className="pt-3 border-t border-slate-100">
             <h5 className="text-sm text-slate-900 mb-3">Second Emergency Contact</h5>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {txt("emergency_contact2_name", "Name")}
               {txt("emergency_contact2_relation", "Relation")}
-              {txt("emergency_contact2_phone", "Phone", { type: "tel" })}
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Phone</label>
+                <input type="tel" id={idPrefix + "emergency_contact2_phone"} value={form.emergency_contact2_phone}
+                  onChange={(e) => setForm({ ...form, emergency_contact2_phone: e.target.value })}
+                  onBlur={(e) => onFieldBlur("emergency_contact2_phone", validatePhone(e.target.value))}
+                  className={inputCls} placeholder="+92 …" />
+                {errors.emergency_contact2_phone && <p className="text-xs text-danger-600 mt-1">{errors.emergency_contact2_phone}</p>}
+              </div>
             </div>
-          </div>
-        </div>
-      </FormSection>
-
-      {/* ── Contract & Reporting ─────────────────────────────────────────── */}
-      <FormSection
-        label={HR_SECTIONS[2].label}
-        open={isOpen("contract")}
-        onToggle={() => toggleSection("contract")}
-      >
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Contract Type</label>
-            <ThemedSelect value={form.employee_contract_type}
-              onChange={(e) => setForm({ ...form, employee_contract_type: e.target.value as FormState["employee_contract_type"] })} className={inputCls}>
-              <option value="">—</option>
-              <option value="permanent">Permanent</option>
-              <option value="contract">Contract</option>
-              <option value="probation">Probation</option>
-              <option value="daily_wages">Daily Wages</option>
-            </ThemedSelect>
-          </div>
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Probation End Date</label>
-            <input type="date" value={form.probation_end_date}
-              onChange={(e) => setForm({ ...form, probation_end_date: e.target.value })}
-              className={inputCls} disabled={form.employee_contract_type !== "probation"} />
-          </div>
-          <div className="col-span-full">
-            <label className="block text-sm text-slate-700 mb-1">Reporting To (supervisor)</label>
-            <ThemedSelect value={form.reporting_to_employee_id}
-              onChange={(e) => setForm({ ...form, reporting_to_employee_id: e.target.value })} className={inputCls}>
-              <option value="">— Nobody —</option>
-              {supervisorOptions.map((e) => <option key={e.id} value={e.id}>{e.full_name} ({e.employee_code})</option>)}
-            </ThemedSelect>
           </div>
         </div>
       </FormSection>
 
       {/* ── Ex-Service (replaces the removed Licences & Compliance tab) ───── */}
       <FormSection
-        label={HR_SECTIONS[3].label}
+        label={HR_SECTIONS[2].label}
         open={isOpen("exservice")}
         onToggle={() => toggleSection("exservice")}
       >
@@ -5295,7 +5335,7 @@ function EmployeeHrSection({
 
       {/* ── Experience ───────────────────────────────────────────────────── */}
       <FormSection
-        label={HR_SECTIONS[4].label}
+        label={HR_SECTIONS[3].label}
         open={isOpen("experience")}
         onToggle={() => toggleSection("experience")}
       >
@@ -5304,7 +5344,7 @@ function EmployeeHrSection({
 
       {/* ── Internal Office Data (+ folded Licences & Compliance) ─────────── */}
       <FormSection
-        label={HR_SECTIONS[5].label}
+        label={HR_SECTIONS[4].label}
         open={isOpen("office")}
         onToggle={() => toggleSection("office")}
       >
@@ -5375,10 +5415,139 @@ function useSectionState() {
   return { isOpen, toggle, reset };
 }
 
+
 /**
- * "Physical copies on file" — the flag that drives the red/green completeness
- * state on the roster. Sits beside Verify identity in the edit form: both are
- * "is this record trustworthy yet?" questions, answered at the same moment.
+ * Everything on the record that actually has a value, grouped the way the form
+ * groups it. Empty fields are dropped rather than rendered as "—", so the panel
+ * shows what was captured for THIS employee and nothing else; a group with no
+ * filled fields disappears entirely.
+ *
+ * Contract / reporting fields are deliberately absent — they were removed from
+ * the add/edit form, so surfacing them here would show data nothing can edit.
+ */
+function FilledDetails({ employee }: { employee: EmployeeRow }) {
+  type Row = [label: string, value: unknown];
+
+  // A value counts as filled when it is a non-blank string, any number, or a
+  // true boolean. `false` is "not ticked", which is absence, not information.
+  const filled = (rows: Row[]) =>
+    rows.filter(([, v]) =>
+      typeof v === "boolean" ? v : typeof v === "number" ? true : Boolean(String(v ?? "").trim()),
+    );
+
+  const show = (v: unknown): string => (typeof v === "boolean" ? "Yes" : String(v));
+
+  const GROUPS: [title: string, rows: Row[]][] = [
+    ["Personal", [
+      ["Father / Husband Name", employee.father_or_husband_name],
+      ["Date of Birth", employee.date_of_birth && formatDate(employee.date_of_birth)],
+      ["CNIC Expiry", employee.cnic_expiry && formatDate(employee.cnic_expiry)],
+      ["Blood Group", employee.blood_group],
+      ["Education", employee.education],
+      ["Marital Status", employee.marital_status],
+      ["Spouse Name", employee.spouse_name],
+      ["Height (cm)", employee.height_cm],
+      ["Weight (kg)", employee.weight_kg],
+      ["Build", employee.build],
+      ["Uniform Size", employee.uniform_size],
+      ["Shoe Size", employee.shoe_size],
+      ["Permanent Address", employee.permanent_address],
+      ["Current Address", employee.current_address],
+    ]],
+    ["Emergency Contacts", [
+      ["Contact 1", [employee.emergency_contact_name, employee.emergency_contact_relation, employee.emergency_contact_phone].filter(Boolean).join(" · ")],
+      ["Contact 2", [employee.emergency_contact2_name, employee.emergency_contact2_relation, employee.emergency_contact2_phone].filter(Boolean).join(" · ")],
+    ]],
+    ["Family / Next of Kin", [
+      ["Next of Kin", employee.next_of_kin_name],
+      ["Relation", employee.next_of_kin_relation],
+      ["CNIC", employee.next_of_kin_cnic],
+      ["Contact", employee.next_of_kin_contact],
+    ]],
+    ["Political / Locality", [
+      ["Post Office", employee.post_office],
+      ["Police Station", employee.police_station],
+      ["Area Nazim", employee.area_nazim],
+      ["Union Council", employee.union_council],
+    ]],
+    ["Ex-Service", [
+      ["Ex-serviceman", employee.is_ex_serviceman],
+      ["Army Number", employee.army_number],
+      ["Unit", employee.service_unit],
+      ["Rank", employee.service_rank],
+      ["Trade", employee.service_trade],
+      ["Join Date", employee.service_join_date && formatDate(employee.service_join_date)],
+      ["Discharge Date", employee.service_discharge_date && formatDate(employee.service_discharge_date)],
+      ["Discharging Officer", employee.discharging_officer],
+    ]],
+    ["Experience", [
+      ["Weapons Trained", employee.weapons_trained],
+      ["Special Skills", employee.special_skills],
+    ]],
+    ["Internal Office Data", [
+      ["Designation", employee.designation],
+      ["Project", employee.project],
+      ["Company ID Card No.", employee.company_id_card_number],
+      ["Social Security Status", employee.social_security_status],
+      ["Social Security No.", employee.social_security_number],
+      ["Insurance Provider", employee.insurance_provider],
+      ["Insurance No.", employee.insurance_number],
+      ["EOBI Registration No.", employee.eobi_registration_number],
+      ["Interview Date", employee.interview_date && formatDate(employee.interview_date)],
+      ["Form Serial No.", employee.form_serial_no],
+      ["Remarks", employee.remarks],
+    ]],
+    ["Licences & Compliance", [
+      ["Weapon Licence No.", employee.weapon_licence_number],
+      ["Weapon Licence Expiry", employee.weapon_licence_expiry && formatDate(employee.weapon_licence_expiry)],
+      ["Guard Service Licence No.", employee.guard_service_licence_number],
+      ["Guard Service Licence Expiry", employee.guard_service_licence_expiry && formatDate(employee.guard_service_licence_expiry)],
+      ["Medical Fitness Expiry", employee.medical_fitness_expiry && formatDate(employee.medical_fitness_expiry)],
+    ]],
+    ["Recruitment", [
+      ["Referral Source", employee.referral_source],
+      ["Referred By", employee.referred_by_name],
+    ]],
+    ["Record", [
+      ["Physical Copy Present", employee.physical_copy_present],
+      ["Identity Verified", employee.identity_verified],
+      ["IBAN", employee.iban],
+      ["Exit Date", employee.exit_date && formatDate(employee.exit_date)],
+      ["Last Working Day", employee.last_working_day && formatDate(employee.last_working_day)],
+      ["Exit Reason", employee.exit_reason],
+    ]],
+  ];
+
+  const groups = GROUPS.map(([title, rows]) => [title, filled(rows)] as const)
+    .filter(([, rows]) => rows.length > 0);
+
+  if (groups.length === 0) return null;
+
+  return (
+    <>
+      {groups.map(([title, rows]) => (
+        <div key={title} className="pt-4 border-t border-slate-200">
+          <h4 className="text-sm text-slate-900 mb-4">{title}</h4>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+            {rows.map(([label, value]) => (
+              <div key={label}>
+                <p className="text-slate-500 mb-1">{label}</p>
+                <p className="text-slate-900 whitespace-pre-wrap">{show(value)}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
+
+/**
+ * "Physical copies on file" — whether the signed paper file is physically on
+ * hand. Surfaced as its own column in the roster. Sits beside Verify identity in
+ * the edit form: both are "is this record trustworthy yet?" questions, answered
+ * at the same moment. It no longer drives the Incomplete flag, which is now the
+ * required-field set (missingRequiredFields).
  */
 function PhysicalCopyToggle({
   checked, onChange,
@@ -5398,7 +5567,7 @@ function PhysicalCopyToggle({
       <span>
         Physical Copy Present
         <span className="block text-xs opacity-80">
-          {checked ? "Profile marked complete." : "Profile is incomplete until the physical copies are on file."}
+          {checked ? "Signed paper file is on hand." : "Signed paper file is not on file yet."}
         </span>
       </span>
     </label>
