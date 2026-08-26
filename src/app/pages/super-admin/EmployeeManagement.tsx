@@ -653,6 +653,7 @@ const hasEmergencyContact = (e: {
 // paper copies are on file is tracked as its own column in the table, and says
 // nothing about whether the record's own data is filled in.
 const missingRequiredFields = (e: {
+  join_date: string | null;
   full_name: string | null;
   phone: string | null;
   bank_name: string | null;
@@ -676,6 +677,9 @@ const missingRequiredFields = (e: {
     !e.father_or_husband_name?.trim() ? "Father / Husband Name" : null,
     !e.cnic_expiry ? "CNIC Expiry" : null,
     !hasEmergencyContact(e) ? "Emergency Contact" : null,
+    // Set when the employee is assigned (Assignments & Pay). Attendance can't be
+    // gated without it, so it belongs in the same flag as everything else.
+    !e.join_date ? "Join Date" : null,
     !e.bank_name?.trim() ? "Bank Name" : null,
     !e.account_title?.trim() ? "Account Title" : null,
     !e.bank_account?.trim() ? "Bank Account Number" : null,
@@ -761,16 +765,12 @@ export default function EmployeeManagement() {
   const [clients, setClients] = useState<Client[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [contractLines, setContractLines] = useState<ContractLine[]>([]);
-  // Phase 4: the ONLY way to move a guard between clients (or shifts) — a dated
-  // posting change (close current row, open new). Never edited in place.
-  const [changeClientTarget, setChangeClientTarget] = useState<EmployeeRow | null>(null);
-  // §7.5: dated shift change — closes the old-shift posting, opens a new one.
-  const [changeShiftTarget, setChangeShiftTarget] = useState<EmployeeRow | null>(null);
-  // Category change (reliever / client / office_staff) — same dated-posting model.
-  const [changeCategoryTarget, setChangeCategoryTarget] = useState<EmployeeRow | null>(null);
   // Phase 7 §9: separation / rehire.
   const [separationTarget, setSeparationTarget] = useState<EmployeeRow | null>(null);
   const [rehireTarget, setRehireTarget] = useState<EmployeeRow | null>(null);
+  // Which employee's "Incomplete" badge was clicked — the modal lists exactly
+  // which required fields that record is short.
+  const [incompleteTarget, setIncompleteTarget] = useState<EmployeeRow | null>(null);
   // Phase 8 §11.3: bulk document generation over the filtered set.
   const [bulkOpen, setBulkOpen] = useState(false);
   const [addendums, setAddendums] = useState<ContractAddendum[]>([]);
@@ -819,25 +819,6 @@ export default function EmployeeManagement() {
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeRow | null>(null);
-  // Salary in force TODAY for the open profile, read from the effective-dated
-  // salary history (same source payroll pays from) so the profile figure always
-  // matches what today's pay would use; a future-dated raise flips on its date.
-  // Falls back to the stored employees.base_salary when there is no history row.
-  const [profilePay, setProfilePay] = useState<{ base: number | null; allowance: number | null } | null>(null);
-  useEffect(() => {
-    const id = selectedEmployee?.id;
-    if (!id) { setProfilePay(null); return; }
-    let alive = true;
-    setProfilePay(null);
-    supabase
-      .rpc("effective_salary", { p_employee_id: id, p_as_of: todayIso() })
-      .then(({ data }) => {
-        if (!alive) return;
-        const row = (data as { base_salary: number | null; allowance: number | null }[] | null)?.[0];
-        setProfilePay(row ? { base: row.base_salary, allowance: row.allowance } : null);
-      });
-    return () => { alive = false; };
-  }, [selectedEmployee?.id]);
   const [selectedDocs, setSelectedDocs] = useState<DocumentWithUrl[]>([]);
   const [codeHistory, setCodeHistory] = useState<EmployeeCodeHistory[]>([]);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
@@ -1868,7 +1849,10 @@ export default function EmployeeManagement() {
   // of them (rehire-eligible leavers, then never-hired candidates); every other
   // tab shows one. Taking `rows` as a parameter is what lets the same table and
   // the same mobile cards serve both without a second copy.
-  const renderEmployeeList = (rows: EmployeeRow[]) => (
+  const renderEmployeeList = (
+    rows: EmployeeRow[],
+    emptyText = 'No employees yet. Click "Add Employee" to create one.',
+  ) => (
     <>
             {/* Phone: one card per employee. A six-column table with a sticky
                 action column does not survive 390 logical pixels, and
@@ -1878,7 +1862,7 @@ export default function EmployeeManagement() {
             <MobileCardList
               rows={loading ? [] : rows}
               loading={loading}
-              empty='No employees yet. Tap "Add Employee" to create one.'
+              empty={emptyText}
               rowKey={(employee) => employee.id}
               accent={(employee) =>
                 missingRequiredFields(employee).length === 0 ? undefined : "border-l-danger-500"
@@ -1923,30 +1907,26 @@ export default function EmployeeManagement() {
                 },
               ]}
               tags={(employee) => {
-                const incomplete = missingRequiredFields(employee).length > 0;
-                const missingKeyFields = [
-                  !employee.cnic_number?.trim() ? "CNIC" : null,
-                  !employee.join_date ? "Join Date" : null,
-                ].filter(Boolean) as string[];
+                const missingRequired = missingRequiredFields(employee);
+                const incomplete = missingRequired.length > 0;
                 const expired = isCardExpired(employee.cnic_expiry);
                 const dupe = duplicateCnicIds.has(employee.id);
-                if (!incomplete && !expired && !dupe && missingKeyFields.length === 0) return null;
+                if (!incomplete && !expired && !dupe) return null;
                 const chip = "inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md border";
                 return (
                   <>
                     {incomplete && (
-                      <span className={`${chip} text-danger-700 dark:text-danger-500 bg-danger-50 border-danger-200`}>
-                        <AlertCircle className="w-3 h-3" strokeWidth={2} /> Incomplete
-                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setIncompleteTarget(employee)}
+                        className={`${chip} text-danger-700 dark:text-danger-500 bg-danger-50 border-danger-200`}
+                      >
+                        <AlertCircle className="w-3 h-3" strokeWidth={2} /> Incomplete ({missingRequired.length})
+                      </button>
                     )}
                     {expired && (
                       <span className={`${chip} text-warning-700 dark:text-warning-500 bg-warning-50 border-warning-200`}>
                         <AlertCircle className="w-3 h-3" strokeWidth={2} /> Card expired
-                      </span>
-                    )}
-                    {missingKeyFields.length > 0 && (
-                      <span className={`${chip} text-danger-700 dark:text-danger-500 bg-danger-50 border-danger-200`}>
-                        <AlertCircle className="w-3 h-3" strokeWidth={2} /> No {missingKeyFields.join(" / ")}
                       </span>
                     )}
                     {dupe && (
@@ -2000,7 +1980,7 @@ export default function EmployeeManagement() {
                   {!loading && rows.length === 0 && (
                     <tr>
                       <td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">
-                        No employees yet. Click "Add Employee" to create one.
+                        {emptyText}
                       </td>
                     </tr>
                   )}
@@ -2011,13 +1991,6 @@ export default function EmployeeManagement() {
                       // missing → red row + Incomplete badge naming what's short.
                       const missingRequired = missingRequiredFields(employee);
                       const incomplete = missingRequired.length > 0;
-                      // CNIC and Join Date are mandatory on the form now, so any
-                      // record still missing them predates the rule and needs
-                      // fixing — attendance and payroll both depend on them.
-                      const missingKeyFields = [
-                        !employee.cnic_number?.trim() ? "CNIC" : null,
-                        !employee.join_date ? "Join Date" : null,
-                      ].filter(Boolean) as string[];
                       return (
                       <tr
                         key={employee.id}
@@ -2032,27 +2005,20 @@ export default function EmployeeManagement() {
                           <div className="flex items-center gap-2">
                             <span className="font-medium">{employee.full_name}</span>
                             {incomplete && (
-                              <span
-                                className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-danger-700 dark:text-danger-500 bg-danger-50 border border-danger-200 px-1.5 py-0.5 rounded-md"
-                                title={`Missing ${missingRequired.join(", ")}`}
+                              <button
+                                type="button"
+                                onClick={() => setIncompleteTarget(employee)}
+                                className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-danger-700 dark:text-danger-500 bg-danger-50 border border-danger-200 px-1.5 py-0.5 rounded-md hover:bg-danger-100 transition-colors"
+                                title="Show the missing fields"
                               >
                                 <AlertCircle className="w-3 h-3" strokeWidth={2} />
-                                Incomplete
-                              </span>
+                                Incomplete ({missingRequired.length})
+                              </button>
                             )}
                             {isCardExpired(employee.cnic_expiry) && (
                               <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-warning-700 dark:text-warning-500 bg-warning-50 border border-warning-200 px-1.5 py-0.5 rounded-md" title="CNIC card expired">
                                 <AlertCircle className="w-3 h-3" strokeWidth={2} />
                                 Card expired
-                              </span>
-                            )}
-                            {missingKeyFields.length > 0 && (
-                              <span
-                                className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-danger-700 dark:text-danger-500 bg-danger-50 border border-danger-200 px-1.5 py-0.5 rounded-md"
-                                title={`Missing ${missingKeyFields.join(" and ")} — required. Attendance can't be gated and payroll can't be trusted without ${missingKeyFields.length > 1 ? "them" : "it"}.`}
-                              >
-                                <AlertCircle className="w-3 h-3" strokeWidth={2} />
-                                No {missingKeyFields.join(" / ")}
                               </span>
                             )}
                             {duplicateCnicIds.has(employee.id) && (
@@ -2257,16 +2223,26 @@ export default function EmployeeManagement() {
                   : <ArrowUpDown className="w-4 h-4" strokeWidth={1.5} />}
                 {sortDir === "asc" ? "ID 001→high" : sortDir === "desc" ? "ID high→001" : "Sort by ID"}
               </button>
-              <Tabs
-                className="ml-auto"
-                value={empTab}
-                onChange={setEmpTab}
-                items={[
-                  { value: "active", label: "Active" },
-                  { value: "waitlist", label: "Waiting List" },
-                  { value: "terminated", label: "Terminated" },
-                ]}
-              />
+              <div className="ml-auto flex gap-2 flex-wrap">
+                {([
+                  ["active", "Active"],
+                  ["waitlist", "Waiting List"],
+                  ["terminated", "Terminated"],
+                ] as const).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setEmpTab(value)}
+                    className={`px-4 py-2 rounded-md text-sm transition-colors ${
+                      empTab === value
+                        ? "bg-brand-600 text-[#fff]"
+                        : "text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
             {filtersOpen && (
               <div className="mt-3 pt-3 border-t border-border flex flex-wrap gap-2">
@@ -2356,20 +2332,37 @@ export default function EmployeeManagement() {
               one merged list. */}
           {empTab === "waitlist" ? (
             <>
-              <div className="px-3 pt-4 md:px-6">
-                <h3 className="text-sm font-semibold text-foreground">Eligible for rehire</h3>
-                <p className="text-xs text-muted-foreground mt-0.5">
+              <div className="px-3 pt-5 pb-1 md:px-6 bg-secondary/40 border-y border-border">
+                <h3 className="text-sm font-semibold text-foreground">
+                  Eligible for rehire{" "}
+                  <span className="text-muted-foreground font-normal">
+                    ({sorted.filter(isRehireCandidate).length})
+                  </span>
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5 mb-3">
                   Previously employed — resigned or separated on terms that allow a return.
                 </p>
               </div>
-              {renderEmployeeList(sorted.filter(isRehireCandidate))}
-              <div className="px-3 pt-6 md:px-6 border-t border-border mt-4">
-                <h3 className="text-sm font-semibold text-foreground mt-4">Eligible for hire</h3>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Applicants and waiting-list entries who have never been posted.
+              {renderEmployeeList(
+                sorted.filter(isRehireCandidate),
+                "Nobody has left on rehireable terms yet.",
+              )}
+              <div className="px-3 pt-5 pb-1 md:px-6 bg-secondary/40 border-y border-border mt-4">
+                <h3 className="text-sm font-semibold text-foreground">
+                  Eligible for hire{" "}
+                  <span className="text-muted-foreground font-normal">
+                    ({sorted.filter((e) => !isRehireCandidate(e)).length})
+                  </span>
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5 mb-3">
+                  Never employed — applicants and waiting-list entries. Add one with
+                  “Add Employee”, setting Recruitment Intake to Applicant or Waiting list.
                 </p>
               </div>
-              {renderEmployeeList(sorted.filter((e) => !isRehireCandidate(e)))}
+              {renderEmployeeList(
+                sorted.filter((e) => !isRehireCandidate(e)),
+                "No applicants or waiting-list entries yet.",
+              )}
             </>
           ) : (
             renderEmployeeList(sorted)
@@ -2681,82 +2674,10 @@ export default function EmployeeManagement() {
                     {selectedEmployee.cnic_number ? formatCnicInline(selectedEmployee.cnic_number) : "—"}
                   </p>
                 </div>
-                {/* Phase 3H: Location deprecated — hidden from UI (column retained). */}
-                <div>
-                  <p className="text-slate-500 mb-1">Branch</p>
-                  <p className="text-slate-900">{selectedEmployee.branch_name ?? "—"}</p>
-                </div>
-                <div>
-                  <p className="text-slate-500 mb-1">Category</p>
-                  <p className="text-slate-900 capitalize">
-                    {(selectedEmployee.category ?? "client").replace("_", " ")}
-                  </p>
-                  {["active", "on_leave"].includes(selectedEmployee.lifecycle_state) && (
-                    <button
-                      type="button"
-                      className="text-xs text-brand-700 hover:underline mt-1"
-                      onClick={() => setChangeCategoryTarget(selectedEmployee)}
-                    >
-                      Change category
-                    </button>
-                  )}
-                </div>
-                <div>
-                  <p className="text-slate-500 mb-1">Client</p>
-                  <p className="text-slate-900">
-                    {(selectedEmployee.category ?? "client") === "client"
-                      ? selectedEmployee.client_name ?? "—"
-                      : "—"}
-                  </p>
-                  {(selectedEmployee.category ?? "client") === "client" && (
-                    <button
-                      type="button"
-                      className="text-xs text-brand-700 hover:underline mt-1 disabled:text-slate-300"
-                      onClick={() => setChangeClientTarget(selectedEmployee)}
-                    >
-                      Change client
-                    </button>
-                  )}
-                </div>
-                {/* Phase 3H: Department deprecated — hidden from UI (column retained). */}
-                <div>
-                  <p className="text-slate-500 mb-1">Shift</p>
-                  <p className="text-slate-900 capitalize">{selectedEmployee.shift}</p>
-                  {(selectedEmployee.category ?? "client") === "client"
-                    && ["active", "on_leave"].includes(selectedEmployee.lifecycle_state) && (
-                    <button
-                      type="button"
-                      className="text-xs text-brand-700 hover:underline mt-1 disabled:text-slate-300"
-                      onClick={() => setChangeShiftTarget(selectedEmployee)}
-                    >
-                      Change shift
-                    </button>
-                  )}
-                </div>
-                {(() => {
-                  // Prefer the salary effective today (history) over the stored
-                  // column, so the profile matches what payroll would pay now.
-                  const shownBase = profilePay?.base ?? selectedEmployee.base_salary;
-                  const shownAllowance = profilePay?.allowance ?? selectedEmployee.allowance;
-                  return (
-                    <>
-                      <div>
-                        <p className="text-slate-500 mb-1">Base Salary</p>
-                        <p className="text-slate-900">
-                          {shownBase != null ? `PKR ${Number(shownBase).toLocaleString()}` : "—"}
-                        </p>
-                      </div>
-                      {/* Phase 3H: stored Per Day Salary deprecated — hidden from UI; the
-                          per-day rate is computed at runtime (rate ÷ days_in_month). */}
-                      <div>
-                        <p className="text-slate-500 mb-1">Allowance</p>
-                        <p className="text-slate-900">
-                          {shownAllowance ? `PKR ${Number(shownAllowance).toLocaleString()}` : "—"}
-                        </p>
-                      </div>
-                    </>
-                  );
-                })()}
+                {/* Branch, Category, Client, Shift, Base Salary and Allowance are
+                    not shown here — they are posting and pay, which are owned and
+                    edited on Workforce ▸ Assignments & Pay. Showing a second copy
+                    on this read-only profile only invited them to drift. */}
                 {selectedEmployee.opening_leaves != null && (
                   <div>
                     <p className="text-slate-500 mb-1">Opening Leaves</p>
@@ -2857,14 +2778,6 @@ export default function EmployeeManagement() {
 
             {viewTab === "history" && (
               <div className="space-y-3">
-                {/* §8.8: month calendar is a correction-only Timesheet, reached
-                    from the record here — not from the daily attendance flow. */}
-                <a
-                  href="/super-admin/attendance/timesheet"
-                  className="inline-flex items-center gap-1 text-sm text-brand-700 hover:underline"
-                >
-                  Open attendance timesheet (corrections) →
-                </a>
                 <div className="pt-2">
                   <h4 className="text-sm text-slate-900 mb-3">Shift changes</h4>
                   <ShiftChangeHistory employeeId={selectedEmployee.id} />
@@ -2894,44 +2807,8 @@ export default function EmployeeManagement() {
         </ul>
       </Modal>
 
-      {changeClientTarget && (
-        <ChangeClientModal
-          guard={changeClientTarget}
-          clients={clients}
-          contractsForClient={contractsForClient}
-          linesForContract={linesForContract}
-          displayCode={displayCodeFor(changeClientTarget)}
-          onClose={() => setChangeClientTarget(null)}
-          onDone={async () => {
-            setChangeClientTarget(null);
-            await loadData();
-          }}
-          onError={setError}
-        />
-      )}
 
-      {changeShiftTarget && (
-        <ChangeShiftModal
-          guard={changeShiftTarget}
-          displayCode={displayCodeFor(changeShiftTarget)}
-          onClose={() => setChangeShiftTarget(null)}
-          onDone={async () => { setChangeShiftTarget(null); await loadData(); }}
-          onError={setError}
-        />
-      )}
 
-      {changeCategoryTarget && (
-        <ChangeCategoryModal
-          guard={changeCategoryTarget}
-          clients={clients}
-          contractsForClient={contractsForClient}
-          linesForContract={linesForContract}
-          displayCode={displayCodeFor(changeCategoryTarget)}
-          onClose={() => setChangeCategoryTarget(null)}
-          onDone={async () => { setChangeCategoryTarget(null); await loadData(); }}
-          onError={setError}
-        />
-      )}
 
       {separationTarget && (
         <SeparationModal
@@ -2942,6 +2819,43 @@ export default function EmployeeManagement() {
           onDone={async () => { setSeparationTarget(null); await loadData(); }}
           onError={setError}
         />
+      )}
+
+      {incompleteTarget && (
+        <Modal
+          isOpen
+          onClose={() => setIncompleteTarget(null)}
+          title={`Incomplete — ${incompleteTarget.full_name}`}
+          size="sm"
+        >
+          <div className="space-y-3">
+            <p className="text-sm text-slate-600">
+              {displayCodeFor(incompleteTarget)} is missing the following required
+              fields. Open Edit to fill them in.
+            </p>
+            <ul className="space-y-1.5">
+              {missingRequiredFields(incompleteTarget).map((f) => (
+                <li key={f} className="flex items-center gap-2 text-sm text-slate-900">
+                  <AlertCircle className="w-3.5 h-3.5 text-danger-600 shrink-0" strokeWidth={2} />
+                  {f}
+                </li>
+              ))}
+            </ul>
+            <div className="flex items-center gap-3 pt-2">
+              <Button
+                variant="primary"
+                size="md"
+                className="flex-1"
+                onClick={() => { const t = incompleteTarget; setIncompleteTarget(null); openEdit(t); }}
+              >
+                Edit employee
+              </Button>
+              <Button variant="secondary" size="md" onClick={() => setIncompleteTarget(null)}>
+                Close
+              </Button>
+            </div>
+          </div>
+        </Modal>
       )}
 
       {rehireTarget && (

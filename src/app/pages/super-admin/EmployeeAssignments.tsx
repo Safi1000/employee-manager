@@ -1240,8 +1240,16 @@ export default function EmployeeAssignments() {
                   {/* Fire / Resign sits immediately left of Assign employees:
                       the two ends of a posting, in one place. It targets one
                       guard, so it opens a picker over this group's roster
-                      first. */}
-                  {canEdit && !g.siteBuckets && (g.clientId || g.categoryKey) && (
+                      first.
+
+                      Unlike Assign, this is NOT gated on the group being
+                      siteless. Assign has to name a site, so on a client with
+                      sites it belongs on the site row — but a separation just
+                      closes whatever posting the person already has, wherever it
+                      is. Gating it the same way hid it from every client that
+                      has sites, which was most of them. g.rows spans all of the
+                      group's sites, so the picker covers the whole client. */}
+                  {canEdit && (g.clientId || g.categoryKey) && (
                     <Button
                       variant="secondary"
                       size="sm"
