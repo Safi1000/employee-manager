@@ -469,11 +469,15 @@ export type AttendanceEmployeeRow = {
   // or any code a contract defines. shiftByDay[day-1] = the code worked that day.
   // Falls back to `shift` for every day when omitted.
   shiftByDay?: string[];
-  // statusByDay[day-1] = "P" | "A" | "L" | "X" (separated — see separationNote) | ""
+  // statusByDay[day-1] = "P" | "A" | "L" | "DD" (double duty — two shifts worked
+  // that day) | "X" (separated — see separationNote) | ""
   statusByDay: string[];
   presents: number;
   absents: number;
   leaves: number;
+  /** Days the guard worked TWO shifts. Counted inside `presents` as well — a
+   *  double-duty day is still one day present; this is the extra duty on top. */
+  doubleDuties: number;
   payDays: number;
   // Set for a guard who left/was fired: shown after their name and used for the
   // legend, e.g. "Fired 10/03/2026". Days from that date on carry "X".
@@ -547,13 +551,13 @@ export function exportAttendance(opts: {
   for (let d = 0; d < daysInMonth; d += 1) {
     headers1.push(dayLabels[d], ...Array(S - 1).fill("")); // each day spans its shifts
   }
-  headers1.push("Presents", "Absents", "Leaves", "Pay Days");
+  headers1.push("Presents", "Absents", "Leaves", "Double Duty", "Pay Days");
 
   const headers2: any[] = ["", "", "", ""];
   for (let d = 0; d < daysInMonth; d += 1) {
     for (const c of shifts) headers2.push(shiftAbbr(c));
   }
-  headers2.push("", "", "", "");
+  headers2.push("", "", "", "", "");
 
   const data: any[][] = [];
   data.push([DEFAULT_COMPANY]);
@@ -588,11 +592,11 @@ export function exportAttendance(opts: {
       const dayShift = String(row.shiftByDay?.[i] ?? row.shift ?? "day").toLowerCase();
       const si = shiftIndex.get(dayShift) ?? 0;
       for (let c = 0; c < S; c += 1) r.push(c === si ? status : "");
-      if (status === "P") totalPresentsByDay[i][si] += 1;
+      if (status === "P" || status === "DD") totalPresentsByDay[i][si] += 1;
       if (status === "L") totalLeavesByDay[i][si] += 1;
       if (status === "A") totalAbsentsByDay[i][si] += 1;
     }
-    r.push(row.presents, row.absents, row.leaves, row.payDays);
+    r.push(row.presents, row.absents, row.leaves, row.doubleDuties, row.payDays);
     data.push(r);
   }
 
@@ -600,21 +604,22 @@ export function exportAttendance(opts: {
   const totalRow = (
     label: string,
     src: number[][],
-    final: { p: number; a: number; l: number; pd: number } | null,
+    final: { p: number; a: number; l: number; dd: number; pd: number } | null,
   ) => {
     const r: any[] = [label, "", "", ""];
     for (const perShift of src) for (const v of perShift) r.push(v);
-    if (final) r.push(final.p, final.a, final.l, final.pd);
-    else r.push("", "", "", "");
+    if (final) r.push(final.p, final.a, final.l, final.dd, final.pd);
+    else r.push("", "", "", "", "");
     return r;
   };
 
   const sumP = rows.reduce((s, r) => s + r.presents, 0);
   const sumA = rows.reduce((s, r) => s + r.absents, 0);
   const sumL = rows.reduce((s, r) => s + r.leaves, 0);
+  const sumDD = rows.reduce((s, r) => s + r.doubleDuties, 0);
   const sumPD = rows.reduce((s, r) => s + r.payDays, 0);
 
-  data.push(totalRow("Total Presents", totalPresentsByDay, { p: sumP, a: sumA, l: sumL, pd: sumPD }));
+  data.push(totalRow("Total Presents", totalPresentsByDay, { p: sumP, a: sumA, l: sumL, dd: sumDD, pd: sumPD }));
   data.push(totalRow("Total Leaves", totalLeavesByDay, null));
   data.push(totalRow("Total Absents", totalAbsentsByDay, null));
 
@@ -626,6 +631,7 @@ export function exportAttendance(opts: {
   data.push([]);
   for (const c of shifts) data.push([shiftAbbr(c), "=", `${c} shift`]);
   data.push(["P / A / L", "=", "present / absent / leave"]);
+  data.push(["DD", "=", "double duty — two shifts worked that day"]);
   data.push([
     "X",
     "=",

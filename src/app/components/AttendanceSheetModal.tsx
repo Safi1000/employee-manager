@@ -15,6 +15,7 @@ const todayMonth = () => new Date().toISOString().slice(0, 7);
 
 const statusClass = (s: string): string =>
   s === "P" ? "text-success-700 dark:text-success-500"
+    : s === "DD" ? "text-info-700 dark:text-info-500"
     : s === "A" ? "text-danger-600"
       : s === "L" ? "text-warning-700 dark:text-warning-500"
         : s === "X" ? "text-muted-foreground/60"
@@ -271,7 +272,7 @@ export default function AttendanceSheetModal({
         const st = row.statusByDay[i] ?? "";
         const ds = String(row.shiftByDay?.[i] ?? row.shift ?? "day").toLowerCase();
         const si = shiftIndex.get(ds) ?? 0;
-        if (st === "P") P[i][si] += 1;
+        if (st === "P" || st === "DD") P[i][si] += 1;
         else if (st === "L") L[i][si] += 1;
         else if (st === "A") A[i][si] += 1;
       }
@@ -282,6 +283,7 @@ export default function AttendanceSheetModal({
       sumP: rows.reduce((s, r) => s + r.presents, 0),
       sumA: rows.reduce((s, r) => s + r.absents, 0),
       sumL: rows.reduce((s, r) => s + r.leaves, 0),
+      sumDD: rows.reduce((s, r) => s + r.doubleDuties, 0),
       sumPD: rows.reduce((s, r) => s + r.payDays, 0),
     };
   }, [rows, daysInMonth, S, shiftIndex]);
@@ -310,7 +312,7 @@ export default function AttendanceSheetModal({
       )}
       {final
         ? final.map((v, i) => <td key={i} className="border border-border px-1 py-0.5 text-center tabular-nums font-medium">{v}</td>)
-        : Array(4).fill(0).map((_, i) => <td key={i} className="border border-border" />)}
+        : Array(5).fill(0).map((_, i) => <td key={i} className="border border-border" />)}
     </>
   );
 
@@ -420,7 +422,7 @@ export default function AttendanceSheetModal({
                   {days.map((d) => (
                     <th key={d} colSpan={S} className="border border-border px-1 py-1 text-center tabular-nums bg-secondary">{d}</th>
                   ))}
-                  {["Presents", "Absents", "Leaves", "Pay Days"].map((h) => (
+                  {["Presents", "Absents", "Leaves", "Double Duty", "Pay Days"].map((h) => (
                     <th key={h} rowSpan={2} className="border border-border px-1.5 py-1 text-center whitespace-nowrap bg-secondary">{h}</th>
                   ))}
                 </tr>
@@ -453,7 +455,7 @@ export default function AttendanceSheetModal({
                       // only once the month has ended (and while it isn't yet
                       // OPS-verified). Before month-end the board stays read-only;
                       // editing happens on the Attendance board until it locks.
-                      const canOverride = !!row.empId && monthEnded && !verifiedAt && (st === "P" || st === "A" || st === "L");
+                      const canOverride = !!row.empId && monthEnded && !verifiedAt && (st === "P" || st === "A" || st === "L" || st === "DD");
                       return shifts.map((_c, s) => {
                         const isStatusCell = s === si;
                         const overridable = isStatusCell && canOverride;
@@ -476,12 +478,13 @@ export default function AttendanceSheetModal({
                     <td className="border border-border px-1.5 py-0.5 text-center tabular-nums">{row.presents}</td>
                     <td className="border border-border px-1.5 py-0.5 text-center tabular-nums">{row.absents}</td>
                     <td className="border border-border px-1.5 py-0.5 text-center tabular-nums">{row.leaves}</td>
+                    <td className="border border-border px-1.5 py-0.5 text-center tabular-nums">{row.doubleDuties || ""}</td>
                     <td className="border border-border px-1.5 py-0.5 text-center tabular-nums font-medium">{row.payDays}</td>
                   </tr>
                 ))}
                 <tr className="bg-secondary/60 font-medium">
                   <td colSpan={4} className="border border-border px-2 py-0.5">Total Presents</td>
-                  {totalRowCells(totals.P, [String(totals.sumP), String(totals.sumA), String(totals.sumL), String(totals.sumPD)])}
+                  {totalRowCells(totals.P, [String(totals.sumP), String(totals.sumA), String(totals.sumL), String(totals.sumDD), String(totals.sumPD)])}
                 </tr>
                 <tr className="bg-secondary/40">
                   <td colSpan={4} className="border border-border px-2 py-0.5">Total Leaves</td>

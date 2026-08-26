@@ -941,9 +941,11 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     // (worked_shift on the row — so a day guard who covered one night lands under
     // N for that day). Status is normalized across the legacy (Present/Absent/
     // Leave) and spec (present/absent/rotation_leave/…) vocabularies.
-    const symbolOf = (raw: unknown): "P" | "A" | "L" | "" => {
+    const symbolOf = (raw: unknown): "P" | "A" | "L" | "DD" | "" => {
       const s = String(raw ?? "").toLowerCase();
-      if (s === "present" || s === "double_duty" || s === "relief_cover") return "P";
+      // Double duty keeps its own symbol so the sheet shows the second shift.
+      if (s === "double_duty") return "DD";
+      if (s === "present" || s === "relief_cover") return "P";
       if (s === "absent") return "A";
       if (s === "leave" || s === "rotation_leave" || s === "rest_day") return "L";
       return "";
@@ -987,6 +989,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       let p = 0;
       let a = 0;
       let l = 0;
+      let dd = 0;
       for (let d = 1; d <= dim; d += 1) {
         const cell = dayMap.get(d);
         const iso = `${yStr}-${mStr}-${String(d).padStart(2, "0")}`;
@@ -995,7 +998,9 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         // A real record always wins: historical data is reported as-is.
         const sym = cell?.sym ?? (windowBlockFor(emp, iso) ? SEPARATION_MARK : "");
         statusByDay.push(sym);
+        // A double-duty day is still one day present; dd counts the extra duty.
         if (sym === "P") p += 1;
+        else if (sym === "DD") { p += 1; dd += 1; }
         else if (sym === "A") a += 1;
         else if (sym === "L") l += 1;
         // The shift column follows the shift actually worked that day, falling
@@ -1023,6 +1028,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         presents: p,
         absents: a,
         leaves: l,
+        doubleDuties: dd,
         payDays,
         separationNote: separationNoteFor(emp),
       };

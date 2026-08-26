@@ -22,11 +22,13 @@ export type SheetEmployee = {
   shift: string | null;
 };
 
-// P/A/L symbol from either vocabulary (legacy Present/Absent/Leave or the spec's
-// present/absent/rotation_leave/…). Worked statuses count as present.
-const symbolOf = (raw: unknown): "P" | "A" | "L" | "" => {
+// P/A/L/DD symbol from either vocabulary (legacy Present/Absent/Leave or the
+// spec's present/absent/rotation_leave/…). Worked statuses count as present;
+// double duty keeps its own symbol so the sheet can show the second shift.
+const symbolOf = (raw: unknown): "P" | "A" | "L" | "DD" | "" => {
   const s = String(raw ?? "").toLowerCase();
-  if (s === "present" || s === "double_duty" || s === "relief_cover") return "P";
+  if (s === "double_duty") return "DD";
+  if (s === "present" || s === "relief_cover") return "P";
   if (s === "absent") return "A";
   if (s === "leave" || s === "rotation_leave" || s === "rest_day") return "L";
   return "";
@@ -101,7 +103,7 @@ export async function buildAttendanceRows(opts: {
     const contract = emp.contract_id ? contractById.get(emp.contract_id) ?? null : null;
     const statusByDay: string[] = [];
     const shiftByDay: string[] = [];
-    let p = 0, a = 0, l = 0;
+    let p = 0, a = 0, l = 0, dd = 0;
     for (let d = 1; d <= dim; d += 1) {
       let cell = dayMap.get(d);
       const iso = `${yStr}-${mStr}-${String(d).padStart(2, "0")}`;
@@ -112,6 +114,7 @@ export async function buildAttendanceRows(opts: {
       const sym = cell?.sym ?? (attendanceWindowError(emp, contract, iso) ? SEPARATION_MARK : "");
       statusByDay.push(sym);
       if (sym === "P") p += 1;
+      else if (sym === "DD") { p += 1; dd += 1; }
       else if (sym === "A") a += 1;
       else if (sym === "L") l += 1;
       shiftByDay.push((cell?.ws ?? resolveShift(emp.id, iso)) || "day");
@@ -133,6 +136,7 @@ export async function buildAttendanceRows(opts: {
       presents: p,
       absents: a,
       leaves: l,
+      doubleDuties: dd,
       payDays,
       separationNote: separationNote(emp),
     };

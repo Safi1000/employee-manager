@@ -69,7 +69,9 @@ const BULK_STATUS_OPTIONS: { status: Status; label: string; activeBtn: string }[
 // (lib/excel exportAttendance). Worked statuses count as Present; leave-type
 // statuses as Leave; blocked/unknown leave the cell blank.
 const EXPORT_SYMBOL: Record<Status, string> = {
-  present: "P", double_duty: "P", relief_cover: "P",
+  // Double duty carries its own symbol so the sheet shows the second shift. It
+  // still counts as a day present wherever presents are tallied.
+  present: "P", double_duty: "DD", relief_cover: "P",
   absent: "A", rotation_leave: "L", rest_day: "L", blocked: "",
 };
 
@@ -1474,12 +1476,16 @@ async function exportClientRange(client: ExportClient, startDate: string, endDat
     // Row-level shift is a fallback only (shiftByDay is always supplied); take it
     // from the first date in range rather than "now".
     const defShift: string = resolveShift(emp.id, dates[0]) || "day";
-    let p = 0, a = 0, l = 0;
+    let p = 0, a = 0, l = 0, dd = 0;
     for (let d = 0; d < dates.length; d += 1) {
       const cell = dayMap.get(d);
       const sym = cell ? EXPORT_SYMBOL[cell.st] : "";
       statusByDay.push(sym);
-      if (sym === "P") p += 1; else if (sym === "A") a += 1; else if (sym === "L") l += 1;
+      // A double-duty day is still one day present; dd counts the extra duty.
+      if (sym === "P") p += 1;
+      else if (sym === "DD") { p += 1; dd += 1; }
+      else if (sym === "A") a += 1;
+      else if (sym === "L") l += 1;
       // The shift column follows the shift actually worked that day, falling back
       // to the shift the guard was rostered on for THAT date. Real shift code
       // (day/night/evening/…) — the exporter builds columns from these.
@@ -1495,7 +1501,7 @@ async function exportClientRange(client: ExportClient, startDate: string, endDat
       empCode: guardDisplayCode(emp, emp.clients?.employee_id_prefix ?? client.prefix),
       shift: defShift,
       shiftByDay, statusByDay,
-      presents: p, absents: a, leaves: l, payDays,
+      presents: p, absents: a, leaves: l, doubleDuties: dd, payDays,
     };
   });
 

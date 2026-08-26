@@ -342,13 +342,27 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
 
   const changeStatus = (s: Status) => {
     setPendingStatus(s);
-    if (s !== "double_duty") {
+    if (s === "double_duty") {
+      // Seed each selected date with its ROSTERED shift already chosen. Double
+      // duty is "the shift you were on, plus one more", so the first pick is
+      // never a real decision — pre-selecting it leaves the operator with the
+      // single question that matters: which second shift did they cover?
       setCellShifts((prev) => {
-        const next = new Map<string, string[]>();
-        for (const [d, arr] of prev) next.set(d, arr.length ? [arr[0]] : arr);
+        const next = new Map(prev);
+        for (const d of selected) {
+          const cur = next.get(d) ?? existingShift.get(d) ?? (emp ? [defaultShiftFor(d)] : []);
+          if (cur.length === 0) continue;
+          next.set(d, [cur[0]]);
+        }
         return next;
       });
+      return;
     }
+    setCellShifts((prev) => {
+      const next = new Map<string, string[]>();
+      for (const [d, arr] of prev) next.set(d, arr.length ? [arr[0]] : arr);
+      return next;
+    });
   };
 
   const pickCellShift = (date: string, code: string) => {
@@ -358,9 +372,13 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
       const next = new Map(prev);
       const cur = next.get(date) ?? existingShift.get(date) ?? (emp ? [defaultShiftFor(date)] : []);
       if (pendingStatus !== "double_duty") { next.set(date, [code]); return next; }
-      const chosen = cur.includes(code) ? cur.filter((c) => c !== code) : [...cur, code];
-      const ordered = siteShifts.filter((c) => chosen.includes(c));
-      next.set(date, ordered.length ? ordered : [code]);
+      const primary = cur[0] ?? defaultShiftFor(date);
+      // Tapping the rostered shift is a no-op — it is the duty they were on.
+      if (code === primary) { next.set(date, [primary]); return next; }
+      // Tapping the current second shift clears it; any other shift replaces it.
+      const second = cur[1];
+      const chosen = second === code ? [primary] : [primary, code];
+      next.set(date, siteShifts.filter((c) => chosen.includes(c)));
       return next;
     });
   };
@@ -603,16 +621,25 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
                           <div className="flex flex-wrap gap-0.5">
                             {siteShifts.map((code) => {
                               const chosen = picks.includes(code);
-                              const cls = chosen
-                                ? sel
-                                  ? "bg-brand-600 text-white border-brand-600"
-                                  : "bg-brand-50 text-brand-700 border-brand-400"
-                                : "bg-card/70 text-muted-foreground border-slate-200 hover:border-brand-400";
+                              // Under Double Duty the first pick is the rostered
+                              // shift and is fixed; a second chip is the cover.
+                              const isDD = pendingStatus === "double_duty" && sel;
+                              const isPrimary = isDD && picks[0] === code;
+                              const isSecond = isDD && picks[1] === code;
+                              const cls = isPrimary
+                                ? "bg-slate-600 text-white border-slate-600 cursor-default"
+                                : isSecond
+                                  ? "bg-info-600 text-white border-info-600"
+                                  : chosen
+                                    ? sel
+                                      ? "bg-brand-600 text-white border-brand-600"
+                                      : "bg-brand-50 text-brand-700 border-brand-400"
+                                    : "bg-card/70 text-muted-foreground border-slate-200 hover:border-brand-400";
                               return (
                                 <button key={code} type="button"
                                   onMouseDown={(e) => e.stopPropagation()}
                                   onClick={(e) => { e.stopPropagation(); pickCellShift(c.date!, code); }}
-                                  title={catLabel(code)}
+                                  title={isPrimary ? `${catLabel(code)} — rostered shift` : isDD ? `${catLabel(code)} — tap to set as the second shift` : catLabel(code)}
                                   className={`px-1 py-0.5 rounded text-[9px] font-bold leading-none border transition-colors ${cls}`}>
                                   {shiftAbbr(code)}
                                 </button>
@@ -637,7 +664,8 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
               <div className="space-y-3 pt-2 border-t border-slate-200">
                 {pendingStatus === "double_duty" && (
                   <p className="text-[11px] text-info-700 dark:text-info-500 bg-info-50 border border-info-200 rounded px-2.5 py-1.5">
-                    Double duty — tap more than one shift (e.g. D and N) in a date cell to record both.
+                    Double duty — the rostered shift (grey) is already selected on each day.
+                    Tap a second shift in the date cell to record the extra duty.
                   </p>
                 )}
 

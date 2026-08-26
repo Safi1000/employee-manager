@@ -785,6 +785,10 @@ export default function EmployeeManagement() {
   // Which employee's "Incomplete" badge was clicked — the modal lists exactly
   // which required fields that record is short.
   const [incompleteTarget, setIncompleteTarget] = useState<EmployeeRow | null>(null);
+  // Hiring mode: the edit modal opened via "Hire" on a waiting-list candidate.
+  // It shows the FULL employee form and, on a clean save, promotes the record to
+  // an active hire — so the employee required set is what gates the promotion.
+  const [hiringMode, setHiringMode] = useState(false);
   // Phase 8 §11.3: bulk document generation over the filtered set.
   const [bulkOpen, setBulkOpen] = useState(false);
   const [addendums, setAddendums] = useState<ContractAddendum[]>([]);
@@ -1352,13 +1356,20 @@ export default function EmployeeManagement() {
   // gating downstream treats a record without it as unusable. Records created
   // before this rule can still be missing them; those surface via
   // isMissingKeyFields in the list, and are forced to be filled on the next edit.
-  const computeEmployeeErrors = (f: FormState): Record<string, string | null> => {
-    // Applicants and waiting-list entries fill in a short intake form. Requiring
-    // a CNIC, bank details or an emergency contact from someone who has not been
-    // hired would make them unsaveable, so the required set is reduced to what
-    // the intake form actually asks for. Everything else is still format-checked
-    // if it happens to be filled.
-    if (f.lifecycle_intake) return {
+  // `intakeOnly` = this is a waiting-list candidate on the short intake form,
+  // not an employee. Passed explicitly rather than read off the form, because
+  // the Add modal signals it with lifecycle_intake while the Edit modal signals
+  // it with the record's own lifecycle_state — and the Hire flow deliberately
+  // holds an intake record to the FULL employee set.
+  const computeEmployeeErrors = (
+    f: FormState,
+    intakeOnly = false,
+  ): Record<string, string | null> => {
+    // Requiring a CNIC, bank details or an emergency contact from someone who
+    // has not been hired would make them unsaveable, so the required set is
+    // reduced to what the intake form actually asks for. Everything else is
+    // still format-checked if it happens to be filled.
+    if (intakeOnly) return {
       full_name: f.full_name.trim() ? validateFreeText(f.full_name) : "Full Name is required.",
       phone: f.phone.trim() ? validatePhone(f.phone) : "Phone Number is required.",
       preferred_location: validateFreeText(f.preferred_location),
@@ -1406,7 +1417,7 @@ export default function EmployeeManagement() {
     // Field-level validation: format errors PLUS required-empty checks. All of
     // these surface inline under the field + in the summary + auto-scroll, so the
     // user never gets a message hidden behind the modal.
-    const errs = computeEmployeeErrors(form);
+    const errs = computeEmployeeErrors(form, Boolean(form.lifecycle_intake));
     // CNIC must be unique across employees (compared on digits, so formatting
     // differences don't slip a duplicate through). Enforced on ADD only.
     const cnicDigits = form.cnic_number.replace(/\D/g, "");
@@ -1625,7 +1636,19 @@ export default function EmployeeManagement() {
     });
   };
 
+  // A candidate is a record that has never been hired. Their Edit shows the same
+  // short intake form they were created with — asking for bank details and a
+  // CNIC from someone who is only on a list is what made the form unusable.
+  const isCandidate = (emp: { lifecycle_state: string }) =>
+    emp.lifecycle_state === "applicant" || emp.lifecycle_state === "waitlisted";
+
+  const openHire = (emp: EmployeeRow) => {
+    openEdit(emp);
+    setHiringMode(true);
+  };
+
   const openEdit = (emp: EmployeeRow) => {
+    setHiringMode(false);
     editSections.reset();
     setSelectedEmployee(emp);
     setEditStatus(emp.status);
@@ -1729,9 +1752,12 @@ export default function EmployeeManagement() {
   const handleEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEmployee) return;
-    // The edit modal exposes the same structured fields (incl. the HR section's
-    // CNIC/addresses/emergency phone), so validate the full set on save.
-    const errs = computeEmployeeErrors(editForm);
+    // A candidate being edited normally is held to the short intake set. The
+    // moment they are being HIRED, the full employee set applies — that check is
+    // exactly what blocks a promotion on an incomplete record, so a half-filled
+    // candidate can never become an active employee.
+    const intakeOnly = isCandidate(selectedEmployee) && !hiringMode;
+    const errs = computeEmployeeErrors(editForm, intakeOnly);
     if (Object.values(errs).some(Boolean)) {
       setEditFormErrors(errs);
       setEditSubmitAttempted(true);
@@ -1783,7 +1809,7 @@ export default function EmployeeManagement() {
           category: editForm.category,
           department: editForm.department.trim() || null,
           shift: editForm.shift,
-          status: editStatus,
+          status: hiringMode ? "Active" : editStatus,
           // Salary is NOT written from the edit modal — it changes only through the
           // dated increment flow (set_employee_salary → employee_salary_history), so
           // base_salary/allowance/per_day are deliberately omitted here.
@@ -1871,7 +1897,18 @@ export default function EmployeeManagement() {
         editForm,
       );
       await syncAdditionalBranches(selectedEmployee.id, editForm.additional_branch_ids, editForm.branch_id);
+      // Promotion happens only after the update above succeeded, so the record
+      // that becomes active is the completed one. The RPC re-checks the
+      // transition against the lifecycle state machine (0082).
+      if (hiringMode) {
+        const { error: tErr } = await supabase.rpc("transition_employee_lifecycle", {
+          p_employee_id: selectedEmployee.id,
+          p_to_state: "active",
+        });
+        if (tErr) throw tErr;
+      }
       setIsEditModalOpen(false);
+      setHiringMode(false);
       await loadData();
     } catch (err: any) {
       setError(err.message ?? String(err));
@@ -1987,6 +2024,13 @@ export default function EmployeeManagement() {
                       onClick={() => setRehireTarget(employee)}
                     >
                       Rehire
+                    </Button>
+                  )}
+                  {/* Hiring opens the FULL employee form; the record is only
+                      promoted once every required field is filled. */}
+                  {isCandidate(employee) && (
+                    <Button variant="ghost" size="sm" onClick={() => openHire(employee)}>
+                      Hire
                     </Button>
                   )}
                 </>
@@ -2124,6 +2168,15 @@ export default function EmployeeManagement() {
                                 onClick={() => setRehireTarget(employee)}
                               >
                                 Rehire
+                              </Button>
+                            )}
+                            {isCandidate(employee) && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => openHire(employee)}
+                              >
+                                Hire
                               </Button>
                             )}
                           </div>
@@ -2486,11 +2539,11 @@ export default function EmployeeManagement() {
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
                 >
                   <option value="">Active hire (default)</option>
-                  <option value="applicant">Applicant</option>
                   <option value="waitlisted">Waiting list</option>
                 </ThemedSelect>
                 <p className="text-xs text-slate-500 mt-1">
-                  Create as an applicant / waiting-list entry; promote later from the employee's Lifecycle panel.
+                  Create as a waiting-list entry; hire them later with “Hire” on
+                  the Waiting List tab, which asks for the full employee record.
                 </p>
               </div>
             </div>
@@ -3001,12 +3054,150 @@ export default function EmployeeManagement() {
         isOpen={isEditModalOpen}
         error={error}
         onDismissError={() => setError(null)}
-        onClose={() => setIsEditModalOpen(false)}
-        title="Edit Employee"
+        onClose={() => { setIsEditModalOpen(false); setHiringMode(false); }}
+        title={hiringMode ? "Hire — complete employee record" : "Edit Employee"}
         size="lg"
       >
         {selectedEmployee && (
           <form className="space-y-2" onSubmit={handleEdit}>
+            {isCandidate(selectedEmployee) && !hiringMode ? (
+              <>
+            {/* Editing a candidate shows the SAME short form they were created
+                with. They are on a list, not on the books — there is no posting,
+                no bank account and no CNIC on file, so the employee form would be
+                a wall of required fields nobody can answer. The full form appears
+                when they are Hired, and completing it is what promotes them. */}
+            <FormSection label="Candidate Details" collapsible={false}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">Full Name *</label>
+                  <input
+                    type="text"
+                    id="empeditfield-full_name"
+                    value={editForm.full_name}
+                    onChange={(e) => setEditForm({ ...editForm, full_name: e.target.value })}
+                    onBlur={(e) => setEditFormErrors((p) => ({ ...p, full_name: validateFreeText(e.target.value) }))}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  />
+                  {editFormErrors.full_name && <p className="text-xs text-danger-600 mt-1">{editFormErrors.full_name}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">Phone Number *</label>
+                  <input
+                    type="tel"
+                    id="empeditfield-phone"
+                    value={editForm.phone}
+                    onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                    onBlur={(e) => setEditFormErrors((p) => ({ ...p, phone: validatePhone(e.target.value) }))}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  />
+                  {editFormErrors.phone && <p className="text-xs text-danger-600 mt-1">{editFormErrors.phone}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">Secondary Phone Number</label>
+                  <input
+                    type="tel"
+                    id="empeditfield-secondary_phone"
+                    value={editForm.secondary_phone}
+                    onChange={(e) => setEditForm({ ...editForm, secondary_phone: e.target.value })}
+                    onBlur={(e) => setEditFormErrors((p) => ({ ...p, secondary_phone: e.target.value.trim() ? validatePhone(e.target.value) : null }))}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    placeholder="Optional"
+                  />
+                  {editFormErrors.secondary_phone && <p className="text-xs text-danger-600 mt-1">{editFormErrors.secondary_phone}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">Preferred Location</label>
+                  <input
+                    type="text"
+                    id="empeditfield-preferred_location"
+                    value={editForm.preferred_location}
+                    onChange={(e) => setEditForm({ ...editForm, preferred_location: e.target.value })}
+                    onBlur={(e) => setEditFormErrors((p) => ({ ...p, preferred_location: validateFreeText(e.target.value) }))}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    placeholder="Where would they like to be posted?"
+                  />
+                  {editFormErrors.preferred_location && <p className="text-xs text-danger-600 mt-1">{editFormErrors.preferred_location}</p>}
+                </div>
+                <div className="col-span-full">
+                  <label className="block text-sm text-slate-700 mb-1">Current Address</label>
+                  <textarea
+                    rows={2}
+                    id="empeditfield-current_address"
+                    value={editForm.current_address}
+                    onChange={(e) => setEditForm({ ...editForm, current_address: e.target.value })}
+                    onBlur={(e) => setEditFormErrors((p) => ({ ...p, current_address: validateFreeText(e.target.value) }))}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  />
+                  {editFormErrors.current_address && <p className="text-xs text-danger-600 mt-1">{editFormErrors.current_address}</p>}
+                </div>
+                <div className="col-span-full">
+                  <label className="block text-sm text-slate-700 mb-1">Experience</label>
+                  <textarea
+                    rows={2}
+                    value={editForm.weapons_trained}
+                    onChange={(e) => setEditForm({ ...editForm, weapons_trained: e.target.value })}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    placeholder="Weapons trained on, previous postings…"
+                  />
+                </div>
+              </div>
+            </FormSection>
+
+            <FormSection label="Ex-Service" collapsible={false}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="col-span-full flex items-center gap-2 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={editForm.is_ex_serviceman}
+                    onChange={(e) => setEditForm({ ...editForm, is_ex_serviceman: e.target.checked })}
+                  />
+                  <span>Ex-serviceman</span>
+                </label>
+                {editForm.is_ex_serviceman ? (
+                  <>
+                    {([
+                      ["army_number", "Army Number", "text"],
+                      ["service_unit", "Unit", "text"],
+                      ["service_rank", "Rank", "text"],
+                      ["service_trade", "Trade", "text"],
+                      ["service_join_date", "Join Date", "date"],
+                      ["service_discharge_date", "Discharge Date", "date"],
+                      ["discharging_officer", "Discharging Officer", "text"],
+                    ] as const).map(([key, label, type]) => (
+                      <div key={key}>
+                        <label className="block text-sm text-slate-700 mb-1">{label}</label>
+                        <input
+                          type={type}
+                          value={editForm[key]}
+                          onChange={(e) => setEditForm({ ...editForm, [key]: e.target.value })}
+                          className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                        />
+                      </div>
+                    ))}
+                  </>
+                ) : (
+                  <p className="col-span-full text-xs text-slate-500">
+                    Tick “Ex-serviceman” to record army service details.
+                  </p>
+                )}
+              </div>
+            </FormSection>
+
+              </>
+            ) : (
+              <>
+            {hiringMode && (
+              <div className="flex items-start gap-2 p-3 bg-brand-50 border border-brand-200 rounded-md text-sm text-slate-700">
+                <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-brand-600" strokeWidth={2} />
+                <span>
+                  Hiring <span className="font-medium">{selectedEmployee.full_name}</span>. Every
+                  required field below must be filled before they can be moved onto
+                  the books — saving completes the hire.
+                </span>
+              </div>
+            )}
+
             <FormSection label="Identity Verification" collapsible={false}>
             <IdentityVerificationPanel
               employee={selectedEmployee}
@@ -3280,13 +3471,16 @@ export default function EmployeeManagement() {
               </div>
             </FormSection>
 
+              </>
+            )}
+
             {editSubmitAttempted && <FieldErrorSummary errors={editFormErrors} idPrefix="empeditfield-" />}
 
             <div className="flex items-center gap-3 pt-4">
               <Button variant="primary" size="md" className="flex-1" disabled={editing}>
-                {editing ? "Updating…" : "Update Employee"}
+                {editing ? "Saving…" : hiringMode ? "Complete hire" : "Update Employee"}
               </Button>
-              <Button variant="secondary" size="md" onClick={() => setIsEditModalOpen(false)}>
+              <Button variant="secondary" size="md" onClick={() => { setIsEditModalOpen(false); setHiringMode(false); }}>
                 Cancel
               </Button>
               {/* Phase 3G: Delete is gone — Archive requires a reason, is logged,
