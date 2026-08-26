@@ -982,6 +982,10 @@ function ShiftDrillModal({
   profilesById: Map<string, string>;
   onClose: () => void; onDone: () => Promise<void>; onError: (m: string) => void;
 }) {
+  // The confirmation's uniqueness key is company-scoped (0195), so the company
+  // has to travel with the row rather than being left to the fill_company_id
+  // trigger — the ON CONFLICT arbiter names company_id.
+  const { company } = useAuth();
   // per-guard exception (undefined = presumed present)
   const [marks, setMarks] = useState<Map<string, { status: Status; absent_reason: AbsentReason | null }>>(new Map(shift.marks));
   // §7/§8.4 worked-shift selection per guard. Options come ENTIRELY from this
@@ -1140,9 +1144,15 @@ function ShiftDrillModal({
       if (upErr) throw upErr;
       // Confirmation keyed by group_key (0132): a client-shift keys on its site,
       // a category group (office staff, …) on 'cat:<category>' with null site.
+      // A site key is a uuid and so unique everywhere, but 'cat:<category>' is
+      // the SAME string in every company — so the key must carry company_id
+      // (0195). Without it two tenants confirming office staff on one date
+      // collide, and the loser's ON CONFLICT lands on a row RLS hides from it:
+      // "new row violates row-level security policy (USING expression)".
       const groupKey = shift.group_key;
       const { error: cErr } = await supabase.from("attendance_confirmations").upsert(
         {
+          company_id: company?.id ?? null,
           group_key: groupKey,
           category: shift.synthetic ? shift.client_id.replace(/^cat:/, "") : null,
           client_id: shift.synthetic ? null : shift.client_id,
