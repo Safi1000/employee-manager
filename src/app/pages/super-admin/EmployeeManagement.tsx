@@ -8,7 +8,7 @@ import jsPDF from "jspdf";
 import { generateEmployeeFormPdf, type FormApprovals } from "../../lib/employeeFormPdf";
 import { generateIdCardPdf } from "../../lib/idCardPdf";
 import { brandingFromCompany, type PdfBranding } from "../../lib/pdfBranding";
-import EmployeeLifecyclePanel from "../../components/EmployeeLifecyclePanel";
+import EmployeeVettingFields from "../../components/EmployeeVettingFields";
 import Header from "../../components/Header";
 import GuardCapBanner from "../../components/GuardCapBanner";
 import { formatDate } from "../../lib/date";
@@ -66,7 +66,6 @@ import {
   validateBankAccountLength,
 } from "../../lib/validation";
 import { useAuth, hasPermission } from "../../lib/auth";
-import { generateDischargeSheet } from "../../lib/dischargeSheetPdf";
 
 export type EmployeeRow = Employee & {
   location_name: string | null;
@@ -781,8 +780,7 @@ export default function EmployeeManagement() {
   const [clients, setClients] = useState<Client[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [contractLines, setContractLines] = useState<ContractLine[]>([]);
-  // Phase 7 §9: separation / rehire.
-  const [separationTarget, setSeparationTarget] = useState<EmployeeRow | null>(null);
+  // Phase 7 §9: rehire. (Separation lives on Assignments & Pay.)
   const [rehireTarget, setRehireTarget] = useState<EmployeeRow | null>(null);
   // Which employee's "Incomplete" badge was clicked — the modal lists exactly
   // which required fields that record is short.
@@ -2754,11 +2752,9 @@ export default function EmployeeManagement() {
           <div className="space-y-6">
             <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-2">
-                {/* Phase 7 §9: separation stays on the record. Rehire and Archive
-                    are driven from the Employees list row, not from here. */}
-                {["active", "on_leave"].includes(selectedEmployee.lifecycle_state) && (
-                  <Button size="sm" variant="secondary" onClick={() => setSeparationTarget(selectedEmployee)}>Record separation</Button>
-                )}
+                {/* Separations are recorded from Workforce ▸ Assignments & Pay
+                    (Fire / Resign), which runs the same record_separation RPC.
+                    Rehire and Archive are driven from the Employees list row. */}
                 <div className="flex-1" />
                 <button
                   type="button"
@@ -2942,16 +2938,6 @@ export default function EmployeeManagement() {
 
 
 
-      {separationTarget && (
-        <SeparationModal
-          guard={separationTarget}
-          displayCode={displayCodeFor(separationTarget)}
-          branding={brandingFromCompany(company)}
-          onClose={() => setSeparationTarget(null)}
-          onDone={async () => { setSeparationTarget(null); await loadData(); }}
-          onError={setError}
-        />
-      )}
 
       {incompleteTarget && (
         <Modal
@@ -3254,29 +3240,6 @@ export default function EmployeeManagement() {
             </FormSection>
 
             <FormSection
-              label="Lifecycle & Verification"
-              open={editSections.isOpen("lifecycle")}
-              onToggle={() => editSections.toggle("lifecycle")}
-            >
-            <EmployeeLifecyclePanel
-              employee={selectedEmployee}
-              onChanged={async () => {
-                const { data } = await supabase
-                  .from("employees")
-                  .select(
-                    "lifecycle_state, status, rehire_count, pending_termination_review, eligible_for_rehire, exit_date, exit_reason, blacklisted, police_verification_status, police_verification_date, nadra_verisys_status, nadra_verisys_date, orientation_done, weapons_certified, weapons_cert_expiry",
-                  )
-                  .eq("id", selectedEmployee.id)
-                  .single();
-                if (data) {
-                  setSelectedEmployee({ ...selectedEmployee, ...(data as Partial<EmployeeRow>) } as EmployeeRow);
-                }
-                loadData();
-              }}
-            />
-            </FormSection>
-
-            <FormSection
               label="Add Documents"
               open={editSections.isOpen("docs")}
               onToggle={() => editSections.toggle("docs")}
@@ -3294,6 +3257,25 @@ export default function EmployeeManagement() {
                   label="Other Documents"
                   multiple
                   onChange={(f) => setEditForm({ ...editForm, other: f as FileList | undefined })}
+                />
+                {/* Police Character Certificate + NADRA Verisys. They are
+                    documents the office chases and files, so they sit with the
+                    other documents rather than in a separate panel. */}
+                <EmployeeVettingFields
+                  employeeId={selectedEmployee.id}
+                  police={selectedEmployee.police_verification_status}
+                  nadra={selectedEmployee.nadra_verisys_status}
+                  onChanged={async () => {
+                    const { data } = await supabase
+                      .from("employees")
+                      .select("police_verification_status, police_verification_date, nadra_verisys_status, nadra_verisys_date")
+                      .eq("id", selectedEmployee.id)
+                      .single();
+                    if (data) {
+                      setSelectedEmployee({ ...selectedEmployee, ...(data as Partial<EmployeeRow>) } as EmployeeRow);
+                    }
+                    loadData();
+                  }}
                 />
               </div>
             </FormSection>
@@ -3885,113 +3867,6 @@ function BulkGenerateModal({
         {finished && failures.length === 0 && (
           <p className="text-xs text-success-700">All {employees.length} generated successfully.</p>
         )}
-      </div>
-    </Modal>
-  );
-}
-
-// Phase 7 §9: Record separation — sets the two dates + reason, closes the active
-// posting (RPC), moves lifecycle, generates the discharge sheet PDF and files it
-// into guard_documents. NOTHING is deleted; the guard leaves rosters via the window.
-const SEPARATION_REASONS: { value: string; label: string }[] = [
-  { value: "resignation", label: "Resigned" },
-  { value: "termination_misconduct", label: "Terminated — misconduct" },
-  { value: "termination_performance", label: "Terminated — performance" },
-  { value: "absconded", label: "Absconded" },
-  { value: "retirement", label: "Retired" },
-  { value: "deceased", label: "Deceased" },
-  { value: "contract_end", label: "Contract ended" },
-  { value: "medical_unfit", label: "Medically unfit" },
-];
-
-function SeparationModal({
-  guard, displayCode, branding, onClose, onDone, onError,
-}: {
-  guard: EmployeeRow; displayCode: string; branding: PdfBranding;
-  onClose: () => void; onDone: () => Promise<void>; onError: (m: string) => void;
-}) {
-  const [reason, setReason] = useState("resignation");
-  const [lastWorkingDay, setLastWorkingDay] = useState(todayIso());
-  const [terminationDate, setTerminationDate] = useState(todayIso());
-  const [rehireEligible, setRehireEligible] = useState(true);
-  const [note, setNote] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const fail = (m: string) => { setErr(m); onError(m); };
-  const inputCls = "mt-1 w-full px-3 py-2 border border-slate-200 rounded-md text-sm";
-
-  const save = async () => {
-    if (!note.trim()) { fail("A separation reason/note is required."); return; }
-    setSaving(true);
-    setErr(null);
-    try {
-      const { error: sepErr } = await supabase.rpc("record_separation", {
-        p_guard: guard.id,
-        p_reason: reason,
-        p_last_working_day: lastWorkingDay,
-        p_termination_date: terminationDate || null,
-        p_rehire_eligible: rehireEligible,
-        p_note: note.trim(),
-      });
-      if (sepErr) throw sepErr;
-      // §9.4: generate the discharge sheet and file it into guard_documents.
-      generateDischargeSheet({
-        branding,
-        full_name: guard.full_name,
-        guard_code: guard.guard_code ?? guard.employee_code,
-        display_code: displayCode,
-        cnic_number: (guard as any).cnic_number,
-        join_date: guard.join_date,
-        last_working_day: lastWorkingDay,
-        termination_date: terminationDate,
-        separation_reason: SEPARATION_REASONS.find((r) => r.value === reason)?.label ?? reason,
-        rehire_eligible: rehireEligible,
-        note: note.trim(),
-      });
-      await supabase.from("guard_documents").upsert(
-        {
-          employee_id: guard.id, doc_type: "discharge_sheet", status: "on_file",
-          issue_date: todayIso(), notes: "Generated on separation",
-        },
-        { onConflict: "employee_id,doc_type" },
-      );
-      await onDone();
-    } catch (e: any) { fail(e.message ?? String(e)); setSaving(false); }
-  };
-
-  return (
-    <Modal isOpen onClose={onClose} size="md" title={`Record separation — ${guard.full_name} (${displayCode})`}
-      error={err} onDismissError={() => setErr(null)}
-      footer={
-        <div className="flex justify-end gap-2">
-          <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
-          <Button variant="danger" size="sm" onClick={save} disabled={saving}>
-            {saving && <Loader2 className="w-4 h-4 animate-spin mr-1" />} Record separation
-          </Button>
-        </div>
-      }
-    >
-      <div className="space-y-3">
-        <p className="text-xs text-slate-500">Closes the active posting and removes the guard from rosters after the last working day. Nothing is deleted — full history is retained.</p>
-        <label className="block"><span className="text-sm text-slate-600">Reason</span>
-          <ThemedSelect value={reason} onChange={(e) => setReason(e.target.value)} className={inputCls}>
-            {SEPARATION_REASONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-          </ThemedSelect>
-        </label>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <label className="block"><span className="text-sm text-slate-600">Last working day *</span>
-            <input type="date" value={lastWorkingDay} onChange={(e) => setLastWorkingDay(e.target.value)} className={inputCls} />
-          </label>
-          <label className="block"><span className="text-sm text-slate-600">Termination date (HR)</span>
-            <input type="date" value={terminationDate} onChange={(e) => setTerminationDate(e.target.value)} className={inputCls} />
-          </label>
-        </div>
-        <label className="flex items-center gap-2 text-sm text-slate-700">
-          <input type="checkbox" checked={rehireEligible} onChange={(e) => setRehireEligible(e.target.checked)} /> Eligible for rehire
-        </label>
-        <label className="block"><span className="text-sm text-slate-600">Reason / note *</span>
-          <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} className={inputCls} />
-        </label>
       </div>
     </Modal>
   );

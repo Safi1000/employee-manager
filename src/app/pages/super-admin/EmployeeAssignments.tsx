@@ -34,12 +34,14 @@ import {
   AlertTriangle,
   SlidersHorizontal,
   UserMinus,
+  ShieldAlert,
 } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import MobileCardList from "../../components/MobileCardList";
 import FireGuardModal from "../../components/FireGuardModal";
+import DisciplinaryWarningsModal from "../../components/DisciplinaryWarningsModal";
 import ThemedSelect from "../../components/ThemedSelect";
 import ExportButton from "../../components/ExportButton";
 import { exportTable } from "../../lib/excel";
@@ -271,6 +273,10 @@ export default function EmployeeAssignments() {
   // the group's posted guards is leaving, then the separation form itself.
   const [firePickFrom, setFirePickFrom] = useState<{ label: string; rows: EmployeeRow[] } | null>(null);
   const [fireTarget, setFireTarget] = useState<EmployeeRow | null>(null);
+  // Disciplinary warnings, moved here from the employee record's compliance
+  // panel. Same two-step shape as Fire: pick the guard, then act on them.
+  const [warnPickFrom, setWarnPickFrom] = useState<{ label: string; rows: EmployeeRow[] } | null>(null);
+  const [warnTarget, setWarnTarget] = useState<EmployeeRow | null>(null);
   const [changeClientTarget, setChangeClientTarget] = useState<EmployeeRow | null>(null);
   const [changeCategoryTarget, setChangeCategoryTarget] = useState<EmployeeRow | null>(null);
   const [changeShiftTarget, setChangeShiftTarget] = useState<EmployeeRow | null>(null);
@@ -1237,6 +1243,20 @@ export default function EmployeeAssignments() {
                       posts of one site's contract lines. Only a group with no
                       site level (a siteless client, Office Staff, Relievers)
                       keeps them up here, where the group IS the whole target. */}
+                  {/* Warnings are the steps that lead to a separation, so they
+                      sit next to it. Same picker, same roster. */}
+                  {canEdit && (g.clientId || g.categoryKey) && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={firableIn(g.rows).length === 0}
+                      title={firableIn(g.rows).length === 0 ? "Nobody here to warn" : undefined}
+                      onClick={() => setWarnPickFrom({ label: g.label, rows: firableIn(g.rows) })}
+                    >
+                      <ShieldAlert className="w-4 h-4 mr-1.5" strokeWidth={1.75} />
+                      Warnings
+                    </Button>
+                  )}
                   {/* Fire / Resign sits immediately left of Assign employees:
                       the two ends of a posting, in one place. It targets one
                       guard, so it opens a picker over this group's roster
@@ -1521,6 +1541,43 @@ export default function EmployeeAssignments() {
           onChangeCategory={() => { const t = rowTarget; setRowTarget(null); setChangeCategoryTarget(t); }}
           onChangeShift={() => { const t = rowTarget; setRowTarget(null); setChangeShiftTarget(t); }}
           onError={setError}
+        />
+      )}
+
+      {warnPickFrom && (
+        <Modal
+          isOpen
+          onClose={() => setWarnPickFrom(null)}
+          title={`Disciplinary Warnings — ${warnPickFrom.label}`}
+          size="sm"
+        >
+          <div className="space-y-2">
+            <p className="text-sm text-slate-600">Select the guard.</p>
+            <div className="max-h-80 overflow-y-auto divide-y divide-border border border-border rounded-md">
+              {warnPickFrom.rows.map((e) => (
+                <button
+                  key={e.id}
+                  type="button"
+                  className="w-full text-left px-3 py-2.5 hover:bg-accent transition-colors"
+                  onClick={() => { setWarnTarget(e); setWarnPickFrom(null); }}
+                >
+                  <span className="text-sm text-foreground">{e.full_name}</span>
+                  <span className="block text-xs text-muted-foreground font-mono">{displayCodeFor(e)}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {warnTarget && (
+        <DisciplinaryWarningsModal
+          guard={{
+            id: warnTarget.id,
+            full_name: warnTarget.full_name,
+            employee_code: warnTarget.employee_code,
+          }}
+          onClose={() => setWarnTarget(null)}
         />
       )}
 
