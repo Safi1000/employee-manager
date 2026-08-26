@@ -49,6 +49,8 @@ type ContractFormState = {
   annual_escalation_pct: string;
   renewal_terms: string;
   status: ContractStatus;
+  /** When the contract was terminated. Required once status is 'terminated'. */
+  termination_date: string;
 };
 
 // One editable row in a site's Contract Lines table.
@@ -108,6 +110,7 @@ const blankForm = (clientId: string): ContractFormState => ({
   annual_escalation_pct: "",
   renewal_terms: "",
   status: "active",
+  termination_date: "",
 });
 
 const fromContract = (c: Contract): ContractFormState => ({
@@ -126,6 +129,7 @@ const fromContract = (c: Contract): ContractFormState => ({
   annual_escalation_pct: c.annual_escalation_pct != null ? String(c.annual_escalation_pct) : "",
   renewal_terms: c.renewal_terms ?? "",
   status: c.status,
+  termination_date: c.termination_date ?? "",
 });
 
 // The category a fresh line starts on, given the contract's type.
@@ -522,6 +526,7 @@ export default function ContractEditorModal({
     annual_escalation_pct: form.annual_escalation_pct === "" ? null : Number(form.annual_escalation_pct),
     renewal_terms: form.renewal_terms.trim() || null,
     status: form.status,
+    termination_date: form.status === "terminated" ? form.termination_date || null : null,
   });
 
   /**
@@ -776,6 +781,10 @@ export default function ContractEditorModal({
       setError("Select a client.");
       return;
     }
+    if (form.status === "terminated" && !form.termination_date) {
+      setError("A termination date is required when the contract status is Terminated.");
+      return;
+    }
     // Reject injection-shaped input in the free-text fields (renewal terms +
     // each contract line's label/notes).
     if (hasInjectionPattern(form.renewal_terms)) {
@@ -948,6 +957,21 @@ export default function ContractEditorModal({
               ))}
             </ThemedSelect>
           </div>
+
+          {/* Only asked for when it applies — a date field on a contract that is
+              still running has nothing to record. */}
+          {form.status === "terminated" && (
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Termination Date *</label>
+              <input
+                required
+                type="date"
+                value={form.termination_date}
+                onChange={(e) => setForm({ ...form, termination_date: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              />
+            </div>
+          )}
 
           <div>
             <label className="block text-sm text-slate-700 mb-1">Start Date *</label>

@@ -555,6 +555,8 @@ export type Contract = {
   auto_invoice_enabled: boolean;
   renewal_terms: string | null;
   status: ContractStatus;
+  /** Date the contract was terminated. Required whenever status = terminated (0198). */
+  termination_date: string | null;
   drive_file_id: string | null;
   drive_view_url: string | null;
   contract_file_name: string | null;
@@ -1076,6 +1078,10 @@ export type Employee = {
   bank_name: string | null;
   bank_account: string | null;
   account_title: string | null;
+  /** Bank branch code for the salary transfer (0198). */
+  bank_branch_code: string | null;
+  /** Optional alternate number. Not the emergency contact (0198). */
+  secondary_phone: string | null;
   // Sprint 2 HR field expansion (spec section 3.3 + Appendix A.1)
   cnic_number: string | null;
   date_of_birth: string | null;

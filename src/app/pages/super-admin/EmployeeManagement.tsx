@@ -1,7 +1,7 @@
 import ThemedSelect from "../../components/ThemedSelect";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { Plus, Search, Upload, AlertCircle, Loader2, Check, X, Trash2, ChevronDown, ChevronRight as ChevronRightIcon, FileText, SlidersHorizontal, Image as ImageIcon, ArrowUp, ArrowDown, ArrowUpDown, Camera } from "lucide-react";
+import { Plus, Search, Upload, AlertCircle, Loader2, X, Trash2, ChevronDown, ChevronRight as ChevronRightIcon, FileText, SlidersHorizontal, Image as ImageIcon, ArrowUp, ArrowDown, ArrowUpDown, Camera } from "lucide-react";
 import CameraCapture from "../../components/CameraCapture";
 import DocumentInput from "../../components/DocumentInput";
 import jsPDF from "jspdf";
@@ -131,6 +131,7 @@ function CodeHistoryRow({ h }: { h: EmployeeCodeHistory }) {
 type FormState = {
   full_name: string;
   phone: string;
+  secondary_phone: string;
   location_id: string;
   client_id: string;
   contract_id: string;
@@ -150,6 +151,7 @@ type FormState = {
   bank_name: string;
   bank_account: string;
   account_title: string;
+  bank_branch_code: string;
   // Sprint 2 HR additions
   cnic_number: string;
   date_of_birth: string;
@@ -277,6 +279,7 @@ const emptyPaperFormFields = {
 const emptyForm: FormState = {
   full_name: "",
   phone: "",
+  secondary_phone: "",
   location_id: "",
   client_id: "",
   contract_id: "",
@@ -296,6 +299,7 @@ const emptyForm: FormState = {
   bank_name: "",
   bank_account: "",
   account_title: "",
+  bank_branch_code: "",
   cnic_number: "",
   date_of_birth: "",
   father_or_husband_name: "",
@@ -651,6 +655,10 @@ const hasEmergencyContact = (e: {
 const missingRequiredFields = (e: {
   full_name: string | null;
   phone: string | null;
+  bank_name: string | null;
+  account_title: string | null;
+  bank_account: string | null;
+  bank_branch_code: string | null;
   cnic_number: string | null;
   date_of_birth: string | null;
   father_or_husband_name: string | null;
@@ -668,6 +676,11 @@ const missingRequiredFields = (e: {
     !e.father_or_husband_name?.trim() ? "Father / Husband Name" : null,
     !e.cnic_expiry ? "CNIC Expiry" : null,
     !hasEmergencyContact(e) ? "Emergency Contact" : null,
+    !e.bank_name?.trim() ? "Bank Name" : null,
+    !e.account_title?.trim() ? "Account Title" : null,
+    !e.bank_account?.trim() ? "Bank Account Number" : null,
+    // Mirrors the form rule: a mobile wallet has no branch code to give.
+    !isPkWallet(e.bank_name ?? "") && !e.bank_branch_code?.trim() ? "Branch Code" : null,
   ].filter(Boolean) as string[];
 
 // Human labels for the validated employee fields, keyed by their form key. Used
@@ -681,7 +694,11 @@ const EMPLOYEE_FIELD_LABELS: Record<string, string> = {
   father_or_husband_name: "Father / Husband Name",
   cnic_expiry: "CNIC Expiry",
   iban: "IBAN",
-  bank_account: "Bank Account",
+  bank_name: "Bank Name",
+  account_title: "Account Title",
+  bank_account: "Bank Account Number",
+  bank_branch_code: "Branch Code",
+  secondary_phone: "Secondary Phone Number",
   emergency_contact_name: "Emergency Contact",
   emergency_contact_phone: "Emergency Contact Phone",
   emergency_contact2_phone: "Second Emergency Contact Phone",
@@ -847,7 +864,10 @@ export default function EmployeeManagement() {
     "full_name",
     "client_id",
     "phone",
+    "bank_name",
+    "account_title",
     "bank_account",
+    "bank_branch_code",
     "iban",
     "cnic_number",
     "date_of_birth",
@@ -1342,7 +1362,17 @@ export default function EmployeeManagement() {
       : "Father / Husband Name is required.",
     cnic_expiry: f.cnic_expiry ? null : "CNIC Expiry is required.",
     iban: isPkWallet(f.bank_name) ? null : validateIban(f.iban, pkBankCode(f.bank_name)),
-    bank_account: accountFieldError(f.bank_name, f.bank_account),
+    // The bank block is what payroll actually pays into — a record short any
+    // part of it cannot be disbursed, so all four are required together.
+    bank_name: f.bank_name.trim() ? null : "Bank Name is required.",
+    account_title: f.account_title.trim() ? null : "Account Title is required.",
+    bank_account: f.bank_account.trim()
+      ? accountFieldError(f.bank_name, f.bank_account)
+      : "Bank Account Number is required.",
+    // A mobile wallet has no branch, so the code only applies to real banks.
+    bank_branch_code: isPkWallet(f.bank_name) || f.bank_branch_code.trim()
+      ? null
+      : "Branch Code is required.",
     // At least ONE usable emergency contact — a name with no number can't be
     // called, so a contact only counts when both halves are there. Either slot
     // satisfies it; the second is still optional on its own.
@@ -1351,6 +1381,8 @@ export default function EmployeeManagement() {
       : "At least one emergency contact (name and phone) is required.",
     emergency_contact_phone: validatePhone(f.emergency_contact_phone),
     emergency_contact2_phone: validatePhone(f.emergency_contact2_phone),
+    // Optional — only format-checked, and only once something is typed.
+    secondary_phone: f.secondary_phone.trim() ? validatePhone(f.secondary_phone) : null,
     permanent_address: validateFreeText(f.permanent_address),
     current_address: validateFreeText(f.current_address),
   });
@@ -1395,6 +1427,7 @@ export default function EmployeeManagement() {
         .insert({
           full_name: form.full_name.trim(),
           phone: form.phone.trim() || null,
+          secondary_phone: form.secondary_phone.trim() || null,
           location_id: form.location_id || null,
           // "" is not a uuid — and since the client picker moved to Assignments &
           // Pay, client_id is ALWAYS "" here. Coalesce or Postgres rejects the row.
@@ -1419,6 +1452,7 @@ export default function EmployeeManagement() {
           bank_name: form.bank_name.trim() || null,
           bank_account: form.bank_account.trim() || null,
           account_title: form.account_title.trim() || null,
+          bank_branch_code: form.bank_branch_code.trim() || null,
           cnic_number: form.cnic_number.trim() || null,
           date_of_birth: form.date_of_birth || null,
           father_or_husband_name: form.father_or_husband_name.trim() || null,
@@ -1585,6 +1619,7 @@ export default function EmployeeManagement() {
     setEditForm({
       full_name: emp.full_name,
       phone: emp.phone ?? "",
+      secondary_phone: emp.secondary_phone ?? "",
       location_id: emp.location_id ?? "",
       client_id: emp.client_id ?? "",
       contract_id: emp.contract_id ?? "",
@@ -1604,6 +1639,7 @@ export default function EmployeeManagement() {
       bank_name: emp.bank_name ?? "",
       bank_account: emp.bank_account ?? "",
       account_title: emp.account_title ?? "",
+      bank_branch_code: emp.bank_branch_code ?? "",
       cnic_number: emp.cnic_number ?? "",
       date_of_birth: emp.date_of_birth ?? "",
       father_or_husband_name: emp.father_or_husband_name ?? "",
@@ -1713,6 +1749,7 @@ export default function EmployeeManagement() {
         .update({
           full_name: editForm.full_name.trim(),
           phone: editForm.phone.trim() || null,
+          secondary_phone: editForm.secondary_phone.trim() || null,
           location_id: editForm.location_id || null,
           ...(postingChanged ? { display_number: null } : {}),
           client_id: editForm.category === "client" ? (editForm.client_id || null) : null,
@@ -1743,6 +1780,7 @@ export default function EmployeeManagement() {
           bank_name: editForm.bank_name.trim() || null,
           bank_account: editForm.bank_account.trim() || null,
           account_title: editForm.account_title.trim() || null,
+          bank_branch_code: editForm.bank_branch_code.trim() || null,
           cnic_number: editForm.cnic_number.trim() || null,
           date_of_birth: editForm.date_of_birth || null,
           father_or_husband_name: editForm.father_or_husband_name.trim() || null,
@@ -1843,7 +1881,7 @@ export default function EmployeeManagement() {
               empty='No employees yet. Tap "Add Employee" to create one.'
               rowKey={(employee) => employee.id}
               accent={(employee) =>
-                employee.physical_copy_present ? undefined : "border-l-danger-500"
+                missingRequiredFields(employee).length === 0 ? undefined : "border-l-danger-500"
               }
               title={(employee) => employee.full_name}
               subtitle={(employee) => displayCodeFor(employee)}
@@ -2040,15 +2078,9 @@ export default function EmployeeManagement() {
                             cabinet, not about whether the record's fields are
                             filled in (that is the Incomplete badge). */}
                         <td className="px-6 py-3.5">
-                          {employee.physical_copy_present ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium border bg-success-50 text-success-700 dark:text-success-500 border-success-200">
-                              <Check className="w-3 h-3" strokeWidth={2} /> Present
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium border bg-secondary text-muted-foreground border-border">
-                              <X className="w-3 h-3" strokeWidth={2} /> Not on file
-                            </span>
-                          )}
+                          <span className="text-sm text-muted-foreground">
+                            {employee.physical_copy_present ? "Yes" : "No"}
+                          </span>
                         </td>
                         <td className="px-6 py-3.5">
                           {/* Plain status label — separation/rehire are explicit
@@ -2377,7 +2409,7 @@ export default function EmployeeManagement() {
                 {formErrors.full_name && <p className="text-xs text-danger-600 mt-1">{formErrors.full_name}</p>}
               </div>
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Phone Number</label>
+                <label className="block text-sm text-slate-700 mb-1">Phone Number *</label>
                 <input
                   type="tel"
                   id="empfield-phone"
@@ -2388,6 +2420,19 @@ export default function EmployeeManagement() {
                   placeholder="+92 300 1234567"
                 />
                 {formErrors.phone && <p className="text-xs text-danger-600 mt-1">{formErrors.phone}</p>}
+              </div>
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Secondary Phone Number</label>
+                <input
+                  type="tel"
+                  id="empfield-secondary_phone"
+                  value={form.secondary_phone}
+                  onChange={(e) => setForm({ ...form, secondary_phone: e.target.value })}
+                  onBlur={(e) => setFormErrors((p) => ({ ...p, secondary_phone: e.target.value.trim() ? validatePhone(e.target.value) : null }))}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  placeholder="Optional"
+                />
+                {formErrors.secondary_phone && <p className="text-xs text-danger-600 mt-1">{formErrors.secondary_phone}</p>}
               </div>
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Recruitment Intake</label>
@@ -2424,11 +2469,11 @@ export default function EmployeeManagement() {
           <FormSection
             label="Bank Details"
             collapsible={false}
-            hasError={Boolean(formErrors.bank_account || formErrors.iban)}
+            hasError={Boolean(formErrors.bank_name || formErrors.account_title || formErrors.bank_account || formErrors.bank_branch_code || formErrors.iban)}
           >
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Bank Name</label>
+                <label className="block text-sm text-slate-700 mb-1">Bank Name *</label>
                 <ClientFilterSelect
                   clients={PK_BANK_OPTIONS}
                   value={form.bank_name}
@@ -2451,20 +2496,23 @@ export default function EmployeeManagement() {
                       : undefined
                   }
                 />
+                {formErrors.bank_name && <p className="text-xs text-danger-600 mt-1">{formErrors.bank_name}</p>}
               </div>
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Account Title</label>
+                <label className="block text-sm text-slate-700 mb-1">Account Title *</label>
                 <input
                   type="text"
+                  id="empfield-account_title"
                   value={form.account_title}
                   onChange={(e) => setForm({ ...form, account_title: e.target.value })}
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                   placeholder="Account holder name"
                 />
+                {formErrors.account_title && <p className="text-xs text-danger-600 mt-1">{formErrors.account_title}</p>}
               </div>
               <div>
                 <label className="block text-sm text-slate-700 mb-1">
-                  {isPkWallet(form.bank_name) ? "Mobile Account Number" : "Bank Account Number"}
+                  {isPkWallet(form.bank_name) ? "Mobile Account Number" : "Bank Account Number"} *
                 </label>
                 <input
                   type="text"
@@ -2484,6 +2532,21 @@ export default function EmployeeManagement() {
                   <p className="text-xs text-slate-500 mt-1">Branch code: {branchCodeHint(form.bank_account)}</p>
                 )}
               </div>
+              {!isPkWallet(form.bank_name) && (
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">Branch Code *</label>
+                  <input
+                    type="text"
+                    id="empfield-bank_branch_code"
+                    value={form.bank_branch_code}
+                    onChange={(e) => setForm({ ...form, bank_branch_code: e.target.value })}
+                    onBlur={(e) => setFormErrors((p) => ({ ...p, bank_branch_code: e.target.value.trim() ? null : "Branch Code is required." }))}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm font-mono"
+                    placeholder={branchCodeHint(form.bank_account) ?? "e.g., 0010"}
+                  />
+                  {formErrors.bank_branch_code && <p className="text-xs text-danger-600 mt-1">{formErrors.bank_branch_code}</p>}
+                </div>
+              )}
               {!isPkWallet(form.bank_name) && (
                 <div className="col-span-full">
                   <label className="block text-sm text-slate-700 mb-1">IBAN (24 chars — as issued by the bank)</label>
@@ -2960,7 +3023,7 @@ export default function EmployeeManagement() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-700 mb-1">Full Name</label>
+                  <label className="block text-sm text-slate-700 mb-1">Full Name *</label>
                   <input
                     required
                     type="text"
@@ -2974,7 +3037,7 @@ export default function EmployeeManagement() {
                   {editFormErrors.full_name && <p className="text-xs text-danger-600 mt-1">{editFormErrors.full_name}</p>}
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-700 mb-1">Phone Number</label>
+                  <label className="block text-sm text-slate-700 mb-1">Phone Number *</label>
                   <input
                     type="tel"
                     id="empeditfield-phone"
@@ -2984,6 +3047,19 @@ export default function EmployeeManagement() {
                     className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                   />
                   {editFormErrors.phone && <p className="text-xs text-danger-600 mt-1">{editFormErrors.phone}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">Secondary Phone Number</label>
+                  <input
+                    type="tel"
+                    id="empeditfield-secondary_phone"
+                    value={editForm.secondary_phone}
+                    onChange={(e) => setEditForm({ ...editForm, secondary_phone: e.target.value })}
+                    onBlur={(e) => setEditFormErrors((p) => ({ ...p, secondary_phone: e.target.value.trim() ? validatePhone(e.target.value) : null }))}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    placeholder="Optional"
+                  />
+                  {editFormErrors.secondary_phone && <p className="text-xs text-danger-600 mt-1">{editFormErrors.secondary_phone}</p>}
                 </div>
                 <div>
                   <label className="block text-sm text-slate-700 mb-1">Status</label>
@@ -3018,11 +3094,11 @@ export default function EmployeeManagement() {
             <FormSection
               label="Bank Details"
               collapsible={false}
-              hasError={Boolean(editFormErrors.bank_account || editFormErrors.iban)}
+              hasError={Boolean(editFormErrors.bank_name || editFormErrors.account_title || editFormErrors.bank_account || editFormErrors.bank_branch_code || editFormErrors.iban)}
             >
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm text-slate-700 mb-1">Bank Name</label>
+                  <label className="block text-sm text-slate-700 mb-1">Bank Name *</label>
                   <ClientFilterSelect
                     clients={PK_BANK_OPTIONS}
                     value={editForm.bank_name}
@@ -3043,20 +3119,23 @@ export default function EmployeeManagement() {
                         : undefined
                     }
                   />
+                  {editFormErrors.bank_name && <p className="text-xs text-danger-600 mt-1">{editFormErrors.bank_name}</p>}
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-700 mb-1">Account Title</label>
+                  <label className="block text-sm text-slate-700 mb-1">Account Title *</label>
                   <input
                     type="text"
+                    id="empeditfield-account_title"
                     value={editForm.account_title}
                     onChange={(e) => setEditForm({ ...editForm, account_title: e.target.value })}
                     className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                     placeholder="Account holder name"
                   />
+                  {editFormErrors.account_title && <p className="text-xs text-danger-600 mt-1">{editFormErrors.account_title}</p>}
                 </div>
                 <div>
                   <label className="block text-sm text-slate-700 mb-1">
-                    {isPkWallet(editForm.bank_name) ? "Mobile Account Number" : "Bank Account Number"}
+                    {isPkWallet(editForm.bank_name) ? "Mobile Account Number" : "Bank Account Number"} *
                   </label>
                   <input
                     type="text"
@@ -3076,6 +3155,21 @@ export default function EmployeeManagement() {
                     <p className="text-xs text-slate-500 mt-1">Branch code: {branchCodeHint(editForm.bank_account)}</p>
                   )}
                 </div>
+                {!isPkWallet(editForm.bank_name) && (
+                  <div>
+                    <label className="block text-sm text-slate-700 mb-1">Branch Code *</label>
+                    <input
+                      type="text"
+                      id="empeditfield-bank_branch_code"
+                      value={editForm.bank_branch_code}
+                      onChange={(e) => setEditForm({ ...editForm, bank_branch_code: e.target.value })}
+                      onBlur={(e) => setEditFormErrors((p) => ({ ...p, bank_branch_code: e.target.value.trim() ? null : "Branch Code is required." }))}
+                      className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm font-mono"
+                      placeholder={branchCodeHint(editForm.bank_account) ?? "e.g., 0010"}
+                    />
+                    {editFormErrors.bank_branch_code && <p className="text-xs text-danger-600 mt-1">{editFormErrors.bank_branch_code}</p>}
+                  </div>
+                )}
                 {!isPkWallet(editForm.bank_name) && (
                   <div className="col-span-full">
                     <label className="block text-sm text-slate-700 mb-1">IBAN (24 chars — as issued by the bank)</label>
@@ -5020,7 +5114,7 @@ function EmployeeHrSection({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-slate-700 mb-1">CNIC Number</label>
+              <label className="block text-sm text-slate-700 mb-1">CNIC Number *</label>
               <input
                 type="text"
                 maxLength={15}
@@ -5035,7 +5129,7 @@ function EmployeeHrSection({
               {errors.cnic_number && <p className="text-xs text-danger-600 mt-1">{errors.cnic_number}</p>}
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Date of Birth</label>
+              <label className="block text-sm text-slate-700 mb-1">Date of Birth *</label>
               <input
                 type="date"
                 id={idPrefix + "date_of_birth"}
@@ -5048,7 +5142,7 @@ function EmployeeHrSection({
               {errors.date_of_birth && <p className="text-xs text-danger-600 mt-1">{errors.date_of_birth}</p>}
             </div>
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Father / Husband Name</label>
+              <label className="block text-sm text-slate-700 mb-1">Father / Husband Name *</label>
               <input
                 type="text"
                 id={idPrefix + "father_or_husband_name"}
@@ -5077,7 +5171,7 @@ function EmployeeHrSection({
             </div>
 
             <div>
-              <label className="block text-sm text-slate-700 mb-1">CNIC Expiry</label>
+              <label className="block text-sm text-slate-700 mb-1">CNIC Expiry *</label>
               <input
                 type="date"
                 id={idPrefix + "cnic_expiry"}
@@ -5173,7 +5267,10 @@ function EmployeeHrSection({
       >
         <div className="space-y-4">
           <div>
-            <h5 className="text-sm text-slate-900 mb-3">Emergency Contact</h5>
+            <h5 className="text-sm text-slate-900 mb-3">Emergency Contact *</h5>
+            <p className="text-xs text-slate-500 mb-3">
+              At least one contact below must have both a name and a phone.
+            </p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Name</label>
@@ -5426,6 +5523,8 @@ function FilledDetails({ employee }: { employee: EmployeeRow }) {
       ["Physical Copy Present", employee.physical_copy_present],
       ["Identity Verified", employee.identity_verified],
       ["IBAN", employee.iban],
+      ["Bank Branch Code", employee.bank_branch_code],
+      ["Secondary Phone", employee.secondary_phone],
       ["Exit Date", employee.exit_date && formatDate(employee.exit_date)],
       ["Last Working Day", employee.last_working_day && formatDate(employee.last_working_day)],
       ["Exit Reason", employee.exit_reason],
