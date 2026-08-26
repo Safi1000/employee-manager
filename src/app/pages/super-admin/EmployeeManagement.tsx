@@ -41,6 +41,7 @@ import {
   type EmployeeCategory,
   type EmployeeCodeHistory,
   type MaritalStatus,
+  type PaymentMode,
   type SocialSecurityStatus,
   type EmployeeIdentityAmendment,
   type EmployeeChild,
@@ -599,6 +600,32 @@ const computePerDay = (baseStr: string): string => {
 const isMissingKeyFields = (e: { cnic_number: string | null; join_date: string | null }): boolean =>
   !e.cnic_number?.trim() || !e.join_date;
 
+// Which roster tab a record belongs to.
+//
+// "Terminated" is a separation the office decided was final — eligible_for_rehire
+// set to false at the separation — plus 'archived', which nothing brings back.
+// Every other separation stays rehireable and so sits in the Waiting List
+// alongside the applicants who have never been hired at all.
+type RosterTab = "active" | "waitlist" | "terminated";
+
+const rosterTabOf = (e: {
+  lifecycle_state: string;
+  eligible_for_rehire?: boolean | null;
+}): RosterTab | null => {
+  if (e.lifecycle_state === "archived") return "terminated";
+  if (isSeparatedState(e.lifecycle_state)) {
+    return e.eligible_for_rehire === false ? "terminated" : "waitlist";
+  }
+  if (e.lifecycle_state === "applicant" || e.lifecycle_state === "waitlisted") return "waitlist";
+  if (e.lifecycle_state === "active" || e.lifecycle_state === "on_leave") return "active";
+  return null;
+};
+
+// Within the Waiting List: someone who has worked here before and left on terms
+// that allow a return, versus someone who has never been posted at all.
+const isRehireCandidate = (e: { lifecycle_state: string }): boolean =>
+  isSeparatedState(e.lifecycle_state);
+
 // A contact is only usable when it has both a name and a number, and either of
 // the two slots satisfies the requirement. Shared by the form validation and the
 // list's Incomplete flag so the badge and the save rule can never disagree.
@@ -750,7 +777,12 @@ export default function EmployeeManagement() {
   // by the headline tile, which doubles as the toggle.
   const [missingKeyFilter, setMissingKeyFilter] = useState<"all" | "missing">("all");
   // Quick Active / Inactive tab split (Inactive = anything not currently Active).
-  const [empTab, setEmpTab] = useState<"all" | "active" | "inactive">("all");
+  // Roster tabs. These are lifecycle buckets, not status filters: Active is who
+  // is on the books now, Waiting List is everyone who COULD be put on a posting
+  // (past leavers still eligible for rehire, plus never-hired candidates), and
+  // Terminated is the hard exits — separated and explicitly not rehireable, plus
+  // archived records, which are a dead end by definition.
+  const [empTab, setEmpTab] = useState<"active" | "waitlist" | "terminated">("active");
   const [filtersOpen, setFiltersOpen] = useState(false);
   // Sort by the NUMERIC part of the client-prefixed display code (= display_number
   // integer column). null = default load order (newest-first); asc = 001 first.
@@ -1034,8 +1066,7 @@ export default function EmployeeManagement() {
       if (expiredCardFilter === "expired" && !isCardExpired(e.cnic_expiry)) return false;
       if (dupCnicFilter === "duplicate" && !duplicateCnicIds.has(e.id)) return false;
       if (missingKeyFilter === "missing" && !isMissingKeyFields(e)) return false;
-      if (empTab === "active" && e.status !== "Active") return false;
-      if (empTab === "inactive" && e.status === "Active") return false;
+      if (rosterTabOf(e) !== empTab) return false;
       return true;
     });
   }, [employees, search, clientFilter, categoryFilter, shiftFilter, statusFilter, completenessFilter, lifecycleFilter, expiredCardFilter, dupCnicFilter, duplicateCnicIds, missingKeyFilter, empTab, branches]);
@@ -1178,32 +1209,9 @@ export default function EmployeeManagement() {
     }
   };
 
-  // Fire / Reactivate straight from the status badge (no Edit needed). Both
-  // routes go through the lifecycle state machine (transition_employee_lifecycle)
-  // so the Employees table, the Lifecycle & Compliance panel, and Exit Clearance
-  // always agree — a change in one is immediately reflected in the others.
-  const [statusTogglingId, setStatusTogglingId] = useState<string | null>(null);
-
-
-  // Fire flow: outstanding-dues popup + required reason + rehire decision.
-  type ExitGates = {
-    outstanding_kit_count: number;
-    outstanding_advance: number;
-    open_incident_count: number;
-    undisbursed_salary: number;
-  };
-  const [fireTarget, setFireTarget] = useState<EmployeeRow | null>(null);
-  const [fireGates, setFireGates] = useState<ExitGates | null>(null);
-  const [fireGatesLoading, setFireGatesLoading] = useState(false);
-  const [fireReason, setFireReason] = useState("");
-  const [fireEligible, setFireEligible] = useState(true);
-  // Separation type + effective date (§9). Firing and Resignation behave
-  // IDENTICALLY for the roster (both close the posting + set last_working_day);
-  // they differ only in recorded reason and the default rehire eligibility.
-  const [fireType, setFireType] = useState<"firing" | "resignation">("firing");
-  const [fireDate, setFireDate] = useState<string>(todayIso());
-  const [fireSubmitting, setFireSubmitting] = useState(false);
-  const [fireError, setFireError] = useState<string | null>(null);
+  // The Fire / Resign flow moved to Workforce ▸ Assignments & Pay (see
+  // components/FireGuardModal) — separating someone ends a posting, so it lives
+  // beside the actions that create and move them.
 
   // Export exactly what the table is showing — the same `filtered` rows, in the
   // same visible column order — so filters/search/tab carry into the export.
@@ -1239,93 +1247,6 @@ export default function EmployeeManagement() {
   };
 
   const isFired = (emp: EmployeeRow) => isSeparatedState(emp.lifecycle_state);
-
-  const requestStatusToggle = (emp: EmployeeRow) => {
-    if (isFired(emp)) {
-      // Rehire relinks to the SAME record; only allowed when eligible (the RPC
-      // enforces it too). Opens the dated Rehire flow (new posting from a date).
-      if (emp.eligible_for_rehire === false) {
-        setError("This guard is not eligible for rehire (set at their last separation).");
-        return;
-      }
-      setRehireTarget(emp);
-    } else if (emp.lifecycle_state === "active" || emp.lifecycle_state === "on_leave") {
-      openFireModal(emp);
-    }
-    // Applicants / waitlisted are driven from the Lifecycle & Compliance panel,
-    // not the fire toggle — so the badge is a no-op for them.
-  };
-
-  const openFireModal = async (emp: EmployeeRow) => {
-    setFireTarget(emp);
-    setFireReason("");
-    setFireType("firing");
-    setFireEligible(false); // firing defaults to NOT rehire-eligible
-    setFireDate(todayIso());
-    setFireError(null);
-    setFireGates(null);
-    setFireGatesLoading(true);
-    const { data, error: gErr } = await supabase.rpc("employee_clearance_gates", {
-      p_employee_id: emp.id,
-    });
-    setFireGatesLoading(false);
-    if (gErr) {
-      setFireError(gErr.message);
-      return;
-    }
-    // A returns-table RPC comes back as an array of one row.
-    const row = Array.isArray(data) ? data[0] : data;
-    if (row) {
-      setFireGates({
-        outstanding_kit_count: Number(row.outstanding_kit_count ?? 0),
-        outstanding_advance: Number(row.outstanding_advance ?? 0),
-        open_incident_count: Number(row.open_incident_count ?? 0),
-        undisbursed_salary: Number(row.undisbursed_salary ?? 0),
-      });
-    }
-  };
-
-  const confirmFire = async () => {
-    if (!fireTarget) return;
-    if (!fireReason.trim()) {
-      setFireError("A reason is required.");
-      return;
-    }
-    if (!fireDate) {
-      setFireError("An effective (last working) date is required.");
-      return;
-    }
-    setFireSubmitting(true);
-    setFireError(null);
-    // §9: record_separation sets last_working_day + termination_date, records the
-    // reason + rehire flag, moves lifecycle_state, and CLOSES the active posting
-    // (end_date = last working day). This is what removes the guard from the
-    // roster from the day after — the old transition RPC did none of that.
-    const reasonVal = fireType === "resignation" ? "resignation" : "termination_misconduct";
-    const { error: sErr } = await supabase.rpc("record_separation", {
-      p_guard: fireTarget.id,
-      p_reason: reasonVal,
-      p_last_working_day: fireDate,
-      p_termination_date: fireDate,
-      p_rehire_eligible: fireEligible,
-      p_note: fireReason.trim(),
-    });
-    if (sErr) {
-      setFireSubmitting(false);
-      setFireError(sErr.message);
-      return;
-    }
-    // Snapshot the exit clearance so the panel reflects the outstanding dues.
-    await supabase.rpc("assess_clearance", { p_employee_id: fireTarget.id });
-    setFireSubmitting(false);
-    const firedId = fireTarget.id;
-    const newState = fireType === "resignation" ? "left" : "fired";
-    setFireTarget(null);
-    if (selectedEmployee?.id === firedId) {
-      setSelectedEmployee({ ...selectedEmployee, lifecycle_state: newState, status: "Inactive", eligible_for_rehire: fireEligible } as EmployeeRow);
-    }
-    await loadData();
-  };
 
   // Phase 3D: advance/reverse the approval state machine. Reversal needs a reason.
   // Phase 3G: Archive replaces Delete — reason required, logged, never removes rows.
@@ -1905,6 +1826,282 @@ export default function EmployeeManagement() {
     }
   };
 
+  // The list markup, rendered once per section. The Waiting List tab shows two
+  // of them (rehire-eligible leavers, then never-hired candidates); every other
+  // tab shows one. Taking `rows` as a parameter is what lets the same table and
+  // the same mobile cards serve both without a second copy.
+  const renderEmployeeList = (rows: EmployeeRow[]) => (
+    <>
+            {/* Phone: one card per employee. A six-column table with a sticky
+                action column does not survive 390 logical pixels, and
+                side-scrolling it means hunting for a column while losing track of
+                which row you are on. A supervisor at a site is looking up ONE
+                guard, so the row is the unit. */}
+            <MobileCardList
+              rows={loading ? [] : rows}
+              loading={loading}
+              empty='No employees yet. Tap "Add Employee" to create one.'
+              rowKey={(employee) => employee.id}
+              accent={(employee) =>
+                employee.physical_copy_present ? undefined : "border-l-danger-500"
+              }
+              title={(employee) => employee.full_name}
+              subtitle={(employee) => displayCodeFor(employee)}
+              badge={(employee) => (
+                <span
+                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium border ${
+                    isFired(employee)
+                      ? "bg-danger-50 text-danger-700 dark:text-danger-500 border-danger-200"
+                      : employee.status === "Active"
+                        ? "bg-success-50 text-success-700 dark:text-success-500 border-success-200"
+                        : employee.status === "On Leave"
+                          ? "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200"
+                          : "bg-secondary text-muted-foreground border-border"
+                  }`}
+                >
+                  {lifecycleStatusLabel(employee)}
+                </span>
+              )}
+              fields={[
+                {
+                  label: "Phone",
+                  // A tel: link — the point of having this on a phone is being
+                  // able to call the man without copying the number out.
+                  value: (employee) =>
+                    employee.phone ? (
+                      <a href={`tel:${employee.phone}`} className="text-brand-700 dark:text-brand-500 tabular-nums">
+                        {employee.phone}
+                      </a>
+                    ) : (
+                      "—"
+                    ),
+                },
+                {
+                  label: "Client / Category",
+                  value: (employee) =>
+                    (employee.category ?? "client") === "client"
+                      ? employee.client_name ?? "—"
+                      : (employee.category ?? "client").replace("_", " "),
+                },
+              ]}
+              tags={(employee) => {
+                const incomplete = missingRequiredFields(employee).length > 0;
+                const missingKeyFields = [
+                  !employee.cnic_number?.trim() ? "CNIC" : null,
+                  !employee.join_date ? "Join Date" : null,
+                ].filter(Boolean) as string[];
+                const expired = isCardExpired(employee.cnic_expiry);
+                const dupe = duplicateCnicIds.has(employee.id);
+                if (!incomplete && !expired && !dupe && missingKeyFields.length === 0) return null;
+                const chip = "inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md border";
+                return (
+                  <>
+                    {incomplete && (
+                      <span className={`${chip} text-danger-700 dark:text-danger-500 bg-danger-50 border-danger-200`}>
+                        <AlertCircle className="w-3 h-3" strokeWidth={2} /> Incomplete
+                      </span>
+                    )}
+                    {expired && (
+                      <span className={`${chip} text-warning-700 dark:text-warning-500 bg-warning-50 border-warning-200`}>
+                        <AlertCircle className="w-3 h-3" strokeWidth={2} /> Card expired
+                      </span>
+                    )}
+                    {missingKeyFields.length > 0 && (
+                      <span className={`${chip} text-danger-700 dark:text-danger-500 bg-danger-50 border-danger-200`}>
+                        <AlertCircle className="w-3 h-3" strokeWidth={2} /> No {missingKeyFields.join(" / ")}
+                      </span>
+                    )}
+                    {dupe && (
+                      <span className={`${chip} text-warning-700 dark:text-warning-500 bg-warning-50 border-warning-200`}>
+                        <AlertCircle className="w-3 h-3" strokeWidth={2} /> Duplicate CNIC
+                      </span>
+                    )}
+                  </>
+                );
+              }}
+              actions={(employee) => (
+                <>
+                  <Button variant="ghost" size="sm" onClick={() => openView(employee)}>View</Button>
+                  <Button variant="ghost" size="sm" onClick={() => openEdit(employee)}>Edit</Button>
+                  {isFired(employee) && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={employee.eligible_for_rehire === false}
+                      onClick={() => setRehireTarget(employee)}
+                    >
+                      Rehire
+                    </Button>
+                  )}
+                </>
+              )}
+            />
+
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border bg-slate-50">
+                    <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground border-l-2 border-l-transparent">Employee ID</th>
+                    <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Name</th>
+                    <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Phone</th>
+                    <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Client / Category</th>
+                    <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Physical Copy</th>
+                    <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Status</th>
+                    <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground sticky right-0 z-10 bg-slate-50 border-l border-border">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loading && (
+                    <tr>
+                      <td colSpan={7} className="px-6 py-10 text-center text-slate-500">
+                        <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
+                        Loading…
+                      </td>
+                    </tr>
+                  )}
+                  {!loading && rows.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">
+                        No employees yet. Click "Add Employee" to create one.
+                      </td>
+                    </tr>
+                  )}
+                  {!loading &&
+                    rows.map((employee) => {
+                      // Completeness is the required-field set (see
+                      // missingRequiredFields) — all present → clean row, any one
+                      // missing → red row + Incomplete badge naming what's short.
+                      const missingRequired = missingRequiredFields(employee);
+                      const incomplete = missingRequired.length > 0;
+                      // CNIC and Join Date are mandatory on the form now, so any
+                      // record still missing them predates the rule and needs
+                      // fixing — attendance and payroll both depend on them.
+                      const missingKeyFields = [
+                        !employee.cnic_number?.trim() ? "CNIC" : null,
+                        !employee.join_date ? "Join Date" : null,
+                      ].filter(Boolean) as string[];
+                      return (
+                      <tr
+                        key={employee.id}
+                        className="group border-b border-border transition-colors hover:bg-accent"
+                        title={incomplete ? `Incomplete profile — missing ${missingRequired.join(", ")}` : "Complete profile"}
+                      >
+                        <td className={`px-6 py-3.5 text-sm font-mono border-l-2 ${incomplete ? "border-l-danger-500" : "border-l-transparent"}`}>
+                          <span className={incomplete ? "text-danger-600 dark:text-danger-500" : "text-foreground"}>{displayCodeFor(employee)}</span>
+                          <span className="block text-[11px] text-muted-foreground">{employee.guard_code ?? employee.employee_code}</span>
+                        </td>
+                        <td className="px-6 py-3.5 text-sm text-foreground">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{employee.full_name}</span>
+                            {incomplete && (
+                              <span
+                                className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-danger-700 dark:text-danger-500 bg-danger-50 border border-danger-200 px-1.5 py-0.5 rounded-md"
+                                title={`Missing ${missingRequired.join(", ")}`}
+                              >
+                                <AlertCircle className="w-3 h-3" strokeWidth={2} />
+                                Incomplete
+                              </span>
+                            )}
+                            {isCardExpired(employee.cnic_expiry) && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-warning-700 dark:text-warning-500 bg-warning-50 border border-warning-200 px-1.5 py-0.5 rounded-md" title="CNIC card expired">
+                                <AlertCircle className="w-3 h-3" strokeWidth={2} />
+                                Card expired
+                              </span>
+                            )}
+                            {missingKeyFields.length > 0 && (
+                              <span
+                                className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-danger-700 dark:text-danger-500 bg-danger-50 border border-danger-200 px-1.5 py-0.5 rounded-md"
+                                title={`Missing ${missingKeyFields.join(" and ")} — required. Attendance can't be gated and payroll can't be trusted without ${missingKeyFields.length > 1 ? "them" : "it"}.`}
+                              >
+                                <AlertCircle className="w-3 h-3" strokeWidth={2} />
+                                No {missingKeyFields.join(" / ")}
+                              </span>
+                            )}
+                            {duplicateCnicIds.has(employee.id) && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-warning-700 dark:text-warning-500 bg-warning-50 border border-warning-200 px-1.5 py-0.5 rounded-md" title="Another employee record shares this CNIC — review and resolve manually">
+                                <AlertCircle className="w-3 h-3" strokeWidth={2} />
+                                Duplicate CNIC
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-3.5 text-sm text-muted-foreground tabular-nums">{employee.phone ?? "—"}</td>
+                        <td className="px-6 py-3.5 text-sm text-muted-foreground">
+                          {(employee.category ?? "client") === "client" ? (
+                            employee.client_name ?? "—"
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs bg-secondary text-secondary-foreground border border-border capitalize">
+                              {(employee.category ?? "client").replace("_", " ")}
+                            </span>
+                          )}
+                        </td>
+                        {/* Whether the signed paper file is physically on hand.
+                            Tracked on its own now: it is about the folder in the
+                            cabinet, not about whether the record's fields are
+                            filled in (that is the Incomplete badge). */}
+                        <td className="px-6 py-3.5">
+                          {employee.physical_copy_present ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium border bg-success-50 text-success-700 dark:text-success-500 border-success-200">
+                              <Check className="w-3 h-3" strokeWidth={2} /> Present
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium border bg-secondary text-muted-foreground border-border">
+                              <X className="w-3 h-3" strokeWidth={2} /> Not on file
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-6 py-3.5">
+                          {/* Plain status label — separation/rehire are explicit
+                              actions in the row, not a click on this badge. */}
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium border ${
+                              isFired(employee)
+                                ? "bg-danger-50 text-danger-700 dark:text-danger-500 border-danger-200"
+                                : employee.status === "Active"
+                                ? "bg-success-50 text-success-700 dark:text-success-500 border-success-200"
+                                : employee.status === "On Leave"
+                                ? "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200"
+                                : "bg-secondary text-muted-foreground border-border"
+                            }`}
+                          >
+                            <span className={`w-1.5 h-1.5 rounded-full ${isFired(employee) ? "bg-danger-500" : employee.status === "Active" ? "bg-success-500" : employee.status === "On Leave" ? "bg-warning-500" : "bg-slate-400"}`} />
+                            {lifecycleStatusLabel(employee)}
+                          </span>
+                        </td>
+                        {/* Sticky column: the background MUST be fully opaque in
+                            every state — a translucent tint (bg-accent/50) lets the
+                            columns underneath show through while scrolling sideways. */}
+                        <td className="px-6 py-3.5 sticky right-0 z-10 border-l border-border bg-card group-hover:bg-accent transition-colors">
+                          <div className="flex gap-1">
+                            <Button variant="ghost" size="sm" onClick={() => openView(employee)}>
+                              View
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => openEdit(employee)}>
+                              Edit
+                            </Button>
+                            {isFired(employee) && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={employee.eligible_for_rehire === false}
+                                title={employee.eligible_for_rehire === false ? "Not eligible for rehire" : ""}
+                                onClick={() => setRehireTarget(employee)}
+                              >
+                                Rehire
+                              </Button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+    </>
+  );
+
+
   return (
     <>
       <Header
@@ -2033,9 +2230,9 @@ export default function EmployeeManagement() {
                 value={empTab}
                 onChange={setEmpTab}
                 items={[
-                  { value: "all", label: "All" },
                   { value: "active", label: "Active" },
-                  { value: "inactive", label: "Fired" },
+                  { value: "waitlist", label: "Waiting List" },
+                  { value: "terminated", label: "Terminated" },
                 ]}
               />
             </div>
@@ -2120,294 +2317,32 @@ export default function EmployeeManagement() {
             )}
           </div>
 
-          {/* Phone: one card per employee. A six-column table with a sticky
-              action column does not survive 390 logical pixels, and
-              side-scrolling it means hunting for a column while losing track of
-              which row you are on. A supervisor at a site is looking up ONE
-              guard, so the row is the unit. */}
-          <MobileCardList
-            rows={loading ? [] : sorted}
-            loading={loading}
-            empty='No employees yet. Tap "Add Employee" to create one.'
-            rowKey={(employee) => employee.id}
-            accent={(employee) =>
-              employee.physical_copy_present ? undefined : "border-l-danger-500"
-            }
-            title={(employee) => employee.full_name}
-            subtitle={(employee) => displayCodeFor(employee)}
-            badge={(employee) => (
-              <span
-                className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium border ${
-                  isFired(employee)
-                    ? "bg-danger-50 text-danger-700 dark:text-danger-500 border-danger-200"
-                    : employee.status === "Active"
-                      ? "bg-success-50 text-success-700 dark:text-success-500 border-success-200"
-                      : employee.status === "On Leave"
-                        ? "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200"
-                        : "bg-secondary text-muted-foreground border-border"
-                }`}
-              >
-                {lifecycleStatusLabel(employee)}
-              </span>
-            )}
-            fields={[
-              {
-                label: "Phone",
-                // A tel: link — the point of having this on a phone is being
-                // able to call the man without copying the number out.
-                value: (employee) =>
-                  employee.phone ? (
-                    <a href={`tel:${employee.phone}`} className="text-brand-700 dark:text-brand-500 tabular-nums">
-                      {employee.phone}
-                    </a>
-                  ) : (
-                    "—"
-                  ),
-              },
-              {
-                label: "Client / Category",
-                value: (employee) =>
-                  (employee.category ?? "client") === "client"
-                    ? employee.client_name ?? "—"
-                    : (employee.category ?? "client").replace("_", " "),
-              },
-            ]}
-            tags={(employee) => {
-              const incomplete = missingRequiredFields(employee).length > 0;
-              const missingKeyFields = [
-                !employee.cnic_number?.trim() ? "CNIC" : null,
-                !employee.join_date ? "Join Date" : null,
-              ].filter(Boolean) as string[];
-              const expired = isCardExpired(employee.cnic_expiry);
-              const dupe = duplicateCnicIds.has(employee.id);
-              if (!incomplete && !expired && !dupe && missingKeyFields.length === 0) return null;
-              const chip = "inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md border";
-              return (
-                <>
-                  {incomplete && (
-                    <span className={`${chip} text-danger-700 dark:text-danger-500 bg-danger-50 border-danger-200`}>
-                      <AlertCircle className="w-3 h-3" strokeWidth={2} /> Incomplete
-                    </span>
-                  )}
-                  {expired && (
-                    <span className={`${chip} text-warning-700 dark:text-warning-500 bg-warning-50 border-warning-200`}>
-                      <AlertCircle className="w-3 h-3" strokeWidth={2} /> Card expired
-                    </span>
-                  )}
-                  {missingKeyFields.length > 0 && (
-                    <span className={`${chip} text-danger-700 dark:text-danger-500 bg-danger-50 border-danger-200`}>
-                      <AlertCircle className="w-3 h-3" strokeWidth={2} /> No {missingKeyFields.join(" / ")}
-                    </span>
-                  )}
-                  {dupe && (
-                    <span className={`${chip} text-warning-700 dark:text-warning-500 bg-warning-50 border-warning-200`}>
-                      <AlertCircle className="w-3 h-3" strokeWidth={2} /> Duplicate CNIC
-                    </span>
-                  )}
-                </>
-              );
-            }}
-            actions={(employee) => (
-              <>
-                <Button variant="ghost" size="sm" onClick={() => openView(employee)}>View</Button>
-                <Button variant="ghost" size="sm" onClick={() => openEdit(employee)}>Edit</Button>
-                {["active", "on_leave"].includes(employee.lifecycle_state) && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-danger-600 hover:text-danger-700"
-                    disabled={statusTogglingId === employee.id}
-                    onClick={() => requestStatusToggle(employee)}
-                  >
-                    Fire
-                  </Button>
-                )}
-                {isFired(employee) && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={employee.eligible_for_rehire === false}
-                    onClick={() => setRehireTarget(employee)}
-                  >
-                    Rehire
-                  </Button>
-                )}
-              </>
-            )}
-          />
+          {/* The Waiting List is two populations that happen to share a tab:
+              people the company has employed before and would take back, and
+              people it has never employed. They are ranked and approached
+              differently, so they are shown as separate sections rather than
+              one merged list. */}
+          {empTab === "waitlist" ? (
+            <>
+              <div className="px-3 pt-4 md:px-6">
+                <h3 className="text-sm font-semibold text-foreground">Eligible for rehire</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Previously employed — resigned or separated on terms that allow a return.
+                </p>
+              </div>
+              {renderEmployeeList(sorted.filter(isRehireCandidate))}
+              <div className="px-3 pt-6 md:px-6 border-t border-border mt-4">
+                <h3 className="text-sm font-semibold text-foreground mt-4">Eligible for hire</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Applicants and waiting-list entries who have never been posted.
+                </p>
+              </div>
+              {renderEmployeeList(sorted.filter((e) => !isRehireCandidate(e)))}
+            </>
+          ) : (
+            renderEmployeeList(sorted)
+          )}
 
-          <div className="hidden md:block overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-border bg-slate-50">
-                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground border-l-2 border-l-transparent">Employee ID</th>
-                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Name</th>
-                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Phone</th>
-                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Client / Category</th>
-                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Physical Copy</th>
-                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Status</th>
-                  <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground sticky right-0 z-10 bg-slate-50 border-l border-border">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading && (
-                  <tr>
-                    <td colSpan={7} className="px-6 py-10 text-center text-slate-500">
-                      <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
-                      Loading…
-                    </td>
-                  </tr>
-                )}
-                {!loading && filtered.length === 0 && (
-                  <tr>
-                    <td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">
-                      No employees yet. Click "Add Employee" to create one.
-                    </td>
-                  </tr>
-                )}
-                {!loading &&
-                  sorted.map((employee) => {
-                    // Completeness is the required-field set (see
-                    // missingRequiredFields) — all present → clean row, any one
-                    // missing → red row + Incomplete badge naming what's short.
-                    const missingRequired = missingRequiredFields(employee);
-                    const incomplete = missingRequired.length > 0;
-                    // CNIC and Join Date are mandatory on the form now, so any
-                    // record still missing them predates the rule and needs
-                    // fixing — attendance and payroll both depend on them.
-                    const missingKeyFields = [
-                      !employee.cnic_number?.trim() ? "CNIC" : null,
-                      !employee.join_date ? "Join Date" : null,
-                    ].filter(Boolean) as string[];
-                    return (
-                    <tr
-                      key={employee.id}
-                      className="group border-b border-border transition-colors hover:bg-accent"
-                      title={incomplete ? `Incomplete profile — missing ${missingRequired.join(", ")}` : "Complete profile"}
-                    >
-                      <td className={`px-6 py-3.5 text-sm font-mono border-l-2 ${incomplete ? "border-l-danger-500" : "border-l-transparent"}`}>
-                        <span className={incomplete ? "text-danger-600 dark:text-danger-500" : "text-foreground"}>{displayCodeFor(employee)}</span>
-                        <span className="block text-[11px] text-muted-foreground">{employee.guard_code ?? employee.employee_code}</span>
-                      </td>
-                      <td className="px-6 py-3.5 text-sm text-foreground">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">{employee.full_name}</span>
-                          {incomplete && (
-                            <span
-                              className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-danger-700 dark:text-danger-500 bg-danger-50 border border-danger-200 px-1.5 py-0.5 rounded-md"
-                              title={`Missing ${missingRequired.join(", ")}`}
-                            >
-                              <AlertCircle className="w-3 h-3" strokeWidth={2} />
-                              Incomplete
-                            </span>
-                          )}
-                          {isCardExpired(employee.cnic_expiry) && (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-warning-700 dark:text-warning-500 bg-warning-50 border border-warning-200 px-1.5 py-0.5 rounded-md" title="CNIC card expired">
-                              <AlertCircle className="w-3 h-3" strokeWidth={2} />
-                              Card expired
-                            </span>
-                          )}
-                          {missingKeyFields.length > 0 && (
-                            <span
-                              className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-danger-700 dark:text-danger-500 bg-danger-50 border border-danger-200 px-1.5 py-0.5 rounded-md"
-                              title={`Missing ${missingKeyFields.join(" and ")} — required. Attendance can't be gated and payroll can't be trusted without ${missingKeyFields.length > 1 ? "them" : "it"}.`}
-                            >
-                              <AlertCircle className="w-3 h-3" strokeWidth={2} />
-                              No {missingKeyFields.join(" / ")}
-                            </span>
-                          )}
-                          {duplicateCnicIds.has(employee.id) && (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-warning-700 dark:text-warning-500 bg-warning-50 border border-warning-200 px-1.5 py-0.5 rounded-md" title="Another employee record shares this CNIC — review and resolve manually">
-                              <AlertCircle className="w-3 h-3" strokeWidth={2} />
-                              Duplicate CNIC
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-3.5 text-sm text-muted-foreground tabular-nums">{employee.phone ?? "—"}</td>
-                      <td className="px-6 py-3.5 text-sm text-muted-foreground">
-                        {(employee.category ?? "client") === "client" ? (
-                          employee.client_name ?? "—"
-                        ) : (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs bg-secondary text-secondary-foreground border border-border capitalize">
-                            {(employee.category ?? "client").replace("_", " ")}
-                          </span>
-                        )}
-                      </td>
-                      {/* Whether the signed paper file is physically on hand.
-                          Tracked on its own now: it is about the folder in the
-                          cabinet, not about whether the record's fields are
-                          filled in (that is the Incomplete badge). */}
-                      <td className="px-6 py-3.5">
-                        {employee.physical_copy_present ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium border bg-success-50 text-success-700 dark:text-success-500 border-success-200">
-                            <Check className="w-3 h-3" strokeWidth={2} /> Present
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium border bg-secondary text-muted-foreground border-border">
-                            <X className="w-3 h-3" strokeWidth={2} /> Not on file
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-6 py-3.5">
-                        {/* Plain status label — separation/rehire are explicit
-                            actions in the row, not a click on this badge. */}
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium border ${
-                            isFired(employee)
-                              ? "bg-danger-50 text-danger-700 dark:text-danger-500 border-danger-200"
-                              : employee.status === "Active"
-                              ? "bg-success-50 text-success-700 dark:text-success-500 border-success-200"
-                              : employee.status === "On Leave"
-                              ? "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200"
-                              : "bg-secondary text-muted-foreground border-border"
-                          }`}
-                        >
-                          <span className={`w-1.5 h-1.5 rounded-full ${isFired(employee) ? "bg-danger-500" : employee.status === "Active" ? "bg-success-500" : employee.status === "On Leave" ? "bg-warning-500" : "bg-slate-400"}`} />
-                          {lifecycleStatusLabel(employee)}
-                        </span>
-                      </td>
-                      {/* Sticky column: the background MUST be fully opaque in
-                          every state — a translucent tint (bg-accent/50) lets the
-                          columns underneath show through while scrolling sideways. */}
-                      <td className="px-6 py-3.5 sticky right-0 z-10 border-l border-border bg-card group-hover:bg-accent transition-colors">
-                        <div className="flex gap-1">
-                          <Button variant="ghost" size="sm" onClick={() => openView(employee)}>
-                            View
-                          </Button>
-                          <Button variant="ghost" size="sm" onClick={() => openEdit(employee)}>
-                            Edit
-                          </Button>
-                          {["active", "on_leave"].includes(employee.lifecycle_state) && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-danger-600 hover:text-danger-700"
-                              disabled={statusTogglingId === employee.id}
-                              onClick={() => requestStatusToggle(employee)}
-                            >
-                              Fire
-                            </Button>
-                          )}
-                          {isFired(employee) && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled={employee.eligible_for_rehire === false}
-                              title={employee.eligible_for_rehire === false ? "Not eligible for rehire" : ""}
-                              onClick={() => setRehireTarget(employee)}
-                            >
-                              Rehire
-                            </Button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                    );
-                  })}
-              </tbody>
-            </table>
-          </div>
         </div>
       </div>
 
@@ -2867,7 +2802,14 @@ export default function EmployeeManagement() {
                 >
                   Open attendance timesheet (corrections) →
                 </a>
-                <ServiceHistoryTab employeeId={selectedEmployee.id} />
+                <div className="pt-2">
+                  <h4 className="text-sm text-slate-900 mb-3">Shift changes</h4>
+                  <ShiftChangeHistory employeeId={selectedEmployee.id} />
+                </div>
+                <div className="pt-4 border-t border-slate-200">
+                  <h4 className="text-sm text-slate-900 mb-3">Payroll disbursements</h4>
+                  <PayrollDisbursementHistory employeeId={selectedEmployee.id} />
+                </div>
               </div>
             )}
           </div>
@@ -3239,147 +3181,6 @@ export default function EmployeeManagement() {
           </form>
         )}
       </Modal>
-      {/* Separation modal — type + effective date + outstanding dues + reason. */}
-      <Modal
-        isOpen={fireTarget !== null}
-        error={error}
-        onDismissError={() => setError(null)}
-        onClose={() => setFireTarget(null)}
-        title="Fire / Resign guard"
-        size="sm"
-      >
-        {fireTarget && (
-          <div className="space-y-4">
-            <p className="text-sm text-slate-600">
-              Separating{" "}
-              <span className="text-slate-900 font-medium">{fireTarget.full_name}</span>{" "}
-              ({fireTarget.employee_code}). Removes them from the roster from the day
-              after the last working day; prior attendance stays intact.
-            </p>
-
-            {/* Separation type — both remove from the roster identically; they
-                differ only in recorded reason + default rehire eligibility. */}
-            <div>
-              <span className="block text-sm text-slate-700 mb-1">Separation type</span>
-              <div className="flex gap-2">
-                {([["firing", "Firing"], ["resignation", "Resignation"]] as const).map(([val, label]) => (
-                  <button
-                    key={val}
-                    type="button"
-                    onClick={() => { setFireType(val); setFireEligible(val === "resignation"); }}
-                    className={`flex-1 px-3 py-2 rounded-md text-sm border transition-colors ${fireType === val ? "bg-brand-500 text-brand-950 border-brand-500 font-medium" : "border-border text-muted-foreground hover:bg-accent"}`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Effective date — Today or a picker. */}
-            <div>
-              <label className="block text-sm text-slate-700 mb-1">Effective (last working) date *</label>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setFireDate(todayIso())}
-                  className={`px-3 py-2 rounded-md text-sm border ${fireDate === todayIso() ? "bg-slate-100 border-slate-300 text-slate-900" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}
-                >
-                  Today
-                </button>
-                <input
-                  type="date"
-                  value={fireDate}
-                  onChange={(e) => setFireDate(e.target.value)}
-                  className="flex-1 px-3 py-2 border border-slate-200 rounded-md text-sm"
-                />
-              </div>
-            </div>
-
-            {/* Outstanding dues — only shown when there is something outstanding. */}
-            {fireGatesLoading ? (
-              <div className="flex items-center gap-2 text-sm text-slate-500">
-                <Loader2 className="w-4 h-4 animate-spin" /> Checking outstanding dues…
-              </div>
-            ) : fireGates && (
-              fireGates.undisbursed_salary > 0 ||
-              fireGates.outstanding_advance > 0 ||
-              fireGates.outstanding_kit_count > 0 ||
-              fireGates.open_incident_count > 0
-            ) ? (
-              <div className="rounded-md border border-warning-200 bg-warning-50 p-3 space-y-1.5">
-                <p className="text-xs font-semibold uppercase tracking-wide text-warning-800">
-                  Outstanding before exit
-                </p>
-                <ul className="text-sm text-warning-900 space-y-1">
-                  {fireGates.undisbursed_salary > 0 && (
-                    <li className="flex justify-between gap-4">
-                      <span>Salary not yet disbursed</span>
-                      <span className="font-medium tabular-nums">{fireGates.undisbursed_salary.toLocaleString()}</span>
-                    </li>
-                  )}
-                  {fireGates.outstanding_advance > 0 && (
-                    <li className="flex justify-between gap-4">
-                      <span>Advance outstanding</span>
-                      <span className="font-medium tabular-nums">{fireGates.outstanding_advance.toLocaleString()}</span>
-                    </li>
-                  )}
-                  {fireGates.outstanding_kit_count > 0 && (
-                    <li className="flex justify-between gap-4">
-                      <span>Equipment / kit not returned</span>
-                      <span className="font-medium tabular-nums">{fireGates.outstanding_kit_count} item{fireGates.outstanding_kit_count === 1 ? "" : "s"}</span>
-                    </li>
-                  )}
-                  {fireGates.open_incident_count > 0 && (
-                    <li className="flex justify-between gap-4">
-                      <span>Open incidents</span>
-                      <span className="font-medium tabular-nums">{fireGates.open_incident_count}</span>
-                    </li>
-                  )}
-                </ul>
-                <p className="text-xs text-warning-700 pt-1">
-                  These are recorded on the exit clearance; final dues can only be released once settled.
-                </p>
-              </div>
-            ) : fireGates ? (
-              <p className="text-sm text-success-700">No outstanding dues, kit, or open incidents.</p>
-            ) : null}
-
-            <div>
-              <label className="block text-sm text-slate-700 mb-1">
-                {fireType === "resignation" ? "Resignation note *" : "Reason for firing *"}
-              </label>
-              <textarea
-                value={fireReason}
-                onChange={(e) => setFireReason(e.target.value)}
-                rows={2}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                placeholder={fireType === "resignation" ? "e.g. Resigned for personal reasons…" : "e.g. Repeated no-shows, misconduct…"}
-              />
-            </div>
-            <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input type="checkbox" checked={fireEligible} onChange={(e) => setFireEligible(e.target.checked)} />
-              <span>Eligible for rehire</span>
-            </label>
-
-            {fireError && <p className="text-xs text-danger-600">{fireError}</p>}
-
-            <div className="flex items-center gap-3 pt-2">
-              <Button
-                variant="danger"
-                size="md"
-                className="flex-1"
-                disabled={fireSubmitting || fireGatesLoading}
-                onClick={confirmFire}
-              >
-                {fireSubmitting ? "Saving…" : fireType === "resignation" ? "Confirm Resignation" : "Confirm Fire"}
-              </Button>
-              <Button variant="secondary" size="md" onClick={() => setFireTarget(null)}>
-                Cancel
-              </Button>
-            </div>
-          </div>
-        )}
-      </Modal>
     </>
   );
 }
@@ -3671,41 +3472,154 @@ const REFERENCE_SLOTS: { type: ReferenceType; label: string }[] = [
   { type: "blood_relation", label: "Reference 2 — Blood Relation" },
 ];
 
-// Phase 3F: History tab — the unified service-log timeline (lifecycle, approvals,
-// postings, warnings, incidents, training) from the employee_service_history view.
-function ServiceHistoryTab({ employeeId }: { employeeId: string }) {
-  const [rows, setRows] = useState<
-    { kind: string; title: string; detail: string | null; event_at: string }[]
-  >([]);
+// ── Employee history ────────────────────────────────────────────────────────
+// Two things the office is actually asked to produce for a guard: what shifts
+// they have worked and when, and what they have been paid out. Both are read
+// from the records that already drive them — the dated deployment segments and
+// the payslips — rather than from a separate narrative log, so neither can
+// drift from what attendance and payroll actually did.
+
+const SHIFT_REASON_LABEL: Record<string, string> = {
+  new_hire: "New hire",
+  relief_cover: "Relief cover",
+  return_to_pool: "Returned to pool",
+  separation: "Separation",
+  shift_change: "Shift change",
+};
+
+/**
+ * Shift history from the dated posting segments. A shift change closes one
+ * segment and opens another (change_guard_shift, 0130), so the segment list IS
+ * the history — each row is "this shift, at this client, over these dates".
+ */
+function ShiftChangeHistory({ employeeId }: { employeeId: string }) {
+  type Seg = {
+    id: string;
+    start_date: string;
+    end_date: string | null;
+    reason: string;
+    shift_code: string | null;
+    client: { name: string } | null;
+    site: { name: string } | null;
+  };
+  const [rows, setRows] = useState<Seg[]>([]);
   const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+
   useEffect(() => {
     let alive = true;
+    setLoading(true);
     supabase
-      .from("employee_service_history")
-      .select("*")
-      .eq("employee_id", employeeId)
-      .order("event_at", { ascending: false })
-      .then(({ data }) => {
+      .from("deployments")
+      .select("id, start_date, end_date, reason, shift_code, client:client_id(name), site:site_id(name)")
+      .eq("guard_id", employeeId)
+      .order("start_date", { ascending: false })
+      .then(({ data, error }) => {
         if (!alive) return;
-        setRows((data ?? []) as typeof rows);
+        if (error) setErr(error.message);
+        else setRows((data ?? []) as unknown as Seg[]);
         setLoading(false);
       });
     return () => { alive = false; };
   }, [employeeId]);
+
   if (loading) return <p className="text-sm text-slate-500">Loading…</p>;
-  if (rows.length === 0) return <p className="text-sm text-slate-500">No history yet.</p>;
+  if (err) return <p className="text-sm text-danger-600">{err}</p>;
+  if (rows.length === 0) return <p className="text-sm text-slate-500">No postings recorded yet.</p>;
+
   return (
     <div className="space-y-2">
-      {rows.map((r, i) => (
-        <div key={i} className="flex gap-3 text-sm border-b border-slate-100 pb-2 last:border-0">
-          <span className="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600 capitalize h-fit whitespace-nowrap">{r.kind}</span>
+      {rows.map((r) => (
+        <div key={r.id} className="flex gap-3 text-sm border-b border-slate-100 pb-2 last:border-0">
+          <span className="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600 capitalize h-fit whitespace-nowrap">
+            {r.shift_code ?? "—"}
+          </span>
           <div className="min-w-0 flex-1">
-            <p className="text-slate-900">{r.title}</p>
-            {r.detail && <p className="text-xs text-slate-500">{r.detail}</p>}
-            <p className="text-[11px] text-slate-400">{new Date(r.event_at).toLocaleDateString()}</p>
+            <p className="text-slate-900">
+              {r.client?.name ?? "—"}
+              {r.site?.name && <span className="text-slate-500"> · {r.site.name}</span>}
+            </p>
+            <p className="text-xs text-slate-500">
+              {SHIFT_REASON_LABEL[r.reason] ?? r.reason}
+            </p>
+            {/* An open segment (no end_date) is the posting they are on today. */}
+            <p className="text-[11px] text-slate-400">
+              {fmtDate(r.start_date)} → {r.end_date ? fmtDate(r.end_date) : "current"}
+            </p>
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+/**
+ * Payroll disbursement history. Lists the payslips that have actually moved
+ * money — amount_paid is cumulative cash handed over (0189), so a slip part-paid
+ * shows its outstanding balance rather than reading as settled.
+ */
+function PayrollDisbursementHistory({ employeeId }: { employeeId: string }) {
+  type Slip = {
+    id: string;
+    period_month: string;
+    net_salary: number;
+    amount_paid: number;
+    payment_mode: PaymentMode;
+    disbursed: boolean;
+    disbursed_at: string | null;
+  };
+  const [rows, setRows] = useState<Slip[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    supabase
+      .from("payslips")
+      .select("id, period_month, net_salary, amount_paid, payment_mode, disbursed, disbursed_at")
+      .eq("employee_id", employeeId)
+      .gt("amount_paid", 0)
+      .order("period_month", { ascending: false })
+      .then(({ data, error }) => {
+        if (!alive) return;
+        if (error) setErr(error.message);
+        else setRows((data ?? []) as Slip[]);
+        setLoading(false);
+      });
+    return () => { alive = false; };
+  }, [employeeId]);
+
+  const money = (n: number) => `PKR ${Number(n).toLocaleString()}`;
+
+  if (loading) return <p className="text-sm text-slate-500">Loading…</p>;
+  if (err) return <p className="text-sm text-danger-600">{err}</p>;
+  if (rows.length === 0) return <p className="text-sm text-slate-500">Nothing disbursed yet.</p>;
+
+  return (
+    <div className="space-y-2">
+      {rows.map((r) => {
+        const balance = Number(r.net_salary) - Number(r.amount_paid);
+        return (
+          <div key={r.id} className="flex gap-3 text-sm border-b border-slate-100 pb-2 last:border-0">
+            <span className="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600 h-fit whitespace-nowrap">
+              {r.payment_mode}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-slate-900">
+                {formatDate(r.period_month)} — {money(r.amount_paid)}
+                {balance > 0 && (
+                  <span className="text-danger-600"> · {money(balance)} outstanding</span>
+                )}
+              </p>
+              <p className="text-xs text-slate-500">Net {money(r.net_salary)}</p>
+              <p className="text-[11px] text-slate-400">
+                {r.disbursed_at ? new Date(r.disbursed_at).toLocaleDateString() : "Date not recorded"}
+              </p>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -33,11 +33,13 @@ import {
   MapPin,
   AlertTriangle,
   SlidersHorizontal,
+  UserMinus,
 } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import MobileCardList from "../../components/MobileCardList";
+import FireGuardModal from "../../components/FireGuardModal";
 import ThemedSelect from "../../components/ThemedSelect";
 import ExportButton from "../../components/ExportButton";
 import { exportTable } from "../../lib/excel";
@@ -265,9 +267,18 @@ export default function EmployeeAssignments() {
   const [rowTarget, setRowTarget] = useState<EmployeeRow | null>(null);
   const [assignTo, setAssignTo] = useState<AssignTarget | null>(null);
   const [transferTarget, setTransferTarget] = useState<EmployeeRow | null>(null);
+  // Fire / Resign, moved here from Employee Management. Two steps: pick which of
+  // the group's posted guards is leaving, then the separation form itself.
+  const [firePickFrom, setFirePickFrom] = useState<{ label: string; rows: EmployeeRow[] } | null>(null);
+  const [fireTarget, setFireTarget] = useState<EmployeeRow | null>(null);
   const [changeClientTarget, setChangeClientTarget] = useState<EmployeeRow | null>(null);
   const [changeCategoryTarget, setChangeCategoryTarget] = useState<EmployeeRow | null>(null);
   const [changeShiftTarget, setChangeShiftTarget] = useState<EmployeeRow | null>(null);
+
+  // Only a guard who is actually on the books can be separated — an applicant or
+  // an already-separated record has no posting to close.
+  const firableIn = (rows: EmployeeRow[]): EmployeeRow[] =>
+    rows.filter((e) => e.lifecycle_state === "active" || e.lifecycle_state === "on_leave");
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -1226,6 +1237,23 @@ export default function EmployeeAssignments() {
                       posts of one site's contract lines. Only a group with no
                       site level (a siteless client, Office Staff, Relievers)
                       keeps them up here, where the group IS the whole target. */}
+                  {/* Fire / Resign sits immediately left of Assign employees:
+                      the two ends of a posting, in one place. It targets one
+                      guard, so it opens a picker over this group's roster
+                      first. */}
+                  {canEdit && !g.siteBuckets && (g.clientId || g.categoryKey) && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="text-danger-600 hover:text-danger-700"
+                      disabled={firableIn(g.rows).length === 0}
+                      title={firableIn(g.rows).length === 0 ? "Nobody here can be separated" : undefined}
+                      onClick={() => setFirePickFrom({ label: g.label, rows: firableIn(g.rows) })}
+                    >
+                      <UserMinus className="w-4 h-4 mr-1.5" strokeWidth={1.75} />
+                      Fire / Resign
+                    </Button>
+                  )}
                   {canEdit && !g.siteBuckets && (g.clientId || g.categoryKey) && (
                     <Button
                       variant="secondary"
@@ -1485,6 +1513,52 @@ export default function EmployeeAssignments() {
           onChangeCategory={() => { const t = rowTarget; setRowTarget(null); setChangeCategoryTarget(t); }}
           onChangeShift={() => { const t = rowTarget; setRowTarget(null); setChangeShiftTarget(t); }}
           onError={setError}
+        />
+      )}
+
+      {/* Step 1 — which guard is leaving. Scoped to the group the button was on,
+          so the list is short and the wrong client's people can't be picked. */}
+      {firePickFrom && (
+        <Modal
+          isOpen
+          onClose={() => setFirePickFrom(null)}
+          title={`Fire / Resign — ${firePickFrom.label}`}
+          size="sm"
+        >
+          <div className="space-y-2">
+            <p className="text-sm text-slate-600">Select the guard being separated.</p>
+            <div className="max-h-80 overflow-y-auto divide-y divide-border border border-border rounded-md">
+              {firePickFrom.rows.map((e) => (
+                <button
+                  key={e.id}
+                  type="button"
+                  className="w-full text-left px-3 py-2.5 hover:bg-accent transition-colors"
+                  onClick={() => { setFireTarget(e); setFirePickFrom(null); }}
+                >
+                  <span className="text-sm text-foreground">{e.full_name}</span>
+                  <span className="block text-xs text-muted-foreground font-mono">{displayCodeFor(e)}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Step 2 — the separation form itself. Same rules and logic as before;
+          the component just lives in components/FireGuardModal now. */}
+      {fireTarget && (
+        <FireGuardModal
+          guard={{
+            id: fireTarget.id,
+            full_name: fireTarget.full_name,
+            employee_code: fireTarget.employee_code,
+          }}
+          onClose={() => setFireTarget(null)}
+          onDone={async () => {
+            setFireTarget(null);
+            setNotice("Separation recorded.");
+            await loadData();
+          }}
         />
       )}
 
@@ -2475,7 +2549,11 @@ function AssignEmployeesModal({
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [contractId, setContractId] = useState("");
   const [contractLineId, setContractLineId] = useState("");
-  const [startDate, setStartDate] = useState(todayIso());
+  // This date IS the joining date: it opens the posting and is written to
+  // join_date for anyone who does not already have one. Deliberately NOT
+  // defaulted to today — it is required, and a pre-filled value gets accepted
+  // without being read, which is how people end up joined on the wrong day.
+  const [startDate, setStartDate] = useState("");
   const [shift, setShift] = useState("");
   const [baseSalary, setBaseSalary] = useState("");
   const [allowance, setAllowance] = useState("");
@@ -2506,14 +2584,15 @@ function AssignEmployeesModal({
    * A line the contract commits no headcount to is dropped outright — it bills
    * for something, but it is not a post anybody can stand in.
    */
+  const slotAsOf = startDate || todayIso();
   const offeredLines = useMemo(() => {
     const adds = addendums.filter((a) => a.contract_id === contractId);
     return lines.filter(
       (l) =>
         (!siteId || l.site_id === siteId || l.site_id === null) &&
-        effectiveCommittedForLine(l, adds, startDate) > 0,
+        effectiveCommittedForLine(l, adds, slotAsOf) > 0,
     );
-  }, [lines, siteId, addendums, contractId, startDate]);
+  }, [lines, siteId, addendums, contractId, slotAsOf]);
   // Committed vs already-filled for THIS LINE, as of the posting start date, and
   // the cap that follows. Per line, not per category: on a multi-site contract
   // the category pool spans every site, so posting to Nova Charsadda measured
@@ -2525,11 +2604,11 @@ function AssignEmployeesModal({
       const line = lines.find((l) => l.id === lineId);
       if (!line) return null;
       const adds = addendums.filter((a) => a.contract_id === contractId);
-      const committed = effectiveCommittedForLine(line, adds, startDate);
-      const filled = activeCountByLine(allEmployees, startDate).get(lineId) ?? 0;
+      const committed = effectiveCommittedForLine(line, adds, slotAsOf);
+      const filled = activeCountByLine(allEmployees, slotAsOf).get(lineId) ?? 0;
       return { category: line.category, committed, filled, available: Math.max(0, committed - filled) };
     },
-    [addendums, contractId, lines, startDate, allEmployees],
+    [addendums, contractId, lines, slotAsOf, allEmployees],
   );
 
   const slot = contractLineId ? slotFor(contractLineId) : null;
@@ -2580,7 +2659,7 @@ function AssignEmployeesModal({
   const save = async () => {
     const targets = candidates.filter((e) => picked.has(e.id));
     if (targets.length === 0) { setErr("Pick at least one employee."); return; }
-    if (!startDate) { setErr("Pick a start date."); return; }
+    if (!startDate) { setErr("A joining date is required."); return; }
     if (toClient && clientContracts.length > 0 && !contractId) { setErr("Choose which contract this posting is under."); return; }
     if (toClient && offeredLines.length > 0 && !contractLineId) { setErr("Choose a contract line — it sets the category and its headcount limit."); return; }
     // Re-check against the live figures: the cap also guards the checkboxes, but
@@ -2913,8 +2992,16 @@ function AssignEmployeesModal({
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-muted-foreground mb-1">{toClient ? "Start date" : "Effective date"}</label>
-              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className={inputCls} />
+              <label className="block text-xs text-muted-foreground mb-1">
+                {toClient ? "Joining (start) date" : "Joining (effective) date"} *
+              </label>
+              <input
+                type="date"
+                required
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className={inputCls}
+              />
             </div>
             <div>
               <label className="block text-xs text-muted-foreground mb-1">Shift</label>
