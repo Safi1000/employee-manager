@@ -383,15 +383,19 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
     });
   };
 
-  const gateSelectedDays = async (): Promise<{ days: string[]; overrideSet: Set<string>; overrodeCount: number; blockedCount: number } | null> => {
+  const gateSelectedDays = async (): Promise<{ days: string[]; overrideSet: Set<string>; overrodeCount: number; blockedCount: number; blockedReasons: string[] } | null> => {
     if (!emp) return null;
     const days = [...selected].filter(inWindow);
     const gates = await Promise.all(days.map((d) =>
       supabase.rpc("attendance_gate", { p_guard: emp.id, p_date: d })
-        .then(({ data }) => ({ d, mode: (data as { mode?: string } | null)?.mode ?? "blocked" }))));
+        .then(({ data }) => ({ d, mode: (data as { mode?: string } | null)?.mode ?? "blocked", reason: (data as { reason?: string } | null)?.reason ?? null }))));
     const allowedDays = gates.filter((x) => x.mode === "allowed" || x.mode === "allowed_unposted").map((x) => x.d);
     const overrideDays = gates.filter((x) => x.mode === "override_required").map((x) => x.d);
-    const blockedCount = gates.filter((x) => x.mode === "blocked").length;
+    const blocked = gates.filter((x) => x.mode === "blocked");
+    const blockedCount = blocked.length;
+    // The DISTINCT reasons the gate gave — so the error says WHY (e.g. confirmed
+    // & month ended → override on the Monthly Board) instead of a generic catch-all.
+    const blockedReasons = [...new Set(blocked.map((x) => x.reason).filter(Boolean) as string[])];
     if (overrideDays.length > 0 && !overrideReason.trim()) {
       setBulkError(`${overrideDays.length} of ${days.length} selected day(s) are backdated beyond the limit. Enter a supervisor override reason below to include them, or deselect those days.`);
       return null;
@@ -402,6 +406,7 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
       overrideSet: new Set(overrideDays),
       overrodeCount: useOverride ? overrideDays.length : 0,
       blockedCount,
+      blockedReasons,
     };
   };
 
@@ -414,7 +419,11 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
     if (!gate) { setSubmitting(false); return; }
     if (gate.days.length === 0) {
       setSubmitting(false);
-      setBulkError(`Nothing written — all selected day(s) are blocked (closed payroll period, archived, or out of employment window).`);
+      setBulkError(
+        gate.blockedReasons.length
+          ? `Nothing written — ${gate.blockedReasons.join("; ")}`
+          : `Nothing written — all selected day(s) are blocked (closed payroll period, archived, or out of employment window).`,
+      );
       return;
     }
     // Double duty means two shifts worked in one day — enforce two picks per date.
@@ -477,7 +486,11 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
     if (!gate) { setSubmitting(false); return; }
     if (gate.days.length === 0) {
       setSubmitting(false);
-      setBulkError(`Nothing cleared — selected day(s) are blocked (closed payroll period or out of employment window).`);
+      setBulkError(
+        gate.blockedReasons.length
+          ? `Nothing cleared — ${gate.blockedReasons.join("; ")}`
+          : `Nothing cleared — selected day(s) are blocked (closed payroll period or out of employment window).`,
+      );
       return;
     }
     const { error } = await supabase
