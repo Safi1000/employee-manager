@@ -45,6 +45,7 @@ type ExpenseRow = Expense & {
   client_name: string | null;
   vendor_name: string | null;
   bank_name: string | null;
+  expense_by_name: string | null;
 };
 
 type AdvanceRow = Advance & {
@@ -195,6 +196,7 @@ type ExpenseForm = {
   cheque_id: string;
   due_date: string;
   notes: string;
+  expense_by: string;
   receipts?: File[];
 };
 
@@ -212,6 +214,7 @@ const emptyForm: ExpenseForm = {
   cheque_id: "",
   due_date: "",
   notes: "",
+  expense_by: "",
 };
 
 export default function Expenses() {
@@ -348,7 +351,7 @@ export default function Expenses() {
           withRegion(
             supabase
               .from("expenses")
-              .select("*, category:category_id(name), client:client_id(name), vendor:vendor_id(name), bank:bank_account_id(bank_name)")
+              .select("*, category:category_id(name), client:client_id(name), vendor:vendor_id(name), bank:bank_account_id(bank_name), expense_by_emp:expense_by(full_name)")
               .order("expense_date", { ascending: false })
               .order("created_at", { ascending: false }),
             regionId,
@@ -379,6 +382,7 @@ export default function Expenses() {
         client_name: e.client?.name ?? null,
         vendor_name: e.vendor?.name ?? null,
         bank_name: e.bank?.bank_name ?? null,
+        expense_by_name: e.expense_by_emp?.full_name ?? null,
       }))
     );
     setCategories((catRes.data ?? []) as ExpenseCategory[]);
@@ -453,6 +457,11 @@ export default function Expenses() {
     for (const e of employees) m.set(e.id, e.branch_id ?? null);
     return m;
   }, [employees]);
+  // All office staff — the "Expense By" options (who the expense was incurred by).
+  const officeStaff = useMemo(
+    () => employees.filter((e) => e.category === "office_staff").sort((a, b) => a.full_name.localeCompare(b.full_name)),
+    [employees],
+  );
 
   const filteredAdvances = useMemo(() => {
     const q = advSearch.trim().toLowerCase();
@@ -1126,6 +1135,7 @@ export default function Expenses() {
           due_date: form.payment_mode === "Payable" ? form.due_date : null,
           payable_status: form.payment_mode === "Payable" ? "Pending" : null,
           notes: form.notes.trim() || null,
+          expense_by: form.expense_by || null,
         })
         .select()
         .single();
@@ -1197,6 +1207,7 @@ export default function Expenses() {
       cheque_id: expense.cheque_id ?? "",
       due_date: expense.due_date ?? "",
       notes: expense.notes ?? "",
+      expense_by: expense.expense_by ?? "",
     });
     setReplaceReceipt(false);
     setIsEditOpen(true);
@@ -1381,6 +1392,7 @@ export default function Expenses() {
           paid_bank_account_id: editForm.payment_mode === "Payable" ? selected.paid_bank_account_id : null,
           paid_at: editForm.payment_mode === "Payable" ? selected.paid_at : null,
           notes: editForm.notes.trim() || null,
+          expense_by: editForm.expense_by || null,
           receipt_path: receiptPath,
           drive_file_id: receiptDriveFileId,
           drive_view_url: receiptDriveViewUrl,
@@ -2156,6 +2168,7 @@ export default function Expenses() {
                 label: "Amount",
                 value: (exp) => <span className="tabular-nums">PKR {Number(exp.amount).toLocaleString()}</span>,
               },
+              { label: "Expense By", value: (exp) => exp.expense_by_name ?? "—" },
               { label: "Description", full: true, value: (exp) => exp.description ?? "—" },
             ]}
             actions={(exp) => (
@@ -2183,13 +2196,14 @@ export default function Expenses() {
                   <th className="text-left px-4 py-3 text-xs text-slate-500">Description</th>
                   <th className="text-left px-4 py-3 text-xs text-slate-500">Amount</th>
                   <th className="text-left px-4 py-3 text-xs text-slate-500">Mode</th>
+                  <th className="text-left px-4 py-3 text-xs text-slate-500">Expense By</th>
                   <th className="text-left px-4 py-3 text-xs text-slate-500">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
                 {loading && (
                   <tr>
-                    <td colSpan={7} className="px-6 py-10 text-center text-slate-500">
+                    <td colSpan={8} className="px-6 py-10 text-center text-slate-500">
                       <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
                       Loading…
                     </td>
@@ -2197,7 +2211,7 @@ export default function Expenses() {
                 )}
                 {!loading && filtered.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">
+                    <td colSpan={8} className="px-6 py-10 text-center text-slate-500 text-sm">
                       No expenses yet. Click "Add Expense" to create one.
                     </td>
                   </tr>
@@ -2229,6 +2243,9 @@ export default function Expenses() {
                           {exp.payment_mode}
                           {exp.payment_mode === "Payable" && exp.payable_status ? ` · ${exp.payable_status}` : ""}
                         </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-700">
+                        {exp.expense_by_name ?? <span className="text-slate-400">—</span>}
                       </td>
                       <td className="px-4 py-3 flex gap-1">
                         <Button variant="ghost" size="sm" onClick={() => openView(exp)}>
@@ -3848,6 +3865,21 @@ export default function Expenses() {
               })()}
             </div>
           )}
+          <div className="col-span-2">
+            <label className="block text-sm text-slate-700 mb-1">Expense By (Office Staff)</label>
+            <ThemedSelect
+              value={state.expense_by}
+              onChange={(e) => setState({ ...state, expense_by: e.target.value })}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+            >
+              <option value="">Select who the expense is by…</option>
+              {officeStaff.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.full_name}
+                </option>
+              ))}
+            </ThemedSelect>
+          </div>
           {state.payment_mode === "Bank" && (
             <div className="col-span-2">
               <label className="block text-sm text-slate-700 mb-1">Bank Account *</label>

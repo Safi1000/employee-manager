@@ -2159,6 +2159,7 @@ export type Expense = {
   drive_view_url: string | null;
   receipt_file_name: string | null;
   notes: string | null;
+  expense_by: string | null;
   created_at?: string;
   updated_at?: string;
 };

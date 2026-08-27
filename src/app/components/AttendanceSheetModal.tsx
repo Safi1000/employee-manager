@@ -44,6 +44,9 @@ export default function AttendanceSheetModal({
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [rows, setRows] = useState<AttendanceEmployeeRow[]>([]);
+  // Per-employee `${day}|${shift}` → P/A/L for every visible (confirmed/overridden)
+  // mark, so each shift column renders independently and double duty shows in two.
+  const [cells, setCells] = useState<Map<string, Map<string, string>>>(new Map());
   const [daysInMonth, setDaysInMonth] = useState(30);
   const [monthLabel, setMonthLabel] = useState("");
 
@@ -58,7 +61,7 @@ export default function AttendanceSheetModal({
   const [opsBusy, setOpsBusy] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   // Override modal target: which employee+date cell is being overridden.
-  const [ovTarget, setOvTarget] = useState<{ empId: string; empName: string; date: string; current: string; shift: string } | null>(null);
+  const [ovTarget, setOvTarget] = useState<{ empId: string; empName: string; date: string; current: string; shift: string; presentOnly?: boolean } | null>(null);
 
   const label = siteName ? `${clientName} — ${siteName}` : clientName;
   // Synthetic (non-client) groups from the attendance board carry id 'cat:<category>'
@@ -162,6 +165,7 @@ export default function AttendanceSheetModal({
         });
         if (cancelled) return;
         setRows(built.rows);
+        setCells(built.cellsByEmp);
         setDaysInMonth(built.daysInMonth);
         setMonthLabel(built.monthLabel);
       } catch (e: any) {
@@ -455,22 +459,35 @@ export default function AttendanceSheetModal({
                       // only once the month has ended (and while it isn't yet
                       // OPS-verified). Before month-end the board stays read-only;
                       // editing happens on the Attendance board until it locks.
-                      const canOverride = !!row.empId && monthEnded && !verifiedAt && (st === "P" || st === "A" || st === "L" || st === "DD");
-                      return shifts.map((_c, s) => {
-                        const isStatusCell = s === si;
-                        const overridable = isStatusCell && canOverride;
-                        const cellBg = isStatusCell && flagged ? "bg-danger-100 dark:bg-danger-900/30"
-                          : overridable ? "cursor-pointer hover:bg-accent" : "";
+                      // The guard's own (primary) shift is overridable to any
+                      // status once the day is confirmed, the month has ended, and
+                      // it isn't OPS-verified.
+                      const canOverridePrimary = !!row.empId && monthEnded && !verifiedAt && (st === "P" || st === "A" || st === "L" || st === "DD");
+                      // A SECOND shift = double duty, which only exists when the
+                      // guard is PRESENT that day. If they're absent/leave the other
+                      // shift columns stay inert, and adding one is Present-only.
+                      const canAddSecond = !!row.empId && monthEnded && !verifiedAt && (st === "P" || st === "DD");
+                      return shifts.map((cShift, s) => {
+                        const isPrimary = s === si;
+                        // Primary column = the guard's own status; other columns =
+                        // any second-shift (double-duty) mark from `cells`.
+                        const cellStatus = isPrimary
+                          ? st
+                          : (row.empId ? cells.get(row.empId)?.get(`${i + 1}|${cShift}`) ?? "" : "");
+                        const clickable = isPrimary ? canOverridePrimary : canAddSecond;
+                        const cellBg = isPrimary && flagged ? "bg-danger-100 dark:bg-danger-900/30"
+                          : clickable ? "cursor-pointer hover:bg-accent" : "";
                         return (
                           <td
                             key={`${i}-${s}`}
-                            onClick={overridable ? () => setOvTarget({ empId: row.empId!, empName: row.name, date, current: st, shift: ds }) : undefined}
-                            title={isStatusCell && flagged ? "Not confirmed — confirm this shift on the Attendance board to show it here"
-                              : overridable ? "Confirmed & month ended — click to override"
-                              : undefined}
-                            className={`border border-border px-1 py-0.5 text-center font-medium ${cellBg} ${statusClass(isStatusCell ? st : "")}`}
+                            onClick={clickable ? () => setOvTarget({ empId: row.empId!, empName: row.name, date, current: cellStatus, shift: cShift, presentOnly: !isPrimary }) : undefined}
+                            title={isPrimary && flagged ? "Not confirmed — confirm this shift on the Attendance board to show it here"
+                              : !clickable ? undefined
+                              : isPrimary ? "Confirmed & month ended — click to override"
+                              : cellStatus ? "Double duty — click to edit" : `Click to add a ${cShift} shift (double duty)`}
+                            className={`border border-border px-1 py-0.5 text-center font-medium ${cellBg} ${statusClass(cellStatus)}`}
                           >
-                            {isStatusCell ? st : ""}
+                            {cellStatus}
                           </td>
                         );
                       });
@@ -526,6 +543,7 @@ export default function AttendanceSheetModal({
           currentUserId={currentUserId}
           currentUserRole={currentUserRole}
           locked={!!verifiedAt}
+          presentOnly={!!ovTarget.presentOnly}
           history={overrides.filter((o) => o.employee_id === ovTarget.empId && o.attendance_date === ovTarget.date)}
           onClose={() => setOvTarget(null)}
           onSaved={() => { setOvTarget(null); setReloadKey((k) => k + 1); }}
@@ -548,7 +566,7 @@ const letterToStatus = (l: string) => OV_STATUSES.find((s) => s.letter === l)?.k
 // reason, and it marks the day (attendance_records) + writes a permanent audit
 // row. Prior overrides for this exact employee+date are listed below.
 function OverrideModal({
-  target, clientId, category, currentUserId, currentUserRole, locked, history, onClose, onSaved,
+  target, clientId, category, currentUserId, currentUserRole, locked, presentOnly = false, history, onClose, onSaved,
 }: {
   target: { empId: string; empName: string; date: string; current: string; shift: string };
   clientId: string | null;
@@ -556,12 +574,16 @@ function OverrideModal({
   currentUserId: string | null;
   currentUserRole: string | null;
   locked: boolean;
+  // A second shift can only be a double-duty Present — offer Present alone and
+  // default to it (used when overriding a shift other than the guard's own).
+  presentOnly?: boolean;
   history: OverrideRow[];
   onClose: () => void;
   onSaved: () => void;
 }) {
   const wasUnmarked = target.current === "";
-  const [status, setStatus] = useState<"present" | "absent" | "leave" | null>(letterToStatus(target.current));
+  const statusOptions = presentOnly ? OV_STATUSES.filter((s) => s.key === "present") : OV_STATUSES;
+  const [status, setStatus] = useState<"present" | "absent" | "leave" | null>(presentOnly ? "present" : letterToStatus(target.current));
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -620,9 +642,11 @@ function OverrideModal({
             <p className="text-xs text-danger-600 flex items-center gap-1"><Lock className="w-3.5 h-3.5" /> Month is OPS-verified and locked. Un-verify to edit.</p>
           )}
           <div>
-            <label className="block text-xs text-muted-foreground mb-1">Mark this day as</label>
+            <label className="block text-xs text-muted-foreground mb-1">
+              {presentOnly ? "Double duty — add this shift as" : "Mark this day as"}
+            </label>
             <div className="flex gap-2">
-              {OV_STATUSES.map((s) => (
+              {statusOptions.map((s) => (
                 <button
                   key={s.key} type="button" disabled={locked}
                   onClick={() => setStatus(s.key)}

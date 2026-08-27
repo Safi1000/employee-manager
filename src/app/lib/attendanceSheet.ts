@@ -55,7 +55,7 @@ export async function buildAttendanceRows(opts: {
   // attendance — an unconfirmed mark (bulk-marked, reported, awaiting) renders
   // as blank, exactly as if it were never entered.
   confirmedOnly?: (empId: string, iso: string, workedShift: string) => boolean;
-}): Promise<{ rows: AttendanceEmployeeRow[]; daysInMonth: number; monthLabel: string }> {
+}): Promise<{ rows: AttendanceEmployeeRow[]; daysInMonth: number; monthLabel: string; cellsByEmp: Map<string, Map<string, string>> }> {
   const { month, employees, contracts, clients, confirmedOnly } = opts;
   const [yStr, mStr] = month.split("-");
   const y = Number(yStr);
@@ -73,12 +73,12 @@ export async function buildAttendanceRows(opts: {
   const roster = employees.filter((e) => !hiddenFromAttendance(e, monthStart));
 
   const empIds = roster.map((e) => e.id);
-  if (empIds.length === 0) return { rows: [], daysInMonth: dim, monthLabel };
+  if (empIds.length === 0) return { rows: [], daysInMonth: dim, monthLabel, cellsByEmp: new Map() };
 
   const records = await fetchAllRows<any>(() =>
     supabase
       .from("attendance_records")
-      .select("employee_id, attendance_date, status, worked_shift")
+      .select("employee_id, attendance_date, status, worked_shift, supervisor_override")
       .gte("attendance_date", monthStart)
       .lte("attendance_date", monthEnd)
       .in("employee_id", empIds)
@@ -87,11 +87,26 @@ export async function buildAttendanceRows(opts: {
     },
   );
 
-  const byEmp = new Map<string, Map<number, { sym: string; ws: string }>>();
+  const byEmp = new Map<string, Map<number, { sym: string; ws: string; ovr: boolean }>>();
+  // Per-(day, shift) status for EVERY visible mark a guard has — the grid renders
+  // a cell per shift column from this, so a double-duty day (two worked shifts)
+  // shows in both columns. A mark is visible if the supervisor confirmed it OR it
+  // was set by an override (the one edit allowed once locked). Keyed `${day}|${shift}`.
+  const cellsByEmp = new Map<string, Map<string, string>>();
   for (const r of records ?? []) {
     const day = Number(String(r.attendance_date).slice(8, 10));
+    const ws = (r.worked_shift as string) ?? "day";
+    const ovr = !!r.supervisor_override;
     if (!byEmp.has(r.employee_id)) byEmp.set(r.employee_id, new Map());
-    byEmp.get(r.employee_id)!.set(day, { sym: symbolOf(r.status), ws: (r.worked_shift as string) ?? "day" });
+    // dayMap keeps one record per day for the export's single-column view (last
+    // wins, as before). `cells` below keeps every shift for the on-screen grid.
+    byEmp.get(r.employee_id)!.set(day, { sym: symbolOf(r.status), ws, ovr });
+    const visible = !confirmedOnly || confirmedOnly(r.employee_id, String(r.attendance_date), ws) || ovr;
+    if (visible) {
+      const m = cellsByEmp.get(r.employee_id) ?? new Map<string, string>();
+      m.set(`${day}|${ws}`, symbolOf(r.status));
+      cellsByEmp.set(r.employee_id, m);
+    }
   }
 
   const resolveShift = await loadShiftResolver(empIds);
@@ -99,7 +114,7 @@ export async function buildAttendanceRows(opts: {
   const contractById = new Map(contracts.map((c) => [c.id, c]));
 
   const rows: AttendanceEmployeeRow[] = roster.map((emp, idx) => {
-    const dayMap = byEmp.get(emp.id) ?? new Map<number, { sym: string; ws: string }>();
+    const dayMap = byEmp.get(emp.id) ?? new Map<number, { sym: string; ws: string; ovr: boolean }>();
     const contract = emp.contract_id ? contractById.get(emp.contract_id) ?? null : null;
     const statusByDay: string[] = [];
     const shiftByDay: string[] = [];
@@ -108,7 +123,8 @@ export async function buildAttendanceRows(opts: {
       let cell = dayMap.get(d);
       const iso = `${yStr}-${mStr}-${String(d).padStart(2, "0")}`;
       // Hide any mark the supervisor hasn't confirmed — it reads as unmarked.
-      if (cell && confirmedOnly && !confirmedOnly(emp.id, iso, cell.ws)) cell = undefined;
+      // An override always shows (it's the one edit allowed on a locked day).
+      if (cell && confirmedOnly && !confirmedOnly(emp.id, iso, cell.ws) && !cell.ovr) cell = undefined;
       // No record AND not employed that day → "X" (separated / pre-join / off-contract),
       // otherwise blank. A real record always wins — history is reported as-is.
       const sym = cell?.sym ?? (attendanceWindowError(emp, contract, iso) ? SEPARATION_MARK : "");
@@ -142,5 +158,5 @@ export async function buildAttendanceRows(opts: {
     };
   });
 
-  return { rows, daysInMonth: dim, monthLabel };
+  return { rows, daysInMonth: dim, monthLabel, cellsByEmp };
 }
