@@ -1223,16 +1223,29 @@ export default function EmployeeAssignments() {
                   {g.recon && (
                     <span className="hidden lg:flex items-center gap-3 text-xs text-muted-foreground tabular-nums shrink-0">
                       <span title="Sites">{g.recon.site_count} site{g.recon.site_count === 1 ? "" : "s"}</span>
-                      <span title="Contracted (billed) vs enrolled (active)">
-                        {g.recon.enrolled_active}/{g.recon.contracted_billed_qty} enrolled
-                      </span>
-                      <span title="On-ground requirement">req. {g.recon.required_on_ground}</span>
-                      <span
-                        className={`inline-block px-2 py-0.5 rounded-md border font-medium ${varianceBadge(g.recon.variance)}`}
-                        title="Variance = contracted − enrolled(active)"
-                      >
-                        {g.recon.variance > 0 ? `+${g.recon.variance}` : g.recon.variance}
-                      </span>
+                      {/* Reconciliation only makes sense against a live contract.
+                          With 0 contracted every enrolled guard reads as "over-
+                          enrolled" (a red −N) and req. is 0 — noise that the
+                          "No live contract" pill already explains. Show just the
+                          head-count until there's a contract to compare to. */}
+                      {g.recon.contracted_billed_qty > 0 ? (
+                        <>
+                          <span title="Contracted (billed) vs enrolled (active)">
+                            {g.recon.enrolled_active}/{g.recon.contracted_billed_qty} enrolled
+                          </span>
+                          <span title="On-ground requirement">req. {g.recon.required_on_ground}</span>
+                          <span
+                            className={`inline-block px-2 py-0.5 rounded-md border font-medium ${varianceBadge(g.recon.variance)}`}
+                            title="Variance = contracted − enrolled(active)"
+                          >
+                            {g.recon.variance > 0 ? `+${g.recon.variance}` : g.recon.variance}
+                          </span>
+                        </>
+                      ) : (
+                        <span title="Enrolled (active) — no live contract to reconcile against">
+                          {g.recon.enrolled_active} enrolled
+                        </span>
+                      )}
                     </span>
                   )}
                   <span className="text-xs text-muted-foreground tabular-nums hidden sm:inline">
