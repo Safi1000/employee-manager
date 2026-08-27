@@ -440,15 +440,19 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
       const picks = shiftsFor(d);
       const sched = defaultShiftFor(d);
       const shifts = isDouble ? picks : [picks[0] ?? sched];
-      return shifts.map((ws) => ({
+      return shifts.map((ws, idx) => {
+      // Double duty = the rostered shift worked as Present + one EXTRA shift.
+      // Only the second (cover) shift is Double Duty; the normal shift stays P.
+      const isSecondDuty = isDouble && idx > 0;
+      return {
         employee_id: emp.id,
         attendance_date: d,
         // Fold Rotation leave into the single canonical "Leave" token.
-        status: status === "rotation_leave" ? "Leave" : status,
+        status: isDouble ? (isSecondDuty ? "double_duty" : "present") : (status === "rotation_leave" ? "Leave" : status),
         absent_reason: status === "absent" ? "awol" : null,
         scheduled_shift: sched,
         worked_shift: ws,
-        entry_type: isDouble ? "double_duty" : "normal",
+        entry_type: isSecondDuty ? "double_duty" : "normal",
         source: "manual",
         // worked_for_client_id is deliberately NOT sent: this calendar marks a
         // whole month at once, and the guard's current client is the wrong
@@ -459,7 +463,8 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
         marked_at: nowIso,
         supervisor_override: gate.overrideSet.has(d),
         override_reason: gate.overrideSet.has(d) ? overrideReason.trim() : null,
-      }));
+      };
+      });
     });
     const { error } = await supabase
       .from("attendance_records")

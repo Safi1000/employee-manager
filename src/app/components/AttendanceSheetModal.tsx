@@ -110,8 +110,12 @@ export default function AttendanceSheetModal({
         const siteByGuard = new Map<string, string | null>();
         if (!synthetic) {
           const { data: deps } = await supabase
-            .from("deployments").select("guard_id, site_id").eq("client_id", clientId).is("end_date", null);
-          for (const d of (deps ?? []) as any[]) siteByGuard.set(d.guard_id, d.site_id ?? null);
+            .from("deployments").select("guard_id, site_id, end_date").eq("client_id", clientId)
+            .order("end_date", { ascending: false, nullsFirst: true });
+          // Open posting (end_date null) wins; else fall back to the guard's most
+          // recent closed posting so separated/fired guards' confirmed attendance
+          // still matches its site instead of rendering a blank row.
+          for (const d of (deps ?? []) as any[]) if (!siteByGuard.has(d.guard_id)) siteByGuard.set(d.guard_id, d.site_id ?? null);
         }
         // Narrow to one site by the guard's current open posting.
         if (siteId) list = list.filter((e) => siteByGuard.get(e.id) === siteId);

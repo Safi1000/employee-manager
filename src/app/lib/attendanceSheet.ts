@@ -82,7 +82,12 @@ export async function buildAttendanceRows(opts: {
       .gte("attendance_date", monthStart)
       .lte("attendance_date", monthEnd)
       .in("employee_id", empIds)
-      .order("attendance_date", { ascending: true }) as unknown as {
+      // Full unique key order (date alone is NOT unique) so paginated range()
+      // fetches are STABLE — otherwise rows sharing a date at the 1000-row page
+      // boundary get skipped between pages, blanking a whole day for big rosters.
+      .order("attendance_date", { ascending: true })
+      .order("employee_id", { ascending: true })
+      .order("worked_shift", { ascending: true }) as unknown as {
       range: (from: number, to: number) => Promise<{ data: unknown; error: { message: string } | null }>;
     },
   );
