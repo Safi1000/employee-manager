@@ -770,9 +770,9 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
                 {/* Gross Profit */}
                 <div className="pt-4 border-t-2 border-slate-300">
                   <div className="flex justify-between items-center">
-                    <span className="text-base text-slate-900">Gross Profit</span>
+                    <span className="text-base text-slate-900">{cashPl.grossProfit < 0 ? "Gross Loss" : "Gross Profit"}</span>
                     <span className={`text-lg ${cashPl.grossProfit >= 0 ? "text-success-600" : "text-danger-600"}`}>
-                      {currency(cashPl.grossProfit)}
+                      {currency(Math.abs(cashPl.grossProfit))}
                     </span>
                   </div>
                 </div>
@@ -803,9 +803,9 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
                 {/* Operating Profit */}
                 <div className="pt-4 border-t-2 border-slate-300">
                   <div className="flex justify-between items-center">
-                    <span className="text-base text-slate-900">Operating Profit</span>
+                    <span className="text-base text-slate-900">{cashPl.operatingProfit < 0 ? "Operating Loss" : "Operating Profit"}</span>
                     <span className={`text-lg ${cashPl.operatingProfit >= 0 ? "text-success-600" : "text-danger-600"}`}>
-                      {currency(cashPl.operatingProfit)}
+                      {currency(Math.abs(cashPl.operatingProfit))}
                     </span>
                   </div>
                 </div>

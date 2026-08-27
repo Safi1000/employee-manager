@@ -107,6 +107,9 @@ export default function FinancialReports() {
   // Top-level switch merging the Financial Report and Cash Flow pages under one
   // roof — Cash Flow is rendered from its own (embedded) component.
   const [topTab, setTopTab] = useState<"financial" | "cashflow">("financial");
+  // Once Cash Basis has been opened, keep <Cashflow> mounted and just hide it on
+  // other tabs — so it fetches once instead of re-loading on every visit.
+  const [cashflowOpened, setCashflowOpened] = useState(false);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [plBranchFilter, setPlBranchFilter] = useState<string>("all");
   const [statementBranchFilter, setStatementBranchFilter] = useState<string>("all");
@@ -848,7 +851,7 @@ export default function FinancialReports() {
                 <button
                   key={t.key}
                   type="button"
-                  onClick={() => setTopTab(t.key)}
+                  onClick={() => { setTopTab(t.key); if (t.key === "cashflow") setCashflowOpened(true); }}
                   className={`px-3 py-1 text-[11px] font-semibold rounded-md transition-colors ${
                     topTab === t.key
                       ? "bg-white text-brand-700 shadow-sm"
@@ -937,7 +940,13 @@ export default function FinancialReports() {
       />
 
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
-        {topTab === "cashflow" && <Cashflow embedded />}
+        {/* Mounted once opened, then just hidden on other tabs so it keeps its
+            loaded data instead of re-fetching on every return to Cash Basis. */}
+        {cashflowOpened && (
+          <div className={topTab === "cashflow" ? undefined : "hidden"}>
+            <Cashflow embedded />
+          </div>
+        )}
 
         {topTab === "financial" && (
         <div className="bg-white rounded-lg border border-slate-200">
@@ -1066,11 +1075,11 @@ export default function FinancialReports() {
                   {/* Gross Profit */}
                   <div className="pt-4 border-t-2 border-slate-300">
                     <div className="flex justify-between items-center">
-                      <span className="text-base text-slate-900">Gross Profit</span>
+                      <span className="text-base text-slate-900">{plFigures.grossProfit < 0 ? "Gross Loss" : "Gross Profit"}</span>
                       <span
                         className={`text-lg ${plFigures.grossProfit >= 0 ? "text-success-600" : "text-danger-600"}`}
                       >
-                        PKR {plFigures.grossProfit.toLocaleString()}
+                        PKR {Math.abs(plFigures.grossProfit).toLocaleString()}
                       </span>
                     </div>
                   </div>
@@ -1105,11 +1114,11 @@ export default function FinancialReports() {
                   {/* Operating Profit */}
                   <div className="pt-4 border-t-2 border-slate-300">
                     <div className="flex justify-between items-center">
-                      <span className="text-base text-slate-900">Operating Profit</span>
+                      <span className="text-base text-slate-900">{plFigures.operatingProfit < 0 ? "Operating Loss" : "Operating Profit"}</span>
                       <span
                         className={`text-lg ${plFigures.operatingProfit >= 0 ? "text-success-600" : "text-danger-600"}`}
                       >
-                        PKR {plFigures.operatingProfit.toLocaleString()}
+                        PKR {Math.abs(plFigures.operatingProfit).toLocaleString()}
                       </span>
                     </div>
                   </div>
