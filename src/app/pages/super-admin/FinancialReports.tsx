@@ -1,6 +1,6 @@
 import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useState } from "react";
-import { Download, Loader2, FileText, Plus, Lock, Trash2, Pencil, Settings2 } from "lucide-react";
+import { Download, Loader2, FileText, Plus, Lock, Trash2, BookOpen, Settings2 } from "lucide-react";
 import Header from "../../components/Header";
 import { formatDate, invoicePeriodFilter } from "../../lib/date";
 import ExportButton from "../../components/ExportButton";
@@ -1080,14 +1080,14 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                                 <button
                                   onClick={() => setDetailPartner(p)}
                                   className="p-1.5 rounded text-slate-600 hover:bg-slate-100"
-                                  title="Client breakdown and ledger"
+                                  title="Client breakdown (view) & ledger (record payments)"
                                 >
-                                  <Pencil className="w-4 h-4" />
+                                  <BookOpen className="w-4 h-4" />
                                 </button>
                                 <button
                                   onClick={() => { setFormPartner(p); setIsPartnerFormOpen(true); }}
                                   className="p-1.5 rounded text-slate-600 hover:bg-slate-100"
-                                  title="Edit name, kind and share"
+                                  title="Edit client shares (partner details locked)"
                                 >
                                   <Settings2 className="w-4 h-4" />
                                 </button>
@@ -1140,8 +1140,13 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
         partner={formPartner}
         branches={branches}
         equityShareTotal={equityShareTotal}
+        period={partnershipPeriod}
+        regionName={formPartner?.branch_id
+          ? branches.find((b) => b.id === formPartner.branch_id)?.name ?? null
+          : null}
         onClose={() => setIsPartnerFormOpen(false)}
         onSaved={() => { setIsPartnerFormOpen(false); setFormPartner(null); loadPartnership(); }}
+        onChanged={() => loadPartnership()}
       />
 
       <PartnerDetailModal

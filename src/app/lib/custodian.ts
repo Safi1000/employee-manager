@@ -24,7 +24,7 @@ export type CustodianOption = {
  * currently hold. Used to render the "who received / who paid" dropdowns.
  */
 export async function loadCustodianOptions(companyId: string): Promise<CustodianOption[]> {
-  const [{ data: staff }, { data: locs }, { data: tx }, { data: cashPays }, { data: cashExps }, { data: cashAdvances }, { data: cashCheques }, { data: bankWd }] =
+  const [{ data: staff }, { data: locs }, { data: tx }, { data: cashPays }, { data: cashExps }, { data: cashAdvances }, { data: cashCheques }, { data: bankWd }, { data: partnerCash }] =
     await Promise.all([
       supabase.from("employees").select("id, full_name").eq("category", "office_staff").order("full_name"),
       supabase
@@ -42,6 +42,9 @@ export async function loadCustodianOptions(companyId: string): Promise<Custodian
       supabase.from("cheques").select("amount, custodian_location_id").eq("cheque_type", "cash").eq("status", "cleared").not("custodian_location_id", "is", null),
       // Bank→custodian withdrawals (reference_id = custodian cash_location).
       supabase.from("bank_transactions").select("cash_delta, reference_id").eq("kind", "withdraw_to_cash").not("reference_id", "is", null),
+      // Partner cash payments/contributions stamped with a custodian location —
+      // a DRAWING is cash the custodian hands out, a CONTRIBUTION is cash received.
+      supabase.from("partner_account_entries").select("amount, type, cash_location_id").eq("payment_method", "CASH").not("cash_location_id", "is", null),
     ]);
 
   // Payroll paid in cash by a custodian — cash they physically hand out
@@ -87,6 +90,12 @@ export async function loadCustodianOptions(companyId: string): Promise<Custodian
   // cash_delta is already signed (negative = paid out, positive = reversal).
   for (const pr of (payrollCash ?? []) as any[]) {
     if (pr.reference_id && heldByLoc.has(pr.reference_id)) heldByLoc.set(pr.reference_id, (heldByLoc.get(pr.reference_id) ?? 0) + Number(pr.cash_delta ?? 0));
+  }
+  for (const pe of (partnerCash ?? []) as any[]) {
+    if (pe.cash_location_id && heldByLoc.has(pe.cash_location_id)) {
+      const sign = pe.type === "CONTRIBUTION" ? 1 : -1; // DRAWING = cash out of the custodian's hands
+      heldByLoc.set(pe.cash_location_id, (heldByLoc.get(pe.cash_location_id) ?? 0) + sign * Number(pe.amount ?? 0));
+    }
   }
 
   return ((staff ?? []) as any[]).map((s) => {
