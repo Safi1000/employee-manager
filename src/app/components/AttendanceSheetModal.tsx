@@ -603,7 +603,9 @@ function OverrideModal({
       attendance_date: target.date,
       // A second (non-primary) shift IS double duty — store it as DD, never a
       // second Present, so the day reads P on the normal shift + DD on the extra.
-      status: presentOnly ? "double_duty" : status,
+      // "leave" is a UI key; the DB stores it as rotation_leave (matches the other
+      // marking modals and the status check constraint).
+      status: presentOnly ? "double_duty" : status === "leave" ? "rotation_leave" : status,
       absent_reason: status === "absent" ? "awol" : null,
       scheduled_shift: target.shift,
       worked_shift: target.shift,
