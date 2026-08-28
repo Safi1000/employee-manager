@@ -601,11 +601,13 @@ function OverrideModal({
     const { error: mErr } = await supabase.from("attendance_records").upsert({
       employee_id: target.empId,
       attendance_date: target.date,
-      status,
+      // A second (non-primary) shift IS double duty — store it as DD, never a
+      // second Present, so the day reads P on the normal shift + DD on the extra.
+      status: presentOnly ? "double_duty" : status,
       absent_reason: status === "absent" ? "awol" : null,
       scheduled_shift: target.shift,
       worked_shift: target.shift,
-      entry_type: "normal",
+      entry_type: presentOnly ? "double_duty" : "normal",
       source: "manual",
       marked_by_role: currentUserRole ?? "hr",
       marked_by_user_id: currentUserId,
@@ -622,7 +624,7 @@ function OverrideModal({
       attendance_date: target.date,
       reason: reason.trim(),
       before_value: wasUnmarked ? "unmarked" : target.current,
-      after_value: OV_STATUSES.find((s) => s.key === status)?.letter ?? status,
+      after_value: presentOnly ? "DD" : (OV_STATUSES.find((s) => s.key === status)?.letter ?? status),
       created_by: currentUserId,
     });
     setBusy(false);
@@ -656,7 +658,7 @@ function OverrideModal({
                   onClick={() => setStatus(s.key)}
                   className={`flex-1 px-3 py-2 rounded-md text-sm border transition-colors disabled:opacity-50 ${status === s.key ? s.activeBtn : "border-border text-foreground hover:bg-accent"}`}
                 >
-                  {s.label}
+                  {presentOnly ? "Double Duty (DD)" : s.label}
                 </button>
               ))}
             </div>

@@ -72,6 +72,7 @@ import {
   ChangeCategoryModal,
   ChangeShiftModal,
   SalaryHistoryPanel,
+  ShiftChangeHistory,
   type EmployeeRow,
 } from "./EmployeeManagement";
 
@@ -2588,6 +2589,12 @@ function RowEditModal({
               onApplied={() => { void onSaved(); }}
             />
           )}
+        </section>
+        <section>
+          <div className="rounded-lg border border-border p-4">
+            <h4 className="text-sm font-medium text-foreground mb-3">Shift history</h4>
+            <ShiftChangeHistory employeeId={employee.id} />
+          </div>
         </section>
       </div>
     </Modal>

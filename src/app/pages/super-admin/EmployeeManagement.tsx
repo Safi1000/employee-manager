@@ -3808,7 +3808,7 @@ const SHIFT_REASON_LABEL: Record<string, string> = {
  * segment and opens another (change_guard_shift, 0130), so the segment list IS
  * the history — each row is "this shift, at this client, over these dates".
  */
-function ShiftChangeHistory({ employeeId }: { employeeId: string }) {
+export function ShiftChangeHistory({ employeeId }: { employeeId: string }) {
   type Seg = {
     id: string;
     start_date: string;

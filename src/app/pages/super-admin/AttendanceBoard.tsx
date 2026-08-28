@@ -1080,10 +1080,16 @@ function ShiftDrillModal({
         next.set(g.guard_id, [code]); // single-select
         return next;
       }
-      // Multi-select (double duty): toggle, keep ≥1, order by siteShifts.
-      const chosen = cur.includes(code) ? cur.filter((c) => c !== code) : [...cur, code];
-      const ordered = siteShifts.filter((c) => (chosen.length ? chosen : [code]).includes(c));
-      next.set(g.guard_id, ordered.length ? ordered : [code]);
+      // Double duty = EXACTLY two shifts: the scheduled (normal) shift, always
+      // kept, plus ONE extra. Never one, never three. Tapping the scheduled shift
+      // is a no-op; tapping the current extra clears it; tapping another swaps it.
+      const sched = g.scheduled_shift;
+      if (code === sched) return next;
+      const curExtra = cur.find((c) => c !== sched) ?? null;
+      const nextExtra = curExtra === code ? null : code;
+      const sel = nextExtra ? [sched, nextExtra] : [sched];
+      const ordered = siteShifts.filter((c) => sel.includes(c));
+      next.set(g.guard_id, ordered.length ? ordered : [sched]);
       return next;
     });
   };
@@ -1114,19 +1120,27 @@ function ShiftDrillModal({
       const rows = shift.roster.flatMap((g) => {
         const mk = marks.get(g.guard_id);
         const status = mk?.status ?? "present";
-        const entry_type: EntryType = status === "double_duty" ? "double_duty"
-          : status === "relief_cover" ? "relief_cover"
-          : "normal";
         const sel = getWorked(g);
         const workedShifts = status === "double_duty"
           ? [...new Set(sel)]                        // one row per chosen shift
           : [sel[0] ?? g.scheduled_shift];           // single worked shift
-        return workedShifts.map((ws) => ({
+        return workedShifts.map((ws) => {
+          // Double duty = the rostered (scheduled) shift worked as Present + each
+          // EXTRA shift as Double Duty. Only the extra shift(s) carry DD, never
+          // two Presents and never DD on the normal shift.
+          const isExtraDuty = status === "double_duty" && ws !== g.scheduled_shift;
+          const rowStatus = status === "double_duty"
+            ? (isExtraDuty ? "double_duty" : "present")
+            : (status === "rotation_leave" ? "Leave" : status);
+          const entry_type: EntryType = isExtraDuty ? "double_duty"
+            : status === "relief_cover" ? "relief_cover"
+            : "normal";
+          return {
           employee_id: g.guard_id,
           attendance_date: date,
           // Store leave under the single canonical "Leave" token (Rotation leave
           // is folded into Leave); everything else keeps its spec value.
-          status: status === "rotation_leave" ? "Leave" : status,
+          status: rowStatus,
           absent_reason: mk?.absent_reason ?? null,
           scheduled_shift: g.scheduled_shift,
           worked_shift: ws,
@@ -1138,7 +1152,8 @@ function ShiftDrillModal({
           marked_at: new Date().toISOString(),
           supervisor_override: needsOverride,
           override_reason: needsOverride ? override.trim() : null,
-        }));
+        };
+        });
       });
       const { error: upErr } = await supabase
         .from("attendance_records")
