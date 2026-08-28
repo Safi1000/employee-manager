@@ -834,6 +834,29 @@ export default function FinancialReports() {
     await loadPartnership();
   };
 
+  // Rendered inside the Client Statements filter row, in the same slot the
+  // cash-basis statement puts it — not in the page Header, which still carries
+  // the P&L and Partnership exports.
+  const clientStatementExportBtn = (
+    <ExportButton
+      onExport={() =>
+        exportClientStatements(
+          clientStatementRows.map((r) => ({
+            client: `${r.name} (${r.client_code})`,
+            totalReceivable: r.total_invoiced,
+            payrollExpenses: r.payroll_expense,
+            // Direct plus both apportioned layers, so the exported
+            // columns still add up to netIncome.
+            otherExpenses: r.expenses + r.regional_overhead + r.ho_share,
+            netIncome: r.total_income,
+          })),
+          formatPeriod(statementPeriod),
+          `Client Statement ${formatPeriod(statementPeriod)}.xlsx`,
+        )
+      }
+    />
+  );
+
   return (
     <>
       <Header
@@ -866,7 +889,7 @@ export default function FinancialReports() {
         }
         subtitle="P&L, client statements and cash flow"
         actions={
-          topTab === "cashflow" || activeTab === "rmd" ? undefined : (
+          topTab === "cashflow" || activeTab === "rmd" || activeTab === "clients" ? undefined : (
           <ExportButton
             onExport={() => {
               if (activeTab === "pl") {
@@ -895,20 +918,6 @@ export default function FinancialReports() {
                   },
                   formatPeriod(plPeriod),
                   `P&L ${formatPeriod(plPeriod)}.xlsx`
-                );
-              } else if (activeTab === "clients") {
-                exportClientStatements(
-                  clientStatementRows.map((r) => ({
-                    client: `${r.name} (${r.client_code})`,
-                    totalReceivable: r.total_invoiced,
-                    payrollExpenses: r.payroll_expense,
-                    // Direct plus both apportioned layers, so the exported
-                    // columns still add up to netIncome.
-                    otherExpenses: r.expenses + r.regional_overhead + r.ho_share,
-                    netIncome: r.total_income,
-                  })),
-                  formatPeriod(statementPeriod),
-                  `Client Statement ${formatPeriod(statementPeriod)}.xlsx`
                 );
               } else if (activeTab === "partnership") {
                 exportTable({
@@ -956,13 +965,13 @@ export default function FinancialReports() {
                   Profit-Share module it belongs to (Partner Accounts,
                   Participation Rules, Treasury) is still out of the nav, so this
                   tab is currently the only way to reach any of it — partners
-                  themselves are still added from the tab body below. */}
-              {/* Partnership Report and RMD Statements tabs are hidden, not
-                  deleted — their tab-content blocks below remain, just not
-                  reachable from the tab bar. */}
+                  themselves are still added from the tab body below.
+                  RMD Statements stays hidden: its tab-content block below
+                  remains, just not reachable from the tab bar. */}
               {([
                 { key: "pl", label: "Profit & Loss" },
                 { key: "clients", label: "Client Statements" },
+                { key: "partnership", label: "Partnership Report" },
               ] as const).map((tab) => (
                 <button
                   key={tab.key}
@@ -1156,7 +1165,17 @@ export default function FinancialReports() {
 
           {activeTab === "clients" && (
             <div>
-              <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+              {/* Deliberately the same header shape as the cash-basis statement
+                  in CashFlow's ClientStatementsTab: basis-named heading and
+                  period on the left, Branch → Month → Export on the right, note
+                  underneath. Switching basis must never move a control. */}
+              <div className="p-6 flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <h3 className="text-lg text-slate-900 mb-1">Client Statements — Revenue Basis</h3>
+                  <p className="text-sm text-slate-500">
+                    For {formatPeriod(statementPeriod)} ({firstOfMonth(statementPeriod)} – {lastOfMonth(statementPeriod)})
+                  </p>
+                </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <label className="text-sm text-slate-600">Branch:</label>
                   <ThemedSelect
@@ -1181,6 +1200,7 @@ export default function FinancialReports() {
                       </option>
                     ))}
                   </ThemedSelect>
+                  {clientStatementExportBtn}
                 </div>
                 <span className="text-xs text-slate-500">
                   Total Income = Invoiced − (Payroll + Direct Expenses + Regional Overhead + Head Office).
