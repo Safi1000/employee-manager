@@ -533,14 +533,26 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
     const ebt = operatingProfit;
     const netProfit = ebt - taxes;
 
+    // Non-P&L cash out: employee advances are a loan (balance-sheet), so they are
+    // not an expense — but they DO move cash, so a true cash view has to net them.
+    let advancesPaid = 0;
+    for (const a of advances) {
+      const date = a.payment_mode === "Cheque" ? clearedDay(a.cheque_id) : isoDay(a.advance_date);
+      if (!date || !inPeriod(date)) continue;
+      if (!branchOk(employeeBranch.get(a.employee_id) ?? null)) continue;
+      advancesPaid += Number(a.amount ?? 0);
+    }
+    const netCashChange = netProfit - advancesPaid;
+
     return {
       securityRevenue, guardRevenue, totalRevenue,
       guardPayroll, cosStatutory, cosTransport, cosEquipment, cosOther, totalCos,
       grossProfit,
       officePayroll, opUtilities, opInsurance, opLicenses, opOther, totalOpex,
       operatingProfit, ebt, taxes, netProfit,
+      advancesPaid, netCashChange,
     };
-  }, [invoicePayments, payslips, expenses, cheques, clients, categories, branches, employeeBranch, inPeriod, branchOk]);
+  }, [invoicePayments, payslips, expenses, advances, cheques, clients, categories, branches, employeeBranch, inPeriod, branchOk]);
 
   // Aggregation for charts + table. In single-month mode, group by day; otherwise by month.
   const rows: MonthRow[] = useMemo(() => {
@@ -841,6 +853,27 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
                     <span className="text-base text-slate-900">Net Profit</span>
                     <span className={`text-xl ${cashPl.netProfit >= 0 ? "text-success-600" : "text-danger-600"}`}>
                       {currency(cashPl.netProfit)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Non-P&L cash movements — money that moved but isn't income/expense
+                    (employee advances are loans, recovered later from salary). */}
+                <div>
+                  <h4 className="text-sm text-slate-900 mb-3 pb-2 border-b border-slate-200">Non-Operating Cash Movements</h4>
+                  <div className="flex justify-between items-center pl-4">
+                    <span className="text-sm text-slate-600">Employee Advances Paid</span>
+                    <span className="text-sm text-danger-600">({currency(cashPl.advancesPaid)})</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 pl-4 mt-1">A loan, not an expense — it lowers cash now and is recovered from later salary (which then pays out less).</p>
+                </div>
+
+                {/* Net Cash Change = operating net + non-operating movements */}
+                <div className="pt-4 border-t-2 border-slate-300">
+                  <div className="flex justify-between items-center">
+                    <span className="text-base text-slate-900">Net Cash Change</span>
+                    <span className={`text-xl ${cashPl.netCashChange >= 0 ? "text-success-600" : "text-danger-600"}`}>
+                      {currency(cashPl.netCashChange)}
                     </span>
                   </div>
                 </div>
