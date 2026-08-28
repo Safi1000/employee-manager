@@ -123,9 +123,17 @@ export async function ensureCustodianLocation(
   companyId: string,
   personId: string,
   fullName: string,
-  kind: "employee" | "partner" = "employee",
+  kind?: "employee" | "partner",
 ): Promise<string> {
-  const col = kind === "partner" ? "custodian_partner_id" : "custodian_employee_id";
+  // When the caller didn't say, detect it: a partner id must NOT land in
+  // custodian_employee_id (FK → employees) and vice-versa. Cheap and covers
+  // every call site without each having to thread `kind`.
+  let resolved = kind;
+  if (!resolved) {
+    const { data: p } = await supabase.from("partners").select("id").eq("id", personId).maybeSingle();
+    resolved = p ? "partner" : "employee";
+  }
+  const col = resolved === "partner" ? "custodian_partner_id" : "custodian_employee_id";
   // One custodian location per person — reuse it whether active or not.
   const { data: existing, error: selErr } = await supabase
     .from("cash_locations")

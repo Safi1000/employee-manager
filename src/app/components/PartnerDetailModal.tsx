@@ -54,7 +54,6 @@ export default function PartnerDetailModal({
   isOpen,
   partner,
   period,
-  periodOptions,
   regionName,
   onClose,
   onChanged,
@@ -74,7 +73,6 @@ export default function PartnerDetailModal({
   const [ledger, setLedger] = useState<LedgerRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [ledgerFrom, setLedgerFrom] = useState(period);
 
   // Ledger recording (the one editable thing in this drawer).
   const { profile, company } = useAuth();
@@ -114,23 +112,20 @@ export default function PartnerDetailModal({
 
   const loadLedger = useCallback(async () => {
     if (!partner) { setLedger([]); return; }
+    // No date filter — the ledger always shows the partner's full history.
     const { data, error: e } = await supabase.rpc("partner_ledger", {
       p_partner_id: partner.id,
-      p_start: firstOfMonth(ledgerFrom),
-      p_end: lastOfMonth(period),
+      p_start: "2000-01-01",
+      p_end: "2999-12-31",
     });
     if (e) { setError(e.message); return; }
     setLedger((data ?? []) as LedgerRow[]);
-  }, [partner, ledgerFrom, period]);
+  }, [partner]);
 
   useEffect(() => {
     if (!isOpen || !partner) return;
     setError(null);
     setTab("ledger"); // this drawer is the ledger; client breakdown lives in the Edit (gear) dialog
-    // Default the ledger to a year back, or the partner's own start.
-    const [y, m] = period.split("-").map(Number);
-    const back = new Date(y - 1, m - 1, 1);
-    setLedgerFrom(`${back.getFullYear()}-${String(back.getMonth() + 1).padStart(2, "0")}`);
   }, [isOpen, partner, isRegional, period]);
 
   useEffect(() => {
@@ -310,16 +305,12 @@ export default function PartnerDetailModal({
         {!loading && tab === "ledger" && (
           <div>
             <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-              <div className="flex items-center gap-2">
-                <label className="text-xs text-slate-500">From</label>
-                <ThemedSelect
-                  value={ledgerFrom}
-                  onChange={(e) => setLedgerFrom(e.target.value)}
-                  className="px-2 py-1.5 border border-slate-200 rounded-md text-sm"
-                >
-                  {periodOptions.map((p) => <option key={p} value={p}>{p}</option>)}
-                </ThemedSelect>
-                <span className="text-xs text-slate-500">through {period}</span>
+              <div className="flex items-baseline gap-2">
+                <span className="text-xs text-slate-500 uppercase tracking-wide">Current balance</span>
+                {(() => {
+                  const cb = ledger.length ? Number(ledger[ledger.length - 1].balance) : Number(partner.opening_balance ?? 0);
+                  return <span className={`text-base font-semibold tabular-nums ${cb < 0 ? "text-danger-700" : "text-slate-900"}`}>{acct(cb)}</span>;
+                })()}
               </div>
               <Button variant="secondary" size="sm" onClick={() => setIsAddEntryOpen(true)}>
                 <Plus className="w-3.5 h-3.5 mr-1" /> Record payment
