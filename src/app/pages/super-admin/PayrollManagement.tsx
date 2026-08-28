@@ -107,6 +107,9 @@ type PayrollManagementProps = {
   // Called by an afterNet embed after it saves/disburses, so the parent shell can
   // refresh its per-client totals (drives the green "all disbursed" colour-coding).
   onDataChanged?: () => void;
+  // Report the live computed totals up (for the Payroll Run Review cards, which
+  // can't read persisted payslips — none exist before Finance Verify).
+  onTotals?: (t: { disbursed: number; notDisbursed: number; advance: number; disbursedCount: number; notDisbursedCount: number }) => void;
   periodOverride?: string;
   // Payroll Run "inline" layout: trimmed columns (Name/Attendance/Base/Net) and the
   // Salary Calculation panel rendered inline below the table rather than as a side
@@ -114,7 +117,7 @@ type PayrollManagementProps = {
   runInline?: boolean;
 };
 
-export default function PayrollManagement({ relieversOnly = false, clientScopeId = null, categoryScope = null, throughNet = false, afterNet = false, onDataChanged, periodOverride, runInline = false }: PayrollManagementProps = {}) {
+export default function PayrollManagement({ relieversOnly = false, clientScopeId = null, categoryScope = null, throughNet = false, afterNet = false, onDataChanged, onTotals, periodOverride, runInline = false }: PayrollManagementProps = {}) {
   // `embedded` = rendered inside the Payroll Run / Payroll Management client list:
   // no page Header, filters, totals cards, or bulk actions — just the scoped
   // roster + the payslip drawer.
@@ -683,7 +686,10 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         countableLeaves = Math.min(rawLeaves, merged.allowed_leaves);
         extraLeaveAbsent = Math.max(0, rawLeaves - merged.allowed_leaves);
       }
-      merged.effective_present_days = rawPresent + countableLeaves;
+      // Paid days must match what salary is earned on: worked days + paid leaves
+      // PLUS each double-duty extra shift (ap.earned already bills those, so the
+      // days figure has to include them or it reads short of the pay).
+      merged.effective_present_days = rawPresent + countableLeaves + merged.double_duty_shifts;
       merged.extra_leave_absent = extraLeaveAbsent;
       merged.effective_absent_days = rawAbsent + extraLeaveAbsent;
 
@@ -835,6 +841,17 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     }
     return { disbursed, notDisbursed, advance };
   }, [filtered]);
+
+  // Push live totals up to an embedding parent (Payroll Run Review). Ref-held so a
+  // fresh inline callback each parent render can't retrigger this effect.
+  const onTotalsRef = useRef(onTotals);
+  onTotalsRef.current = onTotals;
+  useEffect(() => {
+    if (!onTotalsRef.current) return;
+    let disbursedCount = 0, notDisbursedCount = 0;
+    for (const r of filtered) (Math.round(r.amount_paid || 0) > 0 ? disbursedCount++ : notDisbursedCount++);
+    onTotalsRef.current({ ...payrollTotals, disbursedCount, notDisbursedCount });
+  }, [payrollTotals, filtered]);
 
   // afterNet = the Payroll Management page for a Finance-Verified client. Persist
   // the payable with a default so it's saved before any payment: create a payslip
@@ -2172,6 +2189,12 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                       <span className="text-danger-700">A {row.absent_days}</span>
                                       {" / "}
                                       <span className="text-warning-700">L {row.leave_days}</span>
+                                      {row.double_duty_shifts > 0 && (
+                                        <>
+                                          {" / "}
+                                          <span className="text-brand-700">DD {row.double_duty_shifts}</span>
+                                        </>
+                                      )}
                                       {unmarked > 0 && (
                                         <>
                                           {" / "}

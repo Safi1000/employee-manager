@@ -82,6 +82,10 @@ export default function PayrollRun() {
   // Same columns PayrollManagement sums (payslips.net_salary/amount_paid/advance),
   // so the cards match the embedded page for saved payslips.
   const [totalsByKey, setTotalsByKey] = useState<Map<string, Totals>>(new Map());
+  // Live totals reported by an expanded Review roster — Review has no persisted
+  // payslips (those are written only at Finance Verify), so the cards must use the
+  // roster's live figures. Falls back to persisted totals for un-opened scopes.
+  const [liveTotalsByKey, setLiveTotalsByKey] = useState<Map<string, Totals>>(new Map());
 
   const load = async () => {
     setLoading(true); setErr(null);
@@ -140,9 +144,10 @@ export default function PayrollRun() {
   // Review-tab cards: the expanded client's totals, else the sum across every
   // client currently in Review this month. Same source for both, so they agree.
   const reviewCardTotals = useMemo(() => {
-    if (expanded) return totalsByKey.get(expanded) ?? ZERO_TOTALS;
-    return reviewScopes.reduce((acc, s) => addTotals(acc, totalsByKey.get(s.key) ?? ZERO_TOTALS), { ...ZERO_TOTALS });
-  }, [expanded, reviewScopes, totalsByKey]);
+    const forKey = (k: string) => liveTotalsByKey.get(k) ?? totalsByKey.get(k) ?? ZERO_TOTALS;
+    if (expanded) return forKey(expanded);
+    return reviewScopes.reduce((acc, s) => addTotals(acc, forKey(s.key)), { ...ZERO_TOTALS });
+  }, [expanded, reviewScopes, totalsByKey, liveTotalsByKey]);
 
   // Live OPS-verified check for one scope+month (re-queried at every transition).
   const isVerifiedNow = async (s: Scope): Promise<boolean> => {
@@ -345,7 +350,8 @@ export default function PayrollRun() {
                       {open && (
                         <div className="border-t border-border">
                           {/* Existing Payslips page, scoped + through-Net (no payment UI). */}
-                          <PayrollManagement clientScopeId={s.clientId} categoryScope={s.category} throughNet runInline periodOverride={period} />
+                          <PayrollManagement clientScopeId={s.clientId} categoryScope={s.category} throughNet runInline periodOverride={period}
+                            onTotals={(t) => setLiveTotalsByKey((prev) => { const n = new Map(prev); n.set(s.key, t); return n; })} />
                         </div>
                       )}
                     </div>
