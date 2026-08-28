@@ -5,7 +5,7 @@ import ClientFilterSelect from "./ClientFilterSelect";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../lib/auth";
 import { guardDisplayCode } from "../lib/guardCode";
-import { attendanceWindowError, hiddenFromAttendance } from "../lib/employmentWindow";
+import { attendanceWindowError, hiddenFromAttendance, buildClientCoverage, effectiveWindowContract } from "../lib/employmentWindow";
 import { loadShiftResolver, type ShiftResolver } from "../lib/shiftOnDate";
 
 // ── Shared "Bulk Mark by Employee" calendar ──────────────────────────────────
@@ -80,7 +80,7 @@ type BulkEmp = {
   category: string;
 };
 
-type BulkContract = { id: string; start_date: string | null; end_date: string | null; is_infinite: boolean | null };
+type BulkContract = { id: string; start_date: string | null; end_date: string | null; is_infinite: boolean | null; client_id: string | null; status: string | null };
 
 export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmployeeId, initialMonth }: {
   onClose: () => void;
@@ -141,7 +141,7 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
           )
           .neq("category", "reliever")
           .order("full_name"),
-        supabase.from("contracts").select("id, start_date, end_date, is_infinite"),
+        supabase.from("contracts").select("id, start_date, end_date, is_infinite, client_id, status"),
       ]);
       if (error) { setBulkError(error.message); setLoadingEmps(false); return; }
       setContracts((conRes.data ?? []) as BulkContract[]);
@@ -284,10 +284,16 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
     return m;
   }, [orderedDates]);
 
-  const empContract = useMemo(
-    () => (emp?.contract_id ? contracts.find((c) => c.id === emp.contract_id) ?? null : null),
-    [emp, contracts],
-  );
+  // Same fallback as the timesheet screens: no contract_id of their own means
+  // the guard is judged against their CLIENT's contract coverage.
+  const empContract = useMemo(() => {
+    if (!emp) return null;
+    return effectiveWindowContract(
+      emp,
+      new Map(contracts.map((c) => [c.id, c])),
+      buildClientCoverage(contracts),
+    );
+  }, [emp, contracts]);
 
   // Why this date can't be marked, or null. Shared with the timesheet screens
   // and mirrored by the DB trigger (migration 0152), so a day greyed out here is

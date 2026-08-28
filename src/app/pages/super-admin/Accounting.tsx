@@ -2812,8 +2812,8 @@ export default function Accounting() {
             const amount = Number(chequeForm.amount);
             if (!chequeForm.bank_account_id || !chequeForm.cheque_number || !amount || amount <= 0 || !chequeForm.cheque_date) return;
             // A Cash cheque is handed to an office-staff custodian, who then holds
-            // the cash. On creation it clears immediately: bank −, Cash in Hand +,
-            // custodian held +.
+            // the cash once it is encashed. It is recorded pending and clears on
+            // the same manual step a payment cheque uses.
             const isCashCheque = chequeForm.direction === "outgoing" && chequeForm.cheque_type === "cash";
             const cashStaff = isCashCheque ? custodians.find((c) => c.employeeId === chequeForm.custodian_employee_id) : null;
             if (isCashCheque && !cashStaff) {
@@ -2854,12 +2854,14 @@ export default function Accounting() {
                 .single();
               if (insErr) throw insErr;
               const chequeId = (inserted as Cheque).id;
-              // Immediate clear (user's choice): moves the amount into Cash in Hand
-              // now. The custodian attribution is via custodian_location_id above.
-              if (isCashCheque) {
-                const { error: clrErr } = await supabase.from("cheques").update({ status: "cleared" }).eq("id", chequeId);
-                if (clrErr) throw clrErr;
-              }
+              // A cash cheque stays PENDING until someone marks it cleared, exactly
+              // like a payment cheque. It used to clear the instant it was written,
+              // which recorded the cash as in the custodian's hands before the bank
+              // had actually paid it out — there was no way to represent a cash
+              // cheque that had been issued but not yet encashed, and no way to
+              // bounce one. The custodian attribution is already on the row via
+              // custodian_location_id, so clearing later still lands on the right
+              // person.
               if (chequeForm.attachment) {
                 const file = chequeForm.attachment;
                 const effectiveCompanyId =
@@ -3038,7 +3040,7 @@ export default function Accounting() {
                       <option key={c.employeeId} value={c.employeeId}>{c.fullName} — holds {`PKR ${Math.round(c.held).toLocaleString()}`}</option>
                     ))}
                   </ThemedSelect>
-                  <p className="text-[11px] text-slate-500 mt-1">The cash is added to this custodian's held cash and to Cash in Hand.</p>
+                  <p className="text-[11px] text-slate-500 mt-1">Once the cheque is marked cleared, the cash lands in this custodian's held cash and in Cash in Hand.</p>
                 </>
               ) : (
                 <input
@@ -3073,7 +3075,9 @@ export default function Accounting() {
           </div>
           {chequeForm.direction === "outgoing" && chequeForm.cheque_type === "cash" && (
             <div className="bg-brand-50 border border-brand-200 rounded-md p-3 text-xs text-brand-800">
-              PKR {Number(chequeForm.amount || 0).toLocaleString()} will be deducted from the bank and added to <strong>Cash in Hand</strong> and to the selected custodian's held cash immediately.
+              Issuing this cheque will <strong>reserve</strong> PKR {Number(chequeForm.amount || 0).toLocaleString()} from the selected bank's Account Balance.{" "}
+              It stays <strong>Pending</strong> until you mark it cleared — only then does the cash move into <strong>Cash in Hand</strong> and the selected custodian's held cash.
+              {" "}Deleting it while Pending restores the bank balance.
             </div>
           )}
           {chequeForm.direction === "outgoing" && chequeForm.cheque_type === "payment" && (

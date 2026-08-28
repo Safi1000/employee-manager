@@ -2076,6 +2076,8 @@ export type Advance = {
   payment_mode: "Cash" | "Bank" | "Cheque";
   bank_account_id: string | null;
   cheque_id: string | null;
+  /** "Paid By" — the office-staff custodian whose held cash this came out of (0203). */
+  custodian_location_id?: string | null;
   notes: string | null;
   created_at?: string;
   updated_at?: string;

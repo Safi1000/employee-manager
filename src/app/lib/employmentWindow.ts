@@ -118,6 +118,83 @@ export function attendanceWindowError(
 }
 
 /**
+ * A contract row as the client-coverage builder needs to read it.
+ */
+export type CoverageContract = {
+  client_id?: string | null;
+  end_date?: string | null;
+  is_infinite?: boolean | null;
+  status?: string | null;
+};
+
+/**
+ * Per-client attendance coverage, keyed by client id.
+ *
+ * Most guards are attached to a CLIENT but carry no contract_id of their own —
+ * on this database, 316 of 535 — so `attendanceWindowError` was handed a null
+ * contract for them and skipped the contract window entirely. The client's
+ * contract could have ended months ago and their attendance stayed markable.
+ * This closes that hole by giving every such guard their client's coverage as a
+ * stand-in contract.
+ *
+ * Deliberately conservative — it only ever supplies an END date:
+ *   • A client with no contracts on file is not covered here at all. Absence of
+ *     data is not evidence the client's work has stopped.
+ *   • One open-ended contract (is_infinite, or simply no end_date recorded)
+ *     leaves the client open-ended. Most contracts here have a null end_date,
+ *     and reading that as "ended" would lock the whole roster out.
+ *   • Draft contracts are ignored — they are not in force yet.
+ *   • The LATEST end date across the client's contracts wins, so a renewal on a
+ *     second contract row extends coverage rather than fighting the old one.
+ * No start date is derived: back-marking a period that predates when contracts
+ * were first entered is legitimate, and blocking it would be a regression.
+ */
+export function buildClientCoverage(
+  contracts: CoverageContract[],
+): Map<string, WindowContract> {
+  // clientId → latest end date, or null once any contract is open-ended.
+  const latestEnd = new Map<string, string | null>();
+  const openEnded = new Set<string>();
+
+  for (const c of contracts) {
+    const clientId = c.client_id;
+    if (!clientId) continue;
+    if (c.status === "draft") continue;
+    if (c.is_infinite || !c.end_date) {
+      openEnded.add(clientId);
+      continue;
+    }
+    const prev = latestEnd.get(clientId);
+    if (prev === undefined || c.end_date > prev!) latestEnd.set(clientId, c.end_date);
+  }
+
+  const coverage = new Map<string, WindowContract>();
+  for (const [clientId, end] of latestEnd) {
+    if (openEnded.has(clientId) || !end) continue;
+    coverage.set(clientId, { start_date: null, end_date: end, is_infinite: false });
+  }
+  return coverage;
+}
+
+/**
+ * The contract window to judge a guard's attendance against: their own contract
+ * when they have one, otherwise their client's overall coverage. Returns null
+ * when neither is known, which `attendanceWindowError` reads as "no contract
+ * window to enforce".
+ */
+export function effectiveWindowContract(
+  emp: { contract_id?: string | null; client_id?: string | null },
+  contractById: Map<string, WindowContract>,
+  clientCoverage: Map<string, WindowContract>,
+): WindowContract {
+  if (emp.contract_id) {
+    const own = contractById.get(emp.contract_id);
+    if (own) return own;
+  }
+  return emp.client_id ? clientCoverage.get(emp.client_id) ?? null : null;
+}
+
+/**
  * Whether a separated guard should be dropped from the attendance roster for
  * `date`, rather than shown as a locked row. They disappear from their
  * separation date (the last working day) onward; before it they still appear so

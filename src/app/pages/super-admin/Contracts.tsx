@@ -10,11 +10,13 @@ import {
   AlertCircle,
   X,
   FileText,
+  RotateCcw,
 } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import ContractEditorModal from "../../components/ContractEditorModal";
 import ContractViewModal from "../../components/ContractViewModal";
+import ContractRenewModal from "../../components/ContractRenewModal";
 import ContractStatusBadge from "../../components/ContractStatusBadge";
 import ClientFilterSelect from "../../components/ClientFilterSelect";
 import MobileCardList from "../../components/MobileCardList";
@@ -80,6 +82,7 @@ export default function Contracts() {
   const [viewingRow, setViewingRow] = useState<ContractRow | null>(null);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [renewingRow, setRenewingRow] = useState<ContractRow | null>(null);
 
   const loadAll = async () => {
     setLoading(true);
@@ -473,18 +476,28 @@ export default function Contracts() {
                 </>
               );
             }}
-            actions={(row) =>
-              row.drive_view_url ? (
-                <a
-                  href={row.drive_view_url}
-                  target="_blank"
-                  rel="noopener"
-                  className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-brand-600"
-                >
-                  <FileText className="w-3.5 h-3.5" /> Document
-                </a>
-              ) : null
-            }
+            actions={(row) => {
+              const { expired, endingSoon } = deriveContract(row);
+              return (
+                <>
+                  {canEdit && (expired || endingSoon) && (
+                    <Button variant="ghost" size="sm" onClick={() => setRenewingRow(row)}>
+                      <RotateCcw className="w-3.5 h-3.5 mr-1" /> Renew
+                    </Button>
+                  )}
+                  {row.drive_view_url && (
+                    <a
+                      href={row.drive_view_url}
+                      target="_blank"
+                      rel="noopener"
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-brand-600"
+                    >
+                      <FileText className="w-3.5 h-3.5" /> Document
+                    </a>
+                  )}
+                </>
+              );
+            }}
           />
 
           <div className="hidden md:block overflow-x-auto">
@@ -643,6 +656,18 @@ export default function Contracts() {
                           >
                             <Eye className="w-4 h-4" />
                           </button>
+                          {/* Renew is offered once the contract has an end in
+                              sight — expired, or inside the notice window. */}
+                          {canEdit && (expired || endingSoon) && (
+                            <button
+                              type="button"
+                              onClick={() => setRenewingRow(row)}
+                              className="p-1.5 rounded text-brand-600 hover:bg-brand-50"
+                              title={expired ? "Renew — copy this contract onto a new term" : "Renew early — copy this contract onto a new term"}
+                            >
+                              <RotateCcw className="w-4 h-4" />
+                            </button>
+                          )}
                           {canEdit && (
                             <button
                               type="button"
@@ -695,6 +720,17 @@ export default function Contracts() {
           contract={editingRow}
           onClose={() => setEditingRow(null)}
           onSaved={() => { setEditingRow(null); loadAll(); }}
+        />
+      )}
+
+      {/* Renew — clones the contract onto a new term (renew_contract RPC) */}
+      {renewingRow && (
+        <ContractRenewModal
+          isOpen={renewingRow !== null}
+          contract={renewingRow}
+          clientName={renewingRow.client_name}
+          onClose={() => setRenewingRow(null)}
+          onRenewed={() => { setRenewingRow(null); loadAll(); }}
         />
       )}
 
