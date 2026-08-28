@@ -170,10 +170,14 @@ export const router = createRouter([
       { path: "relievers/attendance", element: <Navigate to="/super-admin/relievers" replace /> },
       { path: "relievers/payroll", element: guard(["payroll.view", "payroll.edit"], <PayrollManagement relieversOnly />) },
       { path: "accounting", element: guard(["accounting.view", "accounting.edit"], <Accounting />) },
-      { path: "reports", element: guard(["reports.view"], <FinancialReports />) },
+      // Distinct `key` per route: both render the same FinancialReports, so
+      // without it React reuses one instance across the two paths and the
+      // activeTab state leaks (Financial Reports would show the Partnership tab
+      // and vice versa). The key forces a fresh mount per page.
+      { path: "reports", element: guard(["reports.view"], <FinancialReports key="reports" />) },
       // Partnership Report is its own page under Finance now, not a tab of
       // Financial Reports. Same component, pinned to that one report.
-      { path: "partnership-report", element: guard(["accounting.view", "accounting.edit"], <FinancialReports standalone="partnership" />) },
+      { path: "partnership-report", element: guard(["accounting.view", "accounting.edit"], <FinancialReports key="partnership" standalone="partnership" />) },
       { path: "expenses", element: guard(["expenses.view", "expenses.edit"], <Expenses />) },
       { path: "invoices", element: guard(["invoices.view", "invoices.edit"], <Invoices />) },
       { path: "cashflow", element: guard(["cashflow.view"], <Cashflow />) },
