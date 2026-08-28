@@ -15,7 +15,6 @@ import Partners from "./Partners";
 import Cashflow from "./CashFlow";
 import {
   supabase,
-  fetchAllRows,
   INVOICE_ATTACHMENTS_BUCKET,
   type Client,
   type Invoice,
@@ -26,38 +25,8 @@ import {
   type BankAccount,
   type ClientType,
   type Partner,
-  type BankTransaction,
   type Branch,
 } from "../../lib/supabase";
-
-/**
- * One line of the two-tier partner allocation — see public.partnership_allocation.
- *
- * row_kind tells you what the line is:
- *   REGION            a region's profit before and after head office is
- *                     apportioned to it, what its regional partners took, and
- *                     the residual that fell through to the equity pool.
- *   REGIONAL_PARTNER  a regional partner's share of THEIR region.
- *   EQUITY_PARTNER    an equity partner's share of the pooled residual.
- *   UNALLOCATED       whatever the equity shares did not add up to.
- *
- * own_profit + ho_allocated = base_amount, which is what the shares bite on.
- * Head office's own row carries ho_allocated = −own_profit, so it nets to zero:
- * its whole cost has been pushed out to the regions it serves.
- */
-type AllocRow = {
-  row_kind: "REGION" | "REGIONAL_PARTNER" | "EQUITY_PARTNER" | "UNALLOCATED";
-  branch_id: string | null;
-  region_name: string | null;
-  partner_id: string | null;
-  partner_name: string | null;
-  share_pct: number | null;
-  own_profit: number | null;
-  ho_allocated: number | null;
-  base_amount: number;
-  amount: number;
-  residual: number | null;
-};
 
 type ClientStatementRow = Client & {
   total_invoiced: number;
@@ -167,11 +136,6 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
   // ----- Partnership tab state -----
   const [partners, setPartners] = useState<Partner[]>([]);
   const [partnershipPeriod, setPartnershipPeriod] = useState<string>(previousMonthKey());
-  const [partnerBanks, setPartnerBanks] = useState<BankAccount[]>([]);
-  const [allInvoicesForPl, setAllInvoicesForPl] = useState<{ invoice_date: string; invoice_amount: number; client?: { client_type: ClientType } | null }[]>([]);
-  const [allPayslipsForPl, setAllPayslipsForPl] = useState<{ period_month: string; final_salary: number }[]>([]);
-  const [allExpensesForPl, setAllExpensesForPl] = useState<{ expense_date: string; amount: number }[]>([]);
-  const [allPartnerTxns, setAllPartnerTxns] = useState<BankTransaction[]>([]);
   const [loadingPartnership, setLoadingPartnership] = useState(false);
   const [partnerError, setPartnerError] = useState<string | null>(null);
 
@@ -185,13 +149,6 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
   const [newPartnerBranch, setNewPartnerBranch] = useState("");
   // Regional partners only: what the share bites on. "" = legacy adjusted profit.
   const [newPartnerBasis, setNewPartnerBasis] = useState<"" | "cash" | "revenue">("");
-
-  // Two-tier allocation. `alloc` is the selected month; `allocOpening` is every
-  // month before it, which the same function answers in ONE call because profit
-  // over a range is the sum of its months and the shares are constant.
-  const [allocBasis, setAllocBasis] = useState<"revenue" | "cash">("revenue");
-  const [alloc, setAlloc] = useState<AllocRow[]>([]);
-  const [allocOpening, setAllocOpening] = useState<AllocRow[]>([]);
 
   const [editPartnerId, setEditPartnerId] = useState<string | null>(null);
   const [editPartnerShare, setEditPartnerShare] = useState("");
@@ -523,66 +480,10 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
   const loadPartnership = async () => {
     setLoadingPartnership(true);
     setPartnerError(null);
-    const [pRes, bRes] = await Promise.all([
-      supabase.from("partners").select("*").order("name"),
-      supabase.from("bank_accounts").select("*").eq("owner_type", "partner"),
-    ]);
-    const partnerList = (pRes.data ?? []) as Partner[];
-    const partnerAccounts = (bRes.data ?? []) as BankAccount[];
-    const partnerAccountIds = partnerAccounts.map((b) => b.id);
-    // Paginate the all-time data loads. PostgREST caps unpaginated SELECT at
-    // ~1000 rows, which silently breaks partnership math at scale.
-    let iRows: typeof allInvoicesForPl = [];
-    let sRows: typeof allPayslipsForPl = [];
-    let eRows: typeof allExpensesForPl = [];
-    let txRows: BankTransaction[] = [];
-    try {
-      [iRows, sRows, eRows] = await Promise.all([
-        fetchAllRows<typeof allInvoicesForPl[number]>(() =>
-          supabase
-            .from("invoices")
-            .select("invoice_date, invoice_amount, client:client_id(client_type)")
-            .order("invoice_date", { ascending: false }) as unknown as {
-            range: (from: number, to: number) => Promise<{ data: unknown; error: { message: string } | null }>;
-          },
-        ),
-        fetchAllRows<typeof allPayslipsForPl[number]>(() =>
-          supabase
-            .from("payslips")
-            .select("period_month, final_salary")
-            .order("period_month", { ascending: false }) as unknown as {
-            range: (from: number, to: number) => Promise<{ data: unknown; error: { message: string } | null }>;
-          },
-        ),
-        fetchAllRows<typeof allExpensesForPl[number]>(() =>
-          supabase
-            .from("expenses")
-            .select("expense_date, amount")
-            .order("expense_date", { ascending: false }) as unknown as {
-            range: (from: number, to: number) => Promise<{ data: unknown; error: { message: string } | null }>;
-          },
-        ),
-      ]);
-      if (partnerAccountIds.length) {
-        txRows = await fetchAllRows<BankTransaction>(() =>
-          supabase
-            .from("bank_transactions")
-            .select("*")
-            .in("bank_account_id", partnerAccountIds)
-            .order("created_at", { ascending: false }) as unknown as {
-            range: (from: number, to: number) => Promise<{ data: unknown; error: { message: string } | null }>;
-          },
-        );
-      }
-    } catch (err: any) {
-      setPartnerError(err.message ?? String(err));
-    }
-    setPartners(partnerList);
-    setPartnerBanks(partnerAccounts);
-    setAllInvoicesForPl(iRows);
-    setAllPayslipsForPl(sRows);
-    setAllExpensesForPl(eRows);
-    setAllPartnerTxns(txRows);
+    // The report is the partner list and their shares, nothing more — no
+    // all-time invoice/payslip/expense scans, no partner bank transactions.
+    const pRes = await supabase.from("partners").select("*").order("name");
+    setPartners((pRes.data ?? []) as Partner[]);
     setLoadingPartnership(false);
   };
 
@@ -590,145 +491,6 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
     if (activeTab === "partnership") loadPartnership();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
-
-  // The allocation for the month, and the cumulative one for everything before
-  // it. `1900-01-01` is simply "before any record exists" — the function sums a
-  // range, so one call covers the whole of history.
-  useEffect(() => {
-    if (activeTab !== "partnership") return;
-    let cancelled = false;
-    (async () => {
-      const start = firstOfMonth(partnershipPeriod);
-      const end = lastOfMonth(partnershipPeriod);
-      const prevEnd = (() => {
-        const d = new Date(start);
-        d.setDate(d.getDate() - 1);
-        return d.toISOString().slice(0, 10);
-      })();
-      const [cur, prior] = await Promise.all([
-        supabase.rpc("partnership_allocation", { p_start: start, p_end: end, p_basis: allocBasis }),
-        supabase.rpc("partnership_allocation", { p_start: "1900-01-01", p_end: prevEnd, p_basis: allocBasis }),
-      ]);
-      if (cancelled) return;
-      setAlloc((cur.data ?? []) as AllocRow[]);
-      setAllocOpening((prior.data ?? []) as AllocRow[]);
-    })();
-    return () => { cancelled = true; };
-  }, [activeTab, partnershipPeriod, allocBasis]);
-
-  // partner_id → allocated amount, for whichever allocation was passed in.
-  const allocByPartner = (rows: AllocRow[]) => {
-    const m = new Map<string, number>();
-    for (const r of rows) {
-      if (!r.partner_id) continue;
-      m.set(r.partner_id, (m.get(r.partner_id) ?? 0) + Number(r.amount));
-    }
-    return m;
-  };
-
-  const allocRegions = useMemo(() => alloc.filter((r) => r.row_kind === "REGION"), [alloc]);
-  const allocEquity = useMemo(() => alloc.filter((r) => r.row_kind === "EQUITY_PARTNER"), [alloc]);
-  const allocUnallocated = useMemo(() => alloc.find((r) => r.row_kind === "UNALLOCATED") ?? null, [alloc]);
-  const residualPool = useMemo(
-    () => allocRegions.reduce((s, r) => s + Number(r.residual ?? 0), 0),
-    [allocRegions],
-  );
-
-  const bankToPartnerId = useMemo(() => {
-    const m = new Map<string, string | null>();
-    for (const b of partnerBanks) m.set(b.id, b.owner_partner_id);
-    return m;
-  }, [partnerBanks]);
-
-  // Monthly net P&L = invoices − payroll − expenses for that month.
-  const monthlyPL = (period: string) => {
-    const start = firstOfMonth(period);
-    const end = lastOfMonth(period);
-    const rev = allInvoicesForPl
-      .filter((i) => i.invoice_date >= start && i.invoice_date <= end)
-      .reduce((s, i) => s + Number(i.invoice_amount), 0);
-    const pay = allPayslipsForPl
-      .filter((s) => s.period_month >= start && s.period_month <= end)
-      .reduce((s, x) => s + Number(x.final_salary), 0);
-    const exp = allExpensesForPl
-      .filter((e) => e.expense_date >= start && e.expense_date <= end)
-      .reduce((s, x) => s + Number(x.amount), 0);
-    return rev - pay - exp;
-  };
-
-  // Cumulative net P&L through the END of the given period.
-  const cumulativePLThrough = (periodEndDate: string) => {
-    const rev = allInvoicesForPl
-      .filter((i) => i.invoice_date <= periodEndDate)
-      .reduce((s, i) => s + Number(i.invoice_amount), 0);
-    const pay = allPayslipsForPl
-      .filter((s) => s.period_month <= periodEndDate)
-      .reduce((s, x) => s + Number(x.final_salary), 0);
-    const exp = allExpensesForPl
-      .filter((e) => e.expense_date <= periodEndDate)
-      .reduce((s, x) => s + Number(x.amount), 0);
-    return rev - pay - exp;
-  };
-
-  // For a partner, the cumulative transaction impact (sum of -account_delta) through a date.
-  const cumulativeTxImpact = (partnerId: string, throughDate: string) => {
-    let total = 0;
-    for (const tx of allPartnerTxns) {
-      if (!tx.bank_account_id) continue;
-      const pid = bankToPartnerId.get(tx.bank_account_id);
-      if (pid !== partnerId) continue;
-      const txDate = (tx.created_at ?? "").slice(0, 10);
-      if (txDate <= throughDate) total += -Number(tx.account_delta);
-    }
-    return total;
-  };
-
-  // Same but bounded within a [start, end] window.
-  const txImpactInRange = (partnerId: string, start: string, end: string) => {
-    let total = 0;
-    for (const tx of allPartnerTxns) {
-      if (!tx.bank_account_id) continue;
-      const pid = bankToPartnerId.get(tx.bank_account_id);
-      if (pid !== partnerId) continue;
-      const txDate = (tx.created_at ?? "").slice(0, 10);
-      if (txDate >= start && txDate <= end) total += -Number(tx.account_delta);
-    }
-    return total;
-  };
-
-  const partnerRows = useMemo(() => {
-    const start = firstOfMonth(partnershipPeriod);
-    const end = lastOfMonth(partnershipPeriod);
-    // Day before start = previous month end
-    const prevDay = (() => {
-      const d = new Date(start);
-      d.setDate(d.getDate() - 1);
-      return d.toISOString().slice(0, 10);
-    })();
-    // Both the month's profit and the accumulated one come from the two-tier
-    // allocation now, NOT from `share × whole-company profit`. The old formula
-    // double-counted: a regional partner was paid on revenue earned in regions
-    // they have no stake in, and an equity partner was paid on profit already
-    // promised to a regional partner.
-    const curr = allocByPartner(alloc);
-    const prior = allocByPartner(allocOpening);
-    return partners.map((p) => {
-      const openingForMonth =
-        Number(p.opening_balance) +
-        (prior.get(p.id) ?? 0) +
-        cumulativeTxImpact(p.id, prevDay);
-      const profitForMonth = curr.get(p.id) ?? 0;
-      const adjustmentsForMonth = txImpactInRange(p.id, start, end);
-      const remaining = openingForMonth + profitForMonth + adjustmentsForMonth;
-      return {
-        partner: p,
-        opening: openingForMonth,
-        profit: profitForMonth,
-        adjustments: adjustmentsForMonth,
-        remaining,
-      };
-    });
-  }, [partners, partnershipPeriod, alloc, allocOpening, allPartnerTxns, bankToPartnerId]);
 
   // Shares are only comparable WITHIN a tier: equity shares divide the residual
   // pool, a region's shares divide that region's profit. Summing all partners
@@ -936,21 +698,13 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                   fileName: `Partnership Report ${formatPeriod(partnershipPeriod)}.xlsx`,
                   sheetName: "Partnership",
                   title: `Partnership Report — ${formatPeriod(partnershipPeriod)}`,
-                  headers: [
-                    "Partner",
-                    "Profit Share %",
-                    "Opening Balance",
-                    "P&L Share",
-                    "Adjustments",
-                    "Remaining Balance",
-                  ],
-                  rows: partnerRows.map((r) => [
-                    r.partner.name,
-                    Number(r.partner.profit_share_percent),
-                    Number(r.opening),
-                    Number(r.profit),
-                    Number(r.adjustments),
-                    Number(r.remaining),
+                  headers: ["Partner", "Kind", "Profit Share %"],
+                  rows: partners.map((p) => [
+                    p.name,
+                    p.scope === "BRANCH"
+                      ? `Regional · ${branches.find((b) => b.id === p.branch_id)?.name ?? "no region"}`
+                      : "Equity",
+                    Number(p.profit_share_percent),
                   ]),
                 });
               }
@@ -1371,90 +1125,6 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                 <div className="text-sm text-danger-600 bg-danger-50 border border-danger-200 px-4 py-2 rounded mb-4">{partnerError}</div>
               )}
 
-              {/* ---- The two-tier split ---- */}
-              <div className="mb-6 border border-slate-200 rounded-lg overflow-hidden">
-                <div className="px-4 py-3 border-b border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h4 className="text-sm text-slate-900">Profit allocation</h4>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Head-office cost is apportioned to the regions first, pro-rata by revenue.
-                      Regional partners then take their share of their region's adjusted profit, and
-                      what is left in every region pools together for the equity partners.
-                    </p>
-                  </div>
-                  <div className="flex gap-1 bg-slate-100 rounded-md p-1">
-                    {(["revenue", "cash"] as const).map((b) => (
-                      <button
-                        key={b}
-                        type="button"
-                        onClick={() => setAllocBasis(b)}
-                        className={`px-3 py-1.5 text-xs rounded capitalize transition-colors ${
-                          allocBasis === b ? "bg-white text-brand-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
-                        }`}
-                      >
-                        {b === "revenue" ? "Revenue basis" : "Cash basis"}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* The per-region breakdown table used to sit here. Every
-                    partner it named — regional and equity alike — is still
-                    listed with their allocation in Partner Accounts below, so
-                    it restated that one level coarser while being the widest
-                    table on the page. The one figure that came only from it,
-                    the residual falling through to the equity partners, is
-                    kept as the line below. */}
-                <div className="px-4 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-sm">
-                  <span className="text-slate-700">Residual pool for equity partners</span>
-                  <span className="tabular-nums text-slate-900">
-                    PKR {Math.round(residualPool).toLocaleString()}
-                  </span>
-                </div>
-
-                {/* Equity tier */}
-                <div className="overflow-x-auto border-t border-slate-200">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-200 text-xs text-slate-500 uppercase">
-                        <th className="text-left px-4 py-2.5">Equity partner</th>
-                        <th className="text-right px-4 py-2.5">Share</th>
-                        <th className="text-right px-4 py-2.5">From pool</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {allocEquity.length === 0 && (
-                        <tr><td colSpan={3} className="px-4 py-6 text-center text-slate-500">No equity partners.</td></tr>
-                      )}
-                      {allocEquity.map((p) => (
-                        <tr key={p.partner_id} className="hover:bg-slate-50">
-                          <td className="px-4 py-3 text-slate-900">{p.partner_name}</td>
-                          <td className="px-4 py-3 text-right tabular-nums text-slate-600">{Number(p.share_pct)}%</td>
-                          <td className="px-4 py-3 text-right tabular-nums text-slate-900">
-                            PKR {Math.round(Number(p.amount)).toLocaleString()}
-                          </td>
-                        </tr>
-                      ))}
-                      {/* Surfaced rather than spread: shares totalling 90% show
-                          10% retained instead of quietly inflating everyone. */}
-                      {allocUnallocated && Math.round(Number(allocUnallocated.amount)) !== 0 && (
-                        <tr className="bg-warning-50/50">
-                          <td className="px-4 py-3 text-slate-700">
-                            Unallocated — retained by the company
-                          </td>
-                          <td className="px-4 py-3 text-right tabular-nums text-slate-600">
-                            {Number(allocUnallocated.share_pct)}%
-                          </td>
-                          <td className="px-4 py-3 text-right tabular-nums text-slate-900">
-                            PKR {Math.round(Number(allocUnallocated.amount)).toLocaleString()}
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
               {/* 12 columns, not 5. With Region hidden the fields are 4+2+2+2
                   and the button takes the last 2; with it shown the name gives
                   up two of its own so the row still totals 12. On a 5-column
@@ -1574,7 +1244,7 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                   <div className="py-12 text-center text-slate-500">
                     <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                   </div>
-                ) : partnerRows.length === 0 ? (
+                ) : partners.length === 0 ? (
                   <div className="py-12 text-center text-slate-500 text-sm">
                     No partners yet. Add the first one above.
                   </div>
@@ -1585,15 +1255,11 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                         <tr className="border-b border-slate-200">
                           <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Partner</th>
                           <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Profit Share</th>
-                          <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Opening Balance</th>
-                          <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">P&amp;L Share</th>
-                          <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Adjustments</th>
-                          <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Remaining</th>
                           <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200">
-                        {partnerRows.map(({ partner: p, opening, profit, adjustments, remaining }) => {
+                        {partners.map((p) => {
                           const editing = editPartnerId === p.id;
                           return (
                             <tr key={p.id} className="hover:bg-slate-50 transition-colors">
@@ -1634,6 +1300,18 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                                         <option value="revenue">Revenue</option>
                                       </ThemedSelect>
                                     )}
+                                    {/* Opening balance is a property of the partner,
+                                        not an allocation figure, so it stays settable
+                                        here even though it is no longer a column. */}
+                                    {!p.opening_balance_locked && (
+                                      <input
+                                        type="number"
+                                        value={editPartnerOpening}
+                                        onChange={(e) => setEditPartnerOpening(e.target.value)}
+                                        placeholder="Opening balance"
+                                        className="w-32 px-2 py-1 border border-slate-200 rounded text-xs text-right"
+                                      />
+                                    )}
                                   </div>
                                 ) : (
                                   <>
@@ -1645,28 +1323,6 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                                     )}
                                   </>
                                 )}
-                              </td>
-                              <td className="px-4 py-3 text-sm text-right text-slate-700">
-                                {editing && !p.opening_balance_locked ? (
-                                  <input
-                                    type="number"
-                                    value={editPartnerOpening}
-                                    onChange={(e) => setEditPartnerOpening(e.target.value)}
-                                    placeholder="Lock once entered"
-                                    className="w-32 px-2 py-1 border border-slate-200 rounded text-sm text-right"
-                                  />
-                                ) : (
-                                  <>PKR {Number(opening).toLocaleString(undefined, { maximumFractionDigits: 2 })}</>
-                                )}
-                              </td>
-                              <td className={`px-4 py-3 text-sm text-right ${profit >= 0 ? "text-success-600" : "text-danger-600"}`}>
-                                PKR {Number(profit).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                              </td>
-                              <td className={`px-4 py-3 text-sm text-right ${adjustments >= 0 ? "text-success-600" : "text-danger-600"}`}>
-                                PKR {Number(adjustments).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                              </td>
-                              <td className={`px-4 py-3 text-sm text-right ${remaining >= 0 ? "text-slate-900" : "text-danger-600"}`}>
-                                PKR {Number(remaining).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                               </td>
                               <td className="px-4 py-3 text-right">
                                 {editing ? (
@@ -1702,27 +1358,20 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                 )}
               </div>
 
-              <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+              <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                 <div className="bg-slate-50 border border-slate-200 p-3 rounded">
                   <p className="text-slate-500 text-xs mb-1">Equity share allocated</p>
                   <p className={`text-lg ${equityShareTotal > 100 ? "text-danger-600" : "text-slate-900"}`}>{equityShareTotal}%</p>
                 </div>
                 <div className="bg-slate-50 border border-slate-200 p-3 rounded">
-                  <p className="text-slate-500 text-xs mb-1">Month P&amp;L</p>
-                  <p className={`text-lg ${monthlyPL(partnershipPeriod) >= 0 ? "text-success-700" : "text-danger-600"}`}>
-                    PKR {Number(monthlyPL(partnershipPeriod)).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                  </p>
-                </div>
-                <div className="bg-slate-50 border border-slate-200 p-3 rounded">
-                  <p className="text-slate-500 text-xs mb-1">Sum of remaining balances</p>
-                  <p className="text-lg text-slate-900">
-                    PKR {partnerRows.reduce((s, r) => s + r.remaining, 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                  </p>
+                  <p className="text-slate-500 text-xs mb-1">Partners</p>
+                  <p className="text-lg text-slate-900">{partners.length}</p>
                 </div>
               </div>
 
               <p className="mt-4 text-xs text-slate-500">
-                Remaining balance carries forward: this month's remaining becomes next month's opening. Use the month selector to step through history.
+                Equity shares divide the company-wide residual; a regional partner's share divides
+                their own region. The two are separate pools, so they are not summed together.
               </p>
             </div>
           )}
