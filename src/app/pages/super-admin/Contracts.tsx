@@ -10,11 +10,13 @@ import {
   AlertCircle,
   X,
   FileText,
+  RotateCcw,
 } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import ContractEditorModal from "../../components/ContractEditorModal";
 import ContractViewModal from "../../components/ContractViewModal";
+import ContractRenewModal from "../../components/ContractRenewModal";
 import ContractStatusBadge from "../../components/ContractStatusBadge";
 import ClientFilterSelect from "../../components/ClientFilterSelect";
 import MobileCardList from "../../components/MobileCardList";
@@ -24,7 +26,6 @@ import {
   CONTRACT_TYPE_LABEL,
   CONTRACT_STATUS_LABEL,
   CONTRACT_LINE_CATEGORY_LABEL,
-  CONTRACT_LINE_CATEGORY_ORDER,
   HARDWARE_LINE_CATEGORIES,
   isPersonnelCategory,
   effectiveContractLinesValue,
@@ -81,6 +82,7 @@ export default function Contracts() {
   const [viewingRow, setViewingRow] = useState<ContractRow | null>(null);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [renewingRow, setRenewingRow] = useState<ContractRow | null>(null);
 
   const loadAll = async () => {
     setLoading(true);
@@ -455,43 +457,6 @@ export default function Contracts() {
                   <span className="tabular-nums">PKR {deriveContract(row).valuePerMonth.toLocaleString()}</span>
                 ),
               },
-              {
-                label: "Committed by category",
-                full: true,
-                value: (row) => {
-                  const { committedByCat, activeByCat } = deriveContract(row);
-                  const personnel = CONTRACT_LINE_CATEGORY_ORDER.filter(
-                    (cat) => committedByCat.has(cat) && isPersonnelCategory(cat),
-                  );
-                  const hardware = HARDWARE_LINE_CATEGORIES.filter((cat) => committedByCat.has(cat));
-                  if (committedByCat.size === 0) return <span className="text-muted-foreground">No lines</span>;
-                  return (
-                    <span className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
-                      {personnel.map((cat) => {
-                        const committed = committedByCat.get(cat) ?? 0;
-                        const active = activeByCat.get(cat) ?? 0;
-                        return (
-                          <span key={cat}>
-                            <span className="text-muted-foreground">{CONTRACT_LINE_CATEGORY_LABEL[cat]}:</span>{" "}
-                            <span className={active > committed ? "text-danger-700 font-medium" : "font-medium"}>
-                              {active}/{committed}
-                            </span>
-                          </span>
-                        );
-                      })}
-                      {hardware.map((cat) => (
-                        <span key={cat}>
-                          <span className="text-muted-foreground">{CONTRACT_LINE_CATEGORY_LABEL[cat]}:</span>{" "}
-                          <span className="font-medium">{committedByCat.get(cat) ?? 0}</span>
-                        </span>
-                      ))}
-                      {personnel.length === 0 && (
-                        <span className="text-muted-foreground">No personnel lines</span>
-                      )}
-                    </span>
-                  );
-                },
-              },
             ]}
             tags={(row) => {
               const { expired, overStaffed } = deriveContract(row);
@@ -511,18 +476,28 @@ export default function Contracts() {
                 </>
               );
             }}
-            actions={(row) =>
-              row.drive_view_url ? (
-                <a
-                  href={row.drive_view_url}
-                  target="_blank"
-                  rel="noopener"
-                  className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-brand-600"
-                >
-                  <FileText className="w-3.5 h-3.5" /> Document
-                </a>
-              ) : null
-            }
+            actions={(row) => {
+              const { expired, endingSoon } = deriveContract(row);
+              return (
+                <>
+                  {canEdit && (expired || endingSoon) && (
+                    <Button variant="ghost" size="sm" onClick={() => setRenewingRow(row)}>
+                      <RotateCcw className="w-3.5 h-3.5 mr-1" /> Renew
+                    </Button>
+                  )}
+                  {row.drive_view_url && (
+                    <a
+                      href={row.drive_view_url}
+                      target="_blank"
+                      rel="noopener"
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-brand-600"
+                    >
+                      <FileText className="w-3.5 h-3.5" /> Document
+                    </a>
+                  )}
+                </>
+              );
+            }}
           />
 
           <div className="hidden md:block overflow-x-auto">
@@ -533,7 +508,6 @@ export default function Contracts() {
                   <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Client</th>
                   <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Type</th>
                   <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Period</th>
-                  <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Committed by category</th>
                   <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Guards (active/allotted)</th>
                   <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Weapons &amp; equipment</th>
                   <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Value/mo</th>
@@ -545,14 +519,14 @@ export default function Contracts() {
               <tbody className="divide-y divide-slate-200">
                 {loading && (
                   <tr>
-                    <td colSpan={11} className="px-4 py-10 text-center text-slate-500">
+                    <td colSpan={10} className="px-4 py-10 text-center text-slate-500">
                       <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                     </td>
                   </tr>
                 )}
                 {!loading && filteredRows.length === 0 && (
                   <tr>
-                    <td colSpan={11} className="px-4 py-10 text-center text-slate-500 text-sm">
+                    <td colSpan={10} className="px-4 py-10 text-center text-slate-500 text-sm">
                       No contracts match the current filters.
                     </td>
                   </tr>
@@ -560,7 +534,7 @@ export default function Contracts() {
                 {!loading && filteredRows.map((row) => {
                   const {
                     eff, effEndDate, renewed, dleft, endingSoon, expired,
-                    committedByCat, activeByCat, totalCommitted, hardwareCommitted,
+                    committedByCat, totalCommitted, hardwareCommitted,
                     activeGuards, looseActive, valuePerMonth, overStaffed,
                   } = deriveContract(row);
                   return (
@@ -596,33 +570,6 @@ export default function Contracts() {
                               {endingSoon && ` (${dleft}d)`}
                             </div>
                           )
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-600">
-                        {committedByCat.size === 0 ? (
-                          <span className="text-slate-400 text-xs">No lines</span>
-                        ) : (
-                          <div className="flex flex-col gap-0.5">
-                            {CONTRACT_LINE_CATEGORY_ORDER.filter(
-                              (cat) => committedByCat.has(cat) && isPersonnelCategory(cat),
-                            ).map((cat) => {
-                              const committed = committedByCat.get(cat) ?? 0;
-                              const active = activeByCat.get(cat) ?? 0;
-                              const over = active > committed;
-                              return (
-                                <span key={cat} className="text-xs">
-                                  <span className="text-slate-500">{CONTRACT_LINE_CATEGORY_LABEL[cat]}:</span>{" "}
-                                  <span className={over ? "text-danger-700 font-medium" : "text-slate-900 font-medium"}>
-                                    {active}/{committed}
-                                  </span>
-                                </span>
-                              );
-                            })}
-                            {/* A hardware-only contract has no personnel lines at all. */}
-                            {![...committedByCat.keys()].some(isPersonnelCategory) && (
-                              <span className="text-xs text-slate-400">No personnel lines</span>
-                            )}
-                          </div>
                         )}
                       </td>
                       <td className="px-4 py-3 text-sm text-right">
@@ -709,6 +656,18 @@ export default function Contracts() {
                           >
                             <Eye className="w-4 h-4" />
                           </button>
+                          {/* Renew is offered once the contract has an end in
+                              sight — expired, or inside the notice window. */}
+                          {canEdit && (expired || endingSoon) && (
+                            <button
+                              type="button"
+                              onClick={() => setRenewingRow(row)}
+                              className="p-1.5 rounded text-brand-600 hover:bg-brand-50"
+                              title={expired ? "Renew — copy this contract onto a new term" : "Renew early — copy this contract onto a new term"}
+                            >
+                              <RotateCcw className="w-4 h-4" />
+                            </button>
+                          )}
                           {canEdit && (
                             <button
                               type="button"
@@ -761,6 +720,17 @@ export default function Contracts() {
           contract={editingRow}
           onClose={() => setEditingRow(null)}
           onSaved={() => { setEditingRow(null); loadAll(); }}
+        />
+      )}
+
+      {/* Renew — clones the contract onto a new term (renew_contract RPC) */}
+      {renewingRow && (
+        <ContractRenewModal
+          isOpen={renewingRow !== null}
+          contract={renewingRow}
+          clientName={renewingRow.client_name}
+          onClose={() => setRenewingRow(null)}
+          onRenewed={() => { setRenewingRow(null); loadAll(); }}
         />
       )}
 

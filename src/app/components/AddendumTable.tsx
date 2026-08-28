@@ -4,6 +4,7 @@ import {
   ADDENDUM_CHANGE_TYPE_LABEL,
   ADDENDUM_SOURCE_LABEL,
   CONTRACT_LINE_CATEGORY_LABEL,
+  CONTRACT_SHIFT_LABEL,
   type ContractAddendum,
   type ContractLineCategory,
 } from "../lib/supabase";
@@ -35,6 +36,7 @@ export default function AddendumTable({
             <th className="text-left px-3 py-2">Effective</th>
             <th className="text-left px-3 py-2">Change</th>
             <th className="text-left px-3 py-2">Category / Line</th>
+            <th className="text-left px-3 py-2">Shift</th>
             <th className="text-left px-3 py-2">Source</th>
             <th className="text-left px-3 py-2">Reference</th>
           </tr>
@@ -58,6 +60,9 @@ export default function AddendumTable({
                 <td className="px-3 py-1.5 text-slate-600">
                   {cat ? CONTRACT_LINE_CATEGORY_LABEL[cat] : "—"}
                   {!a.contract_line_id && <span className="text-[10px] text-slate-400 ml-1">(new line)</span>}
+                </td>
+                <td className="px-3 py-1.5 text-slate-600">
+                  {a.shift_code ? CONTRACT_SHIFT_LABEL[a.shift_code] : "—"}
                 </td>
                 <td className="px-3 py-1.5 text-slate-600">{ADDENDUM_SOURCE_LABEL[a.source]}</td>
                 <td className="px-3 py-1.5">

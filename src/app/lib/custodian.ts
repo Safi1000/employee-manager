@@ -5,7 +5,8 @@
 // via a CUSTODIAN cash_location linked to that employee (custodian_employee_id).
 // treasury.cash_balance stays the canonical total; these balances reconcile up to it.
 //
-// heldCash(location) = opening + net custody_transfers + attributed cash-in − attributed cash-out.
+// heldCash(location) = opening + net custody_transfers + attributed cash-in − attributed cash-out
+// (cash expenses AND cash salary advances, both stamped with custodian_location_id).
 // This is the single source of truth reused by Cash Custody, Record Payment, and Expenses.
 import { supabase } from "./supabase";
 
@@ -23,7 +24,7 @@ export type CustodianOption = {
  * currently hold. Used to render the "who received / who paid" dropdowns.
  */
 export async function loadCustodianOptions(companyId: string): Promise<CustodianOption[]> {
-  const [{ data: staff }, { data: locs }, { data: tx }, { data: cashPays }, { data: cashExps }, { data: cashCheques }, { data: bankWd }] =
+  const [{ data: staff }, { data: locs }, { data: tx }, { data: cashPays }, { data: cashExps }, { data: cashAdvances }, { data: cashCheques }, { data: bankWd }] =
     await Promise.all([
       supabase.from("employees").select("id, full_name").eq("category", "office_staff").order("full_name"),
       supabase
@@ -34,6 +35,9 @@ export async function loadCustodianOptions(companyId: string): Promise<Custodian
       supabase.from("custody_transfers").select("from_location_id, to_location_id, amount").eq("company_id", companyId),
       supabase.from("invoice_payments").select("amount, custodian_location_id").eq("payment_mode", "Cash").not("custodian_location_id", "is", null),
       supabase.from("expenses").select("amount, custodian_location_id").not("custodian_location_id", "is", null),
+      // Salary advances paid in cash by a custodian (0203) — cash out of their
+      // hands, exactly like an expense.
+      supabase.from("advances").select("amount, custodian_location_id").eq("payment_mode", "Cash").not("custodian_location_id", "is", null),
       // Cleared cash cheques handed to a custodian — cash they now physically hold.
       supabase.from("cheques").select("amount, custodian_location_id").eq("cheque_type", "cash").eq("status", "cleared").not("custodian_location_id", "is", null),
       // Bank→custodian withdrawals (reference_id = custodian cash_location).
@@ -70,6 +74,9 @@ export async function loadCustodianOptions(companyId: string): Promise<Custodian
   }
   for (const e of (cashExps ?? []) as any[]) {
     if (e.custodian_location_id && heldByLoc.has(e.custodian_location_id)) heldByLoc.set(e.custodian_location_id, (heldByLoc.get(e.custodian_location_id) ?? 0) - Number(e.amount ?? 0));
+  }
+  for (const a of (cashAdvances ?? []) as any[]) {
+    if (a.custodian_location_id && heldByLoc.has(a.custodian_location_id)) heldByLoc.set(a.custodian_location_id, (heldByLoc.get(a.custodian_location_id) ?? 0) - Number(a.amount ?? 0));
   }
   for (const c of (cashCheques ?? []) as any[]) {
     if (c.custodian_location_id && heldByLoc.has(c.custodian_location_id)) heldByLoc.set(c.custodian_location_id, (heldByLoc.get(c.custodian_location_id) ?? 0) + Number(c.amount ?? 0));

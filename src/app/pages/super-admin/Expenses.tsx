@@ -1,4 +1,5 @@
 import ThemedSelect from "../../components/ThemedSelect";
+import CategoryPicker from "../../components/CategoryPicker";
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Search, Upload, AlertCircle, X, Loader2, Trash2, Download, Pencil } from "lucide-react";
 import Header from "../../components/Header";
@@ -75,6 +76,8 @@ type FixedExpense = {
   amount: number;
   payment_mode: FixedPaymentMode;
   bank_account_id: string | null;
+  /** Default "Paid By" custodian for cash instances raised from this template (0203). */
+  custodian_location_id: string | null;
   due_day: number | null;
   notes: string | null;
   start_month: string;
@@ -131,6 +134,10 @@ type FixedForm = {
   start_month: string;
   end_month: string;
   is_active: boolean;
+  // Default "Paid By" for cash instances raised from this template. A fixed
+  // expense is a template, not a payment, so this only prefills the approval —
+  // the custodian is stamped on the real expense when the instance is approved.
+  paid_by_employee_id: string;
 };
 
 const thisMonthKey = () => {
@@ -153,6 +160,7 @@ const emptyFixedForm: FixedForm = {
   start_month: thisMonthKey(),
   end_month: "",
   is_active: true,
+  paid_by_employee_id: "",
 };
 
 const monthLabel = (key: string) => {
@@ -169,6 +177,10 @@ type AdvanceForm = {
   bank_account_id: string;
   cheque_id: string;
   notes: string;
+  // "Paid By" — the office-staff custodian whose held cash the advance came out
+  // of. Cash mode only; the same attribution expenses have carried since 0135,
+  // without which the money left Cash in Hand against nobody.
+  paid_by_employee_id: string;
 };
 
 const emptyAdvanceForm: AdvanceForm = {
@@ -180,6 +192,7 @@ const emptyAdvanceForm: AdvanceForm = {
   bank_account_id: "",
   cheque_id: "",
   notes: "",
+  paid_by_employee_id: "",
 };
 
 type ExpenseForm = {
@@ -244,6 +257,16 @@ export default function Expenses() {
   const [cashBalance, setCashBalance] = useState(0);
   // Office-staff custodians + their held cash — for attributing cash expenses (0135).
   const [custodians, setCustodians] = useState<CustodianOption[]>([]);
+  // employeeId → their custodian cash_location id. The "Paid By" filters compare
+  // against the stored custodian_location_id, which is what the row actually holds.
+  const custodianLocationById = useMemo(
+    () => new Map(custodians.filter((c) => c.locationId).map((c) => [c.employeeId, c.locationId!])),
+    [custodians],
+  );
+  const custodianNameByLocation = useMemo(
+    () => new Map(custodians.filter((c) => c.locationId).map((c) => [c.locationId!, c.fullName])),
+    [custodians],
+  );
   const [expenseCustodianId, setExpenseCustodianId] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -261,6 +284,9 @@ export default function Expenses() {
   const [advSearch, setAdvSearch] = useState("");
   const [advClientFilter, setAdvClientFilter] = useState<string>("all");
   const [advModeFilter, setAdvModeFilter] = useState<"all" | "Cash" | "Bank" | "Cheque">("all");
+  // "Paid By" filters — which office-staff custodian's cash the money came from.
+  const [advPaidByFilter, setAdvPaidByFilter] = useState<"all" | "none" | string>("all");
+  const [fixedPaidByFilter, setFixedPaidByFilter] = useState<"all" | "none" | string>("all");
 
   const currentMonthKey = () => {
     const d = new Date();
@@ -271,6 +297,9 @@ export default function Expenses() {
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [clientFilter, setClientFilter] = useState<"all" | "office" | string>("all");
   const [modeFilter, setModeFilter] = useState<"all" | ExpensePaymentMode>("all");
+  // "Expense By" — narrows the list (and the category totals / pie above it) to
+  // one office-staff member, so spend can be read person by person.
+  const [expenseByFilter, setExpenseByFilter] = useState<"all" | "none" | string>("all");
   const [monthFilter, setMonthFilter] = useState<string>(currentMonthKey());
   const [advMonthFilter, setAdvMonthFilter] = useState<string>(currentMonthKey());
 
@@ -476,6 +505,12 @@ export default function Expenses() {
         if (advClientFilter !== "none" && a.client_id !== advClientFilter) return false;
       }
       if (advModeFilter !== "all" && a.payment_mode !== advModeFilter) return false;
+      if (advPaidByFilter !== "all") {
+        const locId = a.custodian_location_id ?? null;
+        if (advPaidByFilter === "none") {
+          if (locId) return false;
+        } else if (locId !== custodianLocationById.get(advPaidByFilter)) return false;
+      }
       if (advBranchFilter !== "all") {
         // Advances belong to a branch via the employee (always present). Fall back
         // to the client's branch, then Head Office for legacy rows.
@@ -486,7 +521,7 @@ export default function Expenses() {
       }
       return true;
     });
-  }, [advances, advSearch, advMonthFilter, advClientFilter, advModeFilter, advBranchFilter, clientBranchMap, employeeBranchMap, headOfficeBranchId]);
+  }, [advances, advSearch, advMonthFilter, advClientFilter, advModeFilter, advPaidByFilter, custodianLocationById, advBranchFilter, clientBranchMap, employeeBranchMap, headOfficeBranchId]);
 
   const advTotals = useMemo(() => {
     const t = { count: filteredAdvances.length, total: 0 };
@@ -536,9 +571,11 @@ export default function Expenses() {
       if (clientFilter === "office" && e.client_id !== null) return false;
       if (clientFilter !== "all" && clientFilter !== "office" && e.client_id !== clientFilter) return false;
       if (modeFilter !== "all" && e.payment_mode !== modeFilter) return false;
+      if (expenseByFilter === "none" && e.expense_by) return false;
+      if (expenseByFilter !== "all" && expenseByFilter !== "none" && e.expense_by !== expenseByFilter) return false;
       return true;
     });
-  }, [expenses, search, monthFilter, categoryFilter, clientFilter, modeFilter]);
+  }, [expenses, search, monthFilter, categoryFilter, clientFilter, modeFilter, expenseByFilter]);
 
   // Last 18 months of options + "All" for the month select.
   const monthOptions = useMemo(() => {
@@ -647,6 +684,8 @@ export default function Expenses() {
       start_month: f.start_month.slice(0, 7),
       end_month: f.end_month ? f.end_month.slice(0, 7) : "",
       is_active: f.is_active,
+      paid_by_employee_id:
+        custodians.find((c) => c.locationId && c.locationId === f.custodian_location_id)?.employeeId ?? "",
     });
     setFixedError(null);
     setIsFixedFormOpen(true);
@@ -679,6 +718,13 @@ export default function Expenses() {
         (fixedForm.client_id ? clients.find((c) => c.id === fixedForm.client_id)?.branch_id ?? null : null) ||
         headOfficeBranchId ||
         null;
+      // Resolve the default custodian now so the monthly approval can prefill it.
+      let fixedCustodianLocId: string | null = null;
+      if (fixedForm.payment_mode === "Cash" && fixedForm.paid_by_employee_id) {
+        const cid = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
+        const staff = custodians.find((c) => c.employeeId === fixedForm.paid_by_employee_id);
+        if (cid && staff) fixedCustodianLocId = await ensureCustodianLocation(cid, staff.employeeId, staff.fullName);
+      }
       const payload = {
         category_id: fixedForm.category_id,
         // Locked: always derived from the client, never a manual choice.
@@ -695,6 +741,7 @@ export default function Expenses() {
         start_month: `${fixedForm.start_month}-01`,
         end_month: fixedForm.end_month ? `${fixedForm.end_month}-01` : null,
         is_active: fixedForm.is_active,
+        custodian_location_id: fixedCustodianLocId,
       };
       if (fixedEditingId) {
         const { error: upErr } = await supabase.from("fixed_expenses").update(payload).eq("id", fixedEditingId);
@@ -781,7 +828,13 @@ export default function Expenses() {
   const openDecision = (row: FixedInstance, action: "approve" | "deny") => {
     setDecisionTarget({ row, action });
     setDecisionNote("");
-    setDecisionCustodianId("");
+    // Prefill "Paid By" from the template's default payer — still changeable,
+    // since the person who actually pays can differ in any given month.
+    const template = fixedExpenses.find((f) => f.id === row.fixed_expense_id);
+    const defaultLoc = template?.custodian_location_id ?? null;
+    setDecisionCustodianId(
+      custodians.find((c) => c.locationId && c.locationId === defaultLoc)?.employeeId ?? "",
+    );
     setFixedError(null);
   };
 
@@ -922,6 +975,16 @@ export default function Expenses() {
     await loadFixedInstances(fixedMonth);
   };
 
+  // Templates narrowed by their default payer.
+  const filteredFixedExpenses = useMemo(() => {
+    if (fixedPaidByFilter === "all") return fixedExpenses;
+    return fixedExpenses.filter((f) => {
+      const locId = f.custodian_location_id ?? null;
+      if (fixedPaidByFilter === "none") return !locId;
+      return locId === custodianLocationById.get(fixedPaidByFilter);
+    });
+  }, [fixedExpenses, fixedPaidByFilter, custodianLocationById]);
+
   const fixedTotals = useMemo(() => {
     let pending = 0, approved = 0, denied = 0;
     for (const i of fixedInstances) {
@@ -1038,7 +1101,8 @@ export default function Expenses() {
     e.preventDefault();
     setFormError(null);
     const amount = Number(form.amount);
-    if (!form.category_id || !amount || amount <= 0 || !form.expense_date) return;
+    if (!form.category_id) { setFormError("Pick a category."); return; }
+    if (!amount || amount <= 0 || !form.expense_date) return;
     if (form.payment_mode === "Bank" && !form.bank_account_id) {
       setFormError("Select a bank account for Bank payment.");
       return;
@@ -1264,7 +1328,8 @@ export default function Expenses() {
     setFormError(null);
     if (!selected) return;
     const amount = Number(editForm.amount);
-    if (!editForm.category_id || !amount || amount <= 0 || !editForm.expense_date) return;
+    if (!editForm.category_id) { setFormError("Pick a category."); return; }
+    if (!amount || amount <= 0 || !editForm.expense_date) return;
     if (editForm.payment_mode === "Bank" && !editForm.bank_account_id) {
       setFormError("Select a bank account for Bank payment.");
       return;
@@ -1490,6 +1555,7 @@ export default function Expenses() {
     if (!amt || amt <= 0) return "Enter a positive amount.";
     if (!f.advance_date) return "Select a date.";
     if (f.payment_mode === "Bank" && !f.bank_account_id) return "Select a bank account.";
+    if (f.payment_mode === "Cash" && !f.paid_by_employee_id) return "Select who paid the cash.";
     if (f.payment_mode === "Cheque" && !f.cheque_id) return "Select a pending cheque.";
     if (f.payment_mode === "Cheque") {
       const ownPrev = existingAmount ?? 0;
@@ -1537,6 +1603,14 @@ export default function Expenses() {
         advForm.payment_mode === "Cheque"
           ? cheques.find((c) => c.id === advForm.cheque_id)?.bank_account_id ?? null
           : null;
+      // Attribute cash paid to the office-staff custodian who handed it over,
+      // exactly as a cash expense does.
+      let advCustodianLocId: string | null = null;
+      if (advForm.payment_mode === "Cash") {
+        const cid = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
+        const staff = custodians.find((c) => c.employeeId === advForm.paid_by_employee_id);
+        if (cid && staff) advCustodianLocId = await ensureCustodianLocation(cid, staff.employeeId, staff.fullName);
+      }
       const { data: inserted, error: insErr } = await supabase
         .from("advances")
         .insert({
@@ -1552,6 +1626,7 @@ export default function Expenses() {
                 ? chequeBank
                 : null,
           cheque_id: advForm.payment_mode === "Cheque" ? advForm.cheque_id : null,
+          custodian_location_id: advCustodianLocId,
           notes: advForm.notes.trim() || null,
         })
         .select()
@@ -1601,6 +1676,8 @@ export default function Expenses() {
       bank_account_id: adv.bank_account_id ?? "",
       cheque_id: adv.cheque_id ?? "",
       notes: adv.notes ?? "",
+      paid_by_employee_id:
+        custodians.find((c) => c.locationId && c.locationId === adv.custodian_location_id)?.employeeId ?? "",
     });
     setAdvEditEmpSearch(`${adv.employee_name} (${adv.employee_code})`);
     setIsAdvEditOpen(true);
@@ -1655,6 +1732,12 @@ export default function Expenses() {
       const client = advEditForm.client_id
         ? clients.find((c) => c.id === advEditForm.client_id) ?? null
         : null;
+      let advEditCustodianLocId: string | null = null;
+      if (advEditForm.payment_mode === "Cash") {
+        const cid = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
+        const staff = custodians.find((c) => c.employeeId === advEditForm.paid_by_employee_id);
+        if (cid && staff) advEditCustodianLocId = await ensureCustodianLocation(cid, staff.employeeId, staff.fullName);
+      }
       const { error: upErr } = await supabase
         .from("advances")
         .update({
@@ -1670,6 +1753,7 @@ export default function Expenses() {
                 ? cheques.find((c) => c.id === advEditForm.cheque_id)?.bank_account_id ?? null
                 : null,
           cheque_id: advEditForm.payment_mode === "Cheque" ? advEditForm.cheque_id : null,
+          custodian_location_id: advEditCustodianLocId,
           notes: advEditForm.notes.trim() || null,
           updated_at: new Date().toISOString(),
         })
@@ -2137,6 +2221,18 @@ export default function Expenses() {
                 <option value="Cheque">Cheque</option>
                 <option value="Payable">Payable</option>
               </ThemedSelect>
+              <ThemedSelect
+                value={expenseByFilter}
+                onChange={(e) => setExpenseByFilter(e.target.value)}
+                className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                title="Filter by who the expense was incurred by"
+              >
+                <option value="all">All Expense By</option>
+                <option value="none">Unassigned</option>
+                {officeStaff.map((s) => (
+                  <option key={s.id} value={s.id}>{s.full_name}</option>
+                ))}
+              </ThemedSelect>
             </div>
           </div>
 
@@ -2348,6 +2444,18 @@ export default function Expenses() {
                       <option key={m} value={m}>{monthLabel(m)}</option>
                     ))}
                   </ThemedSelect>
+                  <ThemedSelect
+                    value={fixedPaidByFilter}
+                    onChange={(e) => setFixedPaidByFilter(e.target.value)}
+                    className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                    title="Filter templates by their default payer"
+                  >
+                    <option value="all">All Paid By</option>
+                    <option value="none">No default</option>
+                    {custodians.map((c) => (
+                      <option key={c.employeeId} value={c.employeeId}>{c.fullName}</option>
+                    ))}
+                  </ThemedSelect>
                   <Button variant="primary" size="md" onClick={openFixedAdd}>
                     <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
                     Add Fixed Expense
@@ -2478,20 +2586,23 @@ export default function Expenses() {
                       <th className="text-left px-6 py-3 text-sm text-slate-500">Category</th>
                       <th className="text-left px-6 py-3 text-sm text-slate-500">Client / Vendor</th>
                       <th className="text-left px-6 py-3 text-sm text-slate-500">Mode</th>
+                      <th className="text-left px-6 py-3 text-sm text-slate-500">Paid By</th>
                       <th className="text-right px-6 py-3 text-sm text-slate-500">Amount</th>
                       <th className="text-left px-6 py-3 text-sm text-slate-500">Runs</th>
                       <th className="text-right px-6 py-3 text-sm text-slate-500">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
-                    {fixedExpenses.length === 0 && (
+                    {filteredFixedExpenses.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">
-                          No fixed expenses yet.
+                        <td colSpan={8} className="px-6 py-10 text-center text-slate-500 text-sm">
+                          {fixedExpenses.length === 0
+                            ? "No fixed expenses yet."
+                            : "No fixed expenses match the current Paid By filter."}
                         </td>
                       </tr>
                     )}
-                    {fixedExpenses.map((f) => (
+                    {filteredFixedExpenses.map((f) => (
                       <tr key={f.id} className={`hover:bg-slate-50 transition-colors ${f.is_active ? "" : "opacity-60"}`}>
                         <td className="px-6 py-4 text-sm text-slate-900">
                           {f.description || <span className="text-slate-400">—</span>}
@@ -2502,6 +2613,11 @@ export default function Expenses() {
                           {f.client?.name ?? f.vendor?.name ?? <span className="text-slate-400">Office</span>}
                         </td>
                         <td className="px-6 py-4 text-sm text-slate-600">{f.payment_mode}</td>
+                        <td className="px-6 py-4 text-sm text-slate-600">
+                          {custodianNameByLocation.get(f.custodian_location_id ?? "") ?? (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </td>
                         <td className="px-6 py-4 text-sm text-right text-slate-900">
                           PKR {Number(f.amount).toLocaleString()}
                         </td>
@@ -2600,6 +2716,18 @@ export default function Expenses() {
                   <option value="Bank">Bank</option>
                   <option value="Cheque">Cheque</option>
                 </ThemedSelect>
+                <ThemedSelect
+                  value={advPaidByFilter}
+                  onChange={(e) => setAdvPaidByFilter(e.target.value)}
+                  className="px-3 py-2 border border-slate-200 rounded-md text-sm"
+                  title="Filter by who paid the cash"
+                >
+                  <option value="all">All Paid By</option>
+                  <option value="none">Unattributed</option>
+                  {custodians.map((c) => (
+                    <option key={c.employeeId} value={c.employeeId}>{c.fullName}</option>
+                  ))}
+                </ThemedSelect>
                 <div className="ml-auto text-xs text-slate-500">
                   {advTotals.count} advance{advTotals.count === 1 ? "" : "s"} · PKR {advTotals.total.toLocaleString()}
                 </div>
@@ -2630,6 +2758,11 @@ export default function Expenses() {
                   value: (adv) => <span className="tabular-nums">PKR {Number(adv.amount).toLocaleString()}</span>,
                 },
                 { label: "Client", value: (adv) => adv.client_name ?? "—" },
+                {
+                  label: "Paid By",
+                  value: (adv) =>
+                    custodianNameByLocation.get(adv.custodian_location_id ?? "") ?? "—",
+                },
                 { label: "Notes", full: true, value: (adv) => adv.notes ?? "—" },
               ]}
               actions={(adv) => (
@@ -2657,6 +2790,7 @@ export default function Expenses() {
                     <th className="text-left px-4 py-3 text-xs text-slate-500">Client</th>
                     <th className="text-right px-4 py-3 text-xs text-slate-500">Amount</th>
                     <th className="text-left px-4 py-3 text-xs text-slate-500">Mode</th>
+                    <th className="text-left px-4 py-3 text-xs text-slate-500">Paid By</th>
                     <th className="text-left px-4 py-3 text-xs text-slate-500">Notes</th>
                     <th className="text-left px-4 py-3 text-xs text-slate-500">Actions</th>
                   </tr>
@@ -2664,7 +2798,7 @@ export default function Expenses() {
                 <tbody className="divide-y divide-slate-200">
                   {loading && (
                     <tr>
-                      <td colSpan={7} className="px-6 py-10 text-center text-slate-500">
+                      <td colSpan={8} className="px-6 py-10 text-center text-slate-500">
                         <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
                         Loading…
                       </td>
@@ -2672,7 +2806,7 @@ export default function Expenses() {
                   )}
                   {!loading && filteredAdvances.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">
+                      <td colSpan={8} className="px-6 py-10 text-center text-slate-500 text-sm">
                         No advances yet. Click "Add Advance" to record one.
                       </td>
                     </tr>
@@ -2702,6 +2836,11 @@ export default function Expenses() {
                             {adv.payment_mode}
                             {adv.bank_name ? ` · ${adv.bank_name}` : ""}
                           </span>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-slate-700">
+                          {custodianNameByLocation.get(adv.custodian_location_id ?? "") ?? (
+                            <span className="text-slate-400">—</span>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-sm text-slate-600 max-w-xs truncate">
                           {adv.notes ?? "—"}
@@ -2842,17 +2981,11 @@ export default function Expenses() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Category *</label>
-              <ThemedSelect
+              <CategoryPicker
+                categories={categories}
                 value={fixedForm.category_id}
-                onChange={(e) => setFixedForm({ ...fixedForm, category_id: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-                required
-              >
-                <option value="">Select category</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </ThemedSelect>
+                onChange={(v) => setFixedForm({ ...fixedForm, category_id: v })}
+              />
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">P&amp;L Treatment *</label>
@@ -2916,6 +3049,28 @@ export default function Expenses() {
               </p>
             </div>
           </div>
+
+          {fixedForm.payment_mode === "Cash" && (
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Paid By (Office Staff)</label>
+              <ThemedSelect
+                value={fixedForm.paid_by_employee_id}
+                onChange={(e) => setFixedForm({ ...fixedForm, paid_by_employee_id: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              >
+                <option value="">No default — choose at approval</option>
+                {custodians.map((c) => (
+                  <option key={c.employeeId} value={c.employeeId}>
+                    {c.fullName} — holds PKR {Math.round(c.held).toLocaleString()}
+                  </option>
+                ))}
+              </ThemedSelect>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Who normally pays this. It prefills the approval each month; the money only moves,
+                and only lands against a custodian, when that month's entry is approved.
+              </p>
+            </div>
+          )}
 
           {fixedForm.payment_mode === "Bank" && (
             <div>
@@ -3603,6 +3758,35 @@ export default function Expenses() {
             ))}
           </div>
         </div>
+        {/* Same "Paid By" a cash expense asks for: without it the cash leaves
+            Cash in Hand attributed to nobody. */}
+        {state.payment_mode === "Cash" && (
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Paid By (Office Staff) *</label>
+            <ThemedSelect
+              required
+              value={state.paid_by_employee_id}
+              onChange={(e) => setState({ ...state, paid_by_employee_id: e.target.value })}
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+            >
+              <option value="">Select who paid the cash…</option>
+              {custodians.map((c) => (
+                <option key={c.employeeId} value={c.employeeId}>
+                  {c.fullName} — holds PKR {Math.round(c.held).toLocaleString()}
+                </option>
+              ))}
+            </ThemedSelect>
+            {(() => {
+              const staff = custodians.find((c) => c.employeeId === state.paid_by_employee_id);
+              const amt = Number(state.amount);
+              return staff && amt > 0 && amt > staff.held ? (
+                <p className="text-[11px] text-warning-700 mt-1.5">
+                  This exceeds {staff.fullName}'s held cash (PKR {Math.round(staff.held).toLocaleString()}). You can still record it.
+                </p>
+              ) : null;
+            })()}
+          </div>
+        )}
         {state.payment_mode === "Bank" && (
           <div>
             <label className="block text-sm text-slate-700 mb-1">Bank Account *</label>
@@ -3741,19 +3925,11 @@ export default function Expenses() {
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Category *</label>
-            <ThemedSelect
-              required
+            <CategoryPicker
+              categories={categories}
               value={state.category_id}
-              onChange={(e) => setState({ ...state, category_id: e.target.value })}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
-            >
-              <option value="">Select category</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </ThemedSelect>
+              onChange={(v) => setState({ ...state, category_id: v })}
+            />
           </div>
           <div className="col-span-full">
             <label className="block text-sm text-slate-700 mb-1">P&amp;L Category *</label>

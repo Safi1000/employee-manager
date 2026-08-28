@@ -801,9 +801,21 @@ export default function Clients() {
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
             >
               <option value="">— Select branch —</option>
-              {branches.map((b) => (
-                <option key={b.id} value={b.id}>{b.name}{b.is_head_office ? " (HO)" : ""}</option>
-              ))}
+              {/* Head Office is not a posting region — it is where overhead is
+                  booked and then apportioned OUT to the regions. A client sitting
+                  on it would carry guards no region owns, and its revenue would
+                  skew the very apportionment it should be receiving.
+
+                  A client already saved on Head Office keeps showing it, so
+                  opening that record doesn't silently blank the field — it just
+                  can't be chosen afresh, and picking anything else drops it. */}
+              {branches
+                .filter((b) => !b.is_head_office || b.id === form.branch_id)
+                .map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}{b.is_head_office ? " (Head Office — no longer assignable)" : ""}
+                  </option>
+                ))}
             </ThemedSelect>
             <p className="text-xs text-slate-500 mt-1">Inherited by employees of this client.</p>
           </div>

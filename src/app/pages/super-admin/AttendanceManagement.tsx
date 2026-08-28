@@ -23,7 +23,7 @@ import {
 import { useRegion, withRegion } from "../../lib/region";
 import { hasPermission, useAuth } from "../../lib/auth";
 import { guardDisplayCode } from "../../lib/guardCode";
-import { attendanceWindowError, isSeparatedState, hiddenFromAttendance, SEPARATION_MARK } from "../../lib/employmentWindow";
+import { attendanceWindowError, isSeparatedState, hiddenFromAttendance, buildClientCoverage, effectiveWindowContract, SEPARATION_MARK } from "../../lib/employmentWindow";
 import { formatDate } from "../../lib/date";
 
 type EmployeeLite = {
@@ -53,7 +53,7 @@ type EmployeeLite = {
 
 type ContractLeaveRow = Pick<
   Contract,
-  "id" | "allowed_leaves_per_month" | "start_date" | "end_date" | "is_infinite"
+  "id" | "allowed_leaves_per_month" | "start_date" | "end_date" | "is_infinite" | "client_id" | "status"
 >;
 
 type HistoryRow = {
@@ -255,7 +255,9 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         regionId,
       ),
       supabase.from("employee_branches").select("employee_id, branch_id"),
-      supabase.from("contracts").select("id, allowed_leaves_per_month, start_date, end_date, is_infinite"),
+      // client_id + status feed buildClientCoverage: guards with no contract_id of
+      // their own are judged against their CLIENT's contract coverage instead.
+      supabase.from("contracts").select("id, allowed_leaves_per_month, start_date, end_date, is_infinite, client_id, status"),
       supabase.from("profiles").select("id, full_name, email"),
     ]);
     if (cliRes.error) setError(cliRes.error.message);
@@ -470,12 +472,17 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   // Why `d` isn't markable for this employee, or null. Employment window ∩
   // contract window — mirrored by the DB trigger in migration 0152, so this is
   // a friendlier restatement of a rule the database enforces on every path.
+  // Guards attached to a client but not to a specific contract row fall back to
+  // that client's contract coverage, so attendance stops being markable once the
+  // client's contract has ended — not only when the guard's own contract has.
+  const contractById = useMemo(
+    () => new Map(contracts.map((c) => [c.id, c])),
+    [contracts],
+  );
+  const clientCoverage = useMemo(() => buildClientCoverage(contracts), [contracts]);
+
   const windowBlockFor = (e: EmployeeLite, d: string): string | null =>
-    attendanceWindowError(
-      e,
-      e.contract_id ? contracts.find((c) => c.id === e.contract_id) ?? null : null,
-      d,
-    );
+    attendanceWindowError(e, effectiveWindowContract(e, contractById, clientCoverage), d);
 
   // "Fired 10/03/2026" / "Resigned 01/04/2026" — null for anyone still employed.
   // Dated off termination_date (the day the separation took effect), falling

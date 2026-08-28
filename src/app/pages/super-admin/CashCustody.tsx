@@ -77,10 +77,6 @@ const LEDGER_KIND_LABEL: Record<LedgerEntry["kind"], string> = {
   cash_paid: "Cash paid",
 };
 
-// Synthetic id for the "Cash in Hand" (company treasury) row shown alongside
-// the real cash_locations on the Cash Position tab.
-const CASH_IN_HAND_ID = "__cash_in_hand__";
-
 export function CashCustodyPanel({ onReady, onSummary }: {
   onReady?: (api: { addLocation: () => void; recordTransfer: () => void; openTransactions: () => void }) => void;
   // Push the three summary figures up so the page can render the cards above the
@@ -95,7 +91,6 @@ export function CashCustodyPanel({ onReady, onSummary }: {
   // company-wide roles (no branch) see everyone. SSA viewing a company is company-wide.
   const branchScope = profile?.role === "super_super_admin" ? null : (profile?.branch_id ?? null);
 
-  const [tab, setTab] = useState<"locations" | "transfers" | "position" | "reconciliation">("position");
   // Transactions is a header-button modal (mirrors the Bank Accounts "Transaction Log"), not a sub-tab.
   const [isTxOpen, setIsTxOpen] = useState(false);
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);
@@ -150,6 +145,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
         { data: locs }, { data: tx }, { data: pts }, { data: brs },
         { data: bnks }, { data: treas }, { data: pEntries }, { data: iEntries },
         { data: staff }, { data: cashPays }, { data: cashExps }, { data: cashCheques }, { data: bankWd }, { data: payrollCash },
+        { data: cashAdvances },
       ] = await Promise.all([
         supabase.from("cash_locations").select("*").eq("company_id", companyId).order("name"),
         supabase.from("custody_transfers").select("*").eq("company_id", companyId).order("date", { ascending: false }).limit(100),
@@ -167,6 +163,11 @@ export function CashCustodyPanel({ onReady, onSummary }: {
         // Payroll cash payments handed out by a custodian (reference_id = custodian
         // cash_location, cash_delta negative). Shows as "Cash paid" in the ledger.
         supabase.from("bank_transactions").select("id, cash_delta, reference_id, description, created_at").eq("kind", "payroll").not("reference_id", "is", null),
+        // Salary advances paid in cash by a custodian (0203). Cash out of their
+        // hands, same as an expense — without this the advance left Cash in Hand
+        // but never left the custodian, so the reconciliation drifted by the
+        // amount of every cash advance ever paid.
+        supabase.from("advances").select("id, amount, custodian_location_id, advance_date, employees:employee_id(full_name, employee_code)").eq("payment_mode", "Cash").not("custodian_location_id", "is", null),
       ]);
       const partnerList = ((pts ?? []) as Partner[]).filter((p) => p.is_active);
       setLocations((locs ?? []) as CashLocation[]);
@@ -182,6 +183,10 @@ export function CashCustodyPanel({ onReady, onSummary }: {
       for (const e of (cashExps ?? []) as any[]) {
         if (!e.custodian_location_id) continue;
         outBy.set(e.custodian_location_id, (outBy.get(e.custodian_location_id) ?? 0) + Number(e.amount ?? 0));
+      }
+      for (const a of (cashAdvances ?? []) as any[]) {
+        if (!a.custodian_location_id) continue;
+        outBy.set(a.custodian_location_id, (outBy.get(a.custodian_location_id) ?? 0) + Number(a.amount ?? 0));
       }
       setCashOutByLoc(outBy);
       const chqBy = new Map<string, number>();
@@ -253,6 +258,14 @@ export function CashCustodyPanel({ onReady, onSummary }: {
         raw.push({
           id: `e-${ex.id}`, date: ex.expense_date, locationId: ex.custodian_location_id, employeeId: empByLoc.get(ex.custodian_location_id) ?? null,
           kind: "cash_paid", detail: ex.description || "Expense", cashIn: 0, cashOut: Number(ex.amount),
+        });
+      }
+      for (const a of (cashAdvances ?? []) as any[]) {
+        if (!a.custodian_location_id) continue;
+        const who = a.employees ? `${a.employees.employee_code} ${a.employees.full_name}` : "employee";
+        raw.push({
+          id: `a-${a.id}`, date: a.advance_date, locationId: a.custodian_location_id, employeeId: empByLoc.get(a.custodian_location_id) ?? null,
+          kind: "cash_paid", detail: `Advance · ${who}`, cashIn: 0, cashOut: Number(a.amount),
         });
       }
       for (const c of (cashCheques ?? []) as any[]) {
@@ -406,19 +419,6 @@ export function CashCustodyPanel({ onReady, onSummary }: {
     return { custodians, sumHeld, discrepancy };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationsWithBalance, cashInByLoc, cashOutByLoc, chequeInByLoc, withdrawInByLoc, payrollCashByLoc, cashInHand]);
-
-  // Cash in Hand (company treasury) as its own Position row alongside real locations.
-  const cashInHandRow: LocationWithBalance = {
-    id: CASH_IN_HAND_ID, name: "Cash in Hand", location_type: "PETTY_CASH",
-    custodian_partner_id: null, custodian_user_id: null, custodian_employee_id: null, opening_balance: 0,
-    branch_id: null, is_active: true, bank_account_id: null, balance: cashInHand,
-  };
-  // Cash Position shows only the headline Cash in Hand figure. Per-custodian holdings
-  // live on the Reconciliation tab; bank balances live on the Bank Accounts tab.
-  const positionRows = useMemo(
-    () => [cashInHandRow],
-    [cashInHand],
-  );
 
   // Total Cash = Cash in Hand (treasury) ONLY. This page deals with cash; bank
   // balances live on the Bank Accounts tab and are deliberately not added in here.
@@ -592,7 +592,6 @@ export function CashCustodyPanel({ onReady, onSummary }: {
   const typeLabel = (t: CashLocation["location_type"]) =>
     ({ BANK: "Bank", PETTY_CASH: "Petty Cash", CUSTODIAN: "Custodian" })[t];
 
-  const locName = (id: string | null) => id ? (locations.find((l) => l.id === id)?.name ?? id) : "—";
 
   if (loading) return <div className="py-12 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>;
 
@@ -607,276 +606,94 @@ export function CashCustodyPanel({ onReady, onSummary }: {
           </div>
         )}
 
-        {/* Tab bar — same brand-button style as the other Banks & Ledgers
-            sections (e.g. the Cheques / Cash Deposits toggle). */}
-        <div className="flex gap-2 flex-wrap mb-6">
-          {([["position", "Cash Position"], ["reconciliation", "Reconciliation"], ["locations", "Locations"], ["transfers", "Transfers"]] as const).map(([k, l]) => (
-            <button key={k} type="button" onClick={() => setTab(k)}
-              className={`px-4 py-2 rounded-md text-sm transition-colors ${tab === k ? "bg-brand-600 text-[#fff]" : "text-slate-600 hover:bg-slate-100"}`}>
-              {l}
-            </button>
-          ))}
-        </div>
+        {/* One view. Cash Holdings used to be split across three tabs that asked
+            the same question in three shapes — a Position tab showing only the
+            treasury total, a Locations tab listing the custodians, and a
+            Reconciliation tab listing the same custodians again with their held
+            cash. They are one table now, with the reconciliation check as its
+            footer. The Transfers tab is gone too; transfers are recorded from the
+            header button and read back in the Transaction Log. */}
+        <div className="space-y-4">
+          <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+            <div className="p-4 border-b border-slate-200">
+              <h3 className="text-base text-slate-900">Cash Holdings</h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Where company cash sits right now. Each custodian's held cash is opening balance
+                plus what they have taken in, less what they have paid out — and the sum of them
+                must equal Total Cash in Hand. Bank balances live on the Bank Accounts tab.
+              </p>
+            </div>
 
-        {/* ── POSITION TAB ── */}
-        {tab === "position" && (
-          <div className="space-y-4">
-            {/* Cash Holdings — a table, same sectioning as the Bank Accounts list. */}
-            <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
-              <div className="p-4 border-b border-slate-200">
-                <h3 className="text-base text-slate-900">Cash Holdings</h3>
-                <p className="text-xs text-slate-500 mt-0.5">Where company cash sits right now — treasury, banks, and custodians.</p>
+            {Math.round(custodyRecon.discrepancy) !== 0 && (
+              <div className="m-4 flex items-start gap-2 p-3 bg-warning-50 text-warning-800 border border-warning-200 rounded-md text-sm">
+                <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" strokeWidth={2} />
+                <div>
+                  <span className="font-medium">Discrepancy: {fmt(Math.abs(custodyRecon.discrepancy))}</span> {custodyRecon.discrepancy > 0
+                    ? "of Cash in Hand is not attributed to any custodian yet. Assign it via custodian opening balances or record the movements against a custodian."
+                    : "more is attributed to custodians than the Total Cash in Hand — check for an over-attribution."}
+                </div>
               </div>
+            )}
+
+            <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-slate-200">
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Location</th>
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Type</th>
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Holder</th>
-                    <th className="text-right px-6 py-3 text-sm text-slate-500">Balance</th>
+                    <th className="text-right px-6 py-3 text-sm text-slate-500">Opening</th>
+                    <th className="text-right px-6 py-3 text-sm text-slate-500">Held Cash</th>
+                    <th className="text-left px-6 py-3 text-sm text-slate-500">Status</th>
+                    <th className="text-right px-6 py-3 text-sm text-slate-500">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {positionRows.length === 0 && (
-                    <tr><td colSpan={4} className="px-6 py-8 text-center text-slate-500 text-sm">No cash locations.</td></tr>
-                  )}
-                  {positionRows.map((loc) => {
-                    // Treasury total + BANK use loc.balance; custodian/petty show HELD
-                    // cash (opening + transfers + attributed cash in − cash out).
-                    const shown = loc.id === CASH_IN_HAND_ID || loc.location_type === "BANK" ? loc.balance : heldCash(loc);
-                    const holder = loc.custodian_employee_id
-                      ? staffName(loc.custodian_employee_id)
-                      : loc.custodian_partner_id
-                        ? partners.find((p) => p.id === loc.custodian_partner_id)?.name ?? "—"
-                        : "—";
-                    return (
-                      <tr key={loc.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-2">
-                            {typeIcon(loc.location_type)}
-                            <span className="text-sm text-slate-900">{loc.name}</span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-slate-600">{loc.id === CASH_IN_HAND_ID ? "Cash / Treasury" : typeLabel(loc.location_type)}</td>
-                        <td className="px-6 py-4 text-sm text-slate-600">{holder}</td>
-                        <td className={`px-6 py-4 text-right text-sm font-mono ${shown < 0 ? "text-danger-600" : "text-slate-900"}`}>{fmt(shown)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* ── Partners Summary (Phase 3) ── */}
-            <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
-              <div className="p-4 border-b border-slate-200">
-                <h3 className="text-base text-slate-900">Partners Summary</h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Running balance per partner. Positive = company owes the partner; negative (red) = overdrawn.
-                </p>
-              </div>
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-slate-200">
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Partner</th>
-                    <th className="text-right px-6 py-3 text-sm text-slate-500">Allocated</th>
-                    <th className="text-right px-6 py-3 text-sm text-slate-500">Contributed</th>
-                    <th className="text-right px-6 py-3 text-sm text-slate-500">Drawn</th>
-                    <th className="text-right px-6 py-3 text-sm text-slate-500">Net Balance</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {summaryPartners.length === 0 && (
-                    <tr><td colSpan={5} className="px-6 py-8 text-center text-slate-500 text-sm">No partners.</td></tr>
-                  )}
-                  {summaryPartners.map((p) => {
-                    const s = partnerStats.get(p.id) ?? { allocated: 0, drawn: 0, contributed: 0, balance: 0 };
-                    return (
-                      <tr key={p.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-6 py-4">
-                          <p className="text-sm text-slate-900 font-medium">{p.name}</p>
-                          <span className={`inline-flex mt-0.5 px-2 py-0.5 rounded text-xs ${p.scope === "COMPANY" ? "bg-brand-50 text-brand-700" : "bg-amber-50 text-amber-700"}`}>
-                            {p.scope === "COMPANY" ? "Owner" : (branches.find((b) => b.id === p.branch_id)?.name ?? "Branch")}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-right text-sm font-mono text-success-600">{fmt(s.allocated)}</td>
-                        <td className="px-6 py-4 text-right text-sm font-mono text-brand-600">{fmt(s.contributed)}</td>
-                        <td className="px-6 py-4 text-right text-sm font-mono text-danger-600">{fmt(s.drawn)}</td>
-                        <td className={`px-6 py-4 text-right text-sm font-mono font-semibold ${s.balance < 0 ? "text-danger-700" : "text-slate-900"}`}>{fmt(s.balance)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* ── RECONCILIATION TAB ── */}
-        {tab === "reconciliation" && (
-          <div className="space-y-4">
-            {/* Cash-in-Hand by custodian (0135): Σ custodians must equal Total Cash in Hand. */}
-            <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
-              <div className="p-4 border-b border-slate-200">
-                <h3 className="text-base text-slate-900">Cash in Hand — by Custodian</h3>
-                <p className="text-xs text-slate-500 mt-0.5">Which office-staff member holds how much company cash. The sum must equal Total Cash in Hand.</p>
-              </div>
-              {Math.round(custodyRecon.discrepancy) !== 0 && (
-                <div className="m-4 flex items-start gap-2 p-3 bg-warning-50 text-warning-800 border border-warning-200 rounded-md text-sm">
-                  <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" strokeWidth={2} />
-                  <div>
-                    <span className="font-medium">Discrepancy: {fmt(Math.abs(custodyRecon.discrepancy))}</span> {custodyRecon.discrepancy > 0
-                      ? "of Cash in Hand is not attributed to any custodian yet. Assign it via custodian opening balances or record the movements against a custodian."
-                      : "more is attributed to custodians than the Total Cash in Hand — check for an over-attribution."}
-                  </div>
-                </div>
-              )}
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-slate-200">
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Custodian</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Holder</th>
-                      <th className="text-right px-6 py-3 text-sm text-slate-500">Held Cash</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200">
-                    {custodyRecon.custodians.length === 0 && (
-                      <tr><td colSpan={3} className="px-6 py-8 text-center text-slate-500 text-sm">No custodian locations yet. Add one (Locations → Add) and set its office-staff holder.</td></tr>
-                    )}
-                    {custodyRecon.custodians.map(({ loc, held }) => (
-                      <tr key={loc.id} className="hover:bg-slate-50">
-                        <td className="px-6 py-4 text-sm text-slate-900">{loc.name}</td>
-                        <td className="px-6 py-4 text-sm text-slate-600">{loc.custodian_employee_id ? staffName(loc.custodian_employee_id) : "—"}</td>
-                        <td className={`px-6 py-4 text-right text-sm font-mono ${held < 0 ? "text-danger-600" : "text-slate-900"}`}>{fmt(held)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t border-slate-200 bg-slate-50">
-                      <td className="px-6 py-3 text-sm font-medium text-slate-700" colSpan={2}>Sum of custodians</td>
-                      <td className="px-6 py-3 text-right text-sm font-mono font-semibold text-slate-900">{fmt(custodyRecon.sumHeld)}</td>
-                    </tr>
-                    <tr className="bg-slate-50">
-                      <td className="px-6 py-2 text-sm text-slate-500" colSpan={2}>Total Cash in Hand (treasury)</td>
-                      <td className="px-6 py-2 text-right text-sm font-mono text-slate-700">{fmt(cashInHand)}</td>
-                    </tr>
-                    <tr className={`${Math.round(custodyRecon.discrepancy) !== 0 ? "bg-warning-50" : "bg-success-50"}`}>
-                      <td className={`px-6 py-2 text-sm font-medium ${Math.round(custodyRecon.discrepancy) !== 0 ? "text-warning-800" : "text-success-700"}`} colSpan={2}>Unattributed (should be 0)</td>
-                      <td className={`px-6 py-2 text-right text-sm font-mono font-bold ${Math.round(custodyRecon.discrepancy) !== 0 ? "text-warning-800" : "text-success-700"}`}>{fmt(custodyRecon.discrepancy)}</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-lg border border-slate-200 p-6">
-              <h3 className="text-base text-slate-900 mb-1">Cash vs Liabilities</h3>
-              <p className="text-xs text-slate-500 mb-4">Shows how much of the cash on hand is actually owed to partners vs. truly free.</p>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between py-2 border-b border-slate-100">
-                  <span className="text-sm text-slate-700">Total Cash in Hand</span>
-                  <span className="text-sm font-mono font-semibold text-slate-900">{fmt(totalCash)}</span>
-                </div>
-                <div className="flex items-center justify-between py-2 border-b border-slate-100">
-                  <span className="text-sm text-slate-500 ml-4">− Undrawn partner entitlements (positive balances)</span>
-                  <span className="text-sm font-mono text-warning-700">({fmt(totalPartnerOwed)})</span>
-                </div>
-                <div className="flex items-center justify-between py-2 border-b border-slate-100">
-                  <span className="text-sm text-slate-500 ml-4">− Investor liabilities (capital outstanding + returns owed)</span>
-                  <span className="text-sm font-mono text-warning-700">({fmt(investorLiabilities)})</span>
-                </div>
-                <div className={`flex items-center justify-between py-3 rounded-md px-3 ${freeCash >= 0 ? "bg-success-50" : "bg-danger-50"}`}>
-                  <span className={`text-sm font-medium ${freeCash >= 0 ? "text-success-700" : "text-danger-700"}`}>= Free Company Cash</span>
-                  <span className={`text-base font-mono font-bold ${freeCash >= 0 ? "text-success-700" : "text-danger-700"}`}>{fmt(freeCash)}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Partner balance breakdown */}
-            <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
-              <div className="p-4 border-b border-slate-200">
-                <h3 className="text-base text-slate-900">Partner Balances</h3>
-                <p className="text-xs text-slate-500 mt-0.5">Positive = company owes the partner (cash tied up). Negative = partner is overdrawn.</p>
-              </div>
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-slate-200">
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Partner</th>
-                    <th className="text-right px-6 py-3 text-sm text-slate-500">Balance</th>
-                    <th className="text-right px-6 py-3 text-sm text-slate-500">Cash Impact</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {partners.length === 0 && (
-                    <tr><td colSpan={3} className="px-6 py-8 text-center text-slate-500 text-sm">No partners.</td></tr>
-                  )}
-                  {partners.map((p) => {
-                    const bal = partnerStats.get(p.id)?.balance ?? 0;
-                    return (
-                      <tr key={p.id} className="hover:bg-slate-50">
-                        <td className="px-6 py-4 text-sm text-slate-900">{p.name}</td>
-                        <td className={`px-6 py-4 text-right text-sm font-mono ${bal < 0 ? "text-danger-600" : "text-slate-900"}`}>{fmt(bal)}</td>
-                        <td className={`px-6 py-4 text-right text-sm font-mono ${bal > 0 ? "text-warning-600" : "text-success-600"}`}>
-                          {bal > 0 ? `(${fmt(bal)}) tied up` : bal < 0 ? "— overdrawn" : "—"}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* ── LOCATIONS TAB ── */}
-        {tab === "locations" && (
-          <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-slate-200">
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Name</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Type</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Holder</th>
-                  <th className="text-right px-6 py-3 text-sm text-slate-500">Opening Balance</th>
-                  <th className="text-right px-6 py-3 text-sm text-slate-500">Current Balance</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Status</th>
-                  <th className="text-right px-6 py-3 text-sm text-slate-500">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {/* Banks are managed on the Bank Accounts tab — only cash custodians here. */}
-                {locationsWithBalance.filter((l) => l.location_type !== "BANK").length === 0 && (
-                  <tr><td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">No cash locations yet.</td></tr>
-                )}
-                {locationsWithBalance.filter((l) => l.location_type !== "BANK").map((loc) => (
-                  <tr key={loc.id} className="hover:bg-slate-50 transition-colors">
+                  {/* Treasury total first — the figure every custodian row rolls up to. */}
+                  <tr className="bg-slate-50/60">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
-                        {typeIcon(loc.location_type)}
-                        <span className="text-sm text-slate-900">{loc.name}</span>
+                        {typeIcon("PETTY_CASH")}
+                        <span className="text-sm text-slate-900">Cash in Hand</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-sm text-slate-600">{typeLabel(loc.location_type)}</td>
-                    <td className="px-6 py-4 text-sm text-slate-600">
-                      {loc.custodian_employee_id ? staffName(loc.custodian_employee_id) : loc.custodian_partner_id ? partners.find((p) => p.id === loc.custodian_partner_id)?.name ?? "—" : "—"}
-                    </td>
-                    <td className="px-6 py-4 text-right text-sm font-mono text-slate-600">{fmt(loc.opening_balance)}</td>
-                    {(() => {
-                      // BANK mirrors its live account; custodian/petty show HELD cash
-                      // (opening + transfers + attributed cash received − cash paid).
-                      const shown = loc.location_type === "BANK" ? loc.balance : heldCash(loc);
-                      return <td className={`px-6 py-4 text-right text-sm font-mono ${shown < 0 ? "text-danger-600" : "text-slate-900"}`}>{fmt(shown)}</td>;
-                    })()}
-                    <td className="px-6 py-4">
-                      <span className={`inline-flex px-2 py-0.5 rounded text-xs ${loc.is_active ? "bg-success-50 text-success-700" : "bg-slate-100 text-slate-500"}`}>
-                        {loc.is_active ? "Active" : "Inactive"}
-                      </span>
-                    </td>
+                    <td className="px-6 py-4 text-sm text-slate-600">Cash / Treasury</td>
+                    <td className="px-6 py-4 text-sm text-slate-600">—</td>
+                    <td className="px-6 py-4 text-right text-sm font-mono text-slate-400">—</td>
+                    <td className={`px-6 py-4 text-right text-sm font-mono ${cashInHand < 0 ? "text-danger-600" : "text-slate-900"}`}>{fmt(cashInHand)}</td>
+                    <td className="px-6 py-4 text-sm text-slate-400">—</td>
                     <td className="px-6 py-4 text-right">
-                      {loc.location_type === "BANK" ? (
-                        <span className="text-xs text-slate-400" title="Synced automatically from the Bank Accounts tab">Auto-synced</span>
-                      ) : (
+                      <span className="text-xs text-slate-400" title="The company treasury total — derived, not editable">Derived</span>
+                    </td>
+                  </tr>
+
+                  {/* Banks are managed on the Bank Accounts tab — only cash custodians here. */}
+                  {locationsWithBalance.filter((l) => l.location_type !== "BANK").length === 0 && (
+                    <tr><td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">No cash custodians yet. Add one with "Add Location" above and set its office-staff holder.</td></tr>
+                  )}
+                  {locationsWithBalance.filter((l) => l.location_type !== "BANK").map((loc) => (
+                    <tr key={loc.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          {typeIcon(loc.location_type)}
+                          <span className="text-sm text-slate-900">{loc.name}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-slate-600">{typeLabel(loc.location_type)}</td>
+                      <td className="px-6 py-4 text-sm text-slate-600">
+                        {loc.custodian_employee_id ? staffName(loc.custodian_employee_id) : loc.custodian_partner_id ? partners.find((p) => p.id === loc.custodian_partner_id)?.name ?? "—" : "—"}
+                      </td>
+                      <td className="px-6 py-4 text-right text-sm font-mono text-slate-600">{fmt(loc.opening_balance)}</td>
+                      {(() => {
+                        const shown = heldCash(loc);
+                        return <td className={`px-6 py-4 text-right text-sm font-mono ${shown < 0 ? "text-danger-600" : "text-slate-900"}`}>{fmt(shown)}</td>;
+                      })()}
+                      <td className="px-6 py-4">
+                        <span className={`inline-flex px-2 py-0.5 rounded text-xs ${loc.is_active ? "bg-success-50 text-success-700" : "bg-slate-100 text-slate-500"}`}>
+                          {loc.is_active ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-1">
                           <button onClick={() => openEditLoc(loc)} title="Edit" className="p-1.5 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors">
                             <Pencil className="w-4 h-4" strokeWidth={1.5} />
@@ -887,49 +704,104 @@ export function CashCustodyPanel({ onReady, onSummary }: {
                             </button>
                           )}
                         </div>
-                      )}
-                    </td>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                {/* The reconciliation check, sitting under the numbers it checks. */}
+                <tfoot>
+                  <tr className="border-t border-slate-200 bg-slate-50">
+                    <td className="px-6 py-3 text-sm font-medium text-slate-700" colSpan={4}>Sum of custodians</td>
+                    <td className="px-6 py-3 text-right text-sm font-mono font-semibold text-slate-900">{fmt(custodyRecon.sumHeld)}</td>
+                    <td colSpan={2} />
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                  <tr className="bg-slate-50">
+                    <td className="px-6 py-2 text-sm text-slate-500" colSpan={4}>Total Cash in Hand (treasury)</td>
+                    <td className="px-6 py-2 text-right text-sm font-mono text-slate-700">{fmt(cashInHand)}</td>
+                    <td colSpan={2} />
+                  </tr>
+                  <tr className={`${Math.round(custodyRecon.discrepancy) !== 0 ? "bg-warning-50" : "bg-success-50"}`}>
+                    <td className={`px-6 py-2 text-sm font-medium ${Math.round(custodyRecon.discrepancy) !== 0 ? "text-warning-800" : "text-success-700"}`} colSpan={4}>Unattributed (should be 0)</td>
+                    <td className={`px-6 py-2 text-right text-sm font-mono font-bold ${Math.round(custodyRecon.discrepancy) !== 0 ? "text-warning-800" : "text-success-700"}`}>{fmt(custodyRecon.discrepancy)}</td>
+                    <td colSpan={2} />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
           </div>
-        )}
 
-        {/* ── TRANSFERS TAB ── */}
-        {tab === "transfers" && (
+          <div className="bg-white rounded-lg border border-slate-200 p-6">
+            <h3 className="text-base text-slate-900 mb-1">Cash vs Liabilities</h3>
+            <p className="text-xs text-slate-500 mb-4">Shows how much of the cash on hand is actually owed to partners vs. truly free.</p>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between py-2 border-b border-slate-100">
+                <span className="text-sm text-slate-700">Total Cash in Hand</span>
+                <span className="text-sm font-mono font-semibold text-slate-900">{fmt(totalCash)}</span>
+              </div>
+              <div className="flex items-center justify-between py-2 border-b border-slate-100">
+                <span className="text-sm text-slate-500 ml-4">− Undrawn partner entitlements (positive balances)</span>
+                <span className="text-sm font-mono text-warning-700">({fmt(totalPartnerOwed)})</span>
+              </div>
+              <div className="flex items-center justify-between py-2 border-b border-slate-100">
+                <span className="text-sm text-slate-500 ml-4">− Investor liabilities (capital outstanding + returns owed)</span>
+                <span className="text-sm font-mono text-warning-700">({fmt(investorLiabilities)})</span>
+              </div>
+              <div className={`flex items-center justify-between py-3 rounded-md px-3 ${freeCash >= 0 ? "bg-success-50" : "bg-danger-50"}`}>
+                <span className={`text-sm font-medium ${freeCash >= 0 ? "text-success-700" : "text-danger-700"}`}>= Free Company Cash</span>
+                <span className={`text-base font-mono font-bold ${freeCash >= 0 ? "text-success-700" : "text-danger-700"}`}>{fmt(freeCash)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Partners Summary. The old Reconciliation tab repeated Net Balance in a
+              second "Partner Balances" table whose only addition was the cash-impact
+              wording — that is the last column here instead. */}
           <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
             <div className="p-4 border-b border-slate-200">
-              <h3 className="text-base text-slate-900">Custody Transfers</h3>
-              <p className="text-xs text-slate-500 mt-0.5">Moving cash between locations. Changes where money is, not whose it is.</p>
+              <h3 className="text-base text-slate-900">Partners Summary</h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Running balance per partner. Positive = company owes the partner (cash tied up); negative (red) = overdrawn.
+              </p>
             </div>
             <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-200">
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Date</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">From</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">To</th>
-                  <th className="text-right px-6 py-3 text-sm text-slate-500">Amount</th>
-                  <th className="text-left px-6 py-3 text-sm text-slate-500">Notes</th>
+                  <th className="text-left px-6 py-3 text-sm text-slate-500">Partner</th>
+                  <th className="text-right px-6 py-3 text-sm text-slate-500">Allocated</th>
+                  <th className="text-right px-6 py-3 text-sm text-slate-500">Contributed</th>
+                  <th className="text-right px-6 py-3 text-sm text-slate-500">Drawn</th>
+                  <th className="text-right px-6 py-3 text-sm text-slate-500">Net Balance</th>
+                  <th className="text-right px-6 py-3 text-sm text-slate-500">Cash Impact</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {transfers.length === 0 && (
-                  <tr><td colSpan={5} className="px-6 py-10 text-center text-slate-500 text-sm">No transfers yet.</td></tr>
+                {summaryPartners.length === 0 && (
+                  <tr><td colSpan={6} className="px-6 py-8 text-center text-slate-500 text-sm">No partners.</td></tr>
                 )}
-                {transfers.map((t) => (
-                  <tr key={t.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-6 py-4 text-sm text-slate-900">{t.date}</td>
-                    <td className="px-6 py-4 text-sm text-slate-600">{locName(t.from_location_id)}</td>
-                    <td className="px-6 py-4 text-sm text-slate-600">{locName(t.to_location_id)}</td>
-                    <td className="px-6 py-4 text-right text-sm font-mono text-slate-900">{fmt(t.amount)}</td>
-                    <td className="px-6 py-4 text-sm text-slate-500">{t.notes ?? "—"}</td>
-                  </tr>
-                ))}
+                {summaryPartners.map((p) => {
+                  const s = partnerStats.get(p.id) ?? { allocated: 0, drawn: 0, contributed: 0, balance: 0 };
+                  return (
+                    <tr key={p.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-6 py-4">
+                        <p className="text-sm text-slate-900 font-medium">{p.name}</p>
+                        <span className={`inline-flex mt-0.5 px-2 py-0.5 rounded text-xs ${p.scope === "COMPANY" ? "bg-brand-50 text-brand-700" : "bg-amber-50 text-amber-700"}`}>
+                          {p.scope === "COMPANY" ? "Owner" : (branches.find((b) => b.id === p.branch_id)?.name ?? "Branch")}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right text-sm font-mono text-success-600">{fmt(s.allocated)}</td>
+                      <td className="px-6 py-4 text-right text-sm font-mono text-brand-600">{fmt(s.contributed)}</td>
+                      <td className="px-6 py-4 text-right text-sm font-mono text-danger-600">{fmt(s.drawn)}</td>
+                      <td className={`px-6 py-4 text-right text-sm font-mono font-semibold ${s.balance < 0 ? "text-danger-700" : "text-slate-900"}`}>{fmt(s.balance)}</td>
+                      <td className={`px-6 py-4 text-right text-sm font-mono ${s.balance > 0 ? "text-warning-600" : "text-success-600"}`}>
+                        {s.balance > 0 ? `(${fmt(s.balance)}) tied up` : s.balance < 0 ? "— overdrawn" : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
-        )}
+        </div>
 
       </div>
 

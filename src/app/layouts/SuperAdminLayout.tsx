@@ -82,7 +82,6 @@ export default function SuperAdminLayout() {
   const CLIENTS: LinkDef = { to: "/super-admin/clients", label: "Clients", icon: Building2, perms: ["clients.view", "clients.edit"] };
   const CONTRACTS: LinkDef = { to: "/super-admin/contracts", label: "Contracts", icon: FileSignature, perms: ["contracts.view", "contracts.edit"] };
   const SITES_STRENGTH: LinkDef = { to: "/super-admin/sites-strength", label: "Sites & Strength", icon: MapPin, perms: ["clients.view", "clients.edit", "contracts.view", "contracts.edit"] };
-  const LICENCES: LinkDef = { to: "/super-admin/licences", label: "Licenses & Renewals", icon: ShieldAlert, perms: ["compliance.view", "compliance.edit"] };
   const INVOICES: LinkDef = { to: "/super-admin/invoices", label: "Invoices", icon: ReceiptText, perms: ["invoices.view", "invoices.edit"] };
   const EMPLOYEES: LinkDef = { to: "/super-admin/employees", label: "Employees", icon: UserCircle, perms: ["employees.view", "employees.edit"] };
   const ASSIGNMENTS: LinkDef = { to: "/super-admin/assignments", label: "Assignments & Pay", icon: ClipboardList, perms: ["employees.view", "employees.edit"] };
@@ -135,6 +134,7 @@ export default function SuperAdminLayout() {
   const ACCESS_GOVERNANCE: LinkDef = { to: "/super-admin/access-governance", label: "Access & Governance", icon: Users, roles: ["super_super_admin", "super_admin"] };
   const PARTICIPATION_RULES: LinkDef = { to: "/super-admin/profit-distribution", label: "Participation Rules", icon: PieChart, perms: ["accounting.view", "accounting.edit"] };
   const RMD_STATEMENTS: LinkDef = { to: "/super-admin/partners", label: "RMD Statements", icon: Users2, perms: ["accounting.view", "accounting.edit"] };
+  const PARTNERSHIP_REPORT: LinkDef = { to: "/super-admin/partnership-report", label: "Partnership Report", icon: Users2, perms: ["accounting.view", "accounting.edit"] };
 
   // Build groups, dropping any link the user lacks permission for. Drop the
   // group entirely if it ends up with no visible children.
@@ -221,6 +221,10 @@ export default function SuperAdminLayout() {
     // Cash Flow is now merged into Financial Reports as a top-level tab, so its
     // own nav link is hidden (CASHFLOW LinkDef and the /cashflow route are kept).
     REPORTS,
+    // Its own Finance entry rather than a tab inside Financial Reports: it is a
+    // report about partners, not about the P&L, and burying it behind another
+    // report's tab strip is what kept it hard to find.
+    PARTNERSHIP_REPORT,
     // Unhidden and rehomed. It used to sit in the hidden Profit-Share group,
     // which is why it disappeared with it; it is a financial report about
     // regions, so Finance is where it belongs rather than beside partner
@@ -246,9 +250,10 @@ export default function SuperAdminLayout() {
   if (profitShare) links.push(profitShare);
 
   // COMPLIANCE
+  // Licenses & Renewals and Contract Renewals are tabs of the Compliance
+  // Calendar now, so it is the group's only entry.
   // Documents and Compliance Cases hidden (routes kept).
   const compliance = buildGroup("Compliance", "/super-admin/comply", [
-    LICENCES,
     COMPLIANCE,
   ]);
   if (compliance) links.push(compliance);

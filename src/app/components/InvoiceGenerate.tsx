@@ -56,6 +56,11 @@ type Draft = {
   overrideTotal: string;
   overrideReason: string;
   previousBalance: number;
+  // Whether the client's outstanding balance is rolled into this invoice's total.
+  // Ticked by default whenever there IS an outstanding balance — that was the
+  // old, unconditional behaviour — but now it can be dropped per invoice, for
+  // the times the arrears are being chased separately.
+  includePreviousBalance: boolean;
   // Per-draft ready-to-post toggle. A draft is reviewed, then "Cleared", then
   // batch-posted by "Generate All Cleared" into a real Unpaid invoice.
   status: "Pending" | "Cleared";
@@ -251,6 +256,7 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
           overrideTotal: "",
           overrideReason: "",
           previousBalance: contractPreviousBalance(con.id),
+          includePreviousBalance: true,
           status: "Pending",
         };
       }
@@ -307,6 +313,7 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
         overrideTotal: "",
         overrideReason: "",
         previousBalance: contractPreviousBalance(con.id),
+        includePreviousBalance: true,
         status: "Pending",
       };
     },
@@ -399,10 +406,12 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
     const manualWithholding = num(d.withholdingAmount);
     // Variable clients: the Total Due is the auto-sum of the Amount column, less any
     // manual withholding. No other tax/subtotal is computed.
+    // Outstanding balance is only rolled in when the draft's tickbox is on.
+    const carried = d.includePreviousBalance ? d.previousBalance : 0;
     if ((d.client.invoice_group ?? "FIXED") === "VARIABLE") {
       const gross = variableAmountTotal(d);
-      const totalDue = gross - manualWithholding;
-      return { subtotal: gross, computed: [] as ReturnType<typeof computeInvoiceTaxes>["computed"], addedTotal: 0, withheldTotal: manualWithholding, lineTotal: gross, totalDue, overridden: false };
+      const lineTotal = gross - manualWithholding + carried;
+      return { subtotal: gross, computed: [] as ReturnType<typeof computeInvoiceTaxes>["computed"], addedTotal: 0, withheldTotal: manualWithholding, lineTotal, totalDue: lineTotal, carried, overridden: false };
     }
     const subtotal = d.lines.reduce((s, l) => s + num(l.quantity) * num(l.unit_rate), 0);
     const { computed, addedTotal, withheldTotal: taxWithheld } = computeInvoiceTaxes(
@@ -411,10 +420,10 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
     );
     // Manual withholding adds to any tax-profile withholding.
     const withheldTotal = taxWithheld + manualWithholding;
-    const lineTotal = subtotal + addedTotal - withheldTotal + d.previousBalance;
+    const lineTotal = subtotal + addedTotal - withheldTotal + carried;
     const overridden = d.overrideTotal.trim() !== "" && num(d.overrideTotal) !== lineTotal;
     const totalDue = overridden ? num(d.overrideTotal) : lineTotal;
-    return { subtotal, computed, addedTotal, withheldTotal, lineTotal, totalDue, overridden };
+    return { subtotal, computed, addedTotal, withheldTotal, lineTotal, totalDue, carried, overridden };
   };
 
   const patchDraft = (contractId: string, patch: Partial<Draft>) =>
@@ -493,7 +502,7 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
       subtotal: f.subtotal,
       tax_added_total: f.addedTotal,
       tax_withheld_total: f.withheldTotal,
-      previous_balance: d.previousBalance,
+      previous_balance: f.carried,
       total_due: f.totalDue,
       amount_in_words: amountInWords(f.totalDue),
       remit_account: remit,
@@ -986,6 +995,23 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
               {isVariable ? (
                 <div className="text-sm space-y-1">
                   <Row label="Amount (sum of column)" value={variableAmountTotal(d)} />
+                  {/* Roll the client's outstanding balance into this invoice.
+                      Only offered when there IS one to roll in. */}
+                  {d.previousBalance !== 0 && (
+                    <label className="flex items-center justify-between gap-2 pt-0.5 cursor-pointer">
+                      <span className="flex items-center gap-1.5 text-xs text-slate-600">
+                        <input
+                          type="checkbox"
+                          checked={d.includePreviousBalance}
+                          onChange={(e) => patchDraft(d.contractId, { includePreviousBalance: e.target.checked })}
+                        />
+                        Add outstanding balance
+                      </span>
+                      <span className={`tabular-nums text-xs ${d.includePreviousBalance ? "text-slate-700" : "text-slate-400 line-through"}`}>
+                        PKR {d.previousBalance.toLocaleString()}
+                      </span>
+                    </label>
+                  )}
                   {/* Manual, optional withholding — deducted from the total. */}
                   <div className="flex items-center justify-between gap-2 pt-0.5">
                     <label className="text-xs text-slate-500">Withholding tax (optional)</label>
@@ -1007,6 +1033,23 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
               ) : (
                 <div className="text-sm space-y-1">
                   <Row label="Subtotal" value={f.subtotal} />
+                  {/* Roll the client's outstanding balance into this invoice.
+                      Only offered when there IS one to roll in. */}
+                  {d.previousBalance !== 0 && (
+                    <label className="flex items-center justify-between gap-2 pt-0.5 cursor-pointer">
+                      <span className="flex items-center gap-1.5 text-xs text-slate-600">
+                        <input
+                          type="checkbox"
+                          checked={d.includePreviousBalance}
+                          onChange={(e) => patchDraft(d.contractId, { includePreviousBalance: e.target.checked })}
+                        />
+                        Add outstanding balance
+                      </span>
+                      <span className={`tabular-nums text-xs ${d.includePreviousBalance ? "text-slate-700" : "text-slate-400 line-through"}`}>
+                        PKR {d.previousBalance.toLocaleString()}
+                      </span>
+                    </label>
+                  )}
                   {f.computed.map((t, ti) => (
                     <Row key={ti} label={`${t.name} (${t.rate}%)`} value={t.direction === "WITHHELD" ? -t.amount : t.amount} muted />
                   ))}
@@ -1022,7 +1065,7 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
                     />
                   </div>
                   {num(d.withholdingAmount) > 0 && <Row label="Less: withholding (manual)" value={-num(d.withholdingAmount)} muted />}
-                  {d.previousBalance !== 0 && <Row label="Previous balance" value={d.previousBalance} muted />}
+                  {f.carried !== 0 && <Row label="Previous balance" value={f.carried} muted />}
                   <div className="flex items-center justify-between border-t border-slate-200 pt-1 font-semibold text-slate-900">
                     <span>Total Due{f.withheldTotal > 0 ? " (net of withholding)" : ""}</span>
                     <span className="tabular-nums">PKR {f.totalDue.toLocaleString()}</span>

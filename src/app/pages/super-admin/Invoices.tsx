@@ -41,7 +41,6 @@ import { useRegion, withRegion } from "../../lib/region";
 import { useAuth } from "../../lib/auth";
 import { generateInvoiceDocument } from "../../lib/invoiceTemplates";
 import InvoiceGenerate from "../../components/InvoiceGenerate";
-import BillingReconciliation from "./BillingReconciliation";
 import InvoiceStructureModal from "../../components/InvoiceStructureModal";
 import { validateInvoiceNumber, validateAmount, validateFreeText } from "../../lib/validation";
 import { formatDate, invoiceMonth } from "../../lib/date";
@@ -136,7 +135,7 @@ export default function Invoices() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [tab, setTab] = useState<"ledger" | "generate" | "reconciliation">("ledger");
+  const [tab, setTab] = useState<"ledger" | "generate">("ledger");
   const [clientFilter, setClientFilter] = useState<string>("");
   const [monthFilter, setMonthFilter] = useState<string>("all");
 
@@ -967,7 +966,7 @@ export default function Invoices() {
         )}
 
         <div className="flex gap-1 mb-6 border-b border-slate-200">
-          {(["ledger", "generate", "reconciliation"] as const).map((t) => (
+          {(["ledger", "generate"] as const).map((t) => (
             <button
               key={t}
               type="button"
@@ -978,14 +977,13 @@ export default function Invoices() {
                   : "border-transparent text-slate-500 hover:text-slate-700"
               }`}
             >
-              {t === "ledger" ? "Invoices" : t === "generate" ? "Generate" : "Billing reconciliation"}
+              {t === "ledger" ? "Invoices" : "Generate"}
             </button>
           ))}
         </div>
 
         {tab === "generate" && <InvoiceGenerate onPosted={loadAll} />}
 
-        {tab === "reconciliation" && <BillingReconciliation />}
 
         {tab === "ledger" && (
         <>

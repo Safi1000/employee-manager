@@ -716,6 +716,9 @@ export type ContractAddendum = {
   new_end_date?: string | null;
   new_is_infinite?: boolean;
   effective_from: string;
+  // Which shift a headcount change staffs. Null on hardware lines, rate changes
+  // and renewals, and on every addendum written before the column existed.
+  shift_code?: ContractShift | null;
   source: AddendumSource;
   reference: string | null;
   drive_file_id: string | null;
@@ -1789,6 +1792,8 @@ export type Partner = {
   profit_share_percent: number;
   opening_balance: number;
   opening_balance_locked: boolean;
+  /** Where the partner's ledger starts. */
+  opening_balance_date?: string | null;
   start_month: string | null;
   /**
    * Which pool the share bites on. COMPANY = equity partner, sharing what is
@@ -2073,6 +2078,8 @@ export type Advance = {
   payment_mode: "Cash" | "Bank" | "Cheque";
   bank_account_id: string | null;
   cheque_id: string | null;
+  /** "Paid By" — the office-staff custodian whose held cash this came out of (0203). */
+  custodian_location_id?: string | null;
   notes: string | null;
   created_at?: string;
   updated_at?: string;

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import { supabase } from "../../lib/supabase";
@@ -399,9 +399,18 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
     });
   }, [clients, invoicePayments, expenses, cheques, payrollCashByClient, loadedStatements, revOverheadByClient, statementPeriod]);
 
+  // The Branch filter narrows the statement the same way it does on the
+  // revenue-basis side: rows first, then the cards total what is shown.
+  const statementRowsForBranch = useMemo(
+    () => (branchFilter === "all"
+      ? cashStatementRows
+      : cashStatementRows.filter((r) => r.branchId === branchFilter)),
+    [cashStatementRows, branchFilter],
+  );
+
   const statementTotals = useMemo(() => {
     let received = 0, payroll = 0, exp = 0, regional = 0, ho = 0, net = 0;
-    for (const r of cashStatementRows) {
+    for (const r of statementRowsForBranch) {
       received += r.received;
       payroll += r.payrollPaid;
       exp += r.expensesPaid;
@@ -410,7 +419,7 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
       net += r.netCash;
     }
     return { received, payroll, expenses: exp, regional, ho, net };
-  }, [cashStatementRows]);
+  }, [statementRowsForBranch]);
 
   // Apply the period filter to a list.
   const inPeriod = useMemo(() => {
@@ -610,7 +619,7 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
     <ExportButton
       onExport={() =>
         exportClientStatements(
-          cashStatementRows.map((r) => ({
+          statementRowsForBranch.map((r) => ({
             client: `${r.client.name} (${r.client.client_code})`,
             totalReceivable: r.received,
             payrollExpenses: r.payrollPaid,
@@ -632,7 +641,6 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
         <Header
           title="Cash Flow"
           subtitle="Cash inflow vs outflow — filter by month, range or all time"
-          actions={exportBtn}
         />
       )}
 
@@ -665,13 +673,12 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
               </button>
             ))}
           </div>
-          {embedded && exportBtn}
         </div>
 
         <div className={embedded ? "p-4 md:p-6" : ""}>
         {activeTab === "clients" && (
           <ClientStatementsTab
-            rows={cashStatementRows}
+            rows={statementRowsForBranch}
             totals={statementTotals}
             period={statementPeriod}
             periodOptions={statementPeriodOptions}
@@ -679,6 +686,10 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
             loading={loading || loadingStatements}
             onView={setSelectedStatement}
             bare={embedded}
+            branches={branches}
+            branchFilter={branchFilter}
+            onBranchChange={setBranchFilter}
+            exportSlot={exportBtn}
           />
         )}
 
@@ -943,6 +954,7 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
  */
 function ClientStatementsTab({
   rows, totals, period, periodOptions, onPeriodChange, loading, onView, bare = false,
+  branches, branchFilter, onBranchChange, exportSlot,
 }: {
   rows: CashStatementRow[];
   totals: { received: number; payroll: number; expenses: number; regional: number; ho: number; net: number };
@@ -952,6 +964,12 @@ function ClientStatementsTab({
   loading: boolean;
   onView: (r: CashStatementRow) => void;
   bare?: boolean;
+  // Branch + Export live in the same filter row as Month, in the same order as
+  // the revenue-basis statement, so switching basis never moves a control.
+  branches: Branch[];
+  branchFilter: string;
+  onBranchChange: (v: string) => void;
+  exportSlot?: ReactNode;
 }) {
   return (
     <div className={bare ? "" : "bg-white rounded-lg border border-slate-200"}>
@@ -963,6 +981,17 @@ function ClientStatementsTab({
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <label className="text-sm text-slate-600">Branch:</label>
+          <ThemedSelect
+            value={branchFilter}
+            onChange={(e) => onBranchChange(e.target.value)}
+            className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+          >
+            <option value="all">All Branches</option>
+            {branches.map((b) => (
+              <option key={b.id} value={b.id}>{b.name}</option>
+            ))}
+          </ThemedSelect>
           <label className="text-sm text-slate-600">Month:</label>
           <ThemedSelect
             value={period}
@@ -973,6 +1002,7 @@ function ClientStatementsTab({
               <option key={p} value={p}>{formatPeriod(p)}</option>
             ))}
           </ThemedSelect>
+          {exportSlot}
         </div>
         <span className="text-xs text-slate-500">
           Net Cash = Received − (Payroll + Direct Expenses + Regional Overhead + Head Office).
