@@ -1792,6 +1792,8 @@ export type Partner = {
   profit_share_percent: number;
   opening_balance: number;
   opening_balance_locked: boolean;
+  /** Where the partner's ledger starts. */
+  opening_balance_date?: string | null;
   start_month: string | null;
   /**
    * Which pool the share bites on. COMPANY = equity partner, sharing what is

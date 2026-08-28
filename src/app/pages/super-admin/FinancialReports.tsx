@@ -1,9 +1,11 @@
 import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useState } from "react";
-import { Download, Loader2, FileText, Plus, Lock, Trash2, Pencil } from "lucide-react";
+import { Download, Loader2, FileText, Plus, Lock, Trash2, Pencil, Settings2 } from "lucide-react";
 import Header from "../../components/Header";
 import { formatDate, invoicePeriodFilter } from "../../lib/date";
 import ExportButton from "../../components/ExportButton";
+import PartnerFormModal from "../../components/PartnerFormModal";
+import PartnerDetailModal from "../../components/PartnerDetailModal";
 import {
   exportProfitLoss,
   exportClientStatements,
@@ -139,21 +141,12 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
   const [loadingPartnership, setLoadingPartnership] = useState(false);
   const [partnerError, setPartnerError] = useState<string | null>(null);
 
-  const [newPartnerName, setNewPartnerName] = useState("");
-  const [newPartnerShare, setNewPartnerShare] = useState("");
-  const [newPartnerOpening, setNewPartnerOpening] = useState("");
-  const [partnerSubmitting, setPartnerSubmitting] = useState(false);
-  // A partner is one of two kinds, and which one changes what their share bites
-  // on — see public.partnership_allocation.
-  const [newPartnerScope, setNewPartnerScope] = useState<"COMPANY" | "BRANCH">("COMPANY");
-  const [newPartnerBranch, setNewPartnerBranch] = useState("");
-  // Regional partners only: what the share bites on. "" = legacy adjusted profit.
-  const [newPartnerBasis, setNewPartnerBasis] = useState<"" | "cash" | "revenue">("");
-
-  const [editPartnerId, setEditPartnerId] = useState<string | null>(null);
-  const [editPartnerShare, setEditPartnerShare] = useState("");
-  const [editPartnerOpening, setEditPartnerOpening] = useState("");
-  const [editPartnerBasis, setEditPartnerBasis] = useState<"" | "cash" | "revenue">("");
+  // Add / edit partner dialog, and the per-partner drawer the pencil opens.
+  // Both own their own form state — the page no longer keeps a dozen loose
+  // new*/edit* fields for an inline form that no longer exists.
+  const [isPartnerFormOpen, setIsPartnerFormOpen] = useState(false);
+  const [formPartner, setFormPartner] = useState<Partner | null>(null);
+  const [detailPartner, setDetailPartner] = useState<Partner | null>(null);
 
   const chartPeriodOptions = useMemo(() => {
     const opts: string[] = [];
@@ -500,107 +493,10 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
     () => partners.filter((p) => p.scope !== "BRANCH").reduce((s, p) => s + Number(p.profit_share_percent), 0),
     [partners],
   );
-  const branchShareTotal = (branchId: string) =>
-    partners
-      .filter((p) => p.scope === "BRANCH" && p.branch_id === branchId)
-      .reduce((s, p) => s + Number(p.profit_share_percent), 0);
-
-  const handleAddPartner = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newPartnerName.trim()) return;
-    const share = Number(newPartnerShare || 0);
-    if (share < 0 || share > 100) {
-      setPartnerError("Profit share must be between 0 and 100.");
-      return;
-    }
-    if (newPartnerScope === "BRANCH" && !newPartnerBranch) {
-      setPartnerError("Pick the region this partner has a stake in.");
-      return;
-    }
-    // Checked within the tier the partner belongs to, not across both.
-    if (newPartnerScope === "COMPANY") {
-      if (equityShareTotal + share > 100) {
-        setPartnerError(`Equity shares would exceed 100% (currently ${equityShareTotal}%).`);
-        return;
-      }
-    } else {
-      const used = branchShareTotal(newPartnerBranch);
-      if (used + share > 100) {
-        setPartnerError(`This region's shares would exceed 100% (currently ${used}%).`);
-        return;
-      }
-    }
-    const opening = Number(newPartnerOpening || 0);
-    setPartnerSubmitting(true);
-    setPartnerError(null);
-    const { error: insErr } = await supabase.from("partners").insert({
-      name: newPartnerName.trim(),
-      profit_share_percent: share,
-      scope: newPartnerScope,
-      branch_id: newPartnerScope === "BRANCH" ? newPartnerBranch : null,
-      basis: newPartnerScope === "BRANCH" && newPartnerBasis ? newPartnerBasis : null,
-      opening_balance: opening,
-      opening_balance_locked: opening !== 0,
-    });
-    setPartnerSubmitting(false);
-    if (insErr) {
-      setPartnerError(insErr.message);
-      return;
-    }
-    setNewPartnerName("");
-    setNewPartnerShare("");
-    setNewPartnerOpening("");
-    setNewPartnerBasis("");
-    await loadPartnership();
-  };
-
   const handleDeletePartner = async (p: Partner) => {
-    if (!window.confirm(`Delete partner "${p.name}"? Any bank accounts owned by them will be left orphaned; reassign or delete those first.`)) return;
+    if (!window.confirm(`Delete ${p.name}? Their ledger entries and any per-client share overrides go with them.`)) return;
     const { error: delErr } = await supabase.from("partners").delete().eq("id", p.id);
-    if (delErr) {
-      setPartnerError(delErr.message);
-      return;
-    }
-    await loadPartnership();
-  };
-
-  const openEditPartner = (p: Partner) => {
-    setEditPartnerId(p.id);
-    setEditPartnerShare(String(p.profit_share_percent));
-    setEditPartnerOpening(p.opening_balance_locked ? "" : String(p.opening_balance));
-    setEditPartnerBasis(p.basis ?? "");
-  };
-
-  const handleSavePartnerEdit = async (p: Partner) => {
-    const share = Number(editPartnerShare);
-    if (Number.isNaN(share) || share < 0 || share > 100) {
-      setPartnerError("Profit share must be between 0 and 100.");
-      return;
-    }
-    // Same tier-local rule as adding: an equity share competes only with other
-    // equity shares, a regional one only with its own region's.
-    const otherShare =
-      (p.scope === "BRANCH" ? branchShareTotal(p.branch_id ?? "") : equityShareTotal) -
-      Number(p.profit_share_percent);
-    if (otherShare + share > 100) {
-      setPartnerError(
-        `${p.scope === "BRANCH" ? "This region's" : "Equity"} shares would exceed 100% (others already use ${otherShare}%).`,
-      );
-      return;
-    }
-    const update: Partial<Partner> = { profit_share_percent: share };
-    if (p.scope === "BRANCH") update.basis = editPartnerBasis || null;
-    if (!p.opening_balance_locked && editPartnerOpening !== "") {
-      update.opening_balance = Number(editPartnerOpening);
-      update.opening_balance_locked = true;
-    }
-    setPartnerError(null);
-    const { error: upErr } = await supabase.from("partners").update(update).eq("id", p.id);
-    if (upErr) {
-      setPartnerError(upErr.message);
-      return;
-    }
-    setEditPartnerId(null);
+    if (delErr) { setPartnerError(delErr.message); return; }
     await loadPartnership();
   };
 
@@ -1125,119 +1021,13 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                 <div className="text-sm text-danger-600 bg-danger-50 border border-danger-200 px-4 py-2 rounded mb-4">{partnerError}</div>
               )}
 
-              {/* 12 columns, not 5. With Region hidden the fields are 4+2+2+2
-                  and the button takes the last 2; with it shown the name gives
-                  up two of its own so the row still totals 12. On a 5-column
-                  grid the six cells always overflowed and dropped the button
-                  onto a second row.
+              <div className="mb-6 flex justify-end">
+                <Button variant="primary" size="md" onClick={() => { setFormPartner(null); setIsPartnerFormOpen(true); }}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Partner
+                </Button>
+              </div>
 
-                  items-start, not items-end: only some fields carry helper text
-                  under them, so bottom-aligning the cells staggered the inputs.
-                  The button gets an invisible label so it lines up with them. */}
-              <form onSubmit={handleAddPartner} className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-12 gap-3 items-start">
-                <div className={newPartnerScope === "BRANCH" ? "md:col-span-2" : "md:col-span-4"}>
-                  <label className="block text-xs text-slate-700 mb-1">Partner Name</label>
-                  <input
-                    type="text"
-                    value={newPartnerName}
-                    onChange={(e) => setNewPartnerName(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-                    placeholder="Full name"
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-xs text-slate-700 mb-1">Kind</label>
-                  <ThemedSelect
-                    value={newPartnerScope}
-                    onChange={(e) => setNewPartnerScope(e.target.value as "COMPANY" | "BRANCH")}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-                  >
-                    <option value="COMPANY">Equity partner</option>
-                    <option value="BRANCH">Regional partner</option>
-                  </ThemedSelect>
-                  <p className="text-[10px] text-slate-500 mt-1">
-                    {newPartnerScope === "COMPANY"
-                      ? "Shares the pooled residual."
-                      : "Shares one region's profit."}
-                  </p>
-                </div>
-                {newPartnerScope === "BRANCH" && (
-                  <div className="md:col-span-2">
-                    <label className="block text-xs text-slate-700 mb-1">Region</label>
-                    <ThemedSelect
-                      value={newPartnerBranch}
-                      onChange={(e) => setNewPartnerBranch(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-                    >
-                      <option value="">Select region</option>
-                      {branches.map((b) => (
-                        <option key={b.id} value={b.id}>{b.name}</option>
-                      ))}
-                    </ThemedSelect>
-                  </div>
-                )}
-                {newPartnerScope === "BRANCH" && (
-                  <div className="md:col-span-2">
-                    <label className="block text-xs text-slate-700 mb-1">Basis</label>
-                    <ThemedSelect
-                      value={newPartnerBasis}
-                      onChange={(e) => setNewPartnerBasis(e.target.value as "" | "cash" | "revenue")}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-                    >
-                      <option value="">Adjusted profit</option>
-                      <option value="cash">Cash (Net Cash)</option>
-                      <option value="revenue">Revenue (Total Income)</option>
-                    </ThemedSelect>
-                    <p className="text-[10px] text-slate-500 mt-1">What the share is a % of.</p>
-                  </div>
-                )}
-                <div className="md:col-span-2">
-                  <label className="block text-xs text-slate-700 mb-1">Profit Share %</label>
-                  <input
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    max="100"
-                    value={newPartnerShare}
-                    onChange={(e) => setNewPartnerShare(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-                    placeholder="0"
-                  />
-                  <p className="text-[10px] text-slate-500 mt-1">
-                    {newPartnerScope === "COMPANY"
-                      ? `Of the residual pool. ${equityShareTotal}% used.`
-                      : newPartnerBranch
-                        ? `Of that region. ${branchShareTotal(newPartnerBranch)}% used.`
-                        : "Of that region's profit."}
-                  </p>
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-xs text-slate-700 mb-1">Opening Balance (PKR)</label>
-                  <input
-                    type="number"
-                    value={newPartnerOpening}
-                    onChange={(e) => setNewPartnerOpening(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-                    placeholder="0"
-                  />
-                  <p className="text-[10px] text-slate-500 mt-1">Locks once non-zero is saved.</p>
-                </div>
-                <div className="md:col-span-2">
-                  {/* Spacer matching the other cells' label, so the button sits
-                      on the same line as the inputs rather than above them. */}
-                  <span className="hidden md:block text-xs mb-1 invisible" aria-hidden="true">Add</span>
-                  <Button
-                    type="submit"
-                    variant="primary"
-                    size="md"
-                    className="w-full"
-                    disabled={partnerSubmitting || !newPartnerName.trim()}
-                  >
-                    <Plus className="w-4 h-4" />
-                    Add Partner
-                  </Button>
-                </div>
-              </form>
 
               <div className="overflow-x-auto">
                 {loadingPartnership ? (
@@ -1259,99 +1049,59 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200">
-                        {partners.map((p) => {
-                          const editing = editPartnerId === p.id;
-                          return (
-                            <tr key={p.id} className="hover:bg-slate-50 transition-colors">
-                              <td className="px-4 py-3 text-sm text-slate-900">
-                                {p.name}
-                                {p.opening_balance_locked && (
-                                  <Lock className="w-3 h-3 text-slate-400 inline-block ml-2" />
-                                )}
-                                {/* Which tier the share belongs to — without this
-                                    the Profit Share column reads as one pool when
-                                    it is really two. */}
-                                <div className="text-[11px] text-slate-500 mt-0.5">
-                                  {p.scope === "BRANCH"
-                                    ? `Regional · ${branches.find((b) => b.id === p.branch_id)?.name ?? "no region"}`
-                                    : "Equity"}
+                        {partners.map((p) => (
+                          <tr key={p.id} className="hover:bg-slate-50 transition-colors">
+                            <td className="px-4 py-3 text-sm text-slate-900">
+                              {p.name}
+                              {p.opening_balance_locked && (
+                                <Lock className="w-3 h-3 text-slate-400 inline-block ml-2" />
+                              )}
+                              {/* Which tier the share belongs to — without this the
+                                  Profit Share column reads as one pool when it is
+                                  really two. */}
+                              <div className="text-[11px] text-slate-500 mt-0.5">
+                                {p.scope === "BRANCH"
+                                  ? `Regional · ${branches.find((b) => b.id === p.branch_id)?.name ?? "no region"}`
+                                  : "Equity"}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-sm text-right">
+                              <span className="text-brand-600">{Number(p.profit_share_percent)}%</span>
+                              {p.scope === "BRANCH" && p.basis && (
+                                <div className="text-[10px] text-slate-500">
+                                  of {p.basis === "cash" ? "Net Cash" : "Total Income"}
                                 </div>
-                              </td>
-                              <td className="px-4 py-3 text-sm text-right">
-                                {editing ? (
-                                  <div className="flex flex-col items-end gap-1">
-                                    <input
-                                      type="number"
-                                      step="0.001"
-                                      min="0"
-                                      max="100"
-                                      value={editPartnerShare}
-                                      onChange={(e) => setEditPartnerShare(e.target.value)}
-                                      className="w-20 px-2 py-1 border border-slate-200 rounded text-sm text-right"
-                                    />
-                                    {p.scope === "BRANCH" && (
-                                      <ThemedSelect
-                                        value={editPartnerBasis}
-                                        onChange={(e) => setEditPartnerBasis(e.target.value as "" | "cash" | "revenue")}
-                                        className="w-32 px-2 py-1 border border-slate-200 rounded text-xs"
-                                      >
-                                        <option value="">Adjusted profit</option>
-                                        <option value="cash">Cash</option>
-                                        <option value="revenue">Revenue</option>
-                                      </ThemedSelect>
-                                    )}
-                                    {/* Opening balance is a property of the partner,
-                                        not an allocation figure, so it stays settable
-                                        here even though it is no longer a column. */}
-                                    {!p.opening_balance_locked && (
-                                      <input
-                                        type="number"
-                                        value={editPartnerOpening}
-                                        onChange={(e) => setEditPartnerOpening(e.target.value)}
-                                        placeholder="Opening balance"
-                                        className="w-32 px-2 py-1 border border-slate-200 rounded text-xs text-right"
-                                      />
-                                    )}
-                                  </div>
-                                ) : (
-                                  <>
-                                    <span className="text-brand-600">{Number(p.profit_share_percent)}%</span>
-                                    {p.scope === "BRANCH" && p.basis && (
-                                      <div className="text-[10px] text-slate-500">
-                                        {p.basis === "cash" ? "Net Cash" : "Total Income"}
-                                      </div>
-                                    )}
-                                  </>
-                                )}
-                              </td>
-                              <td className="px-4 py-3 text-right">
-                                {editing ? (
-                                  <div className="flex gap-1 justify-end">
-                                    <Button variant="primary" size="sm" onClick={() => handleSavePartnerEdit(p)}>Save</Button>
-                                    <Button variant="ghost" size="sm" onClick={() => setEditPartnerId(null)}>Cancel</Button>
-                                  </div>
-                                ) : (
-                                  <div className="flex gap-1 justify-end">
-                                    <button
-                                      onClick={() => openEditPartner(p)}
-                                      className="p-1.5 rounded text-slate-600 hover:bg-slate-100"
-                                      title="Edit"
-                                    >
-                                      <Pencil className="w-4 h-4" />
-                                    </button>
-                                    <button
-                                      onClick={() => handleDeletePartner(p)}
-                                      className="p-1.5 rounded text-danger-600 hover:bg-danger-50"
-                                      title="Delete"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </button>
-                                  </div>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <div className="flex gap-1 justify-end">
+                                {/* The pencil opens the partner's drawer: what each
+                                    client contributes, and their running ledger. */}
+                                <button
+                                  onClick={() => setDetailPartner(p)}
+                                  className="p-1.5 rounded text-slate-600 hover:bg-slate-100"
+                                  title="Client breakdown and ledger"
+                                >
+                                  <Pencil className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => { setFormPartner(p); setIsPartnerFormOpen(true); }}
+                                  className="p-1.5 rounded text-slate-600 hover:bg-slate-100"
+                                  title="Edit name, kind and share"
+                                >
+                                  <Settings2 className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => handleDeletePartner(p)}
+                                  className="p-1.5 rounded text-danger-600 hover:bg-danger-50"
+                                  title="Delete"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                   </div>
@@ -1384,6 +1134,27 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
         </div>
         )}
       </div>
+
+      <PartnerFormModal
+        isOpen={isPartnerFormOpen}
+        partner={formPartner}
+        branches={branches}
+        equityShareTotal={equityShareTotal}
+        onClose={() => setIsPartnerFormOpen(false)}
+        onSaved={() => { setIsPartnerFormOpen(false); setFormPartner(null); loadPartnership(); }}
+      />
+
+      <PartnerDetailModal
+        isOpen={detailPartner !== null}
+        partner={detailPartner}
+        period={partnershipPeriod}
+        periodOptions={chartPeriodOptions}
+        regionName={detailPartner?.branch_id
+          ? branches.find((b) => b.id === detailPartner.branch_id)?.name ?? null
+          : null}
+        onClose={() => setDetailPartner(null)}
+        onChanged={() => loadPartnership()}
+      />
 
       <Modal isOpen={isClientStatementModalOpen} onClose={() => setIsClientStatementModalOpen(false)} title="Full Client Statement" size="lg">
         {selectedClient && (
