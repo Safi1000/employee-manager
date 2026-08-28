@@ -24,7 +24,7 @@ import Expenses from "./pages/super-admin/Expenses";
 import Invoices from "./pages/super-admin/Invoices";
 import Cashflow from "./pages/super-admin/CashFlow";
 import Inventory from "./pages/super-admin/Inventory";
-import Compliance from "./pages/super-admin/Compliance";
+import ComplianceHub from "./pages/super-admin/ComplianceHub";
 import Documents from "./pages/super-admin/Documents";
 import Settings from "./pages/super-admin/Settings";
 import Tasks from "./pages/super-admin/Tasks";
@@ -57,7 +57,6 @@ import AccountingCore from "./pages/super-admin/AccountingCore";
 import AccessGovernance from "./pages/super-admin/AccessGovernance";
 import DailyReports from "./pages/super-admin/DailyReports";
 import IncidentsHub from "./pages/super-admin/IncidentsHub";
-import LicencesHub from "./pages/super-admin/LicencesHub";
 
 import Billing from "./pages/super-admin/Billing";
 
@@ -139,8 +138,9 @@ export const router = createRouter([
       // enrolled reconciliation now sits on the same screen as the guards it counts.
       { path: "deployment", element: <Navigate to="/super-admin/assignments" replace /> },
       { path: "sites-strength", element: <Navigate to="/super-admin/assignments" replace /> },
-      // Licenses & Renewals now also hosts the contract renewal pipeline.
-      { path: "licences", element: guard(["compliance.view", "compliance.edit"], <LicencesHub />) },
+      // Licenses & Renewals and the contract renewal pipeline are tabs of the
+      // Compliance Calendar now — one home for everything with an expiry on it.
+      { path: "licences", element: <Navigate to="/super-admin/compliance?tab=licences" replace /> },
       // Deployment Roster killed (supervisor handles daily assignment) → Assignments & Pay.
       { path: "roster", element: <Navigate to="/super-admin/assignments" replace /> },
       // Incidents now also hosts client complaints (from dissolved Client Relationships).
@@ -197,7 +197,7 @@ export const router = createRouter([
       { path: "profit-distribution", element: guard(["accounting.view", "accounting.edit"], <ProfitDistribution />) },
       { path: "project-financing", element: guard(["accounting.view", "accounting.edit"], <ProjectFinancing />) },
       { path: "inventory", element: <Navigate to="/super-admin/assets-issuance?tab=issuance" replace /> },
-      { path: "compliance", element: guard(["compliance.view", "compliance.edit"], <Compliance />) },
+      { path: "compliance", element: guard(["compliance.view", "compliance.edit"], <ComplianceHub />) },
       { path: "documents", element: guard(["documents.view", "documents.edit"], <Documents />) },
       { path: "settings", element: guard(["settings.view", "settings.edit"], <Settings />) },
       // Plan, guard cap and AI credit. Readable by anyone who can see settings;

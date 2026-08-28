@@ -716,6 +716,9 @@ export type ContractAddendum = {
   new_end_date?: string | null;
   new_is_infinite?: boolean;
   effective_from: string;
+  // Which shift a headcount change staffs. Null on hardware lines, rate changes
+  // and renewals, and on every addendum written before the column existed.
+  shift_code?: ContractShift | null;
   source: AddendumSource;
   reference: string | null;
   drive_file_id: string | null;

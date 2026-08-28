@@ -95,9 +95,30 @@ const triggerDayHelp = (f: RecurringFrequency) => {
   return "MM-DD (e.g. 03-15)";
 };
 
+/**
+ * How far ahead a contract ending is announced: two weeks, one week, three days
+ * and one day out. Descending, so `contractMilestone` can return the first one a
+ * contract has reached — i.e. the widest window still open.
+ */
+const CONTRACT_NOTICE_DAYS = [14, 7, 3, 1] as const;
+
+/** The notice window a contract this many days out currently sits in. */
+const contractMilestone = (days: number): number | null =>
+  CONTRACT_NOTICE_DAYS.find((t) => days <= t) ?? null;
+
+const milestoneLabel = (days: number): string => {
+  if (days < 0) return `Ended ${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} ago`;
+  if (days === 0) return "Ends today";
+  if (days === 1) return "1 day left";
+  if (days <= 3) return `${days} days left`;
+  if (days <= 7) return `${days} days left (1-week notice)`;
+  return `${days} days left (2-week notice)`;
+};
+
 type ContractEndAlert = {
   id: string;
-  client_id: string;
+  contract_id: string;
+  contract_code: string | null;
   client_name: string;
   due_date: string;
   daysRemaining: number;
@@ -141,22 +162,26 @@ export default function Compliance() {
   const loadAll = async () => {
     setLoading(true);
     setError(null);
-    const today = todayStr();
-    const in60Iso = (() => {
+    const horizonIso = (() => {
       const d = new Date();
-      d.setDate(d.getDate() + 60);
+      d.setDate(d.getDate() + CONTRACT_NOTICE_DAYS[0]);
       return d.toISOString().slice(0, 10);
     })();
     const [dRes, rRes, cRes] = await Promise.all([
       supabase.from("important_dates").select("*").order("due_date"),
       supabase.from("recurring_alerts").select("*").order("created_at", { ascending: false }),
+      // The end date lives on the CONTRACT. This used to read clients.contract_end,
+      // a column nothing populates, so the contract-ending alert never fired once.
+      // No lower bound on end_date: a contract that is active but already past its
+      // end is the most urgent case there is, and filtering to future dates hid it.
       supabase
-        .from("clients")
-        .select("id, name, contract_end")
-        .not("contract_end", "is", null)
-        .gte("contract_end", today)
-        .lte("contract_end", in60Iso)
-        .order("contract_end"),
+        .from("contracts")
+        .select("id, contract_code, end_date, is_infinite, status, clients:client_id(name)")
+        .eq("status", "active")
+        .eq("is_infinite", false)
+        .not("end_date", "is", null)
+        .lte("end_date", horizonIso)
+        .order("end_date"),
     ]);
     if (dRes.error) setError(dRes.error.message);
     if (rRes.error) setError(rRes.error.message);
@@ -165,17 +190,21 @@ export default function Compliance() {
     setRecurring((rRes.data ?? []) as RecurringAlert[]);
     const synth: ContractEndAlert[] = ((cRes.data ?? []) as {
       id: string;
-      name: string;
-      contract_end: string;
+      contract_code: string | null;
+      end_date: string;
+      clients: { name?: string } | null;
     }[]).map((c) => {
-      const daysRemaining = dayDiff(c.contract_end);
+      const daysRemaining = dayDiff(c.end_date);
+      // 3 days or less (and anything already overdue) is critical, a week out is
+      // high, the two-week heads-up is medium.
       const priority: CompliancePriority =
-        daysRemaining <= 7 ? "critical" : daysRemaining <= 30 ? "high" : "medium";
+        daysRemaining <= 3 ? "critical" : daysRemaining <= 7 ? "high" : "medium";
       return {
         id: `contract-${c.id}`,
-        client_id: c.id,
-        client_name: c.name,
-        due_date: c.contract_end,
+        contract_id: c.id,
+        contract_code: c.contract_code,
+        client_name: c.clients?.name ?? "Client",
+        due_date: c.end_date,
         daysRemaining,
         priority,
       };
@@ -217,7 +246,7 @@ export default function Compliance() {
         due_date: string;
         daysRemaining: number;
         notes: string | null;
-        client_id: string;
+        contract_id: string;
       };
 
   const activeAlerts = useMemo<ActiveAlertItem[]>(() => {
@@ -234,28 +263,30 @@ export default function Compliance() {
         notes: d.notes ?? null,
         source: d,
       }));
-    // Contract-end alerts fire at the 60/30/7-day windows.
+    // Contract-end alerts open at the 2-week mark and stay up, tightening
+    // through the 1-week, 3-day and 1-day notices. An already-overdue contract
+    // never drops off — it is past every window, not outside them.
     const fromContracts: ActiveAlertItem[] = contractAlerts
-      .filter(
-        (c) =>
-          c.daysRemaining >= 0 &&
-          (c.daysRemaining <= 7 || c.daysRemaining <= 30 || c.daysRemaining <= 60),
-      )
+      .filter((c) => contractMilestone(c.daysRemaining) !== null)
       .map((c) => ({
         kind: "contract_end",
         id: c.id,
-        title: `Contract ending: ${c.client_name}`,
-        category: "Client",
+        title: `Contract ending: ${c.client_name}${c.contract_code ? ` (${c.contract_code})` : ""}`,
+        category: "Contract",
         priority: c.priority,
         due_date: c.due_date,
         daysRemaining: c.daysRemaining,
         notes:
-          c.daysRemaining <= 7
-            ? "Critical: contract ends within a week — renew or replace."
-            : c.daysRemaining <= 30
-              ? "Renew or replace within the next 30 days."
-              : "Heads up: contract ends within 60 days.",
-        client_id: c.client_id,
+          c.daysRemaining < 0
+            ? "Overdue: this contract is still active past its end date."
+            : c.daysRemaining <= 1
+              ? "Final notice: renew or replace today."
+              : c.daysRemaining <= 3
+                ? "3-day notice: renew or replace now."
+                : c.daysRemaining <= 7
+                  ? "1-week notice: renew or replace within the week."
+                  : "2-week notice: contract ends in a fortnight.",
+        contract_id: c.contract_id,
       }));
     return [...fromDates, ...fromContracts].sort(
       (a, b) =>
@@ -841,8 +872,9 @@ export default function Compliance() {
             <div className="divide-y divide-slate-200">
               {activeAlerts.length === 0 ? (
                 <div className="p-6 text-center text-slate-500 text-sm">
-                  No active alerts. Alerts surface automatically when an Important Date enters its
-                  advance-notice window.
+                  No active alerts. Alerts surface automatically when an Important Date enters
+                  its advance-notice window, or when a contract is 2 weeks, 1 week, 3 days or
+                  1 day from ending.
                 </div>
               ) : (
                 activeAlerts.map((d) => {
@@ -882,10 +914,7 @@ export default function Compliance() {
                         <p className="text-sm text-slate-900">
                           {d.title}{" "}
                           <span className="text-slate-500">
-                            — due {formatDate(d.due_date)}
-                            {d.daysRemaining === 0
-                              ? " (today)"
-                              : ` (${d.daysRemaining} day${d.daysRemaining === 1 ? "" : "s"} away)`}
+                            — due {formatDate(d.due_date)} ({milestoneLabel(d.daysRemaining)})
                           </span>
                         </p>
                         {d.notes && (

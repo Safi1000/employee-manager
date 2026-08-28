@@ -24,7 +24,6 @@ import {
   CONTRACT_TYPE_LABEL,
   CONTRACT_STATUS_LABEL,
   CONTRACT_LINE_CATEGORY_LABEL,
-  CONTRACT_LINE_CATEGORY_ORDER,
   HARDWARE_LINE_CATEGORIES,
   isPersonnelCategory,
   effectiveContractLinesValue,
@@ -455,43 +454,6 @@ export default function Contracts() {
                   <span className="tabular-nums">PKR {deriveContract(row).valuePerMonth.toLocaleString()}</span>
                 ),
               },
-              {
-                label: "Committed by category",
-                full: true,
-                value: (row) => {
-                  const { committedByCat, activeByCat } = deriveContract(row);
-                  const personnel = CONTRACT_LINE_CATEGORY_ORDER.filter(
-                    (cat) => committedByCat.has(cat) && isPersonnelCategory(cat),
-                  );
-                  const hardware = HARDWARE_LINE_CATEGORIES.filter((cat) => committedByCat.has(cat));
-                  if (committedByCat.size === 0) return <span className="text-muted-foreground">No lines</span>;
-                  return (
-                    <span className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
-                      {personnel.map((cat) => {
-                        const committed = committedByCat.get(cat) ?? 0;
-                        const active = activeByCat.get(cat) ?? 0;
-                        return (
-                          <span key={cat}>
-                            <span className="text-muted-foreground">{CONTRACT_LINE_CATEGORY_LABEL[cat]}:</span>{" "}
-                            <span className={active > committed ? "text-danger-700 font-medium" : "font-medium"}>
-                              {active}/{committed}
-                            </span>
-                          </span>
-                        );
-                      })}
-                      {hardware.map((cat) => (
-                        <span key={cat}>
-                          <span className="text-muted-foreground">{CONTRACT_LINE_CATEGORY_LABEL[cat]}:</span>{" "}
-                          <span className="font-medium">{committedByCat.get(cat) ?? 0}</span>
-                        </span>
-                      ))}
-                      {personnel.length === 0 && (
-                        <span className="text-muted-foreground">No personnel lines</span>
-                      )}
-                    </span>
-                  );
-                },
-              },
             ]}
             tags={(row) => {
               const { expired, overStaffed } = deriveContract(row);
@@ -533,7 +495,6 @@ export default function Contracts() {
                   <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Client</th>
                   <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Type</th>
                   <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Period</th>
-                  <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Committed by category</th>
                   <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Guards (active/allotted)</th>
                   <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Weapons &amp; equipment</th>
                   <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Value/mo</th>
@@ -545,14 +506,14 @@ export default function Contracts() {
               <tbody className="divide-y divide-slate-200">
                 {loading && (
                   <tr>
-                    <td colSpan={11} className="px-4 py-10 text-center text-slate-500">
+                    <td colSpan={10} className="px-4 py-10 text-center text-slate-500">
                       <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                     </td>
                   </tr>
                 )}
                 {!loading && filteredRows.length === 0 && (
                   <tr>
-                    <td colSpan={11} className="px-4 py-10 text-center text-slate-500 text-sm">
+                    <td colSpan={10} className="px-4 py-10 text-center text-slate-500 text-sm">
                       No contracts match the current filters.
                     </td>
                   </tr>
@@ -560,7 +521,7 @@ export default function Contracts() {
                 {!loading && filteredRows.map((row) => {
                   const {
                     eff, effEndDate, renewed, dleft, endingSoon, expired,
-                    committedByCat, activeByCat, totalCommitted, hardwareCommitted,
+                    committedByCat, totalCommitted, hardwareCommitted,
                     activeGuards, looseActive, valuePerMonth, overStaffed,
                   } = deriveContract(row);
                   return (
@@ -596,33 +557,6 @@ export default function Contracts() {
                               {endingSoon && ` (${dleft}d)`}
                             </div>
                           )
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-600">
-                        {committedByCat.size === 0 ? (
-                          <span className="text-slate-400 text-xs">No lines</span>
-                        ) : (
-                          <div className="flex flex-col gap-0.5">
-                            {CONTRACT_LINE_CATEGORY_ORDER.filter(
-                              (cat) => committedByCat.has(cat) && isPersonnelCategory(cat),
-                            ).map((cat) => {
-                              const committed = committedByCat.get(cat) ?? 0;
-                              const active = activeByCat.get(cat) ?? 0;
-                              const over = active > committed;
-                              return (
-                                <span key={cat} className="text-xs">
-                                  <span className="text-slate-500">{CONTRACT_LINE_CATEGORY_LABEL[cat]}:</span>{" "}
-                                  <span className={over ? "text-danger-700 font-medium" : "text-slate-900 font-medium"}>
-                                    {active}/{committed}
-                                  </span>
-                                </span>
-                              );
-                            })}
-                            {/* A hardware-only contract has no personnel lines at all. */}
-                            {![...committedByCat.keys()].some(isPersonnelCategory) && (
-                              <span className="text-xs text-slate-400">No personnel lines</span>
-                            )}
-                          </div>
                         )}
                       </td>
                       <td className="px-4 py-3 text-sm text-right">

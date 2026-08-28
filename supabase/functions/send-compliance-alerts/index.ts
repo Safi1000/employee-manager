@@ -14,8 +14,11 @@
 //      (mirrors what Compliance.tsx renders as active alerts). Identical rows
 //      are collapsed — the same review is often stored several times with
 //      different notice windows, which would otherwise repeat in the digest.
-//   2. contracts.end_date at or under 60 / 30 / 7 days out, once per threshold
+//   2. contracts.end_date at or under 14 / 7 / 3 / 1 days out, once per threshold
 //      (recorded in compliance_alert_log so a missed run still catches up).
+//      An already-overdue active contract lands on the tightest threshold and is
+//      announced there — it used to be filtered out for being in the past, which
+//      is exactly backwards: past its end and still active is the urgent case.
 //
 // Source 2 used to read clients.contract_end. That column is unset on every
 // client here, while the real end dates live on the contracts table — so the
@@ -32,9 +35,10 @@ const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-// Days-out values that should trigger a contract-end alert. Must match the
-// thresholds rendered in Compliance.tsx / Dashboard.tsx.
-const CONTRACT_ALERT_DAYS = [60, 30, 7];
+// Days-out values that should trigger a contract-end alert: two weeks, one week,
+// three days and one day before the contract ends. Must match CONTRACT_NOTICE_DAYS
+// in Compliance.tsx, which renders the same windows in the calendar.
+const CONTRACT_ALERT_DAYS = [14, 7, 3, 1];
 
 // Fallback sender if the company has not set sender_email. Resend allows this
 // address out of the box without domain verification — good for first run.
@@ -179,8 +183,7 @@ async function collectAlerts(
     .select("id, contract_code, end_date, is_infinite, status, clients:client_id(name)")
     .eq("company_id", companyId)
     .eq("status", "active")
-    .not("end_date", "is", null)
-    .gte("end_date", today);
+    .not("end_date", "is", null);
 
   // Which thresholds have already been announced for this company.
   const alreadySent = new Set<string>();
@@ -201,6 +204,8 @@ async function collectAlerts(
 
     // The tightest threshold this contract has reached. "At or under" rather
     // than "exactly", so a day the job did not run does not lose the notice.
+    // An overdue contract (days < 0) is under every threshold and so lands on
+    // the tightest one — announced once, then quiet.
     const threshold = [...CONTRACT_ALERT_DAYS].sort((a, b) => a - b).find((t) => days <= t);
     if (threshold === undefined) continue;
 
@@ -210,7 +215,7 @@ async function collectAlerts(
     const clientName = (c.clients as { name?: string } | null)?.name ?? "Client";
     const code = c.contract_code ? ` (${c.contract_code})` : "";
     alerts.push({
-      title: `${clientName}${code} — contract ending`,
+      title: `${clientName}${code} — contract ${days < 0 ? "expired" : "ending"}`,
       category: "Contract",
       daysRemaining: days,
       source: "contract_end",
@@ -223,9 +228,11 @@ async function collectAlerts(
   return { alerts, toLog };
 }
 
+// Colours the "Due" cell to the same bands the calendar uses: 3 days or less
+// (and anything overdue) is critical, a week out is a warning, wider is info.
 function urgencyColor(days: number): string {
-  if (days <= 7) return "#dc2626"; // danger
-  if (days <= 30) return "#d97706"; // warning
+  if (days <= 3) return "#dc2626"; // danger
+  if (days <= 7) return "#d97706"; // warning
   return "#2563eb"; // info
 }
 

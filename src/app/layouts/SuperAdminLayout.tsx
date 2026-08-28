@@ -82,7 +82,6 @@ export default function SuperAdminLayout() {
   const CLIENTS: LinkDef = { to: "/super-admin/clients", label: "Clients", icon: Building2, perms: ["clients.view", "clients.edit"] };
   const CONTRACTS: LinkDef = { to: "/super-admin/contracts", label: "Contracts", icon: FileSignature, perms: ["contracts.view", "contracts.edit"] };
   const SITES_STRENGTH: LinkDef = { to: "/super-admin/sites-strength", label: "Sites & Strength", icon: MapPin, perms: ["clients.view", "clients.edit", "contracts.view", "contracts.edit"] };
-  const LICENCES: LinkDef = { to: "/super-admin/licences", label: "Licenses & Renewals", icon: ShieldAlert, perms: ["compliance.view", "compliance.edit"] };
   const INVOICES: LinkDef = { to: "/super-admin/invoices", label: "Invoices", icon: ReceiptText, perms: ["invoices.view", "invoices.edit"] };
   const EMPLOYEES: LinkDef = { to: "/super-admin/employees", label: "Employees", icon: UserCircle, perms: ["employees.view", "employees.edit"] };
   const ASSIGNMENTS: LinkDef = { to: "/super-admin/assignments", label: "Assignments & Pay", icon: ClipboardList, perms: ["employees.view", "employees.edit"] };
@@ -246,9 +245,10 @@ export default function SuperAdminLayout() {
   if (profitShare) links.push(profitShare);
 
   // COMPLIANCE
+  // Licenses & Renewals and Contract Renewals are tabs of the Compliance
+  // Calendar now, so it is the group's only entry.
   // Documents and Compliance Cases hidden (routes kept).
   const compliance = buildGroup("Compliance", "/super-admin/comply", [
-    LICENCES,
     COMPLIANCE,
   ]);
   if (compliance) links.push(compliance);

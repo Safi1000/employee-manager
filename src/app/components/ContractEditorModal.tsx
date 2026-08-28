@@ -199,6 +199,9 @@ type AddendumForm = {
   new_end_date: string; // EXTEND_END_DATE: the new contract end date
   new_is_infinite: boolean; // EXTEND_END_DATE: renew to open-ended
   effective_from: string;
+  // Which shift a headcount change staffs. "" for hardware / rate / renewal,
+  // where the question does not apply.
+  shift_code: string;
   source: AddendumSource;
   reference: string;
 };
@@ -212,6 +215,7 @@ const blankAddendum = (): AddendumForm => ({
   new_end_date: "",
   new_is_infinite: false,
   effective_from: new Date().toISOString().slice(0, 10),
+  shift_code: "day",
   source: "SIGNED_CONTRACT",
   reference: "",
 });
@@ -366,6 +370,17 @@ export default function ContractEditorModal({
   const categoryByLineId = new Map(
     lines.filter((l) => l.id).map((l) => [l.id!, l.category] as const),
   );
+
+  // The category an in-flight addendum lands on: its own for a brand-new line,
+  // otherwise the target line's. Drives whether the shift question is asked —
+  // hardware categories staff nobody, and rate/renewal changes are not per-shift.
+  const addendumCategory =
+    addForm.target === "__new__"
+      ? addForm.category
+      : categoryByLineId.get(addForm.target) ?? addForm.category;
+  const addendumNeedsShift =
+    (addForm.change_type === "ADD_HEADCOUNT" || addForm.change_type === "REDUCE_HEADCOUNT") &&
+    isPersonnelCategory(addendumCategory);
 
   // Switching contract type invalidates any line whose category belongs to the other
   // type, so move those lines onto the new type's default category rather than leaving
@@ -714,6 +729,18 @@ export default function ContractEditorModal({
       setError("Special characters are not allowed in the addendum reference.");
       return;
     }
+    // Every addendum is a DATED change — the effective date is what decides
+    // which count/rate is in force on any given day, so it can never be blank.
+    if (!addForm.effective_from) {
+      setError("Pick the date this addendum takes effect.");
+      return;
+    }
+    // A headcount change has to name the shift it staffs, or the extra people
+    // cannot be turned into postings against the right line.
+    if (addendumNeedsShift && !addForm.shift_code) {
+      setError("Pick the shift this headcount change applies to.");
+      return;
+    }
     setAddSubmitting(true);
     setError(null);
     try {
@@ -736,6 +763,7 @@ export default function ContractEditorModal({
         new_end_date: isRenewal && !addForm.new_is_infinite ? addForm.new_end_date : null,
         new_is_infinite: isRenewal ? addForm.new_is_infinite : false,
         effective_from: addForm.effective_from,
+        shift_code: addendumNeedsShift ? addForm.shift_code : null,
         source: addForm.source,
         reference: addForm.reference.trim() || null,
       };
@@ -1243,7 +1271,17 @@ export default function ContractEditorModal({
                 <ThemedSelect
                   value={addForm.change_type === "EXTEND_END_DATE" ? "__contract__" : addForm.target}
                   disabled={addForm.change_type === "EXTEND_END_DATE"}
-                  onChange={(e) => setAddForm({ ...addForm, target: e.target.value })}
+                  onChange={(e) => {
+                    const target = e.target.value;
+                    // Adopt the target line's own shift — an addendum against an
+                    // existing line almost always staffs the shift that line runs.
+                    const line = lines.find((l) => l.id === target);
+                    setAddForm({
+                      ...addForm,
+                      target,
+                      shift_code: line?.shift_code || addForm.shift_code || "day",
+                    });
+                  }}
                   className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm disabled:bg-slate-100 disabled:text-slate-500"
                 >
                   {addForm.change_type === "EXTEND_END_DATE" ? (
@@ -1340,7 +1378,26 @@ export default function ContractEditorModal({
                   onChange={(e) => setAddForm({ ...addForm, effective_from: e.target.value })}
                   className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
                 />
+                <p className="text-[10px] text-slate-500 mt-0.5">
+                  The date the change takes effect — counts before it are unchanged.
+                </p>
               </div>
+              {/* A headcount change has to say WHICH shift it staffs; without it
+                  the extra people can't be posted against the right line. */}
+              {addendumNeedsShift && (
+                <div>
+                  <label className="block text-[11px] text-slate-600 mb-1">Shift</label>
+                  <ThemedSelect
+                    value={addForm.shift_code}
+                    onChange={(e) => setAddForm({ ...addForm, shift_code: e.target.value })}
+                    className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                  >
+                    {(["day", "evening", "night"] as const).map((sc) => (
+                      <option key={sc} value={sc}>{SHIFT_LABEL[sc]}</option>
+                    ))}
+                  </ThemedSelect>
+                </div>
+              )}
               <div>
                 <label className="block text-[11px] text-slate-600 mb-1">Source</label>
                 <ThemedSelect
