@@ -171,6 +171,9 @@ export const router = createRouter([
       { path: "relievers/payroll", element: guard(["payroll.view", "payroll.edit"], <PayrollManagement relieversOnly />) },
       { path: "accounting", element: guard(["accounting.view", "accounting.edit"], <Accounting />) },
       { path: "reports", element: guard(["reports.view"], <FinancialReports />) },
+      // Partnership Report is its own page under Finance now, not a tab of
+      // Financial Reports. Same component, pinned to that one report.
+      { path: "partnership-report", element: guard(["accounting.view", "accounting.edit"], <FinancialReports standalone="partnership" />) },
       { path: "expenses", element: guard(["expenses.view", "expenses.edit"], <Expenses />) },
       { path: "invoices", element: guard(["invoices.view", "invoices.edit"], <Invoices />) },
       { path: "cashflow", element: guard(["cashflow.view"], <Cashflow />) },

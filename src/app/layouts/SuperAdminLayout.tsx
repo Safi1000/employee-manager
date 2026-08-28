@@ -134,6 +134,7 @@ export default function SuperAdminLayout() {
   const ACCESS_GOVERNANCE: LinkDef = { to: "/super-admin/access-governance", label: "Access & Governance", icon: Users, roles: ["super_super_admin", "super_admin"] };
   const PARTICIPATION_RULES: LinkDef = { to: "/super-admin/profit-distribution", label: "Participation Rules", icon: PieChart, perms: ["accounting.view", "accounting.edit"] };
   const RMD_STATEMENTS: LinkDef = { to: "/super-admin/partners", label: "RMD Statements", icon: Users2, perms: ["accounting.view", "accounting.edit"] };
+  const PARTNERSHIP_REPORT: LinkDef = { to: "/super-admin/partnership-report", label: "Partnership Report", icon: Users2, perms: ["accounting.view", "accounting.edit"] };
 
   // Build groups, dropping any link the user lacks permission for. Drop the
   // group entirely if it ends up with no visible children.
@@ -220,6 +221,10 @@ export default function SuperAdminLayout() {
     // Cash Flow is now merged into Financial Reports as a top-level tab, so its
     // own nav link is hidden (CASHFLOW LinkDef and the /cashflow route are kept).
     REPORTS,
+    // Its own Finance entry rather than a tab inside Financial Reports: it is a
+    // report about partners, not about the P&L, and burying it behind another
+    // report's tab strip is what kept it hard to find.
+    PARTNERSHIP_REPORT,
     // Unhidden and rehomed. It used to sit in the hidden Profit-Share group,
     // which is why it disappeared with it; it is a financial report about
     // regions, so Finance is where it belongs rather than beside partner

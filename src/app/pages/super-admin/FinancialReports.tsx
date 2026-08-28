@@ -102,8 +102,17 @@ const formatPeriod = (periodMonth: string) => {
   return new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
 };
 
-export default function FinancialReports() {
-  const [activeTab, setActiveTab] = useState<"pl" | "clients" | "partnership" | "rmd">("pl");
+/**
+ * `standalone="partnership"` renders ONLY the Partnership Report — its own page
+ * under Finance, reached from the nav rather than from a tab in here. The report
+ * shares all of this component's partner/allocation state, so it is pinned as a
+ * mode instead of being copied into a second component that would drift.
+ */
+export default function FinancialReports({ standalone }: { standalone?: "partnership" } = {}) {
+  const partnershipOnly = standalone === "partnership";
+  const [activeTab, setActiveTab] = useState<"pl" | "clients" | "partnership" | "rmd">(
+    partnershipOnly ? "partnership" : "pl",
+  );
   // Top-level switch merging the Financial Report and Cash Flow pages under one
   // roof — Cash Flow is rendered from its own (embedded) component.
   const [topTab, setTopTab] = useState<"financial" | "cashflow">("financial");
@@ -618,7 +627,6 @@ export default function FinancialReports() {
   };
 
   const allocRegions = useMemo(() => alloc.filter((r) => r.row_kind === "REGION"), [alloc]);
-  const allocRegional = useMemo(() => alloc.filter((r) => r.row_kind === "REGIONAL_PARTNER"), [alloc]);
   const allocEquity = useMemo(() => alloc.filter((r) => r.row_kind === "EQUITY_PARTNER"), [alloc]);
   const allocUnallocated = useMemo(() => alloc.find((r) => r.row_kind === "UNALLOCATED") ?? null, [alloc]);
   const residualPool = useMemo(
@@ -861,6 +869,7 @@ export default function FinancialReports() {
     <>
       <Header
         title={
+          partnershipOnly ? "Partnership Report" : (
           <span className="inline-flex items-center gap-4">
             Financial Reports
             {/* Basis toggle — compact segmented control (white active thumb on a
@@ -886,8 +895,11 @@ export default function FinancialReports() {
               ))}
             </span>
           </span>
+          )
         }
-        subtitle="P&L, client statements and cash flow"
+        subtitle={partnershipOnly
+          ? "Regional and equity partner allocation, and each partner's running account"
+          : "P&L, client statements and cash flow"}
         actions={
           topTab === "cashflow" || activeTab === "rmd" || activeTab === "clients" ? undefined : (
           <ExportButton
@@ -959,19 +971,18 @@ export default function FinancialReports() {
 
         {topTab === "financial" && (
         <div className="bg-white rounded-lg border border-slate-200">
-          <div className="p-4 md:p-6 border-b border-slate-200 overflow-x-auto">
+          {/* One report, no tab strip to choose from, when this is the standalone
+              Partnership Report page. */}
+          <div className={`p-4 md:p-6 border-b border-slate-200 overflow-x-auto${partnershipOnly ? " hidden" : ""}`}>
             <div className="flex gap-2 min-w-max">
-              {/* Partnership Report is visible again. Note that the rest of the
-                  Profit-Share module it belongs to (Partner Accounts,
-                  Participation Rules, Treasury) is still out of the nav, so this
-                  tab is currently the only way to reach any of it — partners
-                  themselves are still added from the tab body below.
-                  RMD Statements stays hidden: its tab-content block below
-                  remains, just not reachable from the tab bar. */}
+              {/* Partnership Report has its own page under Finance now, so it is
+                  no longer a tab here — this component still renders it, but only
+                  in `standalone` mode (see the top of the file). RMD Statements
+                  stays hidden: its tab-content block below remains, just not
+                  reachable from the tab bar. */}
               {([
                 { key: "pl", label: "Profit & Loss" },
                 { key: "clients", label: "Client Statements" },
-                { key: "partnership", label: "Partnership Report" },
               ] as const).map((tab) => (
                 <button
                   key={tab.key}
@@ -1387,85 +1398,18 @@ export default function FinancialReports() {
                   </div>
                 </div>
 
-                {/* Regional tier */}
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-200 text-xs text-slate-500 uppercase">
-                        <th className="text-left px-4 py-2.5">Region</th>
-                        <th className="text-right px-4 py-2.5">Own profit</th>
-                        <th className="text-right px-4 py-2.5">Head office share</th>
-                        <th className="text-right px-4 py-2.5">Adjusted profit</th>
-                        <th className="text-left px-4 py-2.5">Regional partners</th>
-                        <th className="text-right px-4 py-2.5">Taken</th>
-                        <th className="text-right px-4 py-2.5">Falls to pool</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {allocRegions.length === 0 && (
-                        <tr><td colSpan={7} className="px-4 py-6 text-center text-slate-500">No regions.</td></tr>
-                      )}
-                      {allocRegions.map((r) => {
-                        const mine = allocRegional.filter((p) => p.branch_id === r.branch_id);
-                        // Head office's row is the apportionment itself: its cost
-                        // leaves in full, so it nets to zero and takes no partners.
-                        const isHo = Math.round(Number(r.base_amount)) === 0
-                          && Math.round(Number(r.ho_allocated ?? 0)) === -Math.round(Number(r.own_profit ?? 0))
-                          && Math.round(Number(r.own_profit ?? 0)) !== 0;
-                        return (
-                          <tr key={r.branch_id ?? "unassigned"} className={`hover:bg-slate-50 ${isHo ? "bg-slate-50/60" : ""}`}>
-                            <td className="px-4 py-3 text-slate-900">
-                              {r.region_name}
-                              {isHo && (
-                                <div className="text-[11px] text-slate-500">Cost spread across the regions</div>
-                              )}
-                            </td>
-                            <td className="px-4 py-3 text-right tabular-nums text-slate-700">
-                              PKR {Math.round(Number(r.own_profit ?? 0)).toLocaleString()}
-                            </td>
-                            <td className="px-4 py-3 text-right tabular-nums text-slate-600">
-                              {Math.round(Number(r.ho_allocated ?? 0)) === 0
-                                ? "—"
-                                : `PKR ${Math.round(Number(r.ho_allocated ?? 0)).toLocaleString()}`}
-                            </td>
-                            <td className="px-4 py-3 text-right tabular-nums text-slate-900">
-                              PKR {Math.round(Number(r.base_amount)).toLocaleString()}
-                            </td>
-                            <td className="px-4 py-3 text-xs text-slate-600">
-                              {isHo ? (
-                                <span className="text-slate-400">—</span>
-                              ) : mine.length === 0 ? (
-                                <span className="text-slate-400">None — whole profit pools</span>
-                              ) : (
-                                mine.map((p) => (
-                                  <div key={p.partner_id}>
-                                    {p.partner_name} · {Number(p.share_pct)}% ={" "}
-                                    <span className="tabular-nums">
-                                      PKR {Math.round(Number(p.amount)).toLocaleString()}
-                                    </span>
-                                  </div>
-                                ))
-                              )}
-                            </td>
-                            <td className="px-4 py-3 text-right tabular-nums text-slate-700">
-                              PKR {Math.round(Number(r.amount)).toLocaleString()}
-                            </td>
-                            <td className="px-4 py-3 text-right tabular-nums text-slate-900">
-                              PKR {Math.round(Number(r.residual ?? 0)).toLocaleString()}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                    <tfoot>
-                      <tr className="border-t border-slate-200 bg-slate-50 text-slate-900">
-                        <td className="px-4 py-3" colSpan={6}>Residual pool for equity partners</td>
-                        <td className="px-4 py-3 text-right tabular-nums">
-                          PKR {Math.round(residualPool).toLocaleString()}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
+                {/* The per-region breakdown table used to sit here. Every
+                    partner it named — regional and equity alike — is still
+                    listed with their allocation in Partner Accounts below, so
+                    it restated that one level coarser while being the widest
+                    table on the page. The one figure that came only from it,
+                    the residual falling through to the equity partners, is
+                    kept as the line below. */}
+                <div className="px-4 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-sm">
+                  <span className="text-slate-700">Residual pool for equity partners</span>
+                  <span className="tabular-nums text-slate-900">
+                    PKR {Math.round(residualPool).toLocaleString()}
+                  </span>
                 </div>
 
                 {/* Equity tier */}
