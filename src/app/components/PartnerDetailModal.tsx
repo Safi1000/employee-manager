@@ -165,7 +165,7 @@ export default function PartnerDetailModal({
       let cashLocationId: string | null = null;
       if (entryMethod === "CASH" && companyId) {
         const staff = custodians.find((c) => c.employeeId === paidByEmp);
-        if (staff) cashLocationId = await ensureCustodianLocation(companyId, staff.employeeId, staff.fullName);
+        if (staff) cashLocationId = await ensureCustodianLocation(companyId, staff.employeeId, staff.fullName, staff.kind);
       }
       const { error: e } = await supabase.from("partner_account_entries").insert({
         partner_id: partner.id,

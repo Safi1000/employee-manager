@@ -11,27 +11,32 @@
 import { supabase } from "./supabase";
 
 export type CustodianOption = {
+  /** Person id — an office-staff employee OR a partner (see `kind`). */
   employeeId: string;
+  /** Whether this custodian is an employee or a partner. */
+  kind: "employee" | "partner";
   fullName: string;
-  /** Existing custodian cash_location for this employee, or null until first stamped. */
+  /** Existing custodian cash_location for this person, or null until first stamped. */
   locationId: string | null;
-  /** Cash this office-staff member currently holds. 0 when no location exists yet. */
+  /** Cash this custodian currently holds. 0 when no location exists yet. */
   held: number;
 };
 
 /**
- * Load every office-staff member as a selectable custodian, each with the cash they
- * currently hold. Used to render the "who received / who paid" dropdowns.
+ * Load every custodian — office-staff members AND partners — each with the cash
+ * they currently hold. Used to render the "who received / who paid" dropdowns.
+ * A partner holding cash is company custody (activity), not a capital movement.
  */
 export async function loadCustodianOptions(companyId: string): Promise<CustodianOption[]> {
-  const [{ data: staff }, { data: locs }, { data: tx }, { data: cashPays }, { data: cashExps }, { data: cashAdvances }, { data: cashCheques }, { data: bankWd }, { data: partnerCash }] =
+  const [{ data: staff }, { data: partnersList }, { data: locs }, { data: tx }, { data: cashPays }, { data: cashExps }, { data: cashAdvances }, { data: cashCheques }, { data: bankWd }, { data: partnerCash }] =
     await Promise.all([
       supabase.from("employees").select("id, full_name").eq("category", "office_staff").order("full_name"),
+      supabase.from("partners").select("id, name").eq("company_id", companyId).eq("is_active", true).order("name"),
       supabase
         .from("cash_locations")
-        .select("id, custodian_employee_id, opening_balance, is_active, location_type")
+        .select("id, custodian_employee_id, custodian_partner_id, opening_balance, is_active, location_type")
         .eq("company_id", companyId)
-        .not("custodian_employee_id", "is", null),
+        .or("custodian_employee_id.not.is.null,custodian_partner_id.not.is.null"),
       supabase.from("custody_transfers").select("from_location_id, to_location_id, amount").eq("company_id", companyId),
       supabase.from("invoice_payments").select("amount, custodian_location_id").eq("payment_mode", "Cash").not("custodian_location_id", "is", null),
       supabase.from("expenses").select("amount, custodian_location_id").not("custodian_location_id", "is", null),
@@ -56,18 +61,19 @@ export async function loadCustodianOptions(companyId: string): Promise<Custodian
     .eq("kind", "payroll")
     .not("reference_id", "is", null);
 
-  // Most-recent active custodian location per employee.
-  const locByEmployee = new Map<string, { id: string; opening: number }>();
+  // Most-recent active custodian location per person (employee or partner).
+  const locByPerson = new Map<string, { id: string; opening: number }>();
   for (const l of (locs ?? []) as any[]) {
     if (l.is_active === false) continue;
-    if (!l.custodian_employee_id) continue;
-    if (!locByEmployee.has(l.custodian_employee_id)) {
-      locByEmployee.set(l.custodian_employee_id, { id: l.id, opening: Number(l.opening_balance ?? 0) });
+    const personId = l.custodian_employee_id ?? l.custodian_partner_id;
+    if (!personId) continue;
+    if (!locByPerson.has(personId)) {
+      locByPerson.set(personId, { id: l.id, opening: Number(l.opening_balance ?? 0) });
     }
   }
 
   const heldByLoc = new Map<string, number>();
-  for (const [, v] of locByEmployee) heldByLoc.set(v.id, v.opening);
+  for (const [, v] of locByPerson) heldByLoc.set(v.id, v.opening);
   for (const t of (tx ?? []) as any[]) {
     if (t.to_location_id && heldByLoc.has(t.to_location_id)) heldByLoc.set(t.to_location_id, (heldByLoc.get(t.to_location_id) ?? 0) + Number(t.amount ?? 0));
     if (t.from_location_id && heldByLoc.has(t.from_location_id)) heldByLoc.set(t.from_location_id, (heldByLoc.get(t.from_location_id) ?? 0) - Number(t.amount ?? 0));
@@ -98,15 +104,14 @@ export async function loadCustodianOptions(companyId: string): Promise<Custodian
     }
   }
 
-  return ((staff ?? []) as any[]).map((s) => {
-    const loc = locByEmployee.get(s.id);
-    return {
-      employeeId: s.id,
-      fullName: s.full_name,
-      locationId: loc?.id ?? null,
-      held: loc ? heldByLoc.get(loc.id) ?? 0 : 0,
-    };
-  });
+  const opt = (id: string, name: string, kind: "employee" | "partner"): CustodianOption => {
+    const loc = locByPerson.get(id);
+    return { employeeId: id, kind, fullName: name, locationId: loc?.id ?? null, held: loc ? heldByLoc.get(loc.id) ?? 0 : 0 };
+  };
+  return [
+    ...((staff ?? []) as any[]).map((s) => opt(s.id, s.full_name, "employee")),
+    ...((partnersList ?? []) as any[]).map((p) => opt(p.id, p.name, "partner")),
+  ];
 }
 
 /**
@@ -116,16 +121,17 @@ export async function loadCustodianOptions(companyId: string): Promise<Custodian
  */
 export async function ensureCustodianLocation(
   companyId: string,
-  employeeId: string,
+  personId: string,
   fullName: string,
+  kind: "employee" | "partner" = "employee",
 ): Promise<string> {
-  // One custodian location per office-staff member — reuse it whether active or not
-  // (a unique index enforces this at the DB level).
+  const col = kind === "partner" ? "custodian_partner_id" : "custodian_employee_id";
+  // One custodian location per person — reuse it whether active or not.
   const { data: existing, error: selErr } = await supabase
     .from("cash_locations")
     .select("id")
     .eq("company_id", companyId)
-    .eq("custodian_employee_id", employeeId)
+    .eq(col, personId)
     .eq("location_type", "CUSTODIAN")
     .limit(1)
     .maybeSingle();
@@ -138,7 +144,7 @@ export async function ensureCustodianLocation(
       company_id: companyId,
       name: fullName,
       location_type: "CUSTODIAN",
-      custodian_employee_id: employeeId,
+      [col]: personId,
       opening_balance: 0,
       is_active: true,
     })

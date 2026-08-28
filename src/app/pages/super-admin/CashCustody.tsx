@@ -172,6 +172,11 @@ export function CashCustodyPanel({ onReady, onSummary }: {
       const partnerList = ((pts ?? []) as Partner[]).filter((p) => p.is_active);
       setLocations((locs ?? []) as CashLocation[]);
       setOfficeStaff((staff ?? []) as OfficeStaff[]);
+      // A custodian location belongs to an office-staff member OR a partner.
+      const partnerNameById = new Map<string, string>();
+      for (const p of partnerList) partnerNameById.set(p.id, p.name);
+      const isCustodian = (l: CashLocation) =>
+        l.location_type !== "BANK" && !!(l.custodian_employee_id || l.custodian_partner_id);
       // Attributed cash per custodian location.
       const inBy = new Map<string, number>();
       for (const p of (cashPays ?? []) as any[]) {
@@ -196,7 +201,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
       }
       setChequeInByLoc(chqBy);
       // Bank→custodian withdrawals attributed by reference_id (a custodian location).
-      const custodianIdSet = new Set(((locs ?? []) as CashLocation[]).filter((l) => l.location_type !== "BANK" && l.custodian_employee_id).map((l) => l.id));
+      const custodianIdSet = new Set(((locs ?? []) as CashLocation[]).filter(isCustodian).map((l) => l.id));
       const wdBy = new Map<string, number>();
       for (const w of (bankWd ?? []) as any[]) {
         if (!w.reference_id || !custodianIdSet.has(w.reference_id)) continue;
@@ -217,12 +222,18 @@ export function CashCustodyPanel({ onReady, onSummary }: {
       const locList = (locs ?? []) as CashLocation[];
       const staffById = new Map<string, string>();
       for (const s of (staff ?? []) as OfficeStaff[]) staffById.set(s.id, s.full_name);
-      const custodianLocIds = new Set(locList.filter((l) => l.location_type !== "BANK" && l.custodian_employee_id).map((l) => l.id));
+      const custodianLocIds = new Set(locList.filter(isCustodian).map((l) => l.id));
       const empByLoc = new Map<string, string | null>();
       const labelByLoc = new Map<string, string>();
       for (const l of locList) {
-        empByLoc.set(l.id, l.custodian_employee_id);
-        labelByLoc.set(l.id, l.custodian_employee_id ? (staffById.get(l.custodian_employee_id) ?? l.name) : l.name);
+        const personId = l.custodian_employee_id ?? l.custodian_partner_id ?? null;
+        empByLoc.set(l.id, personId);
+        labelByLoc.set(
+          l.id,
+          l.custodian_employee_id ? (staffById.get(l.custodian_employee_id) ?? l.name)
+            : l.custodian_partner_id ? (partnerNameById.get(l.custodian_partner_id) ?? l.name)
+            : l.name,
+        );
       }
       const raw: Omit<LedgerEntry, "before" | "after">[] = [];
       for (const t of (tx ?? []) as CustodyTransfer[]) {
@@ -295,7 +306,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
       // balance), oldest→newest, so each row shows Before → After like the bank log.
       raw.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.id < b.id ? -1 : 1));
       const runBal = new Map<string, number>();
-      for (const l of locList) if (l.location_type !== "BANK" && l.custodian_employee_id) runBal.set(l.id, Number(l.opening_balance ?? 0));
+      for (const l of locList) if (isCustodian(l)) runBal.set(l.id, Number(l.opening_balance ?? 0));
       const withBal: LedgerEntry[] = raw.map((e) => {
         const before = runBal.get(e.locationId) ?? 0;
         const after = before + e.cashIn - e.cashOut;
@@ -377,7 +388,9 @@ export function CashCustodyPanel({ onReady, onSummary }: {
   const heldCash = (loc: CashLocation): number =>
     computeLocationBalance(loc) + (cashInByLoc.get(loc.id) ?? 0) - (cashOutByLoc.get(loc.id) ?? 0) + (chequeInByLoc.get(loc.id) ?? 0) + (withdrawInByLoc.get(loc.id) ?? 0) + (payrollCashByLoc.get(loc.id) ?? 0);
 
-  const staffName = (id: string | null) => (id ? officeStaff.find((s) => s.id === id)?.full_name ?? "—" : "—");
+  // A custodian is an office-staff member or a partner — resolve either.
+  const staffName = (id: string | null) =>
+    id ? (officeStaff.find((s) => s.id === id)?.full_name ?? partners.find((p) => p.id === id)?.name ?? "—") : "—";
 
   // Month options for the transaction log — the months that actually have entries
   // (YYYY-MM), newest first, labeled like the Bank Accounts log ("Aug 2026").
@@ -403,8 +416,13 @@ export function CashCustodyPanel({ onReady, onSummary }: {
   }, [filteredLedger]);
   // Office staff who actually hold a custodian location (for the filter dropdown).
   const custodianStaff = useMemo(
-    () => officeStaff.filter((s) => locations.some((l) => l.custodian_employee_id === s.id && l.location_type !== "BANK")),
-    [officeStaff, locations],
+    () => [
+      ...officeStaff.map((s) => ({ id: s.id, name: s.full_name })),
+      ...partners.map((p) => ({ id: p.id, name: p.name })),
+    ].filter((person) => locations.some(
+      (l) => (l.custodian_employee_id === person.id || l.custodian_partner_id === person.id) && l.location_type !== "BANK",
+    )),
+    [officeStaff, partners, locations],
   );
 
   // Cash-in-hand custodian reconciliation (Change 1): every custodian's held cash,
@@ -475,12 +493,17 @@ export function CashCustodyPanel({ onReady, onSummary }: {
   const saveLoc = async () => {
     if (!companyId) return;
     const empId = locForm.custodian_employee_id;
-    // A custodian IS an office-staff member; the location is named after them.
-    if (locForm.location_type === "CUSTODIAN" && !empId) {
-      setError("Select the office-staff member for this custodian.");
+    const partId = locForm.custodian_partner_id;
+    // A custodian IS an office-staff member OR a partner; the location is named after them.
+    if (locForm.location_type === "CUSTODIAN" && !empId && !partId) {
+      setError("Select the office-staff member or partner for this custodian.");
       return;
     }
-    const derivedName = (empId ? officeStaff.find((s) => s.id === empId)?.full_name : null) || locForm.name.trim();
+    if (empId && partId) { setError("Pick either an office-staff member or a partner, not both."); return; }
+    const derivedName =
+      (empId ? officeStaff.find((s) => s.id === empId)?.full_name
+        : partId ? partners.find((p) => p.id === partId)?.name
+        : null) || locForm.name.trim();
     if (!derivedName) return;
     setLocSaving(true);
     setError(null);
@@ -489,7 +512,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
         company_id: companyId,
         name: derivedName,
         location_type: locForm.location_type,
-        custodian_partner_id: null,
+        custodian_partner_id: partId || null,
         custodian_employee_id: empId || null,
         branch_id: locForm.branch_id || null,
         opening_balance: parseFloat(locForm.opening_balance) || 0,
@@ -499,9 +522,11 @@ export function CashCustodyPanel({ onReady, onSummary }: {
         const { error: e } = await supabase.from("cash_locations").update(payload).eq("id", editLoc.id);
         if (e) throw e;
       } else {
-        // One custodian per office-staff member — never create a second row for a
-        // person who already has one.
-        const existing = empId ? locations.find((l) => l.custodian_employee_id === empId && l.location_type === "CUSTODIAN") : null;
+        // One custody per person — never create a second row for someone who has one.
+        const existing = (empId || partId)
+          ? locations.find((l) => l.location_type === "CUSTODIAN"
+              && (empId ? l.custodian_employee_id === empId : l.custodian_partner_id === partId))
+          : null;
         if (existing) {
           setError(`${derivedName} already has a custody location. Edit it from the list instead.`);
           setLocSaving(false);
@@ -817,7 +842,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
               <ThemedSelect value={ledgerStaffFilter} onChange={(e) => setLedgerStaffFilter(e.target.value)}
                 className="px-3 py-1.5 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
                 <option value="all">All custodians</option>
-                {custodianStaff.map((s) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
+                {custodianStaff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </ThemedSelect>
             </div>
             <div className="flex items-center gap-2">
@@ -879,11 +904,11 @@ export function CashCustodyPanel({ onReady, onSummary }: {
       <Modal isOpen={isLocOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsLocOpen(false)} title={editLoc ? "Edit Custodian" : "Add Custodian"} size="md">
         <div className="space-y-4">
           <div>
-            <label className="block text-sm text-slate-700 mb-1">Office Staff *</label>
-            {/* The custodian IS the office-staff member — no free-text name. Their cash
-                is tracked as one custody under their own name. On Add, staff who already
-                have a custody are hidden so nobody gets a duplicate. */}
-            <ThemedSelect value={locForm.custodian_employee_id} onChange={(e) => setLocForm({ ...locForm, custodian_employee_id: e.target.value })}
+            <label className="block text-sm text-slate-700 mb-1">Office Staff</label>
+            {/* The custodian is an office-staff member OR a partner — pick one. On Add,
+                people who already hold a custody are hidden so nobody gets a duplicate. */}
+            <ThemedSelect value={locForm.custodian_employee_id}
+              onChange={(e) => setLocForm({ ...locForm, custodian_employee_id: e.target.value, custodian_partner_id: e.target.value ? "" : locForm.custodian_partner_id })}
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
               <option value="">Select office-staff member…</option>
               {(editLoc
@@ -891,9 +916,19 @@ export function CashCustodyPanel({ onReady, onSummary }: {
                 : officeStaff.filter((s) => !locations.some((l) => l.custodian_employee_id === s.id && l.location_type === "CUSTODIAN"))
               ).map((s) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
             </ThemedSelect>
-            {editLoc?.custodian_partner_id && !locForm.custodian_employee_id && (
-              <p className="text-[11px] text-warning-700 mt-1">Legacy partner holder: {partners.find((p) => p.id === editLoc.custodian_partner_id)?.name ?? "—"}. Pick an office-staff holder to migrate.</p>
-            )}
+          </div>
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">…or Partner</label>
+            <ThemedSelect value={locForm.custodian_partner_id}
+              onChange={(e) => setLocForm({ ...locForm, custodian_partner_id: e.target.value, custodian_employee_id: e.target.value ? "" : locForm.custodian_employee_id })}
+              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
+              <option value="">Select partner…</option>
+              {(editLoc
+                ? partners
+                : partners.filter((p) => !locations.some((l) => l.custodian_partner_id === p.id && l.location_type === "CUSTODIAN"))
+              ).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </ThemedSelect>
+            <p className="text-[11px] text-slate-500 mt-1">Cash a partner holds is company custody (activity), not a capital drawing.</p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
@@ -972,8 +1007,8 @@ export function CashCustodyPanel({ onReady, onSummary }: {
               <ThemedSelect value={transferForm.to_location_id} onChange={(e) => setTransferForm({ ...transferForm, to_location_id: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
                 <option value="">Select…</option>
-                {locations.filter((l) => l.is_active && l.location_type !== "BANK" && l.custodian_employee_id).map((l) => (
-                  <option key={l.id} value={l.id}>{staffName(l.custodian_employee_id)} — holds {fmt(heldCash(l))}</option>
+                {locations.filter((l) => l.is_active && l.location_type !== "BANK" && (l.custodian_employee_id || l.custodian_partner_id)).map((l) => (
+                  <option key={l.id} value={l.id}>{staffName(l.custodian_employee_id ?? l.custodian_partner_id)} — holds {fmt(heldCash(l))}</option>
                 ))}
               </ThemedSelect>
             </div>

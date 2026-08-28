@@ -723,7 +723,7 @@ export default function Expenses() {
       if (fixedForm.payment_mode === "Cash" && fixedForm.paid_by_employee_id) {
         const cid = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
         const staff = custodians.find((c) => c.employeeId === fixedForm.paid_by_employee_id);
-        if (cid && staff) fixedCustodianLocId = await ensureCustodianLocation(cid, staff.employeeId, staff.fullName);
+        if (cid && staff) fixedCustodianLocId = await ensureCustodianLocation(cid, staff.employeeId, staff.fullName, staff.kind);
       }
       const payload = {
         category_id: fixedForm.category_id,
@@ -886,7 +886,7 @@ export default function Expenses() {
         if (row.payment_mode === "Cash") {
           const cid = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
           const staff = custodians.find((c) => c.employeeId === decisionCustodianId);
-          if (cid && staff) custodianLocId = await ensureCustodianLocation(cid, staff.employeeId, staff.fullName);
+          if (cid && staff) custodianLocId = await ensureCustodianLocation(cid, staff.employeeId, staff.fullName, staff.kind);
         }
 
         // Dated to the 1st of the month it belongs to, not the day it happened
@@ -1173,7 +1173,7 @@ export default function Expenses() {
       if (form.payment_mode === "Cash") {
         const cid = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
         const staff = custodians.find((c) => c.employeeId === expenseCustodianId);
-        if (cid && staff) custodianLocId = await ensureCustodianLocation(cid, staff.employeeId, staff.fullName);
+        if (cid && staff) custodianLocId = await ensureCustodianLocation(cid, staff.employeeId, staff.fullName, staff.kind);
       }
       const { data: inserted, error: insErr } = await supabase
         .from("expenses")
@@ -1609,7 +1609,7 @@ export default function Expenses() {
       if (advForm.payment_mode === "Cash") {
         const cid = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
         const staff = custodians.find((c) => c.employeeId === advForm.paid_by_employee_id);
-        if (cid && staff) advCustodianLocId = await ensureCustodianLocation(cid, staff.employeeId, staff.fullName);
+        if (cid && staff) advCustodianLocId = await ensureCustodianLocation(cid, staff.employeeId, staff.fullName, staff.kind);
       }
       const { data: inserted, error: insErr } = await supabase
         .from("advances")
@@ -1736,7 +1736,7 @@ export default function Expenses() {
       if (advEditForm.payment_mode === "Cash") {
         const cid = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
         const staff = custodians.find((c) => c.employeeId === advEditForm.paid_by_employee_id);
-        if (cid && staff) advEditCustodianLocId = await ensureCustodianLocation(cid, staff.employeeId, staff.fullName);
+        if (cid && staff) advEditCustodianLocId = await ensureCustodianLocation(cid, staff.employeeId, staff.fullName, staff.kind);
       }
       const { error: upErr } = await supabase
         .from("advances")
