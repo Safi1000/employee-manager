@@ -1,3 +1,22 @@
+-- ============================================================================
+-- DESCRIBES PRODUCTION. It does not change it.
+--
+-- This file was reverse-engineered FROM production (crm-design,
+-- mmkfpnshxjcyijhuydgr), which already had this state before the file existed.
+-- It is here so a from-scratch replay reaches the same shape, not because it
+-- introduced anything.
+--
+-- Consequences, all of which have bitten:
+--   * Production has NO schema_migrations row for it and correctly never will.
+--     scripts/check-migrations.mjs reports it as "in repo, NOT recorded"; that
+--     is expected for this class of file, not a defect to alias away.
+--   * It is NOT safe to assume it runs at the position its number implies. It
+--     was written long after the migrations that follow it, so applying it to
+--     an existing database can undo later work. Guard anything order-sensitive.
+--   * It reflects production as of the date it was recovered. If prod has moved
+--     since, this file is stale and reconciling it is the fix.
+-- ============================================================================
+
 -- 0078b: Create the 12 tables that exist in production but were never captured
 -- as migrations (created directly in the SQL editor). Without them a from-scratch
 -- database fails at 0079 (custody_transfers), 0207 (partner_account_entries) and
@@ -240,3 +259,44 @@ alter table public.investor_ledger_entries enable row level security;
 drop policy if exists company_isolation on public.investor_ledger_entries;
 create policy company_isolation on public.investor_ledger_entries for all
   using (company_id = (select company_id from public.profiles where id = auth.uid()));
+
+-- ── Do not regress a table that has already moved on ────────────────────────
+--
+-- Everything above recreates production's HISTORICAL shape, including the old
+-- `company_isolation` policy, and 0136 (cash_locations, custody_transfers) and
+-- 0211 (partner_account_entries) drop it again further down the sequence. A
+-- clean forward replay therefore ends in the right state, and that is what the
+-- comments above mean by "keep the original here".
+--
+-- It only holds if this file runs BEFORE 0136 and 0211. It did not on dev.
+-- 0078b is a recovery migration, written long after both, and applying it to an
+-- existing database re-created `company_isolation` on three tables that had been
+-- migrated off it years earlier. Dev carries all three to this day, next to the
+-- modern pair, and prod does not.
+--
+-- So the ordering assumption is now asserted rather than assumed. If a table
+-- already has `company_members`, it is past this point in history and the legacy
+-- policy must not be reintroduced. On a genuine forward replay no table has it
+-- yet and this block does nothing.
+--
+-- Same lesson as the 0224b/0231b guards: a migration may not assume it is
+-- running at the position its number implies.
+do $legacy_rls$
+declare r record;
+begin
+  for r in
+    select p.tablename
+      from pg_policies p
+     where p.schemaname = 'public'
+       and p.policyname = 'company_isolation'
+       and exists (
+         select 1 from pg_policies m
+          where m.schemaname = 'public'
+            and m.tablename = p.tablename
+            and m.policyname = 'company_members')
+  loop
+    execute format('drop policy if exists company_isolation on public.%I', r.tablename);
+    raise notice '0078b: % already on company_members — legacy company_isolation not reintroduced', r.tablename;
+  end loop;
+end
+$legacy_rls$;

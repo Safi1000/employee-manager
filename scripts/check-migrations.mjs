@@ -1,11 +1,28 @@
 #!/usr/bin/env node
-// Migration ledger audit — BOTH directions, EVERY environment.
+// Migration ledger audit — BOTH directions, EVERY environment, BY COUNT.
 //
-// The first version of this script checked one direction (applied-but-not-in-
-// repo) against one environment (dev). It passed clean while production was
-// wrong: 0231, 0231b and 0232 had been applied there through the SQL editor,
-// which records no schema_migrations row. In-repo-but-unrecorded was invisible
-// to it, and production was never checked at all.
+// Three defects have been found in this script, each of the same shape: it
+// passed while being wrong.
+//
+//   1. It checked one direction (applied-but-not-in-repo) against one
+//      environment (dev). Production was wrong the whole time — 0231, 0231b and
+//      0232 had been applied through the SQL editor, which records no
+//      schema_migrations row — and was never checked at all.
+//
+//   2. It compared migration stems as SETS. Three stems are not unique in the
+//      repo, and one of them is not unique by a wide margin:
+//
+//        6  drop_partnership_allocation   (0179c 0182c 0203b 0205b 0224b 0231b)
+//        2  change_category_enum_cast     (0148 0184)
+//        2  fix_cheque_treasury_company_scope
+//
+//      Production records drop_partnership_allocation ONCE. Set comparison sees
+//      one match on each side and reports zero discrepancy in both directions.
+//      Five missing migrations were invisible. Comparison is now by COUNT.
+//
+//   3. It reported nothing about environments that record no SQL. Dev's
+//      schema_migrations has `statements` NULL on all 257 rows, so digests come
+//      back NULL and the digest check silently verifies nothing. It now says so.
 //
 //   npm run check:migrations              # every configured environment
 //   npm run check:migrations -- --env dev # one of them
@@ -29,11 +46,22 @@ import { dirname, join } from "node:path";
 const here = dirname(fileURLToPath(import.meta.url));
 const key = (n) => n.replace(/^\d{4}[a-z]?_/, "");
 
+// Count occurrences of each key, remembering which originals produced them, so
+// a shortfall can name the specific files rather than just a number.
+function tally(items, toKey) {
+  const m = new Map();
+  for (const it of items) {
+    const k = toKey(it);
+    if (!m.has(k)) m.set(k, []);
+    m.get(k).push(it);
+  }
+  return m;
+}
+
 // ---------------------------------------------------------------- repo side
 const files = readdirSync(join(here, "..", "supabase", "migrations"))
   .filter((f) => f.endsWith(".sql"))
   .map((f) => f.replace(/\.sql$/, ""));
-const repoKeys = new Set(files.map(key));
 
 // Suffixed migrations (0109b, 0152b) only work if they sort between their base
 // number and the next. Plain lexical order gives that ('_' 0x5F < 'b' 0x62); a
@@ -66,13 +94,20 @@ function loadPairs(file) {
   return out;
 }
 const aliases = loadPairs("migration-aliases.txt");          // repo -> applied
-const aliasApplied = new Set(aliases.values());
 const baseline = new Set(
   existsSync(join(here, "migration-baseline.txt"))
     ? readFileSync(join(here, "migration-baseline.txt"), "utf8")
         .split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("#"))
     : [],
 );
+
+// Repo keys, already translated through the alias map, so both sides of the
+// comparison speak the applied-name vocabulary.
+const repoKey = (f) => {
+  const k = key(f);
+  return aliases.has(k) ? aliases.get(k) : k;
+};
+const repoTally = tally(files, repoKey);
 
 // --------------------------------------------------------------- env config
 function environments() {
@@ -115,29 +150,57 @@ if (envs.length === 0) {
 let bad = 0;
 for (const env of envs) {
   const rows = await applied(env);
-  const appliedKeys = new Set(rows.map((r) => key(r.name)));
+  const appliedTally = tally(rows, (r) => key(r.name));
 
-  // repo -> ledger. THIS is the direction that was missing, and the one that
-  // production failed: a file that has been applied but recorded nowhere.
-  const notRecorded = files.filter((f) => {
-    const k = key(f);
-    if (appliedKeys.has(k)) return false;
-    if (aliases.has(k) && appliedKeys.has(aliases.get(k))) return false;
-    return !baseline.has(k);
-  });
+  const shortfalls = [];   // repo has more copies than the ledger records
+  const excesses = [];     // ledger records more than the repo has files for
 
-  // ledger -> repo. Applied out of band and never written back.
-  const notInRepo = rows.filter((r) => {
-    const k = key(r.name);
-    return !repoKeys.has(k) && !aliasApplied.has(k) && !baseline.has(k);
-  }).map((r) => r.name);
+  for (const [k, fs] of repoTally) {
+    if (baseline.has(k)) continue;
+    const have = appliedTally.get(k)?.length ?? 0;
+    if (have < fs.length) {
+      // Name the files, and say plainly when the shortfall is a count rather
+      // than an absence — that is the case set comparison used to miss.
+      shortfalls.push(
+        have === 0
+          ? `${fs.join(", ")}  (not recorded at all)`
+          : `${fs.join(", ")}  (${fs.length} files, only ${have} recorded)`,
+      );
+    }
+  }
 
-  const ok = notRecorded.length === 0 && notInRepo.length === 0;
+  for (const [k, rs] of appliedTally) {
+    if (baseline.has(k)) continue;
+    const want = repoTally.get(k)?.length ?? 0;
+    if (rs.length > want) {
+      const names = rs.map((r) => r.name).join(", ");
+      excesses.push(
+        want === 0
+          ? `${names}  (no repo file)`
+          : `${names}  (${rs.length} recorded, only ${want} file${want === 1 ? "" : "s"})`,
+      );
+    }
+  }
+
+  // An environment whose ledger stores no SQL cannot be digest-checked. Dev is
+  // in exactly that state: every row was hand-inserted with version and name
+  // only, so `statements` is NULL and md5(NULL) comes back NULL. Say it out
+  // loud rather than letting a check that verifies nothing report success.
+  const withDigest = rows.filter((r) => r.digest).length;
+  const digestNote =
+    withDigest === 0
+      ? "NO recorded SQL — digest checking unavailable in this environment"
+      : withDigest < rows.length
+        ? `${rows.length - withDigest} of ${rows.length} rows carry no SQL — those cannot be digest-checked`
+        : null;
+
+  const ok = shortfalls.length === 0 && excesses.length === 0;
   if (!ok) bad++;
   console.log(`\n[${env.name}] ${rows.length} applied, ${files.length} files — ` +
-    (ok ? "OK" : `${notRecorded.length} in repo not recorded, ${notInRepo.length} recorded not in repo`));
-  for (const n of notRecorded) console.log(`   in repo, NOT recorded : ${n}`);
-  for (const n of notInRepo)   console.log(`   recorded, NOT in repo : ${n}`);
+    (ok ? "OK" : `${shortfalls.length} in repo not recorded, ${excesses.length} recorded not in repo`));
+  if (digestNote) console.log(`   note: ${digestNote}`);
+  for (const n of shortfalls) console.log(`   in repo, NOT recorded : ${n}`);
+  for (const n of excesses)   console.log(`   recorded, NOT in repo : ${n}`);
 }
 
 if (bad) {
@@ -149,6 +212,9 @@ commit the file:
 
   select array_to_string(statements, E';\n\n') || ';'
     from supabase_migrations.schema_migrations where name = '<name>';
+
+A count mismatch ("6 files, only 1 recorded") is NOT a naming problem and an
+alias will not fix it — five migrations really are missing from that ledger.
 
 If a number is already taken, add a letter suffix (0109b, 0152b). If the two
 names are the same migration under different spellings, add the pair to
