@@ -24,6 +24,17 @@
 //      schema_migrations has `statements` NULL on all 257 rows, so digests come
 //      back NULL and the digest check silently verifies nothing. It now says so.
 //
+//   4. THERE WAS NO DIGEST CHECK. Defect 3's wording is generous to defect 4:
+//      the script fetched digests, counted how many were non-null, printed a
+//      note about the shortfall, and never compared a single one to a file. So
+//      "the recorded SQL must equal the file" — the rule CLAUDE.md states and
+//      says this script enforces — had never run. It was found by comparing 300
+//      files against the ledger BY HAND; 26 differed. This is the most
+//      instructive of the four because the other three produced a wrong answer
+//      and this one produced no answer while reading like a clean pass.
+//      The comparison is now at the foot of the per-environment loop, and a
+//      mismatch fails the run.
+//
 //   npm run check:migrations              # every configured environment
 //   npm run check:migrations -- --env dev # one of them
 //
@@ -40,6 +51,7 @@
 // back as zero matches and looked like total divergence.
 
 import { readdirSync, readFileSync, existsSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -59,7 +71,8 @@ function tally(items, toKey) {
 }
 
 // ---------------------------------------------------------------- repo side
-const files = readdirSync(join(here, "..", "supabase", "migrations"))
+const migrationsDir = join(here, "..", "supabase", "migrations");
+const files = readdirSync(migrationsDir)
   .filter((f) => f.endsWith(".sql"))
   .map((f) => f.replace(/\.sql$/, ""));
 
@@ -232,6 +245,46 @@ for (const env of envs) {
     }
   }
 
+  // ------------------------------------------------------------------ digests
+  //
+  // THE RULE THIS SCRIPT CLAIMED TO ENFORCE AND DID NOT (0283).
+  //
+  // Until now the digests were fetched, counted, and never compared to
+  // anything. CLAUDE.md says the recorded SQL must equal the file; nothing here
+  // computed the file's digest, so the digest half of the rule had never once
+  // run. Four migrations were found to differ only by reading the ledger by
+  // hand.
+  //
+  // The comparison must match applied_migration_digests() exactly:
+  //
+  //   md5 of the statements array joined with newlines
+  //
+  // so the file is normalised to LF and its trailing newline dropped before
+  // hashing. Repo files are CRLF on a Windows checkout; without the \r strip
+  // every file on this machine reports as drifted, which is a checker that
+  // cries wolf and therefore a checker nobody reads. That exact artefact made
+  // two files look drifted in the first hand audit and they were not.
+  //
+  // Only 1:1 keys are compared. A key with two files or two recorded rows is
+  // already reported above as a count mismatch, and pairing them off would be
+  // inventing a verdict.
+  const appliedDigest = new Map(rows.map((r) => [key(r.name), r.digest]));
+  const drifted = [];
+  for (const [k, fs] of repoTally) {
+    if (baseline.has(k)) continue;
+    if (fs.length !== 1) continue;
+    const rs = appliedTally.get(k);
+    if (!rs || rs.length !== 1) continue;
+    const recorded = appliedDigest.get(k);
+    if (!recorded) continue;            // no stored SQL: reported separately
+    const text = readFileSync(join(migrationsDir, `${fs[0]}.sql`), "utf8")
+      .replace(/\r/g, "")
+      .replace(/\n+$/, "");
+    const mine = createHash("md5").update(text, "utf8").digest("hex");
+    if (mine !== recorded) {
+      drifted.push(`${fs[0]}  (file ${mine.slice(0, 8)}, recorded ${recorded.slice(0, 8)})`);
+    }
+  }
   // An environment whose ledger stores no SQL cannot be digest-checked. Dev is
   // in exactly that state: every row was hand-inserted with version and name
   // only, so `statements` is NULL and md5(NULL) comes back NULL. Say it out
@@ -244,14 +297,15 @@ for (const env of envs) {
         ? `${rows.length - withDigest} of ${rows.length} rows carry no SQL — those cannot be digest-checked`
         : null;
 
-  const ok = shortfalls.length === 0 && excesses.length === 0;
+  const ok = shortfalls.length === 0 && excesses.length === 0 && drifted.length === 0;
   if (!ok) bad++;
   console.log(`\n[${env.name}${env.pinned ? ` ${env.ref}` : " UNPINNED"}] ${rows.length} applied, ${files.length} files — ` +
-    (ok ? "OK" : `${shortfalls.length} in repo not recorded, ${excesses.length} recorded not in repo`));
+    (ok ? "OK" : `${shortfalls.length} in repo not recorded, ${excesses.length} recorded not in repo, ${drifted.length} recorded SQL != file`));
   if (!env.pinned) console.log(`   note: not pinned to a project ref — this proves nothing about prod or dev`);
   if (digestNote) console.log(`   note: ${digestNote}`);
   for (const n of shortfalls) console.log(`   in repo, NOT recorded : ${n}`);
   for (const n of excesses)   console.log(`   recorded, NOT in repo : ${n}`);
+  for (const n of drifted)    console.log(`   recorded SQL != file  : ${n}`);
 }
 
 if (bad) {
@@ -266,6 +320,11 @@ commit the file:
 
 A count mismatch ("6 files, only 1 recorded") is NOT a naming problem and an
 alias will not fix it — five migrations really are missing from that ledger.
+
+"recorded SQL != file" means the file was edited after it was applied, or it was
+applied through a path that recorded different text. Re-apply the file so the
+ledger carries it. Do NOT edit the file down to match the ledger: the recorded
+SQL exists to describe the file, not to replace it.
 
 If a number is already taken, add a letter suffix (0109b, 0152b). If the two
 names are the same migration under different spellings, add the pair to

@@ -100,7 +100,7 @@ begin
   -- a refusal here would be a real failure rather than a closed month.
 
   begin
-    insert into public.advances (company_id, employee_id, amount, advance_date, payment_mode, cash_location_id)
+    insert into public.advances (company_id, employee_id, amount, advance_date, payment_mode, custodian_location_id)
     values (v_co, v_emp, 5000, v_m1, 'Cash', v_loc1) returning id into v_id;
     v_src := v_src || 'advances'::text; v_ids := v_ids || v_id; v_label := v_label || 'advances.advance_date'::text;
   exception when others then

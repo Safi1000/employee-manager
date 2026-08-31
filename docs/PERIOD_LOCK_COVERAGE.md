@@ -194,16 +194,23 @@ subtraction; `invoice_payments` INSERT has none by decision (0237) and
 |---|---|---|
 | advances | notes, updated_at | E01–E02, T12 |
 | expenses | notes, document, payable settlement | E03–E05, T13, T14 |
-| cheques | notes, document — **not** clearing | E06, T15, T16 |
+| cheques | notes, document, **and clearing** (status, cleared_at) since 0269 | E06, T15, T16 |
 
-**Why clearing is excluded.** `journal_on_expense_settlement` posts at
-`coalesce(paid_at, current_date)`; `journal_on_cheque` posts at `cheque_date`.
-Same workflow — a July document completed in August — and only the first lands
-in the open month. Permitting `cheques.status` would wave the clearance through
-the cheques lock and leave `trg_journal_entries_period_lock` to refuse it, which
-is the wrong-lock pathology 0237 removed carve-out (b) for. **A July cheque
-cannot be cleared once July closes.** That is a named limit, and G3 removes it
-by making clearance post at the clearance date.
+**Why clearing WAS excluded, and why it no longer is.**
+`journal_on_expense_settlement` posts at `coalesce(paid_at, current_date)`;
+`journal_on_cheque` posted at `cheque_date`. Same workflow — a July document
+completed in August — and only the first landed in the open month. Permitting
+`cheques.status` would have waved the clearance through the cheques lock and
+left `trg_journal_entries_period_lock` to refuse it, which is the wrong-lock
+pathology 0237 removed carve-out (b) for. **A July cheque could not be cleared
+once July closed.**
+
+**0269 removed that limit at its cause**, as this section said G3 would.
+Clearing now posts at `cleared_at`, so it is a current-period event, and
+`status` / `cleared_at` joined `c_cheque_open`. T16 was inverted in the same
+change — deliberately, not discovered — and it asserts both halves: the update
+is accepted AND the resulting entry is dated in the open month. Asserting only
+the first would pass in exactly the case this paragraph was written to prevent.
 
 ### Two findings from the G0.3 probes. Neither is fixed here.
 

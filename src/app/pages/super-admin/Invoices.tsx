@@ -73,7 +73,19 @@ type PaymentForm = {
   payment_date: string;
   payment_mode: "Cash" | "Bank";
   bank_account_id: string;
+  /** 0281: required for Cash — the ledger posts to this custodian's account. */
+  custodian_location_id: string;
+  /** 0281: A1 withholding for THIS receipt. Prefilled from the client's rate. */
+  withholding: string;
   notes: string;
+};
+
+type CashLocationOption = {
+  id: string;
+  name: string;
+  custodian_employee_id: string | null;
+  custodian_partner_id: string | null;
+  is_active: boolean | null;
 };
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
@@ -121,6 +133,8 @@ const emptyPaymentForm = (): PaymentForm => ({
   payment_date: todayStr(),
   payment_mode: "Cash",
   bank_account_id: "",
+  custodian_location_id: "",
+  withholding: "",
   notes: "",
 });
 
@@ -155,6 +169,7 @@ export default function Invoices() {
   const [editPayments, setEditPayments] = useState<PaymentRow[]>([]);
   const [editSubmitting, setEditSubmitting] = useState(false);
 
+  const [cashLocations, setCashLocations] = useState<CashLocationOption[]>([]);
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
   const [paymentInvoice, setPaymentInvoice] = useState<InvoiceRow | null>(null);
   const [paymentForm, setPaymentForm] = useState<PaymentForm>(emptyPaymentForm());
@@ -168,19 +183,32 @@ export default function Invoices() {
   const loadAll = async () => {
     setLoading(true);
     setError(null);
-    const [cliRes, conRes, bankRes, brRes] = await Promise.all([
+    const [cliRes, conRes, bankRes, brRes, locRes] = await Promise.all([
       supabase.from("clients").select("*").order("name"),
       supabase.from("contracts").select("*"),
       supabase.from("bank_accounts").select("*").order("bank_name"),
       supabase.from("branches").select("*").order("is_head_office", { ascending: false }).order("name"),
+      // 0281: a cash receipt must name the custodian who took the money.
+      supabase
+        .from("cash_locations")
+        .select("id, name, custodian_employee_id, custodian_partner_id, is_active")
+        .order("name"),
     ]);
     if (cliRes.error) setError(cliRes.error.message);
     if (bankRes.error) setError(bankRes.error.message);
     if (brRes.error) setError(brRes.error.message);
+    if (locRes.error) setError(locRes.error.message);
     setClients((cliRes.data ?? []) as Client[]);
     setContracts((conRes.data ?? []) as Contract[]);
     setBanks((bankRes.data ?? []) as BankAccount[]);
     setBranches((brRes.data ?? []) as Branch[]);
+    setCashLocations(
+      ((locRes.data ?? []) as CashLocationOption[]).filter(
+        (l) =>
+          l.is_active !== false &&
+          (l.custodian_employee_id !== null || l.custodian_partner_id !== null),
+      ),
+    );
     try {
       const invRows = await fetchAllRows<InvoiceRow>(() =>
         withRegion(
@@ -690,7 +718,17 @@ export default function Invoices() {
 
   const openPayment = (row: InvoiceRow) => {
     setPaymentInvoice(row);
-    setPaymentForm(emptyPaymentForm());
+    // 0281: prefill withholding from the client's agreed rate. It stays
+    // editable — a rate is what is normally deducted, not what always is.
+    const rate = Number(
+      clients.find((c) => c.id === row.client_id)?.withholding_tax_rate ?? 0,
+    );
+    const outstanding =
+      Number(row.invoice_amount ?? 0) - Number(row.amount_received ?? 0);
+    setPaymentForm({
+      ...emptyPaymentForm(),
+      withholding: rate > 0 ? String(Math.round(outstanding * rate) / 100) : "0",
+    });
     setIsPaymentOpen(true);
   };
 
@@ -710,6 +748,10 @@ export default function Invoices() {
       setError("Select a bank account for Bank payments.");
       return;
     }
+    if (paymentForm.payment_mode === "Cash" && !paymentForm.custodian_location_id) {
+      setError("Select the custodian who received the cash.");
+      return;
+    }
     setPaymentSubmitting(true);
     setError(null);
     try {
@@ -725,6 +767,12 @@ export default function Invoices() {
         p_bank_account_id:
           paymentForm.payment_mode === "Bank" ? paymentForm.bank_account_id : null,
         p_notes: paymentForm.notes.trim() || null,
+        // 0281. Explicit, always: null would mean "apply the client's rate",
+        // and the operator has already seen and accepted (or edited) that
+        // figure in the field above.
+        p_withholding: Number(paymentForm.withholding || 0),
+        p_custodian_location_id:
+          paymentForm.payment_mode === "Cash" ? paymentForm.custodian_location_id : null,
       });
       if (rpcErr) throw rpcErr;
 
@@ -746,6 +794,11 @@ export default function Invoices() {
       payment_date: p.payment_date,
       payment_mode: p.payment_mode,
       bank_account_id: p.bank_account_id ?? "",
+      // The edit path does not change either of these; it carries them so the
+      // form shape matches. Editing a receipt's custodian or withholding goes
+      // through the posting rules, not this screen.
+      custodian_location_id: "",
+      withholding: "",
       notes: p.notes ?? "",
     });
     setIsEditPaymentOpen(true);
@@ -1579,6 +1632,50 @@ export default function Invoices() {
               </ThemedSelect>
             </div>
           )}
+
+          {paymentForm.payment_mode === "Cash" && (
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Received By *</label>
+              <ThemedSelect
+                required
+                value={paymentForm.custodian_location_id}
+                onChange={(e) =>
+                  setPaymentForm({ ...paymentForm, custodian_location_id: e.target.value })
+                }
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              >
+                <option value="">Select custodian</option>
+                {cashLocations.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </ThemedSelect>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Cash is held by a person. The ledger posts this receipt to their account.
+              </p>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">
+              Withholding Tax Deducted (PKR)
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={paymentForm.withholding}
+              onChange={(e) =>
+                setPaymentForm({ ...paymentForm, withholding: e.target.value })
+              }
+              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+            />
+            <p className="text-[11px] text-slate-500 mt-1">
+              Prefilled from this client&rsquo;s agreed rate. The receivable is cleared by the
+              cash received <em>and</em> the tax withheld together.
+            </p>
+          </div>
 
           <div>
             <label className="block text-sm text-slate-700 mb-1">Notes</label>

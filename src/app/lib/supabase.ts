@@ -1840,8 +1840,9 @@ export type Partner = {
 export type Treasury = {
   id: string;
   cash_balance: number;
-  cash_opening_balance: number;
-  cash_opening_locked: boolean;
+  // cash_opening_balance / cash_opening_locked dropped by migration 0280 —
+  // one opening-balance concept for cash, and the ledger uses
+  // cash_locations.opening_balance.
   updated_at?: string;
 };
 

@@ -656,8 +656,14 @@ export default function Accounting() {
     if (chequesRes.error) setError(chequesRes.error.message);
     setCheques((chequesRes.data ?? []) as Cheque[]);
     setCashBalance(Number(treasuryRes.data?.cash_balance ?? 0));
-    setCashOpeningBalance(Number(treasuryRes.data?.cash_opening_balance ?? 0));
-    setCashOpeningLocked(Boolean(treasuryRes.data?.cash_opening_locked ?? false));
+    // 0280: treasury.cash_opening_balance / cash_opening_locked are gone. There
+    // is one opening-balance concept for cash and the ledger uses
+    // cash_locations.opening_balance. The "already set" state is derived from
+    // the opening transaction this page itself writes, which is the record that
+    // actually exists rather than a second flag that can disagree with it.
+    const openingTx = txRows.find((t) => t.kind === "opening" && !t.bank_account_id);
+    setCashOpeningBalance(Number(openingTx?.cash_delta ?? 0));
+    setCashOpeningLocked(Boolean(openingTx));
     setTreasuryId(treasuryRes.data?.id ?? null);
     setTransactions(txRows);
     setPayables((payablesRes.data ?? []) as PayableRow[]);
@@ -851,8 +857,6 @@ export default function Accounting() {
           .from("treasury")
           .insert({
             cash_balance: amt,
-            cash_opening_balance: amt,
-            cash_opening_locked: true,
           })
           .select("id")
           .single();
@@ -863,8 +867,6 @@ export default function Accounting() {
           .from("treasury")
           .update({
             cash_balance: cashBalance + amt,
-            cash_opening_balance: amt,
-            cash_opening_locked: true,
             updated_at: new Date().toISOString(),
           })
           .eq("id", id);

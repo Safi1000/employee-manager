@@ -346,6 +346,24 @@ start here.
 
 ### 9.6 Before accepting a green result, state what would have made it red
 
+> **THE MOST GENERAL FORM OF THIS RULE, AND THE ONE TO READ FIRST:**
+>
+> **A CHECK THAT IS NEVER EVALUATED IS INDISTINGUISHABLE FROM ONE THAT ALWAYS
+> PASSES. ASK NOT ONLY "COULD THIS GO RED" BUT "IS THIS EXPRESSION EVALUATED AT
+> ALL".**
+>
+> Established by `scripts/check-migrations.mjs`, which fetched migration
+> digests, counted how many were non-null, printed a note, and never compared
+> one of them to anything. The digest half of "the recorded SQL must equal the
+> file" had never run. It was the third defect found in that one script and the
+> only one that produced no answer rather than a wrong answer — and no answer
+> reads exactly like a clean pass, which is why it survived the other two
+> audits. Full account in §9.10.
+>
+> The operational habit: when a rule is documented as enforced, open the
+> enforcement and find the line that compares. If there is no comparison
+> operator anywhere in it, the rule is a comment.
+
 Nine instances now, and the last one was in the FORCE RLS pre-check itself. That
 pre-check tested `current_company_id()` and `effective_salary` under FORCE **as
 `authenticated`** and both passed — two green results about the wrong subject,
@@ -628,3 +646,198 @@ The same question is owed to every existing zero-pass check —
 `no_one_sided_entries`, `no_billing_clients_on_head_office`,
 `no_gate_mode_in_attendance_status` all pass at zero and none can currently say
 what would make it non-zero. Not audited yet.
+### 9.8 Three rules from the G2/G3 round
+
+**AN INSTRUMENT THAT REPORTS ITS OWN INPUT IS NOT AN INSTRUMENT.**
+`checks_evaluated` was shaped `expected = n, actual = n, passed = true`, where
+`n` was the count of rows the same query had just produced. It could not fail.
+Nothing read it — grep found it only in the migrations that defined it. It was
+built to detect a truncated run, and it was itself the thing that could not
+report. That is the canary problem recursing one level, and it is the fifteenth
+instance of a check that could not fail. It now carries a **hardcoded** expected
+count, so adding or losing a check turns it red until someone updates the
+constant deliberately. 0266 fixed the shape; 0269, 0271 and 0275 each bumped the
+constant as part of adding their check, which is the behaviour the hardcoding
+exists to force.
+
+**EVERY OTHER CONTROL COMPARES THE LEDGER TO ITSELF.**
+`cash_control_equals_cash_locations` (0259) compares the cash control subtree to
+`sum(cash_location_balances.balance)` — and that view is
+`cl.opening_balance + coalesce(sum(jl.debit - jl.credit), 0)`. **Both sides are
+`journal_lines`.** It is a real and useful measurement — "lines on the parent
+that are on no child", which was exactly the 595,990.13 — but it is not
+ledger-versus-reality, and its name suggests otherwise.
+
+`custodian_held_operational()` (0262) is the first check in this project that
+compares the ledger to something **outside** it: the operational held-cash
+figure the application computes in `src/app/lib/custodian.ts` and shows the user.
+`bank_held_operational()` (0271) is its bank-side twin. The distinction is the
+difference between *internally consistent* and *correct*, and until 0262 the
+suite could only establish the first.
+
+Two corollaries earned the same round:
+
+*An aggregate check cannot see an error that nets to zero inside its own
+aggregate.* The per-account bank check reported **1,616,923** where the subtree
+check reported **938,467**. The 678,456 difference was misrouting between the
+control and its children — invisible by construction, not by defect. The
+990,000 bank-to-bank transfer that never posted was inside it: both accounts sit
+in the bank subtree, so the missing entry cancelled against itself. Third
+instance of ask-what-a-check-measures, and the second where the answer was "less
+than it appears".
+
+*Two records agreeing is not evidence that either is right.*
+`cash_per_location_gl_equals_operational` is **green** for HAMNA (−3,477.00) and
+Safi (−1,999.87): the ledger and the operational record agree precisely that a
+custodian holds less than nothing. 0275 adds the check that a physical
+impossibility is impossible, which neither reconciliation could ever have caught
+because reconciliations compare two things to each other and never to the world.
+
+**ANY MIGRATION INSTALLING A POSTING RULE MUST STATE ITS BACKFILL, OR STATE WHY
+NONE IS NEEDED.**
+0221 installed `journal_on_cheque` as an `AFTER UPDATE` trigger keyed to the
+`pending -> cleared` **transition**. Two cheques had already made that
+transition, so their posting was owed and could never be paid: a rule keyed to
+an observed change cannot repair a row whose change already happened. 0221 stated
+no backfill and needed one. It escaped consequence on seven of the eight source
+tables only because those tables had no qualifying rows yet — an accident of the
+sandbox timeline, not a property of the design.
+
+Two mechanisms enforce it now:
+
+* **Key posting rules to STATE, not to transitions.** `sync_cheque_journal()`
+  (0269) and `sync_bank_transfer_journal()` (0272) compute what the row's current
+  state requires, compare that to the live entry on four facts, and act only on a
+  difference. Idempotent by construction, which is what makes them safe as
+  backfills.
+* **The backfill is a loop over the rule itself**, so it cannot drift from what
+  it backfills — the same failure the fixture audit found, where a fixture
+  encoded a *model* of an RPC rather than the RPC.
+* **`every_source_row_posted`** (0269, extended by 0272) is red whenever a source
+  row a rule covers has no live entry. Proved able to fail by disabling the
+  posting trigger and inserting a cleared cheque: `unposted 0 -> 1`. The next
+  unbackfilled rule is red the day it ships rather than found by looking.
+
+### 9.9 Two more, from the F4 round
+
+**WHEN A FIX LANDS BEFORE ITS CHECK, THE CHECK MUST BE PROVED AGAINST SYNTHETIC
+FAILURE, BECAUSE THE REAL FAILURE IS NO LONGER REACHABLE.**
+
+§9.6 says a check amended after the posting it misreads is a check amended to
+fit an answer, and that the remedy is to ship the check first. F4 is the
+inverted case: `partnership_allocation()` was already the nested waterfall by
+the time its check was written, so the 135% over-allocation could not be
+reproduced by running anything. Breaking the function to prove the check would
+be worse than not proving it.
+
+The resolution is to write the check against the **output** rather than the
+code. `profit_allocation_exhausts_pool` (0282) reads the stored
+`profit_allocation_runs` record — `regional_total + equity_total` against
+`total_profit` — so a run shaped like the old separate-pools rule can simply be
+inserted. It is proved in the migration, in a rolled-back subtransaction, on the
+real July figures:
+
+```
+old rule    profit −131,120.00  regional −25,224.00  equity −131,120.00  -> RED
+nested      profit −131,120.00  regional −25,224.00  equity −105,896.00  -> GREEN
+```
+
+Both directions, because a check only ever seen red is as uninformative as one
+only ever seen green. A check that reads persisted results rather than
+re-deriving them is also the only kind that can be proved this way, which is a
+reason to prefer that shape when there is a choice.
+
+**A CONSTRAINT PROVED ONLY BY WHAT IT REFUSES IS HALF PROVED.**
+
+0268 added `invoice_payments_cash_names_a_location` and proved it could reject a
+cash receipt with no custodian. It never proved a cash receipt *with* one still
+worked. `record_invoice_payment()` inserts without a custodian, so from 0268
+until 0281 **every cash receipt through the application was refused** — the only
+path an operator has for recording a client paying in cash.
+
+Nothing caught it. The constraint's own test was green, the ledger checks were
+green, and the sandbox's cash receipts predated the constraint. It was found by
+deliberately exercising the real call path while looking at something else.
+
+So a rule needs both proofs: that it rejects what it should, and that everything
+it should accept still passes — the second exercised through the actual caller,
+not through a hand-written insert that resembles it. 0281 carries both, and the
+"accepts" half runs the real RPC inside a savepoint and rolls it back, because
+unwinding an oldest-first payment waterfall by hand would mean writing a model
+of the RPC instead of calling it — the same mistake the fixture audit found.
+
+This is a third form of the vacuity problem, distinct from the two already
+recorded. A check that cannot fail proves nothing. A check that reports its own
+input proves nothing. **A constraint that has only ever been shown to say no
+tells you nothing about whether the system still says yes.**
+
+### 9.10 Three from the digest-alignment round
+
+#### THE RULE NOBODY WAS ENFORCING WAS THE ONE WITH A SCRIPT NAMED AFTER IT
+
+`CLAUDE.md` states that the recorded SQL must equal the file, that there are no
+acceptable exceptions, and that `ledger_checks()` flags a mismatch.
+`scripts/check-migrations.mjs` fetched the digests, counted how many were
+non-null, printed a note about the shortfall, and **never compared one of them
+to anything**. There was no digest check. There had never been a digest check.
+
+It surfaced only because 0283 exposed `recorded_migration_sql()` for an
+unrelated reason and the comparison was then run by hand: 300 files, 26 adrift.
+
+The three defects previously recorded in that script's header each produced a
+*wrong answer*. This one produced *no answer*, and no answer reads exactly like
+a clean pass. That is the more dangerous shape, and the general form is worth
+keeping:
+
+**A CHECK THAT IS NEVER EVALUATED IS INDISTINGUISHABLE FROM A CHECK THAT ALWAYS
+PASSES. THE INSTRUMENT'S OUTPUT MUST DEPEND ON THE THING IT MEASURES — SO ASK
+NOT ONLY "COULD THIS GO RED" BUT "IS THIS EXPRESSION EVALUATED AT ALL".**
+
+The related habit that would have caught it earlier: when a rule is documented
+as enforced, open the enforcement and find the line that compares. If there is
+no comparison operator anywhere in it, the rule is a comment.
+
+#### A DIFFERENCE THAT IS AN ARTEFACT OF THE MEASUREMENT IS NOT A FINDING
+
+The first hand audit reported 26 divergences of which 4 had "differing
+executable SQL". Both numbers were partly artefacts of how the comparison was
+done, and the corrections run in opposite directions, which is the useful part:
+
+* Two files (`0078c`, `0253`) were reported as divergent and were byte-identical
+  apart from **CRLF line endings**. The repo is checked out on Windows; the
+  ledger stores LF. Any digest comparison that does not normalise line endings
+  reports every file on a Windows machine as drifted — a checker that cries wolf
+  is a checker nobody reads.
+* Two others (`0260`, `0261`) were *not* divergent when the audit ran and became
+  divergent afterwards, because they were restored from git in between. A count
+  taken before a change and reported after it describes neither state.
+* The "executable SQL differs" classification was produced by a stripper that
+  removed whole-line comments only. It therefore counted a trailing `-- ...` on
+  a code line as executable text, and it counted line re-wrapping as a
+  difference. Diffed properly, **none of the four differed in executable
+  logic**: `0245` not at all, `0242` and `0251` only in COMMENT ON strings, and
+  `0248` only in two declared-but-never-used variables.
+
+Reported as four security-guard migrations whose deployed behaviour might not
+match the repo, the finding was alarming and wrong. The measurement was the
+defect. Before escalating a discrepancy, reproduce it a second way.
+
+#### ALIGN UP, AND SAY WHICH WAY YOU ALIGNED IT
+
+Where the file and the ledger disagree, the file wins: re-apply so the ledger
+carries the full text. Never edit the file down to match the ledger — the
+recorded SQL exists to *describe* the file, and trimming a file to match a
+truncated record destroys the headers this project deliberately writes and
+leaves the ledger looking authoritative about text it never had.
+
+One departure, taken deliberately and recorded here because it is the kind of
+thing that should not be discovered later in a diff: the 26 were aligned by
+**rewriting the recorded statements, not by re-executing the migrations**.
+Re-execution was not available. `0242` would re-run a code generator against
+today's catalogue and rewrite functions written after it; `0245` would insert a
+second closed accounting period and another test journal entry; `0250` and
+`0258` would repost. Applying them again also does not replace a row — it
+appends a second one under a new version, so the ledger would gain duplicates.
+The executable text was proved equal before each rewrite, and the three cases
+where it was not exactly equal were overridden by hand with the reason stored in
+the migration's own alignment record.

@@ -320,15 +320,15 @@ begin
   -- than silently passing.
   insert into public.advances
     (company_id, employee_id, client_id, amount, advance_date, payment_mode,
-     cash_location_id, branch_id, custodian_location_id)
-  values (v_co, v_emp2, v_client, 5000, v_month, 'Cash', v_loc, v_br2, v_loc)
+     branch_id, custodian_location_id)
+  values (v_co, v_emp2, v_client, 5000, v_month, 'Cash', v_br2, v_loc)
   returning id into v_advance;
 
   insert into public.expenses
     (company_id, category_id, client_id, amount, expense_date, payment_mode, description,
-     payable_status, branch_id, cash_location_id, custodian_location_id, pl_category)
+     payable_status, branch_id, custodian_location_id, pl_category)
   values (v_co, v_cat, v_client, 7000, v_month, 'Payable', 'period_lock suite', 'Pending',
-          v_br2, v_loc, v_loc, 'operating_expense')
+          v_br2, v_loc, 'operating_expense')
   returning id into v_expense;
 
   insert into public.cheques
@@ -468,7 +468,8 @@ begin
   -- F01..Fnn — G0.3, the dimension columns. The money-and-date loops above miss
   -- these entirely, and the posting logic BRANCHES on them: payment_mode picks
   -- the credit account, category_id and pl_category pick the expense account,
-  -- cash_location_id and custodian_location_id pick which cash account. The
+  -- custodian_location_id picks which cash account (cash_location_id was the dead
+  -- column all this time; dropped in 0267). The
   -- advance Cash->Bank defect (0256) sat on exactly one of these columns, which
   -- is why "every money and date column" was not enough coverage.
   --
@@ -730,21 +731,40 @@ begin
     v_results := v_results || 'T15 cheque_document_allowed       FAIL  (' || left(sqlerrm, 60) || ')' || chr(10);
   end;
 
-  -- T16 — DELIBERATELY STILL REFUSED, and by [cheques] specifically.
+  -- T16 — INVERTED BY 0269, deliberately, which is what the previous version of
+  -- this comment asked for.
   --
-  -- journal_on_cheque posts the clearance at cheque_date, so permitting `status`
-  -- would move a posting into the closed month and leave the journal lock to
-  -- refuse it — the wrong-lock pathology. This assertion is the standing record
-  -- of that decision: when G3 makes clearing post at the clearance date, this
-  -- test should be inverted deliberately, not discovered to have started failing.
+  -- It used to assert that clearing a closed-month cheque was REFUSED, because
+  -- journal_on_cheque posted the clearance at cheque_date and permitting
+  -- `status` would have moved a posting into the closed month, leaving the
+  -- journal lock to refuse it — the wrong-lock pathology.
+  --
+  -- 0269 posts the clearance at cleared_at, so clearing is a CURRENT-period
+  -- event and `status`/`cleared_at` joined the cheques carve-out. The
+  -- assertion is now the opposite: clearing must be ACCEPTED, and the entry
+  -- must land in the open month, not the closed one.
+  --
+  -- Both halves are asserted. "It was accepted" alone would pass if the
+  -- carve-out let the row through and the posting still landed in the closed
+  -- month — the exact failure the old comment was guarding against.
   begin
     update public.cheques set status = 'cleared', cleared_at = now() where id = v_cheque;
-    v_results := v_results || 'T16 cheque_clearing_refused       FAIL  (accepted; posting lands in a closed month)' || chr(10);
+    if exists (select 1 from public.journal_entries je
+                where je.source_table = 'cheques' and je.source_id = v_cheque
+                  and je.is_reversal = false
+                  and je.entry_date >= date_trunc('month', current_date)::date) then
+      v_results := v_results || 'T16 cheque_clearing_allowed       PASS  (0269: posts at cleared_at, open month)' || chr(10);
+    elsif exists (select 1 from public.journal_entries je
+                   where je.source_table = 'cheques' and je.source_id = v_cheque) then
+      v_results := v_results || 'T16 cheque_clearing_allowed       FAIL  (accepted, but the entry is dated in the closed month)' || chr(10);
+    else
+      v_results := v_results || 'T16 cheque_clearing_allowed       FAIL  (accepted, but nothing posted at all)' || chr(10);
+    end if;
   exception when others then
     v_msg := sqlerrm;
-    v_results := v_results || 'T16 cheque_clearing_refused       '
-      || case when v_msg like '%[cheques]%' then 'PASS  (intended until G3 moves the posting date)'
-              when v_msg like '%[journal_entries]%' then 'FAIL  (carve-out let it through; journal lock caught it)'
+    v_results := v_results || 'T16 cheque_clearing_allowed       '
+      || case when v_msg like '%[cheques]%' then 'FAIL  (cheques lock still refuses clearing; 0269 carve-out missing)'
+              when v_msg like '%[journal_entries]%' then 'FAIL  (journal lock refused the clearing posting)'
               else 'FAIL  (' || left(v_msg, 50) || ')' end || chr(10);
   end;
 

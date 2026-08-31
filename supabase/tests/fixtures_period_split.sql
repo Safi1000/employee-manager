@@ -62,7 +62,7 @@
 do $$
 declare
   v_co uuid; v_vertex uuid; v_citadel uuid; v_delta uuid;
-  v_inv uuid; v_target uuid; v_pay uuid; v_amt numeric := 150000;
+  v_inv uuid; v_target uuid; v_pay uuid; v_cust uuid; v_amt numeric := 150000;
 begin
   select id into v_co from public.companies where name = 'SANDBOX TESTING ORG';
   if v_co is null then
@@ -116,10 +116,21 @@ begin
      and not exists (select 1 from public.invoice_payments
                       where company_id = v_co and payment_date = date '2026-09-15') then
 
+    -- A cash receipt must name the custodian who took the money (0268). Without
+    -- this the row is one production cannot create, and the posting lands on the
+    -- undifferentiated cash control account instead of a custodian's.
+    select id into v_cust from public.cash_locations
+     where company_id = v_co and is_active is not false
+       and custodian_employee_id is not null
+     order by name limit 1;
+    if v_cust is null then
+      raise exception 'No active custodian cash location in the sandbox — the receipt cannot be attributed';
+    end if;
+
     insert into public.invoice_payments
       (company_id, invoice_id, client_id, amount, withholding_amount, payment_date,
-       payment_mode, notes)
-    values (v_co, v_target, v_delta, v_amt, 0, date '2026-09-15', 'Cash',
+       payment_mode, custodian_location_id, notes)
+    values (v_co, v_target, v_delta, v_amt, 0, date '2026-09-15', 'Cash', v_cust,
             'F4.1 fixture — cash in period with no invoice in period')
     returning id into v_pay;
 
@@ -202,3 +213,21 @@ left join lateral (
 -- constrain a NULL contract, and any report reaching invoices through a contract
 -- join will not see these rows. Fix before these fixtures are used to validate
 -- per-client attribution.
+
+-- SEVENTH DIVERGENCE (logged 2026-09-01, G2).
+--
+-- Part C writes a cash receipt with NO custodian location. Every cash movement
+-- the application produces carries one — the Cash Custody path sets
+-- custodian_location_id via ensureCustodianLocation() — so a cash payment
+-- without one is another row production cannot create. It was the single
+-- category-3 line in the G2 investigation: 150,000.00 sitting on the cash
+-- control account, attributable to nobody.
+--
+-- Migration 0268 repaired the sandbox row and now REFUSES the shape outright:
+--   invoice_payments_cash_names_a_location
+--     check (payment_mode <> 'Cash' or custodian_location_id is not null)
+--
+-- So this fixture no longer runs as written. The insert below must name a
+-- custodian. Choosing one is not arbitrary decoration — it decides which cash
+-- account the posting lands on, and therefore which custodian the ledger says is
+-- holding the money.

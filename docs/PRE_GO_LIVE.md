@@ -398,3 +398,301 @@ sites, and that one of them is separately wrong by 2,582,280.
 
 **Confirm on landing:** editing a posted invoice, payslip and expense must all
 work end to end.
+
+---
+
+## Custody accounting has effectively never run
+
+Established 2026-09-01, during the G2 cash-routing work.
+
+Before migration 0264, **five of the seven posting paths that touch cash read
+`cash_location_id` — a column set on zero rows of every table in the database.**
+The application has never written it; it writes `custodian_location_id`. Only
+two paths (`journal_on_cheque`, `record_bank_to_custodian`) read the live column,
+and they were the only ones whose postings ever reached a per-location account.
+
+The consequence, measured before the fix:
+
+- **Two journal lines** existed across all custodian cash accounts, both from a
+  single custody transfer. Fourteen per-location accounts had been created
+  correctly, parented correctly, and were empty.
+- **595,990.13** of cash movement sat on the undifferentiated cash control
+  account, attributable to no custodian.
+- Two cleared cash cheques of 5,000 each, handed to named custodians, produced
+  **no journal entry at all** — 10,000 of company cash in individuals' hands with
+  no ledger record whatsoever. Assigned to G3.
+
+**Partners can be cash custodians.** So this is not only a bookkeeping gap: the
+ledger could not say how much company cash any individual — employee or partner —
+was holding, and the reports that claimed to were reading the operational tables,
+not the ledger.
+
+0262-0268 close the routing defect and add
+`cash_per_location_gl_equals_operational`, which compares each custodian's GL
+balance to the operational held-cash figure. **Do not go live while that check is
+red.** It found the cheque defect on its first run, which is the argument for it.
+
+Two custodians also show a NEGATIVE operational cash position (HAMNA -3,477.00,
+Safi -1,999.87). A custodian cannot hold less than nothing; either an opening
+balance is missing or cash was recorded as paid out that was never received.
+Resolve before go-live — this is a real-world cash question, not a ledger one.
+
+---
+
+## The production deployment manifest (as at 2026-09-01)
+
+Prod is deliberately behind. Dev is where the posting model is still moving, and
+the gap gets closed as **one named deployment** when the posting rules settle,
+with the full external verification repeated against prod's own key. This
+section is that deployment's manifest, so it is a list rather than a
+reconstruction.
+
+`scripts/check-migrations.mjs` reports **61 files in repo not recorded** on
+`crm-design` (`mmkfpnshxjcyijhuydgr`) and **0 recorded not in repo**. The second
+number is the reassuring one: prod has never run a migration the repo does not
+describe.
+
+**The 61 are not one problem, and the checker cannot tell them apart.** It
+compares names; it cannot distinguish "applied by hand, no ledger row" from
+"never applied". Probing prod for the objects each migration creates separates
+them:
+
+| probe | prod | meaning |
+|---|---|---|
+| `cash_location_balances` view (0239) | **present** | applied, unrecorded |
+| `ledger_checks` row count | **8** (dev: 17) | 0239's control checks absent from the function |
+| `journal_lines` insert guard (0245) | **absent** | never applied |
+| `payslips.custodian_location_id` (0263) | **absent** | never applied |
+| `expenses.cash_location_id` (0267 drops it) | **present** | never applied |
+| `custodian_held_operational` (0262) | **absent** | never applied |
+| `sync_cheque_journal` (0269) | **absent** | never applied |
+| `bank_held_operational` (0271) | **absent** | never applied |
+| `partners.basis` (0232 drops it) | **present** | never applied — differs from dev |
+
+### What prod is actually missing, by group
+
+1. **The tenant guard series** — 0242, 0242b, 0242c, 0243, 0248, 0251, 0252.
+2. **The posting-integrity guards** — 0245 (journal_lines insert guard), 0246,
+   0247, 0249, 0250, 0253, 0254, 0255, 0256, 0257, 0258.
+3. **The control checks that can see a sub-ledger** — 0259, 0260, 0261. Prod's
+   `ledger_checks` returns **8 rows**; dev returns 17. Prod cannot currently
+   measure bank or cash against anything.
+4. **The G2 cash-routing series** — 0262 to 0268. Prod still has the dead
+   `cash_location_id` on `expenses`, `invoice_payments` and `advances`, and
+   still has seven posting functions reading it.
+5. **The G3 cheque and bank series** — 0269 to 0275.
+6. **Partner remuneration basis** — 0230, 0231, 0232. Present on dev, absent on
+   prod: `partners.basis` still exists there. **These need Shayan's sign-off
+   before they go anywhere**, and the accompanying frontend change
+   (`PartnerFormModal.tsx` still writes `partners.basis`) must ship with them or
+   the form breaks on the column it writes.
+7. **Older unrecorded files** — 0009, 0012, 0013, 0014, 0042, 0043, 0053, 0058,
+   0059, 0060, 0078b, 0078c, 0079b, 0108, 0109, 0179b, 0200, 0234, 0235, 0237,
+   0238, 0244. Several of these are certainly applied and merely unrecorded
+   (0058's `auto_zero_monthly` column exists on prod); each needs the object
+   probe above before it is either re-run or given a ledger row.
+8. **Two count mismatches, which are real losses rather than naming problems** —
+   `0148 / 0184_change_category_enum_cast` (2 files, 1 recorded) and the six
+   `*_drop_partnership_allocation` files (6 files, 1 recorded). Five migrations
+   really are missing from that ledger.
+
+### Deployment order, when it happens
+
+The dependency order is the migration order, with two constraints that are not
+obvious from the numbers:
+
+- **0259 before any opening batch.** It had to ship ahead of the data on dev for
+  the reason recorded in §9.6, and the same applies to prod.
+- **0262 before 0263–0265, and 0269 before 0271.** Each check goes in ahead of
+  the correction it judges. Reversing that order produces a check written to
+  agree with the data it is measuring.
+
+### Also true of prod, and worth knowing before the deployment
+
+- **The `SANDBOX TESTING ORG` fixture company exists on production.** The
+  `5eed0000-…` ids resolve there. Every "sandbox" figure in the G2/G3 reports
+  can be found on prod under that company, and it is not customer data.
+- **`apply_monthly_account_zeroing()` and `bank_accounts.auto_zero_monthly` are
+  live on prod.** One of nine accounts has the flag set and has been zeroed —
+  and it is the sandbox's United Bank Ltd row, not a customer's. No real
+  customer account has the flag today. The mechanism itself is unchanged from
+  the one that moved 800,000 with no `bank_transactions` row and no journal
+  entry, so it would behave identically the moment anyone ticks the box on a
+  real account. See `docs/LEDGER_G3_BLOCK1_RESULTS.md`.
+
+---
+
+## SANDBOX TESTING ORG is on production. What it is, who can reach it, and whether it should stay.
+
+Established by reading `crm-design` (`mmkfpnshxjcyijhuydgr`) on 2026-09-01.
+
+Production carries **four** companies:
+
+| company | created | users | employees |
+|---|---|---|---|
+| GUARDS AND GUIDES (PVT) LTD | 2026-05-11 | 4 | 552 |
+| Sandboxx | 2026-08-08 | 1 | 1 |
+| guards n guides | 2026-08-13 | **0** | **527** |
+| SANDBOX TESTING ORG | 2026-08-25 | 1 | 69 |
+
+### What SANDBOX TESTING ORG contains
+
+69 employees, 8 clients, 9 invoices, 48 payslips, 9 bank accounts and **307
+journal entries**, all under the `5eed0000-…` id range. It is the same fixture
+that appears on dev, and every figure quoted as "sandbox" throughout the G2/G3
+reports exists on production under this company.
+
+### Who can reach it
+
+**A live login.** One profile sits in the company:
+
+```
+Sandbox Admin   sa@sandbox.test   role: super_admin
+                created 2026-08-25   last sign-in 2026-08-31
+```
+
+That is a real `auth.users` row on production, with a guessable address, holding
+`super_admin` on a tenant, and it has been used within the last two days of this
+report. No profile has `view_as_company` pointing at the sandbox, so ordinary
+users of the real company do not see it — the exposure is the credential, not
+the isolation.
+
+Two things follow, and they are different in kind:
+
+1. **TABLE isolation holds — now proved, not reasoned.** Run on production as
+   `sa@sandbox.test` (uid `5eed0000-…-5a01`), `set local role authenticated`
+   with that uid's JWT claims, counting rows belonging to any other company:
+
+   ```
+   employees 0   clients 0   journal_entries 0   invoices 0
+   payslips  0   bank_accounts 0   profiles 0   companies visible: 1 of 4
+   ```
+
+   Zero foreign rows on every tenant table tried. RLS keys on
+   `current_company_id()`, which for this profile resolves to the sandbox, and
+   `super_admin` is company-scoped — the unscoped role is SSA and this account
+   is not it.
+
+   **The RPC surface does NOT hold, and that is a separate finding — see
+   below.**
+2. **The credential is the risk.** An address of the form `sa@sandbox.test` with
+   super-admin rights on the production auth tenant is a standing invitation. It
+   does not matter how well RLS scopes it if the account can be taken and the
+   role model later changes.
+
+### Should it be there at all before go-live
+
+**No**, on the evidence, and for a reason beyond the credential: it makes every
+production figure ambiguous. The 800,000 that
+`apply_monthly_account_zeroing()` removed with no transaction and no journal
+entry is on production — and it is the sandbox's United Bank Ltd row, not a
+customer's. Any query that does not filter by company will report fixture data
+as production data. This report nearly did.
+
+Three options, in order of preference:
+
+1. **Remove it from production entirely**, and keep the fixture on dev where the
+   ledger work happens. Nothing on production needs it: it has one user and that
+   user exists to exercise it.
+2. **Archive it under the F3 mechanism** — the company-level `archived` flag
+   enforced in RLS, which the master findings already schedule for the
+   `guards n guides` clone (527 employees, zero users, also on production). One
+   mechanism, two subjects.
+3. **Keep it and disable the login**, which addresses the credential and leaves
+   the ambiguity.
+
+This is a decision about production data and is not taken here. **What is
+recommended without qualification: disable or rotate `sa@sandbox.test` before
+go-live, and settle `guards n guides` in the same pass** — 527 employee records
+with no user to own them is the larger data-protection question of the two.
+
+---
+
+## BLOCKER — production has no tenant guard on 138 SECURITY DEFINER RPCs, and the leak is demonstrated
+
+Found while proving the sandbox account's isolation. The table-level result
+above is clean; it is also only half the surface.
+
+Production's highest migration is `20260831093651 wht_receivable_fix`. **0242,
+0242b, 0242c, 0243, 0248, 0251 and 0252 — the entire tenant-guard programme —
+are dev-only.** Measured on production:
+
+```
+assert_same_company exists                                        0
+SECURITY DEFINER functions taking a uuid, callable by authenticated  140
+...of those with no current_company_id / is_ssa_unscoped check      138
+```
+
+SECURITY DEFINER means the function runs as its owner and gets **no caller
+RLS**. So RLS scoping a table says nothing about what an RPC over that table
+returns.
+
+### Demonstrated, not inferred
+
+As `sa@sandbox.test`, authenticated, against a different company on production —
+read-only calls only (`provolatile in ('s','i')`), nothing written:
+
+```
+avg_monthly_net_payroll(GUARDS AND GUIDES (PVT) LTD) = 0
+count_client_employees(<their client>)               = 18
+effective_salary(<their employee>, today)            = (40000.00, 0.00, 1290.32, 2026-06-29)
+```
+
+Another company's client headcount and an individual's salary, month rate and
+effective date, returned to an account that can see zero of their rows through
+any table. This is the exact disclosure `0241`'s header described from outside
+with the anon key; `0241` closed `anon`, and **`authenticated` was never
+closed** because the guard that closes it has not been deployed.
+
+### What this changes
+
+* The scope is not the sandbox account. It is **every authenticated user of
+  every company on production** — four companies today. The sandbox login is one
+  way in and removing it does not close this.
+* It raises the deployment manifest from "the ledger work is dev-only" to "a
+  security programme is dev-only". The guard migrations are independent of the
+  ledger posting rules and do not need to wait for them.
+* 77 of the unguarded 138 write. Only read-only functions were exercised here,
+  deliberately; the write half is not proved and should not be.
+
+### Recommendation
+
+Deploy the tenant-guard group to production as its own named change, ahead of
+and separable from the ledger deployment: `0242`, `0242b`, `0242c`, `0243`,
+`0248`, `0251`, `0252`. `0242c` is not optional — without it `assert_same_company`
+is a no-op, because SECURITY DEFINER rewrites `current_user` to the owner. It
+needs the user's explicit, named authorisation like any other production change,
+and it should be rehearsed on a branch first: `0241`'s history shows the failure
+mode is a guard that refuses legitimate traffic, not one that fails to refuse.
+
+---
+
+## The migration set cannot be replayed — logged, not started
+
+Raised while aligning the 26 divergent migrations (2026-09-01). Not costed, not
+scheduled; recorded so it is a decision rather than a discovery.
+
+The 26 were aligned by rewriting the recorded statements rather than by
+re-executing the files, because **several migrations in this repo cannot be run
+a second time against a database that already has them**:
+
+* `0242` re-runs a code generator over the live catalogue and would rewrite
+  functions written after it.
+* `0245`'s verification inserts an `accounting_periods` row and posts a test
+  journal entry, and its own `raise` is caught rather than propagated, so both
+  persist.
+* `0250` and `0258` repost.
+* `0247` backfills under a maintenance session.
+
+Why it matters beyond this alignment: **a migration set that cannot be replayed
+cannot stand up a fresh environment.** Today there are two databases and both
+already exist. The first time a third is needed — a second customer on their own
+project, a rebuilt staging environment, a disaster-recovery restore proved from
+the repo rather than from a snapshot — the repo will not build one, and that
+will be discovered at the moment it is most expensive.
+
+The work is: make each migration idempotent as a whole file (per CLAUDE.md's
+existing rule, which `0232` already failed once at an assert two hundred lines
+above its guarded drop), and separate one-shot data reposts from schema changes
+so a replay skips the former. Real, bounded, and not urgent until a third
+environment is needed.

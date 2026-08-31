@@ -118,5 +118,5 @@ Two settled points that get re-litigated by accident:
 - Revenue is recognised at the **service month** (`period_start`), not
   `invoice_date` (A4).
 - HO cost is apportioned by **revenue**, never by guard-days (A10). Regional
-  partners hold no equity; their share is an expense, and negative shares carry
+  
   with no floor (A9).

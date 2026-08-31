@@ -6,6 +6,56 @@
 
 ---
 
+## Where migrations are applied (policy, from 2026-09-01)
+
+**All migrations are applied to `crm-design-dev` FIRST. Nothing goes straight to prod.**
+
+| role | project | ref | evidence |
+|---|---|---|---|
+| **PROD** | `crm-design` | `mmkfpnshxjcyijhuydgr` | `.env.local` `VITE_SUPABASE_URL` points the app here; 1,149 employees |
+| **DEV** | `crm-design-dev` | `wlyhbvunvdsropqzlpwx` | clone taken 2026-08-31; 1,147 employees |
+
+The git branch is `dev` and the database is now `crm-design-dev`; they promote together.
+
+### Why this is written down
+
+Up to 2026-08-31 the G-series went in through the Supabase SQL editor, to both
+environments, by hand. That produced three problems at once, and the third is the
+one that bites:
+
+1. **No `schema_migrations` row.** `applied_migration_digests()` cannot see a
+   single hand-applied migration, so `npm run check:migrations` reports drift on
+   all of them and the loop-closer is closing nothing.
+2. **Two environments, one memory.** It was not recorded which had received what,
+   and recovering it took a schema-object diff rather than a query.
+3. **Prod got a PARTIAL subset — the writers without the guards.** It has
+   `post_opening_balances`, `record_cash_deposit`, `cash_account_for`; it does NOT
+   have 0243/0248/0251 (tenant guard), 0245 (journal_lines insert guard), 0254
+   (no-empty-entries), 0255 (journal_lines period lock), 0259 (still the blind
+   8-check `ledger_checks`), 0260 (opening-batch gate) or 0261 (partner entry
+   audit). Applying only to dev from now on does not close that gap — it freezes
+   it. **Prod must be brought up to dev's guard set as its own piece of work.**
+
+No journal data was written to prod: 0 `opening_balance_batches`, and the
+fifteenth cash-control line exists only on dev. The divergence is schema-only.
+
+### Running the checker
+
+`scripts/check-migrations.mjs` already handles both environments:
+
+```
+npm run check:migrations                 # every configured environment
+npm run check:migrations -- --env dev    # one of them
+```
+
+It needs `SUPABASE_DEV_URL` / `SUPABASE_DEV_SERVICE_ROLE_KEY` and
+`SUPABASE_PROD_URL` / `SUPABASE_PROD_SERVICE_ROLE_KEY`. **`.env.local` currently
+sets neither** — it carries only `VITE_SUPABASE_URL` and the anon key — so the
+checker skips with a warning and verifies nothing. Configure both before relying
+on it.
+
+---
+
 ## What was wrong
 
 The database's `supabase_migrations.schema_migrations` held **244 rows**; the repo held
