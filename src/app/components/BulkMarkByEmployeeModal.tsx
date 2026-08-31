@@ -454,7 +454,7 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
         employee_id: emp.id,
         attendance_date: d,
         // Fold Rotation leave into the single canonical "Leave" token.
-        status: isDouble ? (isSecondDuty ? "double_duty" : "present") : (status === "rotation_leave" ? "Leave" : status),
+        status: isDouble ? (isSecondDuty ? "double_duty" : "present") : (status === "rotation_leave" ? "leave" : status),
         absent_reason: status === "absent" ? "awol" : null,
         scheduled_shift: sched,
         worked_shift: ws,

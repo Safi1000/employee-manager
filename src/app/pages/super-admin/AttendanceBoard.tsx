@@ -1131,7 +1131,7 @@ function ShiftDrillModal({
           const isExtraDuty = status === "double_duty" && ws !== g.scheduled_shift;
           const rowStatus = status === "double_duty"
             ? (isExtraDuty ? "double_duty" : "present")
-            : (status === "rotation_leave" ? "Leave" : status);
+            : (status === "rotation_leave" ? "leave" : status);
           const entry_type: EntryType = isExtraDuty ? "double_duty"
             : status === "relief_cover" ? "relief_cover"
             : "normal";

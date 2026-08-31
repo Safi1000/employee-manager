@@ -1477,7 +1477,29 @@ export function resolveEobiAmount(
   return client?.eobi_enabled ? Number(client.eobi_amount ?? 0) : 0;
 }
 
-export type AttendanceStatus = "Present" | "Absent" | "Leave";
+// The canonical attendance vocabulary — lowercase, one spelling per state
+// (0224). This type previously read "Present" | "Absent" | "Leave", which made
+// TypeScript certify the legacy capitalised tokens the CHECK constraint now
+// refuses. Label these for display via STATUS_LABEL, never by writing the
+// capitalised form back.
+export type AttendanceStatus =
+  | "present"
+  | "absent"
+  | "leave"
+  | "rest_day"
+  | "double_duty"
+  | "relief_cover"
+  | "blocked";
+
+export const STATUS_LABEL: Record<AttendanceStatus, string> = {
+  present: "Present",
+  absent: "Absent",
+  leave: "Leave",
+  rest_day: "Rest day",
+  double_duty: "Double duty",
+  relief_cover: "Relief cover",
+  blocked: "Blocked",
+};
 
 export type AttendanceRecord = {
   id: string;
