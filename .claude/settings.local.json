@@ -15,7 +15,8 @@
       "WebSearch",
       "WebFetch(domain:bayfikr.com)",
       "WebFetch(domain:bank.codes)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(echo \"EXIT:$?\")"
     ]
   }
 }

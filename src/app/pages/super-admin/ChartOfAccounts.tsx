@@ -24,7 +24,6 @@ import {
   type ChartAccount,
   type AccountType,
   type AccountNormalSide,
-  type JournalEntry,
   type JournalLine,
 } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
@@ -295,31 +294,17 @@ export default function ChartOfAccounts() {
     setManualSubmitting(true);
     setError(null);
 
-    // Insert journal_entry with manual=true, then two journal_lines.
-    const { data: entry, error: jeErr } = await supabase
-      .from("journal_entries")
-      .insert({
-        entry_date: manualForm.entry_date,
-        description: manualForm.description.trim() || "Manual adjustment",
-        source_table: null,
-        source_id: null,
-        is_reversal: false,
-        manual: true,
-        posted_by: profile?.id ?? null,
-      })
-      .select()
-      .single();
-
+    // One transaction via post_journal (0220). Inserting the entry and its lines
+    // as two PostgREST calls left the entry momentarily line-less, which the
+    // deferred debits=credits check rejects.
+    const { error: jeErr } = await supabase.rpc("post_manual_journal", {
+      p_entry_date: manualForm.entry_date,
+      p_description: manualForm.description.trim() || "Manual adjustment",
+      p_debit_account_id: manualForm.debit_account_id,
+      p_credit_account_id: manualForm.credit_account_id,
+      p_amount: amt,
+    });
     if (jeErr) { setError(jeErr.message); setManualSubmitting(false); return; }
-    const entryId = (entry as JournalEntry).id;
-
-    const { error: jlErr } = await supabase
-      .from("journal_lines")
-      .insert([
-        { journal_entry_id: entryId, account_id: manualForm.debit_account_id, debit: amt, credit: 0 },
-        { journal_entry_id: entryId, account_id: manualForm.credit_account_id, debit: 0, credit: amt },
-      ]);
-    if (jlErr) { setError(jlErr.message); setManualSubmitting(false); return; }
 
     setManualSubmitting(false);
     setManualOpen(false);
