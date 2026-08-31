@@ -1,0 +1,316 @@
+# The tenant guard: what the audit actually found
+
+Covers `0242`, `0242b`, `0242c`, `0243` and `supabase/tests/tenant_guard.sql`.
+**Everything below is applied to `crm-design-dev` only.** Production still
+carries the hole apart from `0240` and `0241`, which were applied there by named
+approval.
+
+---
+
+## 1. The population was three times larger than first reported
+
+The first pass filtered on *"the body never mentions `company_id`"* and read a
+mention as evidence of a tenant check. It is not. `post_journal` mentions
+`company_id` eleven times and never once compares it to the caller's.
+
+Re-derived by what each function **checks**:
+
+|  | count |
+|---|---:|
+| SECURITY DEFINER functions in `public` taking a uuid | 140 |
+| …comparing it against `current_company_id()` / `is_ssa_unscoped()` | 2 |
+| …checking some other authorisation (visibility, permission) | 4 |
+| **…with no authorisation check of any kind** | **134** |
+
+Split of the 138 unguarded:
+
+| | takes an object id | takes `p_company_id` directly |
+|---|---:|---:|
+| **write** | 47 | **30** |
+| read | 32 | 29 |
+
+The right-hand column is the half that was missed and the more dangerous one.
+**The caller names the tenant.** No id-guessing is required beyond one company
+id: `post_journal`, `seed_chart_of_accounts`, `next_invoice_number`,
+`fund_region`, `add_subscription_payment`, `run_ho_cost_allocation`.
+
+The old list of 46 was also **over-inclusive by five**: `has_perm` and
+`has_permission` take `text`, `regional_pl` takes a date, and `billing_summary`
+takes nothing and is one of the two genuinely self-scoped functions.
+
+---
+
+## 2. Four functions the name/volatility/return-type heuristic misclassified
+
+This is why `tenant_guard_gaps()` infers nothing and tests only whether the
+function calls the guard.
+
+| function | heuristic said | reading it says |
+|---|---|---|
+| `reassign_client_employee_codes` | read (VOLATILE, returns a count) | **write, and bulk.** Loops every `category = 'client'` employee of the client and calls `assign_employee_code`, which UPDATEs `employees.employee_code`, INSERTs `employee_code_history` and increments `company_counters`. **Not idempotent** — each call burns counter values and reissues codes. `employee_code` is the identifier on client-facing paperwork. |
+| `check_deploy_guard` | read (named "check", returns `text[]`) | **write.** Calls `raise_alert`, which INSERTs into another company's alert feed. |
+| `check_disbursement` | read (named "check", returns `text`) | **write.** Same `raise_alert` path on the `red` branch. |
+| `assert_cheque_capacity` | write (VOLATILE, named "assert") | **read.** Only SELECTs and raises. Corrected *down*, and it is not harmless — see §3. |
+
+The rule this establishes: **volatility and return type are both unreliable.**
+What decides it is whether the body reaches a write, including indirectly
+through `raise_alert`, `assign_employee_code` or `next_counter`.
+
+---
+
+## 3. Exception messages as an output channel
+
+Nobody had audited error strings as a disclosure surface. Every `raise` in
+`public` that interpolates a value was checked. Seven interpolate figures; three
+are genuine cross-tenant leaks, and all three are now closed by the guard —
+**because the guard is the first statement in the body**, before any select that
+could raise.
+
+| function | what the message disclosed |
+|---|---|
+| `assert_cheque_capacity` | `'Cheque capacity exceeded: linked items total PKR % > cheque amount PKR %'` — **two money figures** about another company's cheque, from a function that returns nothing. |
+| `post_opening_balances` | `'opening trial balance does not balance: debits minus credits = %'` — another company's opening trial-balance difference. |
+| `record_separation` | `'…this employee is marked present on %…'` — a date another company's employee worked. |
+
+Not leaks, recorded so nobody re-derives them: `post_journal` and
+`assert_journal_balanced` echo debit/credit totals the caller supplied;
+`enforce_guard_limit` and `cheque_apply_balance` fire on the caller's own write.
+
+**A separate existence oracle, found by reading rather than by pattern**:
+`record_invoice_payment` distinguished `'Invoice not found'` from
+`'Not authorised for this company'`. A caller walking uuids learned which
+invoice ids were **real**. It never returns the invoice, which is why it reads
+as safe. `0242b` puts `assert_same_company` first so both answer identically.
+
+`0242b` also found that **`post_manual_journal` never checked `p_branch_id`**,
+which it writes onto the journal entry and which the regional P&L reads back as
+the region. Not a disclosure — a foreign key written across a tenant boundary
+into the ledger. Guarded conditionally, since NULL is legitimate.
+
+---
+
+## 4. Which of the 59 `p_company_id` functions should not take it
+
+The tenant is already known from the session for any authenticated caller, so
+the parameter is a design smell. It is not always wrong, though, and the three
+groups are different.
+
+**Could derive it — 11 functions.** Called only from the frontend, always by an
+authenticated user acting on their own company, and called from nowhere else in
+the database:
+
+`accrue_attendance_bonuses`, `accrue_bonus_reserve`, `accrue_eid_bonuses`,
+`generate_bonus_pool`, `mirror_depreciation_to_reserve`, `request_approval`,
+`run_appreciation`, `run_depreciation`, `run_ho_cost_allocation`,
+`run_kpi_computation`, `sweep_ammo_discrepancy_alerts`.
+
+**Must keep it — 5 functions, for two different reasons.**
+
+* `add_subscription_payment` is called from `super-super-admin/Companies.tsx`.
+  An SSA acting on **another** company is the intended use, and it is exactly
+  the case the `is_ssa_unscoped()` escape in the guard exists for. Removing the
+  parameter would break the feature.
+* `ai_credit_reset_period`, `ai_credit_spend`, `ai_credit_status`,
+  `ai_credit_topup` are called only from Edge Functions on `service_role`
+  (`signup-complete`, `stripe-webhook`, `ai-chat`), which have no session and
+  therefore no derivable company.
+
+**Must keep it — 27 functions with internal callers.** They are helpers invoked
+with a company already resolved by their caller: `head_office_region` (30
+callers), `post_journal` (23), `reverse_journal_for_source` (15),
+`cash_account_for` (9), `next_counter` (5), and 22 others.
+
+**16 have no caller anywhere** — not in the frontend, not in an Edge Function,
+not in another function: `attendance_gate_mode_residue`, `avg_deployed_guards`,
+`billing_clients_on_head_office`, `bonus_accrual_missing`, `check_disbursement`,
+`first_breach_week`, `fund_region`, `interregion_net_position`, `ledger_checks`,
+`ledger_payroll_by_client`, `region_cash_entitlement`, `region_profit`,
+`repost_payslip_accruals_for_month`, `reserve_target`, `sweep_receipt_to_reserve`,
+`trueup_bonus_provision`. `fund_region` is the one worth a second look — it moves
+money between regions and nothing calls it.
+
+**No change made.** A parameter removal is a signature change, it belongs in its
+own migration, and it is no longer urgent now that the guard checks the claim.
+
+---
+
+## 5. The bug that mattered more than any of the above
+
+**0242 shipped a guard that never fired, and its own verification passed.**
+
+The helper exempted trusted backend roles like this:
+
+```sql
+if current_user not in ('authenticated', 'anon') then return; end if;
+```
+
+**SECURITY DEFINER sets `current_user` to the function owner.** That is what the
+mode does. All 135 guarded functions are SECURITY DEFINER owned by `postgres`,
+so `current_user` was `postgres` on every call, the exemption always matched,
+and the guard returned without checking anything. Measured, not reasoned:
+
+```
+as authenticated, outside a definer function : current_user = authenticated
+inside a definer function                    : current_user = postgres
+```
+
+`session_user` is no better — PostgREST connects as one authenticator role and
+switches with `SET LOCAL ROLE`, so it reads the same for `anon`, `authenticated`
+and `service_role` alike.
+
+**0242's verification passed throughout**, because it asserted that every
+qualifying function *calls* `assert_same_company` — a property a no-op satisfies
+perfectly. The suite caught it on its first run: **60 of 60 negative cases
+returned normally.**
+
+The replacement uses two signals that survive SECURITY DEFINER, because JWT
+claims are a session GUC rather than a role attribute — and they are already
+what `auth.uid()` and `current_company_id()` rest on, so this adds no new
+dependency. Unparseable claims **enforce**, not exempt.
+
+---
+
+## 6. Proof
+
+`supabase/tests/tenant_guard.sql`, run on dev:
+
+```
+population=135 seeded=10
+NEG[exercised=135 pass=135 fail=0 noguard=0 nofixture=0]
+POS[pass=129 fail=0 skip=6]
+gaps=0
+```
+
+Every one of the 135, not a sample. `NEG` is a session for company A calling
+each function with another company's row: all 135 raise exactly `Row not found`.
+`POS` is the same call with the caller's own row: none is refused, so the guard
+is not simply refusing everybody.
+
+**Seeding, and why it is not cheating.** Ten tables are entirely empty on dev —
+`alerts`, `bonus_pools`, `approval_requests`, `payroll_runs`, `fixed_assets`,
+`contract_mobilisations`, `opening_balance_batches`, `bonus_pool_allocations`,
+`posts`, `appraisals`. Without fixtures, 14 of the 135 report NO FIXTURE, which
+is **not a pass**: the guard refuses a missing row and a foreign row with the
+same message by design, so an absent row demonstrates only the
+no-existence-oracle property. The suite seeds a minimal row owned by another
+company, proves a genuine tenant refusal, and rolls it back.
+
+**The guard can fail.** Removing it from `effective_salary`:
+
+```
+BREAK -> gaps=1 (effective_salary)
+         NEG[exercised=135 pass=134 fail=1 noguard=1] gaps=1
+```
+
+Both detectors fire, and the population stays at 135 rather than shrinking to
+match — see §7.
+
+---
+
+## 7. Three bugs in the harness itself, worth recording
+
+Each one produced a *green-looking* result.
+
+1. **The population was derived from the fix.** An earlier version counted
+   `prosrc like '%assert_same_company%'`, so removing a guard shrank the
+   expected count to match and the suite reported all-pass over a smaller set —
+   the same vacuity that left `ledger_foundation.sql` dead from 0224 onward. It
+   now enumerates the population independently and a member with no guard is a
+   **failure**, not an absence.
+2. **Fixtures were resolved after the role switch.** RLS then hid company B from
+   the suite itself, turning all 76 resolved cases into NO FIXTURE and looking
+   exactly like a data shortage.
+3. **The guarded parameter is not always the first.** `post_manual_journal`
+   takes a date first and the guarded account id third; a uuid in position 1
+   produced a signature error that reads precisely like a guard failure.
+
+And a fourth, subtler: other uuid arguments are now passed as **NULL, not
+fabricated**. A fabricated uuid is foreign by construction, so a second guard
+refuses first and the result says nothing about the guard under test. That is
+what made `post_manual_journal` appear to refuse its own company.
+
+---
+
+## 8. What production needs
+
+In order. Each needs a named approval.
+
+1. `0242` — the guard and the 133 generated call sites.
+2. `0242b` — the two hand-guarded functions, the invoice existence oracle, the
+   `post_manual_journal` branch check.
+3. `0242c` — **without this the other two are a no-op.** They must go together
+   or not at all.
+4. `0243` — the standing gap check.
+
+Then run `supabase/tests/tenant_guard.sql` against production and confirm the
+same numbers.
+
+Also outstanding on production, from the earlier work: the recorded
+`statements` for `0240` and `0241` are the trimmed bodies that were applied and
+lack the files' headers. Syncing them is a separate named change.
+
+---
+
+## 9. Standing notes
+
+Things this audit established that outlive it. Recorded here because each one
+reads as obvious afterwards and was invisible in advance.
+
+### 9.1 `current_user` and `session_user` are unusable as caller identity
+
+Under PostgREST **plus** SECURITY DEFINER, neither one identifies the caller:
+
+| signal | why it fails |
+|---|---|
+| `current_user` | SECURITY DEFINER **sets** it to the function owner. Inside every guarded function it reads `postgres`, for every caller — an authenticated user, `anon`, `service_role` and a migration alike. |
+| `session_user` | PostgREST opens one connection as the authenticator role and switches with `SET LOCAL ROLE`. It reads the same for `anon`, `authenticated` and `service_role`. |
+
+**`auth.uid()` and the JWT role claim (`request.jwt.claims ->> 'role'`) are the
+only signals that survive**, because they are session GUCs rather than role
+attributes, and SECURITY DEFINER does not touch them. They are also already what
+`current_company_id()` rests on, so depending on them adds nothing new.
+
+Any future authorisation code in this schema must use those two. The guard
+carries a comment saying so at the point where the mistake would be repeated.
+
+### 9.2 A clean sweep on the first run is suspicious, not reassuring
+
+`assert_same_company` was the eighth instance in this project of a check that
+could not fail — and the most instructive, because the previous seven were
+**tests** that could not fail and this one was a **fix** that could not work,
+certified by a verification that could not tell the difference. The
+verification asserted the guard was *called*. A no-op is called.
+
+The 60-of-60 first run is the detail worth keeping. In this codebase, a perfect
+result on the first attempt has more often meant *the mechanism is not engaged*
+than *the mechanism works*. Treat it as a prompt to go and break something and
+confirm red, before believing the green.
+
+### 9.3 A harness's expected set must be derived independently of what it checks
+
+The suite's first version counted its population as
+`prosrc like '%assert_same_company%'` — the presence of the fix. Removing a
+guard then shrank the denominator to match and the suite reported all-pass over
+a smaller set.
+
+That is structurally identical to `ledger_foundation.sql` sitting dead from 0224
+onward while looking alive. **A harness whose denominator comes from the thing
+it measures cannot report a gap.** The population is now enumerated from the
+catalogue — SECURITY DEFINER, takes a uuid, not commented exempt — and a member
+with no guard is a failure rather than an absence.
+
+### 9.4 "Mentions" is not "checks" — three times now
+
+The same specific error has appeared three times in this one piece of work:
+
+1. The original audit filtered on *the body never mentions `company_id`* and
+   called the result 46. It was 138.
+2. `0242`'s generator filtered on *the body never mentions `current_company_id`*
+   and skipped two functions — caught by `0243` on its first run.
+3. `0243`'s own candidate list had to be written to test *whether the guard is
+   called*, specifically because a mention-based predicate would have passed
+   `tenant_guard_gaps()` itself, which mentions the guard in its documentation.
+
+A predicate over source text answers "does this string appear". It never
+answers "is this enforced". Where the two can differ, the check has to execute
+the code, not read it.

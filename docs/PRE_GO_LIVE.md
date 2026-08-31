@@ -6,41 +6,77 @@ about to carry real money is a defect until it has been run.
 
 ---
 
-## 0. Tenant isolation has never been verified, and three holes are open now
+## 0. Tenant isolation — closed on dev, NOT on production
 
-**Status: plan written (`docs/TENANT_ISOLATION_PLAN.md`), nothing built. Ranked
-above everything else.**
+**Status: fixed and proved on `crm-design-dev`. Production still carries the
+whole hole except the two items already approved and applied there (0240, 0241).
+Applying 0242 / 0242b / 0242c / 0243 to production needs a named approval and is
+the single largest remaining go-live blocker.**
 
-Multi-tenant isolation is enforced almost entirely by RLS policies. Every test
-in this project runs as `postgres`, which carries `rolbypassrls`, so **no test
-has ever verified isolation, and any test that appeared to would report PASS
-with the policies deleted.**
+Multi-tenant isolation is enforced almost entirely by RLS policies, and **a
+SECURITY DEFINER function has no caller RLS** — that is what the mode means. The
+audit found the problem was three times larger than first reported:
 
-One security company seeing another's guards, clients, payroll or rates is not
-a defect to schedule. It is the end of the product.
+|  | count |
+|---|---:|
+| SECURITY DEFINER functions in `public` taking a uuid | 140 |
+| …that checked the caller's tenant | **2** |
+| …with no authorisation check of any kind | **134** |
+| of those, writes | **77** |
 
-Looking for a way to test it found three things that need no test:
+The first pass said 46. That filter asked whether a body *mentions* `company_id`
+and read a mention as a check. `post_journal` mentions it eleven times and never
+compares it to the caller's. **59 functions took `p_company_id` as a parameter** —
+the caller simply names the tenant it wants to act on, no id-guessing required.
 
-1. **`verify_employee_identity`, `release_final_dues` and `disburse_payroll_run`
-   are SECURITY DEFINER, executable by `authenticated`, and mutate by id with no
-   tenant check.** A SECURITY DEFINER function has no caller RLS — that is what
-   the mode means — so any authenticated user of any tenant can mark another
-   company's employee identity-verified, release their final dues, or flip their
-   payroll run to disbursed, given only a UUID. These three were **sampled from
-   46 of the same shape**; the other 43 are unreviewed.
+### What is done, on dev only
 
-2. **`deployments_overlap_backup_0183` and `org_copy_map_0186` have RLS switched
-   off entirely** and grant SELECT/INSERT/UPDATE/DELETE/**TRUNCATE** to `anon`.
-   The first carries `company_id` — every tenant's deployment rows, readable and
-   truncatable with the anon key that ships in the client bundle. Both prod and
-   dev.
+* **0240** — RLS enabled and all grants revoked on
+  `deployments_overlap_backup_0183` and `org_copy_map_0186`. **Also applied to
+  production** by named approval.
+* **0241** — `EXECUTE` revoked from `anon` and from `PUBLIC` on every function in
+  `public`, plus default privileges for future ones. **Also applied to
+  production** by named approval. The grant-back list is empty; verified
+  externally against both databases with the real shipping anon key.
+* **0242 / 0242b** — `assert_same_company` added to 135 functions, in two
+  distinct and separately labelled patterns (`[resolved]` for an object id,
+  `[claimed]` for a `p_company_id` parameter).
+* **0242c** — fixes the fact that 0242's guard **never fired**. It exempted
+  trusted backends with `current_user`, and SECURITY DEFINER *sets*
+  `current_user` to the function owner, so the test matched for every caller.
+  Detection now uses `auth.uid()` and the JWT role claim, which survive
+  SECURITY DEFINER, and fails closed on unparseable claims.
+* **0243** — `tenant_guard_gaps()`, a standing check that returns any SECURITY
+  DEFINER function reachable by `authenticated` that takes a tenant-scoped uuid
+  and is not correctly guarded. It tests the property directly rather than
+  inferring from name, volatility or return type, because that heuristic
+  misclassified four functions in a single pass.
+* **`supabase/tests/tenant_guard.sql`** — proves it. 135 of 135 refused a
+  foreign company; none refused its own; zero gaps. Verified able to fail by
+  removing a guard and confirming red.
 
-3. **Zero tables have `FORCE ROW LEVEL SECURITY`**, on either environment. Not a
-   live leak for app users — they are not table owners — but it is why every
-   owner-role session, including every test and migration, silently ignores
-   every policy.
+### Residuals, deliberately left open
 
-Item 2 of that plan is the cheapest and most urgent: enabling RLS on two tables.
+1. **`is_action_approved` is exempt and does leak a boolean.** It takes a
+   polymorphic `(p_ref_table, p_ref_id)` pair, so there is no single table to
+   resolve against and the mechanical pattern cannot apply. It discloses
+   *whether an action was approved* for another company's ref_id — no amounts,
+   no names. Closing it needs a per-`ref_table` resolver, which is its own
+   change.
+2. **`FORCE ROW LEVEL SECURITY` is still off on every table**, both
+   environments. Not a live leak for app users, who are not table owners, but it
+   is why every owner-role session — including every test and migration —
+   silently ignores every policy. Pre-check first: report whether enabling it
+   breaks any legitimate owner-role path.
+3. **The two backup tables still exist and need retention dates.** Neither is
+   droppable yet: three SECURITY DEFINER functions still write
+   `deployments_overlap_backup_0183`, and `org_copy_map_0186` is the audit trail
+   of the guards-n-guides org clone. Give both a dated comment the way 0111 got
+   one. **Review date: 2027-02-28.** Dropping beats securing.
+4. **Nine of the 59 `p_company_id` functions should not take that parameter at
+   all** — see `docs/TENANT_GUARD_REPORT.md`. A signature change is its own
+   migration and is not urgent now that the guard checks the claim.
+
 
 ## 1. Period Close has never been exercised. Anywhere.
 
@@ -159,3 +195,27 @@ Bank-mode advances with no bank account and no cash movement, payslips marked
 disbursed with `amount_paid = 0`, invoices with a NULL `contract_id` that sit
 outside `uq_invoice_contract_month` entirely. Assertions against unreachable
 state prove nothing. See `docs/LEDGER_PHASE1_FIXTURE_AUDIT.md`.
+
+---
+
+## 7. `deployments_overlap_backup_0183` is a live log wearing a backup's name
+
+**A design decision, not a retention one. It is logged separately because
+inside a retention entry it would be read as "wait for the date" and forgotten.**
+
+The name says one-off snapshot. The behaviour says otherwise: `change_client`,
+`change_guard_shift` and `record_separation` — all SECURITY DEFINER — still
+INSERT into it, and its 43 rows span **2026-07-24 to 2026-08-25**, more than a
+month after migration 0183 created it. It is an operational overlap log that
+has been accumulating unnoticed.
+
+That mismatch is why it was still anon-readable and truncatable until 0240.
+Nobody secured it because everybody read the name and filed it as dead data.
+
+**The question to answer:** model it as what it is — a real name, a real RLS
+policy, a defined lifecycle — or stop the three functions writing to it so the
+snapshot can age out and be dropped.
+
+Until that is decided it carries a **review** date (2027-02-28), not a drop
+date. A drop date on a table that is still filling is a date that gets silently
+missed.
