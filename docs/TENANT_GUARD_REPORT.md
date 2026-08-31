@@ -534,6 +534,29 @@ Fixed in 0259 by summing the account subtree instead — and it had to ship *ahe
 of the data, because a check amended after the posting it misreads is a check
 amended to fit an answer.
 
+**ASK WHAT A CHECK MEASURES, NOT WHETHER IT PASSES.** Twice in one session a
+control was found blind *by construction* rather than by defect — not broken,
+but never able to see the thing it was named for:
+
+* `no_one_sided_entries` scored a journal entry with no lines at all as
+  balanced. Zero debits equal zero credits. The check was correct and the entry
+  was empty.
+* the bank and cash controls summed `group by system_key`, and the per-location
+  sub-accounts carry `system_key = NULL` by construction.
+
+Neither was found by running the check. Both were found by asking what the
+predicate actually ranges over and comparing that to what the name claims. A
+passing check answers "is this true of the rows I looked at"; it never answers
+"did I look at the right rows", and no amount of green tells the difference.
+
+The corollary, which is the operational rule: **a check amended after the
+posting it misreads is a check amended to fit an answer.** If the amendment is
+correct it is correct before the data exists, so ship it first and let it be red
+on its own terms. 0259 went in ahead of the G1 opening batch for exactly this
+reason — had it followed, its author would have been choosing between a
+migration that turns two checks green and one that does not, with the answer
+already known.
+
 ### A different failure mode: a pattern applied by hand and lost in the generated path
 
 The nine instances above are all *a check that could not fail*. The NULL
