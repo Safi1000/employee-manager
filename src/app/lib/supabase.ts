@@ -1805,12 +1805,11 @@ export type Partner = {
    */
   scope: "COMPANY" | "BRANCH";
   branch_id: string | null;
-  /**
-   * Regional partners only. How their take is figured: 'cash' = % of the
-   * region's Net Cash, 'revenue' = % of its Total Income. null keeps the
-   * legacy % of adjusted region profit.
-   */
-  basis: "cash" | "revenue" | null;
+  // NOTE: `basis` is gone. How a partner's take is figured is company policy
+  // (finance_settings.partner_remuneration_basis), not a per-partner field —
+  // a per-partner dropdown is how two partners came to disagree about what a
+  // rupee of profit is. Migration 0232 dropped the column; read the company
+  // setting instead.
   is_active: boolean;
   created_at?: string;
   updated_at?: string;

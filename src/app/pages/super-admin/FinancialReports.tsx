@@ -137,6 +137,9 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
 
   // ----- Partnership tab state -----
   const [partners, setPartners] = useState<Partner[]>([]);
+  // Company remuneration basis — 0232 dropped partners.basis, so the label
+  // below is one company-wide setting rather than a per-partner field.
+  const [companyBasis, setCompanyBasis] = useState<"cash" | "revenue" | null>(null);
   const [partnershipPeriod, setPartnershipPeriod] = useState<string>(previousMonthKey());
   const [loadingPartnership, setLoadingPartnership] = useState(false);
   const [partnerError, setPartnerError] = useState<string | null>(null);
@@ -477,6 +480,9 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
     // all-time invoice/payslip/expense scans, no partner bank transactions.
     const pRes = await supabase.from("partners").select("*").order("name");
     setPartners((pRes.data ?? []) as Partner[]);
+    supabase.from("finance_settings").select("partner_remuneration_basis").maybeSingle()
+      .then(({ data }) => setCompanyBasis(((data as { partner_remuneration_basis?: string } | null)
+        ?.partner_remuneration_basis ?? null) as "cash" | "revenue" | null));
     setLoadingPartnership(false);
   };
 
@@ -1067,9 +1073,9 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                             </td>
                             <td className="px-4 py-3 text-sm text-right">
                               <span className="text-brand-600">{Number(p.profit_share_percent)}%</span>
-                              {p.scope === "BRANCH" && p.basis && (
+                              {p.scope === "BRANCH" && companyBasis && (
                                 <div className="text-[10px] text-slate-500">
-                                  of {p.basis === "cash" ? "Net Cash" : "Total Income"}
+                                  of {companyBasis === "cash" ? "Net Cash" : "Total Income"}
                                 </div>
                               )}
                             </td>

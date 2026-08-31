@@ -65,7 +65,10 @@ export default function PartnerFormModal({
   const [scope, setScope] = useState<"COMPANY" | "BRANCH">("COMPANY");
   const [branchId, setBranchId] = useState("");
   const [share, setShare] = useState("");
-  const [basis, setBasis] = useState<"" | "cash" | "revenue">("");
+  // Remuneration basis is COMPANY policy (finance_settings.partner_remuneration_basis),
+  // not a per-partner choice — 0232 dropped partners.basis. Held here only to
+  // label the breakdown column and show what the share bites on.
+  const [companyBasis, setCompanyBasis] = useState<"cash" | "revenue" | null>(null);
   const [opening, setOpening] = useState("");
   const [startMonth, setStartMonth] = useState(""); // YYYY-MM — partner shares profit from here on
   const [busy, setBusy] = useState(false);
@@ -92,12 +95,18 @@ export default function PartnerFormModal({
     setScope((partner?.scope as "COMPANY" | "BRANCH") ?? "COMPANY");
     setBranchId(partner?.branch_id ?? "");
     setShare(partner ? String(partner.profit_share_percent) : "");
-    setBasis(((partner?.basis ?? "") as "" | "cash" | "revenue"));
     setOpening(partner ? String(partner.opening_balance ?? 0) : "");
     setStartMonth(
       partner?.start_month ? String(partner.start_month).slice(0, 7) : new Date().toISOString().slice(0, 7),
     );
     setEditClientId(null);
+    // RLS scopes finance_settings to the caller's company, so no filter needed.
+    void (async () => {
+      const { data } = await supabase
+        .from("finance_settings").select("partner_remuneration_basis").maybeSingle();
+      setCompanyBasis(((data as { partner_remuneration_basis?: string } | null)
+        ?.partner_remuneration_basis ?? null) as "cash" | "revenue" | null);
+    })();
   }, [isOpen, partner]);
 
   const loadBreakdown = useCallback(async () => {
@@ -183,7 +192,6 @@ export default function PartnerFormModal({
       scope,
       branch_id: scope === "BRANCH" ? branchId : null,
       profit_share_percent: pct,
-      basis: scope === "BRANCH" ? (basis || null) : null,
     };
     // Opening balance locks once set, so only send it while it is still editable.
     if (!partner || !partner.opening_balance_locked) {
@@ -271,18 +279,19 @@ export default function PartnerFormModal({
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Share bites on</label>
-              <ThemedSelect
-                value={basis}
-                disabled={editing}
-                onChange={(e) => setBasis(e.target.value as "" | "cash" | "revenue")}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm disabled:bg-slate-50 disabled:text-slate-400"
-              >
-                <option value="">Adjusted profit (legacy)</option>
-                <option value="cash">Net Cash — cash basis</option>
-                <option value="revenue">Total Income — revenue basis</option>
-              </ThemedSelect>
+              {/* Company policy, not a per-partner choice. It used to be a dropdown
+                  writing partners.basis — which is exactly how two partners could
+                  come to disagree about what a rupee of profit is, so 0232 hoisted
+                  it to finance_settings and dropped the column. Read-only here;
+                  change it once, for the company, in Finance settings. */}
+              <div className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm bg-slate-50 text-slate-600">
+                {companyBasis === "cash" ? "Net Cash — cash basis"
+                  : companyBasis === "revenue" ? "Total Income — revenue basis"
+                    : "Not configured"}
+              </div>
               <p className="text-[11px] text-slate-500 mt-1">
-                The Client Statements column their share is taken from.
+                Company-wide setting — the Client Statements column every partner's
+                share is taken from. Change it in Finance settings.
               </p>
             </div>
           </div>
@@ -337,7 +346,7 @@ export default function PartnerFormModal({
                 <thead className="bg-slate-50">
                   <tr className="text-xs text-slate-500 uppercase">
                     <th className="text-left px-3 py-2">Client</th>
-                    <th className="text-right px-3 py-2">{partner?.basis === "cash" ? "Net Cash" : "Total Income"}</th>
+                    <th className="text-right px-3 py-2">{companyBasis === "cash" ? "Net Cash" : "Total Income"}</th>
                     <th className="text-right px-3 py-2">Share</th>
                     <th className="text-right px-3 py-2">Amount</th>
                     <th className="text-right px-3 py-2">Edit</th>
