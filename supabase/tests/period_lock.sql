@@ -5,18 +5,20 @@
 --
 --   psql "$DATABASE_URL" -f supabase/tests/period_lock.sql
 --
--- STATUS: NOT VERIFIED END TO END SINCE THE G0.3 ADDITIONS.
+-- STATUS: GREEN END TO END. 67/67, canary complete, on dev (crm-design-dev).
 --
--- The payslips and invoices halves ran green as one file (37/37, canary
--- complete). Everything added for G0.3 - the E loop, the F loop, T12..T21, the
--- three fixtures and the unproven report - has been run against dev only as
--- standalone blocks carrying the same code, 11/11 and 19/21 with the two
--- exceptions reclassified into c_chq_elsewhere. The COMBINED canary across all
--- five derived sets plus v_t has therefore never been evaluated, and the canary
--- is the assertion that catches a truncated run.
+-- HOW TO RUN IT. This suite is one self-rolling-back DO block, like the other
+-- suites here, so it does NOT need psql and it does NOT need a service-role key.
+-- Paste it into the Supabase SQL editor, or run it over any connection that can
+-- execute SQL. An earlier version of this header claimed it needed SUPABASE_DEV_*
+-- in the environment; that was wrong. Those variables are for
+-- check-migrations.mjs and backfill-migration-sql.mjs, which talk to PostgREST.
+-- The psql line above is one way to run it, not a requirement.
 --
--- Do not call this suite green until it has run as one file. That needs
--- SUPABASE_DEV_* in the environment.
+-- THE PRECONDITION IS A PROFILE, NOT A CREDENTIAL. Whatever the connection, the
+-- suite adopts a real profile in SANDBOX TESTING ORG and asserts
+-- current_company_id() before running a single test, because the lock returns
+-- early for an unscoped session and every assertion would be vacuous.
 --
 -- WHY THIS SUITE EXISTS
 --
