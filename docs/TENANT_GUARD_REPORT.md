@@ -384,6 +384,27 @@ The suite reported FAIL against code that was behaving properly. A test that
 goes red while the system is right is how a real check gets deleted for being
 noisy.
 
+**Every guard needs a positive control proving the legitimate path still works.**
+A guard verified only by what it refuses is half tested, and the untested half is
+the one that takes production down. Two instances, both caught by a positive
+control and by nothing else:
+
+* 0245's first discriminator, `xmin = txid_current()`, was false for exactly the
+  rows the guard was meant to PERMIT, because every plpgsql `BEGIN…EXCEPTION`
+  block is a subtransaction with its own xid and `post_journal` is essentially
+  always called from inside one. It would have blocked all posting and passed
+  every refusal-only test.
+* 0242's guards raised on a legitimately absent id. `region_for_client(NULL)` is
+  a normal call — an expense need not have a client, and twelve functions make
+  it — and after 0242 it raised `Row not found`, breaking every expense insert.
+  The suite's positive control called each function with the caller's OWN id and
+  never with NULL: exhaustive in the refusing direction, and testing one of the
+  two shapes a legitimate call takes.
+
+**Prefer `now()` to `txid_current()` for "did this happen in the current
+transaction".** `now()` is the transaction timestamp and is stable across
+subtransactions; xids are not. This will come up again.
+
 A corollary that has now earned its place: **a clean sweep on the first run is
 suspicious, not reassuring.** In this codebase it has more often meant the
 mechanism is not engaged than that it works.

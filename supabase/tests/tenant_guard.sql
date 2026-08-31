@@ -42,6 +42,17 @@
 --             -> must raise exactly 'Row not found'
 --   POSITIVE  the same parameter set to the caller's OWN row
 --             -> must NOT raise 'Row not found'
+--   NULL      every uuid argument NULL
+--             -> must NOT raise 'Row not found'
+--
+-- The NULL direction exists because 0242 shipped without it and broke
+-- production paths. A tenant-scoped id is frequently OPTIONAL —
+-- region_for_client(NULL) is a normal call, an expense need not have a client —
+-- and the generated guards raised on it, killing every expense insert. The
+-- fix (0248) is a call-site `if <param> is not null then` rather than tolerance
+-- inside assert_same_company, which must keep raising on NULL or a missing row
+-- becomes distinguishable from a foreign one. Verified: 135/135 tolerate NULL,
+-- and 59/59 [claimed] functions still refuse a foreign company.
 --
 -- A refusal-only suite would score a perfect pass against a guard that refuses
 -- everybody, which is not a fix but an outage. Any OTHER error in the positive
