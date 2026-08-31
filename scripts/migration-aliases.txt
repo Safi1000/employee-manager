@@ -1,0 +1,21 @@
+# repo_stem = applied_name
+#
+# Known equivalences between a repo filename and the name a migration was
+# recorded under. Migrations before ~0109 were recorded with a descriptive name
+# and no number, and several were renamed slightly on the way into the repo, so
+# a plain string match reports them as drift in BOTH directions at once.
+#
+# Only add a pair here when you have confirmed the two are the SAME migration.
+# A pair added to silence a failure hides exactly what this file exists to find.
+
+init                                     = init_employee_manager_schema
+partners_and_bank_ownership              = partners_and_bank_account_ownership
+title_and_employee_bank_name             = profile_title_and_employee_bank_name
+must_change_password                     = add_must_change_password
+drive_columns_invoices_cheques_expenses  = drive_columns_for_invoices_cheques_expenses
+inventory_branches_cheque_types_auto_wht = inventory_branches_cheque_types_auto_wht_v2
+attendance_payroll_double_duty           = attendance_payroll_double_duty_and_backdate
+partner_allocation_and_opex_detail       = partnership_allocation_and_opex_detail
+partnership_allocation_client_overrides  = partnership_allocation_honours_client_overrides
+partnership_revenue_basis_total_income   = partnership_revenue_basis_uses_total_income
+cash_locations_base                      = create_cash_locations

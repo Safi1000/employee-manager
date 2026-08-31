@@ -19,15 +19,26 @@
 -- Dropping is safe: no view or table depends on the function (only
 -- partner_ledger calls it, from inside its body, which is not a hard dependency).
 
+-- GUARD. This tests the condition it actually means: has 0225 already run?
+--
+-- The previous guard compared max(schema_migrations.version) against the string
+-- '0224b'. That worked on production only by accident — production's versions are
+-- timestamps ('20260831041236'), and '2' > '0' in a string comparison, so it
+-- returned early for the wrong reason. Had production's versioning scheme ever
+-- changed, the guard would have dropped partnership_allocation with nothing left
+-- to recreate it, because 0225 is skipped on an already-migrated database.
+--
+-- branch_revenue_for_month is the exact marker: 0225 creates it, and 0225 is what
+-- recreates partnership_allocation afterwards. If it exists, 0225 has run and
+-- there is nothing here to clear.
 do $drop_pa$
 declare
-  v_max text;
-  r     record;
+  r record;
 begin
-  select max(version) into v_max from supabase_migrations.schema_migrations;
-
-  if v_max is not null and v_max > '0224b' then
-    raise notice '0224b: later migrations already applied (max=%) — leaving partnership_allocation alone', v_max;
+  if exists (select 1 from pg_proc p
+              join pg_namespace n on n.oid = p.pronamespace
+             where n.nspname = 'public' and p.proname = 'branch_revenue_for_month') then
+    raise notice '0224b: branch_revenue_for_month exists — 0225 has run, leaving partnership_allocation alone';
     return;
   end if;
 

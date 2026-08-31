@@ -16,6 +16,16 @@
 --   T10  no source-record cascades into the journal remain           (0220)
 --   T11  journal triggers still post after post_journal was recreated(0220)
 --   T12  advances hit employee advances, not client AR, w/ dimension (0219 A7)
+--   T13-T15 payroll accrues independently of disbursement           (0222 A5)
+--   T16  failing-check set still equals the expected-red allowlist   (0229)
+--
+-- T4 and T16 assert the SET of failing ledger_checks against v_expected_red,
+-- not a count of zero. Two checks are red BY DESIGN. A suite that is
+-- permanently red trains a reader to skip the line.
+--
+-- The run ends with a CANARY line stating how many assertions executed. T9
+-- called is_ledger_maintenance() — dropped by 0224 — from 0224 until
+-- 2026-08-31, which aborted the block at T9 and silently skipped T10-T16.
 --
 -- Point v_co at the company under test.
 
@@ -29,6 +39,16 @@ declare
   v_n       int;
   v_ok      boolean;
   v_failed  int;
+  v_red     text[];
+  v_asserts int;
+  -- Checks that are MEANT to be red. A permanently-red harness trains people to
+  -- skip the line, which is how a two-failure state became invisible. Assert the
+  -- failing SET against this allowlist, so a check that STOPS being red without
+  -- this list changing is itself a failure.
+  v_expected_red text[] := array[
+    'no_billing_clients_on_head_office',   -- Ironclad filed on Head Office
+    'no_gate_mode_in_attendance_status'    -- 24 leaked gate-mode rows
+  ];
   v_results text := chr(10);
 begin
   select id into v_ar from public.chart_of_accounts
@@ -81,14 +101,15 @@ begin
     v_results := v_results || 'T3  unbalanced_direct_insert     PASS  ' || left(v_msg, 58) || chr(10);
   end;
 
-  -- T4: reconciliation must be green for every company.
-  select count(*) into v_failed
+  -- T4: the failing set must equal the expected-red allowlist exactly.
+  select coalesce(array_agg(distinct k.check_name order by k.check_name), '{}')
+    into v_red
     from public.companies c
     cross join lateral public.ledger_checks(c.id) k
    where not k.passed;
-  v_results := v_results || case when v_failed = 0
-    then 'T4  ledger_checks_all_companies  PASS  (0 failing)'
-    else 'T4  ledger_checks_all_companies  FAIL  (' || v_failed || ' failing)' end || chr(10);
+  v_results := v_results || case when v_red = v_expected_red
+    then 'T4  ledger_checks_allowlist      PASS  (failing set = expected red)'
+    else 'T4  ledger_checks_allowlist      FAIL  got {' || array_to_string(v_red, ',') || '}' end || chr(10);
 
   select id into v_e from public.journal_entries
    where company_id = v_co and status = 'posted' limit 1;
@@ -133,7 +154,7 @@ begin
     else 'T8  app_roles_cannot_maintain    FAIL  (' || v_n || ' privileged)' end || chr(10);
 
   -- T9: flag off => not maintenance, even for postgres.
-  select public.is_ledger_maintenance() into v_ok;
+  select public.is_maintenance_session() into v_ok;   -- renamed by 0224
   v_results := v_results || case when not v_ok
     then 'T9  flag_off_is_not_maintenance  PASS'
     else 'T9  flag_off_is_not_maintenance  FAIL' end || chr(10);
@@ -201,11 +222,19 @@ begin
     then 'T15 disbursement_posts           PASS'
     else 'T15 disbursement_posts           FAIL' end || chr(10);
 
-  select count(*) into v_failed
+  select coalesce(array_agg(distinct k.check_name order by k.check_name), '{}')
+    into v_red
     from public.companies c cross join lateral public.ledger_checks(c.id) k where not k.passed;
-  v_results := v_results || case when v_failed = 0
-    then 'T16 checks_after_full_payroll    PASS  (0 failing)'
-    else 'T16 checks_after_full_payroll    FAIL  (' || v_failed || ' failing)' end || chr(10);
+  v_results := v_results || case when v_red = v_expected_red
+    then 'T16 checks_after_full_payroll    PASS  (failing set unchanged)'
+    else 'T16 checks_after_full_payroll    FAIL  got {' || array_to_string(v_red, ',') || '}' end || chr(10);
+
+  -- CANARY. A harness whose silence cannot be told apart from "all good" and
+  -- "died at line 40" is not a harness. T9 aborted this suite from 0224 until
+  -- 2026-08-31 and nobody could see it from the output.
+  v_asserts := array_length(string_to_array(trim(both chr(10) from v_results), chr(10)), 1);
+  v_results := v_results || '--- CANARY: ' || v_asserts || '/16 assertions executed'
+    || case when v_asserts = 16 then ' (complete)' else ' *** SUITE TRUNCATED ***' end || chr(10);
 
   raise exception 'ROLLBACK_LEDGER_TESTS: %', v_results;
 end $$;

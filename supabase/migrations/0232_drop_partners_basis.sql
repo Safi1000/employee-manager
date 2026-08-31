@@ -85,14 +85,28 @@ comment on function public.partner_basis_for_report(text) is
 -- hoisted to a NOT NULL, CHECK-constrained company column that branch cannot
 -- fire — but only if it is dead TODAY too, otherwise this migration silently
 -- changes what a real partner is paid.
-
+-- Skipped when the column is already gone: production applied 0232 through the
+-- SQL editor, which records no schema_migrations row, so a runner will replay
+-- this against a database where partners.basis no longer exists. The assert is
+-- moot there — the branch it protects was removed with the column — but an
+-- unguarded reference to a dropped column aborts the migration long before the
+-- IF EXISTS drop at the foot of this file is ever reached.
 do $$
 declare v_n int;
 begin
-  select count(*) into v_n
-    from public.partners p
-   where p.scope = 'BRANCH' and p.is_active
-     and (p.basis is null or lower(p.basis) not in ('cash', 'revenue'));
+  if not exists (select 1 from information_schema.columns
+                  where table_schema = 'public' and table_name = 'partners'
+                    and column_name = 'basis') then
+    raise notice '0232: partners.basis already dropped — fallback assert skipped';
+    return;
+  end if;
+
+  execute $q$
+    select count(*) from public.partners p
+     where p.scope = 'BRANCH' and p.is_active
+       and (p.basis is null or lower(p.basis) not in ('cash', 'revenue'))
+  $q$ into v_n;
+
   if v_n > 0 then
     raise exception
       '% active regional partner(s) have no usable basis and are currently paid by the region-profit fallback — removing that branch would change their pay. Resolve first.',
@@ -283,4 +297,8 @@ $function$;
 -- ---------------------------------------------------------------------------
 -- 5. Drop last, so any failure above leaves the column readable.
 -- ---------------------------------------------------------------------------
-alter table public.partners drop column basis;
+-- IF EXISTS so the migration is replayable. Production applied 0232 through
+-- the SQL editor, which records no schema_migrations row, so a runner will
+-- legitimately try this again against a database where the column is already
+-- gone. Without the guard that attempt aborts here and blocks everything after.
+alter table public.partners drop column if exists basis;
