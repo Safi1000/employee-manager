@@ -13,8 +13,27 @@
 --   T23  accrue_attendance_bonuses disqualifies on lowercase absence
 --   T24  attendance_leave_history sees the folded 'leave' token
 --   T25  is_maintenance_session() exists and is closed by default
+--   T26  invoice revenue sits in its SERVICE month (A4)
+--   T27  'blocked' is a gate refusal mode and is not recordable as a status
+--   T31  an ordinary status change on that same row still succeeds
+--   T29  the residue helper and ledger_checks agree about gate-mode residue
 --
 -- Point v_co at the company under test.
+--
+-- WHAT THIS SUITE CANNOT TEST, AND WHY
+--
+-- The SA-lock on attendance_records is enforced by RLS POLICIES
+-- (no_modify_sa_locked, no_delete_sa_locked, from 0014/0053), not by triggers.
+-- Both roles these suites can run as — postgres and service_role — carry
+-- rolbypassrls, and attendance_records does not have FORCE ROW LEVEL SECURITY.
+-- So those policies are bypassed here and CANNOT be exercised from any session
+-- this file can open. Do not add an SA-lock assertion to this suite: it would
+-- report PASS without the policy existing at all. Testing it needs an
+-- authenticated non-privileged session, i.e. the application.
+--
+-- The same applies to every RLS policy in the schema. Trigger-enforced rules
+-- (the period lock, journal immutability, the attendance gates) DO fire for
+-- privileged roles and are testable here; policy-enforced rules are not.
 
 do $$
 declare
@@ -26,8 +45,21 @@ declare
   v_branch  uuid;
   v_got     numeric;
   v_want    numeric;
+  v_asserts int;
+  v_red     boolean;
   v_results text := chr(10);
 begin
+  -- PRECONDITIONS. Assert the fixtures this suite reads actually exist, before
+  -- any assertion depends on them. A suite pointed at a company that is not
+  -- there reports a screen of green zeros: "0 mixed-case rows" is a PASS whether
+  -- the vocabulary was normalised or the company simply has no attendance.
+  if not exists (select 1 from public.companies where id = v_co) then
+    raise exception 'attendance suite ABORTED: company % does not exist in this database', v_co;
+  end if;
+  if not exists (select 1 from public.attendance_records where company_id = v_co) then
+    raise exception 'attendance suite ABORTED: company % has no attendance rows, so T17/T18/T20/T24 would pass vacuously', v_co;
+  end if;
+
   -- T17: two vocabularies must no longer coexist.
   select count(*) into v_n from public.attendance_records where status <> lower(status);
   v_results := v_results || case when v_n = 0
@@ -78,13 +110,27 @@ begin
   -- Asserted structurally: a data-driven check only catches this in periods
   -- where such a region happens to exist, and the defect is that a region CAN
   -- be dropped at all.
+  --
+  -- COMMENTS ARE STRIPPED FIRST, and that is not a detail. This test searched
+  -- raw prosrc and reported FAIL against a CORRECT function, because 0225's
+  -- rewrite carries the line:
+  --
+  --     -- No `continue` on zero: a branch that billed nothing reaches zero
+  --
+  -- A structural test that greps source cannot tell code from prose, so a
+  -- comment documenting the ABSENCE of `continue` was read as its presence. The
+  -- same shape as everything else this file guards against — the test was not
+  -- testing what its name says — only inverted: it failed while the code was
+  -- right, which is the variant that gets a real check deleted for being noisy.
   select count(*) into v_n
-    from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
+    from pg_proc p
+    join pg_namespace ns on ns.oid = p.pronamespace
+    cross join lateral (select regexp_replace(p.prosrc, '--[^' || chr(10) || ']*', '', 'g') as src) s
    where ns.nspname = 'public' and p.proname = 'run_ho_cost_allocation'
-     and strpos(p.prosrc, 'continue') = 0
-     and strpos(p.prosrc, 'does not exhaust the pool') > 0
-     and strpos(p.prosrc, 'avg_deployed_guards') = 0
-     and strpos(p.prosrc, 'branch_revenue_for_month') > 0;
+     and strpos(s.src, 'continue') = 0
+     and strpos(s.src, 'branch_revenue_for_month') > 0
+     and strpos(s.src, 'avg_deployed_guards') = 0
+     and strpos(p.prosrc, 'does not exhaust the pool') > 0;  -- this one IS the comment
   v_results := v_results || case when v_n = 1
     then 'T21 ho_driver_revenue_no_skip    PASS  (revenue driver, no skip, pool assertion)'
     else 'T21 ho_driver_revenue_no_skip    FAIL  (deployment driver or skip remains)' end || chr(10);
@@ -101,16 +147,14 @@ begin
     else 'T22 ho_pool_fully_accounted      FAIL  (' || v_n || ' run(s) short)' end || chr(10);
 
   -- T23: an employee absent only in lowercase must NOT be bonus-eligible.
-  select count(*) into v_n
-    from public.employees e
-   where e.company_id = v_co
-     and exists (select 1 from public.attendance_records a
-                  where a.employee_id = e.id and a.status = 'absent')
-     and not exists (select 1 from public.attendance_records a
-                      where a.employee_id = e.id and a.status = 'Absent');
-  -- After 0224 'Absent' no longer exists, so this set is either empty (all
-  -- folded) or fully covered by the lower() predicate. What must hold is that
-  -- the function's own predicate is case-insensitive.
+  --
+  -- A data-shaped query used to stand here and was DEAD — its result was
+  -- overwritten by the structural query below before anything read it, so it
+  -- looked like an assertion and was not one. It was also unanswerable by
+  -- construction: after 0224 the token 'Absent' does not exist, so the set it
+  -- counted is empty whether the predicate is case-insensitive or not.
+  --
+  -- What must actually hold is a property of the function, so assert that.
   select count(*) into v_n
     from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
    where ns.nspname = 'public' and p.proname = 'accrue_attendance_bonuses'
@@ -170,33 +214,68 @@ begin
                         and c.shift_code = a.worked_shift)
    order by a.attendance_date desc limit 1;
 
-  begin
-    update public.attendance_records set status = 'blocked'
-     where employee_id = v_emp and attendance_date = v_day;
-    v_results := v_results || 'T27 rejects_gate_mode_status      FAIL  (accepted)' || chr(10);
-  exception when others then
-    get stacked diagnostics v_msg = message_text;
-    v_results := v_results || 'T27 ' || case when v_msg like '%gate refusal%'
-      then 'rejects_gate_mode_status      PASS  (own trigger fired)'
-      else 'rejects_gate_mode_status      INCONCLUSIVE — ' || left(v_msg, 38) end || chr(10);
-  end;
+  -- NO ROW, NO TEST. If that SELECT finds nothing, v_emp and v_day are NULL and
+  -- both UPDATEs below match ZERO rows. T27 would then report FAIL (safe), but
+  -- T31 would report PASS on an update that changed nothing — green for an
+  -- assertion that never ran. Say so instead of scoring it.
+  if v_emp is null or v_day is null then
+    v_results := v_results
+      || 'T27 rejects_gate_mode_status      NO FIXTURE (no eligible row; not asserted)' || chr(10)
+      || 'T31 normal_status_change_ok      NO FIXTURE (no eligible row; not asserted)' || chr(10);
+  else
+    begin
+      update public.attendance_records set status = 'blocked'
+       where employee_id = v_emp and attendance_date = v_day;
+      v_results := v_results || 'T27 rejects_gate_mode_status      FAIL  (accepted)' || chr(10);
+    exception when others then
+      get stacked diagnostics v_msg = message_text;
+      v_results := v_results || 'T27 ' || case when v_msg like '%gate refusal%'
+        then 'rejects_gate_mode_status      PASS  (own trigger fired)'
+        else 'rejects_gate_mode_status      INCONCLUSIVE — ' || left(v_msg, 38) end || chr(10);
+    end;
 
-  -- T31: an ordinary status change on that same row must still succeed.
-  begin
-    update public.attendance_records set status = 'absent'
-     where employee_id = v_emp and attendance_date = v_day;
-    v_results := v_results || 'T31 normal_status_change_ok      PASS' || chr(10);
-  exception when others then
-    get stacked diagnostics v_msg = message_text;
-    v_results := v_results || 'T31 normal_status_change_ok      FAIL  ' || left(v_msg, 42) || chr(10);
-  end;
+    -- T31: an ordinary status change on that same row must still succeed, and
+    -- must actually touch a row — checked, not assumed.
+    begin
+      update public.attendance_records set status = 'absent'
+       where employee_id = v_emp and attendance_date = v_day;
+      get diagnostics v_n = row_count;
+      v_results := v_results || case when v_n = 1
+        then 'T31 normal_status_change_ok      PASS  (1 row updated)'
+        else 'T31 normal_status_change_ok      FAIL  (' || v_n || ' rows updated)' end || chr(10);
+    exception when others then
+      get stacked diagnostics v_msg = message_text;
+      v_results := v_results || 'T31 normal_status_change_ok      FAIL  ' || left(v_msg, 42) || chr(10);
+    end;
+  end if;
   perform set_config('app.skip_attendance_lock', '', true);
 
-  -- T29: the legacy residue is still named so it cannot be forgotten.
+  -- T29: the residue helper and the ledger check must agree.
+  --
+  -- This previously read `case when v_n >= 1 then 'PASS' else 'PASS'` — both
+  -- branches. It could not fail, which makes it a print statement wearing a
+  -- test's name, and it sat in a suite whose whole subject is gate-mode residue.
+  --
+  -- The real property: attendance_gate_mode_residue() and ledger_checks'
+  -- no_gate_mode_in_attendance_status are two views of one fact and must never
+  -- disagree. Residue present <=> that check red. Either direction failing means
+  -- one of them has drifted, which is exactly what nobody would notice.
   select count(*) into v_n from public.attendance_gate_mode_residue(v_co);
-  v_results := v_results || case when v_n >= 1
-    then 'T29 residue_is_named             PASS  (' || v_n || ' guard(s))'
-    else 'T29 residue_is_named             PASS  (none left)' end || chr(10);
+  select not k.passed into v_red
+    from public.ledger_checks(v_co) k
+   where k.check_name = 'no_gate_mode_in_attendance_status';
+  v_results := v_results || case
+    when v_red is null then 'T29 residue_agrees_with_check    FAIL  (check no_gate_mode_in_attendance_status absent)'
+    when (v_n > 0) = v_red then 'T29 residue_agrees_with_check    PASS  (' || v_n || ' residue, check red=' || v_red || ')'
+    else 'T29 residue_agrees_with_check    FAIL  (' || v_n || ' residue but check red=' || v_red || ')'
+  end || chr(10);
+
+  -- CANARY. attendance_status.sql had none, while ledger_foundation.sql did —
+  -- so an abort here truncated silently, which is the defect the canary exists
+  -- to make impossible.
+  v_asserts := array_length(string_to_array(trim(both chr(10) from v_results), chr(10)), 1);
+  v_results := v_results || '--- CANARY: ' || v_asserts || '/13 assertions executed'
+    || case when v_asserts = 13 then ' (complete)' else ' *** SUITE TRUNCATED ***' end || chr(10);
 
   raise exception 'ROLLBACK_ATTENDANCE_TESTS: %', v_results;
 end $$;
