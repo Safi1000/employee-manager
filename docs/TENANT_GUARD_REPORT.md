@@ -367,6 +367,23 @@ you have not tested anything.** Where the change is cheap, make it and watch the
 red. `tenant_guard.sql` does this by removing a guard; `period_lock.sql` does it
 by deriving its column set from the schema so a missing assertion cannot hide.
 
+**A control that exercises a different trigger from the one under test is not a
+control.** Instance ten came from exactly this. A probe of `journal_lines`
+carried `set_config('app.ledger_maintenance','on')` in its preamble, and its
+control — "`journal_entries` UPDATE is refused" — passed, so the session looked
+unprivileged. It was not: `enforce_period_lock` **ignores** maintenance mode
+while `enforce_journal_immutable` **honours** it. Two triggers, two gates, and a
+control that proved the wrong one was awake. The finding was reported as the
+most serious in the project and had to be retracted.
+
+**A test must prove its mutation took effect before asserting on the result.**
+Instance eleven, and the second in the failing direction: `period_lock.sql`
+mutated `per_day_salary` with `col + 1`, the column was NULL, `NULL + 1` is
+NULL, the row never changed, and 0237's carve-out correctly permitted a no-op.
+The suite reported FAIL against code that was behaving properly. A test that
+goes red while the system is right is how a real check gets deleted for being
+noisy.
+
 A corollary that has now earned its place: **a clean sweep on the first run is
 suspicious, not reassuring.** In this codebase it has more often meant the
 mechanism is not engaged than that it works.

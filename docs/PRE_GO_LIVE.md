@@ -360,3 +360,41 @@ SUPABASE_DEV_URL=... SUPABASE_DEV_SERVICE_ROLE_KEY=... npm run backfill:migratio
 Dry run first — it writes nothing without `--apply`. `set_migration_statements`
 must be created for the run and dropped after; the exact SQL is at the foot of
 the script, and it is deliberately not a migration.
+
+---
+
+## 10. BLOCKER — a posted financial document cannot be edited. At all.
+
+**Live today. Open month. Zero periods closed. All 11 source tables.**
+
+Creating an invoice posts its journal entry and works. **Editing that invoice,
+in the same open month, is refused:**
+
+```
+closed periods for this company           : 0
+CTRL entries posted on invoice INSERT     : 1
+TEST edit that invoice in the OPEN month  : REFUSED ("Posted journal rows are immutable")
+```
+
+Every edit routes through `reverse_journal_for_source`, which ends with
+`update journal_entries set status = 'reversed'` on the original.
+`enforce_journal_immutable` refuses every UPDATE outside a maintenance session,
+in any period. So a posted entry cannot be marked reversed, therefore cannot be
+reversed, therefore the document cannot be edited.
+
+Affects `advances`, `cash_deposits`, `cheques`, `custody_transfers`, `expenses`,
+`fixed_assets`, `interregion_transactions`, `invoice_payments`, `invoices`,
+`partner_account_entries`, `payslips`.
+
+**Magnitude: zero rupees, and a support incident on roughly day two.** This is
+not a lock behaving strictly — it is the system being unable to correct a typo
+in an invoice amount. It is invisible only because both live orgs have no
+financial data; the only ledger anywhere is SANDBOX TESTING ORG.
+
+**Fixed by C** (derive `reversed` from `reversal_of_entry_id` instead of writing
+it back onto the original), which removes the UPDATE that fails. See
+`docs/LEDGER_REVERSAL_STATUS_AUDIT.md` — the audit found the change is two call
+sites, and that one of them is separately wrong by 2,582,280.
+
+**Confirm on landing:** editing a posted invoice, payslip and expense must all
+work end to end.
