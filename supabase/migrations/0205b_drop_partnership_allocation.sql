@@ -21,13 +21,33 @@
 
 do $drop_pa$
 declare
-  v_max text;
-  r     record;
+  r record;
 begin
-  select max(version) into v_max from supabase_migrations.schema_migrations;
-
-  if v_max is not null and v_max > '0205b' then
-    raise notice '0205b: later migrations already applied (max=%) — leaving partnership_allocation alone', v_max;
+  -- GUARD. Tests the condition it actually means: has 0206 already run?
+  --
+  -- This previously compared max(schema_migrations.version) against the string
+  -- '0205b'. That is a proxy, not a test, and it was correct on production only
+  -- by accident: production's versions are timestamps, so '2' > '0' returned
+  -- early for the right reason by the wrong logic. Change the versioning scheme
+  -- — or run this against a ledger using the short numbered format, as dev does
+  -- — and the guard inverts, dropping partnership_allocation with nothing left
+  -- to recreate it, because 0206 is skipped on an already-migrated database.
+  --
+  -- Asking the ledger for the successor BY NAME compares no versions at all
+  -- and works on both ledger formats: production records the migration with a
+  -- numeric prefix, dev records the stripped name, and removing the prefix
+  -- reduces the two to the same key.
+  --
+  -- Two spellings because the repo filename and the name production actually
+  -- recorded it under differ; see scripts/migration-aliases.txt. Matching only
+  -- one of them would silently fall through to the drop.
+  if exists (
+    select 1 from supabase_migrations.schema_migrations m
+     where regexp_replace(coalesce(nullif(m.name, ''), m.version), '^[0-9]{4}[a-z]?_', '')
+           = any (array['partnership_allocation_client_overrides',
+                       'partnership_allocation_honours_client_overrides'])
+  ) then
+    raise notice '0205b: 0206 already applied — leaving partnership_allocation alone';
     return;
   end if;
 
