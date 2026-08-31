@@ -429,3 +429,84 @@ the pre-guard bodies exist only in whatever the catalogue held before the run.
 * **`sa@sandbox.test` is not addressed here.** It is a separate decision and this
   deployment does not depend on it — but it also does not fix it, and the account
   remains a super-admin credential on the production auth tenant.
+
+---
+
+# S1 — APPLIED TO PRODUCTION, 2026-09-01
+
+`0242`, `0242b`, `0243` applied to `crm-design` (`mmkfpnshxjcyijhuydgr`) under
+named authorisation. Each migration's own verification block ran inside its
+transaction and passed.
+
+## Recorded SQL equals the file — checked, not assumed
+
+Migration text cannot bypass context on the way IN, so all three were
+retyped into `apply_migration`. The digest check written in the previous round
+is what makes that safe, and this is its first use in anger:
+
+| migration | version | file md5 | recorded md5 |
+|---|---|---|---|
+| `0242_tenant_guard` | `20260831233913` | `f8bcb6cf53b973f36d7b321c49b0eaac` | **equal** |
+| `0242b_tenant_guard_handwritten_two` | `20260831234010` | `21a765c236e352c7bef89c2db4b8d301` | **equal** |
+| `0243_tenant_guard_gaps` | `20260831234055` | `eb5933127b925192eca454f599ed8b31` | **equal** |
+
+Three for three. No transcription error.
+
+## Observations against S0's predictions
+
+| | predicted | observed |
+|---|---|---|
+| `[resolved]` guards after `0242` | 74 | **74** |
+| `[claimed]` guards after `0242` | 59 | **59** |
+| `[resolved]` after `0242b` (+2) | 76 | **76** |
+| functions carrying a guard | 135 | **135** |
+| `tenant_guard_gaps()` (0243 per-function form) | 0 | **0** |
+
+**The 136 in the raw count is not a discrepancy.** 133 rewritten by `0242`,
+2 by `0242b` = 135 functions carrying a guard, plus `tenant_guard_gaps()`
+itself, whose body contains the string `assert_same_company` because it
+searches for it. Confirmed by naming the one function that matches on the
+string but carries no `tenant guard [` marker: it is `tenant_guard_gaps`.
+Stated because "predicted 135, got 136" is the shape of an ambush, and this
+one is a counting artefact with a name.
+
+`guard_completeness` — the rewrite target no dev run has ever covered, dropped
+from dev by `0278` and still live here — **was rewritten**, and `0243`'s check
+passes over it.
+
+## THE POINT OF THIS STAGE: behaviour is unchanged, and the leak is still open
+
+Captured before S1 and again after, through the same channel that demonstrated
+the leak — `set local role authenticated` with `sa@sandbox.test`'s claims,
+read-only calls only:
+
+```
+                              BEFORE S1        AFTER S1
+avg_monthly_net_payroll(foreign co)   0               0
+count_client_employees(foreign client) 2              2
+effective_salary(foreign employee)    {40000.00, 0.00, 1290.32, 2026-06-29}   identical
+employees rows via TABLE (foreign)    0               0
+```
+
+Identical. **Production is exactly as exposed as it was this morning.** 135
+functions now call a guard that returns without checking anything, because
+`current_user` inside SECURITY DEFINER is the owner and `0242`'s helper exempts
+it. That is `0242c`'s bug, reproduced here deliberately and on purpose.
+
+Three green steps are not progress. This one is worth exactly one thing: the
+rewrite landed without changing behaviour, so any behaviour change at S2 is
+attributable to S2.
+
+## Permitting-direction baseline, captured while the guard is inert
+
+For comparison at S2, when these must still succeed:
+
+```
+region_for_client(NULL)            -> NULL   (does not raise)
+count_client_employees(OWN client) -> 25
+```
+
+## Not done, deliberately
+
+No V1 account was created — per plan it is created at the start of S2. No
+write path was exercised on production. `0285`, `0251`, `0252` not applied.
