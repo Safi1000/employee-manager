@@ -111,6 +111,50 @@ allocation computed from them.
 
 ## What is fixed
 
-Only `journal_on_advance` (0256). Every other row changes GL behaviour on a live
-ledger and deserves its own decision and its own before/after measurement. None
-of them is fixed by this document.
+| fix | migration | verified by |
+|---|---|---|
+| `payment_mode` + `advance_date`, `employee_id`, `client_id` on advances | 0256 | probe, then P1 |
+| `partner_id` on partner entries | 0257 | P2 |
+| **the posting date, in all eight remaining triggers** | 0258 | P1 across 9 source tables |
+
+`supabase/tests/repost_sets.sql` asserts the class as one property — move a
+posted row's date, the old month must be vacated — rather than eight separate
+assertions. **9 passed, 0 failed** on dev.
+
+Two of the eight were not a one-line edit, and that is worth remembering.
+`journal_on_cheque` and `journal_on_expense_settlement` have no general "did
+anything relevant change" test; both are driven by a status transition and
+return early when the status did not move. The date case needed a *third*
+branch — staying in the state while the date moves — alongside entering and
+leaving it. Added as an `or` they would have compiled, matched the other six by
+eye, and changed nothing.
+
+## What is still open
+
+
+
+Everything in the ranked list except items 1 and 2, which are done. Remaining,
+in the same order:
+
+3. **`paid_via` / `amount` on `journal_on_expense_settlement`** — the Cash/Bank
+   defect 0256 fixed for advances, on the settlement path, plus a settlement
+   whose amount can drift from the accrual it clears.
+4. **`payment_mode` on `journal_on_invoice_payment`** — the same defect again,
+   on the receipt path. Three instances of one bug across three tables, and only
+   one of the three is fixed.
+5. **`custodian_location_id` / `cheque_type` / `direction` on
+   `journal_on_cheque`** — G3 rewrites this function; fold it in there.
+6. **`pl_category` on `journal_on_expense`** — changes the expense account key
+   through `map_expense_to_coa_key` with no repost.
+
+And one that is not in the table at all, because it is a different shape:
+**`journal_on_partner_entry` depends on three columns of the PARTNERS row** —
+`coa_account_id`, `scope`, `branch_id`. Changing a partner's capital account or
+scope does not repost the entries already posted against them. Cross-table
+staleness; no repost condition on the entry can see it.
+
+Separately: **`partner_account_entries` has no audit trigger.** advances,
+cheques, expenses, invoices and payslips all carry `log_audit_change`; the table
+holding partner capital movements does not. That is why "has any row ever
+changed partner_id" could not be answered from history and had to be answered
+from state instead.

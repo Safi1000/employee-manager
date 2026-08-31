@@ -427,6 +427,39 @@ control and by nothing else:
 transaction".** `now()` is the transaction timestamp and is stable across
 subtransactions; xids are not. This will come up again.
 
+**An audit's detection rule is itself a claim and needs its own control.**
+Instance fourteen, and the first time this shape appeared in a *methodology*
+rather than in a test.
+
+The repost-set audit enumerated, per trigger, the columns the posting reads
+minus the columns its change-detection watches. The "watches" set was computed
+as *any `old.X` reference in the function*. That rule is wrong, and wrong in the
+silent direction: in most of these functions the posting date appears as
+`old.<date>` **only inside the `reverse_journal_for_source` call**, never in a
+comparison. Counting a use as a comparison made eight date columns invisible and
+produced a confident, clean report about a property that was broken in eight
+places.
+
+The audit had every other control this project asks for — it was checked against
+live `prosrc` rather than comments, it was read before being believed, and its
+findings were probed. None of that helps when the detection rule matches the
+wrong thing, because every downstream step faithfully processes a population
+that was wrong before it started.
+
+Same family as the FORCE RLS pre-check testing a non-owner and the unpinned
+project ref reporting on a database it never contacted: **a green result about
+the wrong subject.** The control the audit needed is the one §9.6 already
+prescribes — name what would make it red. "A trigger that posts at an uncompared
+date" was a case the first rule could not produce, and one worked example run
+by hand would have shown it.
+
+**The corollary is sharper than the bug.** `enforce_period_lock` carries a whole
+branch for date moves — *"Moving a transaction out of a closed month requires
+reopening it first"* — and the ledger never performed the move it guards. A
+control defending against something that could not happen, sitting beside the
+thing that did happen, unguarded. Worth checking, whenever a control looks
+thorough, whether the event it refuses is an event the system can produce.
+
 **A generator that reads its input once and writes many times loses all but the
 last write. Re-read the target inside the loop.** The second-resolver-map run
 requested three guards on one function, emitted three `CREATE OR REPLACE`
