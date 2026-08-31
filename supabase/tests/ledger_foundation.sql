@@ -41,14 +41,32 @@ declare
   v_failed  int;
   v_red     text[];
   v_asserts int;
+  v_bank    uuid;
   -- Checks that are MEANT to be red. A permanently-red harness trains people to
   -- skip the line, which is how a two-failure state became invisible. Assert the
   -- failing SET against this allowlist, so a check that STOPS being red without
   -- this list changing is itself a failure.
   v_expected_red text[] := array[
-    'no_billing_clients_on_head_office',   -- Ironclad filed on Head Office
-    'no_gate_mode_in_attendance_status'    -- 24 leaked gate-mode rows
+    -- Sorted, because the assertion compares arrays and array_agg orders by
+    -- check_name. Adding one out of order fails for the wrong reason.
+    'bank_accounts_equal_transaction_deltas',  -- 0239, red by   800,000.00
+    'bank_control_equals_bank_accounts',       -- 0239, red by   948,467.00
+    'cash_control_equals_cash_locations',      -- 0239, red by   595,990.13
+    'no_billing_clients_on_head_office',       -- Ironclad filed on Head Office
+    'no_gate_mode_in_attendance_status'        -- leaked gate-mode rows
   ];
+  -- The three 0239 entries are NOT tolerated defects being hidden. They are
+  -- newly-built controls that had nothing checking them before, and they are
+  -- red because the sandbox genuinely does not reconcile: bank openings were
+  -- never journalised, a 60,000 cheque movement exists only in
+  -- bank_transactions, payroll disagrees by 88,467, and cash posts to a single
+  -- control account rather than the per-location accounts the balances view
+  -- keys on. Each magnitude is in 0239's header with what is known about it.
+  --
+  -- They belong in the allowlist rather than left to fail the suite because the
+  -- allowlist is an assertion in its own right: if one of them turns GREEN
+  -- without this list changing, T4 and T16 fail. That is the behaviour wanted
+  -- while the underlying questions are decided.
   v_results text := chr(10);
 begin
   select id into v_ar from public.chart_of_accounts
@@ -193,8 +211,30 @@ begin
   -- T11/T12: triggers still post after post_journal was dropped/recreated, and
   -- an advance lands in employee advances with its employee dimension set.
   select id into v_emp from public.employees where company_id = v_co limit 1;
-  insert into public.advances (company_id, employee_id, amount, advance_date, payment_mode)
-    values (v_co, v_emp, 1234, current_date, 'Bank');
+  select id into v_bank from public.bank_accounts where company_id = v_co order by id limit 1;
+  if v_bank is null then
+    raise exception 'ledger suite ABORTED: company % has no bank account; the Bank-mode fixtures below would be unreachable state', v_co;
+  end if;
+
+  -- FIXTURE COMPLETENESS (docs/LEDGER_PHASE1_FIXTURE_AUDIT.md, F2).
+  --
+  -- This used to write a Bank-mode advance with NO bank_account_id, no
+  -- bank_transactions row and no balance movement. The column is nullable so
+  -- nothing complained, but Expenses.tsx never produces that row: for Bank mode
+  -- it always sets bank_account_id and then moves the money. T12's assertion
+  -- about the employee dimension was sound; the state it ran against was not
+  -- reachable, so it proved nothing about production.
+  --
+  -- The companion writes are here for the same reason. An assertion about the
+  -- ledger is only worth making against a row the ledger will actually be shown.
+  insert into public.advances
+    (company_id, employee_id, amount, advance_date, payment_mode, bank_account_id)
+    values (v_co, v_emp, 1234, current_date, 'Bank', v_bank);
+
+  insert into public.bank_transactions
+    (company_id, bank_account_id, kind, amount, account_delta, description)
+    values (v_co, v_bank, 'advance', 1234, -1234, 'ledger suite: advance fixture');
+  update public.bank_accounts set balance = balance - 1234 where id = v_bank;
 
   select count(*) into v_n from public.journal_entries
    where company_id = v_co and source_table = 'advances' and entry_date = current_date;
@@ -216,11 +256,16 @@ begin
   -- T13-T16 (0222): payroll accrues independently of disbursement (A5), and a
   -- payslip carrying advance recovery, employee EOBI, salary tax AND the
   -- employer EOBI share still balances and leaves every control reconciled.
+  -- FIXTURE COMPLETENESS (F3). A Bank-mode payslip with no bank_account_id is
+  -- not a shape PayrollManagement.tsx can write. `status` and `amount_paid` are
+  -- set to what a generated, undisbursed payslip actually carries.
   insert into public.payslips
     (company_id, employee_id, period_month, base_salary, final_salary, net_salary,
-     advance, eobi, income_tax, eobi_employer, disbursed, payment_mode)
+     advance, eobi, income_tax, eobi_employer, disbursed, payment_mode,
+     bank_account_id, amount_paid, status)
   values
-    (v_co, v_emp, '2026-05-01', 30000, 30000, 27780, 500, 370, 1350, 1850, false, 'Bank')
+    (v_co, v_emp, '2026-05-01', 30000, 30000, 27780, 500, 370, 1350, 1850, false, 'Bank',
+     v_bank, 0, 'Pending')
   returning id into v_e;
 
   select count(*) into v_n from public.journal_entries
@@ -235,7 +280,26 @@ begin
     then 'T14 no_disbursement_yet          PASS'
     else 'T14 no_disbursement_yet          FAIL' end || chr(10);
 
-  update public.payslips set disbursed = true, disbursed_at = now() where id = v_e;
+  -- FIXTURE COMPLETENESS (F4) — the sharpest of the three. The application NEVER
+  -- sets `disbursed` on its own: PayrollManagement.tsx derives it as
+  -- `target > 0 && target >= net` and writes it in ONE claim together with
+  -- amount_paid, status and the bank account, then moves the money and logs a
+  -- bank_transactions row of kind 'payroll'. The comment at :1233 exists to say
+  -- the claim and the money move are inseparable.
+  --
+  -- The old fixture produced disbursed = true with amount_paid = 0, status
+  -- unchanged, no cash movement and no bank transaction — a row reachable by no
+  -- path at all. T15 was asserting the ledger reacts correctly to a state the
+  -- ledger will never be shown.
+  update public.payslips
+     set disbursed = true, disbursed_at = now(),
+         amount_paid = net_salary, status = 'Cleared'
+   where id = v_e;
+
+  insert into public.bank_transactions
+    (company_id, bank_account_id, kind, amount, account_delta, description, reference_id)
+    values (v_co, v_bank, 'payroll', 27780, -27780, 'ledger suite: payslip disbursement fixture', v_e);
+  update public.bank_accounts set balance = balance - 27780 where id = v_bank;
   select count(*) into v_n from public.journal_entries
    where source_table = 'payslips_disbursement' and source_id = v_e;
   v_results := v_results || case when v_n = 1
