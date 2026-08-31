@@ -40,7 +40,7 @@ declare
   v_results text := '';
   v_asserts int;
   v_expected int;
-  c_fixed_tests constant int := 11;  -- T1..T11 below; hand-maintained, and independent of the derived sets
+  c_fixed_tests constant int := 16;  -- T1..T16 below; hand-maintained, and independent of the derived sets
   v_msg     text;
   v_n       int;
 
@@ -86,6 +86,45 @@ declare
   v_inv_protected text[];
   v_branch  uuid;
   v_contract uuid;
+
+  -- G0.3 — the three tables the lock guards and no suite had ever exercised.
+  --
+  -- Same construction as the other two: schema-derived protected set, short
+  -- hand-maintained permitted list, one assertion per protected column, plus
+  -- positive controls for what each carve-out is FOR.
+  --
+  -- c_*_elsewhere is the piece these three need and the first two did not.
+  -- cheques.amount and cheques.bank_account_id are refused by a separate
+  -- immutability trigger ("Cheque amount and bank account cannot be changed"),
+  -- not by the period lock. Left in the derived loop they would be scored as
+  -- passes for the wrong reason — instance ten, a control proving a different
+  -- trigger was awake. They are excluded by name, with the reason, rather than
+  -- quietly counted.
+  c_adv_permitted constant text[] := array['notes', 'updated_at'];
+  c_exp_permitted constant text[] := array[
+    'notes', 'updated_at', 'receipt_path', 'receipt_file_name',
+    'drive_file_id', 'drive_view_url',
+    'payable_status', 'paid_via', 'paid_bank_account_id', 'paid_at'
+  ];
+  c_chq_permitted constant text[] := array[
+    'notes', 'updated_at', 'attachment_path', 'attachment_file_name',
+    'drive_file_id', 'drive_view_url'
+  ];
+  c_chq_elsewhere constant text[] := array['amount', 'bank_account_id'];
+  v_adv_protected text[];
+  v_exp_protected text[];
+  v_chq_protected text[];
+  v_advance uuid;
+  v_expense uuid;
+  v_cheque  uuid;
+  v_emp2    uuid;
+  v_bank    uuid;
+  v_cat     uuid;
+  v_loc     uuid;
+  v_tbl     text;
+  v_id      uuid;
+  v_set     text[];
+  v_label   text;
 begin
   perform set_config('app.ledger_maintenance', 'on', true);
 
@@ -126,6 +165,36 @@ begin
   if coalesce(array_length(v_inv_protected, 1), 0) < 8 then
     raise exception 'period_lock suite ABORTED: derived invoice protected set is % column(s); invoices should yield at least 8',
       coalesce(array_length(v_inv_protected, 1), 0);
+  end if;
+
+  -- G0.3 — the same derivation for the three tables 0255 gave carve-outs to.
+  select array_agg(c.column_name order by c.column_name) into v_adv_protected
+    from information_schema.columns c
+   where c.table_schema='public' and c.table_name='advances'
+     and c.data_type in ('numeric','integer','bigint','smallint','double precision','real','date')
+     and c.is_generated='NEVER' and not (c.column_name = any (c_adv_permitted));
+
+  select array_agg(c.column_name order by c.column_name) into v_exp_protected
+    from information_schema.columns c
+   where c.table_schema='public' and c.table_name='expenses'
+     and c.data_type in ('numeric','integer','bigint','smallint','double precision','real','date')
+     and c.is_generated='NEVER' and not (c.column_name = any (c_exp_permitted));
+
+  select array_agg(c.column_name order by c.column_name) into v_chq_protected
+    from information_schema.columns c
+   where c.table_schema='public' and c.table_name='cheques'
+     and c.data_type in ('numeric','integer','bigint','smallint','double precision','real','date')
+     and c.is_generated='NEVER'
+     and not (c.column_name = any (c_chq_permitted))
+     and not (c.column_name = any (c_chq_elsewhere));
+
+  if coalesce(array_length(v_adv_protected,1),0) < 2
+     or coalesce(array_length(v_exp_protected,1),0) < 2
+     or coalesce(array_length(v_chq_protected,1),0) < 1 then
+    raise exception 'period_lock suite ABORTED: derived G0.3 sets are advances=%, expenses=%, cheques=% — too small to mean anything',
+      coalesce(array_length(v_adv_protected,1),0),
+      coalesce(array_length(v_exp_protected,1),0),
+      coalesce(array_length(v_chq_protected,1),0);
   end if;
 
   select id into v_co from public.companies where name = 'SANDBOX TESTING ORG';
@@ -204,6 +273,29 @@ begin
      (v_month + interval '1 month - 1 day')::date, 100000, 85000, 118000, 0, 'Unpaid',
      15000, 2000, 20000, 2000)
   returning id into v_invoice;
+
+  -- G0.3 fixtures. An advance, a payable expense and a pending outgoing cash
+  -- cheque, all dated in the month about to close. payable_status starts
+  -- 'Pending' ('Unpaid' is not in the check constraint) so T14 can settle it.
+  select id into v_emp2 from public.employees where company_id = v_co limit 1;
+  select id into v_bank from public.bank_accounts where company_id = v_co limit 1;
+  select id into v_cat  from public.expense_categories limit 1;
+  select id into v_loc  from public.cash_locations where company_id = v_co limit 1;
+
+  insert into public.advances
+    (company_id, employee_id, amount, advance_date, payment_mode, cash_location_id)
+  values (v_co, v_emp2, 5000, v_month, 'Cash', v_loc) returning id into v_advance;
+
+  insert into public.expenses
+    (company_id, category_id, amount, expense_date, payment_mode, description, payable_status)
+  values (v_co, v_cat, 7000, v_month, 'Payable', 'period_lock suite', 'Pending')
+  returning id into v_expense;
+
+  insert into public.cheques
+    (company_id, bank_account_id, cheque_number, amount, cheque_date,
+     status, direction, cheque_type, custodian_location_id)
+  values (v_co, v_bank, 'PLOCK-CHQ', 9000, v_month, 'pending', 'outgoing', 'cash', v_loc)
+  returning id into v_cheque;
 
   -- Close the month. Everything below runs against a genuinely closed period.
   insert into public.accounting_periods (company_id, period_month, closed_at)
@@ -287,6 +379,49 @@ begin
                 then ' FAIL  (only the journal lock caught it — carve-out still open)'
                 else ' FAIL  (' || left(v_msg, 60) || ')' end || chr(10);
     end;
+  end loop;
+
+  -- E01..Enn — G0.3. advances, cheques and expenses. No ride-along is needed
+  -- here: 0255's carve-outs are pure subtractions with no gating first
+  -- condition, so a protected column touched on its own does reach the lock.
+  -- (That is the difference from the D loop, and it is why the two loops look
+  -- different rather than one being wrong.)
+  v_t := 0;
+  foreach v_tbl in array array['advances', 'expenses', 'cheques'] loop
+    v_set := case v_tbl when 'advances' then v_adv_protected
+                        when 'expenses' then v_exp_protected
+                        else v_chq_protected end;
+    v_id  := case v_tbl when 'advances' then v_advance
+                        when 'expenses' then v_expense
+                        else v_cheque end;
+    foreach v_col in array v_set loop
+      v_t := v_t + 1;
+      select c.data_type into v_msg
+        from information_schema.columns c
+       where c.table_schema='public' and c.table_name=v_tbl and c.column_name=v_col;
+      v_label := 'E' || lpad(v_t::text, 2, '0') || ' ' || rpad(v_tbl || '.' || v_col, 26);
+      begin
+        if v_msg = 'date' then
+          execute format('update public.%I set %I = coalesce(%I, $2) + 1 where id = $1', v_tbl, v_col, v_col)
+            using v_id, v_month;
+        else
+          execute format('update public.%I set %I = coalesce(%I, 0) + 1 where id = $1', v_tbl, v_col, v_col)
+            using v_id;
+        end if;
+        v_results := v_results || v_label || ' FAIL  (edit accepted in a closed month)' || chr(10);
+      exception when others then
+        v_msg := sqlerrm;
+        v_results := v_results || v_label
+          || case when v_msg like '%[' || v_tbl || ']%'
+                  then ' PASS  (refused by the ' || v_tbl || ' lock)'
+                  when v_msg like '%[journal_entries]%'
+                  then ' FAIL  (only the journal lock caught it)'
+                  -- Anything else refused it: a NOT NULL, a check constraint, or
+                  -- another trigger. That is not this lock working, and scoring
+                  -- it as a pass is instance ten.
+                  else ' FAIL  (refused by something else: ' || left(v_msg, 45) || ')' end || chr(10);
+      end;
+    end loop;
   end loop;
 
   -- T1 — disbursement fields are the permitted set and must pass.
@@ -415,6 +550,68 @@ begin
       || left(sqlerrm, 70) || ')' || chr(10);
   end;
 
+  -- T12..T15 — G0.3 positive controls. Each carve-out exists for a specific act
+  -- that legitimately happens after the month closes; a guard verified only by
+  -- what it refuses is half tested.
+  begin
+    update public.advances set notes = 'period_lock suite' where id = v_advance;
+    v_results := v_results || 'T12 advance_notes_allowed         PASS' || chr(10);
+  exception when others then
+    v_results := v_results || 'T12 advance_notes_allowed         FAIL  (' || left(sqlerrm, 60) || ')' || chr(10);
+  end;
+
+  begin
+    update public.expenses set receipt_path = 'r.pdf', receipt_file_name = 'r.pdf',
+                               notes = 'period_lock suite'
+     where id = v_expense;
+    v_results := v_results || 'T13 expense_receipt_allowed       PASS' || chr(10);
+  exception when others then
+    v_results := v_results || 'T13 expense_receipt_allowed       FAIL  (' || left(sqlerrm, 60) || ')' || chr(10);
+  end;
+
+  -- T14 is the one that distinguishes 0255 from "permit the document columns".
+  -- Settling a closed-month payable posts at paid_at, i.e. into the OPEN month,
+  -- so it must pass — and it must pass through the expenses lock, not by the
+  -- journal lock happening not to mind.
+  begin
+    update public.expenses
+       set payable_status = 'Paid', paid_via = 'Bank',
+           paid_bank_account_id = v_bank, paid_at = now()
+     where id = v_expense;
+    v_results := v_results || 'T14 expense_settlement_allowed    PASS  (posts at paid_at, open month)' || chr(10);
+  exception when others then
+    v_msg := sqlerrm;
+    v_results := v_results || 'T14 expense_settlement_allowed    FAIL  ('
+      || case when v_msg like '%[journal_entries]%' then 'journal lock refused the settlement posting'
+              else left(v_msg, 55) end || ')' || chr(10);
+  end;
+
+  begin
+    update public.cheques set notes = 'period_lock suite', attachment_file_name = 'c.pdf'
+     where id = v_cheque;
+    v_results := v_results || 'T15 cheque_document_allowed       PASS' || chr(10);
+  exception when others then
+    v_results := v_results || 'T15 cheque_document_allowed       FAIL  (' || left(sqlerrm, 60) || ')' || chr(10);
+  end;
+
+  -- T16 — DELIBERATELY STILL REFUSED, and by [cheques] specifically.
+  --
+  -- journal_on_cheque posts the clearance at cheque_date, so permitting `status`
+  -- would move a posting into the closed month and leave the journal lock to
+  -- refuse it — the wrong-lock pathology. This assertion is the standing record
+  -- of that decision: when G3 makes clearing post at the clearance date, this
+  -- test should be inverted deliberately, not discovered to have started failing.
+  begin
+    update public.cheques set status = 'cleared', cleared_at = now() where id = v_cheque;
+    v_results := v_results || 'T16 cheque_clearing_refused       FAIL  (accepted; posting lands in a closed month)' || chr(10);
+  exception when others then
+    v_msg := sqlerrm;
+    v_results := v_results || 'T16 cheque_clearing_refused       '
+      || case when v_msg like '%[cheques]%' then 'PASS  (intended until G3 moves the posting date)'
+              when v_msg like '%[journal_entries]%' then 'FAIL  (carve-out let it through; journal lock caught it)'
+              else 'FAIL  (' || left(v_msg, 50) || ')' end || chr(10);
+  end;
+
   -- T8 — reopening restores writes. A lock that cannot be lifted is an outage.
   delete from public.accounting_periods where company_id = v_co and period_month = v_month;
   begin
@@ -431,7 +628,9 @@ begin
   -- a literal, so adding a money column to payslips raises the expected count
   -- and the loop must actually cover it.
   v_asserts := array_length(string_to_array(trim(both chr(10) from v_results), chr(10)), 1);
-  v_expected := array_length(v_protected, 1) + array_length(v_inv_protected, 1) + c_fixed_tests;
+  v_expected := array_length(v_protected, 1) + array_length(v_inv_protected, 1)
+              + array_length(v_adv_protected, 1) + array_length(v_exp_protected, 1)
+              + array_length(v_chq_protected, 1) + c_fixed_tests;
   v_results := v_results || '--- CANARY: ' || v_asserts || '/' || v_expected || ' assertions executed'
     || case when v_asserts = v_expected then ' (complete)' else ' *** SUITE TRUNCATED ***' end || chr(10);
 

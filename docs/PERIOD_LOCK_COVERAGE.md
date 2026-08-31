@@ -181,3 +181,57 @@ None has ever had its lock exercised, on either environment. Extending the
 derived-column-set treatment to them is the obvious next step and is the same
 mechanical change made here.
 MDEOF
+
+---
+
+## G0.3 — advances, cheques, expenses (0255)
+
+All seven guarded tables now have coverage. Five carry a carve-out stated as a
+subtraction; `invoice_payments` INSERT has none by decision (0237) and
+`journal_entries` never had one.
+
+| table | permitted | proved by |
+|---|---|---|
+| advances | notes, updated_at | E01–E02, T12 |
+| expenses | notes, document, payable settlement | E03–E05, T13, T14 |
+| cheques | notes, document — **not** clearing | E06, T15, T16 |
+
+**Why clearing is excluded.** `journal_on_expense_settlement` posts at
+`coalesce(paid_at, current_date)`; `journal_on_cheque` posts at `cheque_date`.
+Same workflow — a July document completed in August — and only the first lands
+in the open month. Permitting `cheques.status` would wave the clearance through
+the cheques lock and leave `trg_journal_entries_period_lock` to refuse it, which
+is the wrong-lock pathology 0237 removed carve-out (b) for. **A July cheque
+cannot be cleared once July closes.** That is a named limit, and G3 removes it
+by making clearance post at the clearance date.
+
+### Two findings from the G0.3 probes. Neither is fixed here.
+
+**1. An advance switched from Cash to Bank keeps crediting the cash location.**
+`journal_on_advance` chooses its credit line from `payment_mode` but reposts only
+on `amount`, `branch_id`, `cash_location_id`. Measured on dev, open month:
+
+```
+credit line after INSERT (Cash) : a44fb748…  (= cash_account_for(location))
+credit line after UPDATE (Bank) : a44fb748…  (STILL the cash location)
+journal entries for the advance : 1
+```
+
+The money left the bank; the ledger says it left the cash box. This is the G0.2
+shape — the posting reads a column the repost condition does not watch — and it
+lands directly on the two controls G1 and G2 are about to reconcile. Fixing it
+changes GL behaviour, so it is reported, not fixed.
+
+Two adjacent suspicions were probed and are **not** defects, recorded so they are
+not re-raised: changing `client_id` on an expense *does* repost, because
+`inherit_region_expense` writes `branch_id`, which is in the repost set; and the
+payable settlement path is handled by its own trigger rather than being missing.
+
+**2. The derived loop only reaches numeric and date columns.** advances yields
+2, expenses 3, cheques 1 — these tables are mostly uuid and text. So
+`payment_mode`, `category_id`, `cash_location_id`, `custodian_location_id` and
+the rest are refused by the lock and proved by nothing, exactly the state
+payslips was in before the derivation. invoices got T9/T10 by hand for
+`branch_id` and `contract_id`; the equivalent hand-written assertions for these
+three are not written. The honest statement of coverage is *every money and date
+column*, not *every column*.
