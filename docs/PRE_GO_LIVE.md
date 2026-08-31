@@ -63,11 +63,9 @@ the caller simply names the tenant it wants to act on, no id-guessing required.
    *whether an action was approved* for another company's ref_id — no amounts,
    no names. Closing it needs a per-`ref_table` resolver, which is its own
    change.
-2. **`FORCE ROW LEVEL SECURITY` is still off on every table**, both
-   environments. Not a live leak for app users, who are not table owners, but it
-   is why every owner-role session — including every test and migration —
-   silently ignores every policy. Pre-check first: report whether enabling it
-   breaks any legitimate owner-role path.
+2. **`FORCE ROW LEVEL SECURITY`: pre-check done, and the answer is that it
+   would change nothing.** Not a blocker. Details below in item 8 — the earlier
+   framing of this line was wrong about the cause.
 3. **The two backup tables still exist and need retention dates.** Neither is
    droppable yet: three SECURITY DEFINER functions still write
    `deployments_overlap_backup_0183`, and `org_copy_map_0186` is the audit trail
@@ -219,3 +217,130 @@ snapshot can age out and be dropped.
 Until that is decided it carries a **review** date (2027-02-28), not a drop
 date. A drop date on a table that is still filling is a date that gets silently
 missed.
+
+---
+
+## 8. FORCE ROW LEVEL SECURITY — pre-check complete, NOT a blocker
+
+**Result: enabling it breaks nothing, and protects nothing. Do not schedule it
+as a security measure. This item can close.**
+
+The earlier entry said zero tables have `FORCE ROW LEVEL SECURITY`, and that
+this "is why every owner-role session silently ignores every policy". The first
+half is true. The second half names the wrong cause.
+
+Measured on dev:
+
+| role | `rolbypassrls` | owns tables? |
+|---|---|---|
+| `postgres` | **true** | all 136 tables, all 259 SECURITY DEFINER functions |
+| `service_role` | **true** | — |
+| `authenticated` | false | — |
+| `anon` | false | — |
+
+`FORCE ROW LEVEL SECURITY` makes a table's **owner** subject to its policies. A
+role holding **`BYPASSRLS` bypasses RLS regardless of FORCE** — the two are not
+the same switch, and BYPASSRLS wins. Every table and every SECURITY DEFINER
+function in this schema is owned by `postgres`, which holds BYPASSRLS. So:
+
+* `postgres` — migrations, and every definer function's body — bypasses via
+  BYPASSRLS, not via owner-bypass. FORCE does not touch it.
+* `service_role` — Edge Functions, cron — same.
+* `authenticated` and `anon` are not owners, so RLS already applies to them and
+  FORCE is irrelevant.
+
+**Demonstrated, not inferred.** With `FORCE ROW LEVEL SECURITY` enabled on
+`deployments_overlap_backup_0183` — a table with RLS on and **zero policies**,
+which should deny everything to a non-bypassing owner — `postgres` still read
+all 44 rows and still inserted successfully.
+
+A caution about how this was found, because the first attempt was wrong in the
+usual way: the initial pre-check also tested `current_company_id()` and
+`effective_salary` under FORCE **as `authenticated`**, and both passed. Those
+two results proved nothing at all — `authenticated` is not the owner, so FORCE
+is a no-op for it by definition. A green result from a test of the wrong
+subject. The backup-table case was the only one of the three that touched an
+owner path, and it is the one that settled the question.
+
+### What this means
+
+The real reason owner-role sessions ignore policies is **`BYPASSRLS` on
+`postgres`**, and that is not removable in any sane way: `postgres` is the role
+Supabase's own tooling and every migration runs as, and stripping it would put
+all 259 definer functions under RLS at once.
+
+So there was never an RLS-level fix available for the SECURITY DEFINER problem.
+**Explicit guards inside the functions — 0242 — were the only option, not the
+cheap option.** That is worth recording, because "just turn on FORCE RLS" is the
+obvious-sounding suggestion and it would have produced a migration that changed
+nothing while looking like a fix.
+
+Enabling FORCE anyway is free and harmless, as belt-and-braces against some
+future table owner that lacks BYPASSRLS. If it is ever done, the migration must
+say plainly that it has no effect today, or the next reader will assume the
+schema is protected by it.
+
+---
+
+## 9. Dev migration-SQL backfill — analysed, blocked on one credential
+
+**Not done. The blocker is a credential, not engineering, and the analysis
+below is complete so the run itself is one command.**
+
+`scripts/backfill-migration-sql.mjs` is written and wired to
+`npm run backfill:migration-sql`. It cannot run because it needs
+`SUPABASE_DEV_URL` / `SUPABASE_DEV_SERVICE_ROLE_KEY`:
+`supabase_migrations.schema_migrations` is outside the exposed schema, so an
+anon key cannot reach it, and `.env.development.local` carries only an anon key.
+There is no `psql` on this machine.
+
+Transcribing 2.3 MB of migration SQL through the agent to work around a missing
+key was ruled out, and that decision stands.
+
+### What the run will do, computed against dev's live ledger
+
+| | |
+|---|---:|
+| ledger rows | **268** |
+| rows that already carry SQL | 11 |
+| rows resolving to a repo file — **will be backfilled** | **259** |
+| rows with no repo file — **correctly left NULL** | **8** |
+| repo files with no ledger row | 1 (`RUN_0065_0070_combined`, a helper, not a migration) |
+
+The 8 left NULL are one-off data operations that were never migrations, and
+inventing SQL for them would be worse than leaving them empty:
+`0125_phase5_bank_of_ajk_setup`, `0162_nova_islamabad_split_guards_by_location`,
+`0163_miu_split_guards_by_location`, `0185_sgc_backdate_postings_to_join_date`,
+`0186_clone_org_guards_n_guides`, `0187_prune_inactive_separated_from_new_org`,
+`0188_correct_overrecorded_advances`,
+`0196_revert_accidental_separation_hmc071`.
+
+### Two pieces of drift fixed while measuring this
+
+Both were mine, from this session, and both are exactly the failure the checker
+exists to catch — *recorded rows describing something the repo does not*.
+
+1. **Five rows recorded without their number prefixes.** `apply_migration` was
+   called with `tenant_guard`, `tenant_guard_gaps` and so on rather than
+   `0242_tenant_guard`. Renamed in place to match their filenames. Without this
+   the checker would have reported five phantom missing migrations and five
+   phantom unknown rows.
+2. **One row with no repo file at all**:
+   `0078b_guard_legacy_company_isolation`. Its SQL was real and applied, but it
+   lived only in the tail of `0078b_missing_base_tables.sql`, so nothing in the
+   repo described the row. Given its own file,
+   `0078c_guard_legacy_company_isolation.sql`, written to match the recorded
+   bytes exactly — verified: `md5 = 23561836ba41162688439073d7a98625`, equal to
+   the recorded digest. Row renamed to match.
+
+### To finish it
+
+Put the dev service-role key in the environment and run:
+
+```
+SUPABASE_DEV_URL=... SUPABASE_DEV_SERVICE_ROLE_KEY=... npm run backfill:migration-sql
+```
+
+Dry run first — it writes nothing without `--apply`. `set_migration_statements`
+must be created for the run and dropped after; the exact SQL is at the foot of
+the script, and it is deliberately not a migration.
