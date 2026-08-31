@@ -405,6 +405,33 @@ control and by nothing else:
 transaction".** `now()` is the transaction timestamp and is stable across
 subtransactions; xids are not. This will come up again.
 
+**A generator that reads its input once and writes many times loses all but the
+last write. Re-read the target inside the loop.** The second-resolver-map run
+requested three guards on one function, emitted three `CREATE OR REPLACE`
+statements against the `prosrc` it had read *before* the loop began, and each
+one overwrote the previous. One guard survived. Nothing anywhere reported a
+problem: no error was raised, the function existed, it compiled, and it carried
+a guard — just not the other two.
+
+This is the worst-behaved failure mode in the section, because every other one
+leaves a green result that is *wrong*. This one leaves an artefact that is
+*plausible*. Reading the output tells you nothing: a function with one guard
+looks exactly like a function that only ever needed one. It was caught by
+counting guards against guards requested, not by inspection.
+
+The general rule is read-modify-write, and it is not new; what is new is that a
+code generator hides it. The loop looks like it writes three independent things.
+It writes three things to one address.
+
+**A new guard helper must be taught to the check, or the check quietly disagrees
+with the code.** `assert_branch_in_company` was added as a second way to spell a
+tenant guard, and `tenant_guard_covered` — which decides whether a function is
+guarded — knew only the first. Every function using the new helper read as
+unguarded. The fix is to put both forms in `tenant_guard_covered` so a third
+helper is one edit in one place, rather than a new blind spot each time. A
+coverage check that hard-codes one spelling of the thing it looks for degrades
+silently every time the codebase gains a synonym.
+
 ### A different failure mode: a pattern applied by hand and lost in the generated path
 
 The nine instances above are all *a check that could not fail*. The NULL
