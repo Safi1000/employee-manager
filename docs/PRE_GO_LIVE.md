@@ -6,6 +6,42 @@ about to carry real money is a defect until it has been run.
 
 ---
 
+## 0. Tenant isolation has never been verified, and three holes are open now
+
+**Status: plan written (`docs/TENANT_ISOLATION_PLAN.md`), nothing built. Ranked
+above everything else.**
+
+Multi-tenant isolation is enforced almost entirely by RLS policies. Every test
+in this project runs as `postgres`, which carries `rolbypassrls`, so **no test
+has ever verified isolation, and any test that appeared to would report PASS
+with the policies deleted.**
+
+One security company seeing another's guards, clients, payroll or rates is not
+a defect to schedule. It is the end of the product.
+
+Looking for a way to test it found three things that need no test:
+
+1. **`verify_employee_identity`, `release_final_dues` and `disburse_payroll_run`
+   are SECURITY DEFINER, executable by `authenticated`, and mutate by id with no
+   tenant check.** A SECURITY DEFINER function has no caller RLS — that is what
+   the mode means — so any authenticated user of any tenant can mark another
+   company's employee identity-verified, release their final dues, or flip their
+   payroll run to disbursed, given only a UUID. These three were **sampled from
+   46 of the same shape**; the other 43 are unreviewed.
+
+2. **`deployments_overlap_backup_0183` and `org_copy_map_0186` have RLS switched
+   off entirely** and grant SELECT/INSERT/UPDATE/DELETE/**TRUNCATE** to `anon`.
+   The first carries `company_id` — every tenant's deployment rows, readable and
+   truncatable with the anon key that ships in the client bundle. Both prod and
+   dev.
+
+3. **Zero tables have `FORCE ROW LEVEL SECURITY`**, on either environment. Not a
+   live leak for app users — they are not table owners — but it is why every
+   owner-role session, including every test and migration, silently ignores
+   every policy.
+
+Item 2 of that plan is the cheapest and most urgent: enabling RLS on two tables.
+
 ## 1. Period Close has never been exercised. Anywhere.
 
 **Status: required, not started.**

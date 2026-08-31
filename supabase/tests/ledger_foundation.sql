@@ -67,7 +67,13 @@ begin
     v_results := v_results || 'T1  unresolved_account_key       FAIL (no exception)' || chr(10);
   exception when others then
     get stacked diagnostics v_msg = message_text;
-    v_results := v_results || 'T1  unresolved_account_key       PASS  ' || left(v_msg, 58) || chr(10);
+    -- ASSERT ON THE MESSAGE. "Something raised" is not the assertion: an
+    -- unrelated constraint, a typo in the fixture or a permission error would
+    -- all satisfy it. Only post_journal's own refusal proves the line was
+    -- rejected rather than silently dropped, which is the B1 defect.
+    v_results := v_results || case when v_msg like '%cannot resolve account%'
+      then 'T1  unresolved_account_key       PASS  (post_journal refused the key)'
+      else 'T1  unresolved_account_key       INCONCLUSIVE — ' || left(v_msg, 44) end || chr(10);
   end;
 
   -- T2: post_journal must reject an unbalanced entry.
@@ -80,7 +86,9 @@ begin
     v_results := v_results || 'T2  unbalanced_via_post_journal  FAIL (no exception)' || chr(10);
   exception when others then
     get stacked diagnostics v_msg = message_text;
-    v_results := v_results || 'T2  unbalanced_via_post_journal  PASS  ' || left(v_msg, 58) || chr(10);
+    v_results := v_results || case when v_msg like '%post_journal: entry does not balance%'
+      then 'T2  unbalanced_via_post_journal  PASS  (refused by post_journal)'
+      else 'T2  unbalanced_via_post_journal  INCONCLUSIVE — ' || left(v_msg, 44) end || chr(10);
   end;
 
   -- T3: a direct INSERT bypassing post_journal must also fail.
@@ -98,7 +106,15 @@ begin
     v_results := v_results || 'T3  unbalanced_direct_insert     FAIL (no exception)' || chr(10);
   exception when others then
     get stacked diagnostics v_msg = message_text;
-    v_results := v_results || 'T3  unbalanced_direct_insert     PASS  ' || left(v_msg, 58) || chr(10);
+    -- Must be the DEFERRED CONSTRAINT, not post_journal. The whole point of T3
+    -- is that a write bypassing the RPC is still caught, so a message from
+    -- post_journal here would mean the test proved nothing.
+    v_results := v_results || case
+      when v_msg like '%post_journal%'
+        then 'T3  unbalanced_direct_insert     FAIL  (post_journal answered; constraint untested)'
+      when v_msg like '%does not balance%'
+        then 'T3  unbalanced_direct_insert     PASS  (deferred constraint fired)'
+      else 'T3  unbalanced_direct_insert     INCONCLUSIVE — ' || left(v_msg, 44) end || chr(10);
   end;
 
   -- T4: the failing set must equal the expected-red allowlist exactly.
@@ -122,7 +138,9 @@ begin
     v_results := v_results || 'T5  update_posted_no_flag        FAIL (allowed!)' || chr(10);
   exception when others then
     get stacked diagnostics v_msg = message_text;
-    v_results := v_results || 'T5  update_posted_no_flag        PASS  ' || left(v_msg, 58) || chr(10);
+    v_results := v_results || case when v_msg like '%Posted journal rows are immutable%'
+      then 'T5  update_posted_no_flag        PASS  (immutability trigger fired)'
+      else 'T5  update_posted_no_flag        INCONCLUSIVE — ' || left(v_msg, 44) end || chr(10);
   end;
 
   -- T6: DELETE likewise refused.
@@ -131,7 +149,9 @@ begin
     v_results := v_results || 'T6  delete_posted_no_flag        FAIL (allowed!)' || chr(10);
   exception when others then
     get stacked diagnostics v_msg = message_text;
-    v_results := v_results || 'T6  delete_posted_no_flag        PASS  ' || left(v_msg, 58) || chr(10);
+    v_results := v_results || case when v_msg like '%Posted journal rows are immutable%'
+      then 'T6  delete_posted_no_flag        PASS  (immutability trigger fired)'
+      else 'T6  delete_posted_no_flag        INCONCLUSIVE — ' || left(v_msg, 44) end || chr(10);
   end;
 
   -- T7: flag on + privileged session_user opens the gate.

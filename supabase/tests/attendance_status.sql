@@ -47,6 +47,9 @@ declare
   v_want    numeric;
   v_asserts int;
   v_red     boolean;
+  v_sb      uuid;
+  v_emp2    uuid;
+  v_n2      int;
   v_results text := chr(10);
 begin
   -- PRECONDITIONS. Assert the fixtures this suite reads actually exist, before
@@ -106,69 +109,184 @@ begin
     then 'T20 avg_deployed_counts_worked   PASS  (' || v_got || ')'
     else 'T20 avg_deployed_counts_worked   FAIL  (got ' || v_got || ', want ' || v_want || ')' end || chr(10);
 
-  -- T21: the `continue` guard that dropped a near-zero region must be gone.
-  -- Asserted structurally: a data-driven check only catches this in periods
-  -- where such a region happens to exist, and the defect is that a region CAN
-  -- be dropped at all.
+  -- T21: no region is silently dropped from HO apportionment, and the pool is
+  -- fully accounted for. ASSERTED BEHAVIOURALLY — it runs the allocation.
   --
-  -- COMMENTS ARE STRIPPED FIRST, and that is not a detail. This test searched
-  -- raw prosrc and reported FAIL against a CORRECT function, because 0225's
-  -- rewrite carries the line:
+  -- The previous version grepped pg_proc.prosrc for the word `continue`. It was
+  -- deleted rather than repaired, and the reason is worth keeping:
   --
-  --     -- No `continue` on zero: a branch that billed nothing reaches zero
+  --   * It tested the implementation's SOURCE TEXT, not its behaviour, so it
+  --     would break on any rewrite that phrased the same logic differently.
+  --   * It reported FAIL against CORRECT code, because 0225's rewrite carries
+  --     the comment "No `continue` on zero: a branch that billed nothing
+  --     reaches zero through the proportion itself". A comment documenting the
+  --     absence of `continue` read as its presence.
+  --   * Worst, it was environment-dependent through comment retention alone.
+  --     The identical function — byte-identical once comments and whitespace
+  --     are stripped — PASSED this test on production and FAILED it on dev,
+  --     because production's copy was applied through the SQL editor and stores
+  --     fewer comments. A prosrc assertion tests the DEPLOYMENT MECHANISM, not
+  --     the code.
   --
-  -- A structural test that greps source cannot tell code from prose, so a
-  -- comment documenting the ABSENCE of `continue` was read as its presence. The
-  -- same shape as everything else this file guards against — the test was not
-  -- testing what its name says — only inverted: it failed while the code was
-  -- right, which is the variant that gets a real check deleted for being noisy.
-  select count(*) into v_n
-    from pg_proc p
-    join pg_namespace ns on ns.oid = p.pronamespace
-    cross join lateral (select regexp_replace(p.prosrc, '--[^' || chr(10) || ']*', '', 'g') as src) s
-   where ns.nspname = 'public' and p.proname = 'run_ho_cost_allocation'
-     and strpos(s.src, 'continue') = 0
-     and strpos(s.src, 'branch_revenue_for_month') > 0
-     and strpos(s.src, 'avg_deployed_guards') = 0
-     and strpos(p.prosrc, 'does not exhaust the pool') > 0;  -- this one IS the comment
-  v_results := v_results || case when v_n = 1
-    then 'T21 ho_driver_revenue_no_skip    PASS  (revenue driver, no skip, pool assertion)'
-    else 'T21 ho_driver_revenue_no_skip    FAIL  (deployment driver or skip remains)' end || chr(10);
+  -- What 0225 was actually for: a region must not be skipped, and the HO pool
+  -- must end up entirely allocated or entirely accounted as a remainder.
+  --
+  -- Runs against SANDBOX TESTING ORG because it is the only company with a
+  -- non-zero HO overhead; v_co has none, and asserting an identity over a zero
+  -- pool would pass whatever the code did. `cost_nonzero` is asserted for
+  -- exactly that reason.
+  select id into v_sb from public.companies where name = 'SANDBOX TESTING ORG';
+  if v_sb is null then
+    v_results := v_results || 'T21 ho_no_region_dropped         NO FIXTURE (no sandbox org)' || chr(10);
+  else
+    -- A zero-revenue region, present for the whole run. Under the old `continue`
+    -- this is the shape that got skipped.
+    insert into public.branches (company_id, name, active, is_head_office)
+    values (v_sb, 'ZZ T21 ZERO REVENUE REGION', true, false)
+    returning id into v_branch;
+
+    -- Re-running an allocation REVERSES the previous one, and reversal touches
+    -- posted journal entries, which enforce_journal_immutable refuses outside a
+    -- maintenance session. Declared bypass, narrowest possible scope: on for
+    -- this call, off immediately after, and T25 below re-asserts the gate is
+    -- closed by default so this cannot leak into the rest of the suite.
+    perform set_config('app.ledger_maintenance', 'on', true);
+    perform public.run_ho_cost_allocation(v_sb, date '2026-07-01', 'revenue');
+    perform set_config('app.ledger_maintenance', '', true);
+
+    select r.ho_cost, r.allocated_total + coalesce(r.unallocated, 0)
+      into v_want, v_got
+      from public.ho_allocation_runs r
+     where r.company_id = v_sb and r.period_month = date '2026-07-01';
+
+    -- Every active branch that BILLED must have received an allocation line.
+    -- This is the assertion a `continue` fails: a skipped region has none.
+    select count(*) into v_n
+      from public.branches b
+     where b.company_id = v_sb and b.active
+       and public.branch_revenue_for_month(v_sb, b.id, date '2026-07-01', 'revenue') > 0
+       and not exists (
+         select 1 from public.journal_lines jl
+           join public.journal_entries je on je.id = jl.journal_entry_id
+          where je.company_id = v_sb and je.source_table = 'ho_allocation'
+            and jl.branch_id = b.id);
+
+    v_results := v_results || case
+      when v_want is null or v_want <= 0
+        then 'T21 ho_no_region_dropped         FAIL  (HO pool is zero — assertion would be vacuous)'
+      when v_n > 0
+        then 'T21 ho_no_region_dropped         FAIL  (' || v_n || ' billing region(s) received nothing)'
+      when v_got <> v_want
+        then 'T21 ho_no_region_dropped         FAIL  (pool ' || v_want || ' but allocated+remainder ' || v_got || ')'
+      else 'T21 ho_no_region_dropped         PASS  (pool ' || v_want || ' fully accounted, no billing region skipped)'
+    end || chr(10);
+  end if;
 
   -- T22: the apportionment must exhaust the pool. Proven arithmetically against
   -- the live weights rather than by posting: sum of proportional shares with the
   -- residual to the largest region equals the pool exactly.
+  -- NON-VACUITY GUARD. "zero runs are short" is also true when there are zero
+  -- runs, so the population is asserted before the property is. This is not
+  -- hypothetical: dev has NO ho_allocation_runs of its own, and the previous
+  -- version of this test reported PASS against an empty table.
+  --
+  -- DEPENDS ON T21, deliberately. T21 above runs an allocation, which creates
+  -- the row this assertion then checks. Run T22 alone and it correctly reports
+  -- that it asserted nothing.
+  select count(*) into v_n2
+    from public.ho_allocation_runs
+   where allocated_total is not null and ho_cost is not null;
   select count(*) into v_n
     from public.ho_allocation_runs
    where allocated_total is not null and ho_cost is not null
      and allocated_total + coalesce(unallocated, 0) <> ho_cost;
-  v_results := v_results || case when v_n = 0
-    then 'T22 ho_pool_fully_accounted      PASS'
-    else 'T22 ho_pool_fully_accounted      FAIL  (' || v_n || ' run(s) short)' end || chr(10);
+  v_results := v_results || case
+    when v_n2 = 0 then 'T22 ho_pool_fully_accounted      FAIL  (no allocation runs — nothing asserted)'
+    when v_n = 0  then 'T22 ho_pool_fully_accounted      PASS  (' || v_n2 || ' run(s) checked)'
+    else 'T22 ho_pool_fully_accounted      FAIL  (' || v_n || ' of ' || v_n2 || ' run(s) short)' end || chr(10);
 
-  -- T23: an employee absent only in lowercase must NOT be bonus-eligible.
+  -- T23: an employee absent in the lowercase vocabulary must NOT be
+  -- bonus-eligible. ASSERTED BEHAVIOURALLY — it runs the accrual.
   --
-  -- A data-shaped query used to stand here and was DEAD — its result was
-  -- overwritten by the structural query below before anything read it, so it
-  -- looked like an assertion and was not one. It was also unanswerable by
-  -- construction: after 0224 the token 'Absent' does not exist, so the set it
-  -- counted is empty whether the predicate is case-insensitive or not.
+  -- Two earlier versions of this test were both wrong, in the two different
+  -- ways this file now exists to catch.
   --
-  -- What must actually hold is a property of the function, so assert that.
-  select count(*) into v_n
-    from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
-   where ns.nspname = 'public' and p.proname = 'accrue_attendance_bonuses'
-     and strpos(p.prosrc, 'lower(a.status) = ''absent''') > 0;
-  v_results := v_results || case when v_n = 1
-    then 'T23 bonus_disqualifies_absent    PASS  (case-insensitive predicate)'
-    else 'T23 bonus_disqualifies_absent    FAIL  (still case-sensitive)' end || chr(10);
+  --   1. A data query counting employees absent in lowercase but not uppercase.
+  --      DEAD — its result was overwritten before anything read it — and
+  --      unanswerable anyway, since 0224 removed the token 'Absent' entirely,
+  --      so the set is empty whether the predicate is case-insensitive or not.
+  --   2. strpos(prosrc, 'lower(a.status) = ''absent''') — the same prosrc
+  --      defect as T21. It asserted that one specific spelling appears in the
+  --      source, so `lower(a.status) IN ('absent')`, or a rewrite using
+  --      citext, or a reformat, all fail it while behaving identically.
+  --
+  -- PAIRED, deliberately. The refusal alone proves nothing: if the accrual
+  -- awarded no one — wrong company, wrong month, wrong category filter — the
+  -- absent employee gets no bonus and the test passes for the wrong reason.
+  -- The clean employee is the control that says the accrual actually ran.
+  -- NO FABRICATED ROWS. The absence is created by UPDATING a real July
+  -- attendance row, not by inserting one. Inserting was tried and is wrong
+  -- twice over: worked_shift is NOT NULL so the fixture was incomplete (the
+  -- exact defect docs/LEDGER_PHASE1_FIXTURE_AUDIT.md catalogues), and any past
+  -- month is refused by the guard's service window, which starts 2026-07-01.
+  -- Mutating a row the application really produced avoids both.
+  select a.employee_id into v_emp
+    from public.attendance_records a
+    join public.employees e on e.id = a.employee_id
+   where a.company_id = v_co and e.lifecycle_state = 'active'
+     and e.category in ('client', 'reliever')
+     and a.attendance_date between date '2026-07-01' and date '2026-07-31'
+   order by a.employee_id limit 1;
+  select a.employee_id into v_emp2
+    from public.attendance_records a
+    join public.employees e on e.id = a.employee_id
+   where a.company_id = v_co and e.lifecycle_state = 'active'
+     and e.category in ('client', 'reliever')
+     and a.attendance_date between date '2026-07-01' and date '2026-07-31'
+     and a.employee_id <> v_emp
+   order by a.employee_id limit 1;
+
+  if v_emp is null or v_emp2 is null then
+    v_results := v_results || 'T23 bonus_disqualifies_absent    NO FIXTURE (need two July-attending client/reliever employees)' || chr(10);
+  else
+    -- Declared bypass, one UPDATE wide: the backdate cutoff would refuse an edit
+    -- to July. Cleared before the accrual runs, so nothing under assertion is
+    -- bypassed -- accrue_attendance_bonuses is not gated by it.
+    perform set_config('app.skip_attendance_lock', '1', true);
+    update public.attendance_records set status = 'absent'
+     where employee_id = v_emp
+       and attendance_date = (select min(attendance_date) from public.attendance_records
+                               where employee_id = v_emp
+                                 and attendance_date between date '2026-07-01' and date '2026-07-31');
+    perform set_config('app.skip_attendance_lock', '', true);
+
+    perform public.accrue_attendance_bonuses(v_co, date '2026-07-01', 500);
+
+    select count(*) into v_n from public.guard_bonuses
+     where employee_id = v_emp and bonus_type = 'attendance' and period_month = date '2026-07-01';
+    select count(*) into v_n2 from public.guard_bonuses
+     where employee_id = v_emp2 and bonus_type = 'attendance' and period_month = date '2026-07-01';
+
+    v_results := v_results || case
+      when v_n2 = 0 then 'T23 bonus_disqualifies_absent    FAIL  (control got no bonus -- accrual did not run at all)'
+      when v_n > 0  then 'T23 bonus_disqualifies_absent    FAIL  (absent employee was awarded)'
+      else 'T23 bonus_disqualifies_absent    PASS  (absent refused, control awarded)'
+    end || chr(10);
+  end if;
 
   -- T24: leave history must see the folded token.
+  -- PAIRED. The function returning a positive number proves nothing on its own
+  -- unless there are 'leave' rows for it to have found. v_n2 counts them
+  -- directly; the function must see at least one of them.
+  select count(*) into v_n2 from public.attendance_records
+   where company_id = v_co and status = 'leave'
+     and attendance_date >= date '2026-04-01' and attendance_date < date '2026-09-01';
   select coalesce(sum(cnt), 0) into v_n
     from public.attendance_leave_history(date '2026-04-01', date '2026-09-01');
-  v_results := v_results || case when v_n > 0
-    then 'T24 leave_history_sees_leave     PASS  (' || v_n || ' leave days)'
-    else 'T24 leave_history_sees_leave     FAIL  (0 — predicate missed the token)' end || chr(10);
+  v_results := v_results || case
+    when v_n2 = 0 then 'T24 leave_history_sees_leave     FAIL  (no leave rows in range — nothing to see)'
+    when v_n > 0  then 'T24 leave_history_sees_leave     PASS  (' || v_n || ' seen against ' || v_n2 || ' rows)'
+    else 'T24 leave_history_sees_leave     FAIL  (' || v_n2 || ' leave rows exist but the function saw 0)' end || chr(10);
 
   -- T25: the renamed gate exists and is closed by default.
   select count(*) into v_n from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
@@ -187,15 +305,23 @@ begin
   -- T26 (0225): invoice revenue must sit in its SERVICE month, not the month it
   -- happened to be raised in (A4). Seven sandbox entries were 2026-08 against
   -- June/July service periods because they were posted ~14h before 0221 applied.
+  -- NON-VACUITY GUARD, as T22. Zero misdated entries is also what a database
+  -- with no posted invoice entries at all reports.
+  select count(*) into v_n2
+    from public.invoices i
+    join public.journal_entries je
+      on je.source_table = 'invoices' and je.source_id = i.id
+     and je.is_reversal = false and je.status = 'posted';
   select count(*) into v_n
     from public.invoices i
     join public.journal_entries je
       on je.source_table = 'invoices' and je.source_id = i.id
      and je.is_reversal = false and je.status = 'posted'
    where je.posting_period <> date_trunc('month', coalesce(i.period_start, i.invoice_date))::date;
-  v_results := v_results || case when v_n = 0
-    then 'T26 revenue_at_service_month     PASS'
-    else 'T26 revenue_at_service_month     FAIL  (' || v_n || ' misdated)' end || chr(10);
+  v_results := v_results || case
+    when v_n2 = 0 then 'T26 revenue_at_service_month     FAIL  (no posted invoice entries — nothing asserted)'
+    when v_n = 0  then 'T26 revenue_at_service_month     PASS  (' || v_n2 || ' entries checked)'
+    else 'T26 revenue_at_service_month     FAIL  (' || v_n || ' of ' || v_n2 || ' misdated)' end || chr(10);
 
   -- T27 (0228): 'blocked' is a gate refusal mode and must not be recordable as a
   -- status. NOTE trg_reject_gate_mode_as_status sorts LAST alphabetically among
