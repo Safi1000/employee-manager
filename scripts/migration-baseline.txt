@@ -41,3 +41,23 @@ purge_attendance_after_separation
 regional_pl_range
 renew_contract_skip_generated_column
 revert_accidental_separation_hmc071_pinned
+
+# ---------------------------------------------------------------------------
+# Deliberately removed one-time migrations (2026-08-31).
+#
+# These were single-use operations against named production records — a client
+# pilot, four client-specific data fixes, an org clone and its prune, and a
+# correction for one employee. They cannot run anywhere but the database they
+# were written for: replayed into a fresh environment they either abort by
+# design ("Client X not found") or would corrupt data by running twice.
+#
+# They are listed here because they ARE applied in production and the files no
+# longer exist, which is otherwise exactly the drift this check hunts for. This
+# is not the "silence a failure" case the note above warns about: the fix there
+# is to write the missing file, and here there is deliberately no file to write.
+#
+phase5_bank_of_ajk_setup
+sgc_backdate_postings_to_join_date
+clone_org_guards_n_guides
+prune_inactive_separated_from_new_org
+correct_overrecorded_advances
