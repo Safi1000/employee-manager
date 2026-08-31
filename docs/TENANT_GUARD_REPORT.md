@@ -314,3 +314,59 @@ The same specific error has appeared three times in this one piece of work:
 A predicate over source text answers "does this string appear". It never
 answers "is this enforced". Where the two can differ, the check has to execute
 the code, not read it.
+
+### 9.5 There was never an RLS-level fix available
+
+The obvious-sounding suggestion for the SECURITY DEFINER problem is "just turn
+on `FORCE ROW LEVEL SECURITY`". It would have shipped a migration that changed
+nothing while reading as a fix.
+
+`FORCE ROW LEVEL SECURITY` subjects a table's **owner** to its policies. A role
+holding **`BYPASSRLS` bypasses RLS regardless of FORCE** — they are different
+switches, and BYPASSRLS wins. On this schema:
+
+* `postgres` owns all 136 tables and all 259 SECURITY DEFINER functions, and
+  holds `BYPASSRLS`. Migrations and every definer body bypass via BYPASSRLS, not
+  via owner-bypass, so FORCE never applies to them.
+* `service_role` holds `BYPASSRLS` too.
+* `authenticated` and `anon` are not owners, so RLS already applies and FORCE is
+  irrelevant.
+
+Demonstrated: with FORCE enabled on a table having RLS on and **zero policies**,
+which should deny a non-bypassing owner everything, `postgres` still read all 44
+rows and still inserted.
+
+Removing `BYPASSRLS` from `postgres` is not a real option — it is the role
+Supabase's tooling and every migration runs as, and stripping it would put all
+259 definer functions under RLS simultaneously.
+
+**So explicit guards inside the functions were the only option, not the
+expensive one.** Anyone revisiting 0242 looking for something cheaper should
+start here.
+
+### 9.6 Before accepting a green result, state what would have made it red
+
+Nine instances now, and the last one was in the FORCE RLS pre-check itself. That
+pre-check tested `current_company_id()` and `effective_salary` under FORCE **as
+`authenticated`** and both passed — two green results about the wrong subject,
+because `authenticated` is not the owner and FORCE is a no-op for it by
+definition. Only the third case touched an owner path, and only it meant
+anything.
+
+The instances share one shape. The mechanism under test was never engaged:
+
+| # | what looked green | why it was not engaged |
+|---|---|---|
+| 1–7 | seven tests that could not fail | early returns, unpaired assertions, `case when v_n >= 1 then 'PASS' else 'PASS'`, `prosrc` greps, refusals asserted as "something raised" |
+| 8 | `assert_same_company` in 135 functions | the exemption matched every caller, so the guard no-opped; the verification asserted it was *called* |
+| 9 | FORCE RLS pre-check | tested a non-owner, for whom FORCE does nothing |
+
+The rule, stated once: **before accepting a green result, say out loud what
+would have made it red — and if you cannot name a concrete change that flips it,
+you have not tested anything.** Where the change is cheap, make it and watch the
+red. `tenant_guard.sql` does this by removing a guard; `period_lock.sql` does it
+by deriving its column set from the schema so a missing assertion cannot hide.
+
+A corollary that has now earned its place: **a clean sweep on the first run is
+suspicious, not reassuring.** In this codebase it has more often meant the
+mechanism is not engaged than that it works.

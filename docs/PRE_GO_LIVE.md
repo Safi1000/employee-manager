@@ -78,6 +78,22 @@ the caller simply names the tenant it wants to act on, no id-guessing required.
 
 ## 1. Period Close has never been exercised. Anywhere.
 
+> **Two defects found while auditing the lock's test coverage, both of which
+> become live at the first close. See `docs/PERIOD_LOCK_COVERAGE.md`.**
+>
+> * **`journal_lines` is not guarded by the period lock at all.** The trigger is
+>   on `journal_entries` only, so a *balanced* restatement of a closed month's
+>   ledger commits with no refusal — verified, entry debits moved 48,533 ->
+>   49,533 in a closed month. The deferred balance constraint is not a backstop;
+>   it only catches an edit that unbalances.
+> * **Four `invoices` columns ride along with a receipt into a closed month** —
+>   `subtotal`, `total_due`, `tax_withheld_total`, `previous_balance`. The
+>   carve-out pins five columns by name and says nothing about the rest.
+>
+> Magnitude of both is **zero rupees today** — `accounting_periods` is empty on
+> both environments, so nothing has ever been protected — and unbounded from the
+> first close onward. Neither is fixed; both are reported for a decision.
+
 **Status: required, not started.**
 
 `accounting_periods` is **empty on production and on dev**. Zero months have
