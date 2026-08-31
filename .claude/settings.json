@@ -8,5 +8,31 @@
       "PowerShell(npx vite build 2>&1)",
       "PowerShell(if \\($?\\) { \"TYPECHECK OK\" })"
     ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "mcp__claude_ai_Supabase__apply_migration",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node scripts/migration-ledger.mjs record",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node scripts/migration-ledger.mjs check",
+            "timeout": 15,
+            "statusMessage": "Checking applied migrations have repo files..."
+          }
+        ]
+      }
+    ]
   }
 }

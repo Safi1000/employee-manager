@@ -17,7 +17,9 @@
     "cap:dev": "node scripts/cap-dev.mjs",
     "assets:gen": "node scripts/make-native-assets.mjs",
     "check:migrations": "node scripts/check-migrations.mjs",
-    "backfill:migration-sql": "node scripts/backfill-migration-sql.mjs"
+    "backfill:migration-sql": "node scripts/backfill-migration-sql.mjs",
+    "//prepare": "Arms scripts/pre-push in every clone. A hook that needs a manual git config is a hook that is not installed.",
+    "prepare": "git config core.hooksPath scripts"
   },
   "dependencies": {
     "@capacitor/app": "^8.1.1",

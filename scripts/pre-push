@@ -7,20 +7,34 @@
 # runs in a pipeline would not have caught any of them, because the applies
 # happened locally and the commits never mentioned them.
 #
-# Install once:
+# Installed automatically by `npm install` (the "prepare" script sets
+# core.hooksPath). Install by hand with:
 #     git config core.hooksPath scripts
 #
-# Requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in the environment. If
-# they are absent the check is SKIPPED with a warning rather than blocking the
-# push — a hook that blocks work when a secret is missing gets disabled, and a
-# disabled hook protects nothing.
+# Requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in the environment.
+#
+# THIS USED TO SKIP ITSELF WHEN THOSE WERE ABSENT. The reasoning was that a hook
+# which blocks work over a missing secret gets disabled, and a disabled hook
+# protects nothing. The reasoning was sound and the outcome was worse: hooksPath
+# was never set in at least one clone, the variables were never set in it either,
+# and the check has not run once. 0240 and 0241 reached PRODUCTION without a repo
+# file while this hook was sitting in the tree, notionally guarding exactly that.
+#
+# A control with a silent skip is a control nobody looks at. It now fails, and
+# says how to proceed — which is the difference between a blocked push and a
+# disabled hook.
 #
 # To bypass deliberately: git push --no-verify
 
 if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
-  echo "pre-push: SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set — skipping migration drift check."
-  echo "pre-push: run 'npm run check:migrations' with them set before merging."
-  exit 0
+  echo "pre-push: BLOCKED — SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are not set,"
+  echo "pre-push: so the migration drift check cannot run. It is not being skipped."
+  echo "pre-push:"
+  echo "pre-push:   export SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=..."
+  echo "pre-push:   npm run check:migrations"
+  echo "pre-push:"
+  echo "pre-push: or bypass this push with 'git push --no-verify' if you know why."
+  exit 1
 fi
 
 echo "pre-push: checking migration drift..."

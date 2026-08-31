@@ -103,6 +103,39 @@ to write the file.
 
 ---
 
+## 5. Why the loop-closer did not close the loop, and what runs now
+
+`check:migrations` was written, `scripts/pre-push` was written to run it, and
+between them they did not prevent `0237`–`0252` from existing only as
+`schema_migrations` rows, or `0240`/`0241` from reaching **production** without a
+repo file. Three reasons, all structural rather than accidental:
+
+1. **`core.hooksPath` is per-clone and manual.** A fresh clone has no hook.
+2. **The hook skipped itself when the secrets were absent** — deliberately, so it
+   would not block work. It therefore never ran.
+3. **It runs at push time.** The drift is created by `apply_migration`, often
+   hours earlier and in a different session. Push may not happen that day.
+
+What runs now, in the order it fires:
+
+| When | What | Needs secrets? |
+|---|---|---|
+| the instant `apply_migration` returns | `migration-ledger.mjs record` records the name | no |
+| end of session | `migration-ledger.mjs check` blocks while a recorded name has no file | no |
+| `git push` | `check:migrations` compares repo against the database | yes — and now **fails** rather than skipping when they are missing |
+| `npm install` | `prepare` sets `core.hooksPath`, so a clone arms itself | no |
+
+The first two are the ones that matter, because they need nothing configured and
+they fire in the session that created the divergence. The ledger lives at
+`.claude/applied-migrations.log`, is gitignored, and prunes each entry as soon as
+its file exists — so a session that writes the file before finishing never sees
+it.
+
+Note the pre-push check still points at ONE database. Prod is at `0241` and dev
+is well past it; a green run against one says nothing about the other.
+
+---
+
 ## What was deliberately not done
 
 - **Nothing was replayed against the live database.** Every recovered migration had already
