@@ -5,6 +5,19 @@
 --
 --   psql "$DATABASE_URL" -f supabase/tests/period_lock.sql
 --
+-- STATUS: NOT VERIFIED END TO END SINCE THE G0.3 ADDITIONS.
+--
+-- The payslips and invoices halves ran green as one file (37/37, canary
+-- complete). Everything added for G0.3 - the E loop, the F loop, T12..T21, the
+-- three fixtures and the unproven report - has been run against dev only as
+-- standalone blocks carrying the same code, 11/11 and 19/21 with the two
+-- exceptions reclassified into c_chq_elsewhere. The COMBINED canary across all
+-- five derived sets plus v_t has therefore never been evaluated, and the canary
+-- is the assertion that catches a truncated run.
+--
+-- Do not call this suite green until it has run as one file. That needs
+-- SUPABASE_DEV_* in the environment.
+--
 -- WHY THIS SUITE EXISTS
 --
 -- accounting_periods is empty on prod and dev. Zero months have ever been
@@ -40,7 +53,7 @@ declare
   v_results text := '';
   v_asserts int;
   v_expected int;
-  c_fixed_tests constant int := 16;  -- T1..T16 below; hand-maintained, and independent of the derived sets
+  c_fixed_tests constant int := 21;  -- T1..T21 below; hand-maintained, and independent of the derived sets
   v_msg     text;
   v_n       int;
 
@@ -110,7 +123,14 @@ declare
     'notes', 'updated_at', 'attachment_path', 'attachment_file_name',
     'drive_file_id', 'drive_view_url'
   ];
-  c_chq_elsewhere constant text[] := array['amount', 'bank_account_id'];
+  -- Guarded by a DIFFERENT trigger, so they must not be scored as period-lock
+  -- passes: amount and bank_account_id ("Cheque amount and bank account cannot
+  -- be changed"), cheque_type and direction ("Cheque type/direction cannot be
+  -- changed after creation"). The last two were found by writing the assertion
+  -- and watching it fail with the wrong message, which is the loop working.
+  c_chq_elsewhere constant text[] := array[
+    'amount', 'bank_account_id', 'cheque_type', 'direction'
+  ];
   v_adv_protected text[];
   v_exp_protected text[];
   v_chq_protected text[];
@@ -125,6 +145,12 @@ declare
   v_id      uuid;
   v_set     text[];
   v_label   text;
+  v_unproven text := '';
+  v_cur     text;
+  v_emp3    uuid;
+  v_cli2    uuid;
+  v_cat2    uuid;
+  v_br2     uuid;
 begin
   perform set_config('app.ledger_maintenance', 'on', true);
 
@@ -282,19 +308,32 @@ begin
   select id into v_cat  from public.expense_categories limit 1;
   select id into v_loc  from public.cash_locations where company_id = v_co limit 1;
 
+  select id into v_emp3 from public.employees where company_id = v_co and id <> v_emp2 order by id limit 1;
+  select id into v_br2  from public.branches where company_id = v_co and not coalesce(is_head_office,false) limit 1;
+  select id into v_cat2 from public.expense_categories where id <> v_cat order by id limit 1;
+
+  -- Every dimension the fixture can populate IS populated, so the F loop below
+  -- nulls a real value instead of writing null over null. Instance eleven, third
+  -- time; the columns it still cannot populate are reported as unproven rather
+  -- than silently passing.
   insert into public.advances
-    (company_id, employee_id, amount, advance_date, payment_mode, cash_location_id)
-  values (v_co, v_emp2, 5000, v_month, 'Cash', v_loc) returning id into v_advance;
+    (company_id, employee_id, client_id, amount, advance_date, payment_mode,
+     cash_location_id, branch_id, custodian_location_id)
+  values (v_co, v_emp2, v_client, 5000, v_month, 'Cash', v_loc, v_br2, v_loc)
+  returning id into v_advance;
 
   insert into public.expenses
-    (company_id, category_id, amount, expense_date, payment_mode, description, payable_status)
-  values (v_co, v_cat, 7000, v_month, 'Payable', 'period_lock suite', 'Pending')
+    (company_id, category_id, client_id, amount, expense_date, payment_mode, description,
+     payable_status, branch_id, cash_location_id, custodian_location_id, pl_category)
+  values (v_co, v_cat, v_client, 7000, v_month, 'Payable', 'period_lock suite', 'Pending',
+          v_br2, v_loc, v_loc, 'operating_expense')
   returning id into v_expense;
 
   insert into public.cheques
     (company_id, bank_account_id, cheque_number, amount, cheque_date,
-     status, direction, cheque_type, custodian_location_id)
-  values (v_co, v_bank, 'PLOCK-CHQ', 9000, v_month, 'pending', 'outgoing', 'cash', v_loc)
+     status, direction, cheque_type, custodian_location_id, client_id, branch_id, recipient)
+  values (v_co, v_bank, 'PLOCK-CHQ', 9000, v_month, 'pending', 'outgoing', 'cash',
+          v_loc, v_client, v_br2, 'period_lock suite')
   returning id into v_cheque;
 
   -- Close the month. Everything below runs against a genuinely closed period.
@@ -423,6 +462,101 @@ begin
       end;
     end loop;
   end loop;
+
+  -- F01..Fnn — G0.3, the dimension columns. The money-and-date loops above miss
+  -- these entirely, and the posting logic BRANCHES on them: payment_mode picks
+  -- the credit account, category_id and pl_category pick the expense account,
+  -- cash_location_id and custodian_location_id pick which cash account. The
+  -- advance Cash->Bank defect (0256) sat on exactly one of these columns, which
+  -- is why "every money and date column" was not enough coverage.
+  --
+  -- Nullable dimensions are nulled. A column already NULL on the fixture is
+  -- SKIPPED and reported as unproven rather than counted as a pass -- writing
+  -- null over null is the no-op that produced instance thirteen.
+  v_t := 0;
+  foreach v_tbl in array array['advances', 'expenses', 'cheques'] loop
+    v_id := case v_tbl when 'advances' then v_advance
+                       when 'expenses' then v_expense
+                       else v_cheque end;
+    for v_col in
+      select c.column_name from information_schema.columns c
+       where c.table_schema = 'public' and c.table_name = v_tbl
+         and c.data_type in ('uuid', 'text', 'USER-DEFINED')
+         and c.is_nullable = 'YES' and c.is_generated = 'NEVER'
+         and c.column_name not in ('id', 'company_id')
+         and not (c.column_name = any (case v_tbl when 'advances' then c_adv_permitted
+                                                  when 'expenses' then c_exp_permitted
+                                                  else c_chq_permitted end))
+         and not (v_tbl = 'cheques' and c.column_name = any (c_chq_elsewhere))
+       order by c.column_name
+    loop
+      execute format('select (%I)::text from public.%I where id = $1', v_col, v_tbl)
+        into v_cur using v_id;
+      if v_cur is null then
+        v_unproven := v_unproven || '      ' || v_tbl || '.' || v_col || ' (null in fixture)' || chr(10);
+        continue;
+      end if;
+      v_t := v_t + 1;
+      v_label := 'F' || lpad(v_t::text, 2, '0') || ' ' || rpad(v_tbl || '.' || v_col, 30);
+      begin
+        execute format('update public.%I set %I = null where id = $1', v_tbl, v_col) using v_id;
+        v_results := v_results || v_label || ' FAIL  (accepted in a closed month)' || chr(10);
+      exception when others then
+        v_msg := sqlerrm;
+        v_results := v_results || v_label
+          || case when v_msg like '%[' || v_tbl || ']%' then ' PASS'
+                  when v_msg like '%[journal_entries]%' then ' FAIL  (only the journal lock caught it)'
+                  else ' FAIL  (refused by something else: ' || left(v_msg, 40) || ')' end || chr(10);
+      end;
+    end loop;
+  end loop;
+
+  -- T17..T20 — the NOT NULL dimensions, which need a valid alternate value
+  -- rather than a null. payment_mode on both tables is the 0256 defect's column.
+  begin
+    update public.advances set payment_mode = 'Bank', bank_account_id = v_bank where id = v_advance;
+    v_results := v_results || 'T17 advance_payment_mode_refused  FAIL  (accepted)' || chr(10);
+  exception when others then
+    v_msg := sqlerrm;
+    v_results := v_results || 'T17 advance_payment_mode_refused  '
+      || case when v_msg like '%[advances]%' then 'PASS' else 'FAIL  (' || left(v_msg, 45) || ')' end || chr(10);
+  end;
+
+  begin
+    update public.advances set employee_id = coalesce(v_emp3, v_emp2) where id = v_advance;
+    v_results := v_results || 'T18 advance_employee_refused      FAIL  (accepted)' || chr(10);
+  exception when others then
+    v_msg := sqlerrm;
+    v_results := v_results || 'T18 advance_employee_refused      '
+      || case when v_msg like '%[advances]%' then 'PASS' else 'FAIL  (' || left(v_msg, 45) || ')' end || chr(10);
+  end;
+
+  begin
+    update public.expenses set payment_mode = 'Bank' where id = v_expense;
+    v_results := v_results || 'T19 expense_payment_mode_refused  FAIL  (accepted)' || chr(10);
+  exception when others then
+    v_msg := sqlerrm;
+    v_results := v_results || 'T19 expense_payment_mode_refused  '
+      || case when v_msg like '%[expenses]%' then 'PASS' else 'FAIL  (' || left(v_msg, 45) || ')' end || chr(10);
+  end;
+
+  begin
+    update public.expenses set pl_category = 'cost_of_services' where id = v_expense;
+    v_results := v_results || 'T20 expense_pl_category_refused   FAIL  (accepted)' || chr(10);
+  exception when others then
+    v_msg := sqlerrm;
+    v_results := v_results || 'T20 expense_pl_category_refused   '
+      || case when v_msg like '%[expenses]%' then 'PASS' else 'FAIL  (' || left(v_msg, 45) || ')' end || chr(10);
+  end;
+
+  begin
+    update public.cheques set cheque_number = 'PLOCK-CHQ2' where id = v_cheque;
+    v_results := v_results || 'T21 cheque_number_refused         FAIL  (accepted)' || chr(10);
+  exception when others then
+    v_msg := sqlerrm;
+    v_results := v_results || 'T21 cheque_number_refused         '
+      || case when v_msg like '%[cheques]%' then 'PASS' else 'FAIL  (' || left(v_msg, 45) || ')' end || chr(10);
+  end;
 
   -- T1 — disbursement fields are the permitted set and must pass.
   begin
@@ -627,12 +761,18 @@ begin
   -- assertion per protected column, plus the eight fixed policy tests. It is NOT
   -- a literal, so adding a money column to payslips raises the expected count
   -- and the loop must actually cover it.
+  -- The F loop's size is not derivable from the schema alone, because a column
+  -- that was NULL on the fixture is skipped. v_t carries what it actually ran.
   v_asserts := array_length(string_to_array(trim(both chr(10) from v_results), chr(10)), 1);
   v_expected := array_length(v_protected, 1) + array_length(v_inv_protected, 1)
               + array_length(v_adv_protected, 1) + array_length(v_exp_protected, 1)
-              + array_length(v_chq_protected, 1) + c_fixed_tests;
+              + array_length(v_chq_protected, 1) + v_t + c_fixed_tests;
   v_results := v_results || '--- CANARY: ' || v_asserts || '/' || v_expected || ' assertions executed'
     || case when v_asserts = v_expected then ' (complete)' else ' *** SUITE TRUNCATED ***' end || chr(10);
+
+  -- Absence must be visible: name the dimensions no assertion covered.
+  v_results := v_results || chr(10) || 'UNPROVEN — no assertion was made about these columns:' || chr(10)
+    || coalesce(nullif(v_unproven, ''), '      none' || chr(10));
 
   raise exception 'ROLLBACK_PERIOD_LOCK_TESTS: %', v_results;
 end
