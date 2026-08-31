@@ -97,6 +97,19 @@ export default function PartnerDetailModal({
     if (companyId) loadCustodianOptions(companyId).then(setCustodians);
   }, [isAddEntryOpen, companyId]);
 
+  // Remuneration basis is COMPANY policy since 0232 dropped partners.basis.
+  // RLS scopes finance_settings to the caller's company, so no filter is needed.
+  const [companyBasis, setCompanyBasis] = useState<"cash" | "revenue" | null>(null);
+  useEffect(() => {
+    if (!isOpen) return;
+    void (async () => {
+      const { data } = await supabase
+        .from("finance_settings").select("partner_remuneration_basis").maybeSingle();
+      setCompanyBasis(((data as { partner_remuneration_basis?: string } | null)
+        ?.partner_remuneration_basis ?? null) as "cash" | "revenue" | null);
+    })();
+  }, [isOpen]);
+
   const isRegional = partner?.scope === "BRANCH";
 
   const loadBreakdown = useCallback(async () => {
@@ -208,9 +221,9 @@ export default function PartnerDetailModal({
   if (!partner) return null;
 
   const basisLabel =
-    partner.basis === "cash" ? "Net Cash (cash basis)"
-      : partner.basis === "revenue" ? "Total Income (revenue basis)"
-        : "Adjusted profit";
+    companyBasis === "cash" ? "Net Cash (cash basis)"
+      : companyBasis === "revenue" ? "Total Income (revenue basis)"
+        : "basis not configured";
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={partner.name} size="lg">
@@ -252,7 +265,7 @@ export default function PartnerDetailModal({
                 <thead className="bg-slate-50">
                   <tr className="text-xs text-slate-500 uppercase">
                     <th className="text-left px-3 py-2">Client</th>
-                    <th className="text-right px-3 py-2">{partner.basis === "cash" ? "Net Cash" : "Total Income"}</th>
+                    <th className="text-right px-3 py-2">{companyBasis === "cash" ? "Net Cash" : "Total Income"}</th>
                     <th className="text-right px-3 py-2">Share</th>
                     <th className="text-right px-3 py-2">Amount</th>
                   </tr>
