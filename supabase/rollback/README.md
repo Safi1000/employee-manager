@@ -96,3 +96,18 @@ specific body is wrong and has to go back to what it was.
 this checkout and would otherwise normalise the embedded CRs on commit and
 re-expand every LF on checkout, breaking the md5 and the fidelity it certifies.
 Do not remove that entry.
+
+---
+
+## `EMERGENCY_LEVER.sql`
+
+Two statements. PART 1 replaces `assert_same_company` with an unconditional
+`return`, which disables all 135 guards without touching one rewritten body.
+PART 2 restores it — byte-identical to `0242c`, verified by diff, so putting it
+back is not a retyping exercise under pressure.
+
+**PART 1 restores the leak, deliberately.** It is for "the product is broken",
+not for "the deployment went wrong". A specific bad body is restored from the
+capture above instead.
+
+Written before the deployment, not composed during an incident.

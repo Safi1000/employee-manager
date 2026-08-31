@@ -8,7 +8,7 @@
 # 2026-09-01 capture); left to autocrlf, git would normalise those away on commit
 # and re-expand every LF on checkout, and the restored functions would not be the
 # functions that were captured. Marked as binary so nothing touches them.
-supabase/rollback/** -text -diff
+supabase/rollback/prod_secdef_functions_*.sql -text -diff
 
 # Note for anyone comparing a migration file against the recorded SQL in
 # supabase_migrations: the working tree carries CRLF here and the database
