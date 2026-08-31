@@ -405,6 +405,74 @@ control and by nothing else:
 transaction".** `now()` is the transaction timestamp and is stable across
 subtransactions; xids are not. This will come up again.
 
+### A different failure mode: a pattern applied by hand and lost in the generated path
+
+The nine instances above are all *a check that could not fail*. The NULL
+regression in 0242 is not one of them, and filing it there would blur a
+distinct lesson.
+
+**When a pattern is applied by hand, check whether the generated path uses it
+too.** In 0242b I wrote, by hand, exactly the right shape for
+`post_manual_journal`'s optional `p_branch_id`:
+
+```sql
+if p_branch_id is not null then
+  perform public.assert_same_company((select company_id from public.branches where id = p_branch_id));
+end if;
+```
+
+In the same migration family, in the same session, the generator emitted 135
+guards without the `is not null` test. The pattern was known, written down, and
+not generalised. It took an expense insert failing in production-shaped
+conditions to surface it.
+
+**Audited for other instances of the same failure, and there is a second, larger
+one.** The generator guards exactly ONE parameter per function — the first uuid.
+`post_manual_journal` has two guards only because I added the second by hand.
+**26 guarded functions accept more than one tenant-scoped uuid and check only
+one of them:**
+
+* four with three unchecked: `change_category`, `change_client`, `rehire_guard`
+  (`p_new_client_id`, `p_contract_line_id`, `p_site_id`), and `fund_region`
+  (`p_lender`, `p_borrower`, `p_approval_request_id`)
+* the rest with one unchecked, mostly `p_branch_id`, `p_location_id`,
+  `p_client_id`, `p_payslip_id`, `p_custodian_location_id`
+
+The exploit shape is the one `post_manual_journal` had: pass your own id in the
+guarded position, another company's id in an unguarded one, and the function
+writes a cross-tenant reference. Some are covered by hand-written checks in
+their own bodies (`assign_employee_code` and `record_invoice_payment` both
+validate their second id against the resolved company); most are not.
+Polymorphic parameters — `p_source_id`, `p_ref_id` — cannot be resolved
+mechanically and need the same treatment as `is_action_approved`.
+
+Not fixed. It needs a second reviewed resolver map for the additional parameter
+names, and it is the same shape of change as 0242.
+
 A corollary that has now earned its place: **a clean sweep on the first run is
 suspicious, not reassuring.** In this codebase it has more often meant the
 mechanism is not engaged than that it works.
+
+
+### 9.7 Two rules from the ledger work
+
+**A backfill that reconciles two representations must first prove they already
+agree.** 0247 rewrote `status` from `reversal_of_entry_id`, and asserted on
+every row that the two matched *before* overwriting one of them. Had they ever
+disagreed, the backfill would have destroyed the only evidence that they did —
+and produced a database that looks consistent because it was made consistent,
+not because it was.
+
+**A check whose pass condition is zero must be able to state what non-zero
+input would have produced.** 0246's function returned `0.00` for every month
+while returning the correct client list, and that reads as "these clients have
+no guards" — a plausible sentence about a security company. A wrong sign gets
+questioned; a zero gets believed. Its test now carries two non-vacuity guards:
+the agreed figure must be non-zero, and the OLD predicate must still disagree
+with the new one on the fixture, or the result is reported as NO DEMONSTRATION
+rather than as a pass.
+
+The same question is owed to every existing zero-pass check —
+`no_one_sided_entries`, `no_billing_clients_on_head_office`,
+`no_gate_mode_in_attendance_status` all pass at zero and none can currently say
+what would make it non-zero. Not audited yet.
