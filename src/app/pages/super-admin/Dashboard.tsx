@@ -298,7 +298,7 @@ export default function SuperAdminDashboard() {
 
         const attPct = (rows: { status: string }[] | null): number => {
           if (!rows || rows.length === 0) return 0;
-          const present = rows.filter((r) => r.status === "Present").length;
+          const present = rows.filter((r) => r.status === "present").length;
           return Math.round((present / rows.length) * 100);
         };
         if (attTodayRes.error) throw attTodayRes.error;
@@ -317,9 +317,9 @@ export default function SuperAdminDashboard() {
         for (const r of (attTrendRes.data ?? []) as { attendance_date: string; status: string }[]) {
           const slot = byDay.get(r.attendance_date);
           if (!slot) continue;
-          if (r.status === "Present") slot.present += 1;
-          else if (r.status === "Absent") slot.absent += 1;
-          else if (r.status === "Leave") slot.leave += 1;
+          if (r.status === "present") slot.present += 1;
+          else if (r.status === "absent") slot.absent += 1;
+          else if (r.status === "leave") slot.leave += 1;
         }
         setAttendanceTrend(
           dayList.map((d) => {

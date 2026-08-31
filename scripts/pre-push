@@ -1,0 +1,33 @@
+#!/bin/sh
+# Pre-push hook — stop migration drift before it reaches the remote.
+#
+# `npm run check:migrations` is a DETECTOR: it fires after the divergence
+# already exists. Ten migrations reached production without a repo file, five of
+# them written in the SQL editor minutes after an apply. A detector that only
+# runs in a pipeline would not have caught any of them, because the applies
+# happened locally and the commits never mentioned them.
+#
+# Install once:
+#     git config core.hooksPath scripts
+#
+# Requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in the environment. If
+# they are absent the check is SKIPPED with a warning rather than blocking the
+# push — a hook that blocks work when a secret is missing gets disabled, and a
+# disabled hook protects nothing.
+#
+# To bypass deliberately: git push --no-verify
+
+if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+  echo "pre-push: SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set — skipping migration drift check."
+  echo "pre-push: run 'npm run check:migrations' with them set before merging."
+  exit 0
+fi
+
+echo "pre-push: checking migration drift..."
+if ! npm run --silent check:migrations; then
+  echo ""
+  echo "pre-push: BLOCKED. The database has applied a migration this repo does not carry,"
+  echo "pre-push: or a suffixed migration sorts wrongly. See docs/MIGRATION_DIVERGENCE.md."
+  echo "pre-push: bypass with 'git push --no-verify' only if you know why."
+  exit 1
+fi

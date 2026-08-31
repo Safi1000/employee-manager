@@ -14,6 +14,7 @@ import {
   supabase,
   fetchAllRows,
   resolveAllowedLeaves,
+  STATUS_LABEL,
   type AttendanceStatus,
   type AttendanceRecord,
   type Client,
@@ -80,7 +81,7 @@ const daysAgo = (n: number) => {
   return d.toISOString().slice(0, 10);
 };
 
-const STATUSES: AttendanceStatus[] = ["Present", "Absent", "Leave"];
+const STATUSES: AttendanceStatus[] = ["present", "absent", "leave"];
 
 type AttendanceManagementProps = { relieversOnly?: boolean };
 
@@ -222,9 +223,9 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   const viewStats = useMemo(() => {
     let p = 0, a = 0, l = 0;
     for (const s of viewRecords.values()) {
-      if (s === "Present") p++;
-      else if (s === "Absent") a++;
-      else if (s === "Leave") l++;
+      if (s === "present") p++;
+      else if (s === "absent") a++;
+      else if (s === "leave") l++;
     }
     return { p, a, l };
   }, [viewRecords]);
@@ -403,8 +404,8 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         };
         list.push(row);
       }
-      if (r.status === "Present") row.present++;
-      else if (r.status === "Absent") row.absent++;
+      if (r.status === "present") row.present++;
+      else if (r.status === "absent") row.absent++;
       else row.leave++;
       row.employees.push({
         employee_id: emp.id,
@@ -515,7 +516,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     const employee = employees.find((e) => e.id === employeeId);
     const isReliever = employee?.category === "reliever";
     // Relievers marked Present must have a client picked.
-    if (isReliever && status === "Present" && !workedForClientId) {
+    if (isReliever && status === "present" && !workedForClientId) {
       setError("Pick which client this reliever worked for before marking Present.");
       return;
     }
@@ -544,7 +545,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     setTodayMarkedBy((m) => ({ ...m, [employeeId]: profile?.id ?? null }));
     setTodayWorkedFor((m) => ({
       ...m,
-      [employeeId]: status === "Present" ? workedForClientId ?? null : null,
+      [employeeId]: status === "present" ? workedForClientId ?? null : null,
     }));
     const { error: upErr } = await supabase
       .from("attendance_records")
@@ -555,7 +556,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
           status,
           scheduled_shift: shift,
           worked_shift: shift,
-          worked_for_client_id: status === "Present" ? workedForClientId ?? null : null,
+          worked_for_client_id: status === "present" ? workedForClientId ?? null : null,
           // Record who reported this mark, so the daily list can show it.
           marked_by_user_id: profile?.id ?? null,
           marked_at: new Date().toISOString(),
@@ -701,7 +702,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         return {
           employee_id: e.id,
           attendance_date: date,
-          status: "Present" as AttendanceStatus,
+          status: "present" as AttendanceStatus,
           scheduled_shift: shift,
           worked_shift: shift,
           worked_for_client_id:
@@ -726,7 +727,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     });
     const optimistic: Record<string, AttendanceStatus> = { ...todayRecords };
     payload.forEach((r) => {
-      optimistic[r.employee_id] = "Present";
+      optimistic[r.employee_id] = "present";
     });
     setTodayRecords(optimistic);
     setTodayMarkedBy((m) => {
@@ -844,9 +845,9 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       unm = 0;
     filteredEmployees.forEach((e) => {
       const s = todayRecords[e.id];
-      if (s === "Present") p++;
-      else if (s === "Absent") a++;
-      else if (s === "Leave") l++;
+      if (s === "present") p++;
+      else if (s === "absent") a++;
+      else if (s === "leave") l++;
       else unm++;
     });
     return { p, a, l, unm };
@@ -1206,18 +1207,18 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                   }
                   const status = viewRecords.get(c.date);
                   const tone =
-                    status === "Present"
+                    status === "present"
                       ? "bg-success-50 text-success-700 dark:text-success-500 border-success-200"
-                      : status === "Absent"
+                      : status === "absent"
                         ? "bg-danger-50 text-danger-700 dark:text-danger-500 border-danger-200"
-                        : status === "Leave"
+                        : status === "leave"
                           ? "bg-warning-50 text-warning-700 dark:text-warning-500 border-warning-200"
                           : "bg-card text-muted-foreground border-border";
                   return (
                     <div
                       key={c.date}
                       className={`h-14 rounded-lg border p-1.5 flex flex-col justify-between transition-colors ${tone}`}
-                      title={status ? `${c.date}: ${status}` : `${c.date}: Unmarked`}
+                      title={status ? `${c.date}: ${STATUS_LABEL[status]}` : `${c.date}: Unmarked`}
                     >
                       <div className="text-xs font-medium tabular-nums">{c.day}</div>
                       {status && (
@@ -1467,8 +1468,8 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                                 const newClient = e.target.value || null;
                                 setTodayWorkedFor((m) => ({ ...m, [employee.id]: newClient }));
                                 // If they're already marked Present, persist the change.
-                                if (current === "Present" && newClient) {
-                                  markStatus(employee.id, "Present", newClient);
+                                if (current === "present" && newClient) {
+                                  markStatus(employee.id, "present", newClient);
                                 }
                               }}
                               className="px-2 py-1 border border-slate-200 rounded text-sm max-w-[12rem]"
@@ -1512,11 +1513,11 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                               const on = current === status;
                               const dim = !!current && !on; // another status is set — mute the rest
                               const cls =
-                                status === "Present"
+                                status === "present"
                                   ? on
                                     ? "bg-success-500 text-[#fff] border-success-500 shadow-sm"
                                     : "bg-success-50 text-success-700 dark:text-success-500 border-success-200 hover:bg-success-100 hover:border-success-500"
-                                  : status === "Absent"
+                                  : status === "absent"
                                   ? on
                                     ? "bg-danger-500 text-[#fff] border-danger-500 shadow-sm"
                                     : "bg-danger-50 text-danger-700 dark:text-danger-500 border-danger-200 hover:bg-danger-100 hover:border-danger-500"
@@ -1539,17 +1540,17 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                                     isSaving ||
                                     beforeEffective ||
                                     (employee.category === "reliever" &&
-                                      status === "Present" &&
+                                      status === "present" &&
                                       !todayWorkedFor[employee.id])
                                   }
                                   title={
                                     beforeEffective
                                       ? `Assignment starts ${employee.assignment_effective_from}. Attendance can't be marked before this date.`
-                                      : `Mark ${status}`
+                                      : `Mark ${STATUS_LABEL[status]}`
                                   }
                                   className={`px-3.5 py-1.5 text-xs font-semibold rounded-md border transition-all disabled:opacity-50 ${cls} ${dim ? "opacity-55" : ""}`}
                                 >
-                                  {status}
+                                  {STATUS_LABEL[status]}
                                 </button>
                               );
                             })}
@@ -1564,7 +1565,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                                 <X className="w-4 h-4" strokeWidth={2} />
                               </button>
                             )}
-                            {current === "Present" && (
+                            {current === "present" && (
                               <button
                                 type="button"
                                 onClick={() => openDetailsEditor(employee)}
@@ -1734,14 +1735,14 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                     </div>
                     <span
                       className={`inline-flex items-center px-2 py-0.5 rounded text-xs ${
-                        e.status === "Present"
+                        e.status === "present"
                           ? "bg-success-50 text-success-700"
-                          : e.status === "Absent"
+                          : e.status === "absent"
                           ? "bg-danger-50 text-danger-700"
                           : "bg-warning-50 text-warning-700"
                       }`}
                     >
-                      {e.status}
+                      {STATUS_LABEL[e.status as AttendanceStatus] ?? e.status}
                     </span>
                   </div>
                 ))}

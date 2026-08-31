@@ -1,0 +1,43 @@
+# Applied-migration names that do not match a repo filename by the NNNN_ strip
+# rule, but are believed to BE a repo migration under a slightly different
+# name (e.g. init_employee_manager_schema = 0001_init.sql). Baselined on
+# 2026-08-31 so scripts/check-migrations.mjs catches NEW out-of-band applies
+# rather than re-litigating pre-0109 naming history.
+#
+# Do NOT add to this list to silence a failure. A new name here means a
+# migration was applied without committing the file — write the file instead.
+#
+add_must_change_password
+allow_disbursement_and_invoice_payment_in_closed_period
+allow_invoice_receivable_update_in_closed_period
+attendance_catchup_sync_v2
+attendance_gate_category_cast_fix
+attendance_payroll_double_duty_and_backdate
+backup_guards_and_guides_before_org_purge
+change_category_enum_cast_v2
+confirmable_non_client_attendance_groups
+create_attendance_shift_overrides
+create_cash_locations
+create_expense_receipts_table
+create_profit_distribution
+create_project_financing
+drive_columns_for_invoices_cheques_expenses
+enforce_confirmed_month_end_lock
+enforce_contract_line_headcount_revoke_execute
+expenses_expense_by
+extend_partners_create_ledger
+fix_trigger_order_fill_company_first
+fixed_expenses_due_date_fix
+init_employee_manager_schema
+inventory_branches_cheque_types_auto_wht_v2
+narrow_invoice_receivable_period_lock_exemption
+partner_ledger_fix_variable_conflict
+partners_and_bank_account_ownership
+partnership_allocation_and_opex_detail
+partnership_allocation_honours_client_overrides
+partnership_revenue_basis_uses_total_income
+profile_title_and_employee_bank_name
+purge_attendance_after_separation
+regional_pl_range
+renew_contract_skip_generated_column
+revert_accidental_separation_hmc071_pinned
