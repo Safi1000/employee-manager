@@ -40,7 +40,7 @@ declare
   v_results text := '';
   v_asserts int;
   v_expected int;
-  c_fixed_tests constant int := 8;   -- T1..T8 below; hand-maintained, and independent of the derived set
+  c_fixed_tests constant int := 11;  -- T1..T11 below; hand-maintained, and independent of the derived sets
   v_msg     text;
   v_n       int;
 
@@ -63,6 +63,29 @@ declare
   v_col     text;
   v_t       int := 0;
   v_profile uuid;
+
+  -- THE INVOICES HALF, DERIVED THE SAME WAY — AND FOR THE SAME REASON.
+  --
+  -- This suite tested invoices with two hand-picked assertions: T3 (a receipt is
+  -- allowed) and T4 (invoice_amount is refused). Both passed against 0237's
+  -- carve-out, which pinned six columns by name and let the other twenty-seven
+  -- ride along with any update that also moved amount_received — subtotal,
+  -- total_due, tax_added_total, tax_withheld_total, previous_balance,
+  -- period_start, branch_id, contract_id among them. T3 and T4 could not see
+  -- that, because a hand-picked pair can only ever describe the columns whoever
+  -- wrote it was already thinking about. That is G0.2, and it is the payslips
+  -- lesson repeating on the other table.
+  --
+  -- Derived means a money or date column added to invoices next month joins the
+  -- protected set automatically. The hand-maintained half is the PERMITTED list,
+  -- which is short, and which is what 0253 actually decided.
+  c_invoice_permitted constant text[] := array[
+    'amount_received', 'status', 'notes', 'updated_at',
+    'attachment_path', 'attachment_file_name', 'drive_file_id', 'drive_view_url'
+  ];
+  v_inv_protected text[];
+  v_branch  uuid;
+  v_contract uuid;
 begin
   perform set_config('app.ledger_maintenance', 'on', true);
 
@@ -84,6 +107,25 @@ begin
   if coalesce(array_length(v_protected, 1), 0) < 12 then
     raise exception 'period_lock suite ABORTED: derived protected set is % column(s); payslips should yield at least 12',
       coalesce(array_length(v_protected, 1), 0);
+  end if;
+
+  -- The same derivation for invoices. Numeric AND date columns, because the
+  -- columns 0237 left open were not all money: period_start is the date
+  -- journal_on_invoice reposts the accrual at, and moving it moves the charge
+  -- between months. Restricting to numeric would have reproduced the original
+  -- blind spot in a new place.
+  select array_agg(c.column_name order by c.column_name)
+    into v_inv_protected
+    from information_schema.columns c
+   where c.table_schema = 'public'
+     and c.table_name   = 'invoices'
+     and c.data_type in ('numeric','integer','bigint','smallint','double precision','real','date')
+     and c.is_generated = 'NEVER'
+     and not (c.column_name = any (c_invoice_permitted));
+
+  if coalesce(array_length(v_inv_protected, 1), 0) < 8 then
+    raise exception 'period_lock suite ABORTED: derived invoice protected set is % column(s); invoices should yield at least 8',
+      coalesce(array_length(v_inv_protected, 1), 0);
   end if;
 
   select id into v_co from public.companies where name = 'SANDBOX TESTING ORG';
@@ -125,12 +167,42 @@ begin
     (v_co, v_emp, v_month, 40000, 40000, 37000, 1000, 500, 2000, 370, 1130, 1850, false, 'Bank')
   returning id into v_payslip;
 
+  -- A non-head-office branch, so T9 has something real to move the invoice off.
+  select id into v_branch from public.branches
+   where company_id = v_co and not coalesce(is_head_office, false) limit 1;
+
+  -- A contract with no invoice in the month we are about to close. Two reasons,
+  -- both learned the hard way:
+  --   * uq_invoice_contract_month is unique on (contract_id, month), so a
+  --     contract already invoiced for v_month makes the fixture insert fail.
+  --   * T10 nulls contract_id, and the fixture must therefore START non-null.
+  --     Left NULL, `set contract_id = null` is a no-op, the carve-out correctly
+  --     permits it, and T10 reports the column as unprotected when it is not.
+  --     That is instance eleven, and it caught this suite a second time.
+  select c.id into v_contract
+    from public.contracts c
+   where c.company_id = v_co
+     and not exists (
+       select 1 from public.invoices i
+        where i.contract_id = c.id
+          and date_trunc('month', coalesce(i.period_start, i.invoice_date)) = v_month)
+   limit 1;
+  if v_contract is null then
+    raise exception 'period_lock suite ABORTED: every contract in SANDBOX TESTING ORG already has an invoice in %; T10 would test a no-op', v_month;
+  end if;
+
+  -- Every money column is populated. A NULL column mutated with coalesce(col,0)+1
+  -- still changes, but a fixture that leaves the disputed columns NULL is one
+  -- schema change away from testing nothing — and these are exactly the columns
+  -- 0237 left open, so they are the ones that must be unambiguously present.
   insert into public.invoices
-    (company_id, client_id, invoice_number, invoice_date, period_start, period_end,
-     invoice_amount, subtotal, total_due, amount_received, status)
+    (company_id, client_id, branch_id, contract_id, invoice_number, invoice_date, period_start, period_end,
+     invoice_amount, subtotal, total_due, amount_received, status,
+     tax_added_total, tax_withheld_total, previous_balance, withholding_tax)
   values
-    (v_co, v_client, 'PLOCK-001', v_month, v_month,
-     (v_month + interval '1 month - 1 day')::date, 100000, 100000, 100000, 0, 'Unpaid')
+    (v_co, v_client, v_branch, v_contract, 'PLOCK-001', v_month, v_month,
+     (v_month + interval '1 month - 1 day')::date, 100000, 85000, 118000, 0, 'Unpaid',
+     15000, 2000, 20000, 2000)
   returning id into v_invoice;
 
   -- Close the month. Everything below runs against a genuinely closed period.
@@ -160,6 +232,57 @@ begin
       v_results := v_results || 'C' || lpad(v_t::text, 2, '0') || ' payslip_' || rpad(v_col, 15)
         || case when v_msg like '%[payslips]%'
                 then ' PASS  (refused by the payslips lock)'
+                when v_msg like '%[journal_entries]%'
+                then ' FAIL  (only the journal lock caught it — carve-out still open)'
+                else ' FAIL  (' || left(v_msg, 60) || ')' end || chr(10);
+    end;
+  end loop;
+
+  -- D01..Dnn — G0.2. Every money or date column outside the invoices carve-out
+  -- must be refused BY THE INVOICES LOCK.
+  --
+  -- The distinction this loop exists to draw: before 0253, tax_added_total,
+  -- period_start and branch_id WERE refused — by trg_journal_entries_period_lock
+  -- downstream, because journal_on_invoice reposts on them and the journal lock
+  -- has no carve-out. A suite that asserted "something raised" would have scored
+  -- those as passes while the invoices carve-out sat wide open, and would have
+  -- said nothing at all about subtotal, total_due, tax_withheld_total and
+  -- previous_balance, which no lock anywhere refused. Scoring [journal_entries]
+  -- as a distinct FAIL is what makes this loop mean what its name says.
+  --
+  -- EVERY MUTATION HERE CARRIES A RECEIPT ALONGSIDE IT, AND THAT IS THE WHOLE
+  -- TEST. 0237's carve-out opens with `old.amount_received is distinct from
+  -- new.amount_received`; touch one of these columns on its own and the branch
+  -- never fires, the row falls through to the lock, and it is refused. Written
+  -- that way this loop is green against the broken carve-out and proves nothing.
+  -- The defect is only reachable by riding along with a receipt, so the receipt
+  -- is part of every statement below.
+  --
+  -- The first version of this loop omitted it. The probe that caught the
+  -- omission is the reason the shape is spelled out here rather than assumed.
+  --
+  -- The mutation is coalesced so it always changes the row (instance eleven).
+  v_t := 0;
+  foreach v_col in array v_inv_protected loop
+    v_t := v_t + 1;
+    select c.data_type into v_msg
+      from information_schema.columns c
+     where c.table_schema = 'public' and c.table_name = 'invoices' and c.column_name = v_col;
+    begin
+      if v_msg = 'date' then
+        execute format('update public.invoices set amount_received = amount_received + 100, %I = coalesce(%I, $2) + 1 where id = $1', v_col, v_col)
+          using v_invoice, v_month;
+      else
+        execute format('update public.invoices set amount_received = amount_received + 100, %I = coalesce(%I, 0) + 1 where id = $1', v_col, v_col)
+          using v_invoice;
+      end if;
+      v_results := v_results || 'D' || lpad(v_t::text, 2, '0') || ' invoice_' || rpad(v_col, 20)
+        || ' FAIL  (edit accepted in a closed month)' || chr(10);
+    exception when others then
+      v_msg := sqlerrm;
+      v_results := v_results || 'D' || lpad(v_t::text, 2, '0') || ' invoice_' || rpad(v_col, 20)
+        || case when v_msg like '%[invoices]%'
+                then ' PASS  (refused by the invoices lock)'
                 when v_msg like '%[journal_entries]%'
                 then ' FAIL  (only the journal lock caught it — carve-out still open)'
                 else ' FAIL  (' || left(v_msg, 60) || ')' end || chr(10);
@@ -247,6 +370,51 @@ begin
       || case when v_msg like '%[journal_entries]%' then 'PASS' else 'FAIL  (' || left(v_msg, 50) || ')' end || chr(10);
   end;
 
+  -- T9 — branch_id. Not a money column, so the derived loop above cannot reach
+  -- it, and it is one of the six journal_on_invoice reposts on. Moving an
+  -- invoice to another branch in a closed month restates the closed month's
+  -- revenue by branch, which is the dimension regional allocation runs on.
+  begin
+    update public.invoices set amount_received = amount_received + 100, branch_id = null where id = v_invoice;
+    v_results := v_results || 'T9  invoice_branch_refused        FAIL  (accepted)' || chr(10);
+  exception when others then
+    v_msg := sqlerrm;
+    v_results := v_results || 'T9  invoice_branch_refused        '
+      || case when v_msg like '%[invoices]%' then 'PASS'
+              when v_msg like '%[journal_entries]%' then 'FAIL  (only the journal lock caught it)'
+              else 'FAIL  (' || left(v_msg, 50) || ')' end || chr(10);
+  end;
+
+  -- T10 — contract_id. A posting dimension per the posting rules, and the one
+  -- journal_on_invoice does NOT repost on, so nothing downstream would catch it
+  -- if the carve-out let it through. No backstop means this assertion is the
+  -- only thing standing behind the column.
+  begin
+    update public.invoices set amount_received = amount_received + 100, contract_id = null where id = v_invoice;
+    v_results := v_results || 'T10 invoice_contract_refused      FAIL  (accepted)' || chr(10);
+  exception when others then
+    v_msg := sqlerrm;
+    v_results := v_results || 'T10 invoice_contract_refused      '
+      || case when v_msg like '%[invoices]%' then 'PASS'
+              else 'FAIL  (' || left(v_msg, 50) || ')' end || chr(10);
+  end;
+
+  -- T11 — POSITIVE CONTROL for the permitted set. Attaching the scan of a July
+  -- invoice in August is a normal act and must not be refused. A carve-out
+  -- verified only by what it refuses is half tested, and the untested half is
+  -- the one that takes production down.
+  begin
+    update public.invoices
+       set drive_file_id = 'plock-suite', drive_view_url = 'https://example.invalid/x',
+           attachment_file_name = 'PLOCK-001.pdf', notes = 'period_lock suite',
+           updated_at = now()
+     where id = v_invoice;
+    v_results := v_results || 'T11 invoice_document_allowed      PASS' || chr(10);
+  exception when others then
+    v_results := v_results || 'T11 invoice_document_allowed      FAIL  ('
+      || left(sqlerrm, 70) || ')' || chr(10);
+  end;
+
   -- T8 — reopening restores writes. A lock that cannot be lifted is an outage.
   delete from public.accounting_periods where company_id = v_co and period_month = v_month;
   begin
@@ -263,7 +431,7 @@ begin
   -- a literal, so adding a money column to payslips raises the expected count
   -- and the loop must actually cover it.
   v_asserts := array_length(string_to_array(trim(both chr(10) from v_results), chr(10)), 1);
-  v_expected := array_length(v_protected, 1) + c_fixed_tests;
+  v_expected := array_length(v_protected, 1) + array_length(v_inv_protected, 1) + c_fixed_tests;
   v_results := v_results || '--- CANARY: ' || v_asserts || '/' || v_expected || ' assertions executed'
     || case when v_asserts = v_expected then ' (complete)' else ' *** SUITE TRUNCATED ***' end || chr(10);
 
