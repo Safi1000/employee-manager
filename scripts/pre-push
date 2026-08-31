@@ -11,7 +11,9 @@
 # core.hooksPath). Install by hand with:
 #     git config core.hooksPath scripts
 #
-# Requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in the environment.
+# Requires BOTH environments configured:
+#   SUPABASE_PROD_URL / SUPABASE_PROD_SERVICE_ROLE_KEY
+#   SUPABASE_DEV_URL  / SUPABASE_DEV_SERVICE_ROLE_KEY
 #
 # THIS USED TO SKIP ITSELF WHEN THOSE WERE ABSENT. The reasoning was that a hook
 # which blocks work over a missing secret gets disabled, and a disabled hook
@@ -26,14 +28,27 @@
 #
 # To bypass deliberately: git push --no-verify
 
-if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
-  echo "pre-push: BLOCKED — SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are not set,"
-  echo "pre-push: so the migration drift check cannot run. It is not being skipped."
+have_prod=0; have_dev=0
+[ -n "$SUPABASE_PROD_URL" ] && [ -n "$SUPABASE_PROD_SERVICE_ROLE_KEY" ] && have_prod=1
+[ -n "$SUPABASE_DEV_URL" ]  && [ -n "$SUPABASE_DEV_SERVICE_ROLE_KEY" ]  && have_dev=1
+
+# BOTH, not either. This hook used to gate on the unnamed SUPABASE_URL pair,
+# which is one database. prod and dev have diverged more than once - 0231, 0231b
+# and 0232 were applied to production through the SQL editor and recorded
+# nothing - so a green run against one environment is not evidence about the
+# other. check-migrations.mjs audits every configured environment; the gate's
+# job is to make sure both are configured.
+if [ "$have_prod" -eq 0 ] || [ "$have_dev" -eq 0 ]; then
+  echo "pre-push: BLOCKED - the migration drift check needs BOTH environments."
   echo "pre-push:"
-  echo "pre-push:   export SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=..."
-  echo "pre-push:   npm run check:migrations"
+  [ "$have_prod" -eq 0 ] && echo "pre-push:   missing SUPABASE_PROD_URL / SUPABASE_PROD_SERVICE_ROLE_KEY"
+  [ "$have_dev"  -eq 0 ] && echo "pre-push:   missing SUPABASE_DEV_URL / SUPABASE_DEV_SERVICE_ROLE_KEY"
   echo "pre-push:"
-  echo "pre-push: or bypass this push with 'git push --no-verify' if you know why."
+  echo "pre-push: Each URL is checked against a pinned project ref, so a"
+  echo "pre-push: copy-pasted URL cannot make one environment stand in for the other."
+  echo "pre-push:"
+  echo "pre-push: Then: npm run check:migrations"
+  echo "pre-push: Or bypass this push with 'git push --no-verify' if you know why."
   exit 1
 fi
 

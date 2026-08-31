@@ -110,6 +110,33 @@ const repoKey = (f) => {
 const repoTally = tally(files, repoKey);
 
 // --------------------------------------------------------------- env config
+//
+// THE PROJECT REF IS PINNED, NOT INFERRED.
+//
+// An environment used to be whatever URL happened to be in the shell. Nothing
+// checked that SUPABASE_PROD_URL pointed at production: a copy-pasted dev URL
+// under the prod name produces a clean, confident, entirely wrong report, and
+// the failure mode is the dangerous direction — "prod is fine" when prod was
+// never contacted. Same shape as the FORCE RLS pre-check that tested the wrong
+// role and passed.
+//
+// The refs below are the identity of each environment. A URL that does not
+// carry the expected ref is refused rather than audited.
+//
+// `default` is deliberately unpinned: it is the escape hatch for a throwaway or
+// branch database. It is also reported as UNPINNED in the output, because an
+// environment nobody can name is not evidence about the environments that
+// matter.
+const PROJECT_REFS = {
+  prod: "mmkfpnshxjcyijhuydgr", // crm-design
+  dev: "wlyhbvunvdsropqzlpwx", // crm-design-dev
+};
+
+const refOf = (url) => {
+  const m = /^https?:\/\/([a-z0-9]+)\.supabase\.(co|in)/i.exec(url.trim());
+  return m ? m[1] : null;
+};
+
 function environments() {
   const out = [];
   for (const [name, u, k] of [
@@ -117,7 +144,21 @@ function environments() {
     ["dev", "SUPABASE_DEV_URL", "SUPABASE_DEV_SERVICE_ROLE_KEY"],
     ["default", "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"],
   ]) {
-    if (process.env[u] && process.env[k]) out.push({ name, url: process.env[u], key: process.env[k] });
+    if (!process.env[u] || !process.env[k]) continue;
+    const url = process.env[u];
+    const expected = PROJECT_REFS[name];
+    const actual = refOf(url);
+    if (expected) {
+      if (actual !== expected) {
+        console.error(
+          `\n${name}: ${u} points at project '${actual ?? "unrecognised"}' but ${name} is '${expected}'.\n` +
+            `A misaimed environment reports confidently about a database it never read.\n` +
+            `Fix the variable, or update PROJECT_REFS in scripts/check-migrations.mjs if the project genuinely moved.\n`,
+        );
+        process.exit(2);
+      }
+    }
+    out.push({ name, url, key: process.env[k], ref: actual, pinned: Boolean(expected) });
   }
   const only = process.argv.includes("--env") ? process.argv[process.argv.indexOf("--env") + 1] : null;
   return only ? out.filter((e) => e.name === only) : out;
@@ -145,6 +186,15 @@ const envs = environments();
 if (envs.length === 0) {
   console.error("No environment configured. Set SUPABASE_{PROD,DEV}_URL and the matching SERVICE_ROLE_KEY.");
   process.exit(2);
+}
+
+// A run that audits one of the two real environments is not a clean bill of
+// health for both, and the report must not read like one. prod and dev have
+// diverged before and will again.
+const audited = new Set(envs.map((e) => e.name));
+const unaudited = ["prod", "dev"].filter((n) => !audited.has(n));
+if (unaudited.length && !process.argv.includes("--env")) {
+  console.warn(`\nNOT AUDITED: ${unaudited.join(", ")} — no URL/key pair configured. This run says nothing about ${unaudited.length === 1 ? "it" : "them"}.`);
 }
 
 let bad = 0;
@@ -196,8 +246,9 @@ for (const env of envs) {
 
   const ok = shortfalls.length === 0 && excesses.length === 0;
   if (!ok) bad++;
-  console.log(`\n[${env.name}] ${rows.length} applied, ${files.length} files — ` +
+  console.log(`\n[${env.name}${env.pinned ? ` ${env.ref}` : " UNPINNED"}] ${rows.length} applied, ${files.length} files — ` +
     (ok ? "OK" : `${shortfalls.length} in repo not recorded, ${excesses.length} recorded not in repo`));
+  if (!env.pinned) console.log(`   note: not pinned to a project ref — this proves nothing about prod or dev`);
   if (digestNote) console.log(`   note: ${digestNote}`);
   for (const n of shortfalls) console.log(`   in repo, NOT recorded : ${n}`);
   for (const n of excesses)   console.log(`   recorded, NOT in repo : ${n}`);

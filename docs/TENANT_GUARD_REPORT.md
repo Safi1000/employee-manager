@@ -384,6 +384,28 @@ The suite reported FAIL against code that was behaving properly. A test that
 goes red while the system is right is how a real check gets deleted for being
 noisy.
 
+Instances twelve and thirteen are the same rule, found while writing the G0.2
+suite, both by probing rather than by reading:
+
+* **Twelve — the mutation must use the shape that reaches the code path.** The
+  first G0.2 probe changed `total_due`, `subtotal` and the rest *on their own*
+  and reported every one refused, i.e. nothing wrong. But 0237's carve-out opens
+  with `old.amount_received is distinct from new.amount_received`: touched alone,
+  those columns never reach the carve-out at all, they fall through to the lock,
+  and of course they are refused. The defect is only reachable riding along with
+  a receipt. A probe in the wrong shape does not under-test the code, it
+  **exonerates** it.
+* **Thirteen — `set contract_id = null` on a row whose `contract_id` was already
+  null.** Same class as `per_day_salary`: the statement ran, the row did not
+  change, the carve-out correctly permitted a no-op, and the test scored the
+  column as unprotected when it was not. The fixture now populates
+  `contract_id`, and must, because `uq_invoice_contract_month` also forbids
+  reusing a contract already invoiced that month.
+
+Both were caught by the suite that caught eleven, within one sitting of writing
+it. Worth stating plainly: the suite is currently finding defects in its own
+assertions faster than in the code, and that is the suite working, not failing.
+
 **Every guard needs a positive control proving the legitimate path still works.**
 A guard verified only by what it refuses is half tested, and the untested half is
 the one that takes production down. Two instances, both caught by a positive
