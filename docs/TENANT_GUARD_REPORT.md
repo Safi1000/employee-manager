@@ -487,6 +487,53 @@ helper is one edit in one place, rather than a new blind spot each time. A
 coverage check that hard-codes one spelling of the thing it looks for degrades
 silently every time the codebase gains a synonym.
 
+**A class fix must be verified per member; uniform shape is not uniform
+behaviour.** Eight `journal_on_*` triggers posted at a date they never compared.
+Fixed as one class in 0258 — one migration, one shape, nine call sites — and six
+of the eight were the one-line edit the class implied. The other two were not.
+`journal_on_cheque` and `journal_on_expense_settlement` have no general "did
+anything relevant change" test; each is driven by a status transition and
+returns early when the status did not move. The date case needed a *third*
+branch — **staying** in the state while the date moves — beside entering it and
+leaving it.
+
+Added as an `or` to the existing condition, those two would have compiled,
+matched the other six by eye, and changed nothing. The reviewer's eye is the
+failure surface here: a class fix is reviewed by pattern, and pattern is exactly
+what the two outliers satisfy. They were caught by implementing each member
+rather than by generalising from the first one, and then by asserting the
+*property* — move a posted row's date, the old month must be vacated — across
+all nine source tables rather than asserting eight instances of a shape.
+
+Naming a defect as a class is the right move and it is also where the risk
+enters: the name asserts the members are the same, and that assertion is
+untested until each member is made to behave, one at a time.
+
+**A check keyed on a marker its subjects deliberately do not carry is blind by
+construction, and gets worse the more correct the code becomes.** Every balance
+in `ledger_checks()` came from `group by a.system_key`. Per-location
+sub-accounts — created automatically by `allocate_cash_location_account()` since
+long before — carry `system_key = NULL`, because only one account per company
+may claim a given key. So the bank and cash controls read the control row's own
+lines and could not see a single child.
+
+Two things make this worse than an ordinary blind spot. First, it was invisible
+while broken: the sub-accounts had zero journal lines, so a check that ignored
+them agreed exactly with a check that read them. Second, it **punishes the fix**.
+Posting bank openings to the nine per-account children would have left the bank
+control's measured balance untouched — the money lands where the check does not
+look — and, because `cash_location_balances` includes the BANK-type locations,
+would have driven the *cash* check from red by 595,990.13 to red by
+8,106,091.13. A correct posting, marked as an eight-million-rupee regression, on
+two independent checks at once.
+
+The rule that generalises: when a check identifies its subject by a flag, ask
+what the code does with objects that legitimately lack the flag. If the answer
+is "creates them routinely", the check is measuring a subset it never declared.
+Fixed in 0259 by summing the account subtree instead — and it had to ship *ahead*
+of the data, because a check amended after the posting it misreads is a check
+amended to fit an answer.
+
 ### A different failure mode: a pattern applied by hand and lost in the generated path
 
 The nine instances above are all *a check that could not fail*. The NULL

@@ -153,8 +153,19 @@ And one that is not in the table at all, because it is a different shape:
 scope does not repost the entries already posted against them. Cross-table
 staleness; no repost condition on the entry can see it.
 
-Separately: **`partner_account_entries` has no audit trigger.** advances,
+Separately: **`partner_account_entries` had no audit trigger.** advances,
 cheques, expenses, invoices and payslips all carry `log_audit_change`; the table
-holding partner capital movements does not. That is why "has any row ever
-changed partner_id" could not be answered from history and had to be answered
-from state instead.
+holding partner capital movements did not. That is why "has any row ever changed
+partner_id" could not be answered from history and had to be answered from state
+instead — which is the better question, and is now the standing form, but it was
+not a choice at the time.
+
+**Fixed in 0261**, verified by `supabase/tests/opening_gate_and_partner_audit.sql`
+(A1–A3: insert, update and delete each write an `audit_log` row, and the update
+row names `partner_id` with both before and after). The table is empty on both
+environments, so the trigger lands before the rows do and no blind window
+survives.
+
+**`public.partners` still has none**, and `journal_on_partner_entry` depends on
+three of its columns. Both sides of the cross-table staleness above are
+therefore unaudited on the partners side. Reported, not fixed.
