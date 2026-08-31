@@ -338,15 +338,32 @@ A naive `set status = lower(status)` aborts on the first separated guard and rol
 | 0221 | `posting_rules_ar_and_cash` | Yes |
 | 0222 | `payroll_accrual_and_statutory` | Yes |
 | 0223 | `payroll_client_attendance_split` | Yes |
-| **0224** | — | **next free number** |
+| 0224–0229 | status normalisation, HO revenue driver, HO-billing check, migration names/digests, gate-mode rejection | Yes |
+| 0230, 0231, 0232 | partner basis hoist, backup retention date, partner basis drop | **NOT APPLIED — written only** |
+| **0233** | — | **next free number** |
 
 **Repo/DB divergence noted:** the DB carries teammate migrations 0109–0112 that are not in
 the repo. Numbering above follows the repo.
 
 ### Tests
 
-`supabase/tests/ledger_foundation.sql` — self-rolling-back, **T1–T16**. Run after any ledger
-change. `select * from ledger_checks('<company_id>')` for the six reconciliation checks.
+`supabase/tests/ledger_foundation.sql` — self-rolling-back, **T1–T16**.
+`supabase/tests/attendance_status.sql` — self-rolling-back, **T17–T31**.
+`select * from ledger_checks('<company_id>')` for the eight reconciliation checks.
+
+**The suite is not currently sound — see `docs/LEDGER_PHASE1_FIXTURE_AUDIT.md`.**
+`ledger_foundation.sql` aborts at T9 (it calls `is_ledger_maintenance()`, dropped by 0224),
+so T10–T16 have not run since. T4/T16 assert zero failing `ledger_checks` while two are
+red by design. And 5 of 7 fixture writes construct state the application cannot produce —
+Bank-mode rows with no bank account, disbursed payslips with no money moved, invoices with
+no `contract_id`. A green test on an impossible path is worse than an untested one: it is
+a false signal that stops anyone looking. **Two prior instances of a test passing for the
+wrong reason make this a pattern, not a coincidence.**
+
+There is also **no reconciliation check tying the `bank` control account to
+`bank_accounts.balance` + `bank_transactions`** — which is why the sandbox can currently
+hold 150,000 of ledger bank money the operational tables have never heard of, with
+`ledger_checks` green. Worth a ninth check.
 
 ---
 
