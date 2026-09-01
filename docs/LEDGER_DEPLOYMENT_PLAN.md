@@ -1177,3 +1177,125 @@ the undifferentiated control. Block 4 is where that is fixed.
 **Recorded as the production baseline for this check**, so a later change is
 measurable against a figure that came from the database it describes. It is
 not yet a finding; it is the first honest reading.
+
+---
+
+# THE CLOSE GATE — PRODUCTION CANNOT CLOSE A MONTH, 2026-09-01
+
+Found at the Block 3 gate. **Priority above Block 4.**
+
+```
+trg_bbb_first_close_needs_openings installed on prod ... YES (0260, 11:57)
+accounting_periods rows ................................ 0
+opening_balance_batches rows (any status, any company) . 0
+journal entries from opening batches ................... 0
+companies .............................................. 4
+```
+
+`accounting_periods` is empty, so **every company's next close is its FIRST
+close**, and `0260`'s trigger refuses every one of them for want of a posted
+batch that exists for no company.
+
+**Production cannot close a month, for any of the four companies.** Nobody has
+hit it because nothing has been closed all year; that is the only reason it is
+not already a support call.
+
+The gate is correct and is doing exactly what it was built to do. The fix is the
+batch, not a change to `0260`. `0260`'s header says "nothing is grandfathered,
+because there is nothing to grandfather" — true of every EXISTING close, and
+silent about the fact that no FUTURE close can happen either. On dev this was
+invisible because G1 had already posted SANDBOX's batch.
+
+## The 7,510,101.00 is not a coincidence
+
+`0260`'s header cites 7,510,101.00 as what SANDBOX carried in
+`bank_accounts.opening_balance` with nothing in the general ledger. Production's
+`bank_accounts.opening_balance` sums to **7,510,101.00 exactly, right now**.
+
+The header was written about dev and describes production to the rupee **because
+both were seeded the same way and neither was ever posted** — the same number for
+the same reason, not a coincidence. It is also the size of the gap **Block 4 does
+not close**.
+
+## CORRECTION TO `0271`'s HEADER — the ~6.4M is not a routing defect
+
+`0271`'s header predicts that bank sub-accounts hold "exactly the opening balance
+and nothing else" because postings land on the undifferentiated control. **That
+explanation does not fit production's numbers and should not be believed by the
+next reader.**
+
+```
+Meezan Bank   operational 3,843,255.00   gl −500,000.00   diff −4,343,255.00
+```
+
+A sub-account at −500,000 against an operational 3.84M is not an opening balance
+in the wrong place. It is an opening balance **that was never posted anywhere**,
+which is a different defect with a different fix. Measured, not argued: prod has
+zero opening batches.
+
+Posting the openings moves the bank GL from −465,333.00 to 7,044,768.00 against
+an expected 5,956,301.00 — closing about **5.33M of the 6.42M** and leaving about
+**1,088,467.00**, which still contains United Bank Ltd's 800,000.00 (opening
+recorded, operational zeroed by `apply_monthly_account_zeroing`; §6a keeps that
+visible deliberately).
+
+**Correcting `0271`'s own header means editing an applied migration and
+re-applying it to production.** Not done here — logged in §12 alongside `0302`'s
+header, for the same reason.
+
+## SANDBOX TESTING ORG — the batch, line by line. PROPOSAL. NOT APPLIED.
+
+Nine debit lines, one per bank account, each to that account's own GL
+sub-account. Figures are `bank_accounts.opening_balance` as recorded on
+production; none is derived or inferred.
+
+| # | GL account | bank account | debit |
+|---|---|---|---:|
+| 1 | `1010.01` Meezan Bank | 0102-0100-1234-5601 | 5,000,000.00 |
+| 2 | `1010.02` Habib Bank Ltd | 0234-7900-4455-0002 | 1,250,000.00 |
+| 3 | `1010.03` United Bank Ltd | 0345-2200-8899-0003 | 800,000.00 |
+| 4 | `1010.05` Askari Bank | 0567-4400-6677-0005 | 350,000.00 |
+| 5 | `1010.09` aa | 0010112274540012 | 110,101.00 |
+| 6 | `1010.04` Bank Alfalah | 0456-3300-1122-0004 | 0.00 |
+| 7 | `1010.06` JS Bank | 0678-5500-3344-0006 | 0.00 |
+| 8 | `1010.07` ss | 0067855003344333 | 0.00 |
+| 9 | `1010.08` abl | 0010112274540012 | 0.00 |
+| | | **total debit** | **7,510,101.00** |
+
+Balanced by one credit of **7,510,101.00**. The schema already designates the
+account: `3200 Opening Balance Equity`, `system_key = 'opening_balance_equity'`.
+
+**The four custodian cash locations contribute nothing**, because all four carry
+`opening_balance = 0.00`:
+
+```
+Bilal Ahmad 0.00   HAMNA 0.00   Kiran Shah 0.00   Safi 0.00
+```
+
+**That is exactly what `no_negative_custodian_balance` is red about.** HAMNA at
+−3,477.00 and Safi at −1,999.87 are custodians who spent money the system never
+recorded them receiving. If their true openings are non-zero, this batch is where
+that is recorded and the check goes green for the right reason. **THE FIGURES
+COME FROM SAFI, NOT FROM ARITHMETIC.** Nothing here invents them.
+
+## The other three companies open at nothing
+
+`GUARDS AND GUIDES (PVT) LTD`, `guards n guides` and `Sandboxx` hold **zero bank
+accounts and zero cash locations** on production. Their batch is the single
+`0.00 / 0.00` line `0260`'s header prescribes for a company that genuinely opens
+at nothing — an explicit record rather than a silent exemption.
+
+`GUARDS AND GUIDES (PVT) LTD` is real customer data (527 employees, zero bank
+accounts). **Whether it truly has no opening balances is a question for Shayan,
+not a derivation from an empty table.**
+
+## Outstanding before the batch can be posted
+
+1. **`as_of_date`** — accounting policy, not derivable. Shayan's.
+2. **The credit account** — `3200 Opening Balance Equity` is the schema's own
+   designation and the obvious candidate; confirming it is still his call.
+3. **Custodian openings** — from Safi, if any.
+4. **Whether GUARDS AND GUIDES has real openings.**
+
+The batch is data on production and gets **its own named authorisation** once
+those land.
