@@ -1437,3 +1437,85 @@ constraint instead of the message — a raw Postgres error in a toast where
 `0281` deliberately produced a legible refusal. Low severity, same class of
 defect: **a validation that checks the input but not the resolution of that
 input.**
+
+### 9.18 The fall-through is where the decision gets made by accident
+
+Three instances now, in three different shapes, all in the finance path:
+
+| where | the fall-through | what it decided |
+|---|---|---|
+| the branch resolver | `else 'left'` | a side, for every unlisted value |
+| the period lock | an early `return` | that the period was open |
+| `settlement_account` | `else bank_account_gl(...)` | that every unknown mode is a bank payment |
+
+The third is the clearest. Written as
+
+```sql
+when p_payment_mode = 'Cash'    then cash_account_for(...)
+when p_payment_mode = 'Cheque'
+     and outgoing               then unpresented_cheques
+else                                 bank_account_gl(...)
+```
+
+the `else` reads as "Bank". It is not. It is **"Bank, and every value nobody
+enumerated, and NULL"** — and four tables feed this function, so adding a mode
+to any one of them would have posted it to a bank account with a null account
+id. `0317` names every mode and raises on the rest.
+
+> **A DEFAULT THAT ABSORBS THE UNKNOWN CASE CANNOT FAIL, AND A BRANCH THAT
+> CANNOT FAIL IS INDISTINGUISHABLE FROM ONE THAT IS NEVER CHECKED.**
+
+The shape is hard to see because in all three the fall-through is *correct for
+the values that exist today*. It is only wrong about the value nobody has
+added yet, which means it will be discovered by the change that adds one — at
+which point the failure looks like a bug in the new feature rather than in the
+branch that swallowed it.
+
+**LOGGED, NOT DONE:** a sweep of every `else` and `coalesce` in the finance
+path that SUPPLIES A VALUE rather than raising. `coalesce` deserves equal
+scrutiny — `coalesce(x, 0)` in a balance is the same act as `else` in a
+branch: it turns "unknown" into a number and loses the distinction. Not
+started; scheduled after Blocks 5–9.
+
+#### The distinction between a control and a claim
+
+`0317` added a gate refusing a payroll run whose Cash payslips name no
+custodian. `disburse_payroll_run()` **has no caller**, and `payroll_runs` is
+empty on production. The gate is in the right place and guards a door nobody
+currently walks through.
+
+Recording that in the migration is not a caveat, it is the finding. The fix
+for the eight custodian-less cash payslips is the FRONTEND writing the column;
+the gate is what tells us if that stops. A control described without saying
+what calls it is a claim, and this project has already found detectors that
+nothing invoked (`0288`).
+
+### 9.19 Scheduled: advance invoicing, and the check that cannot see it
+
+**Ruling (Shayan):** AR posts at `invoice_date`; revenue at `period_start`;
+`unearned_revenue` carries the interval.
+
+```
+Invoice raised in September for October service:
+  Dr  Accounts Receivable      at invoice_date
+  Cr  Unearned Revenue         at invoice_date
+At period_start (October):
+  Dr  Unearned Revenue
+  Cr  Revenue
+```
+
+This preserves A4 — revenue in the service month — while recognising that the
+client owes the money from the day they are billed.
+
+Nothing on production has `invoice_date < period_start`, so there is nothing to
+backfill. But `clients.advance_payment` exists and `run_auto_invoices` reads it
+to bill the current month rather than the previous one, so **the first
+advance-billed client creates the first instance.**
+
+The reason this needs its own check: `ar_control_equals_open_invoices` cannot
+see it. Both sides of that comparison move together at whatever single date the
+entry used, so it stays green while revenue sits in the wrong month. A check
+comparing two figures that are computed from the same entry is blind to when
+that entry was dated — the same family as 9.15, two errors that cancel.
+
+**Scheduled after Blocks 5–9. Not folded into the deployment.**
