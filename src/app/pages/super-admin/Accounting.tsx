@@ -19,6 +19,7 @@ import {
   fetchAllRows,
   INVOICE_ATTACHMENTS_BUCKET,
   CHEQUE_ATTACHMENTS_BUCKET,
+  invoiceOutstanding,
   type BankAccount,
   type BankTransaction,
   type BankTransactionKind,
@@ -1412,13 +1413,7 @@ export default function Accounting() {
 
   const recordPayment = (client: ReceivableRow) => {
     setSelectedClient(client);
-    const openInvoice = client.invoices.find(
-      (i) =>
-        Number(i.invoice_amount) -
-          Number(i.withholding_tax ?? 0) -
-          Number(i.amount_received) >
-        0,
-    );
+    const openInvoice = client.invoices.find((i) => invoiceOutstanding(i) > 0);
     // If admin and there are no open invoices, default to standalone mode.
     const noOpen = !openInvoice;
     setPaymentStandalone(isAdmin && noOpen);
@@ -1602,10 +1597,7 @@ export default function Accounting() {
       setError("Selected invoice not found.");
       return;
     }
-    const openAmount =
-      Number(invoice.invoice_amount) -
-      Number(invoice.withholding_tax ?? 0) -
-      Number(invoice.amount_received);
+    const openAmount = invoiceOutstanding(invoice);
     if (amount > openAmount) {
       setError(`Payment exceeds the outstanding amount on this invoice (PKR ${openAmount.toLocaleString()}).`);
       return;
@@ -2177,13 +2169,7 @@ export default function Accounting() {
                               onClick={() => recordPayment(item)}
                               disabled={
                                 !isAdmin &&
-                                item.invoices.every(
-                                  (i) =>
-                                    Number(i.invoice_amount) -
-                                      Number(i.withholding_tax ?? 0) -
-                                      Number(i.amount_received) <=
-                                    0,
-                                )
+                                item.invoices.every((i) => invoiceOutstanding(i) <= 0)
                               }
                             >
                               Record Payment
@@ -3871,18 +3857,9 @@ export default function Accounting() {
                 >
                   <option value="">Select an open invoice…</option>
                   {selectedClient.invoices
-                    .filter(
-                      (i) =>
-                        Number(i.invoice_amount) -
-                          Number(i.withholding_tax ?? 0) -
-                          Number(i.amount_received) >
-                        0,
-                    )
+                    .filter((i) => invoiceOutstanding(i) > 0)
                     .map((i) => {
-                      const out =
-                        Number(i.invoice_amount) -
-                        Number(i.withholding_tax ?? 0) -
-                        Number(i.amount_received);
+                      const out = invoiceOutstanding(i);
                       return (
                         <option key={i.id} value={i.id}>
                           {i.invoice_number} · {formatDate(i.invoice_date)} · Outstanding PKR {out.toLocaleString()}

@@ -24,6 +24,7 @@ import {
   fetchAllRows,
   INVOICE_ATTACHMENTS_BUCKET,
   CONTRACT_TYPE_LABEL,
+  invoiceOutstanding,
   DEFAULT_INVOICE_SETTINGS,
   type Client,
   type Contract,
@@ -962,14 +963,9 @@ export default function Invoices() {
 
   const editInvoiceAmount = Number(editForm.invoice_amount) || 0;
   const editReceived = editInvoice ? Number(editInvoice.amount_received) : 0;
-  const editWht = editInvoice ? Number(editInvoice.withholding_tax ?? 0) : 0;
-  const editOutstanding = Math.max(0, editInvoiceAmount - editWht - editReceived);
+  const editOutstanding = Math.max(0, editInvoiceAmount - editReceived);
 
-  const paymentOutstanding = paymentInvoice
-    ? Number(paymentInvoice.invoice_amount) -
-      Number(paymentInvoice.withholding_tax ?? 0) -
-      Number(paymentInvoice.amount_received)
-    : 0;
+  const paymentOutstanding = paymentInvoice ? invoiceOutstanding(paymentInvoice) : 0;
 
   const editPaymentMaxAllowed = editingPayment && editInvoice
     ? Number(editInvoice.invoice_amount) - (Number(editInvoice.amount_received) - Number(editingPayment.amount))
@@ -1145,8 +1141,7 @@ export default function Invoices() {
               {
                 label: "Outstanding",
                 value: (inv) => {
-                  const outstanding =
-                    Number(inv.invoice_amount) - Number(inv.withholding_tax ?? 0) - Number(inv.amount_received);
+                  const outstanding = invoiceOutstanding(inv);
                   return (
                     <span className={`tabular-nums ${outstanding > 0 ? "text-warning-600" : "text-success-600"}`}>
                       PKR {outstanding.toLocaleString()}
@@ -1216,8 +1211,10 @@ export default function Invoices() {
                 )}
                 {!loading &&
                   filteredInvoices.map((inv) => {
+                    // wht is the Withholding COLUMN, displayed for the reader. It is
+                    // deliberately not part of outstanding — see invoiceOutstanding().
                     const wht = Number(inv.withholding_tax ?? 0);
-                    const outstanding = Number(inv.invoice_amount) - wht - Number(inv.amount_received);
+                    const outstanding = invoiceOutstanding(inv);
                     const isSettled = outstanding <= 0;
                     return (
                       <tr key={inv.id} className="hover:bg-slate-50 transition-colors">

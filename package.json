@@ -19,7 +19,8 @@
     "check:migrations": "node --env-file-if-exists=.env.local scripts/check-migrations.mjs",
     "backfill:migration-sql": "node scripts/backfill-migration-sql.mjs",
     "//prepare": "Arms scripts/pre-push in every clone. A hook that needs a manual git config is a hook that is not installed.",
-    "prepare": "git config core.hooksPath scripts"
+    "prepare": "git config core.hooksPath scripts",
+    "check:outstanding": "node scripts/check-outstanding.mjs"
   },
   "dependencies": {
     "@capacitor/app": "^8.1.1",

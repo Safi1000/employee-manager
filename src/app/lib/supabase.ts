@@ -2029,9 +2029,22 @@ export function computeInvoiceTaxes(
   return { computed, addedTotal, withheldTotal };
 }
 
-// Outstanding on a posted invoice = current-period net still owed.
-export function invoiceOutstanding(inv: Pick<Invoice, "invoice_amount" | "withholding_tax" | "amount_received">): number {
-  return Number(inv.invoice_amount ?? 0) - Number(inv.withholding_tax ?? 0) - Number(inv.amount_received ?? 0);
+// Outstanding on a posted invoice is GROSS — invoice_amount less what has been
+// received, and nothing else.
+//
+// It used to subtract withholding_tax as well. A1 settled that outstanding is
+// gross and 0221 removed the deduction from record_invoice_payment; every
+// database path agrees (cash_forecast, record_invoice_payment,
+// run_auto_invoices, write_off_receivable) and so does
+// ar_control_equals_open_invoices. The frontend was never brought along, so
+// this helper and seven open-coded copies of it understated every aging figure
+// and receivables balance an operator read, while the ledger was right.
+//
+// THIS IS THE ONLY PLACE OUTSTANDING IS COMPUTED IN THE FRONTEND. The copies
+// were deleted, not corrected — the eighth copy is how the ninth gets written.
+// scripts/check-outstanding.mjs fails if one comes back.
+export function invoiceOutstanding(inv: Pick<Invoice, "invoice_amount" | "amount_received">): number {
+  return Number(inv.invoice_amount ?? 0) - Number(inv.amount_received ?? 0);
 }
 
 // A client's carried previous balance = Σ outstanding of prior Unpaid/Partly-Paid invoices.
