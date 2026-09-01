@@ -22,6 +22,41 @@
 --                                of the four source rows no longer exist.
 --                                Reversing a reversal is nonsense. Left alone.
 --
+-- SEVEN, AND WHY THE NUMBER MOVED AFTER THIS FILE WAS WRITTEN
+--
+-- G2 counted six correctable entries and this migration was written asserting
+-- six. Production returned SEVEN when the selection was dry-run immediately
+-- before applying, on 2026-09-01. The seventh is real and it belongs:
+--
+--   expenses eb0acb48-2bf4-4568-907b-16dc8f597906
+--   "Equipment & Supplies"  -1,111.00  entry_date and created 2026-09-01
+--
+-- It was booked on production DURING this deployment. Every other line on the
+-- control account was created 2026-08-28 or 08-29. It landed on the control
+-- account for exactly the reason the other six did: journal_on_expense was
+-- still reading the dead cash_location_id column, because 0264 had not yet
+-- run. It is a fresh instance of the defect 0264 fixed minutes earlier, not a
+-- new kind of defect. Any window between a defect and its fix produces real
+-- data, and this is what that looks like.
+--
+-- It meets the same three tests as the other six — the source row carries a
+-- custodian, cash_account_for() resolves it to a real per-location account
+-- rather than back to the control account, and it is unreversed. Excluding it
+-- would leave a known-wrong line on the control account to protect a constant.
+--
+-- THE POPULATION IS NOW CLOSED. 0264 has landed, so no further line can join
+-- this set by that path. Seven is stable, not a moving target caught in
+-- flight.
+--
+-- This constant is adjusted WITH A STATED REASON, which is a different object
+-- from a constant that is merely asserted. It was not fitted to an
+-- observation: the observation was explained first, and the explanation is
+-- above. G2's categories 1 and 2 still reconcile against production exactly
+-- (+556,000.13 and -110,010.00). Production simply has no category-3 fixture
+-- receipt and has this one extra line — both differences are ±1, so
+-- production also totals 15 lines. A count-only check would have looked right
+-- while describing a different set; this reconciles by category and by rupee.
+--
 -- HOW THE REPOST IS BUILT
 --
 -- Not by re-deriving the entry from the source row. The original posting's lines
@@ -120,9 +155,9 @@ begin
     raise notice '0265: % % -> location %', r.source_table, r.source_id, r.location_id;
   end loop;
 
-  if v_n <> 6 then
+  if v_n <> 7 then
     raise exception
-      'Expected exactly 6 misposted entries to correct, processed % — stop and re-read the G2 categories before forcing this.',
+      'Expected exactly 7 misposted entries to correct, processed % — stop and re-read the G2 categories and the SEVEN note in this header before forcing this.',
       v_n using errcode = '23514';
   end if;
 end $$;
