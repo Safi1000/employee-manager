@@ -42,6 +42,8 @@ import { loadCustodianOptions, ensureCustodianLocation, type CustodianOption } f
 const PIE_COLORS = CHART_COLORS;
 
 type ExpenseRow = Expense & {
+  /** 0268: required when payment_mode is Cash. */
+  custodian_location_id: string | null;
   category_name: string | null;
   client_name: string | null;
   vendor_name: string | null;
@@ -884,9 +886,7 @@ export default function Expenses() {
 
         let custodianLocId: string | null = null;
         if (row.payment_mode === "Cash") {
-          const cid = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
-          const staff = custodians.find((c) => c.employeeId === decisionCustodianId);
-          if (cid && staff) custodianLocId = await ensureCustodianLocation(cid, staff.employeeId, staff.fullName, staff.kind);
+          custodianLocId = await requireCustodianLoc(decisionCustodianId, "paid this cash");
         }
 
         // Dated to the 1st of the month it belongs to, not the day it happened
@@ -1171,9 +1171,7 @@ export default function Expenses() {
       // Attribute cash paid to the office-staff custodian who paid it (0135).
       let custodianLocId: string | null = null;
       if (form.payment_mode === "Cash") {
-        const cid = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
-        const staff = custodians.find((c) => c.employeeId === expenseCustodianId);
-        if (cid && staff) custodianLocId = await ensureCustodianLocation(cid, staff.employeeId, staff.fullName, staff.kind);
+        custodianLocId = await requireCustodianLoc(expenseCustodianId, "paid this cash");
       }
       const { data: inserted, error: insErr } = await supabase
         .from("expenses")
@@ -1255,8 +1253,33 @@ export default function Expenses() {
     }
   };
 
+  // 0268. Four Cash paths resolved a custodian with
+  //
+  //     if (cid && staff) locId = await ensureCustodianLocation(...)
+  //
+  // and carried on with null when either was missing, writing a cash row that
+  // named nobody. Under 0268's CHECK that becomes a raw Postgres error AFTER
+  // the balances have already moved, which is worse than the silent null it
+  // replaces. Resolution now throws, before any money moves, with a sentence
+  // an operator can act on — the same fix 0315 made in Accounting.tsx.
+  const requireCustodianLoc = async (employeeId: string, what: string): Promise<string> => {
+    const cid = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
+    if (!cid) throw new Error("No company is selected — reload the page and try again.");
+    const staff = custodians.find((c) => c.employeeId === employeeId);
+    if (!staff) throw new Error(`Select the office-staff member who ${what}.`);
+    const loc = await ensureCustodianLocation(cid, staff.employeeId, staff.fullName, staff.kind);
+    if (!loc) throw new Error(`Could not open a cash location for ${staff.fullName}.`);
+    return loc;
+  };
+
   const openEdit = (expense: ExpenseRow) => {
     setSelected(expense);
+    // 0268: seed the custodian picker from the row, so an edit that keeps Cash
+    // keeps its custodian instead of clearing it.
+    setExpenseCustodianId(
+      custodians.find((c) => c.locationId && c.locationId === expense.custodian_location_id)
+        ?.employeeId ?? "",
+    );
     setEditForm({
       category_id: expense.category_id ?? "",
       pl_category: expense.pl_category ?? "operating_expense",
@@ -1426,6 +1449,14 @@ export default function Expenses() {
         editForm.payment_mode === "Cheque"
           ? cheques.find((c) => c.id === editForm.cheque_id)?.bank_account_id ?? null
           : null;
+      // 0268. The edit form let the mode be changed to Cash but HID the
+      // custodian picker (`&& !edit`) and never wrote the column, so a
+      // Bank -> Cash edit produced a cash expense naming nobody. The picker is
+      // now shown on edit too and its value is written here.
+      const editCustodianLocId =
+        editForm.payment_mode === "Cash"
+          ? await requireCustodianLoc(expenseCustodianId, "paid this cash")
+          : null;
       const resolvedEditBranch =
         editForm.branch_id ||
         (editForm.client_id ? clients.find((c) => c.id === editForm.client_id)?.branch_id ?? null : null) ||
@@ -1444,6 +1475,7 @@ export default function Expenses() {
           amount,
           expense_date: editForm.expense_date,
           payment_mode: editForm.payment_mode,
+          custodian_location_id: editCustodianLocId,
           bank_account_id:
             editForm.payment_mode === "Bank"
               ? editForm.bank_account_id
@@ -1607,9 +1639,8 @@ export default function Expenses() {
       // exactly as a cash expense does.
       let advCustodianLocId: string | null = null;
       if (advForm.payment_mode === "Cash") {
-        const cid = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
-        const staff = custodians.find((c) => c.employeeId === advForm.paid_by_employee_id);
-        if (cid && staff) advCustodianLocId = await ensureCustodianLocation(cid, staff.employeeId, staff.fullName, staff.kind);
+        advCustodianLocId = await requireCustodianLoc(
+          advForm.paid_by_employee_id, "handed over this cash");
       }
       const { data: inserted, error: insErr } = await supabase
         .from("advances")
@@ -1734,9 +1765,8 @@ export default function Expenses() {
         : null;
       let advEditCustodianLocId: string | null = null;
       if (advEditForm.payment_mode === "Cash") {
-        const cid = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
-        const staff = custodians.find((c) => c.employeeId === advEditForm.paid_by_employee_id);
-        if (cid && staff) advEditCustodianLocId = await ensureCustodianLocation(cid, staff.employeeId, staff.fullName, staff.kind);
+        advEditCustodianLocId = await requireCustodianLoc(
+          advEditForm.paid_by_employee_id, "handed over this cash");
       }
       const { error: upErr } = await supabase
         .from("advances")
@@ -4014,7 +4044,7 @@ export default function Expenses() {
               ))}
             </div>
           </div>
-          {state.payment_mode === "Cash" && !edit && (
+          {state.payment_mode === "Cash" && (
             <div className="col-span-2">
               <label className="block text-sm text-slate-700 mb-1">Paid By (Office Staff) *</label>
               <ThemedSelect

@@ -788,10 +788,13 @@ export default function Invoices() {
       payment_date: p.payment_date,
       payment_mode: p.payment_mode,
       bank_account_id: p.bank_account_id ?? "",
-      // The edit path does not change either of these; it carries them so the
-      // form shape matches. Editing a receipt's custodian or withholding goes
-      // through the posting rules, not this screen.
-      custodian_location_id: "",
+      // 0268: seeded from the ROW. It used to be blank with a comment saying
+      // the edit path does not change it — but the edit path DOES change
+      // payment_mode, so a Bank -> Cash edit wrote a cash receipt naming
+      // nobody. Withholding genuinely is not editable here: it is split pro
+      // rata across invoices by record_invoice_payment and cannot be
+      // re-apportioned from one row.
+      custodian_location_id: p.custodian_location_id ?? "",
       withholding: "",
       notes: p.notes ?? "",
     });
@@ -840,6 +843,14 @@ export default function Invoices() {
     }
     if (editPaymentForm.payment_mode === "Bank" && !editPaymentForm.bank_account_id) {
       setError("Select a bank account for Bank payments.");
+      return;
+    }
+    // 0268. Checked HERE, before reverseOldPaymentEffects moves anything: the
+    // update below is the last step, so a constraint rejection at that point
+    // would leave the cash and bank balances already adjusted for a payment
+    // row that never changed.
+    if (editPaymentForm.payment_mode === "Cash" && !editPaymentForm.custodian_location_id) {
+      setError("Select the custodian who received this cash.");
       return;
     }
     const oldAmt = Number(editingPayment.amount);
@@ -892,6 +903,10 @@ export default function Invoices() {
           payment_date: editPaymentForm.payment_date,
           payment_mode: editPaymentForm.payment_mode,
           bank_account_id: newBankId,
+          custodian_location_id:
+            editPaymentForm.payment_mode === "Cash"
+              ? editPaymentForm.custodian_location_id
+              : null,
           notes: editPaymentForm.notes.trim() || null,
         })
         .eq("id", editingPayment.id);
@@ -1799,6 +1814,30 @@ export default function Invoices() {
               ))}
             </div>
           </div>
+
+          {editPaymentForm.payment_mode === "Cash" && (
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Received By *</label>
+              <ThemedSelect
+                required
+                value={editPaymentForm.custodian_location_id}
+                onChange={(e) =>
+                  setEditPaymentForm({
+                    ...editPaymentForm,
+                    custodian_location_id: e.target.value,
+                  })
+                }
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              >
+                <option value="">Select custodian</option>
+                {cashLocations.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </ThemedSelect>
+            </div>
+          )}
 
           {editPaymentForm.payment_mode === "Bank" && (
             <div>

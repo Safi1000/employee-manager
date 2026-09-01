@@ -2142,6 +2142,10 @@ export type InvoicePayment = {
   payment_date: string;
   payment_mode: "Cash" | "Bank";
   bank_account_id: string | null;
+  /** 0268: required when payment_mode is Cash — the ledger posts to this person. */
+  custodian_location_id: string | null;
+  /** 0281: the withholding half of this receipt. amount is the CASH half. */
+  withholding_amount?: number;
   notes: string | null;
   created_at?: string;
 };
