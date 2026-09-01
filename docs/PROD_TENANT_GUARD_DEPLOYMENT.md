@@ -1,13 +1,21 @@
 # Production deployment — the tenant guard group
 
-**Status: PREPARED. NOT APPLIED. REHEARSAL BLOCKED — the preview branch requires
-the Pro plan (see §5). No gate has run.**
+**Status: APPLIED. `0285_tenant_guard_prod_activation` landed on `crm-design` at
+`20260901002831` (2026-09-01 00:28 UTC).**
+
+**This document below the line describes the state BEFORE that, and is kept as
+the record of how the defect was found and what was planned. Do not read it as
+current.** The three calls in §1 were re-run against production on 2026-09-01
+and all three now refuse with `42501 "Row not found"`, while the same session
+still gets its own company's answers. See `PRE_GO_LIVE.md` §0 for the
+verification and for what `0285` actually contained — it is a fused migration
+carrying `0242c` and `0248` under a name that mentions neither.
 
 **Rollback capture taken:** `supabase/rollback/prod_secdef_functions_20260901.sql`,
 257 functions, md5 `28cbd4912d69b3cf96f5378bea585dd1`, commit `4beae55`.
 
-Target: `crm-design` (`mmkfpnshxjcyijhuydgr`). Nothing in this document has been
-run against production. Every figure below comes from **reading** production —
+Target: `crm-design` (`mmkfpnshxjcyijhuydgr`). ~~Nothing in this document has been
+run against production.~~ **Superseded — see the status line above.** Every figure below comes from **reading** production —
 catalogue queries and read-only RPC calls — which CLAUDE.md permits and which is
 how the defect was found.
 

@@ -6,16 +6,60 @@ about to carry real money is a defect until it has been run.
 
 ---
 
-## 0. Tenant isolation — closed on dev, NOT on production
+## 0. Tenant isolation — CLOSED ON PRODUCTION, 2026-09-01
 
-**Status: fixed and proved on `crm-design-dev`. Production still carries the
-whole hole except the two items already approved and applied there (0240, 0241).
-Applying 0242 / 0242b / 0242c / 0243 to production needs a named approval and is
-the single largest remaining go-live blocker.**
+**Status: closed on both databases. `0285_tenant_guard_prod_activation` was
+applied to `crm-design` at `20260901002831` (2026-09-01 00:28 UTC) and it
+carries the corrected guard — this section's previous "NOT on production" was
+written before that and went stale the moment it landed.**
 
-Multi-tenant isolation is enforced almost entirely by RLS policies, and **a
-SECURITY DEFINER function has no caller RLS** — that is what the mode means. The
-audit found the problem was three times larger than first reported:
+Verified from outside on 2026-09-01, as an authenticated user of one company
+calling the three functions this document's own §1 used to demonstrate the leak,
+against a **different** company:
+
+```
+avg_monthly_net_payroll(B)   -> 42501  "Row not found"
+count_client_employees(B)    -> 42501  "Row not found"
+effective_salary(B, today)   -> 42501  "Row not found"
+
+own company, same session:
+avg_monthly_net_payroll(A)   = 0
+count_client_employees(A)    = 18
+effective_salary(A, today)   = (40000.00, 0.00, 1290.32, 2026-06-29)
+```
+
+Both directions: it refuses the foreign company and still answers for the
+caller's own. The three own-company values are the **same figures** this
+document recorded as the leak, from the same pair of companies — the data did
+not move, the boundary did.
+
+### What `0285` actually contained, because the name does not say
+
+It is a **fused** migration. Its recorded SQL installs:
+
+* `assert_same_company` with the `auth.uid()` + JWT-role signal — **that is
+  `0242c`'s fix**, comment and all, including the line "which is exactly the bug
+  0242c exists to fix";
+* the null-tolerant call sites — **that is `0248`** — confirmed live:
+  `region_for_client` on production reads
+  `if p_client_id is not null then perform assert_same_company(...)`.
+
+So production received `0242c` and `0248` inside `0285`, under a name that
+mentions neither. `0242c` and `0248` were later applied to production under
+their own names during the ledger deployment (Block 2); both were **no-op
+re-installs of an identical function** and exist so the ledger records them by
+name rather than only inside a fused parent.
+
+> **A CORRECTION I MADE AND THEN HAD TO UNMAKE.** During Block 2 I reported that
+> production's guard had been "a no-op until eleven minutes ago", on the
+> strength of `0242c`'s verification passing on prod and `0242c` not being
+> recorded there. Both facts were true and the conclusion did not follow: a
+> verification passing proves the guard works **now**, not that it was broken
+> before, and a migration missing from the ledger does not mean its *content* is
+> missing. I reasoned from a header and an absence instead of reading the SQL
+> `0285` actually recorded. The guard has been live since 00:28.
+
+The audit that produced this section stands as history:
 
 |  | count |
 |---|---:|
@@ -23,6 +67,10 @@ audit found the problem was three times larger than first reported:
 | …that checked the caller's tenant | **2** |
 | …with no authorisation check of any kind | **134** |
 | of those, writes | **77** |
+
+Multi-tenant isolation is enforced almost entirely by RLS policies, and **a
+SECURITY DEFINER function has no caller RLS** — that is what the mode means. The
+audit found the problem was three times larger than first reported.
 
 The first pass said 46. That filter asked whether a body *mentions* `company_id`
 and read a mention as a check. `post_journal` mentions it eleven times and never
@@ -76,7 +124,150 @@ the caller simply names the tenant it wants to act on, no id-guessing required.
    migration and is not urgent now that the guard checks the claim.
 
 
-## 1. Period Close has never been exercised. Anywhere.
+## 1. Period Close — EXERCISED ON DEV, 2026-09-01. The database half passes; the lock is fail-open.
+
+Run against `SANDBOX TESTING ORG` on `crm-design-dev`, July 2026, inside a
+transaction that was rolled back. Driven at the database layer with a real
+tenant identity — `request.jwt.claims` set to the sandbox's `super_admin`
+profile, so `current_company_id()` resolves and `is_ssa_unscoped()` is false.
+
+Fixtures were created *before* the close and succeeded, which is what proves the
+month was genuinely open to begin with.
+
+### Closing, and the nine refusals
+
+`CLOSE: ok` — `0260`'s "no first close without an opening batch" is satisfied,
+because the sandbox has one. `is_period_closed(July) = true` immediately after.
+
+Every write that should be refused was refused, all `P0001`:
+
+| | attempt | outcome |
+|---|---|---|
+| R1 | expense INSERT dated in the closed month | refused |
+| R2 | advance INSERT | refused |
+| R3 | cheque INSERT | refused |
+| R4 | invoice INSERT | refused |
+| R5 | backdated receipt INTO the closed month | refused |
+| R6 | payslip `net_salary` change | refused |
+| R7 | expense `amount` edit | refused |
+| R8 | expense DELETE | refused, with its own message |
+| R9 | manual journal via `post_manual_journal` | refused |
+
+The message is a sentence, names the month, and names the remedy:
+
+> `Period for 2026-07-01 is closed. New / edited transactions in a closed month are not allowed; reopen the month in Period Close to continue. [expenses]`
+
+and DELETE gets its own wording rather than being folded in. **The screen it
+names exists** — `routes.tsx` line 151, `period-close`, guarded on
+`period_close.manage`. A refusal that points at a screen that does not exist
+would have been a quiet second defect.
+
+### The carve-outs
+
+Four of the five behaved. All the ones `0237`, `0253` and `0255` exist for:
+
+* **P1** receipt dated in the OPEN month against a closed-month invoice — **ok**
+* **P2** payslip disbursement fields for a closed month — **ok**
+* **P3** payable settlement on a closed-month expense — **ok**
+* **P4** invoice `amount_received` / `status` on a closed-month invoice — **ok**
+* **P5** cheque clearing (`0269`) — first run **blocked, but not by the period
+  lock**: `Cannot clear payment cheque: linked items total PKR 0.00 but cheque
+  is PKR 500.00`, the cheque-linkage rule refusing a fixture with nothing
+  attached. A fixture artefact, not a carve-out failure.
+  **RE-TESTED 2026-09-01 with a July cheque of 500.00 and a July expense of
+  500.00 linked to it, created while the month was open: the cheque cleared
+  against the closed month. `0269`'s carve-out works. Five of five.**
+
+Reopening restored writes immediately: `is_period_closed(July) = false`, and an
+expense dated in July inserted cleanly.
+
+### THE FINDING: the period lock is fail-open
+
+`enforce_period_lock()` begins:
+
+```sql
+if public.current_company_id() is null and not public.is_ssa_unscoped() then
+  return coalesce(new, old);
+end if;
+```
+
+**No tenant identity means the lock does not run at all.** Demonstrated on dev,
+rolled back: with July closed and `is_period_closed()` returning **true** in the
+same statement, a session with no JWT inserted an expense dated 2026-07-15 into
+the closed month. No refusal, no warning.
+
+That is every backend context: **service_role, `pg_cron`, `psql`, migrations,
+and the Edge Functions.** Including the compliance digest and, as of `0301`, the
+scheduled `ledger_checks` run.
+
+It is not obviously a bug — backend jobs must be able to post, and the same
+early return in `assert_same_company` is correct there, because a *tenant* guard
+should not fire for a caller that legitimately has no tenant. But a **period**
+lock is a different kind of assertion. Closing a month says *this month's
+figures are final*, and that claim should not depend on who is holding the pen.
+As written, the answer to "can anything write into a closed month" is **yes, and
+nothing records that it happened.**
+
+### DECIDED AND FIXED — `0310`, 2026-09-01
+
+Option one, with an allow-list one entry long.
+
+* **The early return is gone.** Both triggers now fall through to the check that
+  was already there, which reads the company off the ROW rather than off the
+  session and never needed a tenant identity to work. A backend caller writing
+  into an **open** month is unaffected; into a **closed** month it is refused,
+  exactly as a user is.
+* **The only bypass is `is_maintenance_session()`** — `app.ledger_maintenance =
+  'on'` AND `session_user` superuser/bypassrls. Already role-gated, already the
+  sanctioned route, and it reads `session_user` rather than `current_user` so a
+  SECURITY DEFINER function cannot launder into it. Nothing else is named;
+  anything that later needs in gets added with a written reason.
+* **And it is observed.** `closed_period_intrusions()` asks whether any row
+  DATED inside a closed period was CREATED after that period closed, wired into
+  `ledger_checks()` as `no_posting_into_a_closed_period`. A refusal you cannot
+  observe is a refusal you are trusting. Self-clearing: a deliberate maintenance
+  write leaves a finding until the month is reopened and re-closed, which is the
+  workflow such a write should follow anyway.
+
+**What it breaks, enumerated rather than guessed** — by listing what each cron
+job actually inserts into rather than reading its name:
+
+| job | writes | period-locked? |
+|---|---|---|
+| `run_auto_invoices` | `invoices` | **yes** |
+| `generate_fixed_expense_instances` | `fixed_expense_instances` | no |
+| `enforce_subscription_expiry` | nothing | no |
+| `run_scheduled_ledger_checks` | `notification_deliveries` | no |
+| `invoke_send_compliance_alerts` | nothing (HTTP) | no |
+
+**`run_auto_invoices` is the only scheduled job that writes a period-locked
+table.** It runs 02:00 on the 1st and dates invoices `current_date`, so it
+writes into the month that has just opened — affected only if someone closed the
+current month, where refusing is correct.
+
+(`generate_fixed_expense_instances` writes `fixed_expense_instances`, not
+`expenses`. I assumed otherwise from the name and checked.)
+
+**The irony, recorded:** `0301` scheduled `run_scheduled_ledger_checks` as a
+pg_cron job with no tenant identity — the mechanism watching the ledger was
+itself exempt from the lock protecting it. It writes nothing period-locked, so
+nothing was wrong; but the exemption covered it, and covered it silently.
+
+### What has still NOT been exercised
+
+**The application layer.** This run drove the database. The requirement in this
+section has always been that a refusal *reaches the user as something they can
+act on* — a `P0001` surfacing as a raw Postgres string in a toast is a fail, and
+that is a frontend question this exercise cannot answer.
+
+The messages are good raw material. Someone has to close a month in the UI and
+attempt each of the nine, and confirm what appears on screen. **That is the last
+untested half, and it belongs before Block 2**, because `0237` and `0245` are
+inside an un-gateable run.
+
+### The original entry, kept
+
+### (superseded) 1. Period Close has never been exercised. Anywhere.
 
 > **Two defects found while auditing the lock's test coverage, both of which
 > become live at the first close. See `docs/PERIOD_LOCK_COVERAGE.md`.**
@@ -150,6 +341,54 @@ after.
 
 Note what it buys: digests match by construction on day one, so it proves
 nothing about the past. It makes drift detectable **from that point on**.
+
+---
+
+## 2b. A second developer writes to the same production database, and nothing says so
+
+**2026-09-01.** `0309_confirm_backdate_override_bypass` was applied to
+`crm-design` at 09:14, fifty-six minutes after this session applied `0308`. It
+is deliberate work by a second developer — a supervisor override now clears the
+attendance backdate lock — and it stands. **Production holds priority for
+`enforce_attendance_backfill`.**
+
+Resolved the same day:
+
+* the same SQL was applied to **dev** under the same migration name, so both
+  databases record digest `0f3c3f7a97d3b220d33f9b41d6a00c0e` and hold an
+  identical function (`526a76092e186091bc85bff2e00899ae`);
+* this project's `0309_drop_auto_zero_columns` was **renumbered to `0311`**,
+  because two migrations sharing a number on one database is a naming failure
+  that costs somebody an hour later. The file already on production kept its
+  number;
+* **the file is now in the repository**, at
+  `supabase/migrations/0309_confirm_backdate_override_bypass.sql`, byte-exact to
+  what both databases recorded — 1765 bytes, digest
+  `0f3c3f7a97d3b220d33f9b41d6a00c0e`.
+
+  It was written from the recorded SQL rather than left for its author, and the
+  reason is worth stating: **this session applied that migration to dev, so this
+  session is what created a recorded row with no file.** Waiting for someone
+  else's push is how that state becomes permanent. If the author's own version
+  differs — a header comment, a different formatting — his push will change the
+  digest and `ledger_checks()` will flag the mismatch, which is a visible,
+  resolvable event. A missing file is not.
+
+**How it was found matters more than the change itself.** It surfaced because
+the migration-digest check was run by hand while answering a question about
+credentials. Nothing announced it; it had been live for an hour. There is no
+mechanism on either database that notices a migration arriving from outside the
+plan.
+
+Two consequences already acted on:
+
+1. **Every gate in the deployment plan now re-reads
+   `supabase_migrations.schema_migrations` on production** and confirms the only
+   new rows are the ones just applied. See `LEDGER_DEPLOYMENT_PLAN.md` §14.
+2. **The read-only production credential moved from "should have" to "before
+   Block 2".** Today this check needs an agent session with MCP access, which
+   means it runs when someone thinks to ask. A check that cannot run unattended
+   runs once, by accident, an hour late — which is exactly what happened.
 
 ---
 
@@ -441,6 +680,14 @@ Resolve before go-live — this is a real-world cash question, not a ledger one.
 
 ## The production deployment manifest (as at 2026-09-01)
 
+> **Superseded in part by `docs/LEDGER_DEPLOYMENT_PLAN.md` (2026-09-01).** That
+> document carries the staged manifest, the frontend gate, the per-red verdicts
+> and the rollback position. The count there is **70**, not 61: sixteen
+> migrations landed after this section was written, and its 61 was measured
+> across the whole repo rather than the ledger stream. This section is kept for
+> the object-probe table and the by-group breakdown, which the plan does not
+> repeat.
+
 Prod is deliberately behind. Dev is where the posting model is still moving, and
 the gap gets closed as **one named deployment** when the posting rules settle,
 with the full external verification repeated against prod's own key. This
@@ -678,9 +925,15 @@ a second time against a database that already has them**:
 
 * `0242` re-runs a code generator over the live catalogue and would rewrite
   functions written after it.
-* `0245`'s verification inserts an `accounting_periods` row and posts a test
+* ~~`0245`'s verification inserts an `accounting_periods` row and posts a test
   journal entry, and its own `raise` is caught rather than propagated, so both
-  persist.
+  persist.~~ **Wrong, corrected 2026-09-01.** The `raise exception 'TESTS_OK'`
+  propagates out of the inner `begin … exception` subtransaction, so both writes
+  roll back; the file says so in a comment. Checked on dev after the whole
+  stream had run: **0** journal entries matching `%0245%` or `%self-test%`, and
+  **0** `accounting_periods` rows on any company. The claim was reasoning about
+  a structure rather than reading the result — the same failure `9.6` records.
+  `0250`, `0258` and `0247` below are unaffected: they write on purpose.
 * `0250` and `0258` repost.
 * `0247` backfills under a maintenance session.
 

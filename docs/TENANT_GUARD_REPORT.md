@@ -400,6 +400,40 @@ start here.
 > disagreed with the artifact about what the bytes were.** Comment stripping,
 > line endings, line endings again.
 
+> **AND THE ONLY RELIABLE WAY TO FIND ANY OF THEM:**
+>
+> **EVERY INSTRUMENT FAILURE IN THIS PROJECT WAS FOUND BY READING THE RESULT,
+> NOT BY REVIEWING THE PATCH.**
+>
+> Not one of them was caught by looking at the change that caused it. The
+> reviewer of a patch already knows what the patch is for, and so reads it as
+> confirmation:
+>
+> * `check-migrations.mjs` never compared a digest — found by asking what the
+>   script had actually printed;
+> * `0288` cleared `ledger_checks` by matching its own comment — found by
+>   reading the list and noticing an absence;
+> * `0301` bumped one of the canary's three copies of its expected count —
+>   found by reading `ledger_checks()` output showing *expected 21, actual 21,
+>   passed FALSE*. The patch had a guard. The guard checked the same literal
+>   the edit changed: a proxy for a proxy.
+> * The vetting coverage table reported **0 completed checks** because it
+>   counted `police_verification_status = 'verified'`, a label the enum
+>   `(pending, cleared, adverse)` does not contain — found by reconciling the
+>   table against a view that computed the same thing. A query asked in
+>   vocabulary the data does not use returns zero and looks like an answer.
+>
+> The practical rule: after a change to a check, **run the check and read the
+> verdict row**. Asserting the operands is not asserting the verdict — `0301`
+> asserted that expected was 21 and actual was 21 and never asked whether
+> `passed` was true.
+>
+> The structural rule, which is cheaper: **when a number must appear in more
+> than one place, make it appear in one place.** `0302` collapsed the canary's
+> count to a single value rather than correcting the two literals the regex
+> had missed, because correcting them leaves the identical trap for whoever
+> adds the next check.
+
 > **A THIRD FAILURE MODE, AND THE WORST OF THE THREE:**
 >
 > **A CONFIDENT WRONG ANSWER STOPS THE SEARCH.**
@@ -1103,6 +1137,27 @@ This sits alongside the earlier note about preferring `now()` over
 **A TIMESTAMP IS A MEASUREMENT. ASK WHAT IT IS MEASURING — THE TRANSACTION, THE
 STATEMENT, OR THE EVENT — AND PICK THE CLOCK THAT ANSWERS THAT QUESTION.**
 
+**Third instance, 2026-09-01, and the most instructive.** `0310` added
+`closed_period_intrusions()` — rows dated inside a closed period that were
+*created after* it closed. Its verification closed a month with `now()`,
+inserted a row whose `created_at` defaults to `now()`, and asked whether
+`created_at > closed_at`. Inside one transaction those are the **same
+microsecond**, so the detector reported nothing and the verification failed.
+
+The detector was right; the test was wrong. A real close and a real write are
+separate transactions, so strict `>` is correct. The fix was to stop the test
+pretending they were simultaneous — close the month an hour earlier, re-close it
+with `clock_timestamp()`.
+
+> **A TEST THAT RUNS IN ONE TRANSACTION CANNOT DEMONSTRATE AN ORDERING THAT ONLY
+> EXISTS BETWEEN TRANSACTIONS. IF THE THING UNDER TEST DEPENDS ON TWO EVENTS
+> HAPPENING AT DIFFERENT TIMES, THE TEST MUST MANUFACTURE THE GAP.**
+
+Worth writing down because the reflex on seeing "detector reported 0 rows" is to
+loosen the detector. `>=` would have made the verification pass — and would have
+made the check flag every row written in the same instant its month was closed,
+which is every legitimate close-after-write.
+
 A related bug in the same function, worth its own line: the detector read "the
 latest row" **twice**, once for its timestamp and once for its status. Two
 queries asking for the latest row are two chances to pick different rows, and
@@ -1133,3 +1188,119 @@ STATE OF THE SAME KIND — OR IT IS MEASURING ITSELF.**
 The fix is ordering, not filtering. Excluding the probe rows by name would have
 worked today and would silently stop working the moment a fixture changed its
 naming; taking the survey first cannot rot.
+
+### 9.13 A defaulted parameter turns a loud failure into a quiet one
+
+> **WHEN ADDING A PARAMETER TO AN EXISTING FUNCTION, ENUMERATE EVERY CALLER
+> RATHER THAN DEFAULTING FOR COMPATIBILITY.**
+
+`0303` gave `partner_basis_for_report(p_basis)` a second parameter,
+`p_company_id uuid DEFAULT NULL`, so that existing call sites would keep
+working. They did. One of them kept working *wrongly*.
+
+`partnership_allocation` calls `partner_basis_for_report` itself, with one
+argument. After the change that call still compiled — and resolved to the
+default, NULL — so it asked for the remuneration basis of no company and raised
+under the review it sits beneath. **A default converts what would have been a
+compile-time error into a runtime one, and a runtime one only appears if
+something asks.** The verification asked; nothing else would have, because
+`profit_allocation_review` had never been callable in the first place.
+
+The default was still the right shape for the four frontend RPC calls and the
+three database callers that legitimately want the session's tenant. What was
+wrong was treating "it still compiles" as the check. **The check is the list of
+callers.** For these three functions that list is seven entries and took one
+grep.
+
+#### And the half that would not have been noticed at all
+
+There is a sharper failure hiding behind the same change, and it is the one to
+remember:
+
+> **A FUNCTION THAT THROWS IS AT LEAST HONEST ABOUT NOT WORKING. THE DANGEROUS
+> REPAIR IS THE ONE THAT STOPS THE THROWING WITHOUT FIXING THE CAUSE.**
+
+Parameterising `partner_basis_for_report` alone would have made
+`profit_allocation_review` stop raising. Its other three arms call
+`client_statement_loaded` and `partnership_allocation`, which resolve the tenant
+from `current_company_id()` — NULL under cron — so they would have read
+`where company_id = NULL`, matched nothing, raised nothing, and returned clean.
+
+A control that throws is visibly broken. A control that returns clean is
+**indistinguishable from a control that is working**, and it would have been
+wired into the scheduled suite and reported green every morning. Half of `0303`
+is the half nobody would have gone looking for.
+
+Related, and the reason both halves were caught: `9.6`'s rule about reading the
+result rather than the patch. The first half was found by the verification
+failing. The second was found by asking what each arm would read, which is the
+same question in a different tense.
+
+### 9.14 A number measured in one database is not a property of the migration
+
+> **ASK OF EVERY LITERAL IN A VERIFICATION BLOCK: IS THIS AN *INPUT* THE
+> MIGRATION CREATES, OR A *READING* OF STATE IT DID NOT CREATE?**
+>
+> **Inputs are fine** — a probe amount, a synthetic three-day divergence, a
+> fixture row. They are properties of the test.
+>
+> **Readings are landmines.** They pass everywhere they were written and abort
+> in the first environment that differs, with no warning, at the least
+> convenient moment.
+>
+> When a reading is genuinely what you want to check, **assert the invariant it
+> is evidence for and print the reading as a `NOTICE`.**
+
+All seventy migrations in the ledger stream were scanned for this shape. **Three
+genuine cases; two of them were mine, written this week, while the older
+migrations were already disciplined about it.** The pattern that failed is the
+one I introduced.
+
+`0275` is the model to copy, and it was written long before the rule was
+articulated: it selects the sandbox company by name, **degrades to a `raise
+notice` when that company is absent**, reports how many custodian locations are
+negative, and raises only if *every* location is negative — "the arithmetic is
+suspect, not the data". A reading, used as evidence, with a failure condition
+that is a property of the arithmetic rather than of the data.
+
+#### The corollary about documents
+
+> **ANY DOCUMENT MAKING CLAIMS ABOUT ANOTHER SYSTEM'S STATE NEEDS A RE-CHECK
+> BEFORE IT IS RELIED ON, NOT ONLY BEFORE IT IS WRITTEN.**
+
+`PRE_GO_LIVE.md`'s production manifest asserted three things about
+`crm-design`, each true when measured and each false when used:
+
+* the partner remuneration basis series (`0230`/`0231`/`0232`) is absent from
+  production — **it is recorded there**;
+* `partners.basis` still exists on production — **it does not**;
+* `PartnerFormModal.tsx` still writes that column, so the form will break —
+  **it reads `finance_settings.partner_remuneration_basis`, with a comment
+  saying why.**
+
+Nothing in the process re-measured them. The document was treated as the state
+rather than as a reading of the state, and a whole go-live precondition and
+frontend gate were carried forward on it.
+
+The same defect bit twice more in one sitting:
+
+* the manifest's claim that **`0245`'s verification leaves rows behind** — false,
+  and disproved by counting rows rather than by re-reading the file;
+* `0308`'s own verification, which asserted **United Bank Ltd reads GL 800,000**.
+  True on dev. On production the same account reads GL 0, so the migration
+  would have aborted on a fact about a different database. Caught by probing
+  prod before applying, not by review.
+
+The last is the sharpest form of it, and the rule it produces is narrower and
+more useful than "re-check your documents":
+
+> **A NUMBER MEASURED IN ONE DATABASE IS NOT A PROPERTY OF THE MIGRATION.**
+>
+> Assert the invariant the change must preserve — here, *removing the mechanism
+> moves no money*, checked as a before/after snapshot of every row — and print
+> the environment-specific figures as evidence instead of requiring them.
+
+An assertion that encodes a local measurement does not become more true by
+being in a migration; it becomes a landmine that goes off in the other
+environment, at the least convenient moment, having passed everywhere it was
+tested.

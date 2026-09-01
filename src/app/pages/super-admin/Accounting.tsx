@@ -237,7 +237,6 @@ export default function Accounting() {
     branch_name: "",
     swift_code: "",
     currency_code: "PKR",
-    auto_zero_monthly: false,
   });
   const [editBankForm, setEditBankForm] = useState({
     bank_name: "",
@@ -517,14 +516,19 @@ export default function Accounting() {
   const loadAll = async () => {
     setLoading(true);
     setError(null);
-    // Roll any month-flagged accounts (e.g. Shayan Ahmed) to 0 for every
-    // completed month before reading balances. Idempotent + best-effort: if the
-    // migration that adds this function hasn't been applied yet, ignore the error.
-    try {
-      await supabase.rpc("apply_monthly_account_zeroing");
-    } catch {
-      /* ignore — function may not exist yet */
-    }
+    // 0308 removed the apply_monthly_account_zeroing() call that used to run
+    // here, on every load of this page.
+    //
+    // It did not zero anything. Its last statement recomputed
+    // bank_accounts.balance from bank_transactions alone, and every opening
+    // balance in this system was seeded directly onto that column with no
+    // transaction row — so one call silently discarded the opening balance of
+    // any flagged account. Proved in 0308 before the function was dropped:
+    // 1,250,000 seeded, 0 afterwards, nothing recorded to explain it.
+    //
+    // The error was also being swallowed, and not by the catch: supabase.rpc()
+    // resolves with an error object rather than throwing, so a failure here was
+    // discarded silently for as long as this call existed.
     const [
       banksRes,
       treasuryRes,
@@ -801,7 +805,10 @@ export default function Accounting() {
           branch_name: newBank.branch_name.trim() || null,
           swift_code: newBank.swift_code.trim() || null,
           currency_code: newBank.currency_code || "PKR",
-          auto_zero_monthly: newBank.auto_zero_monthly,
+          // auto_zero_monthly is not written here any more (0308). The column
+          // survives until 0309 drops it and nothing reads or sets it in
+          // between, which is what lets that drop be an ordinary Stage D
+          // change rather than a coordinated release.
         })
         .select()
         .single();
@@ -829,7 +836,6 @@ export default function Accounting() {
         branch_name: "",
         swift_code: "",
         currency_code: "PKR",
-        auto_zero_monthly: false,
       });
       setIsBankModalOpen(false);
       await loadAll();
@@ -3468,23 +3474,13 @@ export default function Accounting() {
               Seeded into Account Balance and logged as an opening transaction.
             </p>
           </div>
-          <div>
-            <label className="flex items-start gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={newBank.auto_zero_monthly}
-                onChange={(e) => setNewBank({ ...newBank, auto_zero_monthly: e.target.checked })}
-                className="mt-0.5 rounded border-slate-300"
-              />
-              <span className="text-sm text-slate-700">
-                Reset balance to 0 at each month-end
-                <span className="block text-xs text-slate-500">
-                  Any remaining balance is removed via an adjusting entry (treated as
-                  withdrawn). Use for pass-through / personal accounts.
-                </span>
-              </span>
-            </label>
-          </div>
+          {/* The "Reset balance to 0 at each month-end" checkbox was removed by
+              0308 along with the function behind it. It described itself as
+              removing the remaining balance "via an adjusting entry"; what it
+              actually did was recompute the balance from bank_transactions and
+              discard anything not built from that log — including the opening
+              balance. Nothing replaces it: an account that should be emptied
+              needs a transfer that posts, not a flag that rewrites a number. */}
           <div className="flex items-center gap-3 pt-4">
             <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
               {submitting ? "Saving…" : "Add Bank Account"}

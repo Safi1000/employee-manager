@@ -26,12 +26,30 @@ the backlog is finished, and the completion signal is specific:
 Below you will find **0 police-verification adverse results and 0 blacklisted
 guards** on 347 active employees.
 
-**There are no failures on record because there are no results on record.**
+**There are almost no failures on record because there are almost no results on
+record.**
 
-346 police checks were set to `pending` on intake and not one has ever moved to
-`verified` or `adverse`. A zero in the adverse column is not evidence that
-nobody failed; it is evidence that nobody has been recorded either way. Read it
-as an empty column, never as a clean one.
+Of 347 active guards, **one** has a police clearance and **two** have a NADRA
+clearance. Every other police check — 346 of them — still sits at `pending`
+where intake put it, and not one has ever been recorded `adverse`.
+
+A zero in the adverse column is not evidence that nobody failed; it is evidence
+that nobody has been recorded either way. Read it as an empty column, never as
+a clean one.
+
+> **An earlier version of this file said the pipeline had never produced a
+> completed check. That was false**, and it is worth knowing why before you
+> trust any other number here.
+>
+> The query counted `police_verification_status = 'verified'`. The column is an
+> enum of `(pending, cleared, adverse)` — **there is no `verified`**. It was a
+> count of a value the column cannot hold, so it could only ever return zero,
+> and zero read like an answer.
+>
+> Three results out of 347 does not change the size of the backlog. It changes
+> what may be said about it. The figures in this file are now taken from
+> `public.vetting_dashboard`, the view that computes the same coverage in the
+> vocabulary the data actually uses.
 
 ---
 
@@ -222,15 +240,43 @@ Measured 2026-09-01 on `GUARDS AND GUIDES (PVT) LTD`, 347 active employees.
 | Date of birth | 184 | **163** |
 | Join date | 263 | 84 |
 | Phone | 207 | 140 |
-| **Police verification — verified** | **0** | 346 still `pending` |
-| **NADRA Verisys — verified** | **0** | 345 still `pending` |
+| **Police verification — cleared** | **1** | 346 still `pending` |
+| **NADRA Verisys — cleared** | **2** | 345 still `pending` |
 | **Weapons certified** | **0** | 347 |
 | **Weapon licence on file** | **0** | 347 |
 | Police or NADRA **adverse** | 0 | — |
 | Blacklisted | 0 | — |
 
 Read the last two rows against the four above them: no *failures* on record
-because no *results* on record. See the inversion noted at the top of this file.
+because almost no *results* on record. See the inversion noted at the top of
+this file.
+
+### Correction, 2026-09-01, and how it was found
+
+The two verification rows above previously read **0 cleared** for both police
+and NADRA, and this section previously said the pipeline had never produced a
+completed check. Both were wrong. Three results exist: one police clearance and
+two NADRA clearances.
+
+The cause is worth more than the number. The original query counted
+`police_verification_status = 'verified'`. The `vetting_status` enum is
+**`(pending, cleared, adverse)`** — there is no `verified`. The zero was
+structural, not measured: a count of a value the column cannot hold, which
+cannot return anything but zero. Asked in the vocabulary the data actually
+uses, the answer is 1 and 2.
+
+It surfaced only when this table was reconciled against
+`public.vetting_dashboard`, the view that has computed this same coverage
+since 0057 and that nothing read. **The population and every overlapping figure
+agreed exactly** — 347 either way, 346 police-pending, 345 NADRA-pending, 0
+adverse, 347 not weapons-certified — so the `lifecycle_state` versus `status`
+divergence does not split this population. The only disagreement was in the two
+columns the view did not compute, and those were the two that were wrong.
+
+**This table is now generated from `vetting_dashboard`**, which `0306` extended
+with the cleared and not-recorded counters so it can measure the upload, and
+which the Compliance page now displays. Regenerate from the view; do not
+rebuild the query.
 
 **This is the same finding as the four empty licence columns and the 264
 missing CNIC expiries** — one backlog with several faces, and this table is its

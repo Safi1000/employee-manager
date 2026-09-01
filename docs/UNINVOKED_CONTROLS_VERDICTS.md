@@ -3,7 +3,12 @@
 Run 2026-09-01 against `crm-design-dev`, after `0301` scheduled
 `ledger_checks()` and removed it from this list.
 
-`uninvoked_controls()` reports **16**: three functions and thirteen views.
+**Status, 2026-09-01, after `0303`–`0307`: five of the sixteen are now wired
+and `uninvoked_controls()` reports 11.** Two verdicts below were overturned by
+acting on them — `profit_allocation_review` and `vetting_dashboard` — and the
+reasoning that changed them is recorded in place rather than edited away.
+
+As first written, `uninvoked_controls()` reported **16**: three functions and thirteen views.
 Every one gets one of three outcomes — **wire it**, **delete it**, or **keep it
 with a written reason**. Nothing stays unexplained; "we might need it later" is
 not a verdict, it is the absence of one.
@@ -108,6 +113,44 @@ from one, because no company has `partner_remuneration_basis` set.
    two bases is the `defect-1` lesson working as intended. The mismatch is that
    a *review* function inherited a guard designed for a *report*.
 
+### OVERTURNED — `0303` fixed it, `0304` wired it
+
+Two things below are **wrong** and are left standing because the correction is
+the point.
+
+**First, the factual error.** I wrote that it also fails from a logged-in
+session because no company has `partner_remuneration_basis` set. Every company
+on dev and on prod has it set to `'cash'`. I asserted a second cause without
+checking it, while correctly diagnosing the first.
+
+**Second, the verdict itself.** "Two things have to be decided by someone else
+first" was not true either. The tenant is a parameter the function already
+takes; threading it down to `partner_basis_for_report`,
+`client_statement_loaded` and `partnership_allocation` — through one guarded
+helper, `resolve_company_scope` — is the whole fix, and nobody had to decide
+anything.
+
+**And the part I would have missed.** Parameterising
+`partner_basis_for_report` alone makes it stop throwing and leaves three of its
+four arms reading `where company_id = NULL`, which matches nothing and raises
+nothing. It would have returned clean forever from a control that looked wired.
+A function that throws is at least honest about not working.
+
+The verification then found a *third* site: `partnership_allocation` calls
+`partner_basis_for_report` itself with one argument, and the moment that gained
+a defaulted parameter the call still compiled and resolved to NULL. **A default
+turns a compile error into a runtime one, and a runtime one only appears if
+something asks.** The verification asked.
+
+Wired in `0304` as `client_cost_has_an_invoice`, with one thing stated plainly:
+**it would not have caught Palm Grove.** Arm (a) joins `expenses.client_id`;
+the Palm Grove cost was payroll, and on production not one of the six expense
+rows carries a `client_id` at all. It is correct, free, and reads a column
+nothing yet populates. The check that would catch Palm Grove reads deployments
+against contracts and is still only logged.
+
+The original verdict, kept for the record:
+
 **Verdict: keep, with the reason recorded, and revisit when the accounting
 policy questions land.** Two things have to be decided by someone else first:
 whether `partner_remuneration_basis` is configured per company at go-live, and
@@ -190,10 +233,26 @@ view.** The view is correct and nothing reads it, so the coverage measurement
 was rebuilt from scratch by someone who could not see it — the precise cost of
 an uninvoked object, paid in the same session that catalogued them.
 
-**Verdict: keep, and point the vetting-upload progress report at it** rather
-than at a hand-written query, so the number Shayan watches during the upload and
-the number the schema computes are the same number. Not wired as a *check* — the
-coverage figure is a measurement, not an event (`9.11`).
+**Verdict (revised, and acted on in `0306`/`0307`): wire it.**
+
+The two were diffed on production before anything was repointed. **The
+population and every overlapping figure agreed exactly** — 347 either way,
+346 police-pending, 345 NADRA-pending, 0 adverse, 347 not weapons-certified —
+so the `lifecycle_state` versus `status` split does not divide this
+population, and the view's `LEFT JOIN` keeps the 27 employees with a null
+`branch_id` rather than dropping them.
+
+**They disagreed on the two rows the view did not compute, and the report was
+the one that was wrong.** It recorded 0 police-verified and 0 NADRA-verified
+by counting `status = 'verified'`, a label the enum `(pending, cleared,
+adverse)` does not contain. The true figures are 1 and 2. A zero that is
+structural rather than measured reads exactly like a measured one.
+
+`0306` adds the `cleared` and `not_recorded` counters — without them
+`total − pending − adverse` conflates "cleared" with "never recorded", which
+is precisely the distinction the upload changes. `0307` records the reader:
+the Compliance page shows a four-number coverage band. Still not wired as a
+*check* — the coverage figure is a measurement, not an event (`9.11`).
 
 ---
 
@@ -201,11 +260,23 @@ coverage figure is a measurement, not an event (`9.11`).
 
 | outcome | count | items |
 |---|---|---|
-| **Wire** | 3 | `first_breach_week`, `cash_control_reconciliation`, `cash_entitlement_reconciliation` |
+| **Wired** | 5 | `first_breach_week`, `cash_control_reconciliation`, `cash_entitlement_reconciliation` (`0304`), `profit_allocation_review` (`0303`+`0304`), `vetting_dashboard` (`0306`+`0307`) |
 | **Delete** | 0 | — |
-| **Keep, with a written reason** | 13 | the rest, each with the condition that would change the verdict |
+| **Keep, with a written reason** | 11 | the rest, each with the condition that would change the verdict |
 
-**Nothing is recommended for deletion.** That is a real conclusion rather than
+`ledger_checks()` now evaluates **25** checks; `uninvoked_controls()` reports
+**11** — one function (`bonus_accrual_missing`, waiting on its first
+`bonus_accruals` row) and ten views.
+
+Wiring `0303` also turned `tenant_guard_covers_every_parameter` red on all four
+companies: the three functions gained a `p_company_id` and the detector matches
+the literal `assert_same_company(...)`, not the helper that calls it. `0305`
+taught the detector the one indirection rather than adding three rows to the
+exempt list — and its verification asks the **original** predicate whether
+`resolve_company_scope` still guards its own parameter, so the delegate is
+checked with the same test it now stands in for.
+
+**Nothing was recommended for deletion, and nothing was deleted.** That is a real conclusion rather than
 an avoided one: every item is either correct-and-waiting-for-data, or
 correct-and-waiting-for-a-screen, and none is wrong or superseded. The three
 `trial_balance`-shaped duplicates were the ones worth removing, and `0289`,
