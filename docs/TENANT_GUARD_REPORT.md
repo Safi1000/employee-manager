@@ -1304,3 +1304,76 @@ An assertion that encodes a local measurement does not become more true by
 being in a migration; it becomes a landmine that goes off in the other
 environment, at the least convenient moment, having passed everywhere it was
 tested.
+
+### 9.15 Two errors that cancel present as a passing check
+
+> **A CHECK THAT NETS ITS INPUTS CANNOT SEE AN ERROR THAT NETS TO ZERO INSIDE
+> ITS OWN AGGREGATE. THE ONLY DEFENCE IS DECOMPOSITION.**
+
+`bank_per_account_gl_equals_operational` reported **0.00** for United Bank Ltd
+and had done so for as long as anyone had looked. It was not correct. Two
+postings had been routed to the wrong node of the bank subtree — one into the
+parent, one into the child — and the aggregate summed both. The check was
+reading the truth of a sum whose terms were individually wrong.
+
+Posting the SANDBOX opening batch moved the figure to **800,000**. That is the
+check *improving*: the cancelling pair was broken and the residual became
+visible for the first time. Reading it as a regression would have been exactly
+backwards, and would have produced a "fix" that restored the cancellation.
+
+**It was found by decomposing the aggregate per account, not by re-reading the
+check.** No amount of scrutiny of a netting expression reveals what the netting
+hides.
+
+This is the fifth instance of a green that was green for the wrong reason —
+after the empty entry that scored as balanced, the enum count that could only
+ever return zero, the five implementations that agreed because none had data,
+and the digest comparison that was never evaluated (§9.6). **It is the first
+where the false green sat in a real financial control rather than in an
+instrument**, which is what makes it the expensive one: the other four misled a
+reader, this one would have certified a set of books.
+
+The operational habit follows from the shape rather than from the incident: for
+any check that aggregates before comparing, **run it once grouped by its
+finest dimension** — per account, per location, per period — and keep that
+decomposition, because the aggregate will go green again the moment a second
+error arrives to cancel the first.
+
+### 9.16 A figure in a header describes the database it was measured on
+
+> **A FIGURE IN A HEADER DESCRIBES THE DATABASE IT WAS MEASURED ON AND NOTHING
+> ELSE.**
+
+The companion to §9.14, and the reason that rule is not enough on its own.
+§9.14 governs literals inside *assertions*, where being wrong is loud: the
+migration aborts. A figure in **prose** is worse behaved. It never aborts
+anything. It is read by the next person as a property of the system, and it is
+believed, because a number written in a migration header carries the authority
+of the file it sits in.
+
+`0271`'s header explained a ~6.4M discrepancy as opening balances sitting in
+sub-accounts — a routing defect that later migrations would correct. Measured
+against production, the explanation did not fit: Meezan showed GL −500,000
+against operational 3,843,255, which is not a balance in the wrong account but
+**a balance that was never posted at all.** The header did not lie about dev.
+It simply described dev, in a file that would be applied to production, in
+prose that no assertion checked.
+
+`0260`'s header cites **7,510,101.00**, which is production's exact
+`bank_accounts.opening_balance` sum. That one is a coincidence — the figure was
+measured on dev — and a coincidence is the worst possible outcome here, because
+it is the case that survives every spot-check.
+
+Twenty-three headers in the ledger stream carry a dev-measured figure with no
+assertion behind it. They are not all worth the same:
+
+1. **A figure a reader would take as a property of production.** Fix these.
+   They produce wrong decisions, as `0271`'s did.
+2. **A figure inside an assertion.** Already governed by §9.14; audit before
+   the migration is applied, not after.
+3. **Narrative arithmetic inside an explanation.** Lowest value. Fix
+   opportunistically.
+
+The rule for writing one: **name the database beside the number.** "6,771,645
+on `crm-design-dev`" is a reading. "6,771,645" is a claim about the world, and
+it will be wrong somewhere.
