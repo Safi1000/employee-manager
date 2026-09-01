@@ -1473,3 +1473,72 @@ three.** Their first close being refused is correct.
 Its financials are **not live**. Shayan does step 1 after the ledger work
 completes. The same three steps apply to `guards n guides` and `Sandboxx` if
 either is ever brought live.
+
+---
+
+# BLOCK 5 IN PROGRESS — `0286`, `0316b`, `0287`, `0288` APPLIED TO PRODUCTION, 2026-09-02
+
+| file | digest | result |
+|---|---|---|
+| `0268` | `72383b350104eab7dabdc48d362ab268` | four CHECKs, all VALIDATED |
+| `0286` | `c88fd602841df3026a9e200c611b298c` | tenant guard wired; reported **20**, not 19 |
+| `0316b` | `fb9ac361b53fb563eb45f7951d85dcf8` | closed the twentieth; gaps **19** |
+| `0287` | `a98b639187219f56f6d001ea4c90247b` | gaps **0**, 20 rows |
+| `0288` | `3b2faacab260a6829c5b7ed987c75d7e` | `uninvoked_controls()` = **6** |
+
+## THE TWENTIETH GAP WAS MINE
+
+`0286` wired `tenant_guard_gaps()` into `ledger_checks` and it immediately
+reported **twenty**. `0287`'s map is nineteen, and its PART 2b refuses unless
+the map and the live list agree exactly in both directions. The extra:
+
+```
+withholding_written_after_cutover   p_company_id   claimed
+```
+
+added by `0316`, three migrations earlier, **in this same session** — inside
+the interval where the detector that would have caught it was not yet wired to
+anything that runs. That is `0312`'s rule arriving on its own author:
+
+> A DETECTOR ADDED AFTER A DEFECT DOES NOT SEE THE INTERVAL IN WHICH THE
+> DEFECT WAS INTRODUCED.
+
+`0316b` closes it rather than adding a line to `0287`'s map, because a map that
+absorbs whatever it finds is no longer a statement about the schema.
+
+## OPEN, AND TRACKED HERE BECAUSE NOTHING ELSE CAN SEE IT
+
+`0286` and `0288` each **replace** `ledger_checks` with their own list, written
+before `0313` and `0316` existed. Two checks are therefore NOT in the suite
+right now:
+
+| check | detector | still correct? |
+|---|---|---|
+| `total_due_not_read_as_a_balance` | `total_due_read_as_a_balance()` | yes — returns 0 |
+| `no_invoice_time_withholding` | `withholding_written_after_cutover()` | yes — returns 0 |
+
+Only the WIRING is gone; both functions exist and both still answer 0.
+
+**`uninvoked_controls()` cannot report this.** Its candidate predicate is
+name-shaped — `gap|check|drift|residue|...` — and neither
+`total_due_read_as_a_balance` nor `withholding_written_after_cutover` matches
+it. So the suite lost two controls and the control that counts uncalled
+controls is blind to both. That is a second-order instance of the same defect
+`0288` exists to report, and it is why this note is written down rather than
+carried in anyone's head.
+
+### The restore lands AFTER `0302`, and that is not a preference
+
+Restoring them now would set the canary constant to 22. `0301` bumps the canary
+with
+
+```sql
+regexp_replace(v_new, '\m20::numeric,', '21::numeric,')
+```
+
+guarded by requiring `20::numeric,` to be present. With 22 in place that guard
+fails and **`0301` aborts.** `0302` then collapses the constant to one number,
+after which adding a check is a single edit that cannot be half-applied — which
+is exactly the shape the restore needs.
+
+**Sequence: `0288b`–`0299`, `0300`–`0302`, then the restore, then Block 7.**
