@@ -510,3 +510,127 @@ count_client_employees(OWN client) -> 25
 
 No V1 account was created — per plan it is created at the start of S2. No
 write path was exercised on production. `0285`, `0251`, `0252` not applied.
+
+---
+
+# S2 — APPLIED TO PRODUCTION, 2026-09-01. THE LEAK IS CLOSED.
+
+0285 (fused 0242c + 0248) applied to crm-design under named authorisation.
+Both embedded verification blocks ran inside the single transaction and
+passed. **The emergency lever was not needed.**
+
+## Environment note, because it nearly mattered
+
+This stage was run from a different checkout than S0/S1. Local `dev` was 16
+commits behind `origin/dev` and carried **none** of the deployment artifacts —
+no `supabase/rollback/`, no `0285`, no `.gitattributes`. Applying 0285 from
+that state would have meant deploying with no rollback capture and no
+emergency lever, which is precisely what S0 exists to prevent.
+
+Caught by checking for the artifacts before using them rather than assuming
+the working tree matched the plan. Resolved by pulling `origin/dev`.
+
+**The `.gitattributes` written in S0 earned its place on the first try.** The
+D0 capture crossed two machines, both with `core.autocrlf=true`, and arrived
+byte-exact: md5 28cbd4912d69b3cf96f5378bea585dd1, 257 markers, all 123
+embedded CR characters intact.
+
+One false alarm worth recording: the first 0285 integrity check reported both
+embedded blocks as DIFFERING from their sources. They did not. The marker
+strings used to slice the file contain newlines, the freshly-checked-out file
+has CRLF, so the markers were never found and the slices were garbage.
+Normalising first gave 873c87f1 and f50007b5 — the exact digests dev's ledger
+records. **The instrument was broken, not the artifact** — the same class as
+the CRLF finding in 9.10 and the comment-stripper artefact in the four-diffs
+audit. Third instance.
+
+## Recorded SQL equals the file — four for four
+
+0285_tenant_guard_prod_activation, version 20260901002831,
+file md5 = recorded md5 = ab2a30526315f600a3e36ce13ca3357e.
+
+## V1 — created, used, removed, all in this session
+
+    uid     deadbeef-0000-4000-8000-000000000001
+    email   v1-guard-verify@bastion.test
+    role    accounting  (minimum: RLS here is company-scoped, not role-gated)
+    company GUARDS AND GUIDES (PVT) LTD
+    branch  NULL (unbranched, so branch_scope policies pass trivially)
+
+Created by hand in auth.users + auth.identities + public.profiles. GoTrue
+first refused sign-in with "Database error querying schema" — its Go model
+scans the token columns into non-nullable strings, so the hand-inserted NULLs
+had to be set to empty strings. Recorded because the next person to create a
+user this way will hit it.
+
+**Removed at the end of this session**: profile, identity, session and auth
+user all deleted, one row each. Sign-in now returns invalid_credentials.
+
+Its still-unexpired JWT was retested after deletion and is **inert** — no
+profile means current_company_id() is NULL, so the guard refuses it. Revoking
+the profile revokes the access, not merely the login.
+
+## 3. PERMITTING DIRECTION — checked first, with the guard live
+
+As V1, with V1's claims bound, **inside a transaction that was rolled back**,
+so nothing persisted on real customer data. Verified after: zero probe rows
+survive.
+
+    check                                       before 0285   after 0285
+    expense insert, client_id NULL                   OK           OK
+    cash receipt via record_invoice_payment          OK           OK
+    post_manual_journal, p_branch_id NULL            OK           OK
+    region_for_client(NULL)                          OK           OK
+    count_client_employees(OWN client)               OK           OK
+
+GUARDS AND GUIDES has no invoices and no bank accounts, so the cash-receipt
+probe built its own prerequisites inside the same rolled-back transaction. An
+earlier failure in that probe was a missing account_type on my fixture, not a
+guard refusal — distinguished rather than counted.
+
+**The 0242-on-dev regression did not recur. No lever pulled.**
+
+## 4. REFUSING DIRECTION — through production's real HTTP channel
+
+Real password sign-in against production auth, real JWT, real PostgREST — not
+the agent's service-role connection, which would have bypassed the thing under
+test.
+
+    call                                 BEFORE 0285                      AFTER 0285
+    avg_monthly_net_payroll(foreign)     0                                42501 Row not found
+    count_client_employees(foreign)      2                                42501 Row not found
+    effective_salary(foreign employee)   40000.00 / 1290.32 / 2026-07-01  42501 Row not found
+
+    count_client_employees(OWN)          2                                2
+    effective_salary(OWN employee)       52965.00 / 1708.55 / 2026-08-05  identical
+    avg_monthly_net_payroll(OWN)         0                                0
+    region_for_client(NULL)              null                             null
+
+**No-oracle property holds**, tested explicitly — a foreign id and a
+non-existent id return byte-identical responses on both functions. A third
+tenant (SANDBOX TESTING ORG) is refused the same way, so this is not a
+two-company artefact.
+
+## 5. The application layer as V1
+
+Every screen's data layer loads: employees 552, clients 43, branches 4,
+chart_of_accounts 51; expenses, invoices and journal_entries empty, which is
+correct for this company. Cross-tenant table reads still return zero rows —
+RLS unchanged, as expected.
+
+**Honest limit: this is the application's data layer, not its rendered UI.** A
+human still needs to click through the NULL-passing forms — new expense with
+no client, cash receipt, manual journal with no branch — and confirm no
+"Row not found" reaches a toast. Every RPC and table call behind those forms
+is proved above; the rendering is not.
+
+## Final state
+
+    tenant_guard_gaps()                      0
+    functions with a NULL-tolerant guard   135
+    functions carrying a guard             136   (135 + tenant_guard_gaps itself)
+    assert_same_company                    0242c form (JWT claims, not current_user)
+
+ledger_checks() on prod reports one failure, no_billing_clients_on_head_office
+= 1. Pre-existing and unrelated: 0285 executed only CREATE OR REPLACE FUNCTION
+and a COMMENT ON, and wrote no application rows.
