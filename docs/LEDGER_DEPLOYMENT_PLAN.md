@@ -993,6 +993,63 @@ Three cases in seventy files is a low rate, and both of the avoidable ones were
 mine, written this week. The stream's older migrations were already disciplined
 about this; the pattern that failed is the one I introduced.
 
+## 11a. `0268` — DEFERRED out of Block 3, 2026-09-01
+
+**Not applied to production. Block 3 ran `0267`, then `0269`–`0275`.**
+
+`0268` adds:
+
+```sql
+invoice_payments_cash_names_a_location
+  check (payment_mode <> 'Cash' or custodian_location_id is not null)
+```
+
+The constraint is correct. **The deployed `record_invoice_payment()` cannot
+satisfy it** — measured on production immediately before applying:
+
+```
+mentions of custodian_location_id in record_invoice_payment() ...... 0
+signature .... (p_invoice_id, p_amount, p_payment_date, p_payment_mode,
+                p_bank_account_id, p_notes, p_withholding)
+```
+
+It inserts its `invoice_payments` row without a custodian, so **every cash
+receipt through the application would be refused from the moment `0268` lands**.
+That is the regression `0281` documents, and putting it on production knowingly
+is worse than shipping it by accident.
+
+**`0281` does not restore the path on its own.** It replaces the opaque
+`23514 ... violates check constraint` with `'Select the custodian who received
+the cash'`, and raises whenever `p_custodian_location_id` is null. The deployed
+frontend calls the seven-argument form and passes nothing. Better error, same
+outage.
+
+**Release, therefore, not a migration ordering problem.** `0268` + `0281` + the
+frontend change that passes a custodian, together. Until all three ship, the
+path is only restored by not applying `0268`.
+
+Nothing in `0269`–`0275` depends on it: no reference to its constraints, none of
+them insert into the four constrained tables, and it adds no `ledger_checks`
+row, so `0271`'s `<> 16` and `0275`'s `<> 17` are unaffected. `0273` names
+`0268` in prose only and constrains `cheques`.
+
+### The rule this produced
+
+> **A PRE-FLIGHT MUST CHECK WHETHER THE DEPLOYED CODE CAN SATISFY THE NEW
+> CONSTRAINT, NOT ONLY WHETHER THE EXISTING DATA DOES.**
+
+A data-only pre-flight **passes this migration**: zero violating rows across all
+four tables, on production, at the moment of checking. The outage is in the
+writer, not the data, and no query over the four tables would have found it.
+Same family as §9.9 — a constraint proved only by what it refuses is half
+proved — but one layer earlier: here the refusal had not happened yet and the
+only way to see it was to read the code that would trip it.
+
+Applies to every remaining CHECK or NOT NULL in this deployment. `0273` was
+pre-flighted the same way for the same reason and came back clean: 2 outgoing
+cash cheques, both carrying a custodian, and the deployed cheque path writes the
+column.
+
 ## 12. Outstanding corrections, not applied
 
 | # | what | why not done here |
