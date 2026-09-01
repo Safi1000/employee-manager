@@ -35,6 +35,7 @@ type RowKind =
   | "training"
   | "inventory_licence"
   | "contract_end"
+  | "client_contract_end"
   | "important_date";
 
 const KIND_LABEL: Record<RowKind, string> = {
@@ -51,6 +52,10 @@ const KIND_LABEL: Record<RowKind, string> = {
   training: "Training",
   inventory_licence: "Item Licence",
   contract_end: "Contract End",
+  // An anomaly, not an expiry: a client carrying a contract end date with no
+  // active contract row behind it (0293). Named so nobody renews a contract
+  // that does not exist.
+  client_contract_end: "Contract End (no active contract)",
   important_date: "Company Compliance",
 };
 
@@ -68,6 +73,7 @@ const KIND_HREF: Record<RowKind, string> = {
   training: "/super-admin/employees",
   inventory_licence: "/super-admin/assets-issuance",
   contract_end: "/super-admin/contracts",
+  client_contract_end: "/super-admin/clients",
   important_date: "/super-admin/compliance",
 };
 

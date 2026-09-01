@@ -43,13 +43,48 @@ import { useRegion, withRegion } from "../../lib/region";
 type BankRow = { id: string; bank_name: string; balance: number };
 type TopClientRow = { id: string; name: string; revenue: number };
 type AttendancePoint = { date: string; label: string; present: number; absent: number; leave: number };
-type AlertRow = { id: string; title: string; due_date: string; category: string; priority: string };
+// One row of the compliance alerts panel, straight off compliance_upcoming.
+// days_remaining is SIGNED and computed by the view — negative is overdue. It
+// is never clamped at zero here: the panel used to render Math.max(0, …), so an
+// item three weeks late displayed as "today". See TENANT_GUARD_REPORT.md 9.11.
+type AlertRow = {
+  id: string;
+  title: string;
+  due_date: string;
+  category: string;
+  priority: string;
+  days_remaining: number;
+};
 type ExpensePieRow = { name: string; value: number };
 type ContractEndingRow = { id: string; code: string; client_name: string; end_date: string; days_left: number };
 type IncidentRow = { id: string; code: string; severity: string; category: string; occurred_at: string; status: string };
 type RecentPaymentRow = { id: string; client_name: string; amount: number; payment_date: string };
 
 const PIE_COLORS = CHART_COLORS;
+
+// compliance_upcoming rows -> the panel's shape. One mapper, used by both the
+// initial load and the realtime refresh, so the two cannot drift.
+//
+// The urgency badge is derived from days_remaining for every kind, where it
+// used to be important_dates.priority for those rows and a separate ladder for
+// contracts. The human-set priority is not lost — it travels in the view's
+// sublabel, which is what the panel prints as the category line.
+const toAlertRows = (data: unknown): AlertRow[] =>
+  ((data ?? []) as {
+    kind: string; ref_id: string; label: string; sublabel: string | null;
+    due_date: string; days_remaining: number;
+  }[]).map((r) => ({
+    id: `${r.kind}-${r.ref_id}`,
+    title: r.label,
+    due_date: r.due_date,
+    category: r.sublabel ?? "",
+    priority:
+      r.days_remaining < 0 ? "critical"
+      : r.days_remaining <= 7 ? "critical"
+      : r.days_remaining <= 30 ? "high"
+      : "medium",
+    days_remaining: r.days_remaining,
+  }));
 
 const currency = (n: number) => `PKR ${Math.round(n).toLocaleString("en-PK")}`;
 const compact = (n: number) => {
@@ -176,7 +211,6 @@ export default function SuperAdminDashboard() {
         const today = todayIso();
         const yesterday = daysAgoIso(1);
         const sevenDaysAgo = daysAgoIso(6);
-        const in30 = daysAheadIso(30);
         const in60 = daysAheadIso(60);
         const periodMonthKey = `${mStart.slice(0, 7)}-01`;
 
@@ -191,8 +225,7 @@ export default function SuperAdminDashboard() {
           psPrevRes,
           banksRes,
           payMtdRes,
-          datesRes,
-          contractEndsRes,
+          complianceRes,
           // Sprint 1-5 additions
           activeContractsRes,
           openIncidentsRes,
@@ -227,8 +260,27 @@ export default function SuperAdminDashboard() {
                 range: (from: number, to: number) => Promise<{ data: unknown; error: { message: string } | null }>;
               },
           ),
-          supabase.from("important_dates").select("id, title, due_date, category, priority").gte("due_date", today).lte("due_date", in30).order("due_date"),
-          withRegion(supabase.from("clients").select("id, name, contract_end").not("contract_end", "is", null).gte("contract_end", today).lte("contract_end", in60).order("contract_end"), regionId),
+          // Compliance alerts — one query where there were two.
+          //
+          // This panel previously read important_dates directly AND
+          // clients.contract_end, which made it a sixth implementation of "what
+          // is expiring" (0291 found five). clients.contract_end is not
+          // authoritative — contracts.end_date is — but two clients carry an end
+          // date with no active contract row behind them, so repointing alone
+          // would have dropped them. 0293 adds them to the view as an explicit
+          // client_contract_end ANOMALY instead. Both now arrive from one place.
+          //
+          // No lower bound. Overdue items are the loudest rows here, not the
+          // ones that fall out of the filter.
+          withRegion(
+            supabase
+              .from("compliance_upcoming")
+              .select("kind, ref_id, label, sublabel, due_date, days_remaining")
+              .in("kind", ["important_date", "contract_end", "client_contract_end"])
+              .lte("days_remaining", 60)
+              .order("days_remaining"),
+            regionId,
+          ),
           // active contracts count — contracts carry no branch_id (region is via
           // client); left company-wide rather than restructure this count query.
           supabase.from("contracts").select("id", { count: "exact", head: true }).eq("status", "active"),
@@ -404,27 +456,10 @@ export default function SuperAdminDashboard() {
           setTopClients([]);
         }
 
-        // Compliance + contract-end alerts
-        if (datesRes.error) throw datesRes.error;
-        if (contractEndsRes.error) throw contractEndsRes.error;
+        // Compliance alerts
+        if (complianceRes.error) throw complianceRes.error;
         const todayDate = new Date(today);
-        const contractAlerts: AlertRow[] = ((contractEndsRes.data ?? []) as {
-          id: string; name: string; contract_end: string;
-        }[]).flatMap((c) => {
-          const endDate = new Date(c.contract_end);
-          const daysLeft = Math.round((endDate.getTime() - todayDate.getTime()) / (1000 * 60 * 60 * 24));
-          if (daysLeft > 60) return [];
-          const priority = daysLeft <= 7 ? "critical" : daysLeft <= 30 ? "high" : "medium";
-          return [{
-            id: `contract-${c.id}`,
-            title: `Contract ending: ${c.name} (${daysLeft}d)`,
-            due_date: c.contract_end,
-            category: "Client",
-            priority,
-          }];
-        });
-        const merged = [...((datesRes.data ?? []) as AlertRow[]), ...contractAlerts].sort((a, b) => a.due_date.localeCompare(b.due_date));
-        setAlerts(merged);
+        setAlerts(toAlertRows(complianceRes.data));
 
         // Sprint 1-5 stat tallies
         setActiveContracts(activeContractsRes.count ?? 0);
@@ -553,12 +588,15 @@ export default function SuperAdminDashboard() {
           .limit(8),
         regionId,
       ),
-      supabase
-        .from("important_dates")
-        .select("id, title, due_date, category, priority")
-        .gte("due_date", today)
-        .lte("due_date", daysAheadIso(30))
-        .order("due_date"),
+      withRegion(
+        supabase
+          .from("compliance_upcoming")
+          .select("kind, ref_id, label, sublabel, due_date, days_remaining")
+          .in("kind", ["important_date", "contract_end", "client_contract_end"])
+          .lte("days_remaining", 60)
+          .order("days_remaining"),
+        regionId,
+      ),
     ]);
 
     type PayRaw = { id: string; client_id: string | null; invoice_id: string | null; amount: number; payment_date: string };
@@ -601,13 +639,10 @@ export default function SuperAdminDashboard() {
         status: i.status,
       })),
     );
-    if (dateRes.data) setAlerts((prev) => {
-      // Contract-end alerts are computed in the main load and have ids prefixed
-      // "contract-"; keep those and refresh only the compliance dates.
-      const contractOnly = prev.filter((a) => a.id.startsWith("contract-"));
-      return [...(dateRes.data as AlertRow[]), ...contractOnly].sort((a, b) =>
-        a.due_date.localeCompare(b.due_date),
-      );
+    // One source now, so this replaces the whole list rather than merging two
+    // halves and hoping the id prefixes keep them apart.
+    if (dateRes.data) setAlerts(() => {
+      return toAlertRows(dateRes.data);
     });
   }, [regionId]);
 
@@ -921,18 +956,20 @@ export default function SuperAdminDashboard() {
               {show("compliance_alerts") && (
                 <div className="bg-white rounded-lg border border-slate-200">
                   <div className="p-6 border-b border-slate-200">
-                    <h3 className="text-base text-slate-900">Upcoming Compliance · Next 30 Days</h3>
+                    <h3 className="text-base text-slate-900">Compliance · Overdue and Next 60 Days</h3>
                   </div>
                   {alerts.length === 0 ? (
-                    <div className="p-6 text-sm text-slate-500">Nothing due in the next 60 days.</div>
+                    <div className="p-6 text-sm text-slate-500">Nothing overdue or due in the next 60 days.</div>
                   ) : (
                     <div className="divide-y divide-slate-200">
                       {alerts.map((a) => {
-                        const daysLeft = Math.max(0, Math.ceil((new Date(a.due_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)));
+                        // Not recomputed and NOT clamped at zero — the view
+                        // already answered this against the server's date.
+                        const daysLeft = a.days_remaining;
                         const priorityClass = PRIORITY_COLOR[a.priority] ?? PRIORITY_COLOR.low;
                         return (
                           <div key={a.id} className="p-4 flex items-start gap-3 hover:bg-slate-50 transition-colors">
-                            <AlertCircle className="w-4 h-4 text-warning-600 flex-shrink-0 mt-0.5" strokeWidth={1.5} />
+                            <AlertCircle className={`w-4 h-4 flex-shrink-0 mt-0.5 ${daysLeft < 0 ? "text-danger-600" : "text-warning-600"}`} strokeWidth={1.5} />
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-1">
                                 <p className="text-sm text-slate-900 truncate">{a.title}</p>
@@ -940,7 +977,9 @@ export default function SuperAdminDashboard() {
                               </div>
                               <p className="text-xs text-slate-500">{a.category} · due {formatDate(a.due_date)}</p>
                             </div>
-                            <span className="text-xs text-slate-400 tabular-nums">{daysLeft === 0 ? "today" : `${daysLeft}d`}</span>
+                            <span className={`text-xs tabular-nums ${daysLeft < 0 ? "text-danger-600" : "text-slate-400"}`}>
+                              {daysLeft < 0 ? `${Math.abs(daysLeft)}d overdue` : daysLeft === 0 ? "today" : `${daysLeft}d`}
+                            </span>
                           </div>
                         );
                       })}
