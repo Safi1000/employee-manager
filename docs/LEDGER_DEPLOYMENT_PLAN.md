@@ -1610,3 +1610,46 @@ separated employee exists with no exit date, no last working day, no
 termination date and no reason.** Nothing was fabricated by the old else-arm.
 
 **Verdict: the subtransaction idiom holds for all five. Cleared for production.**
+
+## Block 5, continued — `0291`–`0294` applied to production, 2026-09-02
+
+| file | digest | result |
+|---|---|---|
+| `0288b` | `5b17b05b62e07ddd6469e3130edab6fc` | `ledger_checks` now reports itself |
+| `0289` | `b22ed1c088c5d665a1928ccd0e7df352` | gate residue collapsed, figure unmoved |
+| `0290` | `56f2bcb644d1cde1db7ce55bb839aff7` | gaps still **0** — no guard was credited to a comment |
+| `0291` | `c2f45e9215c7c07fc622c3d97c135939` | view rebuilt, **169** rows |
+| `0292` | `ab6b9e286ac6c149ea0d63dded4c49d4` | **169** rows — additive, nothing moved |
+| `0293` | `6abd14df92de126fb449e6a02ea36336` | **171** rows: exactly +2 anomalies |
+| `0294` | `04053d6a3dacaf825837b4760f49a405` | 6 functions + 14 views = **20** |
+
+### The rollback proof holds on production too
+
+After each of `0291`, `0292`, `0293`: zero probe residue. No `ZZ %` employee,
+no `ZZTEST` client prefix, no `probe review` important_date, no `ZZ-0293`
+client. The subtransaction idiom behaves on production exactly as measured on
+dev.
+
+### `0293` predicted the two, and production produced the two
+
+The header names Palm Grove Resorts and Nova Textiles Mills as the clients
+carrying `contract_end` with no active contract row. The view now reports
+exactly those two, by name, and the row count moved from 169 to 171 — the
+arithmetic closes with nothing else disturbed.
+
+**Palm Grove Resorts still has four guards deployed against a contract that
+expired 2026-07-31.** That is now visible on a screen for the first time.
+
+### `0294` pre-flighted before applying, because it asserts two numbers
+
+`0294` refuses unless the function arm is exactly 6 and the view arm exactly
+14. Both were computed against production first, using the migration's own
+predicate: **6 and 14**, and the fourteen were the same fourteen the header
+names. The exempt map had **0 stale entries**.
+
+Asserting a count without checking it first is how a migration aborts halfway
+through a block for a reason that has nothing to do with the change.
+
+`trial_balance` is among the fourteen: the ledger's central report, read by
+nothing, while `ledger_checks_base` recomputes debits-equal-credits inline.
+`0299` collapses that.
