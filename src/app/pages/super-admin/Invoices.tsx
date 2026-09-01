@@ -58,7 +58,6 @@ type InvoiceForm = {
   invoice_number: string;
   invoice_date: string;
   invoice_amount: string;
-  withholding_tax: string;
   notes: string;
   attachment_file: File | null;
   // Existing attachment metadata for edit modal — either a legacy Storage path
@@ -120,7 +119,6 @@ const emptyForm = (): InvoiceForm => ({
   invoice_number: "",
   invoice_date: currentMonthStr(),
   invoice_amount: "",
-  withholding_tax: "",
   notes: "",
   attachment_file: null,
   existing_attachment_path: null,
@@ -498,7 +496,6 @@ export default function Invoices() {
     setError(null);
     try {
       const invAmt = Number(form.invoice_amount);
-      const wht = Number(form.withholding_tax || 0);
       const { data, error: insErr } = await supabase
         .from("invoices")
         .insert({
@@ -507,7 +504,6 @@ export default function Invoices() {
           invoice_number: form.invoice_number.trim(),
           invoice_date: `${form.invoice_date.slice(0, 7)}-01`,
           invoice_amount: invAmt,
-          withholding_tax: wht,
           amount_received: 0,
           notes: form.notes.trim() || null,
           attachment_path: null,
@@ -574,7 +570,6 @@ export default function Invoices() {
       invoice_number: row.invoice_number,
       invoice_date: row.invoice_date.slice(0, 7),
       invoice_amount: String(row.invoice_amount),
-      withholding_tax: String(row.withholding_tax ?? 0),
       notes: row.notes ?? "",
       attachment_file: null,
       existing_attachment_path: row.attachment_path,
@@ -619,7 +614,6 @@ export default function Invoices() {
         legacyPath = null;
       }
       const invAmt = Number(editForm.invoice_amount);
-      const wht = Number(editForm.withholding_tax || 0);
       const { error: upErr } = await supabase
         .from("invoices")
         .update({
@@ -628,7 +622,6 @@ export default function Invoices() {
           invoice_number: editForm.invoice_number.trim(),
           invoice_date: `${editForm.invoice_date.slice(0, 7)}-01`,
           invoice_amount: invAmt,
-          withholding_tax: wht,
           notes: editForm.notes.trim() || null,
           attachment_path: legacyPath,
           drive_file_id: driveFileId,
@@ -1213,6 +1206,9 @@ export default function Invoices() {
                   filteredInvoices.map((inv) => {
                     // wht is the Withholding COLUMN, displayed for the reader. It is
                     // deliberately not part of outstanding — see invoiceOutstanding().
+                    // 0316 removed every writer of this column, so it is non-zero
+                    // only on invoices raised before that. Withholding on new
+                    // receipts is on invoice_payments.withholding_amount.
                     const wht = Number(inv.withholding_tax ?? 0);
                     const outstanding = invoiceOutstanding(inv);
                     const isSettled = outstanding <= 0;
@@ -2005,19 +2001,13 @@ function InvoiceFields({
         />
         {errors.invoice_amount && <p className="text-xs text-danger-600 mt-1">{errors.invoice_amount}</p>}
       </div>
-      <div>
-        <label className="block text-sm text-slate-700 mb-1">Withholding Tax (PKR)</label>
-        <input
-          type="number"
-          min="0"
-          step="0.01"
-          value={form.withholding_tax}
-          onChange={(e) => setForm({ ...form, withholding_tax: e.target.value })}
-          placeholder="0 (optional)"
-          className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-        />
-        <p className="text-xs text-slate-500 mt-1">Deducted from the receivable balance for this invoice.</p>
-      </div>
+      {/* 0316: the invoice-time Withholding Tax field is gone. Its help text
+          said "Deducted from the receivable balance for this invoice", which is
+          the model A1 rejects: the client is billed GROSS and withholding is
+          recognised when the client actually deducts it, on the receipt. The
+          field now lives on the payment modal, prefilled from the client's
+          agreed rate (0281). The Withholding column in the list below still
+          renders historical values. */}
       <div>
         <label className="block text-sm text-slate-700 mb-1">Attachment</label>
         {(form.existing_drive_view_url || form.existing_attachment_path) && !form.attachment_file && (

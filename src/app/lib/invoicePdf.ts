@@ -9,6 +9,7 @@ import type {
   InvoiceTemplateField,
   InvoiceTemplateItem,
 } from "./supabase";
+import { invoiceOutstanding } from "./supabase";
 
 // Header fields go in the top block, totals at the bottom, everything else
 // (description, notes) in the middle. Fields not in the company's template
@@ -39,7 +40,12 @@ function valueFor(
   client: Client | null,
 ): string {
   const amt = Number(inv.invoice_amount ?? 0);
-  const wht = Number(inv.withholding_tax ?? 0);
+  // 0316: the DOCUMENT's withholding is tax_withheld_total — the tax profile's
+  // WITHHELD lines, which is what the rich template already prints and what
+  // InvoiceGenerate still writes. withholding_tax was a second copy of it and
+  // has no writer left; falling back to it keeps invoices raised before 0316
+  // printing what they printed.
+  const wht = Number(inv.tax_withheld_total ?? inv.withholding_tax ?? 0);
   const received = Number(inv.amount_received ?? 0);
   switch (field) {
     case "invoice_number":
@@ -69,7 +75,10 @@ function valueFor(
     case "amount_received":
       return fmtPkr(received);
     case "balance_due":
-      return fmtPkr(amt - wht - received);
+      // A1: the balance owed is GROSS of withholding. This was the ninth copy of
+      // the outstanding calculation and the lint could not see it, because both
+      // subtracted terms are locals by the time they are used.
+      return fmtPkr(invoiceOutstanding(inv));
     case "status":
       return inv.status ?? "—";
     case "notes":

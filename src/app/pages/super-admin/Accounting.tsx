@@ -211,7 +211,17 @@ export default function Accounting() {
   // All invoice_payment rows with dates — used to compute month-aware
   // carry-forward in the Receivables view.
   const [allPaymentEvents, setAllPaymentEvents] = useState<
-    { client_id: string | null; invoice_id: string | null; amount: number; payment_date: string }[]
+    {
+      client_id: string | null;
+      invoice_id: string | null;
+      amount: number;
+      // 0281 splits a receipt: `amount` is the CASH that arrived and
+      // `withholding_amount` is what the client kept and paid to the FBR.
+      // invoices.amount_received moves by the two together, so anything
+      // reconciling against it has to add them back.
+      withholding_amount: number;
+      payment_date: string;
+    }[]
   >([]);
   const [paymentVia, setPaymentVia] = useState<"Cash" | "Bank" | "Cheque">("Bank");
   const [paymentBankId, setPaymentBankId] = useState<string>("");
@@ -315,8 +325,9 @@ export default function Accounting() {
   // "Opening Balance" carries forward from the prior period: it equals the
   // client's *cumulative outstanding* through the day before the selected month
   // started. The "Outstanding" column then = Opening + this-month invoiced
-  // − withholding − payments in this month, which is the running balance at
-  // month-end.
+  // − payments in this month, which is the running balance at month-end.
+  // Withholding is NOT a third term: A1 makes it part of the payment, and it is
+  // reported in its own column from the receipts that carry it.
   const displayedReceivables = useMemo(() => {
     if (receivablesMonth === "all") return receivables;
 
@@ -333,6 +344,9 @@ export default function Accounting() {
     // fall back to the invoice's own date.
     const paymentsByInvoice = new Map<string, number>();
     const datedPayments: { clientId: string; amount: number; date: string }[] = [];
+    // The withholding half of the same receipts, dated identically, so the
+    // Withholding column lands in the month the client actually deducted it.
+    const datedWht: { clientId: string; amount: number; date: string }[] = [];
     for (const p of allPaymentEvents) {
       let clientId = p.client_id ?? null;
       if (!clientId && p.invoice_id) {
@@ -340,17 +354,20 @@ export default function Accounting() {
         if (inv) clientId = inv.client_id;
       }
       if (!clientId) continue;
+      // Cash + withholding, because that is what invoices.amount_received moved
+      // by. Counting cash alone left the withholding to fall out of the residual
+      // loop below and be re-dated to the INVOICE date, putting it in the wrong
+      // month on a screen whose whole purpose is the month.
+      const settled = Number(p.amount ?? 0) + Number(p.withholding_amount ?? 0);
+      const date = (p.payment_date ?? monthStart).slice(0, 10);
       if (p.invoice_id) {
         paymentsByInvoice.set(
           p.invoice_id,
-          (paymentsByInvoice.get(p.invoice_id) ?? 0) + Number(p.amount ?? 0),
+          (paymentsByInvoice.get(p.invoice_id) ?? 0) + settled,
         );
       }
-      datedPayments.push({
-        clientId,
-        amount: Number(p.amount ?? 0),
-        date: (p.payment_date ?? monthStart).slice(0, 10),
-      });
+      datedPayments.push({ clientId, amount: settled, date });
+      datedWht.push({ clientId, amount: Number(p.withholding_amount ?? 0), date });
     }
     // Add residuals: invoice.amount_received minus what we already counted via
     // invoice_payments rows — dated at the invoice's invoice_date.
@@ -397,25 +414,19 @@ export default function Accounting() {
       const priorInvs = allInvs.filter((i) => invoiceMonth(i) < monthStart.slice(0, 7));
 
       const priorInvoiced = priorInvs.reduce((s, i) => s + Number(i.invoice_amount), 0);
-      const priorWithholding = priorInvs.reduce(
-        (s, i) => s + Number(i.withholding_tax ?? 0),
-        0,
-      );
       const priorReceived = sumInRange(c.id, datedPayments, null, dayBeforeMonthStart);
 
       // Opening for this month = cumulative outstanding through end of prior month.
       const openingForMonth =
-        Number(c.opening_balance ?? 0) + priorInvoiced - priorWithholding - priorReceived;
+        Number(c.opening_balance ?? 0) + priorInvoiced - priorReceived;
 
       const total_invoiced = monthInvs.reduce((s, i) => s + Number(i.invoice_amount), 0);
-      const total_withholding = monthInvs.reduce(
-        (s, i) => s + Number(i.withholding_tax ?? 0),
-        0,
-      );
+      // From the RECEIPTS in this month, not from the invoices — see the "all"
+      // path above for why the source moved.
+      const total_withholding = sumInRange(c.id, datedWht, monthStart, monthEnd);
       const total_received = sumInRange(c.id, datedPayments, monthStart, monthEnd);
 
-      const outstanding =
-        openingForMonth + total_invoiced - total_withholding - total_received;
+      const outstanding = openingForMonth + total_invoiced - total_received;
 
       // Show clients with any activity in this month OR a non-zero opening.
       const hasActivity =
@@ -609,6 +620,7 @@ export default function Accounting() {
       client_id: string | null;
       invoice_id: string | null;
       amount: number;
+      withholding_amount: number;
       payment_date: string;
     }[] = [];
     try {
@@ -633,11 +645,12 @@ export default function Accounting() {
           client_id: string | null;
           invoice_id: string | null;
           amount: number;
+          withholding_amount: number;
           payment_date: string;
         }>(() =>
           supabase
             .from("invoice_payments")
-            .select("client_id, invoice_id, amount, payment_date")
+            .select("client_id, invoice_id, amount, withholding_amount, payment_date")
             .order("payment_date", { ascending: false }) as unknown as {
             range: (from: number, to: number) => Promise<{ data: unknown; error: { message: string } | null }>;
           },
@@ -652,7 +665,15 @@ export default function Accounting() {
     for (const row of allPayRows) {
       if (row.invoice_id) continue; // only standalone (no invoice) here
       if (!row.client_id) continue;
-      standaloneMap.set(row.client_id, (standaloneMap.get(row.client_id) ?? 0) + Number(row.amount));
+      // Cash + withholding. A standalone receipt has no invoice whose
+      // amount_received could carry the withholding half, so counting only
+      // `amount` left the client owing the withholding for ever.
+      standaloneMap.set(
+        row.client_id,
+        (standaloneMap.get(row.client_id) ?? 0) +
+          Number(row.amount) +
+          Number(row.withholding_amount ?? 0),
+      );
     }
     setStandalonePayments(standaloneMap);
     if (banksRes.error) setError(banksRes.error.message);
@@ -685,15 +706,32 @@ export default function Accounting() {
       arr.push(inv);
       byClient.set(inv.client_id, arr);
     }
+    // A1 / 0316: withholding is deducted BY THE CLIENT AT PAYMENT, so the
+    // Withholding column is the sum of invoice_payments.withholding_amount.
+    // It used to be summed from invoices.withholding_tax. 0316 removed the three
+    // writers of that column, and a column nothing writes still reads as a
+    // number — repointing the reader is the other half of removing the writer,
+    // or the screen would have shown 0 withholding for every client from 0316
+    // onward and looked like a quiet reporting bug months later.
+    const invClient = new Map(allInvoices.map((i) => [i.id, i.client_id]));
+    const whtByClient = new Map<string, number>();
+    for (const p of allPayRows) {
+      const cid = p.client_id ?? (p.invoice_id ? invClient.get(p.invoice_id) ?? null : null);
+      if (!cid) continue;
+      whtByClient.set(cid, (whtByClient.get(cid) ?? 0) + Number(p.withholding_amount ?? 0));
+    }
     const rec: ReceivableRow[] = allClients.map((c) => {
       const invs = byClient.get(c.id) ?? [];
       const total_invoiced = invs.reduce((s, i) => s + Number(i.invoice_amount), 0);
-      const total_withholding = invs.reduce((s, i) => s + Number(i.withholding_tax ?? 0), 0);
+      const total_withholding = whtByClient.get(c.id) ?? 0;
       const invoice_received = invs.reduce((s, i) => s + Number(i.amount_received), 0);
       const standalone_received = standaloneMap.get(c.id) ?? 0;
       const total_received = invoice_received + standalone_received;
+      // A1: the receivable is GROSS and is cleared by cash and withholding
+      // TOGETHER, both of which are already inside total_received. Subtracting
+      // withholding again here relieved it twice — the same shape as 0313.
       const outstanding =
-        Number(c.opening_balance ?? 0) + total_invoiced - total_withholding - total_received;
+        Number(c.opening_balance ?? 0) + total_invoiced - total_received;
       return {
         ...c,
         total_invoiced,

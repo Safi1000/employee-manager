@@ -493,7 +493,11 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
       invoice_number: d.invoiceNumber.trim(),
       invoice_date: today(),
       invoice_amount: invoiceAmount,
-      withholding_tax: f.withheldTotal,
+      // 0316: withholding_tax is NOT written. It was a duplicate of
+      // tax_withheld_total on the same row, and it was the copy that reduced
+      // receivable balances (Accounting.tsx, invoicePdf.ts) — which A1 forbids.
+      // tax_withheld_total keeps the DOCUMENT figure, so the printed invoice is
+      // unchanged; only the balance-bearing copy is gone.
       amount_received: 0,
       status: "Unpaid" as const,
       notes: d.notes.trim() || null,

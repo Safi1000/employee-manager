@@ -267,6 +267,21 @@ reason, and it is also the one with a complete one-line undo.
 
 Not through a service-role connection. Every item below is a click.
 
+> **The confirmation tested the other implementation.** Item 1 of the verification
+> below was run and passed — a ₨50,000 cash receipt, recorded, custodian balance
+> moved — and the window was declared closed on it. It went through
+> `Accounting.tsx`'s **direct insert into `invoice_payments`**, not through
+> `record_invoice_payment`. All eight payment rows on production carry
+> `client_id` and most carry no invoice, which is that path's shape and not the
+> RPC's; the RPC has never created a production payment row.
+>
+> The window was real and the release closed it. What the click proved is that
+> the screen stores a custodian, which was already true before `0281`. Item 2
+> (0315) removed that second implementation, so the same click now exercises the
+> RPC — but the sequence is worth keeping: **a green verification step is only
+> evidence about the code path it actually took**, and on a screen with two
+> implementations of the same operation, that is not the one being released.
+
 1. **Cash receipt with a custodian** → succeeds; the row carries
    `custodian_location_id`. This is `0268`'s precondition, so it happens before
    `0268` and again after.

@@ -85,6 +85,31 @@ const NAMED = /withholding_tax[\s\S]{0,120}?\s-\s[\s\S]{0,120}?amount_received|a
 // amount_received. Catches the local-variable form rule 1 missed.
 const SHAPE = /invoice_amount[\s\S]{0,80}?\s-\s[\s\S]{0,80}?\s-\s[\s\S]{0,80}?amount_received/;
 
+// Rule 3 — THE AGGREGATE FORM, added by 0316.
+//
+// Rules 1 and 2 both look for a PER-INVOICE calculation, and both are anchored
+// on a token that only appears there. Three further copies were sitting in the
+// tree the whole time, in the client-ledger aggregate:
+//
+//     openingForMonth + total_invoiced - total_withholding - total_received
+//     Number(c.opening_balance ?? 0) + total_invoiced - total_withholding - total_received
+//     fmtPkr(amt - wht - received)
+//
+// No `invoice_amount`, no `withholding_tax` — the sums are named for what they
+// are, so rule 1 saw no token and rule 2 saw no anchor. That is the same
+// failure that produced rule 2: a checker anchored on the SPELLING of the last
+// bug it saw. Rule 3 anchors on the RELATIONSHIP instead — a withholding-ish
+// term SUBTRACTED in a statement that is computing something received or
+// outstanding — so it does not care what any of the three are called.
+//
+// The "received or outstanding" requirement is what keeps it off the DOCUMENT
+// arithmetic. InvoiceGenerate computes `gross - manualWithholding + carried`
+// for the printed Total Due, which is presentation and legitimately net of
+// withholding (0313). It subtracts withholding and stays green, because it is
+// not computing a balance.
+const AGG =
+  /\s-\s[^;]{0,60}?(withholding|wht)[^;]{0,160}?(received|outstanding)|(received|outstanding)[^;]{0,160}?\s-\s[^;]{0,60}?(withholding|wht)/i;
+
 export function scan(text) {
   const src = stripComments(text);
   const hits = [];
@@ -98,14 +123,19 @@ export function scan(text) {
     offset += stmt.length + 1;
     const named = NAMED.test(stmt);
     const shape = SHAPE.test(stmt);
-    if (!named && !shape) continue;
+    const agg = AGG.test(stmt);
+    if (!named && !shape && !agg) continue;
     // Point at the token itself, not the statement start — a statement begins
     // after the PREVIOUS semicolon, which can be several lines back.
-    const token = named ? "withholding_tax" : "invoice_amount";
+    const token = named ? "withholding_tax" : shape ? "invoice_amount" : "-";
     const hit = start + Math.max(0, stmt.indexOf(token));
     hits.push({
       line: src.slice(0, hit).split("\n").length,
-      rule: named ? "withholding_tax subtracted" : "third term subtracted",
+      rule: named
+        ? "withholding_tax subtracted"
+        : shape
+          ? "third term subtracted"
+          : "withholding subtracted from a balance",
       text: src.slice(Math.max(0, hit - 40), hit + 110).replace(/\s+/g, " ").trim(),
     });
   }
@@ -121,13 +151,24 @@ export function scan(text) {
     "const outstanding = Number(inv.invoice_amount) - Number(inv.withholding_tax ?? 0) - Number(inv.amount_received);";
   const LOCAL_COPY =
     "const outstanding = Number(inv.invoice_amount) - wht - Number(inv.amount_received);";
+  const AGG_COPY =
+    "const outstanding = openingForMonth + total_invoiced - total_withholding - total_received;";
+  const PDF_COPY = "return fmtPkr(amt - wht - received);";
   const INNOCENT = "const row = { invoice_amount: 0, withholding_tax: 0, amount_received: 0 };";
   const GOOD = "const outstanding = Number(inv.invoice_amount ?? 0) - Number(inv.amount_received ?? 0);";
+  // The DOCUMENT total, which is legitimately net of withholding (0313) and
+  // must stay green — otherwise rule 3 is a rule someone deletes.
+  const DOCUMENT = "const lineTotal = subtotal + addedTotal - withheldTotal + carried;";
+  const AGG_GOOD = "const outstanding = openingForMonth + total_invoiced - total_received;";
   const fail = [];
   if (scan(NAMED_COPY).length === 0) fail.push("rule 1 did not detect a named copy");
   if (scan(LOCAL_COPY).length === 0) fail.push("rule 2 did not detect a local-variable copy");
+  if (scan(AGG_COPY).length === 0) fail.push("rule 3 did not detect the aggregate copy");
+  if (scan(PDF_COPY).length === 0) fail.push("rule 3 did not detect the locals-only copy");
   if (scan(INNOCENT).length > 0) fail.push("an object literal was flagged");
   if (scan(GOOD).length > 0) fail.push("the correct two-term form was flagged");
+  if (scan(DOCUMENT).length > 0) fail.push("the document total was flagged");
+  if (scan(AGG_GOOD).length > 0) fail.push("the corrected aggregate was flagged");
   if (fail.length) {
     console.error("check-outstanding: SELF-CHECK FAILED —");
     for (const f of fail) console.error("  " + f);
@@ -154,5 +195,5 @@ if (violations.length > 0) {
 }
 
 console.log(
-  `check-outstanding: ${files.length} files scanned, self-check passed all four ways, no open-coded outstanding calculations.`,
+  `check-outstanding: ${files.length} files scanned, self-check passed all eight ways, no open-coded outstanding calculations.`,
 );
