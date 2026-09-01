@@ -1115,3 +1115,65 @@ Today that check needs an agent session with MCP access. That is why §9's
 precondition 3 moved from "should" to "before Block 2": a check nobody can run
 unattended is a check that runs once, by accident, an hour late.
 
+
+---
+
+# BLOCK 3 — APPLIED TO PRODUCTION, 2026-09-01
+
+`0267`, `0269`–`0275` applied to `crm-design` (`mmkfpnshxjcyijhuydgr`).
+**`0268` deferred — see §11a.** All eight recorded digests equal their files,
+none carries a trailing newline, and `0268` has no row.
+
+## The predicted clearance, confirmed
+
+`cash_per_location_gl_equals_operational` went **GREEN**, and it cleared for
+exactly the reason G3 gave:
+
+```
+#1234    cash  outgoing  cleared 2026-08-28  5,000.00  Bilal Ahmad  -> posted
+#222333  cash  outgoing  cleared 2026-08-28  5,000.00  Kiran Shah   -> posted
+```
+
+Same two custodians, same amount, same date, same cause — a `pending -> cleared`
+transition spent before `0221` existed, unreachable by a transition-keyed rule
+and repaired by a state-keyed one. Cash control 444,879.13 -> 454,879.13,
++10,000.00 exactly. Trial balance moved by the same 10,000 and still balances.
+
+**G3's diagnosis is confirmed against production**, not against dev.
+
+## Gate: 13 of 17 pass
+
+| red | figure | verdict |
+|---|---|---|
+| `bank_accounts_equal_transaction_deltas` | difference **−800,000.00** | Accepted red, unchanged. |
+| `bank_control_equals_bank_accounts` | difference **−6,421,634.00** | Was −6,411,634.00 at the Block 2 gate. Moved by exactly **10,000.00** — the two cheque clearings `0269` posted, crediting bank. Explained; the accepted red is otherwise unchanged. |
+| `bank_per_account_gl_equals_operational` | **5 accounts** | NEW, from `0271`. Expected red on arrival per `0259`'s rule. |
+| `no_negative_custodian_balance` | **2 locations** | NEW, from `0275`. HAMNA and Safi, the two already recorded in §6b at these numbers. |
+
+Newly green and staying green: `no_billing_clients_on_head_office` (`0274`),
+`cash_per_location_gl_equals_operational` (`0269`), `every_source_row_posted`
+(`0269`, extended by `0272`). Canary at 16/16.
+
+## `bank_per_account_gl_equals_operational` — 5, and §6b says 2
+
+§6b records **2 accounts** (Meezan 54,679.00, Habib 33,788.00, plus UBL
+800,000.00). Production returns **5**, at different figures:
+
+```
+Meezan Bank      operational 3,843,255.00  gl   −500,000.00  diff −4,343,255.00
+Habib Bank Ltd     "   536,822.00  outstanding 50,000.00  gl −5,000.00  diff −591,822.00
+ss                 "   990,000.00  gl 490,000.00           diff   −500,000.00
+Askari Bank        "   355,000.00  gl   5,000.00           diff   −350,000.00
+aa                 "   231,224.00  gl       0.00           diff   −231,224.00
+```
+
+**This is the same class as the `bank_control` baseline corrected above.** §6b's
+figures were measured on dev; this check reaches production for the first time
+here, so it has no production baseline to have drifted from. The shape is
+consistent with what `0271`'s own header predicts: every bank sub-account holds
+its opening balance and little else, because bank postings have been landing on
+the undifferentiated control. Block 4 is where that is fixed.
+
+**Recorded as the production baseline for this check**, so a later change is
+measurable against a figure that came from the database it describes. It is
+not yet a finding; it is the first honest reading.
