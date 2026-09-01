@@ -400,6 +400,68 @@ start here.
 > disagreed with the artifact about what the bytes were.** Comment stripping,
 > line endings, line endings again.
 
+> **A THIRD FAILURE MODE, AND THE WORST OF THE THREE:**
+>
+> **A CONFIDENT WRONG ANSWER STOPS THE SEARCH.**
+>
+> Ranked by how they behave, not by how often they happen:
+>
+> * a check that **never runs** fails silently and is found late;
+> * a check that reports a **false problem** is expensive but self-announcing —
+>   it forces someone to look;
+> * a check that returns a **false negative** is worse than both, because it is
+>   reassuring. Nothing announces it, and unlike the silent case there is a
+>   green result actively arguing that the question has been settled.
+>
+> `uninvoked_controls()` in `0288` cleared `ledger_checks` — the one function
+> the entire audit existed to expose — because its own exempt-list comment
+> contained the string `ledger_checks`. The check ran, the test passed, and the
+> answer was wrong in the direction that ends the investigation.
+
+> **AND THE RULE THAT WOULD HAVE CAUGHT IT:**
+>
+> **VERIFY THE CLAIM THE HEADER MAKES, NOT THE OUTCOME YOU EXPECTED.**
+>
+> `0288`'s header stated, at length, that `ledger_checks` was deliberately not
+> exempt and must report itself. Its verification asserted that the five
+> known-dead controls appeared, and never asserted the sentence the header had
+> just written.
+>
+> The check worked. The test worked. Neither covered the claim the file made
+> about what it was for. This is distinct from everything above: nothing was
+> broken, nothing was vacuous, and the instrument agreed with the artifact. The
+> gap was between the **stated purpose** and the **asserted property**.
+>
+> The habit: after writing a header, read back every claim it makes in the
+> indicative — "X is not exempt", "Y is refused", "Z is unchanged" — and check
+> that a line in the verification tests each one. A claim in prose that no
+> assertion covers is a comment, exactly like an unenforced rule.
+
+> **A PROHIBITION, NOT A LESSON:**
+>
+> **NO CHECK IN THIS CODEBASE INFERS BEHAVIOUR FROM A SUBSTRING IN `prosrc`.**
+>
+> Three instances is not a recurring mistake, it is a property of the tool:
+>
+> 1. the original audit's `prosrc not ilike '%company_id%'`, which called
+>    `post_journal` tenant-aware because it mentions `company_id` eleven times
+>    without ever comparing it;
+> 2. `0242`'s `prosrc not ilike '%current_company_id%'`, which skipped two
+>    functions for the same reason and needed `0242b` to repair;
+> 3. `0288`'s reachability match, which was fooled by its own comment.
+>
+> Substring matching on source text answers "does this word appear". That is
+> never the question anybody means. Where source text genuinely must be
+> inspected — the tenant-guard coverage checks are the only legitimate case in
+> this schema, because "does this body call the guard" *is* a question about
+> the text — the match must at minimum **strip comments** and **require call
+> syntax**, and the residual limits must be written down.
+>
+> Audited 2026-09-01: exactly two functions read `prosrc`,
+> `tenant_guard_gaps()` and `uninvoked_controls()`. Both are guard-coverage
+> checks. `0290` brings the first up to the standard the second reached in
+> `0288b`.
+
 Nine instances now, and the last one was in the FORCE RLS pre-check itself. That
 pre-check tested `current_company_id()` and `effective_salary` under FORCE **as
 `authenticated`** and both passed — two green results about the wrong subject,
