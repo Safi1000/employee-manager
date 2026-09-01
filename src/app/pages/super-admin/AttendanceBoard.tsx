@@ -1098,10 +1098,15 @@ function ShiftDrillModal({
   const needsOverride = gate?.mode === "override_required";
 
   const confirm = async () => {
-    if (blocked) { fail(gate?.reason ?? "Blocked"); return; }
+    // Confirm is on-demand: no month-end / backdate / already-confirmed gating.
+    // Confirmation routinely happens days-to-weeks late, so it must work for any
+    // day-count in any month, ended or not. The rows are written with
+    // supervisor_override=true (the same sanctioned bypass the Monthly Board
+    // override uses) so the confirmed-month-end and backdate DB locks let them
+    // through. The employment-window and OPS-verified locks remain hard DB
+    // constraints and will surface a clear error via fail() if ever hit.
     if (!supervisor.trim()) { setSupError("Supervisor name is required to confirm."); return; }
     setSupError(null);
-    if (needsOverride && !override.trim()) { fail("Backdated — a supervisor override reason is required."); return; }
     // Double duty = two shifts in one day, so it must have two shifts selected.
     const ddShort = shift.roster.filter(
       (g) => marks.get(g.guard_id)?.status === "double_duty" && new Set(getWorked(g)).size < 2,
@@ -1150,8 +1155,11 @@ function ShiftDrillModal({
           marked_by_role: role,
           marked_by_user_id: userId,
           marked_at: new Date().toISOString(),
-          supervisor_override: needsOverride,
-          override_reason: needsOverride ? override.trim() : null,
+          // Always an authorised override so late / re-confirmations clear the
+          // confirmed-month-end and backdate locks. Reason = the typed note when
+          // present, else a default so the audit trail says how it got in.
+          supervisor_override: true,
+          override_reason: override.trim() || "Confirmed via Attendance Board",
         };
         });
       });
@@ -1201,12 +1209,11 @@ function ShiftDrillModal({
               onChange={(e) => { setSupervisor(e.target.value); if (supError) setSupError(null); }}
               placeholder="Supervisor name *"
               aria-invalid={!!supError}
-              className={`flex-1 px-3 py-2 border rounded-md text-sm ${supError ? "border-danger-300" : "border-slate-200"}`}
-              disabled={blocked} />
+              className={`flex-1 px-3 py-2 border rounded-md text-sm ${supError ? "border-danger-300" : "border-slate-200"}`} />
             <ThemedSelect value={source} onChange={(e) => setSource(e.target.value as any)} className="px-2 py-2 border border-slate-200 rounded-md text-sm" >
               <option value="app">App</option><option value="whatsapp">WhatsApp</option><option value="manual">Manual</option>
             </ThemedSelect>
-            <Button size="sm" onClick={confirm} disabled={saving || blocked}>
+            <Button size="sm" onClick={confirm} disabled={saving}>
               {saving && <Loader2 className="w-4 h-4 animate-spin mr-1" />} Confirm shift
             </Button>
           </div>
@@ -1215,13 +1222,13 @@ function ShiftDrillModal({
       }
     >
       <div className="space-y-3">
-        {blocked && (
-          <div className="p-3 bg-slate-100 text-slate-600 border border-slate-200 rounded text-sm">🔒 {gate?.reason}</div>
-        )}
-        {needsOverride && (
+        {/* Informational only — Confirm always proceeds. A genuinely hard lock
+            (employment window, OPS-verified month) still surfaces as an error on
+            save; this note just explains what the gate flagged. */}
+        {(blocked || needsOverride) && (
           <div className="p-3 bg-warning-50 border border-warning-200 rounded text-sm space-y-2">
-            <div className="text-warning-800">{gate?.reason}</div>
-            <input value={override} onChange={(e) => setOverride(e.target.value)} placeholder="Supervisor override reason *"
+            <div className="text-warning-800">{gate?.reason} — you can still confirm.</div>
+            <input value={override} onChange={(e) => setOverride(e.target.value)} placeholder="Override reason (optional)"
               className="w-full px-3 py-2 border border-warning-300 rounded-md text-sm" />
           </div>
         )}
