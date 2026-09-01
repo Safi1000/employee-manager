@@ -1542,3 +1542,71 @@ after which adding a check is a single edit that cannot be half-applied — whic
 is exactly the shape the restore needs.
 
 **Sequence: `0288b`–`0299`, `0300`–`0302`, then the restore, then Block 7.**
+
+---
+
+# THE ROLLBACK PROOF — RUN ON DEV, 2026-09-02, BEFORE THE FIVE REACH PRODUCTION
+
+`0291`, `0292`, `0293`, `0297` and `0298` probe **employees, clients and
+contracts** — three protected categories — and they do it by MUTATING REAL
+ROWS: setting eight date columns on a live employee, flipping `lifecycle_state`
+through active → on_leave → left, blacklisting a guard, inserting a client, a
+contract, two deployments, six employees and two `important_dates`.
+
+Every one is inside a `begin … exception` subtransaction unwound by
+`raise exception 'TESTS_OK'`. That is the *claim*. Reading it is not proof.
+
+## Order
+
+Run on dev **before** the five are applied to production, not between Block 5
+and Block 6. A proof of unwinding that runs after the writes it is meant to
+justify is a postmortem.
+
+## Method
+
+A snapshot function over every column any of the five touches — not merely the
+tables. A digest that omitted `weapon_licence_expiry` would have been unchanged
+whatever `0291` did to it, which is the vacuity this project keeps finding.
+
+```
+employees        id, full_name, lifecycle_state, status, client_id,
+                 display_number, blacklisted, weapon_licence_expiry,
+                 guard_service_licence_expiry, medical_fitness_expiry,
+                 probation_end_date, cnic_expiry, weapons_cert_expiry,
+                 refresher_due_date
+clients          id, name, client_code, employee_id_prefix, contract_end
+contracts        id, contract_code, status, end_date
+deployments      id, guard_id, start_date
+important_dates  id, title
+```
+
+## Result — identical after every one of the five
+
+| table | rows | digest, baseline and after all five |
+|---|---:|---|
+| employees | 1147 | `6332637591472b6b8dbc1ec4229fbd19` |
+| clients | 94 | `46abaa9e95e364c8c2965657eb9d9994` |
+| contracts | 68 | `028f1e4d9ae403cb99dfbbfb72d0eebb` |
+| deployments | 1451 | `44e48c380150472197d9ae4824a75324` |
+| important_dates | 4 | `64a5fa440b15e131f89a6ff46d935fba` |
+
+Compared after **each** migration, not once at the end: a single before/after
+would have told us that the five together leave nothing behind, but not which
+one to look at if they did.
+
+Named-residue sweep afterwards — `ZZ 0298%`, `ZZ-0293`, `ZZ-CON-0293`,
+`probe review`, `employee_id_prefix = 'ZZTEST'` — **0 rows.**
+
+## Scope, stated rather than implied
+
+The **verification blocks** were run, not the whole files. The DDL in these
+five creates views and functions and touches no protected row, so the residue
+question is fully covered. One deviation: `0293`'s steps 1–2 compare against a
+temp table `_cu_before` built earlier in its file; that table was recreated as
+a plain snapshot of the view. The mutating step 5 ran verbatim.
+
+`0298`'s step 0 also passed on dev, which is a finding in its own right: **no
+separated employee exists with no exit date, no last working day, no
+termination date and no reason.** Nothing was fabricated by the old else-arm.
+
+**Verdict: the subtransaction idiom holds for all five. Cleared for production.**
