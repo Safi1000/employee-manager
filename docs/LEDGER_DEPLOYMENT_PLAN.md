@@ -1363,3 +1363,113 @@ Pre-flight measured **29 violating payslips, excess 88,467.00 exactly**, one
 company — matching the header to the rupee. `not valid`, so they stay visible.
 The over-payment probe was refused and `amount_paid` is now inside
 `enforce_payroll_run_lock`.
+
+---
+
+# THE SANDBOX OPENING BATCH — POSTED TO PRODUCTION, 2026-09-01
+
+Authorised by Shayan, this data change only. `as_of_date` **2026-08-31** —
+September is the first real financial month.
+
+```
+batch status  posted     lines 10     debits 7,510,101.00     credits 7,510,101.00
+journal entry created, debits 7,510,101.00
+```
+
+Nine bank lines at each account's own `bank_accounts.opening_balance`, to that
+account's own GL sub-account, balanced by one credit to **`3200` Opening Balance
+Equity** — a suspense account by design, holding the balancing figure until the
+openings are verified, then netting to zero against retained earnings.
+
+**No custodian lines.** Custodian openings come from Safi and are not available.
+HAMNA (−3,477.00) and Safi (−1,999.87) stay red until those figures arrive.
+Nothing was derived.
+
+## The predicted effects, all confirmed
+
+| account | before | after | predicted |
+|---|---:|---:|---|
+| `aa` | −110,101.00 | **0.00** | green outright ✓ |
+| Askari Bank | −350,000.00 | **0.00** | green outright ✓ |
+| Meezan Bank | −4,945,321.00 | **54,679.00** | falls to 54,679.00 ✓ |
+| Habib Bank Ltd | −1,216,212.00 | **33,788.00** | falls to 33,788.00 ✓ |
+| United Bank Ltd | 0.00 | **800,000.00** | — see below |
+
+`bank_per_account_gl_equals_operational`: **4 → 3**.
+
+**United Bank Ltd is not a new problem.** Its GL and operational were both zero,
+so it netted to zero for the wrong reason — the opening was never posted AND the
+operational balance had been destroyed by `apply_monthly_account_zeroing`.
+Posting the opening puts 800,000.00 into the GL where it belongs and leaves
+operational at zero, so §6a's standing evidence is now visible in a second check
+rather than cancelling itself out. That is the check improving, not the data
+worsening.
+
+## `bank_control_equals_bank_accounts` moved, and it decomposes exactly
+
+```
+before   expected 5,956,301.00   actual −465,333.00   difference −6,421,634.00
+after    expected 5,956,301.00   actual  7,044,768.00  difference  1,088,467.00
+```
+
+It moved because the batch **adds** to the subtree rather than moving within it —
+the first change all deployment that this check could see.
+
+The residual is fully accounted for, to the rupee:
+
+```
+   800,000.00   United Bank Ltd — opening posted, operational zeroed (§6a)
+    54,679.00   Meezan Bank     — §6b's figure
+    33,788.00   Habib Bank Ltd  — §6b's figure
+   150,000.00   the bank CONTROL account's own remaining balance
+    50,000.00   Habib's outstanding cheque — netted by the per-account check,
+                not by this one (§6b says exactly this)
+  ────────────
+ 1,088,467.00
+```
+
+**Nothing on the bank side is unexplained any more.** Trial balance
+37,228,124.61, balanced. Canary 16/16. Gate 13 of 17.
+
+---
+
+# CORRECTION: "PRODUCTION CANNOT CLOSE A MONTH" WAS THE WRONG FRAMING
+
+The earlier section said production cannot close a month for any of four
+companies. **That reads as a defect and it is not one.**
+
+No company can close a month it has no financial data for, and that is `0260`'s
+gate working exactly as designed. Confirmed across nine tables rather than by
+counting two:
+
+| company | bank a/cs | cash locs | journal entries | invoices | expenses | payslips | employees |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| SANDBOX TESTING ORG | 9 | 13 | 423 | 9 | 6 | 48 | 69 |
+| GUARDS AND GUIDES (PVT) LTD | 0 | 0 | 0 | 0 | 0 | 0 | 553 |
+| guards n guides | 0 | 0 | 0 | 0 | 0 | 0 | 527 |
+| Sandboxx | 0 | 0 | 0 | 0 | 0 | 0 | 1 |
+
+**SANDBOX is the only company with financial data**, and it can now close.
+
+## No zero batch for the other three — and why that is not the same as zero
+
+`0260`'s header prescribes a `0.00 / 0.00` line for a company that "genuinely
+opens at nothing". **None of these three does.** Shayan's ruling on GUARDS AND
+GUIDES states the distinction and it applies identically to all three:
+
+> It has real bank accounts that have not been entered. It does not open at
+> nothing — it has nothing to open with yet.
+
+A zero batch would assert "this company started with nothing", which is false and
+would then be locked in as the cutover position. **Post no batch for any of the
+three.** Their first close being refused is correct.
+
+## GUARDS AND GUIDES financial go-live — three ordered steps
+
+1. Enter the real bank accounts and cash locations.
+2. Post the opening batch from those figures.
+3. The first close becomes possible.
+
+Its financials are **not live**. Shayan does step 1 after the ledger work
+completes. The same three steps apply to `guards n guides` and `Sandboxx` if
+either is ever brought live.
