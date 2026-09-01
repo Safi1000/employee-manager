@@ -696,3 +696,8 @@ existing rule, which `0232` already failed once at an assert two hundred lines
 above its guarded drop), and separate one-shot data reposts from schema changes
 so a replay skips the former. Real, bounded, and not urgent until a third
 environment is needed.
+
+## Weapon allotment and custody control — deferred
+
+Deferred to a later stage of Bastion. Weapons are allotted per client, not per
+post. Logged so it is not forgotten; not scoped here.

@@ -6,12 +6,32 @@ Nothing was written to production to produce this.
 For Shayan, to hand to Safi.
 
 Started as a list of expired CNICs. It is broader than that, because the same
-shape turned up in every other guard field that was measured: the alarming
-number is not what the data says, it is how little of it there is.
+shape turned up in every other guard field measured: the number that matters is
+not what the data says, it is how little of it there is.
 
-**One number, if you read nothing else: of 347 active employees, ZERO have a
-completed police verification, a completed NADRA Verisys, a weapons
-certification, or a weapon licence on file.** Not a low number. Zero.
+## This is a BACKLOG measure, not a compliance failure
+
+Confirmed by Shayan: **the vetting is happening, on paper, and none of it has
+reached the system.** Uploads begin once the current work lands.
+
+So every number below is a **target list for that upload**, not a finding about
+how the business operates. The gap closes by data entry, not by process change.
+
+**Re-run this report after the upload.** It is the only way anyone will know
+the backlog is finished, and the completion signal is specific:
+`cnic_expiry_coverage` going green in `ledger_checks()`.
+
+## The line that reads as reassurance and is not
+
+Below you will find **0 police-verification adverse results and 0 blacklisted
+guards** on 347 active employees.
+
+**There are no failures on record because there are no results on record.**
+
+346 police checks were set to `pending` on intake and not one has ever moved to
+`verified` or `adverse`. A zero in the adverse column is not evidence that
+nobody failed; it is evidence that nobody has been recorded either way. Read it
+as an empty column, never as a clean one.
 
 ---
 
@@ -209,19 +229,16 @@ Measured 2026-09-01 on `GUARDS AND GUIDES (PVT) LTD`, 347 active employees.
 | Police or NADRA **adverse** | 0 | — |
 | Blacklisted | 0 | — |
 
-Read the last two rows against the four above them. There are no *failures* on
-record because there are no *results* on record. 346 police verifications are
-marked `pending` and none has ever been marked `verified` or `adverse`. The
-field is being set on intake and never updated.
+Read the last two rows against the four above them: no *failures* on record
+because no *results* on record. See the inversion noted at the top of this file.
 
-**This is the same finding as the four empty licence columns, and as the 264
-missing CNIC expiries.** A guard company's system contains no evidence that any
-guard has been vetted.
+**This is the same finding as the four empty licence columns and the 264
+missing CNIC expiries** — one backlog with several faces, and this table is its
+size.
 
-Whether the vetting is happening on paper and simply is not reaching the
-system, or is not happening, is a question only Safi can answer — and the two
-have very different consequences. Either way the system currently cannot answer
-"is this guard cleared" for a single one of 347 people.
+Until the upload lands, the system cannot answer "is this guard cleared" for
+any of 347 people. That is a statement about the database, not about the
+guards.
 
 ### What this changed in the code, and what it deliberately did not
 
@@ -273,35 +290,28 @@ column has no way to say so, so somebody encoded it as a sentinel date.
 
 It touches the employee intake form. That is why it is a proposal.
 
-### 2. `posts.armed` (or `posts.sensitivity`)
+### 2. ~~`posts.armed`~~ — WITHDRAWN. The model was wrong.
 
-`check_deploy_guard` encodes the rule *"a guard who fails vetting must not be
-deployed to a **sensitive or armed** post"*. **There is no such thing as an
-armed post in this schema.** `public.posts` has `name`, `address`,
-`required_guards`, `shift_pattern`, `active`, `notes` — nothing that marks one.
+I proposed marking posts as armed so `check_deploy_guard` could apply the rule
+as written. Shayan withdrew it, and the reason is worth keeping because the
+proposal was not merely unnecessary — it described a business that does not
+exist:
 
-So `0297` wires the failure check to **every** deployment, not only armed ones.
-That is deliberately broader than the rule as written, and broader in the safe
-direction: a blacklisted guard or one with adverse verification should not be
-posted anywhere. It over-covers rather than under-covers, and it is honest
-about doing so.
+**Weapons are allotted per CLIENT, not per post.** Emaar holds roughly 30
+weapons against roughly 35 guards on a shift, so the allotment moves between
+people through the day. "Is this an armed post" is not a question the business
+asks, and there is nothing for a boolean to attach to.
 
-To apply the rule as actually written, three things need deciding, none of them
-an engineering question:
+A column would have looked reasonable, been fillable, and encoded a model
+nobody uses — the most expensive kind of wrong, because it survives review.
 
-1. **What makes a post armed or sensitive?** A weapon carried on it, a client
-   classification, a regulatory category, or a judgement someone makes per site.
-2. **Who marks it, and when?** At post creation, at contract signing, or by the
-   operations lead reviewing a site.
-3. **Is it a boolean or a level?** "Armed" is one bit. "Sensitive" sounds like
-   a scale, and a scale needs its levels named before it is stored.
+`check_deploy_guard` therefore stays exactly as `0297` built it: **any vetting
+failure at any deployment**. Broader than the rule as originally written, safe
+in that direction, chosen rather than inherited, and now the only version of it
+with a coherent model behind it. No further work on it.
 
-Until those are answered, adding a column would be guessing at an operational
-data model — the same reason the reverse map should refuse rather than guess,
-and the same reason `3000-01-01` has not been overwritten.
-
-**Recommendation:** answer (1) first. Two and three follow from it, and the
-current over-covering wiring is safe to leave in place meanwhile.
+Weapon allotment and custody control is deferred to a later stage of Bastion
+and logged in `PRE_GO_LIVE.md`.
 
 ---
 
@@ -358,6 +368,6 @@ compliance view nor the billing path asks it.
    0186 clone, already on the production cleanup list.)*
 6. **Palm Grove Resorts** — sandbox, so not urgent, but the pattern is real and
    the check for it does not exist.
-7. **The vetting pipeline.** Zero completed verifications on 347 guards is the
-   largest item in this file, and the only one that is about whether the
-   business can evidence what it claims.
+7. **The vetting upload.** The largest item in this file by volume. Not a
+   process problem — the records exist on paper. Re-run this report when it is
+   done; `cnic_expiry_coverage` turning green is the signal.
