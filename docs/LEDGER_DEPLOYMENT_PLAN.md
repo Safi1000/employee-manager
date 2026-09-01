@@ -700,7 +700,57 @@ accepted red whose figure nobody recorded is an ignored red.
 |---|---|---|
 | `bank_per_account_gl_equals_operational` | **2 accounts** after `0308` — Meezan **54,679.00**, Habib **33,788.00** (plus United Bank Ltd at **800,000.00**, which is evidence, not an acceptance) | 39 `payroll` bank transactions with a null `reference_id`, written by the 2026-08-25/28 fixture load with no matching payslip disbursement posting. **Fixture data.** |
 | `bank_accounts_equal_transaction_deltas` | expected **−876,923.00**, actual **−1,676,923.00**, difference **800,000.00** | The United Bank Ltd figure counted a second way. Not an independent finding. |
-| `bank_control_equals_bank_accounts` | expected **5,833,178.00**, actual **6,771,645.00**, difference **938,467.00** = 800,000 + 54,679 + 33,788 + 50,000 | The aggregate of the above plus the outstanding cheque the per-account check nets off and this one does not. **Cannot go green before they do.** |
+| `bank_control_equals_bank_accounts` | **CORRECTED 2026-09-01 — see below.** expected **5,833,178.00**, actual **−578,456.00**, difference **6,411,634.00** | Opening balances were seeded straight onto `bank_accounts.balance` with no transaction or journal row (Habib 1,250,000 + Meezan 5,000,000 = 6,250,000 of it). **Cannot go green before Block 4 moves bank postings to named accounts.** |
+
+### CORRECTION, 2026-09-01 — the `actual` above was dev's number, not production's
+
+The figure originally recorded here was **6,771,645.00**, giving a difference of
+938,467.00. Production's gate returned **−455,333.00** after Block 2, and the
+gap was not explained by the day's activity. It was not drift.
+
+`journal_entries.created_at` makes the baseline recoverable retroactively,
+without needing a measurement nobody took. Restricting the check's `actual` side
+to lines whose entry was created before 2026-09-01 00:00 UTC — before this
+deployment touched anything:
+
+```
+actual, before deployment   −578,456.00   (124 lines)
+moved today                 +123,123.00   (1 line)
+actual now                  −455,333.00   (125 lines)
+```
+
+**Production's bank control GL has always been negative.** 6,771,645.00 was
+measured on dev and recorded here as though it were a property of the check.
+That is §9.14 in the plan rather than in a migration: a number read off one
+database and written down as a fact about the system.
+
+The defect magnitude never moved:
+
+```
+                       expected        actual      difference
+baseline (pre-deploy)  5,833,178.00   −578,456.00  6,411,634.00
+after Block 2          5,956,301.00   −455,333.00  6,411,634.00
+```
+
+**Both sides rose by exactly 123,123.00 and the difference is identical to the
+rupee.** Nothing this deployment did touched a bank account; `0265`'s fourteen
+entries carry no `bank` line at all.
+
+### Live activity moves the checks without moving the findings
+
+The same 123,123.00 appears on both sides of
+`bank_accounts_equal_transaction_deltas` — expected −753,800.00, actual
+−1,553,800.00, difference still exactly **800,000.00**.
+
+**A future reader must not treat these changed numbers as drift.** Production is
+in live use while seventy migrations replay across it, and a user booked an
+invoice payment on 2026-09-01 while Block 2 was running. Both bank checks
+absorbed it on both sides. The check moved; the finding did not.
+
+Gate figures in this document are therefore differences first and absolute
+figures second. Compare the difference. If the difference moves, that is a
+finding; if only the absolutes move, look for the transaction that explains
+both sides before calling it anything.
 | `no_negative_custodian_balance` | **2 locations** — HAMNA **−3,477.00**, Safi **−1,999.87**, both `opening_balance` 0.00 | Cash disbursed from custodian floats that were never funded. **Fixture data.** A physical float cannot hold a negative amount; a custodian who spends money they were never given has created a payable, and the correct model is a payable, not negative cash. |
 
 All four figures are on `SANDBOX TESTING ORG`, which exists on production and is
