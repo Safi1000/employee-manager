@@ -1054,3 +1054,82 @@ questions were wearing one name:
 **A CONDITION TRUE OF EVERY ROW IS A MEASUREMENT, NOT AN EVENT. ROUTE IT TO A
 REPORT, AND KEEP THE ALERT FOR THE THING THAT DISTINGUISHES ONE ROW FROM
 ANOTHER.**
+
+### 9.12 Three from the alerting round
+
+#### A TABLE THAT ONLY RECORDS FAILURES CANNOT DETECT ITS OWN ABSENCE
+
+The delivery watchdog was nearly written as "were there failed sends". That
+catches a broken sender and is blind to the failure that matters more: a cron
+job that stops running writes nothing at all, and an alerting system silent
+because it is broken looks exactly like one silent because all is well.
+
+Inverting it — **is there a recent SUCCESS** — goes red for both, because
+absence of evidence becomes the evidence.
+
+The general form, and it applies to any log used as a health signal:
+
+**AN INSTRUMENT THAT ONLY RECORDS BAD OUTCOMES CANNOT DISTINGUISH "NOTHING BAD
+HAPPENED" FROM "NOTHING HAPPENED". RECORD THE HEARTBEAT, NOT ONLY THE FAULT.**
+
+Two supporting details, both load-bearing:
+
+* **`skipped` is a third status and does not count as success.** A digest run
+  that found nothing due did not exercise the transport, so counting it as
+  healthy would let a permanently broken sender look fine on any quiet day.
+  The mirror rule applies to the scheduled check run, where the opposite is
+  true: a run that found nothing red *did* exercise the mechanism, so it does
+  count. Same table, same watchdog, opposite treatment of "nothing happened" —
+  because in one case nothing happened *to* the mechanism and in the other the
+  mechanism ran and found nothing.
+* **The provider's message id is recorded, not just a boolean.** "The API
+  accepted it and returned this id" is a different claim from "we think we sent
+  something", and it is the same distinction one layer out from the rule above.
+
+#### PICK THE CLOCK THAT MATCHES WHAT IS BEING MEASURED
+
+`notification_deliveries.attempted_at` defaulted to `now()`. `now()` is
+**transaction-start** time, so two delivery attempts written in one transaction
+received identical stamps and could not be ordered — which is how the
+verification failed: `order by attempted_at desc limit 1` returned an arbitrary
+one of the two.
+
+It is an **event log**. It records when the event happened, not when the
+transaction opened, so the default is `clock_timestamp()`.
+
+This sits alongside the earlier note about preferring `now()` over
+`txid_current()` for ordering. The rule underneath both:
+
+**A TIMESTAMP IS A MEASUREMENT. ASK WHAT IT IS MEASURING — THE TRANSACTION, THE
+STATEMENT, OR THE EVENT — AND PICK THE CLOCK THAT ANSWERS THAT QUESTION.**
+
+A related bug in the same function, worth its own line: the detector read "the
+latest row" **twice**, once for its timestamp and once for its status. Two
+queries asking for the latest row are two chances to pick different rows, and
+they duly disagreed the moment two rows shared a stamp — it reported the failure
+and printed the *success* row's null error. **Read the row once.**
+
+#### THE INSTRUMENT DISTURBED ITS SUBJECT, FOR THE THIRD TIME
+
+`0298`'s survey of fabricated separations — employees in a separated state with
+no exit date, no last working day, no termination date and no reason — ran at
+the **end** of a verification block whose earlier steps had inserted an employee
+and updated it to `fired`. A fixture does not fill in a leaving date, so the
+survey found the row the block had just made and reported the data as
+suspect.
+
+Third instance in this codebase:
+
+1. `0290`/`0289`: probes that stub a function must restore it **before**
+   judging, or a failure leaves the stub behind and the next reader inherits it.
+2. The digest audit: counts taken before a change and reported after it
+   described neither state.
+3. This: a survey of a population taken after the block started adding rows to
+   that population.
+
+**A MEASUREMENT OF EXISTING STATE MUST BE TAKEN BEFORE THE BLOCK THAT CREATES
+STATE OF THE SAME KIND — OR IT IS MEASURING ITSELF.**
+
+The fix is ordering, not filtering. Excluding the probe rows by name would have
+worked today and would silently stop working the moment a fixture changed its
+naming; taking the survey first cannot rot.

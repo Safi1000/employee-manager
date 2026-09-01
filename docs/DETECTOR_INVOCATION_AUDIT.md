@@ -90,11 +90,11 @@ moves the problem without solving it.
 
 | | |
 |---|---|
-| 1. Schedule `ledger_checks()` | **NOT DONE** — belongs with the ledger deployment. It is the one item that matters most. |
+| 1. Schedule `ledger_checks()` | **DONE** — `0301`. pg_cron `ledger-checks-daily` at 05:00, one WARNING alert per failing check, deduplicated by `md5(check_name)`. `ledger_checks` is off this list: the audit largest finding reports its own completion. |
 | 2. Decide the five | **PARTLY** — `0296`. `check_disbursement` is wired to `public.expenses` as a WARNING and is no longer uninvoked. `check_deploy_guard` is **deliberately not wired** — see below. Tier for both corrected from blocking to warning, chosen explicitly. Four functions remain. |
 | 3. Collapse the duplicate | **DONE** — `0289`. `ledger_checks_base` now calls `attendance_gate_mode_residue()`, and the reported figure is proved unchanged. |
 | 4. Keep this audit runnable | **DONE** — `0288`/`0288b`, extended to views by `0294`. `uninvoked_controls()` is a check, wired into `ledger_checks()` as `every_control_is_invoked`, currently RED at **20** (6 functions + 14 views). |
-| 5. Decide the fourteen views | **NOT DONE** — new in `0294`. Same policy call as the five. |
+| 5. Decide the sixteen | **DONE** — see [UNINVOKED_CONTROLS_VERDICTS.md](UNINVOKED_CONTROLS_VERDICTS.md). Three to wire, none to delete, thirteen kept with a written condition that would change the verdict. |
 
 The original list, kept as written:
 
