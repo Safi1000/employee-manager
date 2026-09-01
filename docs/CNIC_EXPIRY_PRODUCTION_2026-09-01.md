@@ -183,6 +183,46 @@ created for. But it should be either archived or explained.
 
 ---
 
+## Found on the way: a lapsed contract with guards still on it
+
+Not a CNIC item. Recorded here because it surfaced while repointing the
+Dashboard and because it is the second time the same client has appeared as the
+same defect from a different direction.
+
+The Dashboard's compliance panel read `clients.contract_end`; the consolidated
+view reads `contracts.end_date`. Where both exist they agree. What the
+comparison exposed was two clients carrying an end date with **no active
+contract row behind it** — and "no active contract row" did not mean "no
+contract". Both have contracts; they are excluded by *status*:
+
+| client | contract rows | client `contract_end` | guards on site |
+|---|---|---|---|
+| **Palm Grove Resorts** (CLI-0005) | `CON-0005: expired` | 2026-07-31, 32d past | **4** |
+| Nova Textiles Mills (CLI-0008) | `CON-0007: terminated`, `CON-0008: draft` | 2026-05-31, 93d past | 0 |
+
+Both are on `SANDBOX TESTING ORG`, so there is **no live customer exposure
+today**.
+
+**The pattern is what matters, and it is worse than "a missing contract":**
+
+> A contract lapses. The client record keeps the end date. Guards stay on site.
+> Nothing bills.
+
+Palm Grove is the same client that appeared in July carrying **121,148 of
+payroll against nothing invoiced**. Two independent routes, one client, one
+underlying failure — work continuing under an agreement that has ended.
+
+`0293` adds these to `compliance_upcoming` as an explicit
+`client_contract_end` **anomaly** — labelled so nobody tries to renew a
+contract that does not exist. It is currently the only thing in the system that
+would catch this shape.
+
+**Logged for the ledger work, not built now:** a check for *deployed guards at a
+client with no active contract*. That is the direct question, and neither the
+compliance view nor the billing path asks it.
+
+---
+
 ## Recommended order
 
 1. **The ten.** Renewal chased for each; whether any should stand down from post
@@ -192,4 +232,7 @@ created for. But it should be either archived or explained.
 3. **Decide `3000-01-01`**, then the constraint.
 4. **The 264 with nothing recorded.** The largest item and the only one that
    changes the shape of the problem.
-5. **Explain or archive `guards n guides`.**
+5. **Explain or archive `guards n guides`.** *(Confirmed since: this is the
+   0186 clone, already on the production cleanup list.)*
+6. **Palm Grove Resorts** — sandbox, so not urgent, but the pattern is real and
+   the check for it does not exist.

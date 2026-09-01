@@ -93,7 +93,8 @@ moves the problem without solving it.
 | 1. Schedule `ledger_checks()` | **NOT DONE** — belongs with the ledger deployment. It is the one item that matters most. |
 | 2. Decide the five | **NOT DONE** — a policy decision, not an engineering one. See the two alert-raising controls below. |
 | 3. Collapse the duplicate | **DONE** — `0289`. `ledger_checks_base` now calls `attendance_gate_mode_residue()`, and the reported figure is proved unchanged. |
-| 4. Keep this audit runnable | **DONE** — `0288`/`0288b`. `uninvoked_controls()` is a check, wired into `ledger_checks()` as `every_control_is_invoked`, currently RED at 6. |
+| 4. Keep this audit runnable | **DONE** — `0288`/`0288b`, extended to views by `0294`. `uninvoked_controls()` is a check, wired into `ledger_checks()` as `every_control_is_invoked`, currently RED at **20** (6 functions + 14 views). |
+| 5. Decide the fourteen views | **NOT DONE** — new in `0294`. Same policy call as the five. |
 
 The original list, kept as written:
 
@@ -127,6 +128,82 @@ checking. `0288b` strips comments and requires call syntax; `ledger_checks` now
 reports itself, as intended. Third instance of "a mention is not a check" in
 this codebase, and the first that failed as a FALSE NEGATIVE — which is worse
 than the false positives in §9.6, because it was reassuring.
+
+
+---
+
+# Views: the check could not see the defect that prompted it
+
+Added by `0294`, and it should have been obvious a round earlier.
+
+`0288` built a control that counts uninvoked controls so that "a detector
+nothing calls" would stop depending on somebody noticing. It reads `pg_proc`.
+**It cannot read a view.** `compliance_upcoming` was a view that nothing read —
+not the database, not the application, not a script — for its entire existence,
+and the check written to catch exactly that class of object was blind to it.
+The audit found it by hand. The audit's own automation would not have.
+
+## What "invoked" can and cannot mean for a view
+
+For a function, reachability is answerable in SQL. For a view it is not: a view
+exists to be selected from **by the application**, and this check cannot see
+`src/`. That limitation is an edge case for functions (two RPC-called
+exemptions) and the *normal case* for views.
+
+```
+views in public                     37
+with no in-database reader          30
+of those, read by the app           16   <- established by grep, 2026-09-01
+of those, read by NOTHING           14
+```
+
+Reporting all thirty would be thirty rows of noise, and a check that is noisy
+is a check nobody reads — this audit's own subject, one turn further round. So
+the view exempt list is **a map, not a silencer**: each entry names the file
+that reads that view. It is maintained by hand, and `0294`'s verification
+asserts every entry still names a view that exists, so the map rots loudly.
+
+## The fourteen views nothing reads
+
+| view | note |
+|---|---|
+| **`trial_balance`** | **the one to look at first — see below** |
+| `bonus_reserve_balances` | |
+| `cash_control_reconciliation` | a reconciliation compared against nothing |
+| `cash_entitlement_reconciliation` | a reconciliation compared against nothing |
+| `compliance_weekly_review` | |
+| `contract_amendment_history` | |
+| `employee_service_history` | |
+| `interregion_balances` | |
+| `journal_lines_regional` | |
+| `kpi_department_dashboard` | `kpi_dashboard` is read; this one is not |
+| `low_stock_items` | |
+| `payroll_run_totals` | |
+| `payslip_reward_breakdown` | |
+| `vetting_dashboard` | |
+
+### `trial_balance` is `attendance_gate_mode_residue` again
+
+It is the ledger's central report. Nothing reads it. And
+`ledger_checks_base` computes the debits-equal-credits totals **inline from
+`journal_lines`** rather than summing the view.
+
+One rule, two implementations, one of them invoked and one of them not — the
+exact shape `0289` collapsed for the gate-mode residue. Nothing forces the two
+to agree, and the uninvoked copy is where drift accumulates unseen.
+
+Not collapsed here. `0289`'s lesson was that a naive collapse can silently
+change a published figure (blocked *rows* versus *employees*), and the
+granularities differ again: the view is per account and per branch, the check
+wants two totals. It deserves its own migration with the figure proved
+unchanged, the same way `0289` did it.
+
+## The reconciliations
+
+`cash_control_reconciliation` and `cash_entitlement_reconciliation` exist to be
+compared against something. Nothing compares them. A reconciliation that is
+never read is not a weaker control than a broken one — it is the same control
+as none, with the added cost that the schema claims otherwise.
 
 ## Correctly invoked, for completeness
 
