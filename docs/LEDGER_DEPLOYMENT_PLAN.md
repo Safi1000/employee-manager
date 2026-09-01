@@ -1653,3 +1653,78 @@ through a block for a reason that has nothing to do with the change.
 `trial_balance` is among the fourteen: the ledger's central report, read by
 nothing, while `ledger_checks_base` recomputes debits-equal-credits inline.
 `0299` collapses that.
+
+## Block 5, part 3 — `0295`–`0299` on production
+
+| file | digest | result |
+|---|---|---|
+| `0295_raise_alert_dedupes` | `a18484318c3c24e02179829a48aa5529` | dedupe index + upsert; alerts still 0 |
+| `0296_wire_disbursement_warning` | `f3a0269770ecfd442c18cd7d4595b468` | `check_disbursement` wired to `expenses` |
+| `0297_deploy_guard_failures_not_gaps` | `4ebd1173386e1168c32427583cb7a6ca` | `check_deploy_guard` wired to failures only |
+| `0298_reverse_map_refuses_rather_than_guesses` | `8353af943b7ab1ac50a36f9ea41a6ef6` | ambiguous employee insert raises 22023 |
+| `0299_collapse_trial_balance_duplicate` | `1c7016990af36efe8a3721a870aeeefe` | `ledger_checks_base` reads `trial_balance` |
+
+Every digest equals the repo file.
+
+### Pre-flights that were run because the file asserts something
+
+- **`0295`** — `alerts` held **0** rows and **0** would-be duplicate open keys,
+  so the new partial unique index could not fail on existing data. Postgres
+  **17.6**, so `NULLS NOT DISTINCT` is available; without it the ref-less
+  alerts, the most repetitive kind, would never have collided.
+- **`0296`** — the verify inserts an expense using
+  `expense_categories … limit 1` for the first company, and that company has
+  **no expense categories at all** (22 exist, all on other companies), so
+  `category_id` would be NULL. Dry-run in a rolled-back subtransaction:
+  the insert **succeeds** — `category_id` is nullable and the FK permits NULL.
+  The same fixture's `bank_accounts … limit 1` picks a bank belonging to a
+  **different company**, and the journal trigger accepted that too. Both
+  observations are about the fixture, not the control; recorded because the
+  next person to reuse this fixture should know it is company-blind.
+- **`0297`** — the file's step 1 asserts that **no** active or on-leave
+  employee currently carries a vetting failure. Computed on production with
+  the migration's own predicate before applying: **0 of 756**. So the wiring
+  lands quiet, which is the entire argument of the split.
+- **`0299`** — `ledger_checks()` already returned **21** rows and the uninvoked
+  view arm was exactly **14**, both of which the file asserts; and the regexp
+  that rewrites the inline `tb` CTE was confirmed to match production's
+  `ledger_checks_base` before the surgery ran.
+
+### `0298`'s step 0, repeated on production
+
+The question is whether the old `else 'left'` arm ever fabricated a
+resignation. On production:
+
+```
+separated employees (left, fired, terminated, absconded)      388
+… with no exit date, no last working day,
+  no termination date and no separation reason                  0
+```
+
+**None.** 388 separated rows, every one carrying separation evidence. The
+defect never fired on the database where a fabricated separation would matter,
+and it is now closed while that is still true.
+
+### One number that looked like residue and was not
+
+After `0297`, `employees where blacklisted` reads **1**. It is EMP-0065,
+`lifecycle_state = 'fired'`, created and last updated **2026-08-25** — a
+pre-existing seed, not the probe. The probe's blacklisted employee is
+`active`, and step 1 would have refused had an active blacklisted row existed.
+Checked rather than assumed, because a residue check that reports a number
+without identifying the row is a check that reports its own input.
+
+### Ledger suite on production after `0299`
+
+21 checks, **5 failing**, all pre-existing:
+
+| check | expected | actual |
+|---|---|---|
+| `bank_accounts_equal_transaction_deltas` | -753,800.00 | -1,553,800.00 |
+| `bank_control_equals_bank_accounts` | 5,956,301.00 | 7,044,768.00 |
+| `bank_per_account_gl_equals_operational` | 0 | 3 |
+| `every_control_is_invoked` | 0 | 17 |
+| `no_negative_custodian_balance` | 0 | 2 |
+
+`trial_balance_debits_equal_credits` **passes**, and now passes by reading the
+view rather than by recomputing it.
