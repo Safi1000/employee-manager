@@ -11,6 +11,7 @@ import {
   Pencil,
   RotateCcw,
 } from "lucide-react";
+import { Link } from "react-router";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -24,6 +25,16 @@ import {
   type RecurringAlert,
   type RecurringFrequency,
 } from "../../lib/supabase";
+
+type RaisedAlert = {
+  id: string;
+  tier: string;
+  category: string;
+  message: string;
+  created_at: string;
+  last_seen_at: string | null;
+  seen_count: number | null;
+};
 
 type DateForm = {
   title: string;
@@ -129,6 +140,12 @@ export default function Compliance() {
   const [dates, setDates] = useState<ImportantDate[]>([]);
   const [recurring, setRecurring] = useState<RecurringAlert[]>([]);
   const [contractAlerts, setContractAlerts] = useState<ContractEndAlert[]>([]);
+  // Raised alerts, from the alerts table. NOT filtered by category: this panel
+  // is the in-app delivery channel for the alerting mechanism as a whole, so a
+  // control wired tomorrow appears here without anyone editing this file. The
+  // only filter is state='open' — an acknowledged or resolved alert has been
+  // dealt with by a person and does not belong on a to-do list.
+  const [raisedAlerts, setRaisedAlerts] = useState<RaisedAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -167,7 +184,7 @@ export default function Compliance() {
       d.setDate(d.getDate() + CONTRACT_NOTICE_DAYS[0]);
       return d.toISOString().slice(0, 10);
     })();
-    const [dRes, rRes, cRes] = await Promise.all([
+    const [dRes, rRes, cRes, aRes] = await Promise.all([
       supabase.from("important_dates").select("*").order("due_date"),
       supabase.from("recurring_alerts").select("*").order("created_at", { ascending: false }),
       // The end date lives on the CONTRACT. This used to read clients.contract_end,
@@ -182,10 +199,17 @@ export default function Compliance() {
         .not("end_date", "is", null)
         .lte("end_date", horizonIso)
         .order("end_date"),
+      supabase
+        .from("alerts")
+        .select("id, tier, category, message, created_at, last_seen_at, seen_count")
+        .eq("state", "open")
+        .order("created_at", { ascending: false }),
     ]);
     if (dRes.error) setError(dRes.error.message);
     if (rRes.error) setError(rRes.error.message);
     if (cRes.error) setError(cRes.error.message);
+    if (aRes.error) setError(aRes.error.message);
+    setRaisedAlerts((aRes.data ?? []) as RaisedAlert[]);
     setDates((dRes.data ?? []) as ImportantDate[]);
     setRecurring((rRes.data ?? []) as RecurringAlert[]);
     const synth: ContractEndAlert[] = ((cRes.data ?? []) as {
@@ -660,6 +684,52 @@ export default function Compliance() {
             <p className="text-[11px] text-success-700/70 mt-1">Auto-derived from due dates</p>
           </div>
         </div>
+
+        {/* Raised alerts — the in-app half of alert delivery. The other half is
+            the daily email; both carry the same content, and neither escalates.
+            An alert stays here until someone acknowledges or resolves it. */}
+        {raisedAlerts.length > 0 && (
+          <div className="bg-white rounded-lg border border-slate-200 mb-6">
+            <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+              <div>
+                <h3 className="text-base text-slate-900">Raised Alerts</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Recorded by the system and still open. Acknowledge them on the Alerts page.
+                </p>
+              </div>
+              <Link to="/super-admin/alerts" className="text-xs text-brand-600 hover:text-brand-700">
+                Open Alerts
+              </Link>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {raisedAlerts.map((a) => {
+                const tone =
+                  a.tier === "blocking"
+                    ? "bg-danger-50 text-danger-700 border-danger-200"
+                    : a.tier === "warning"
+                      ? "bg-warning-50 text-warning-700 border-warning-200"
+                      : "bg-slate-50 text-slate-600 border-slate-200";
+                return (
+                  <div key={a.id} className="px-6 py-3 flex items-start gap-3 text-sm">
+                    <span className={`px-2 py-0.5 rounded-md text-[11px] border shrink-0 ${tone}`}>
+                      {a.tier}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-slate-800">{a.message}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {String(a.category).replace(/_/g, " ")} · first seen {formatDate(a.created_at.slice(0, 10))}
+                        {/* seen_count is the dedupe counter (0295). "Still true
+                            after 47 runs" is a different statement from "true",
+                            and it is the one that decides whether to act. */}
+                        {(a.seen_count ?? 1) > 1 ? ` · seen ${a.seen_count} times` : ""}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <div id="compliance-dates-card" className="bg-white rounded-lg border border-slate-200 scroll-mt-4">
           <div className="p-6 border-b border-slate-200">
