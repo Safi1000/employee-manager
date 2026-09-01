@@ -1016,7 +1016,13 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         employee_id: employeeId,
         amount: target,
         advance_date: firstOfNextMonth(periodMonth),
-        payment_mode: "Cash",
+        // 0317: NO MONEY MOVES here. This row records that the employee was
+        // overpaid and owes the difference; it is not a cash disbursement.
+        // It was "Cash" only because that was the only mode the CHECK allowed
+        // without a bank account, and the ledger believed it — posting a credit
+        // against the undifferentiated cash control for money that never left
+        // the building. journal_on_advance skips Carry-forward entirely.
+        payment_mode: "Carry-forward",
         notes: note,
       });
     }
@@ -1245,6 +1251,13 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
               ? row.bank_account_id
               : null,
           cheque_id: row.payment_mode === "Cheque" ? row.cheque_id : null,
+          // 0317. The custodian was already resolved and validated above and
+          // used for the bank_transactions attribution — it was simply never
+          // written to the payslip. post_payslip_disbursement reads
+          // ps.custodian_location_id PER PAYSLIP and has all along, so without
+          // this line every cash payslip posted its credit to the
+          // undifferentiated cash control (8 of them on production).
+          custodian_location_id: row.payment_mode === "Cash" ? custodianLocId : null,
           updated_at: new Date().toISOString(),
         })
         .eq("id", payslipId)
@@ -1419,6 +1432,11 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
             status: "Cleared",
             payment_mode: bulkMode,
             bank_account_id: bulkMode === "Bank" ? bulkBankId : null,
+            // 0317: the bulk path resolves ONE custodian for the batch, which is
+            // correct for a batch one person hands out. It is still written per
+            // payslip, because that is where post_payslip_disbursement reads it
+            // and because a run mixing modes and people has no single answer.
+            custodian_location_id: bulkMode === "Cash" ? bulkCustodianLocId : null,
             updated_at: new Date().toISOString(),
           })
           .eq("id", payslipId)
