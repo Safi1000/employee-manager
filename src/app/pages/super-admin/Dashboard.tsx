@@ -157,6 +157,7 @@ export default function SuperAdminDashboard() {
   const [activeContracts, setActiveContracts] = useState(0);
   const [openIncidents, setOpenIncidents] = useState(0);
   const [licencesExpiring, setLicencesExpiring] = useState(0);
+  const [licencesOverdue, setLicencesOverdue] = useState(0);
   const [expensesPie, setExpensesPie] = useState<ExpensePieRow[]>([]);
   const [contractsEnding, setContractsEnding] = useState<ContractEndingRow[]>([]);
   const [recentIncidents, setRecentIncidents] = useState<IncidentRow[]>([]);
@@ -269,11 +270,14 @@ export default function SuperAdminDashboard() {
               .limit(8),
             regionId,
           ),
-          // employee licence expiries
+          // Guard compliance expiries — from compliance_upcoming, the one place
+          // this is computed (0291/0292). No lower bound: an item that expired
+          // last week is not "not yet due", it is the most urgent row there is.
           withRegion(
             supabase
-              .from("employees")
-              .select("weapon_licence_expiry, guard_service_licence_expiry, medical_fitness_expiry, probation_end_date, status"),
+              .from("compliance_upcoming")
+              .select("kind, ref_id, days_remaining")
+              .lte("days_remaining", 30),
             regionId,
           ),
           // current month period closed?
@@ -426,25 +430,29 @@ export default function SuperAdminDashboard() {
         setActiveContracts(activeContractsRes.count ?? 0);
         setOpenIncidents(openIncidentsRes.count ?? 0);
 
-        // Licences expiring in next 30 days (count employees with any expiring item)
-        const empExpRows = ((empExpRes.data ?? []) as {
-          weapon_licence_expiry: string | null;
-          guard_service_licence_expiry: string | null;
-          medical_fitness_expiry: string | null;
-          probation_end_date: string | null;
-          status: string;
-        }[]).filter((e) => e.status !== "Inactive");
-        let licCount = 0;
-        for (const e of empExpRows) {
-          const dates = [
-            e.weapon_licence_expiry,
-            e.guard_service_licence_expiry,
-            e.medical_fitness_expiry,
-            e.probation_end_date,
-          ].filter(Boolean) as string[];
-          if (dates.some((d) => d >= today && d <= in30)) licCount += 1;
-        }
-        setLicencesExpiring(licCount);
+        // Guards with a compliance item due within 30 days OR ALREADY OVERDUE.
+        //
+        // The previous version of this tile filtered `d >= today && d <= in30`,
+        // so an expired item fell out of the window entirely and the tile read
+        // zero while ten guards on production held an expired CNIC. The lower
+        // bound was the defect: it hid the failures and showed the warnings.
+        // See TENANT_GUARD_REPORT.md 9.11.
+        //
+        // Membership and the day arithmetic now come from the view. The only
+        // decision left here is which kinds this particular tile covers, which
+        // is presentation, not computation.
+        const GUARD_KINDS = new Set([
+          "weapon_licence", "guard_licence", "medical_fitness", "probation_end",
+          "cnic", "weapons_cert", "refresher", "guard_document", "training",
+        ]);
+        const dueRows = ((empExpRes.data ?? []) as {
+          kind: string; ref_id: string; days_remaining: number;
+        }[]).filter((r) => GUARD_KINDS.has(r.kind));
+        // One guard with three lapsing documents is one guard, as before.
+        setLicencesExpiring(new Set(dueRows.map((r) => r.ref_id)).size);
+        setLicencesOverdue(
+          new Set(dueRows.filter((r) => r.days_remaining < 0).map((r) => r.ref_id)).size,
+        );
 
         // Contracts ending list
         const contractsEndingRaw = (contractsEndingRes.data ?? []) as { id: string; contract_code: string; client_id: string | null; end_date: string }[];
@@ -744,7 +752,12 @@ export default function SuperAdminDashboard() {
                 <StatCard title="Open Incidents" value={openIncidents} icon={Siren} tone={openIncidents > 0 ? "danger" : "info"} />
               )}
               {can.compliance && show("stat_licences_expiring") && (
-                <StatCard title="Licences expiring <30d" value={licencesExpiring} icon={ShieldAlert} tone={licencesExpiring > 0 ? "warning" : "info"} />
+                <StatCard
+                  title={licencesOverdue > 0 ? `Compliance due <30d (${licencesOverdue} overdue)` : "Compliance due <30d"}
+                  value={licencesExpiring}
+                  icon={ShieldAlert}
+                  tone={licencesOverdue > 0 ? "danger" : licencesExpiring > 0 ? "warning" : "info"}
+                />
               )}
             </div>
 

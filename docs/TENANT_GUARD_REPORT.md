@@ -939,3 +939,70 @@ appends a second one under a new version, so the ledger would gain duplicates.
 The executable text was proved equal before each rewrite, and the three cases
 where it was not exactly equal were overridden by hand with the reason stored in
 the migration's own alignment record.
+
+### 9.11 Two from the compliance-consolidation round
+
+#### FIVE IMPLEMENTATIONS OF A QUESTION WITH NO DATA ALL AGREE
+
+"What is expiring soon" was implemented five times: `compliance_upcoming`, the
+`send-compliance-alerts` edge function, `Licences.tsx`, `Dashboard.tsx`, and
+ai-chat's `get_expiring_licences`. Two of the five were only found because the
+grep was mandated; three had been the accepted count until then.
+
+The five disagreed about which employees to include — two different membership
+filters, and it turned out **neither was correct**. That divergence was the
+reason the consolidation was ordered, and it was the wrong thing to worry about.
+It was **latent**: zero employees differ under the two filters on either
+database, so no user has ever seen two numbers.
+
+The real finding was what all five *shared*. Every one of them computed weapon
+licence, guard service licence, medical fitness and probation end. **All four of
+those columns are empty on dev and on production.** None of the five read
+`cnic_expiry` — the only compliance date with data in it, 154 rows on dev and 83
+on production, ten of them already expired and one 1,064 days overdue.
+
+So the licence-expiry surface returned nothing, correctly, for its entire
+existence. Five implementations of a question that could not be answered wrongly
+because there was nothing to answer it with, and their agreement was the
+agreement of five empty sets.
+
+**AGREEMENT BETWEEN IMPLEMENTATIONS IS EVIDENCE ONLY WHEN THE INPUTS ARE
+NON-EMPTY. BEFORE RECONCILING TWO ANSWERS, CHECK THAT EITHER ONE READ ANY DATA.**
+
+This is the canary one level up. `ledger_foundation.sql` sat dead from 0224
+because a silent suite cannot be told from a passing one; here, five silent
+implementations could not be told from five correct ones. The same question
+answers both: *what would have made this different?* Five agreeing readers of
+four empty columns would have produced exactly the output observed, and so the
+output carried no information.
+
+The corollary is a habit, not a rule: when consolidating duplicates, check the
+population of every input column **before** reconciling the logic. The columns
+answer in one query whether the disagreement can bite at all, and if the answer
+is no, the duplication was never the defect — the missing coverage was.
+
+#### A WINDOW THAT STARTS AT TODAY HIDES THE FAILURES AND SHOWS THE WARNINGS
+
+`Dashboard.tsx` counted expiries with `d >= today && d <= in30`. An item that has
+already expired is not late in that window; it is **outside** it. The tile would
+have read zero while ten guards held expired CNICs, and zero is what a healthy
+system also shows.
+
+The lower bound is the defect. `<= in30` is a real question ("what needs
+attention soon"); `>= today` silently answers a different one ("what has not
+failed yet"), and it drops precisely the rows that most need to be seen. A
+filter tuned to surface warnings deleted the failures.
+
+**A RANGE FILTER OVER TIME MUST NOT HAVE A LOWER BOUND AT `now()` UNLESS
+SOMETHING ELSE SURFACES WHAT FELL BELOW IT. OVERDUE IS THE LOUDEST STATE, NOT
+THE EXPIRED ONE.**
+
+`compliance_upcoming` therefore exposes a **signed** `days_remaining` and applies
+no window at all. Overdue items come back negative and sort to the top; each
+consumer chooses its own upper bound and none of them can drop the bottom by
+accident. Where a display genuinely wants "next 30 days", the bound to write is
+`days_remaining <= 30`, which keeps every negative row.
+
+The general shape: the two defects in this round are the same defect. One
+filtered out the only populated column, the other filtered out the only failing
+rows, and both presented the empty result as a clean one.
