@@ -1728,3 +1728,98 @@ without identifying the row is a check that reports its own input.
 
 `trial_balance_debits_equal_credits` **passes**, and now passes by reading the
 view rather than by recomputing it.
+
+## Block 6 — `0300`–`0302`, atomic, plus the restore (`0318`)
+
+| file | digest | result |
+|---|---|---|
+| `0300_notification_deliveries` | `e3a90300a601669b99d6db93df526fd8` | delivery log + `alert_delivery_gaps()`, wired as check 21 |
+| `0301_schedule_ledger_checks` | `3386a5c547ae78542d81dbce9130a71c` | `ledger-checks-daily` at 05:00, `in_app` channel |
+| `0302_canary_has_one_number` | `9cbf45ff485efd139436e3a798ceb960` | the expected count collapses to one value |
+| `0318_restore_the_two_unwired_checks` | `d8f59f9ed6c8e4df0abb31307c87c55b` | checks 22 and 23 restored; canary → 23 |
+
+Every digest equals the repo file. Gaps **0** throughout.
+
+### The block is atomic because `0300` breaks the canary and `0302` fixes it
+
+Measured on production between the two, exactly as the files predict:
+after `0300` the suite returned 22 rows with `checks_evaluated` **red** —
+expected 21, actual 21, difference 1. The number lived in three places and the
+bump moved one of them. After `0302` the canary is green on **all four
+companies**, and the number is written once.
+
+Stopping between `0300`/`0301` and `0302` would have left a scheduled 05:00 job
+whose first act every morning was to raise a permanent alert about a check that
+was fine.
+
+### The schedule
+
+```
+ledger-checks-daily | 0 5 * * * | select public.run_scheduled_ledger_checks() | active
+```
+
+`ledger_checks` is no longer uninvoked — the deployment's largest single
+finding, closed. The runner is kept out of `uninvoked_controls()` only by the
+cron row, so deleting the schedule turns `every_control_is_invoked` red through
+a path independent of the delivery-recency check.
+
+### `alert_delivery_is_healthy` is red on all four companies, and should be
+
+| company | gaps |
+|---|---|
+| GUARDS AND GUIDES (PVT) LTD | 2 — never delivered (email) **and** never run (in_app) |
+| guards n guides | 1 — never run |
+| SANDBOX TESTING ORG | 1 — never run |
+| Sandboxx | 1 — never run |
+
+The `in_app` arm clears at the first 05:00 run. The email arm stays red for
+GUARDS AND GUIDES until a digest actually reaches Resend, which is the true
+state of that path today.
+
+### Why `uninvoked_controls()` missed the two restored checks
+
+Its function arm matches names against eighteen substrings
+(`gap|check|drift|residue|…`) or, for set-returning functions, a
+`_rows|_balances|_held_|_review` suffix.
+
+- `total_due_read_as_a_balance` — `a_balance`, not `_balances`. No match.
+- `withholding_written_after_cutover` — no token at all. No match.
+
+Both are named **after the condition they detect** rather than after the word
+"check", which is better naming and precisely what a name-shaped predicate
+cannot see. Third time a detector's own predicate has been the defect, after
+`0288b` (comments counted as callers) and `0290` (guard names credited to
+comments).
+
+**Should the predicate be widened? Measured first, and the answer is no.**
+Dropping the name test for set-returning functions with no caller would add
+**20** entries on `crm-design`, and they are almost entirely application-facing
+report RPCs — `partner_ledger`, `attendance_payroll`, `client_service_report`,
+`payroll_cost_by_client`, `regional_pl` and thirteen more — none of which this
+check can see being called from `src/`. That is an eighteen-entry exempt map of
+non-problems, which is §9.11 and the reason `0296` declined to wire
+`check_deploy_guard`. Adding the two literal names is worse: it fixes these two
+and teaches nothing, because the next detector will also be named after its own
+condition.
+
+What closes the class is process, not a better substring:
+
+1. a migration that adds a detector wires it in the **same** migration, and
+   since `0302` the canary's expected count is one number, so forgetting to
+   bump it goes red immediately;
+2. a migration that **restates** `ledger_checks` must be replayed against the
+   current definition — which is why `0289`/`0299`/`0300`/`0302`/`0318` all do
+   surgery instead.
+
+`0318` asserts the finding rather than narrating it: if a later migration ever
+widens the predicate to match either name, `0318` fails on replay and the
+argument gets re-read.
+
+### The restore is proved by stubbing, not by its zeros
+
+Both checks read 0, which is the state they were in when they were lost — so
+zero proves nothing on its own. Each detector was stubbed to report one row and
+the suite required to go red, then restored and required green, with the
+restore executed **before** the verdict so a failure cannot leave a stub
+behind. `tenant_guard_gaps()` is asserted afterwards, because the stub of
+`withholding_written_after_cutover` deliberately dropped `0316b`'s guard.

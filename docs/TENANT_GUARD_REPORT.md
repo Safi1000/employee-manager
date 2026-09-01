@@ -1305,6 +1305,50 @@ being in a migration; it becomes a landmine that goes off in the other
 environment, at the least convenient moment, having passed everywhere it was
 tested.
 
+#### 9.14a The fixture form: a fixture that SELECTS rows is a reading too
+
+> **A FIXTURE THAT SELECTS EXISTING ROWS RATHER THAN CREATING THEM IS A READING
+> OF STATE THE MIGRATION DID NOT CREATE, AND IT PASSES WHEREVER IT WAS
+> WRITTEN.**
+
+The same defect class as the rule above, one level down, and it has now
+appeared in four places: a verification block, a header figure, an assertion,
+and — here — a fixture.
+
+`0296`'s verification needs an expense to insert, so it picks its parts:
+
+```sql
+select id into v_cat from public.expense_categories where company_id = v_co limit 1;
+select id into v_bank from public.bank_accounts limit 1;
+```
+
+On the database it was written against, both return a usable row. On
+`crm-design` the first company has **no expense categories at all** — 22 exist,
+every one belonging to a different company — so `v_cat` is NULL, and the second
+query, which has no company filter whatsoever, selects a bank belonging to
+**another company entirely**.
+
+Neither is a fact about disbursement warnings. Both are facts about the
+database the fixture was written on. The control was correct; the fixture would
+have aborted the migration mid-block, on production, for a reason having
+nothing to do with the thing being shipped — and the reader of that failure
+would have started by suspecting the control.
+
+It survived only because it was dry-run first, in a rolled-back subtransaction,
+against production: the insert succeeded, because `category_id` is nullable and
+the journal trigger accepted the cross-company bank. That is luck, and the
+right response to luck is to write down what it was covering.
+
+Two habits follow:
+
+1. **A fixture should CREATE what it needs.** A probe employee, a probe
+   category, a probe bank — inserted in the block, rolled back with it. Then
+   the fixture is an input and cannot be wrong about an environment.
+2. **Where selecting is genuinely easier, filter it to the same scope the test
+   is about** (`where company_id = v_co`) and **assert that it found
+   something**, naming what is missing. A `limit 1` with no filter is not a
+   fixture; it is a bet on the contents of a database the author has not seen.
+
 ### 9.15 Two errors that cancel present as a passing check
 
 > **A CHECK THAT NETS ITS INPUTS CANNOT SEE AN ERROR THAT NETS TO ZERO INSIDE
