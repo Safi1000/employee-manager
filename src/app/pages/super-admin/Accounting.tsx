@@ -220,6 +220,8 @@ export default function Accounting() {
   const [custodians, setCustodians] = useState<CustodianOption[]>([]);
   const [paymentCustodianId, setPaymentCustodianId] = useState<string>("");
   const [markPaidCustodianId, setMarkPaidCustodianId] = useState<string>("");
+  const [paymentWithholding, setPaymentWithholding] = useState<string>("0");
+  const [paymentWhtTouched, setPaymentWhtTouched] = useState<boolean>(false);
   const [paymentNotes, setPaymentNotes] = useState<string>("");
   const [paymentDate, setPaymentDate] = useState<string>(todayStr());
   const [paymentChequeNumber, setPaymentChequeNumber] = useState<string>("");
@@ -1423,6 +1425,8 @@ export default function Accounting() {
     setPaymentBankId(banks[0]?.id ?? "");
     setPaymentCustodianId("");
     setPaymentNotes("");
+    setPaymentWithholding("0");
+    setPaymentWhtTouched(false);
     setPaymentDate(todayStr());
     setPaymentChequeNumber("");
     setPaymentChequeDate(todayStr());
@@ -1479,11 +1483,20 @@ export default function Accounting() {
 
     // Resolve (creating on first use) the custodian cash_location for the chosen
     // office-staff member, so cash received is attributed to who holds it (0135).
-    const resolvePaymentCustodianLoc = async (): Promise<string | null> => {
+    // Throws rather than returning null. The guard above checks that a custodian
+    // was SELECTED; this checks that the selection RESOLVES. When the company id
+    // cannot be resolved the two are different things, and returning null sent a
+    // cash receipt with no custodian into the database, where it met a check
+    // constraint and surfaced as a raw Postgres error in a toast. 0281 went to
+    // some trouble to make that refusal legible; this is the same courtesy.
+    const resolvePaymentCustodianLoc = async (): Promise<string> => {
       const cid = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
+      if (!cid) throw new Error("No company is selected — reload the page and try again.");
       const staff = custodians.find((c) => c.employeeId === paymentCustodianId);
-      if (!cid || !staff) return null;
-      return ensureCustodianLocation(cid, staff.employeeId, staff.fullName);
+      if (!staff) throw new Error("Select the office-staff member who received the cash.");
+      const loc = await ensureCustodianLocation(cid, staff.employeeId, staff.fullName);
+      if (!loc) throw new Error(`Could not open a cash location for ${staff.fullName}.`);
+      return loc;
     };
 
     // Cheque payment: record incoming cheque, no immediate balance change.
@@ -1539,44 +1552,25 @@ export default function Accounting() {
       setSubmitting(true);
       setError(null);
       try {
-        const ts = dateToTs(paymentDate);
-        const desc = `Payment received (${paymentVia.toLowerCase()}) · ${selectedClient.name} · No invoice`;
-        if (paymentVia === "Cash") {
-          await applyCashDelta(amount);
-          await logTransaction({
-            bank_account_id: null,
-            kind: "receipt",
-            amount,
-            cash_delta: amount,
-            account_delta: 0,
-            description: desc,
-            reference_id: selectedClient.id,
-            created_at: ts,
-          });
-        } else {
-          await applyBankDelta(paymentBankId, amount);
-          await logTransaction({
-            bank_account_id: paymentBankId,
-            kind: "receipt",
-            amount,
-            cash_delta: 0,
-            account_delta: amount,
-            description: desc,
-            reference_id: selectedClient.id,
-            created_at: ts,
-          });
-        }
-        const { error: payErr } = await supabase.from("invoice_payments").insert({
-          invoice_id: null,
-          client_id: selectedClient.id,
-          amount,
-          payment_date: paymentDate,
-          payment_mode: paymentVia,
-          bank_account_id: paymentVia === "Bank" ? paymentBankId : null,
-          custodian_location_id: paymentVia === "Cash" ? await resolvePaymentCustodianLoc() : null,
-          notes: paymentNotes.trim() || null,
+        // 0315: the client-only entry point. This screen used to insert into
+        // invoice_payments directly and move the balances itself — a second
+        // implementation of payment application. record_invoice_payment does the
+        // oldest-first waterfall, the pro-rata withholding split,
+        // assert_same_company, the balance move and the bank_transactions row.
+        // Doing any of that here as well would double-count it.
+        const { error: rpcErr } = await supabase.rpc("record_invoice_payment", {
+          p_invoice_id: null,
+          p_client_id: selectedClient.id,
+          p_amount: amount,
+          p_payment_date: paymentDate,
+          p_payment_mode: paymentVia,
+          p_bank_account_id: paymentVia === "Bank" ? paymentBankId : null,
+          p_notes: paymentNotes.trim() || null,
+          p_withholding: Number(paymentWithholding || 0),
+          p_custodian_location_id:
+            paymentVia === "Cash" ? await resolvePaymentCustodianLoc() : null,
         });
-        if (payErr) throw payErr;
+        if (rpcErr) throw rpcErr;
         setIsPaymentModalOpen(false);
         await loadAll();
       } catch (e: any) {
@@ -1605,54 +1599,28 @@ export default function Accounting() {
     setSubmitting(true);
     setError(null);
     try {
-      const ts = dateToTs(paymentDate);
-      if (paymentVia === "Cash") {
-        await applyCashDelta(amount);
-        await logTransaction({
-          bank_account_id: null,
-          kind: "receipt",
-          amount,
-          cash_delta: amount,
-          account_delta: 0,
-          description: `Payment received (cash) · ${selectedClient.name} · Invoice ${invoice.invoice_number}`,
-          reference_id: invoice.id,
-          created_at: ts,
-        });
-      } else {
-        await applyBankDelta(paymentBankId, amount);
-        await logTransaction({
-          bank_account_id: paymentBankId,
-          kind: "receipt",
-          amount,
-          cash_delta: 0,
-          account_delta: amount,
-          description: `Payment received (bank) · ${selectedClient.name} · Invoice ${invoice.invoice_number}`,
-          reference_id: invoice.id,
-          created_at: ts,
-        });
-      }
-      const { error: upErr } = await supabase
-        .from("invoices")
-        .update({
-          amount_received: Number(invoice.amount_received) + amount,
-          notes: paymentNotes.trim()
-            ? `${invoice.notes ? invoice.notes + "\n" : ""}[${paymentDate}] Payment PKR ${amount.toLocaleString()} via ${paymentVia}: ${paymentNotes.trim()}`
-            : invoice.notes,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", invoice.id);
-      if (upErr) throw upErr;
-      // Also log to invoice_payments so Cashflow's payment-based Revenue picks it up.
-      await supabase.from("invoice_payments").insert({
-        invoice_id: invoice.id,
-        client_id: selectedClient.id,
-        amount,
-        payment_date: paymentDate,
-        payment_mode: paymentVia,
-        bank_account_id: paymentVia === "Bank" ? paymentBankId : null,
-        custodian_location_id: paymentVia === "Cash" ? await resolvePaymentCustodianLoc() : null,
-        notes: paymentNotes.trim() || null,
+      // 0315: naming the invoice TARGETS it; the RPC then settles the client's
+      // open invoices oldest first from that starting point, which is the tested
+      // existing behaviour. The hand-rolled amount_received update, the balance
+      // move and the bank_transactions row are all the RPC's job now — doing
+      // them here as well would double-count every receipt.
+      //
+      // The waterfall can reach an invoice the operator is not looking at. That
+      // is safe because NO CLIENT SPANS MORE THAN ONE REGION, so everything it
+      // can reach sits in the same region as the invoice in front of them. If a
+      // client ever does span regions, this is the comment that has to change.
+      const { error: rpcErr } = await supabase.rpc("record_invoice_payment", {
+        p_invoice_id: invoice.id,
+        p_amount: amount,
+        p_payment_date: paymentDate,
+        p_payment_mode: paymentVia,
+        p_bank_account_id: paymentVia === "Bank" ? paymentBankId : null,
+        p_notes: paymentNotes.trim() || null,
+        p_withholding: Number(paymentWithholding || 0),
+        p_custodian_location_id:
+          paymentVia === "Cash" ? await resolvePaymentCustodianLoc() : null,
       });
+      if (rpcErr) throw rpcErr;
       setIsPaymentModalOpen(false);
       await loadAll();
     } catch (e: any) {
@@ -3877,7 +3845,20 @@ export default function Accounting() {
                 min="0.01"
                 step="0.01"
                 value={paymentAmount}
-                onChange={(e) => setPaymentAmount(e.target.value)}
+                onChange={(e) => {
+                  setPaymentAmount(e.target.value);
+                  // 0281: null would mean "use the client's rate", but this form
+                  // always sends an explicit number, so the rate is applied here
+                  // and stays visible and editable. A rate is what is normally
+                  // deducted, not what always is.
+                  if (!paymentWhtTouched) {
+                    const rate = Number(selectedClient?.withholding_tax_rate ?? 0);
+                    const amt = Number(e.target.value || 0);
+                    setPaymentWithholding(
+                      rate > 0 && amt > 0 ? String(Math.round(amt * rate) / 100) : "0",
+                    );
+                  }
+                }}
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
               />
             </div>
@@ -3983,6 +3964,28 @@ export default function Accounting() {
                 </div>
               </div>
             )}
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">
+                Withholding Deducted (PKR)
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={paymentWithholding}
+                onChange={(e) => {
+                  setPaymentWhtTouched(true);
+                  setPaymentWithholding(e.target.value);
+                }}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              />
+              <p className="text-[11px] text-slate-500 mt-1.5">
+                {Number(selectedClient?.withholding_tax_rate ?? 0) > 0
+                  ? `Prefilled at ${selectedClient?.withholding_tax_rate}% of the amount — edit if the client deducted something else.`
+                  : "This client has no agreed withholding rate. Enter an amount if any was deducted."}{" "}
+                The receivable is cleared by cash and withholding together.
+              </p>
+            </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Notes</label>
               <textarea

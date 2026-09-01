@@ -1965,6 +1965,10 @@ export type Invoice = {
   tax_withheld_total?: number;
   previous_balance?: number;
   total_due?: number;
+  // 0314: GENERATED in the database as invoice_amount - amount_received. Read it
+  // through invoiceOutstanding(); never recompute it. Absent only on selects
+  // with an explicit column list that omits it.
+  outstanding?: number;
   amount_in_words?: string | null;
   remit_account?: RemitAccount | null;
   override_reason?: string | null;
@@ -2043,7 +2047,15 @@ export function computeInvoiceTaxes(
 // THIS IS THE ONLY PLACE OUTSTANDING IS COMPUTED IN THE FRONTEND. The copies
 // were deleted, not corrected — the eighth copy is how the ninth gets written.
 // scripts/check-outstanding.mjs fails if one comes back.
-export function invoiceOutstanding(inv: Pick<Invoice, "invoice_amount" | "amount_received">): number {
+export function invoiceOutstanding(
+  inv: Pick<Invoice, "invoice_amount" | "amount_received"> & { outstanding?: number },
+): number {
+  // 0314 made this a GENERATED column, so prefer the value the database
+  // computed. The fallback is not a second implementation: it is the same
+  // expression the column is defined as, for rows fetched with an explicit
+  // column list that omits it. If the two could disagree the column would not
+  // be generated.
+  if (inv.outstanding !== undefined && inv.outstanding !== null) return Number(inv.outstanding);
   return Number(inv.invoice_amount ?? 0) - Number(inv.amount_received ?? 0);
 }
 
