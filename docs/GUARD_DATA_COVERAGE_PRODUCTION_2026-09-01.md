@@ -1,9 +1,17 @@
-# Expired CNICs — active employees, production
+# Guard data coverage — active employees, production
 
 Run **2026-09-01** against `crm-design` (`mmkfpnshxjcyijhuydgr`), **read-only**.
 Nothing was written to production to produce this.
 
 For Shayan, to hand to Safi.
+
+Started as a list of expired CNICs. It is broader than that, because the same
+shape turned up in every other guard field that was measured: the alarming
+number is not what the data says, it is how little of it there is.
+
+**One number, if you read nothing else: of 347 active employees, ZERO have a
+completed police verification, a completed NADRA Verisys, a weapons
+certification, or a weapon licence on file.** Not a low number. Zero.
 
 ---
 
@@ -183,6 +191,120 @@ created for. But it should be either archived or explained.
 
 ---
 
+## Vetting coverage: the pipeline has never produced a completed check
+
+Measured 2026-09-01 on `GUARDS AND GUIDES (PVT) LTD`, 347 active employees.
+
+| field | recorded | missing |
+|---|---|---|
+| CNIC number | 205 | **142** |
+| CNIC expiry | 83 | **264** |
+| Date of birth | 184 | **163** |
+| Join date | 263 | 84 |
+| Phone | 207 | 140 |
+| **Police verification — verified** | **0** | 346 still `pending` |
+| **NADRA Verisys — verified** | **0** | 345 still `pending` |
+| **Weapons certified** | **0** | 347 |
+| **Weapon licence on file** | **0** | 347 |
+| Police or NADRA **adverse** | 0 | — |
+| Blacklisted | 0 | — |
+
+Read the last two rows against the four above them. There are no *failures* on
+record because there are no *results* on record. 346 police verifications are
+marked `pending` and none has ever been marked `verified` or `adverse`. The
+field is being set on intake and never updated.
+
+**This is the same finding as the four empty licence columns, and as the 264
+missing CNIC expiries.** A guard company's system contains no evidence that any
+guard has been vetted.
+
+Whether the vetting is happening on paper and simply is not reaching the
+system, or is not happening, is a question only Safi can answer — and the two
+have very different consequences. Either way the system currently cannot answer
+"is this guard cleared" for a single one of 347 people.
+
+### What this changed in the code, and what it deliberately did not
+
+`check_deploy_guard` was about to be wired to raise an alert whenever a guard
+with blockers is deployed. Measured first: `armed_post_blockers()` is non-empty
+for **every employee in the database**, so it would have raised a warning on
+every deployment forever. A control that fires on every input carries exactly
+as much information as one that never fires, and it is worse, because it trains
+its reader to ignore the feed.
+
+So `0297` split the question:
+
+* **A vetting FAILURE** — blacklisted, police adverse, NADRA adverse, not in
+  active service, a certification that lapsed. Someone looked and the answer
+  was bad. **True of nobody today**, which is exactly what lets a control on it
+  stay quiet and still be able to speak. This is now wired: deploying a guard
+  with a vetting failure records a warning.
+* **A vetting GAP** — not certified, document not on file, verification still
+  pending. Nobody looked yet. **True of everybody.** That is this table, not an
+  alert. Nobody needs 758 warnings; the table above is the whole content.
+
+---
+
+## Two schema proposals — shapes only, neither built
+
+Both need an operational decision before any code.
+
+### 1. `employees.cnic_lifetime boolean not null default false`
+
+For the `3000-01-01` case above. NADRA issues lifetime-validity CNICs and the
+column has no way to say so, so somebody encoded it as a sentinel date.
+
+* When true, `cnic_expiry` is not required, and `compliance_upcoming` excludes
+  the row from the expiry arms entirely — **not as expired, not as unrecorded,
+  but as satisfied**.
+* Coverage counting (the table above) treats a lifetime CNIC as **recorded**.
+  It is on file; it simply has no expiry.
+* A boolean rather than a NULL-with-convention, and the 264 employees with no
+  expiry recorded are the reason: a boolean keeps "lifetime" and "not recorded"
+  distinguishable, where a NULL scheme collapses them the first time somebody
+  forgets the flag.
+* **Backfill nothing.** GGS-00527's `3000-01-01` stays until Safi confirms the
+  card is lifetime; then it becomes `cnic_lifetime = true` and the sentinel
+  clears. One row, one confirmation, no guessing.
+* Only *afterwards* does the sanity constraint become possible: with a way to
+  say "does not expire", an expiry more than N years out is unambiguously a
+  typo. Proposed, not added, and it must not land before the flag exists — it
+  would break the only path that records a lifetime card.
+
+It touches the employee intake form. That is why it is a proposal.
+
+### 2. `posts.armed` (or `posts.sensitivity`)
+
+`check_deploy_guard` encodes the rule *"a guard who fails vetting must not be
+deployed to a **sensitive or armed** post"*. **There is no such thing as an
+armed post in this schema.** `public.posts` has `name`, `address`,
+`required_guards`, `shift_pattern`, `active`, `notes` — nothing that marks one.
+
+So `0297` wires the failure check to **every** deployment, not only armed ones.
+That is deliberately broader than the rule as written, and broader in the safe
+direction: a blacklisted guard or one with adverse verification should not be
+posted anywhere. It over-covers rather than under-covers, and it is honest
+about doing so.
+
+To apply the rule as actually written, three things need deciding, none of them
+an engineering question:
+
+1. **What makes a post armed or sensitive?** A weapon carried on it, a client
+   classification, a regulatory category, or a judgement someone makes per site.
+2. **Who marks it, and when?** At post creation, at contract signing, or by the
+   operations lead reviewing a site.
+3. **Is it a boolean or a level?** "Armed" is one bit. "Sensitive" sounds like
+   a scale, and a scale needs its levels named before it is stored.
+
+Until those are answered, adding a column would be guessing at an operational
+data model — the same reason the reverse map should refuse rather than guess,
+and the same reason `3000-01-01` has not been overwritten.
+
+**Recommendation:** answer (1) first. Two and three follow from it, and the
+current over-covering wiring is safe to leave in place meanwhile.
+
+---
+
 ## Found on the way: a lapsed contract with guards still on it
 
 Not a CNIC item. Recorded here because it surfaced while repointing the
@@ -236,3 +358,6 @@ compliance view nor the billing path asks it.
    0186 clone, already on the production cleanup list.)*
 6. **Palm Grove Resorts** — sandbox, so not urgent, but the pattern is real and
    the check for it does not exist.
+7. **The vetting pipeline.** Zero completed verifications on 347 guards is the
+   largest item in this file, and the only one that is about whether the
+   business can evidence what it claims.

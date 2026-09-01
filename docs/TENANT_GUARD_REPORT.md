@@ -1006,3 +1006,51 @@ accident. Where a display genuinely wants "next 30 days", the bound to write is
 The general shape: the two defects in this round are the same defect. One
 filtered out the only populated column, the other filtered out the only failing
 rows, and both presented the empty result as a clean one.
+
+#### A CONTROL THAT FIRES ON EVERY INPUT IS AS UNINFORMATIVE AS ONE THAT NEVER FIRES, AND WORSE, BECAUSE IT TRAINS ITS READER
+
+The mirror of the rule above, found one round later and from the other side.
+
+`check_deploy_guard` was about to be wired to the deployment path. Measuring
+first stopped it:
+
+```
+active employees                       758
+not weapons-certified                  758   <- every one
+no weapon licence document on file     758   <- every one
+police verification pending            701
+police or NADRA ADVERSE                  0
+blacklisted                              0
+```
+
+`armed_post_blockers()` returns a non-empty list for **every employee in the
+database**, for the same reason the licence columns were empty: nobody has
+entered the vetting fields. `weapons_certified` is false for all 758 because it
+was never recorded, not because 758 guards failed a test.
+
+Five implementations agreeing over empty inputs and one control alarming over
+empty inputs are the same defect: **an output that does not depend on the
+world**. Ask of any check not only "could this go red" but "is there any input
+for which it goes green".
+
+The asymmetry is what makes this the worse half. A silent check is ignored by
+nobody, because nobody sees it. A check that fires on everything is seen, and
+teaches the person who sees it that the feed is not worth reading — and it
+teaches that lesson about the whole feed, not just about itself. `alerts` has
+never held a row in either database. Its first day would have been hundreds of
+identical warnings. The feed is currently unread because it is empty; it would
+have become unread because it is noise, and only one of those is recoverable.
+
+The fix is not to suppress the noisy control. It is to notice that two different
+questions were wearing one name:
+
+* a vetting **FAILURE** — blacklisted, police adverse, NADRA adverse, not in
+  active service. True of nobody today, so a control on these is quiet **and
+  able to speak**, which is the definition of a working check.
+* a vetting **GAP** — not certified, document not on file. A data-entry
+  shortfall true of everybody, which is a coverage number, not an alert.
+  Nobody needs 758 warnings; one number in a report is the whole content.
+
+**A CONDITION TRUE OF EVERY ROW IS A MEASUREMENT, NOT AN EVENT. ROUTE IT TO A
+REPORT, AND KEEP THE ALERT FOR THE THING THAT DISTINGUISHES ONE ROW FROM
+ANOTHER.**
