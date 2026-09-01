@@ -1823,3 +1823,98 @@ the suite required to go red, then restored and required green, with the
 restore executed **before** the verdict so a failure cannot leave a stub
 behind. `tenant_guard_gaps()` is asserted afterwards, because the stub of
 `withholding_written_after_cutover` deliberately dropped `0316b`'s guard.
+
+## Blocks 7, 8 and 9 — `0303`–`0307`, `0310`, `0280`, `0311`
+
+| file | digest | result |
+|---|---|---|
+| `0303_profit_allocation_review_takes_a_company` | `63b2617a6ab5c6e7cdcc92a2ff309f0f` | the review is callable per company |
+| `0304_wire_four_controls` | `fd036f5fb701b8dd5914b1930bfc8ead` | four arms wired, canary 23 → 27 |
+| `0305_tenant_guard_sees_through_the_helper` | `5cc7d509367b2474ee6c916ff174c6c8` | gaps 3 → 0 |
+| `0306_vetting_dashboard_measures_progress` | `dd3454474f05b3fdace63542d8116d87` | eight additive counters |
+| `0307_vetting_dashboard_has_a_reader` | `5a1e54cab8dbde6dcdf27f5b53742b39` | uninvoked 12 → 11 |
+| `0310_period_lock_refuses_and_is_observed` | `14a00d37cc5734acb8379630f80ea2b0` | lock stops failing open, canary 27 → 28 |
+| `0280_drop_treasury_cash_opening_columns` | `4f76cdb74c911384941af116e61478fe` | two dead columns dropped |
+| `0311_drop_auto_zero_columns` | `ca67553242e4cd053f107c41c3755b97` | two dead columns dropped |
+
+Every digest equals the repo file. The suite is **29 rows = 28 checks + canary**,
+canary green on all four companies, `tenant_guard_gaps()` **0**,
+`uninvoked_controls()` **11**.
+
+### `0304` and `0310` had to be edited, and the reason is `0318`
+
+Both were written when the suite had 21 and 25 real checks, and both moved the
+canary from a **literal** to a **literal**. `0318` landed between writing and
+deployment, so on `crm-design` the number was 23 by the time `0304` ran. Each
+guard would have aborted correctly and loudly — `the canary is not 21` — which
+is the right failure, in the wrong place: mid-block, on production, on a fact
+about a database that no longer existed.
+
+Both now **read the current number and add their own delta**: `+4` for `0304`,
+`+1` for `0310`. The delta is the migration's property; the base is a reading,
+which is where a reading belongs (§9.14). Their row-count assertions changed
+the same way — `v_rows = expected + 1` rather than a literal 26 or 27.
+
+Editing an applied migration creates drift, so **both were re-applied to
+`crm-design-dev`** (old row deleted, file re-applied) before going to
+production. Dev and prod now hold one row each, digest-identical to the file:
+`fd036f5f…` and `14a00d37…` on both databases.
+
+### `0303`'s before-state, measured on production
+
+`profit_allocation_review(company, 2026-08-01)` raised
+`23502 No partner remuneration basis configured` on production before the
+migration — the exact symptom the header describes. All four companies **do**
+have a basis, which confirms the header's own correction: the NULL tenant was
+the whole cause, not a missing configuration.
+
+After: it runs for every company, on a connection with no JWT, exactly as
+`pg_cron` will call it.
+
+### `0304`'s four arms, pre-flighted against production
+
+| arm | production reading |
+|---|---|
+| `cash_forecast_clears_the_floor` | breach on **SANDBOX TESTING ORG at 2026-09-07**, null on the other three |
+| `cash_control_has_no_direct_postings` | 0 on all four |
+| `cash_entitlements_equal_pool` | 0 on all four; only SANDBOX has entitlements (3) |
+| `client_cost_has_an_invoice` | 0 on all four |
+
+The forecast arm's "not uniformly green" assertion holds on production for the
+same company it holds for on dev, on a different date — which is what an arm
+that reads the world rather than a literal looks like.
+
+### `0305` cleared a gap it did not create
+
+`0303`'s three new `p_company_id` parameters are guarded through
+`resolve_company_scope`, and `tenant_guard_covered()` matched only the two
+`assert_*` spellings — so `tenant_guard_gaps()` read **3** between `0304` and
+`0305`. Teaching the detector the one indirection, rather than adding three
+exempt-list rows, is the difference between fixing a detector and silencing it.
+
+### `0310` — what was dropped and what was measured
+
+`accounting_periods` is **empty on production**, so no month is closed and the
+fail-open branch had nothing to fail open on. The lock is now closed anyway,
+and `closed_period_intrusions()` is check 28.
+
+### The two drops
+
+`treasury.cash_opening_balance` read **0.00** on both rows and
+`cash_opening_locked` **false** — nothing was lost. `bank_accounts` came
+through `0311` byte-identical in both directions.
+
+### Ledger suite on production at the end of the deployment
+
+| check | companies | note |
+|---|---|---|
+| `alert_delivery_is_healthy` | all 4 | never run yet; clears at the first 05:00 job |
+| `every_control_is_invoked` | all 4 | 11 remaining, down from 20 |
+| `no_gate_mode_in_attendance_status` | GUARDS AND GUIDES | 24, pre-existing |
+| `bank_accounts_equal_transaction_deltas` | SANDBOX | pre-existing |
+| `bank_control_equals_bank_accounts` | SANDBOX | pre-existing |
+| `bank_per_account_gl_equals_operational` | SANDBOX | 3, pre-existing |
+| `cash_forecast_clears_the_floor` | SANDBOX | breach 2026-09-07, newly visible |
+| `no_negative_custodian_balance` | SANDBOX | 2, pre-existing |
+
+`0286` through `0318` are recorded on production with no gaps in the sequence.

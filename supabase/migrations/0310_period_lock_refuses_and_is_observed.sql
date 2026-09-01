@@ -102,6 +102,15 @@
 -- have written into is a month whose close should be renewed — so the check
 -- does not become a permanent red on legitimate activity (9.11).
 
+-- THE CANARY IS READ, NOT ASSUMED
+--
+-- This file was written when the suite had 25 real checks and moved the canary
+-- from a literal 25 to a literal 26. 0318 landed after it was written, restoring
+-- two checks 0286/0288 had dropped, so on crm-design the number was 27. A
+-- literal would have aborted this migration on a fact about a database that no
+-- longer existed (9.14). The base is read and one is added — the +1 is this
+-- migration's own property, the base is a reading. Same change as 0304.
+--
 -- ---------------------------------------------------------------------------
 -- 1. The two triggers stop failing open.
 -- ---------------------------------------------------------------------------
@@ -202,6 +211,7 @@ comment on function public.closed_period_intrusions(uuid) is
 do $wire$
 declare
   v_oid oid; v_src text; v_new text; v_def text; v_hdr text; v_rest text; p1 int; p2 int;
+  v_n int;
 begin
   select p.oid, p.prosrc into v_oid, v_src
     from pg_proc p
@@ -227,10 +237,12 @@ begin
     || E'      from public.closed_period_intrusions(p_company_id)\n'
     || E'  )\n  select * from real_checks');
 
-  if strpos(v_new, 'select 25::numeric n) e (n)') = 0 then
-    raise exception '0310 FAILED: the canary is not 25 — do not adjust it blindly';
+  v_n := (regexp_match(v_new, 'select (\d+)::numeric n\) e \(n\)'))[1]::int;
+  if v_n is null then
+    raise exception '0310 FAILED: the canary is not in the single-number shape 0302 left it — do not adjust it blindly';
   end if;
-  v_new := replace(v_new, 'select 25::numeric n) e (n)', 'select 26::numeric n) e (n)');
+  v_new := regexp_replace(v_new, 'select \d+::numeric n\) e \(n\)',
+                          'select ' || (v_n + 1) || '::numeric n) e (n)');
 
   v_def  := pg_get_functiondef(v_oid);
   p1     := strpos(v_def, '$function$');
@@ -252,7 +264,7 @@ begin
   begin
     declare
       v_co uuid; v_br uuid; v_month date := date '2026-07-01';
-      v_bad int; v_rows int; v_state text; v_msg text; v_id uuid;
+      v_bad int; v_rows int; v_state text; v_msg text; v_id uuid; v_exp int;
     begin
       select id into v_co from public.companies where name = 'SANDBOX TESTING ORG';
       if v_co is null then
@@ -343,9 +355,13 @@ begin
 
       -- 7. THE SUITE GREW BY ONE AND THE CANARY PASSES — the verdict, not the
       -- operands (0300's omission, 0302's lesson).
+      -- One row more than the number of real checks. A literal would be a
+      -- reading of one database (9.14): 27 when this was written, 29 after 0318.
       select count(*) into v_rows from public.ledger_checks(v_co);
-      if v_rows <> 27 then
-        raise exception '0310 FAILED: ledger_checks returned % rows, expected 27 (26 checks + canary)', v_rows;
+      select l.expected::int into v_exp from public.ledger_checks(v_co) l
+       where l.check_name = 'checks_evaluated';
+      if v_rows <> v_exp + 1 then
+        raise exception '0310 FAILED: ledger_checks returned % rows for an expected check count of %', v_rows, v_exp;
       end if;
       select count(*) into v_bad
         from public.companies c, lateral public.ledger_checks(c.id) l

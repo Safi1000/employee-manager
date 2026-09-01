@@ -54,13 +54,25 @@
 -- as a go-live precondition rather than guarded away: a silent skip here
 -- would be a check that reports success on a company it never examined.
 --
--- The canary moves 21 -> 25 in the single place 0302 left it.
+-- THE CANARY IS READ, NOT ASSUMED
+--
+-- This migration was written when the suite had 21 real checks, and its first
+-- draft moved the canary from a literal 21 to a literal 25. Between writing and
+-- deployment, 0318 restored two checks that 0286/0288 had dropped, so on
+-- crm-design the number was 23 — and a literal 21 would have aborted this
+-- migration on a fact about a database that no longer existed (9.14: a number
+-- measured in one database is not a property of the migration).
+--
+-- So the current value is read out of the function and four is added to it.
+-- The +4 is the property of THIS migration — it adds four arms — and the base
+-- is a reading, which is where a reading belongs.
 
 do $wire$
 declare
   v_oid oid; v_src text; v_new text; v_def text; v_hdr text; v_rest text;
   p1 int; p2 int;
   v_arms text;
+  v_n int;
 begin
   select p.oid, p.prosrc into v_oid, v_src
     from pg_proc p
@@ -116,11 +128,14 @@ begin
     E'  )\n  select * from real_checks',
     v_arms || E'  )\n  select * from real_checks');
 
-  -- And the canary, in the one place 0302 left it.
-  if strpos(v_new, 'select 21::numeric n) e (n)') = 0 then
+  -- And the canary, in the one place 0302 left it. See the header: the base is
+  -- READ, the +4 is this migration's own property.
+  v_n := (regexp_match(v_new, 'select (\d+)::numeric n\) e \(n\)'))[1]::int;
+  if v_n is null then
     raise exception '0304 FAILED: the canary is not in the single-number shape 0302 left it — do not guess';
   end if;
-  v_new := replace(v_new, 'select 21::numeric n) e (n)', 'select 25::numeric n) e (n)');
+  v_new := regexp_replace(v_new, 'select \d+::numeric n\) e \(n\)',
+                          'select ' || (v_n + 4) || '::numeric n) e (n)');
 
   if v_new = v_src then
     raise exception '0304 FAILED: substitution changed nothing';
@@ -144,7 +159,7 @@ begin
     declare
       v_co uuid; v_rows int; v_bad int; v_uninv int;
       v_period date := (date_trunc('month', current_date) - interval '1 month')::date;
-      v_cl uuid; v_br uuid; v_passed boolean;
+      v_cl uuid; v_br uuid; v_passed boolean; v_exp int;
     begin
       select id into v_co from public.companies order by created_at limit 1;
 
@@ -157,9 +172,15 @@ begin
         raise exception '0304 FAILED: the canary is red on % compan(ies) — the arm count and the expected number disagree', v_bad;
       end if;
 
+      -- The suite is one row longer than the number of real checks, and the
+      -- canary asserted above proves that number is the one the function
+      -- intends. A literal here would be a reading of one database (9.14) —
+      -- it was 26 when this was written and is 28 after 0318.
       select count(*) into v_rows from public.ledger_checks(v_co);
-      if v_rows <> 26 then
-        raise exception '0304 FAILED: ledger_checks returned % rows, expected 26 (25 checks + the canary)', v_rows;
+      select l.expected::int into v_exp from public.ledger_checks(v_co) l
+       where l.check_name = 'checks_evaluated';
+      if v_rows <> v_exp + 1 then
+        raise exception '0304 FAILED: ledger_checks returned % rows for an expected check count of % — the suite carries something other than the canary', v_rows, v_exp;
       end if;
 
       -- 2. ALL FOUR ARMS ARE PRESENT AND NAMED. A union arm that silently
