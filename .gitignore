@@ -53,3 +53,7 @@ ios/App/output/
 *.mobileprovision
 *.p12
 *.p8
+
+# Claude Code: session ledger of migrations applied but not yet written to a file.
+# See scripts/migration-ledger.mjs.
+.claude/applied-migrations.log

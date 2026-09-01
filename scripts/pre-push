@@ -1,0 +1,62 @@
+#!/bin/sh
+# Pre-push hook — stop migration drift before it reaches the remote.
+#
+# `npm run check:migrations` is a DETECTOR: it fires after the divergence
+# already exists. Ten migrations reached production without a repo file, five of
+# them written in the SQL editor minutes after an apply. A detector that only
+# runs in a pipeline would not have caught any of them, because the applies
+# happened locally and the commits never mentioned them.
+#
+# Installed automatically by `npm install` (the "prepare" script sets
+# core.hooksPath). Install by hand with:
+#     git config core.hooksPath scripts
+#
+# Requires BOTH environments configured:
+#   SUPABASE_PROD_URL / SUPABASE_PROD_SERVICE_ROLE_KEY
+#   SUPABASE_DEV_URL  / SUPABASE_DEV_SERVICE_ROLE_KEY
+#
+# THIS USED TO SKIP ITSELF WHEN THOSE WERE ABSENT. The reasoning was that a hook
+# which blocks work over a missing secret gets disabled, and a disabled hook
+# protects nothing. The reasoning was sound and the outcome was worse: hooksPath
+# was never set in at least one clone, the variables were never set in it either,
+# and the check has not run once. 0240 and 0241 reached PRODUCTION without a repo
+# file while this hook was sitting in the tree, notionally guarding exactly that.
+#
+# A control with a silent skip is a control nobody looks at. It now fails, and
+# says how to proceed — which is the difference between a blocked push and a
+# disabled hook.
+#
+# To bypass deliberately: git push --no-verify
+
+have_prod=0; have_dev=0
+[ -n "$SUPABASE_PROD_URL" ] && [ -n "$SUPABASE_PROD_SERVICE_ROLE_KEY" ] && have_prod=1
+[ -n "$SUPABASE_DEV_URL" ]  && [ -n "$SUPABASE_DEV_SERVICE_ROLE_KEY" ]  && have_dev=1
+
+# BOTH, not either. This hook used to gate on the unnamed SUPABASE_URL pair,
+# which is one database. prod and dev have diverged more than once - 0231, 0231b
+# and 0232 were applied to production through the SQL editor and recorded
+# nothing - so a green run against one environment is not evidence about the
+# other. check-migrations.mjs audits every configured environment; the gate's
+# job is to make sure both are configured.
+if [ "$have_prod" -eq 0 ] || [ "$have_dev" -eq 0 ]; then
+  echo "pre-push: BLOCKED - the migration drift check needs BOTH environments."
+  echo "pre-push:"
+  [ "$have_prod" -eq 0 ] && echo "pre-push:   missing SUPABASE_PROD_URL / SUPABASE_PROD_SERVICE_ROLE_KEY"
+  [ "$have_dev"  -eq 0 ] && echo "pre-push:   missing SUPABASE_DEV_URL / SUPABASE_DEV_SERVICE_ROLE_KEY"
+  echo "pre-push:"
+  echo "pre-push: Each URL is checked against a pinned project ref, so a"
+  echo "pre-push: copy-pasted URL cannot make one environment stand in for the other."
+  echo "pre-push:"
+  echo "pre-push: Then: npm run check:migrations"
+  echo "pre-push: Or bypass this push with 'git push --no-verify' if you know why."
+  exit 1
+fi
+
+echo "pre-push: checking migration drift..."
+if ! npm run --silent check:migrations; then
+  echo ""
+  echo "pre-push: BLOCKED. The database has applied a migration this repo does not carry,"
+  echo "pre-push: or a suffixed migration sorts wrongly. See docs/MIGRATION_DIVERGENCE.md."
+  echo "pre-push: bypass with 'git push --no-verify' only if you know why."
+  exit 1
+fi

@@ -1,11 +1,3 @@
--- 0309 — let an explicit supervisor override clear the BACKDATE lock too.
--- The Attendance-Board Confirm action now writes its rows with
--- supervisor_override=true (like the Monthly Board override), and
--- enforce_confirmed_month_end_lock already honours that flag. enforce_attendance_backfill
--- did not, so confirming days older than attendance_backfill_lock_days (default 1)
--- still failed unless the user held attendance.backdate. Exempt override rows from
--- the backdate lock only — the hard service-window bounds above it stay enforced,
--- and OPS-verify (enforce_attendance_month_lock) is untouched.
 create or replace function public.enforce_attendance_backfill()
  returns trigger
  language plpgsql

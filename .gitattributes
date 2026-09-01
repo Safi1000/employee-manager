@@ -1,0 +1,16 @@
+# core.autocrlf is `true` in this checkout, so by default git rewrites LF to CRLF
+# on checkout and back on commit. That is harmless for source it can round-trip,
+# and destructive for a file whose bytes are the point.
+#
+# supabase/rollback/ holds byte-exact captures of production function
+# definitions, recorded with an md5 that must still match after a clone. Some of
+# those bodies contain literal CR characters of their own (123 of them in the
+# 2026-09-01 capture); left to autocrlf, git would normalise those away on commit
+# and re-expand every LF on checkout, and the restored functions would not be the
+# functions that were captured. Marked as binary so nothing touches them.
+supabase/rollback/prod_secdef_functions_*.sql -text -diff
+
+# Note for anyone comparing a migration file against the recorded SQL in
+# supabase_migrations: the working tree carries CRLF here and the database
+# carries LF, so a digest comparison must normalise line endings first. See
+# scripts/check-migrations.mjs and docs/TENANT_GUARD_REPORT.md §9.10.

@@ -334,6 +334,53 @@ async function sendViaResend(args: {
   return (await resp.json()) as { id: string };
 }
 
+/**
+ * Record what happened to a delivery attempt — on BOTH paths, success and
+ * failure.
+ *
+ * This function's failures used to surface in the HTTP response and in
+ * console.error, and this function is invoked by a cron job at 06:00 that
+ * nobody reads. A run that threw every morning for a month looked exactly like
+ * a run that had nothing to send. That is the project's core failure mode
+ * wearing a new hat: a control reporting success while doing nothing.
+ *
+ * public.alert_delivery_gaps() reads this table and is wired into
+ * ledger_checks() as `alert_delivery_is_healthy`, so a failed send is visible
+ * to something that is itself checked (0300).
+ *
+ * The write must never throw. A bookkeeping failure must not turn a delivered
+ * email into a reported error — the mail is already gone, and the caller's
+ * result would then be a lie in the other direction.
+ */
+async function recordDelivery(
+  db: SupabaseClient,
+  row: {
+    company_id: string;
+    recipient: string | null;
+    subject: string | null;
+    status: "sent" | "failed" | "skipped";
+    provider_id?: string | null;
+    error?: string | null;
+    item_count?: number;
+  },
+): Promise<void> {
+  try {
+    const { error } = await db.from("notification_deliveries").insert({
+      channel: "email",
+      item_count: 0,
+      ...row,
+    });
+    if (error) {
+      console.error(
+        `notification_deliveries write failed company=${row.company_id}:`,
+        error.message,
+      );
+    }
+  } catch (e) {
+    console.error("notification_deliveries write threw:", e);
+  }
+}
+
 async function sendForCompany(
   db: SupabaseClient,
   companyId: string,
@@ -348,12 +395,26 @@ async function sendForCompany(
 
   const recipient = ns?.recipient_email?.trim();
   if (!recipient) {
+    // Not recorded: a company with no recipient has not asked for delivery, and
+    // alert_delivery_gaps() deliberately does not report it. Writing a row here
+    // would make every un-opted-in company look like a delivery problem.
     return { sent: false, reason: "No recipient email configured in Settings → Notifications." };
   }
   const sender = ns?.sender_email?.trim() || DEFAULT_SENDER;
 
   const { alerts, toLog } = await collectAlerts(db, companyId, today, !isTest);
   if (alerts.length === 0 && !isTest) {
+    // 'skipped', NOT 'sent'. Nothing was due, so nothing failed — but nothing
+    // was delivered either, and recording this as a success would let a
+    // permanently broken sender look healthy on any quiet day. skipped does not
+    // satisfy the recency check in alert_delivery_gaps().
+    await recordDelivery(db, {
+      company_id: companyId,
+      recipient,
+      subject: null,
+      status: "skipped",
+      item_count: 0,
+    });
     return { sent: false, reason: "No alerts due today." };
   }
 
@@ -361,11 +422,38 @@ async function sendForCompany(
     ? "[Test] Employee Manager compliance alerts"
     : `Compliance digest — ${alerts.length} item${alerts.length === 1 ? "" : "s"} due`;
 
-  await sendViaResend({
-    to: recipient,
-    from: sender,
+  // PROVE THE SEND. sendViaResend throws on any non-2xx, so reaching the line
+  // after it means the provider accepted the message and returned an id. The
+  // failure path records the reason and rethrows, so the caller's behaviour is
+  // unchanged and the evidence survives.
+  let providerId: string | null = null;
+  try {
+    const res = await sendViaResend({
+      to: recipient,
+      from: sender,
+      subject,
+      html: buildEmailHtml(alerts, today, isTest),
+    });
+    providerId = res?.id ?? null;
+  } catch (e) {
+    await recordDelivery(db, {
+      company_id: companyId,
+      recipient,
+      subject,
+      status: "failed",
+      error: e instanceof Error ? e.message : String(e),
+      item_count: alerts.length,
+    });
+    throw e;
+  }
+
+  await recordDelivery(db, {
+    company_id: companyId,
+    recipient,
     subject,
-    html: buildEmailHtml(alerts, today, isTest),
+    status: "sent",
+    provider_id: providerId,
+    item_count: alerts.length,
   });
 
   // Record the thresholds only now. Writing before the send would burn the
@@ -430,16 +518,37 @@ Deno.serve(async (req) => {
       const subject = alerts.length === 0
         ? "[Test] Employee Manager compliance alerts"
         : `[Test] Compliance digest — ${alerts.length} item${alerts.length === 1 ? "" : "s"}`;
-      await sendViaResend({
+      const res = await sendViaResend({
         to: recipient,
         from: sender,
         subject,
         html: buildEmailHtml(alerts, today, true),
       });
-      return json({ sent: true, recipient });
+      // A test send is a real send: it proves the transport works, so it counts
+      // as evidence of delivery health for that company.
+      if (caller.company_id) {
+        await recordDelivery(db, {
+          company_id: caller.company_id,
+          recipient,
+          subject,
+          status: "sent",
+          provider_id: res?.id ?? null,
+          item_count: alerts.length,
+        });
+      }
+      return json({ sent: true, recipient, provider_id: res?.id ?? null });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error("send-compliance-alerts (test):", msg);
+      if (caller.company_id) {
+        await recordDelivery(db, {
+          company_id: caller.company_id,
+          recipient,
+          subject: null,
+          status: "failed",
+          error: msg,
+        });
+      }
       return json({ error: msg }, 500);
     }
   }

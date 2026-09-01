@@ -1801,8 +1801,10 @@ export type BankAccount = {
   swift_code: string | null;
   currency_code: string;
   active: boolean;
-  auto_zero_monthly?: boolean;
-  last_zeroed_month?: string | null;
+  // auto_zero_monthly / last_zeroed_month: removed from this type by 0308.
+  // The mechanism behind them recomputed `balance` from bank_transactions and
+  // discarded any opening balance seeded directly onto the column. The columns
+  // are dropped by 0309; nothing in the app reads or writes them in between.
   created_at?: string;
   updated_at?: string;
 };
@@ -1840,8 +1842,9 @@ export type Partner = {
 export type Treasury = {
   id: string;
   cash_balance: number;
-  cash_opening_balance: number;
-  cash_opening_locked: boolean;
+  // cash_opening_balance / cash_opening_locked dropped by migration 0280 —
+  // one opening-balance concept for cash, and the ledger uses
+  // cash_locations.opening_balance.
   updated_at?: string;
 };
 

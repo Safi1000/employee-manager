@@ -16,7 +16,12 @@
       "WebFetch(domain:bayfikr.com)",
       "WebFetch(domain:bank.codes)",
       "Bash(npm run *)",
-      "Bash(echo \"EXIT:$?\")"
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(cat > *)",
+      "Bash(node -e ' *)"
+    ],
+    "additionalDirectories": [
+      "\\tmp"
     ]
   }
 }

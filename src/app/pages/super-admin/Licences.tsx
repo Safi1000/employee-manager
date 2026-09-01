@@ -5,58 +5,90 @@ import { Link } from "react-router";
 import Header from "../../components/Header";
 import MobileCardList from "../../components/MobileCardList";
 import { formatDate } from "../../lib/date";
-import {
-  supabase,
-  CONTRACT_TYPE_LABEL,
-  type Client,
-  type Contract,
-  type Employee,
-  type ImportantDate,
-} from "../../lib/supabase";
-import { guardDisplayCode } from "../../lib/guardCode";
+import { supabase } from "../../lib/supabase";
+
+// This page reads compliance_upcoming and nothing else.
+//
+// It used to fetch employees, contracts, clients and important_dates and
+// assemble six kinds of expiry in the browser. That was one of FIVE
+// implementations of "what is expiring" (0291), and all five shared the same
+// defect: they read weapon licence, guard service licence, medical fitness and
+// probation end — four columns that are empty on both databases — and none of
+// them read cnic_expiry, the only compliance date with data in it. This page
+// showed nothing for its entire existence while ten guards on production held
+// an expired CNIC.
+//
+// The view answers the question now. Adding a kind here without adding it to
+// the view will render nothing, which is the intended direction of failure.
 
 type RowKind =
+  | "case"
+  | "statutory_filing"
   | "weapon_licence"
-  | "guard_service_licence"
+  | "guard_licence"
   | "medical_fitness"
   | "probation_end"
+  | "cnic"
+  | "weapons_cert"
+  | "refresher"
+  | "guard_document"
+  | "training"
+  | "inventory_licence"
   | "contract_end"
+  | "client_contract_end"
   | "important_date";
 
 const KIND_LABEL: Record<RowKind, string> = {
+  case: "Compliance Case",
+  statutory_filing: "Statutory Filing",
   weapon_licence: "Weapon Licence",
-  guard_service_licence: "Guard Service Licence",
+  guard_licence: "Guard Service Licence",
   medical_fitness: "Medical Fitness",
   probation_end: "Probation End",
+  cnic: "CNIC",
+  weapons_cert: "Weapons Certificate",
+  refresher: "Refresher Training",
+  guard_document: "Guard Document",
+  training: "Training",
+  inventory_licence: "Item Licence",
   contract_end: "Contract End",
+  // An anomaly, not an expiry: a client carrying a contract end date with no
+  // active contract row behind it (0293). Named so nobody renews a contract
+  // that does not exist.
+  client_contract_end: "Contract End (no active contract)",
   important_date: "Company Compliance",
 };
 
 const KIND_HREF: Record<RowKind, string> = {
+  case: "/super-admin/compliance-cases",
+  statutory_filing: "/super-admin/compliance",
   weapon_licence: "/super-admin/employees",
-  guard_service_licence: "/super-admin/employees",
+  guard_licence: "/super-admin/employees",
   medical_fitness: "/super-admin/employees",
   probation_end: "/super-admin/employees",
+  cnic: "/super-admin/employees",
+  weapons_cert: "/super-admin/employees",
+  refresher: "/super-admin/employees",
+  guard_document: "/super-admin/documents",
+  training: "/super-admin/employees",
+  inventory_licence: "/super-admin/assets-issuance",
   contract_end: "/super-admin/contracts",
+  client_contract_end: "/super-admin/clients",
   important_date: "/super-admin/compliance",
 };
 
-type ExpiryRow = {
-  id: string;
+// One row of compliance_upcoming. days_remaining is signed and computed by the
+// view against current_date — negative means overdue. It is NOT recomputed
+// here: a browser clock in another timezone would otherwise disagree with the
+// server about which items are late.
+type ComplianceRow = {
   kind: RowKind;
-  title: string;
-  subtitle: string;
-  expiry_date: string;
+  ref_id: string;
+  label: string;
+  sublabel: string | null;
+  due_date: string;
+  notice_days: number;
   days_remaining: number;
-  href: string;
-};
-
-const todayISO = () => new Date().toISOString().slice(0, 10);
-
-const daysBetween = (futureISO: string, base = todayISO()): number => {
-  const a = new Date(futureISO + "T00:00:00").getTime();
-  const b = new Date(base + "T00:00:00").getTime();
-  return Math.round((a - b) / 86400000);
 };
 
 const colourFor = (days: number): { dot: string; row: string; text: string; label: string } => {
@@ -69,12 +101,7 @@ const colourFor = (days: number): { dot: string; row: string; text: string; labe
 export default function Licences() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [contracts, setContracts] = useState<Contract[]>([]);
-  const [clients, setClients] = useState<Client[]>([]);
-  const empDisplay = (emp: { client_id?: string | null; display_number?: number | null; guard_code?: string | null; employee_code?: string | null }) =>
-    guardDisplayCode(emp, clients.find((c) => c.id === emp.client_id)?.employee_id_prefix ?? null);
-  const [importantDates, setImportantDates] = useState<ImportantDate[]>([]);
+  const [items, setItems] = useState<ComplianceRow[]>([]);
   const [kindFilter, setKindFilter] = useState<"all" | RowKind>("all");
   const [bandFilter, setBandFilter] = useState<"all" | "expired" | "30" | "90" | "future">("all");
   const [search, setSearch] = useState("");
@@ -83,21 +110,12 @@ export default function Licences() {
   const loadAll = async () => {
     setLoading(true);
     setError(null);
-    const [empRes, conRes, cliRes, idRes] = await Promise.all([
-      supabase
-        .from("employees")
-        .select(
-          "id, employee_code, guard_code, display_number, client_id, full_name, weapon_licence_expiry, guard_service_licence_expiry, medical_fitness_expiry, probation_end_date, status",
-        ),
-      supabase.from("contracts").select("*"),
-      supabase.from("clients").select("id, name, client_code"),
-      supabase.from("important_dates").select("*").order("due_date"),
-    ]);
-    if (empRes.error) setError(empRes.error.message);
-    setEmployees((empRes.data ?? []) as Employee[]);
-    setContracts((conRes.data ?? []) as Contract[]);
-    setClients((cliRes.data ?? []) as Client[]);
-    setImportantDates((idRes.data ?? []) as ImportantDate[]);
+    const { data, error: err } = await supabase
+      .from("compliance_upcoming")
+      .select("kind, ref_id, label, sublabel, due_date, notice_days, days_remaining")
+      .order("days_remaining");
+    if (err) setError(err.message);
+    setItems((data ?? []) as ComplianceRow[]);
     setLoading(false);
   };
 
@@ -105,90 +123,13 @@ export default function Licences() {
     loadAll();
   }, []);
 
-  const rows = useMemo<ExpiryRow[]>(() => {
-    const out: ExpiryRow[] = [];
-    const clientById = new Map(clients.map((c) => [c.id, c]));
-
-    // Employee-driven licences
-    for (const e of employees) {
-      if (e.status === "Inactive") continue;
-      if (e.weapon_licence_expiry) {
-        out.push({
-          id: `weapon-${e.id}`,
-          kind: "weapon_licence",
-          title: e.full_name,
-          subtitle: `${empDisplay(e)} · Weapon licence`,
-          expiry_date: e.weapon_licence_expiry,
-          days_remaining: daysBetween(e.weapon_licence_expiry),
-          href: KIND_HREF.weapon_licence,
-        });
-      }
-      if (e.guard_service_licence_expiry) {
-        out.push({
-          id: `guard-${e.id}`,
-          kind: "guard_service_licence",
-          title: e.full_name,
-          subtitle: `${empDisplay(e)} · Guard service licence`,
-          expiry_date: e.guard_service_licence_expiry,
-          days_remaining: daysBetween(e.guard_service_licence_expiry),
-          href: KIND_HREF.guard_service_licence,
-        });
-      }
-      if (e.medical_fitness_expiry) {
-        out.push({
-          id: `medical-${e.id}`,
-          kind: "medical_fitness",
-          title: e.full_name,
-          subtitle: `${empDisplay(e)} · Medical fitness`,
-          expiry_date: e.medical_fitness_expiry,
-          days_remaining: daysBetween(e.medical_fitness_expiry),
-          href: KIND_HREF.medical_fitness,
-        });
-      }
-      if (e.probation_end_date) {
-        out.push({
-          id: `probation-${e.id}`,
-          kind: "probation_end",
-          title: e.full_name,
-          subtitle: `${empDisplay(e)} · Probation ends`,
-          expiry_date: e.probation_end_date,
-          days_remaining: daysBetween(e.probation_end_date),
-          href: KIND_HREF.probation_end,
-        });
-      }
-    }
-
-    // Contract end dates
-    for (const c of contracts) {
-      if (!c.end_date) continue;
-      if (c.status !== "active") continue;
-      const client = clientById.get(c.client_id);
-      out.push({
-        id: `contract-${c.id}`,
-        kind: "contract_end",
-        title: client?.name ?? "(deleted client)",
-        subtitle: `${c.contract_code} · ${CONTRACT_TYPE_LABEL[c.contract_type]}`,
-        expiry_date: c.end_date,
-        days_remaining: daysBetween(c.end_date),
-        href: KIND_HREF.contract_end,
-      });
-    }
-
-    // Company-level important dates (PESRA, SECP, etc.)
-    for (const d of importantDates) {
-      out.push({
-        id: `id-${d.id}`,
-        kind: "important_date",
-        title: d.title,
-        subtitle: `${d.category} · ${d.priority}`,
-        expiry_date: d.due_date,
-        days_remaining: daysBetween(d.due_date),
-        href: KIND_HREF.important_date,
-      });
-    }
-
-    return out.sort((a, b) => (sortDesc ? b.days_remaining - a.days_remaining : a.days_remaining - b.days_remaining));
-  }, [employees, contracts, clients, importantDates, sortDesc]);
+  const rows = useMemo(
+    () =>
+      [...items].sort((a, b) =>
+        sortDesc ? b.days_remaining - a.days_remaining : a.days_remaining - b.days_remaining,
+      ),
+    [items, sortDesc],
+  );
 
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -198,7 +139,7 @@ export default function Licences() {
       if (bandFilter === "30" && (r.days_remaining < 0 || r.days_remaining > 30)) return false;
       if (bandFilter === "90" && (r.days_remaining < 0 || r.days_remaining > 90 || r.days_remaining <= 30)) return false;
       if (bandFilter === "future" && r.days_remaining <= 90) return false;
-      if (q && !r.title.toLowerCase().includes(q) && !r.subtitle.toLowerCase().includes(q)) return false;
+      if (q && !r.label.toLowerCase().includes(q) && !(r.sublabel ?? "").toLowerCase().includes(q)) return false;
       return true;
     });
   }, [rows, kindFilter, bandFilter, search]);
@@ -213,6 +154,7 @@ export default function Licences() {
     }
     return c;
   }, [rows]);
+
 
   return (
     <>
@@ -297,7 +239,7 @@ export default function Licences() {
             rows={loading ? [] : filteredRows}
             loading={loading}
             empty="Nothing matches the current filters. Add expiry dates on Employees, Contracts, or the Compliance Calendar."
-            rowKey={(row) => row.id}
+            rowKey={(row) => `${row.kind}-${row.ref_id}`}
             // Literal class names, not a string built from colourFor().dot —
             // Tailwind only emits classes it can see spelled out in source.
             accent={(row) =>
@@ -309,8 +251,8 @@ export default function Licences() {
                     ? "border-l-warning-500"
                     : "border-l-success-500"
             }
-            title={(row) => row.title}
-            subtitle={(row) => row.subtitle}
+            title={(row) => row.label}
+            subtitle={(row) => row.sublabel ?? ""}
             badge={(row) => {
               const c = colourFor(row.days_remaining);
               return (
@@ -327,7 +269,7 @@ export default function Licences() {
                 value: (row) => (
                   <span className="inline-flex items-center gap-1">
                     <Calendar className="w-3 h-3 text-muted-foreground" />
-                    {formatDate(row.expiry_date)}
+                    {formatDate(row.due_date)}
                   </span>
                 ),
               },
@@ -344,7 +286,7 @@ export default function Licences() {
               },
             ]}
             actions={(row) => (
-              <Link to={row.href} className="px-2 py-1 text-xs text-brand-600">
+              <Link to={KIND_HREF[row.kind]} className="px-2 py-1 text-xs text-brand-600">
                 Open
               </Link>
             )}
@@ -389,16 +331,16 @@ export default function Licences() {
                 {!loading && filteredRows.map((row) => {
                   const c = colourFor(row.days_remaining);
                   return (
-                    <tr key={row.id} className={`hover:bg-slate-50 transition-colors ${c.row}`}>
+                    <tr key={`${row.kind}-${row.ref_id}`} className={`hover:bg-slate-50 transition-colors ${c.row}`}>
                       <td className="px-4 py-3 text-sm">
-                        <div className="text-slate-900">{row.title}</div>
-                        <div className="text-xs text-slate-500">{row.subtitle}</div>
+                        <div className="text-slate-900">{row.label}</div>
+                        <div className="text-xs text-slate-500">{row.sublabel}</div>
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-600">{KIND_LABEL[row.kind]}</td>
                       <td className="px-4 py-3 text-sm text-slate-600">
                         <span className="inline-flex items-center gap-1">
                           <Calendar className="w-3 h-3 text-slate-400" />
-                          {formatDate(row.expiry_date)}
+                          {formatDate(row.due_date)}
                         </span>
                       </td>
                       <td className={`px-4 py-3 text-sm text-right ${c.text}`}>
@@ -414,7 +356,7 @@ export default function Licences() {
                       </td>
                       <td className="px-4 py-3 text-right text-sm">
                         <Link
-                          to={row.href}
+                          to={KIND_HREF[row.kind]}
                           className="text-brand-600 hover:text-brand-700 text-xs"
                         >
                           Open

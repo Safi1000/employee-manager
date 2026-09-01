@@ -11,6 +11,7 @@ import {
   Pencil,
   RotateCcw,
 } from "lucide-react";
+import { Link } from "react-router";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -24,6 +25,38 @@ import {
   type RecurringAlert,
   type RecurringFrequency,
 } from "../../lib/supabase";
+
+type RaisedAlert = {
+  id: string;
+  tier: string;
+  category: string;
+  message: string;
+  created_at: string;
+  last_seen_at: string | null;
+  seen_count: number | null;
+};
+
+/** One region's row of public.vetting_dashboard (0306).
+ *
+ *  This panel is what makes the view read by something. It was written in 0057
+ *  and nothing had ever selected from it, which is how the same coverage table
+ *  came to be rebuilt by hand for GUARD_DATA_COVERAGE_PRODUCTION_2026-09-01.md.
+ *
+ *  `cleared` is NOT the complement of `pending`: an employee with no result
+ *  recorded is neither, which is the whole reason 0306 added the
+ *  `*_not_recorded` counters. Read them together or the empty column reads as
+ *  a clean one. */
+type VettingCoverage = {
+  region_name: string | null;
+  total: number;
+  police_cleared: number;
+  police_pending: number;
+  police_adverse: number;
+  police_not_recorded: number;
+  nadra_cleared: number;
+  cnic_number_recorded: number;
+  cnic_expiry_recorded: number;
+};
 
 type DateForm = {
   title: string;
@@ -129,6 +162,13 @@ export default function Compliance() {
   const [dates, setDates] = useState<ImportantDate[]>([]);
   const [recurring, setRecurring] = useState<RecurringAlert[]>([]);
   const [contractAlerts, setContractAlerts] = useState<ContractEndAlert[]>([]);
+  // Raised alerts, from the alerts table. NOT filtered by category: this panel
+  // is the in-app delivery channel for the alerting mechanism as a whole, so a
+  // control wired tomorrow appears here without anyone editing this file. The
+  // only filter is state='open' — an acknowledged or resolved alert has been
+  // dealt with by a person and does not belong on a to-do list.
+  const [raisedAlerts, setRaisedAlerts] = useState<RaisedAlert[]>([]);
+  const [coverage, setCoverage] = useState<VettingCoverage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -167,7 +207,7 @@ export default function Compliance() {
       d.setDate(d.getDate() + CONTRACT_NOTICE_DAYS[0]);
       return d.toISOString().slice(0, 10);
     })();
-    const [dRes, rRes, cRes] = await Promise.all([
+    const [dRes, rRes, cRes, aRes, vRes] = await Promise.all([
       supabase.from("important_dates").select("*").order("due_date"),
       supabase.from("recurring_alerts").select("*").order("created_at", { ascending: false }),
       // The end date lives on the CONTRACT. This used to read clients.contract_end,
@@ -182,10 +222,27 @@ export default function Compliance() {
         .not("end_date", "is", null)
         .lte("end_date", horizonIso)
         .order("end_date"),
+      supabase
+        .from("alerts")
+        .select("id, tier, category, message, created_at, last_seen_at, seen_count")
+        .eq("state", "open")
+        .order("created_at", { ascending: false }),
+      // Guard-data coverage, straight from the view (0306). Deliberately NOT
+      // recomputed here: the hand-written version of this table got two rows
+      // wrong by counting a vetting_status value the enum does not contain.
+      supabase
+        .from("vetting_dashboard")
+        .select(
+          "region_name, total, police_cleared, police_pending, police_adverse, police_not_recorded, nadra_cleared, cnic_number_recorded, cnic_expiry_recorded"
+        ),
     ]);
     if (dRes.error) setError(dRes.error.message);
     if (rRes.error) setError(rRes.error.message);
     if (cRes.error) setError(cRes.error.message);
+    if (aRes.error) setError(aRes.error.message);
+    if (vRes.error) setError(vRes.error.message);
+    setCoverage((vRes.data ?? []) as VettingCoverage[]);
+    setRaisedAlerts((aRes.data ?? []) as RaisedAlert[]);
     setDates((dRes.data ?? []) as ImportantDate[]);
     setRecurring((rRes.data ?? []) as RecurringAlert[]);
     const synth: ContractEndAlert[] = ((cRes.data ?? []) as {
@@ -216,6 +273,32 @@ export default function Compliance() {
   useEffect(() => {
     loadAll();
   }, []);
+
+  /** The view is per region; the band is per company. Summed here rather than
+   *  in SQL so the regional breakdown stays available to a future drill-down. */
+  const coverageTotals = useMemo(() => {
+    if (coverage.length === 0) return null;
+    return coverage.reduce(
+      (acc, r) => ({
+        total: acc.total + r.total,
+        police_cleared: acc.police_cleared + r.police_cleared,
+        police_pending: acc.police_pending + r.police_pending,
+        police_adverse: acc.police_adverse + r.police_adverse,
+        nadra_cleared: acc.nadra_cleared + r.nadra_cleared,
+        cnic_number_recorded: acc.cnic_number_recorded + r.cnic_number_recorded,
+        cnic_expiry_recorded: acc.cnic_expiry_recorded + r.cnic_expiry_recorded,
+      }),
+      {
+        total: 0,
+        police_cleared: 0,
+        police_pending: 0,
+        police_adverse: 0,
+        nadra_cleared: 0,
+        cnic_number_recorded: 0,
+        cnic_expiry_recorded: 0,
+      }
+    );
+  }, [coverage]);
 
   const datesWithDays = useMemo(
     () =>
@@ -660,6 +743,101 @@ export default function Compliance() {
             <p className="text-[11px] text-success-700/70 mt-1">Auto-derived from due dates</p>
           </div>
         </div>
+
+        {/* Guard-data coverage (0306). A measurement, not an alert: it is true
+            of nearly everybody today, so raising it as a warning per employee
+            would be 758 warnings nobody can act on. One band, four numbers.
+            It goes quiet on its own as the vetting upload lands. */}
+        {coverageTotals && (
+          <div className="bg-white rounded-lg border border-slate-200 mb-6">
+            <div className="p-6 border-b border-slate-200">
+              <h3 className="text-base text-slate-900">Guard data coverage</h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {coverageTotals.total} guards on active or on-leave status. Zero adverse results
+                does not mean zero failures — it means no result has been recorded either way.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-slate-100">
+              {[
+                {
+                  label: "Police verification",
+                  done: coverageTotals.police_cleared,
+                  note: `${coverageTotals.police_pending} pending · ${coverageTotals.police_adverse} adverse`,
+                },
+                {
+                  label: "NADRA Verisys",
+                  done: coverageTotals.nadra_cleared,
+                  note: "cleared results on file",
+                },
+                {
+                  label: "CNIC number",
+                  done: coverageTotals.cnic_number_recorded,
+                  note: "recorded",
+                },
+                {
+                  label: "CNIC expiry",
+                  done: coverageTotals.cnic_expiry_recorded,
+                  note: "recorded — the ledger check reads this",
+                },
+              ].map((m) => (
+                <div key={m.label} className="px-6 py-4">
+                  <p className="text-xs text-slate-500">{m.label}</p>
+                  <p className="text-lg text-slate-900 mt-1">
+                    {m.done}
+                    <span className="text-sm text-slate-400"> / {coverageTotals.total}</span>
+                  </p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">{m.note}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Raised alerts — the in-app half of alert delivery. The other half is
+            the daily email; both carry the same content, and neither escalates.
+            An alert stays here until someone acknowledges or resolves it. */}
+        {raisedAlerts.length > 0 && (
+          <div className="bg-white rounded-lg border border-slate-200 mb-6">
+            <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+              <div>
+                <h3 className="text-base text-slate-900">Raised Alerts</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Recorded by the system and still open. Acknowledge them on the Alerts page.
+                </p>
+              </div>
+              <Link to="/super-admin/alerts" className="text-xs text-brand-600 hover:text-brand-700">
+                Open Alerts
+              </Link>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {raisedAlerts.map((a) => {
+                const tone =
+                  a.tier === "blocking"
+                    ? "bg-danger-50 text-danger-700 border-danger-200"
+                    : a.tier === "warning"
+                      ? "bg-warning-50 text-warning-700 border-warning-200"
+                      : "bg-slate-50 text-slate-600 border-slate-200";
+                return (
+                  <div key={a.id} className="px-6 py-3 flex items-start gap-3 text-sm">
+                    <span className={`px-2 py-0.5 rounded-md text-[11px] border shrink-0 ${tone}`}>
+                      {a.tier}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-slate-800">{a.message}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {String(a.category).replace(/_/g, " ")} · first seen {formatDate(a.created_at.slice(0, 10))}
+                        {/* seen_count is the dedupe counter (0295). "Still true
+                            after 47 runs" is a different statement from "true",
+                            and it is the one that decides whether to act. */}
+                        {(a.seen_count ?? 1) > 1 ? ` · seen ${a.seen_count} times` : ""}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <div id="compliance-dates-card" className="bg-white rounded-lg border border-slate-200 scroll-mt-4">
           <div className="p-6 border-b border-slate-200">
