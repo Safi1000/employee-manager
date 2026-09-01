@@ -1299,3 +1299,67 @@ not a derivation from an empty table.**
 
 The batch is data on production and gets **its own named authorisation** once
 those land.
+
+---
+
+# BLOCK 4, SPLIT — `0276`–`0279` APPLIED TO PRODUCTION, 2026-09-01
+
+**Nothing from `0280` onward.** `0280` crosses the deployed-build boundary (§4)
+and belongs to the frontend release. All four recorded digests equal their
+files; none carries a trailing newline.
+
+`0276` and `0279` were pre-flighted immediately before applying, per §11a's rule
+— both correct existing rows.
+
+## `0276` — and the pre-flight caught another dev-measured header
+
+The header says "45 live entries, netting −728,456.00". **Production had 47
+entries netting −455,333.00**, 46 routable and 1 without a named account. `0276`
+carries no hard count assertion, so it did not abort — but it is the third
+dev-measured figure in a header met on production. Recorded, not corrected in
+the file (that needs a re-apply; §12).
+
+Bank control account, on its own: **−455,333.00 → +150,000.00**.
+
+`bank_control_equals_bank_accounts` did **not** move, and that is correct rather
+than disappointing: it sums the whole subtree, so moving a line from the parent
+to a child cancels inside its own aggregate. That is precisely the blindness
+`0276`'s header describes and `0271` exists to see past.
+
+## THE BANK GAP IS NOW FULLY DECOMPOSED
+
+`bank_per_account_gl_equals_operational` went **5 → 4**, and every remaining gap
+resolves exactly into an unposted opening balance plus a residual already named
+in §6b:
+
+| account | difference | opening_balance | residual |
+|---|---:|---:|---:|
+| `aa` | −110,101.00 | 110,101.00 | **0** — pure unposted opening |
+| Askari Bank | −350,000.00 | 350,000.00 | **0** — pure unposted opening |
+| Meezan Bank | −4,945,321.00 | 5,000,000.00 | **54,679.00** — §6b's Meezan figure, to the rupee |
+| Habib Bank Ltd | −1,216,212.00 | 1,250,000.00 | **33,788.00** — §6b's Habib figure, to the rupee |
+| `ss` | **0.00** | 0.00 | reconciled exactly |
+| United Bank Ltd | 0.00 | 800,000.00 | GL and operational both 0; the 800,000 stays visible in `bank_accounts_equal_transaction_deltas` per §6a |
+
+**`ss` reconciles to 0.00 exactly** — operational 990,000.00, GL 990,000.00 —
+where it was −500,000.00 at the Block 3 gate. `0272` posted the transfer and
+`0276` routed it to the named account; together they closed it completely.
+
+This settles what the ~6.4M is. It is **the opening balances that were never
+posted**, plus 54,679.00 and 33,788.00 that §6b already named and attributed.
+Nothing unexplained remains on the bank side. The batch closes the rest, and no
+migration in this deployment does.
+
+## Gate: 13 of 17
+
+Unchanged reds: `bank_accounts_equal_transaction_deltas` (−800,000.00),
+`bank_control_equals_bank_accounts` (−6,421,634.00, subtree-blind as above),
+`no_negative_custodian_balance` (2). `bank_per_account` improved 5 → 4.
+Trial balance 29,718,023.61, balanced. Canary 16/16.
+
+## `0277` confirmed the 88,467.00 on production
+
+Pre-flight measured **29 violating payslips, excess 88,467.00 exactly**, one
+company — matching the header to the rupee. `not valid`, so they stay visible.
+The over-payment probe was refused and `amount_paid` is now inside
+`enforce_payroll_run_lock`.
