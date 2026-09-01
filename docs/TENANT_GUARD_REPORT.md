@@ -1377,3 +1377,63 @@ assertion behind it. They are not all worth the same:
 The rule for writing one: **name the database beside the number.** "6,771,645
 on `crm-design-dev`" is a reading. "6,771,645" is a claim about the world, and
 it will be wrong somewhere.
+
+### 9.17 One lesson, three angles: what a constraint has to be proved against
+
+`0268` produced the same defect three times in three different shapes. They are
+worth recording together, because each was found only after the previous one had
+been fixed and believed sufficient.
+
+> **1. A CONSTRAINT PROVED ONLY BY WHAT IT REFUSES IS HALF PROVED.**
+>
+> `0268` demonstrated that its check rejects a cash row with no custodian, and
+> never demonstrated that a good row still passes. It did not: the deployed
+> `record_invoice_payment` inserted no custodian, so `0268` would have refused
+> **every cash receipt on production**. Proving the refusal is half. The other
+> half is that everything the rule should accept still passes, and the only way
+> to know is to exercise the real call path.
+
+> **2. A PRE-FLIGHT MUST CHECK WHETHER THE DEPLOYED CODE CAN SATISFY THE NEW
+> CONSTRAINT, NOT ONLY WHETHER THE EXISTING DATA DOES.**
+>
+> `0268`'s data pre-flight was clean — 0 violating rows on all four tables — and
+> would have been clean at any moment in the migration's life. The data was
+> never the problem. The writer was. A pre-flight that queries only the table is
+> asking the wrong object a question it cannot answer.
+
+> **3. CHECK THE WRITER *AND THE ROWS IT IS ABOUT TO MOVE*.**
+>
+> The least obvious of the three, and found last. `0268`'s payslip constraint is
+> `payment_mode <> 'Cash' or not disbursed or custodian_location_id is not null`
+> — keyed to a **state flag**. Production holds **zero** violating payslips and
+> **eight** that violate the instant payroll is disbursed. The violating state
+> does not exist yet; it is created by a normal operation. No query over current
+> data can see it, and rule 2's fix — read the writer — does not find it either,
+> because the writer is fine in isolation. Only the writer *applied to the rows
+> it will touch* reveals it.
+>
+> **A CONSTRAINT GUARDED BY A STATE FLAG IS SATISFIED BY DATA THAT HAS NOT YET
+> REACHED THAT STATE. ASK WHAT THE NEXT TRANSITION PRODUCES, NOT WHAT THE TABLE
+> HOLDS.**
+
+The progression is the point. Each rule is a strictly larger question than the
+one before it, and each was reached only by being wrong in the smaller one:
+
+| | asks about | missed |
+|---|---|---|
+| 1 | the constraint | that the good path was broken |
+| 2 | the writer | that data-clean proves nothing about writers |
+| 3 | the writer × the rows | that a flag-keyed rule is dormant, not satisfied |
+
+Three of `0268`'s eleven write paths still cannot satisfy it, which is why it
+remains deferred after the rest of its release shipped.
+
+#### A smaller note from the same investigation
+
+`Accounting.tsx`'s `resolvePaymentCustodianLoc()` returns `null` when the
+company id resolves to null, and the guard above it only tests that a custodian
+was *selected*. A user whose company cannot be resolved therefore reaches the
+constraint instead of the message — a raw Postgres error in a toast where
+`0281` deliberately produced a legible refusal. Low severity, same class of
+defect: **a validation that checks the input but not the resolution of that
+input.**
