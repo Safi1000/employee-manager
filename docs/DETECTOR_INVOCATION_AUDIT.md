@@ -84,7 +84,18 @@ This is `tenant_guard_gaps()` one level up, and it is why the fix for
 another standalone detector: putting a check inside a function nothing calls
 moves the problem without solving it.
 
-## What to do about it — proposed, not done
+## What to do about it
+
+**Status as of 2026-09-01, after 0287-0289 (dev only):**
+
+| | |
+|---|---|
+| 1. Schedule `ledger_checks()` | **NOT DONE** — belongs with the ledger deployment. It is the one item that matters most. |
+| 2. Decide the five | **NOT DONE** — a policy decision, not an engineering one. See the two alert-raising controls below. |
+| 3. Collapse the duplicate | **DONE** — `0289`. `ledger_checks_base` now calls `attendance_gate_mode_residue()`, and the reported figure is proved unchanged. |
+| 4. Keep this audit runnable | **DONE** — `0288`/`0288b`. `uninvoked_controls()` is a check, wired into `ledger_checks()` as `every_control_is_invoked`, currently RED at 6. |
+
+The original list, kept as written:
 
 1. **Schedule `ledger_checks()`.** A daily `cron.job` per company that runs it
    and raises an alert on any failing row. This is the single change that turns
@@ -95,13 +106,27 @@ moves the problem without solving it.
    exist, and the two alert-raising ones are the ones to decide first.
 3. **Collapse the duplicate.** `no_gate_mode_in_attendance_status` should call
    `attendance_gate_mode_residue()` rather than recompute it, so the rule has
-   one implementation.
+   one implementation. *(Done in 0289. Note found on the way: the two did not
+   report the same number — inline counted blocked ROWS, the function counts
+   EMPLOYEES. Collapsing naively would have silently changed a published
+   figure, so the check sums the function's per-employee `rows` instead.)*
 4. **Keep this audit runnable.** The query above should become a check in its
    own right — a control that counts uninvoked controls — or this document is
    itself a detector nothing invokes.
 
 Point 4 is not a joke. It is the same trap one level further out, and writing
 this file without saying so would be walking into it.
+
+**And it bit on the first attempt.** `0288` shipped `uninvoked_controls()`
+computing reachability as a substring match on `prosrc`. Its own exempt list
+contains the comment "It is invoked by ledger_checks(); listing itself would be
+noise" — so the check found the string `ledger_checks` inside a function body,
+concluded something called it, and cleared the one function the whole audit was
+written to expose. A check fooled by its own prose about the thing it was
+checking. `0288b` strips comments and requires call syntax; `ledger_checks` now
+reports itself, as intended. Third instance of "a mention is not a check" in
+this codebase, and the first that failed as a FALSE NEGATIVE — which is worse
+than the false positives in §9.6, because it was reassuring.
 
 ## Correctly invoked, for completeness
 
@@ -117,3 +142,98 @@ application. `log_audit_change` (36 triggers),
 Their invocation is real — but for the eight reached via `ledger_checks()`, it
 is only as real as the invocation of `ledger_checks()` itself, which is the
 finding above.
+
+
+---
+
+# The two alert-raising controls: what they were meant to catch
+
+Asked for after the first pass. Both are `SECURITY DEFINER`, both call
+`raise_alert`, both are invoked by nothing on **dev and production alike**
+(0 callers on each, verified).
+
+## `check_deploy_guard(p_employee_id) -> text[]`
+
+**The rule:** a guard who fails vetting must not be deployed to a sensitive or
+armed post, and an attempt to do so raises a **blocking** alert against that
+employee.
+
+It calls `armed_post_blockers(p_employee_id)` for the list of disqualifying
+reasons, and if the list is non-empty raises a `blocking` alert with category
+`deploy_unverified_guard` referencing the employee and their branch. Then it
+returns the list.
+
+**What actually happens today:** the application calls `armed_post_blockers`
+*directly* — `src/app/components/EmployeeVettingFields.tsx:46` — and never calls
+`check_deploy_guard`. So the UI renders the warning to whoever is looking at
+that screen, and the alert is never raised.
+
+The half that *renders* shipped. The half that *records* did not. Nobody
+downstream learns that an unverified guard was put forward for an armed post,
+there is no trace after the screen closes, and the alerts feed has never shown
+one.
+
+## `check_disbursement(p_company_id, p_amount, p_is_payroll_or_statutory) -> text`
+
+**The rule:** when a company's cash position is in the RED danger band,
+non-payroll, non-statutory disbursements are blocked and require a COO override.
+Payroll and statutory payments always flow — they are the floor the band is
+measured against.
+
+It reads `danger_level.band`, returns `'allowed'` immediately for
+payroll/statutory, and on `red` raises a `blocking` alert with category
+`danger_level_disbursement` naming the amount, then returns `'blocked'`.
+
+**What actually happens today:** nothing calls it. `danger_level` is read in
+exactly one other place — `src/app/pages/super-admin/Treasury.tsx:53`, which
+*displays* the band. No disbursement path consults it. Payroll disbursement,
+expense payment and cash withdrawal all proceed regardless of the band.
+
+It is also the **only** function in the schema that reads `danger_level` at all.
+The table is populated (one row, currently `amber`), so the band is being
+maintained and nothing consumes it.
+
+## The fact that frames both
+
+```
+alerts table, dev  : 0 rows
+alerts table, prod : 0 rows
+```
+
+**`raise_alert` has never produced a single row in either database.** This is
+not two orphaned functions; it is an alerting mechanism that has never fired.
+Whatever else is wired to `raise_alert` is in the same position — the feed has
+nothing in it because nothing has ever put anything in it.
+
+## Is this a code gap or a business gap
+
+**Business.** Both functions encode a real operational rule, correctly, in one
+place, with the right exemptions already thought through (payroll and statutory
+bypass the band; the blocker list comes from the vetting rules rather than being
+restated). Neither is half-written or wrong. They are simply not called.
+
+So the questions are not for an engineer:
+
+1. **Is the armed-post rule meant to block, or to warn?** Today it warns, on one
+   screen, to one person. If it is meant to block, `check_deploy_guard` needs to
+   sit in the deployment path and its return value has to be honoured.
+2. **Is the RED-band disbursement rule real policy?** If it is, it belongs in
+   `disburse_payroll_run`, the expense payment path and the cash withdrawal
+   path, with the COO override as an `approval_requests` flow — the mechanism
+   for that already exists. If it is not policy any more, the function and the
+   `danger_level` band should go, because a rule that exists and is not enforced
+   teaches readers that the schema describes the business when it does not.
+3. **Is anyone meant to read the alerts feed?** Wiring either control raises
+   alerts into a table nobody has ever looked at. A blocking alert nobody reads
+   is the same failure one level up — the shape this whole audit is about.
+
+Question 3 should be settled first. Wiring 1 and 2 before there is a consumer
+just moves the silence.
+
+## Recommendation
+
+Do not wire either control until (3) is answered. Both are correct and both are
+cheap to call; neither is worth calling into a feed with no reader. The decision
+belongs with whoever owns the operational policy, and it is the same decision as
+scheduling `ledger_checks()` — what an alert *does*, and what happens when one
+stays unactioned.
