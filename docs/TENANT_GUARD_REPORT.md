@@ -364,6 +364,42 @@ start here.
 > enforcement and find the line that compares. If there is no comparison
 > operator anywhere in it, the rule is a comment.
 
+> **AND ITS MIRROR IMAGE, WHICH COSTS MORE WHEN IGNORED:**
+>
+> **WHEN A CHECK REPORTS A PROBLEM, VERIFY THE CHECK BEFORE ACTING ON THE
+> PROBLEM.**
+>
+> A red result is evidence about *two* things — the subject and the instrument —
+> and nothing in the red itself distinguishes them. Three instances now, and
+> they failed in both directions:
+>
+> 1. **The four "executable" migration diffs.** A stripper that removed
+>    whole-line comments only, so a trailing `-- …` on a code line counted as
+>    executable text and re-wrapping counted as difference. Reported four
+>    security-guard migrations as possibly not matching what was deployed.
+>    Diffed properly: **none differed in executable logic.** Believing it would
+>    have meant re-applying guard migrations to production to fix nothing.
+> 2. **Two migrations reported as drifted** that were byte-identical apart from
+>    CRLF line endings, because the comparison did not normalise them. On a
+>    Windows checkout that instrument reports *every* file as drifted — a
+>    checker that cries wolf is a checker nobody reads.
+> 3. **`0285`'s integrity check reporting both embedded blocks as DIFFERING**
+>    from their sources during the production deployment. They were identical.
+>    The marker strings used to slice the file contained `\n`; the freshly
+>    checked-out file was CRLF; the markers were never found and the slices were
+>    garbage. Normalising first reproduced the exact digests dev's ledger
+>    records. **Believing this one would have aborted a correct deployment
+>    mid-flight.**
+>
+> Note the asymmetry with the rule above. A check that never runs fails silently
+> and is found late. A check that reports a false problem fails *loudly* and is
+> acted on immediately — which is why it is the more expensive of the two, and
+> why the first move on a red is to reproduce it a second way.
+>
+> All three were the same root cause dressed differently: **the instrument
+> disagreed with the artifact about what the bytes were.** Comment stripping,
+> line endings, line endings again.
+
 Nine instances now, and the last one was in the FORCE RLS pre-check itself. That
 pre-check tested `current_company_id()` and `effective_salary` under FORCE **as
 `authenticated`** and both passed — two green results about the wrong subject,
