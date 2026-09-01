@@ -91,7 +91,7 @@ moves the problem without solving it.
 | | |
 |---|---|
 | 1. Schedule `ledger_checks()` | **NOT DONE** — belongs with the ledger deployment. It is the one item that matters most. |
-| 2. Decide the five | **NOT DONE** — a policy decision, not an engineering one. See the two alert-raising controls below. |
+| 2. Decide the five | **PARTLY** — `0296`. `check_disbursement` is wired to `public.expenses` as a WARNING and is no longer uninvoked. `check_deploy_guard` is **deliberately not wired** — see below. Tier for both corrected from blocking to warning, chosen explicitly. Four functions remain. |
 | 3. Collapse the duplicate | **DONE** — `0289`. `ledger_checks_base` now calls `attendance_gate_mode_residue()`, and the reported figure is proved unchanged. |
 | 4. Keep this audit runnable | **DONE** — `0288`/`0288b`, extended to views by `0294`. `uninvoked_controls()` is a check, wired into `ledger_checks()` as `every_control_is_invoked`, currently RED at **20** (6 functions + 14 views). |
 | 5. Decide the fourteen views | **NOT DONE** — new in `0294`. Same policy call as the five. |
@@ -204,6 +204,85 @@ unchanged, the same way `0289` did it.
 compared against something. Nothing compares them. A reconciliation that is
 never read is not a weaker control than a broken one — it is the same control
 as none, with the added cost that the schema claims otherwise.
+
+
+---
+
+# The wiring, and the one that was measured and refused
+
+`0296`. Both controls now raise **warning**, not blocking — asked explicitly,
+answered explicitly, recorded in the migration so nobody "fixes" it back. No
+escalation.
+
+## `check_disbursement` — wired
+
+`public.expenses` is the non-payroll cash outflow, and there is no
+expense-payment RPC, so an AFTER trigger covers both the insert-already-paid
+case and the payable settled by `paid_at`. It fires only in the **red** band.
+The band is `amber` today and `danger_level` is a computed view, so the control
+is quiet now and speaks exactly when its condition becomes true. That is the
+shape a control should have.
+
+One limitation written down rather than discovered:
+`p_is_payroll_or_statutory` is passed FALSE for every expense. Payroll does not
+flow through this table, so that half is right — but a **statutory payment made
+as an expense** would be warned about when policy exempts it, and nothing on
+`expenses` or `expense_categories` marks one. When such a marker exists, pass
+it. The cost today is one warning that should not have fired, which `0295`'s
+dedupe collapses to a single row.
+
+## `check_deploy_guard` — NOT wired, and the measurement is why
+
+```
+active employees                       758
+not weapons-certified                  758   <- every one
+no weapon licence document on file     758   <- every one
+police verification pending            701
+NADRA Verisys pending                  701
+police or NADRA ADVERSE                  0
+blacklisted                              0
+```
+
+`armed_post_blockers()` returns a non-empty list for **every employee in the
+database**. Wiring it to the deployment path raises a warning on every
+deployment, 100% of the time, forever.
+
+**A control that fires on every input carries exactly as much information as
+one that never fires.** This is the compliance-consolidation finding in mirror
+image: there, five implementations agreed because their inputs were empty;
+here, one control alarms constantly because its inputs are empty. Both produce
+an output that does not depend on the world.
+
+The practical harm is worse in this direction. The alerts feed has never held a
+row. Its first day would be hundreds of identical warnings, which is precisely
+how a reader learns to ignore a feed — the failure this entire audit is about,
+arriving from the opposite side.
+
+The root cause is the same as the licence columns: `weapons_certified` is false
+for all 758 because nobody entered it, not because 758 guards failed a test.
+
+**Second, independent reason:** there is no armed post in this schema. The rule
+is "must not be deployed to a sensitive or armed post", and `public.posts` has
+no column that marks one. Firing on every deployment does not approximate that
+rule; it replaces it with a different rule that nobody agreed to.
+
+Two policy questions, both for Shayan and Safi:
+
+1. **Split a vetting FAILURE from a vetting GAP.** `blacklisted`, police
+   adverse, NADRA adverse and not-in-active-service are failures, and are true
+   of nobody today — a control on those alone would be quiet and *able to
+   speak*. "Not certified" and "document not on file" are data-entry gaps. That
+   split changes what the rule means, so it is not an engineer's call.
+2. **Give posts a way to say armed or sensitive**, so the rule can apply where
+   it was written to apply.
+
+Until one of those, wiring it moves the silence rather than ending it.
+
+## And the fact that framed both has changed
+
+`raise_alert` had never produced a row in either database. After `0296` it has
+a caller that runs on its own. `0295` went in first so that the first thing the
+feed ever does is not repeat itself.
 
 ## Correctly invoked, for completeness
 
