@@ -40,8 +40,11 @@ export default function Receivables() {
     ]);
     setAging(ag.data ?? []);
     setReminders(rem.data ?? []);
+    // 0313: invoice_amount, not total_due. total_due is the invoice DOCUMENT
+    // total and carries the client's arrears, so filtering and displaying on it
+    // counted every prior month again.
     const open = (inv.data ?? []).filter(
-      (i: any) => (Number(i.total_due ?? i.invoice_amount ?? 0) - Number(i.amount_received ?? 0)) > 0 && i.status !== "Written-Off"
+      (i: any) => (Number(i.invoice_amount ?? 0) - Number(i.amount_received ?? 0)) > 0 && i.status !== "Written-Off"
     );
     setOpenInv(open);
     setSettings(fs.data);
@@ -188,7 +191,8 @@ function WriteOffTab({ openInv, clientName, run, busy }: {
         </thead>
         <tbody className="divide-y divide-slate-100">
           {openInv.map((i) => {
-            const out = Number(i.total_due ?? i.invoice_amount ?? 0) - Number(i.amount_received ?? 0);
+            // 0313: matches what write_off_receivable actually writes off.
+            const out = Number(i.invoice_amount ?? 0) - Number(i.amount_received ?? 0);
             return (
               <tr key={i.id}>
                 <td className="px-3 py-1.5 text-slate-700">{i.invoice_number}</td>
