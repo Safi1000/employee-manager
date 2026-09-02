@@ -12,6 +12,7 @@ import {
   exportTable,
 } from "../../lib/excel";
 import Modal from "../../components/Modal";
+import { useAuth } from "../../lib/auth";
 import Button from "../../components/Button";
 import Partners from "./Partners";
 import Cashflow from "./CashFlow";
@@ -81,6 +82,14 @@ const formatPeriod = (periodMonth: string) => {
  */
 export default function FinancialReports({ standalone }: { standalone?: "partnership" } = {}) {
   const partnershipOnly = standalone === "partnership";
+  // Both treasury and finance_settings hold ONE ROW PER COMPANY and both carry
+  // an ssa_all policy on is_ssa_unscoped(), so an unscoped Super Super Admin
+  // sees every company's row. Read unfiltered, .limit(1) picks an arbitrary
+  // company's cash and .maybeSingle() errors outright once a second company
+  // exists. Neither is a filter RLS applies for us.
+  const { profile, company } = useAuth();
+  const scopeCompanyId = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
+  const scopeCompanyFilter = scopeCompanyId ?? "00000000-0000-0000-0000-000000000000";
   const [activeTab, setActiveTab] = useState<"pl" | "clients" | "partnership" | "rmd">(
     partnershipOnly ? "partnership" : "pl",
   );
@@ -190,7 +199,7 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
           .lte("expense_date", end),
         supabase.from("expense_categories").select("*"),
         supabase.from("bank_accounts").select("id, balance"),
-        supabase.from("treasury").select("cash_balance").limit(1).maybeSingle(),
+        supabase.from("treasury").select("cash_balance").eq("company_id", scopeCompanyFilter).maybeSingle(),
       ]);
       setChartInvoices((invRes.data ?? []) as Invoice[]);
       setChartExpenses((expRes.data ?? []) as Expense[]);
@@ -200,7 +209,7 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
       setLoadingChart(false);
     };
     loadChart();
-  }, [chartPeriod]);
+  }, [chartPeriod, scopeCompanyFilter]);
 
   const chartFigures = useMemo(() => {
     const weaponsCatId = chartCategories.find((c) => c.name === "Weapons & Ammunition")?.id ?? null;
@@ -480,7 +489,7 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
     // all-time invoice/payslip/expense scans, no partner bank transactions.
     const pRes = await supabase.from("partners").select("*").order("name");
     setPartners((pRes.data ?? []) as Partner[]);
-    supabase.from("finance_settings").select("partner_remuneration_basis").maybeSingle()
+    supabase.from("finance_settings").select("partner_remuneration_basis").eq("company_id", scopeCompanyFilter).maybeSingle()
       .then(({ data }) => setCompanyBasis(((data as { partner_remuneration_basis?: string } | null)
         ?.partner_remuneration_basis ?? null) as "cash" | "revenue" | null));
     setLoadingPartnership(false);

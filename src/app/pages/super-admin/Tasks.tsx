@@ -146,7 +146,16 @@ export default function Tasks() {
     setSubmitting(true);
     setError(null);
     try {
+      // tasks.company_id is NOT NULL and the table has NO fill_company_id
+      // trigger — one of the 27 company-scoped tables where the caller must
+      // supply it. Omitting it failed with a not-null violation for every user,
+      // which is why production holds zero tasks. Same defect as treasury.
+      const taskCompanyId = profile?.view_as_company ?? profile?.company_id ?? null;
+      if (!taskCompanyId) {
+        throw new Error("No company is selected, so there is nowhere to file this task. Pick a company with the “Viewing as” selector first.");
+      }
       const { error: insErr } = await supabase.from("tasks").insert({
+        company_id: taskCompanyId,
         title: formTitle.trim(),
         description: formDescription.trim() || null,
         status: formStatus,

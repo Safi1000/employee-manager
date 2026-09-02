@@ -4,6 +4,7 @@ import Modal from "./Modal";
 import Button from "./Button";
 import ThemedSelect from "./ThemedSelect";
 import { supabase, type Branch, type Partner } from "../lib/supabase";
+import { useAuth } from "../lib/auth";
 
 /** One client's contribution to a regional partner's share for the period. */
 type BreakdownRow = {
@@ -87,6 +88,9 @@ export default function PartnerFormModal({
   // every headline field — only the per-client shares stay editable here.
   const editing = !!partner;
 
+  const { profile, company } = useAuth();
+  const companyId = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
+
   useEffect(() => {
     if (!isOpen) return;
     setError(null);
@@ -100,14 +104,19 @@ export default function PartnerFormModal({
       partner?.start_month ? String(partner.start_month).slice(0, 7) : new Date().toISOString().slice(0, 7),
     );
     setEditClientId(null);
-    // RLS scopes finance_settings to the caller's company, so no filter needed.
+    // Scoped explicitly. RLS does NOT scope this for everyone: finance_settings
+    // carries an ssa_all policy on is_ssa_unscoped(), so an unscoped Super Super
+    // Admin sees every company's row and .maybeSingle() then errors on multiple
+    // rows rather than answering. Same shape as the treasury reads.
+    if (!companyId) return;
     void (async () => {
       const { data } = await supabase
-        .from("finance_settings").select("partner_remuneration_basis").maybeSingle();
+        .from("finance_settings").select("partner_remuneration_basis")
+        .eq("company_id", companyId).maybeSingle();
       setCompanyBasis(((data as { partner_remuneration_basis?: string } | null)
         ?.partner_remuneration_basis ?? null) as "cash" | "revenue" | null);
     })();
-  }, [isOpen, partner]);
+  }, [isOpen, partner, companyId]);
 
   const loadBreakdown = useCallback(async () => {
     if (!partner || partner.scope !== "BRANCH") { setBreakdown([]); return; }

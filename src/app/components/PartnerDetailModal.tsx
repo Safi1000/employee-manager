@@ -98,17 +98,21 @@ export default function PartnerDetailModal({
   }, [isAddEntryOpen, companyId]);
 
   // Remuneration basis is COMPANY policy since 0232 dropped partners.basis.
-  // RLS scopes finance_settings to the caller's company, so no filter is needed.
+  // Scoped explicitly. RLS does NOT scope this for everyone: finance_settings
+  // carries an ssa_all policy on is_ssa_unscoped(), so an unscoped Super Super
+  // Admin sees every company's row and .maybeSingle() then errors on multiple
+  // rows rather than answering. Same shape as the treasury reads.
   const [companyBasis, setCompanyBasis] = useState<"cash" | "revenue" | null>(null);
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || !companyId) return;
     void (async () => {
       const { data } = await supabase
-        .from("finance_settings").select("partner_remuneration_basis").maybeSingle();
+        .from("finance_settings").select("partner_remuneration_basis")
+        .eq("company_id", companyId).maybeSingle();
       setCompanyBasis(((data as { partner_remuneration_basis?: string } | null)
         ?.partner_remuneration_basis ?? null) as "cash" | "revenue" | null);
     })();
-  }, [isOpen]);
+  }, [isOpen, companyId]);
 
   const isRegional = partner?.scope === "BRANCH";
 
