@@ -2244,3 +2244,114 @@ misfiled employee-advance balance is **2,000.00** — the same amount seen from
 two directions. One dev-only advance of 2,000.00 is sitting where a client
 receivable is counted. Recorded here rather than chased; it does not exist on
 production.
+
+---
+
+## Advance invoicing (§9.19) — three findings before building
+
+### 1. It collides with 0322, which was ruled absolute one message earlier
+
+The ruled shape posts `Dr Unearned Revenue / Cr Revenue` **at period_start**. For
+an invoice raised in September for October service, that entry is dated
+2026-10-01 — a period that has not been reached. **0322 refuses exactly that**,
+and it was ruled absolute on the evidence then available: nothing legitimately
+posted forward. Advance invoicing is the first thing that does.
+
+Either the recognition entry is written when the month arrives (0322 stays
+absolute), or 0322 gains an exemption. Recommended: **a recognition run**. At
+`invoice_date` post only `Dr AR / Cr Unearned Revenue`; a scheduled job posts
+`Dr Unearned Revenue / Cr Revenue` when the service month opens. That is how
+deferred revenue normally works, it keeps 0322 absolute, and the ledger never
+holds an entry for a month that has not happened.
+
+### 2. "AR at invoice_date" would move every invoice that exists
+
+Measured on production: **all 9 invoices are arrears** (`invoice_date >
+period_start`), none are advance, none have a null `period_start`. Today
+`post_invoice_journal` posts AR, revenue and sales tax together at
+`coalesce(period_start, invoice_date)` — so AR already posts at period_start,
+not invoice_date.
+
+Applying "AR posts at invoice_date" generally would re-date the AR leg of every
+existing invoice, and the interval account would carry a **debit** balance in a
+liability — that is unbilled/accrued revenue, an asset, not unearned revenue,
+and no such account was authorised.
+
+Read narrowly — the two-entry treatment applies only when `invoice_date <
+period_start` — arrears is untouched and nothing existing moves. That is the
+reading the worked example supports, and it is what will be built unless
+corrected.
+
+### 3. `run_auto_invoices` never sets `period_start`
+
+It writes `invoice_date := v_period` and no `period_start` at all; the column is
+nullable with no default and no trigger fills it. So for an advance client it
+produces `invoice_date = the service month's first day` and `period_start =
+null` — **not** `invoice_date < period_start`. The advance branch would never
+fire for an auto-issued invoice, and any check keyed on `period_start` is inert
+for exactly the invoices `advance_payment` governs.
+
+`advance_payment` is **false for all 94 clients** on production, so nothing is
+broken today, but the flag cannot produce the ruled shape as the function
+stands.
+
+---
+
+## Production cleanup — census, read-only
+
+### Companies
+
+| company | employees | clients | invoices | payslips | entries | banks | profiles | contracts |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|
+| GUARDS AND GUIDES (PVT) LTD | 553 | 43 | 0 | 0 | **0** | 0 | 4 | 30 |
+| guards n guides | 527 | 43 | 0 | 0 | 0 | 0 | **0** | 30 |
+| SANDBOX TESTING ORG | 69 | 8 | 9 | 48 | **427** | 9 | 1 | 8 |
+| Sandboxx | 1 | 0 | 0 | 0 | 0 | 0 | 1 | 0 |
+
+Every journal entry on production belongs to SANDBOX. `guards n guides` is a
+527-employee duplicate of GGS with **no profile attached**, so nobody can log
+into it.
+
+### Users
+
+| email | role | company | last sign-in |
+|---|---|---|---|
+| techxserve@gmail.com | super_super_admin | — | 2026-09-02 |
+| guardsandguides.ops@outlook.com | hr | GGS | 2026-09-01 |
+| info@guardsandguides.com | super_admin | GGS | 2026-09-01 |
+| nosherwan29@gmail.com | hr | GGS | 2026-09-01 |
+| tahaarshad004@gmail.com | hr | GGS | 2026-08-31 |
+| sa@sandbox.test | super_admin | SANDBOX | 2026-08-31 |
+| muzammil@techxserve.com | super_admin | Sandboxx | 2026-08-08 |
+
+Seven accounts, all confirmed, none banned.
+
+### Does anything depend on SANDBOX existing?
+
+**No database object does** — no function or view references the company by name
+or by its `5eed0000-…` id.
+
+**Six test suites do**, and four abort loudly without it:
+
+| suite | dependency |
+|---|---|
+| `fixtures_period_split.sql` | `raise exception 'SANDBOX TESTING ORG not found — this fixture is sandbox-only'` |
+| `period_lock.sql` | needs the company **and a profile in it** to act as |
+| `repost_sets.sql` | needs the company **and a profile in it** |
+| `attendance_status.sql` | selects it by name — "the only company with a …" |
+| `ledger_foundation.sql` | hardcodes `5eed0000-0000-4000-8000-000000000001` |
+| `opening_gate_and_partner_audit.sql` | hardcodes the id, and assumes SANDBOX owns the only opening batch |
+
+The dependency is on **a SANDBOX in whichever database the suite runs against**,
+and dev has one. Removing it from production costs nothing *provided the suites
+are never run against production* — which the write discipline already forbids.
+Two of them additionally need `sa@sandbox.test`, so disabling that account and
+removing the company are one decision, not two.
+
+### The archive flag does not exist yet
+
+`companies` has `active boolean not null default true` — but **0 of 272 RLS
+policies reference it**, and `current_company_id()` reads
+`coalesce(view_as_company, company_id)` without consulting it. Setting
+`active = false` on `guards n guides` today hides it from nothing. An
+RLS-enforced archive flag has to be built before it can be relied on.

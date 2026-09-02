@@ -51,6 +51,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // user change from a token refresh.
   const loadedUserIdRef = useRef<string | null>(null);
 
+  /**
+   * Clearing auth is ALL OR NOTHING.
+   *
+   * Wiping the sb-* token out of localStorage without signing the client out
+   * leaves a half-signed-in state: React still holds `session` and `profile`,
+   * so the UI renders a logged-in user, but supabase-js has no token to attach.
+   * Reads that RLS happens to permit still return 200, and the first WRITE goes
+   * out as `anon` — which surfaces as `permission denied for function
+   * current_company_id`, a database-shaped message for what is really an expired
+   * login. That is the shape of the production report on 2026-09-02, and it is
+   * why every clearing path goes through here instead of wiping by hand.
+   */
+  const clearAuthState = async () => {
+    try {
+      await supabase.auth.signOut({ scope: "local" });
+    } catch {
+      // Signing out locally is best-effort; the wipe below is the guarantee.
+    }
+    wipeAuthStorage();
+    loadedUserIdRef.current = null;
+    setSession(null);
+    setProfile(null);
+    setCompany(null);
+  };
+
   const loadProfileAndCompany = async (userId: string): Promise<boolean> => {
     try {
       const { data } = await supabase
@@ -98,14 +123,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let mounted = true;
 
 
-    // Hard timeout: if init isn't done in 4s, give up, wipe storage, fall through
-    // to an unauthenticated state. Avoids the "spinner forever" trap.
+    // Hard timeout: if init isn't done in 4s, stop the spinner. Avoids the
+    // "spinner forever" trap.
+    //
+    // It deliberately does NOT clear auth. This timer fires because the network
+    // was slow, and a slow network is not a reason to destroy a valid session —
+    // `loadProfileAndCompany` awaits two PostgREST round-trips with no timeout
+    // of their own, so a stalled response reaches four seconds easily. The old
+    // version wiped the token here; the in-flight load then resolved and put
+    // `session` and `profile` back, leaving a signed-in user with no token.
+    //
+    // Stopping the spinner alone is safe in both directions: state is still
+    // null, so the app lands on /login, and if the load resolves later with a
+    // real session the normal path sets it and the app renders signed in.
     const failsafe = setTimeout(() => {
       if (!mounted) return;
-      wipeAuthStorage();
-      setSession(null);
-      setProfile(null);
-      setCompany(null);
       setLoading(false);
     }, 4000);
 
@@ -122,10 +154,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const ok = await loadProfileAndCompany(data.session.user.id);
           if (!ok) {
             // Stale session: token decodes to a user with no profile (deleted/mismatched).
-            // Wipe everything so the next render lands cleanly on /login.
-            wipeAuthStorage();
-            try { await supabase.auth.signOut({ scope: "local" }); } catch { /* ignore */ }
-            setSession(null);
+            // Clear everything together so the next render lands cleanly on /login.
+            await clearAuthState();
           } else {
             setSession(data.session);
           }
@@ -134,10 +164,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       } catch {
         if (!mounted) return;
-        wipeAuthStorage();
-        setSession(null);
-        setProfile(null);
-        setCompany(null);
+        await clearAuthState();
       } finally {
         clearTimeout(failsafe);
         if (mounted) setLoading(false);
@@ -185,7 +212,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    // For SSA, clear view_as_company so they don't come back to a stale "viewing as X" state.
+    // For SSA, clear view_as_company so they don't come back to a stale "viewing
+    // as X" state. This runs BEFORE the sign-out below, while the token is still
+    // attached; it is best-effort either way.
     if (profile?.role === "super_super_admin" && profile.view_as_company) {
       try {
         await supabase.from("profiles").update({ view_as_company: null }).eq("id", profile.id);
@@ -193,15 +222,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // best effort
       }
     }
-    try {
-      await supabase.auth.signOut({ scope: "local" });
-    } catch {
-      // ignore
-    }
-    wipeAuthStorage();
-    setSession(null);
-    setProfile(null);
-    setCompany(null);
+    await clearAuthState();
   };
 
   const refreshProfile = async () => {
@@ -211,6 +232,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const setViewAsCompany = async (companyId: string | null) => {
     if (!profile) return { error: "no_profile" };
     if (profile.role !== "super_super_admin") return { error: "forbidden" };
+
+    // Writes need a live token. Without one the request goes out as `anon`, the
+    // profiles UPDATE policy calls current_company_id(), and PostgREST returns
+    // `permission denied for function current_company_id` — a database-shaped
+    // message for an expired login, which is what a real user hit in production.
+    // Ask the auth client rather than trusting that `profile` in React state
+    // implies a session; the two can disagree.
+    const { data: live } = await supabase.auth.getSession();
+    if (!live.session) {
+      return { error: "Your session has expired. Sign in again to switch company." };
+    }
+
     const { error } = await supabase
       .from("profiles")
       .update({ view_as_company: companyId })
