@@ -96,14 +96,26 @@ const isCleared = (inv: Invoice) => inv.status === "Paid";
 // which honours renewal (EXTEND_END_DATE) addendums, so a renewed contract bills
 // up to the new end (incl. missed months in the gap). infinite / no-end → no upper
 // bound. A contract starting or ending mid-month still bills that whole month.
+// A TERMINATED contract bills up to and including its termination month, and never
+// after — the termination_date caps the window even when there is no end_date, so
+// months earned before termination stay invoiceable while later months are blocked.
 const periodInContractWindow = (con: Contract, ym: string, addendums: ContractAddendum[]): boolean => {
   const startMonth = (con.start_date ?? "").slice(0, 7);
   if (startMonth && ym < startMonth) return false;
   const eff = effectiveContractEnd(con, addendums);
   const endMonth = eff.isInfinite || !eff.endDate ? null : eff.endDate.slice(0, 7);
   if (endMonth && ym > endMonth) return false;
+  const termMonth = con.termination_date ? con.termination_date.slice(0, 7) : null;
+  if (termMonth && ym > termMonth) return false;
   return true;
 };
+
+// Eligible for (back-)invoicing: any real contract — active, expired or
+// terminated — gated to the right months by periodInContractWindow. Only `draft`
+// (not yet a contract) is excluded outright. This replaces the old blanket
+// `status === "active"` test, which wrongly hid terminated/expired contracts from
+// invoicing months they were live for.
+const isInvoiceableContract = (con: Contract): boolean => con.status !== "draft";
 
 // End-of-month date string for a YYYY-MM period.
 const monthBounds = (ym: string) => {
@@ -338,7 +350,7 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
     const taken = new Set(invoices.map((i) => i.invoice_number.trim().toLowerCase()));
     const next: Record<string, Draft> = {};
     for (const client of groupClients) {
-      const clientContracts = contracts.filter((c) => c.client_id === client.id && c.status === "active");
+      const clientContracts = contracts.filter((c) => c.client_id === client.id && isInvoiceableContract(c));
       for (const con of clientContracts) {
         // Never draft a period outside the contract's own start→(effective)end window.
         if (!periodInContractWindow(con, period, addendums.filter((a) => a.contract_id === con.id))) continue;
@@ -363,7 +375,7 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
   const rows = useMemo<Row[]>(() => {
     const out: Row[] = [];
     for (const client of groupClients) {
-      const clientContracts = contracts.filter((c) => c.client_id === client.id && c.status === "active");
+      const clientContracts = contracts.filter((c) => c.client_id === client.id && isInvoiceableContract(c));
       for (const con of clientContracts) {
         const existing = invoices.find((i) => i.contract_id === con.id && invoiceMonth(i) === period);
         if (existing) {
