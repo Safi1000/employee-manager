@@ -47,9 +47,6 @@ type Draft = {
   variableColumns: string[];
   variableRows: string[][];
   variableTotal: string; // legacy; retained for back-compat, no longer an input
-  // Manual, optional withholding tax (BOTH groups). When > 0 it is deducted from
-  // the total. Always hand-typed — never sourced from the tax profile.
-  withholdingAmount: string;
   taxes: DraftTax[];
   notes: string;
   remitIndex: number; // index into client's remit_accounts
@@ -271,7 +268,6 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
           variableColumns: columns,
           variableRows: [columns.map(() => "")],
           variableTotal: "",
-          withholdingAmount: "",
           taxes: [],
           notes: "",
           remitIndex: Math.max(0, (client.remit_accounts ?? []).findIndex((r) => r.is_default)),
@@ -328,7 +324,6 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
         variableColumns: [],
         variableRows: [],
         variableTotal: "",
-        withholdingAmount: "",
         taxes,
         notes: "",
         remitIndex,
@@ -426,24 +421,20 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
 
   // Derived figures for a draft.
   const figures = (d: Draft) => {
-    // Manual withholding (both groups): optional, hand-typed, deducted from the total.
-    const manualWithholding = num(d.withholdingAmount);
-    // Variable clients: the Total Due is the auto-sum of the Amount column, less any
-    // manual withholding. No other tax/subtotal is computed.
+    // Invoice-time withholding is gone (A1: bill GROSS, withholding is recognised
+    // on the receipt via record-payment). Nothing is deducted from the invoice.
     // Outstanding balance is only rolled in when the draft's tickbox is on.
     const carried = d.includePreviousBalance ? d.previousBalance : 0;
     if ((d.client.invoice_group ?? "FIXED") === "VARIABLE") {
       const gross = variableAmountTotal(d);
-      const lineTotal = gross - manualWithholding + carried;
-      return { subtotal: gross, computed: [] as ReturnType<typeof computeInvoiceTaxes>["computed"], addedTotal: 0, withheldTotal: manualWithholding, lineTotal, totalDue: lineTotal, carried, overridden: false };
+      const lineTotal = gross + carried;
+      return { subtotal: gross, computed: [] as ReturnType<typeof computeInvoiceTaxes>["computed"], addedTotal: 0, withheldTotal: 0, lineTotal, totalDue: lineTotal, carried, overridden: false };
     }
     const subtotal = d.lines.reduce((s, l) => s + num(l.quantity) * num(l.unit_rate), 0);
-    const { computed, addedTotal, withheldTotal: taxWithheld } = computeInvoiceTaxes(
+    const { computed, addedTotal, withheldTotal } = computeInvoiceTaxes(
       subtotal,
       d.taxes.map((t) => ({ name: t.name, rate: num(t.rate), base: t.base, direction: t.direction, component: t.component ?? null })),
     );
-    // Manual withholding adds to any tax-profile withholding.
-    const withheldTotal = taxWithheld + manualWithholding;
     const lineTotal = subtotal + addedTotal - withheldTotal + carried;
     const overridden = d.overrideTotal.trim() !== "" && num(d.overrideTotal) !== lineTotal;
     const totalDue = overridden ? num(d.overrideTotal) : lineTotal;
@@ -1075,20 +1066,8 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
                       </span>
                     </label>
                   )}
-                  {/* Manual, optional withholding — deducted from the total. */}
-                  <div className="flex items-center justify-between gap-2 pt-0.5">
-                    <label className="text-xs text-slate-500">Withholding tax (optional)</label>
-                    <input
-                      type="number"
-                      value={d.withholdingAmount}
-                      onChange={(e) => patchDraft(d.contractId, { withholdingAmount: e.target.value })}
-                      placeholder="0"
-                      className="w-28 px-2 py-1 border border-slate-200 rounded text-sm text-right tabular-nums"
-                    />
-                  </div>
-                  {num(d.withholdingAmount) > 0 && <Row label="Less: withholding" value={-num(d.withholdingAmount)} muted />}
                   <div className="flex items-center justify-between border-t border-slate-200 pt-1 font-semibold text-slate-900">
-                    <span>Total Due{num(d.withholdingAmount) > 0 ? " (net of withholding)" : ""}</span>
+                    <span>Total Due</span>
                     <span className="tabular-nums">PKR {f.totalDue.toLocaleString()}</span>
                   </div>
                   <div className="text-[11px] italic text-slate-500">{amountInWords(f.totalDue)}</div>
@@ -1116,18 +1095,6 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
                   {f.computed.map((t, ti) => (
                     <Row key={ti} label={`${t.name} (${t.rate}%)`} value={t.direction === "WITHHELD" ? -t.amount : t.amount} muted />
                   ))}
-                  {/* Manual, optional withholding — deducted from the total. */}
-                  <div className="flex items-center justify-between gap-2 pt-0.5">
-                    <label className="text-xs text-slate-500">Withholding tax (optional)</label>
-                    <input
-                      type="number"
-                      value={d.withholdingAmount}
-                      onChange={(e) => patchDraft(d.contractId, { withholdingAmount: e.target.value })}
-                      placeholder="0"
-                      className="w-28 px-2 py-1 border border-slate-200 rounded text-sm text-right tabular-nums"
-                    />
-                  </div>
-                  {num(d.withholdingAmount) > 0 && <Row label="Less: withholding (manual)" value={-num(d.withholdingAmount)} muted />}
                   {f.carried !== 0 && <Row label="Previous balance" value={f.carried} muted />}
                   <div className="flex items-center justify-between border-t border-slate-200 pt-1 font-semibold text-slate-900">
                     <span>Total Due{f.withheldTotal > 0 ? " (net of withholding)" : ""}</span>

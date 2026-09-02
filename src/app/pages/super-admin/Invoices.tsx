@@ -1182,17 +1182,6 @@ export default function Invoices() {
                 ),
               },
               {
-                label: "Withholding",
-                value: (inv) => {
-                  const wht = Number(inv.withholding_tax ?? 0);
-                  return wht > 0 ? (
-                    <span className="tabular-nums text-danger-600">PKR {wht.toLocaleString()}</span>
-                  ) : (
-                    "—"
-                  );
-                },
-              },
-              {
                 label: "Received",
                 value: (inv) => (
                   <span className="tabular-nums text-success-600">
@@ -1252,7 +1241,6 @@ export default function Invoices() {
                   <th className="text-left px-6 py-3 text-sm text-slate-500">Client</th>
                   <th className="text-left px-6 py-3 text-sm text-slate-500">Invoice Month</th>
                   <th className="text-right px-6 py-3 text-sm text-slate-500">Invoice Amount</th>
-                  <th className="text-right px-6 py-3 text-sm text-slate-500">Withholding</th>
                   <th className="text-right px-6 py-3 text-sm text-slate-500">Received</th>
                   <th className="text-right px-6 py-3 text-sm text-slate-500">Outstanding</th>
                   <th className="text-left px-6 py-3 text-sm text-slate-500">Status</th>
@@ -1263,26 +1251,20 @@ export default function Invoices() {
               <tbody className="divide-y divide-slate-200">
                 {loading && (
                   <tr>
-                    <td colSpan={10} className="px-6 py-10 text-center text-slate-500">
+                    <td colSpan={9} className="px-6 py-10 text-center text-slate-500">
                       <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
                     </td>
                   </tr>
                 )}
                 {!loading && filteredInvoices.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="px-6 py-10 text-center text-slate-500 text-sm">
+                    <td colSpan={8} className="px-6 py-10 text-center text-slate-500 text-sm">
                       No invoices yet. Click "New Invoice" to create one.
                     </td>
                   </tr>
                 )}
                 {!loading &&
                   filteredInvoices.map((inv) => {
-                    // wht is the Withholding COLUMN, displayed for the reader. It is
-                    // deliberately not part of outstanding — see invoiceOutstanding().
-                    // 0316 removed every writer of this column, so it is non-zero
-                    // only on invoices raised before that. Withholding on new
-                    // receipts is on invoice_payments.withholding_amount.
-                    const wht = Number(inv.withholding_tax ?? 0);
                     const outstanding = invoiceOutstanding(inv);
                     const isSettled = outstanding <= 0;
                     return (
@@ -1308,9 +1290,6 @@ export default function Invoices() {
                         <td className="px-6 py-4 text-sm text-slate-600">{monthLabel(billingMonth(inv))}</td>
                         <td className="px-6 py-4 text-sm text-brand-600 text-right">
                           PKR {Number(inv.invoice_amount).toLocaleString()}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-danger-600 text-right">
-                          {wht > 0 ? `PKR ${wht.toLocaleString()}` : "—"}
                         </td>
                         <td className="px-6 py-4 text-sm text-success-600 text-right">
                           PKR {Number(inv.amount_received).toLocaleString()}
@@ -2112,13 +2091,11 @@ function InvoiceFields({
         />
         {errors.invoice_amount && <p className="text-xs text-danger-600 mt-1">{errors.invoice_amount}</p>}
       </div>
-      {/* 0316: the invoice-time Withholding Tax field is gone. Its help text
-          said "Deducted from the receivable balance for this invoice", which is
-          the model A1 rejects: the client is billed GROSS and withholding is
-          recognised when the client actually deducts it, on the receipt. The
-          field now lives on the payment modal, prefilled from the client's
-          agreed rate (0281). The Withholding column in the list below still
-          renders historical values. */}
+      {/* 0316: the invoice-time Withholding Tax field is gone (A1: bill GROSS,
+          recognise withholding on the receipt). It now lives on the payment
+          modal, prefilled from the client's agreed rate (0281). The Withholding
+          column that used to render historical values has since been removed
+          from the list too — withholding is a receipt-side figure only. */}
       <div>
         <label className="block text-sm text-slate-700 mb-1">Attachment</label>
         {(form.existing_drive_view_url || form.existing_attachment_path) && !form.attachment_file && (
