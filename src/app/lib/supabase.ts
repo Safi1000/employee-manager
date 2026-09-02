@@ -1649,8 +1649,94 @@ export type ChartAccount = {
   system_account: boolean;
   active: boolean;
   notes: string | null;
+  /** A control account is the summary total of its children; entries post to the leaves. */
+  is_control: boolean;
   created_at?: string;
   updated_at?: string;
+};
+
+/**
+ * A row of `public.trial_balance`. The view is the single source for account
+ * balances (0299 collapsed the duplicate inline sum in `ledger_checks_base`
+ * into it); 0319 added `posting_period` so a screen can filter by period
+ * instead of summing `journal_lines` in the browser.
+ *
+ * Grain: company x account x branch x posting_period.
+ */
+export type TrialBalanceRow = {
+  company_id: string;
+  account_id: string;
+  account_code: string;
+  account_name: string;
+  account_type: AccountType;
+  parent_id: string | null;
+  branch_id: string | null;
+  region_name: string | null;
+  total_debit: number;
+  total_credit: number;
+  net_debit: number;
+  posting_period: string;
+};
+
+/**
+ * A row returned by `public.trial_balance_for(company, period, branch)` — the
+ * trial balance already folded to ONE ROW PER ACCOUNT at the requested grain.
+ * A null period means every period, a null branch every region (0320).
+ *
+ * The function reads `trial_balance` and sums its columns, so it is a reader of
+ * the single source rather than a second implementation of the total. Screens
+ * call it instead of folding branch and period rows themselves.
+ */
+export type TrialBalanceAccountRow = {
+  account_id: string;
+  account_code: string;
+  account_name: string;
+  account_type: AccountType;
+  parent_id: string | null;
+  total_debit: number;
+  total_credit: number;
+  net_debit: number;
+};
+
+/**
+ * A row of `public.journal_lines_regional` — one journal line with its entry,
+ * account and region attached. 0319 added the period, the counterparties, the
+ * account name and both directions of reversal.
+ *
+ * `is_reversal` — this entry reverses something else.
+ * `is_reversed` — something else reverses this entry. Derived in the view from
+ * `reversal_of_entry_id`, never from `status`: 0247 removed the 'reversed'
+ * status value so the question has exactly one answer.
+ */
+export type JournalLineRegional = {
+  id: string;
+  journal_entry_id: string;
+  account_id: string;
+  debit: number;
+  credit: number;
+  branch_id: string | null;
+  region_name: string | null;
+  region_code: string | null;
+  region_kind: string | null;
+  company_id: string;
+  entry_date: string;
+  source_table: string | null;
+  source_id: string | null;
+  is_reversal: boolean;
+  posting_period: string;
+  description: string | null;
+  manual: boolean;
+  entry_created_at: string;
+  reversal_of_entry_id: string | null;
+  is_reversed: boolean;
+  client_id: string | null;
+  partner_id: string | null;
+  employee_id: string | null;
+  contract_id: string | null;
+  cost_center: string | null;
+  account_code: string;
+  account_name: string;
+  account_type: AccountType;
 };
 
 export const ACCOUNT_TYPE_LABEL: Record<AccountType, string> = {

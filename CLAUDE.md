@@ -1,5 +1,23 @@
 # Bastion — working rules
 
+## Branches
+
+**All work goes on `main`.** There is no `dev` branch — it was deleted on
+2026-09-02 after `main` was brought level with it. Commits, migrations, docs:
+`main`.
+
+Note what this did *not* change, because the two things are named the same and
+are not the same thing:
+
+- The **git branch** `dev` is gone.
+- The **Supabase project** `crm-design-dev` (`wlyhbvunvdsropqzlpwx`) is not.
+  Migrations still apply there first and reach production only on named
+  authorisation. The deployment discipline below is untouched.
+
+`scripts/check-migrations.mjs` has no git-branch logic at all — its repo side
+reads `supabase/migrations/` off the working tree, and every `dev` in that file
+means the **database** environment. Do not rename them.
+
 ## Databases: two projects, and only one of them is yours to write
 
 | Role | Supabase project | Project ref | Loaded by |
@@ -106,6 +124,30 @@ exception. Two rules earned the hard way:
 
 `ledger_checks()` reports the **count of checks evaluated** alongside failures,
 for the same reason.
+
+## Reading versus computing, and the one stated exception
+
+The ledger answers; the frontend reads. A screen that recomputes what a view
+already holds is the defect this whole project removed — the Trial Balance
+screen pulled 1,304 journal lines and summed them in JavaScript beside a view
+that answered in 56 rows, while the check suite read the view.
+
+`trial_balance` (0299, given a period by 0319) and `trial_balance_for` (0320,
+which folds branch and period to whatever grain the caller asks for) exist so
+that no screen has to add anything up.
+
+**The exception, and it is deliberate: a table's own footer total is computed
+in the browser.**
+
+A trial balance footer means "the sum of the column above it". Fetched
+separately, it contradicts its own table the moment the row set differs — a
+hide-zero filter, a row RLS withheld — and a header figure that disagrees with
+the table under it is §9.16, which is worse than the duplication. A footer that
+cannot contradict its table has to be folded from the table.
+
+This is the only place arithmetic belongs in a ledger screen. Do not "correct"
+it, and do not extend it to anything that is not literally the sum of displayed
+rows.
 
 ## Accounting policy
 

@@ -1918,3 +1918,329 @@ through `0311` byte-identical in both directions.
 | `no_negative_custodian_balance` | SANDBOX | 2, pre-existing |
 
 `0286` through `0318` are recorded on production with no gaps in the sequence.
+
+---
+
+## 0319 — the ledger views carry the period (dev applied, production pending)
+
+### Why it exists
+
+The three ledger screens have to show the period, filter by client and partner,
+and say whether an entry has been reversed. `trial_balance` had no period
+dimension and `journal_lines_regional` carried none of the counterparties. Every
+one of those questions would otherwise have been answered in the browser, which
+is the defect `0299` removed from the check suite.
+
+### The reduction, proved rather than asserted
+
+`ledger_checks_base` is the **only** reader of `trial_balance` —
+`post_opening_balances` mentions the phrase in prose only, and `pg_depend`
+reports no dependent view. It reads `sum(t.total_debit)` and
+`sum(t.total_credit)` **by name**, filtered by company. Adding a column to a
+`GROUP BY` splits groups and never changes a sum taken over all of them, so the
+0299 collapse survives.
+
+The migration does not stop at saying so. It writes the old view's figures to a
+temp table at the old grain, replaces the view, re-aggregates the new view back
+to that grain, and full-outer-joins the two, refusing to commit on any
+difference in debit, credit or net. It also refuses to commit if the
+before-image is **empty** — a proof over no rows proves nothing (§9.6).
+
+### Preconditions read before applying
+
+| reading | production | dev |
+|---|---|---|
+| `posting_period` null | 0 | 0 |
+| disagreements with `date_trunc('month', entry_date)` | 0 | 0 |
+| `trial_balance` = raw `journal_lines` sums | exact, all 4 companies | — |
+| view definitions | identical md5 on both databases | identical |
+| dependent views | none | none |
+
+The null check is a **gate**; the `entry_date` agreement is recorded as a
+`raise notice` and not a gate, because advance invoicing (§9.19) will
+deliberately post revenue to a period other than the entry month, and the sums
+are unchanged either way.
+
+### Dev result
+
+| | before | after |
+|---|---|---|
+| `trial_balance` rows | 61 | 111 (5 periods) |
+| `journal_lines_regional` rows | 1302 | 1302 |
+| `trial_balance_debits_equal_credits` | 37,930,889.48 = | 37,930,889.48 = |
+| `checks_evaluated` | 26 | 26 |
+
+Digest `2dc4fedcb2bebd57f20decb3d10208ed`, recorded row identical to the file.
+
+### Production
+
+**Not applied.** The instruction to build named 0319 and its reasons but did not
+name the project or its ref, which is the bar `CLAUDE.md` sets for a prod write.
+Awaiting that authorisation.
+
+---
+
+## The future-dated entry
+
+Reported before building, because a source document that can be dated ahead is
+not something the period lock can help with.
+
+| | |
+|---|---|
+| entry | `81e38a78-bde2-4360-bd15-1d5d1a2b404c` |
+| entry date | **2026-09-15** (13 days ahead of the reading on 2026-09-02) |
+| posting period | 2026-09-01 |
+| created | 2026-08-31 05:12 UTC |
+| company | SANDBOX TESTING ORG |
+| source | `invoice_payments` / `59bd7029-c6a0-4a95-ae60-4dd86fc92cdb` |
+| what it posts | Dr 1010 Bank Accounts 150,000 / Cr 1100 Accounts Receivable 150,000, client Delta Port Authority, invoice STS-26-DPA-07 (service month July 2026) |
+
+It is the **only** entry on production with `entry_date > current_date`, it is
+on a sandbox company, and it was created two weeks before the date it claims —
+so it is a fixture, not an operator error in the live company.
+
+The general point survives being a fixture: `invoice_payments.payment_date` is
+operator-supplied and unbounded above, and the journal takes `entry_date` from
+it. The entry therefore lands in a period that has not been reached, let alone
+opened or closed, and a period lock is powerless against it because the lock
+tests whether a period is *closed*, not whether it is in the *future*. The two
+open questions — whether a future payment date should be refused outright, and
+whether posting into an unreached period should be — are policy, so they are
+recorded here rather than answered.
+
+## Flag, logged not chased
+
+Dev's recorded digests differ from the repo for several files in the 0300–0312
+range. The repo↔dev direction of `scripts/check-migrations.mjs` has findings
+waiting.
+
+---
+
+## 0319 on production
+
+Applied. Digest `2dc4fedcb2bebd57f20decb3d10208ed`, identical to the file and to
+the dev row. `checks_evaluated` 28 on all four companies;
+`trial_balance_debits_equal_credits` still exactly **37,678,124.61** on SANDBOX
+TESTING ORG, matching the pre-flight baseline taken before the view was
+touched.
+
+## 0320 — the trial balance answers at every grain (dev applied, production pending)
+
+`trial_balance_for(p_company_id, p_period, p_branch_id)`. Two nullable
+parameters answer all four combinations the screen offers — a period or all
+periods, a region or all regions — from one body that reads `trial_balance` and
+sums its columns. The browser-side fold is gone from both the Trial Balance
+screen and the Chart of Accounts.
+
+**Deliberately SECURITY INVOKER.** The view is `security_invoker`, so the
+caller's RLS is the tenant boundary. A DEFINER function would have to
+re-implement that boundary and would appear in `tenant_guard_gaps()` as a uuid
+parameter needing a guard that exists only because the function removed the one
+RLS already gave it. The migration asserts `prosecdef = false` rather than
+trusting nobody adds it later.
+
+Proof: the four grains are each full-outer-joined against the view aggregated by
+hand to the same grain, on debit, credit and net. Then two guards the
+comparisons themselves cannot supply — the narrowest grain must return rows (four
+empty sets agree perfectly, §9.6) and a null `p_company_id` must return **zero**
+rows, because "`company_id = null` is null-safe by construction" is exactly the
+kind of claim that stops being true when someone rewrites the predicate. The
+fixture picks the company with the most ledger rows, not the first company —
+that is the 0296 lesson.
+
+Dev: digest `0a3706aba68741d6e802dc2c063ec15a`, `tenant_guard_gaps()` **0**,
+`uninvoked_controls()` **11** — unchanged, so the new function did not introduce
+a blind spot in either detector.
+
+**Production: not applied.** The 0319 authorisation was "this migration only."
+
+---
+
+## Logged for after the screens: the two date rules
+
+### Survey — every date-bearing source, upper bound
+
+**No table in the finance path constrains any date column above.** Not one
+`check (… <= current_date)` exists.
+
+| column | future rows | total | max |
+|---|---|---|---|
+| `invoice_payments.payment_date` | **1** | 8 | 2026-09-15 |
+| `invoices.invoice_date` | **2** | 9 | 2026-10-01 |
+| `journal_entries.entry_date` | **1** | 427 | 2026-09-15 |
+| `expenses.expense_date` | 0 | 6 | 2026-09-01 |
+| `expenses.due_date` | 0 | 6 | — |
+| `advances.advance_date` | 0 | 1 | 2026-07-28 |
+| `cheques.cheque_date` | 0 | 3 | 2026-08-28 |
+| `custody_transfers.date` | 0 | 1 | 2026-08-28 |
+| `partner_account_entries.date` | 0 | 0 | — |
+| `payslips.period_month` | 0 | 48 | 2026-07-01 |
+| `payroll_runs.period_month` | 0 | 0 | — |
+| `opening_balance_batches.as_of_date` | 0 | 1 | 2026-08-31 |
+
+They are all unbounded above, so they are decided together rather than one at a
+time — but two of them are **not** the same case as `payment_date`, and that
+difference is the point:
+
+- **`cheques.cheque_date` must stay unbounded.** A post-dated cheque is an
+  ordinary instrument, and the date on it is genuinely in the future. `0269`
+  already moved the clearing posting to `cleared_at` for exactly this reason, so
+  a forward `cheque_date` no longer drags a journal entry with it.
+- **`expenses.due_date` must stay unbounded.** A payable due next month is the
+  normal case; it is a schedule, not a record of something that happened.
+- **`payslips.period_month` / `payroll_runs.period_month`** are month labels, not
+  event dates; the natural bound is the current month, not the current day.
+
+So the rule is not "no future dates". It is: **a column that records something
+that has happened is bounded; a column that records something scheduled is
+not.** `payment_date`, `expense_date`, `advance_date`, `custody_transfers.date`
+and `partner_account_entries.date` are the first kind.
+
+### `invoices.invoice_date` — future, and correctly so
+
+The two future invoices are fixtures (`FIX-SEP-COINCIDE` 2026-09-30,
+`FIX-SEP-CROSS` 2026-10-01, both SANDBOX, both created 2026-08-31). Their
+journal entries post at **2026-09-01** — the service month, not the invoice
+date. **A4 already redirects them**, so an invoice dated ahead does not produce
+an entry dated ahead. `run_auto_invoices` sets `invoice_date` to
+`date_trunc('month', p_run_date) - interval '1 month'` — the previous month,
+never forward.
+
+### Does anything legitimately post forward? No.
+
+`run_auto_invoices` dates backward. `post_payslip_accrual` and
+`trueup_bonus_provision` are period-driven. Invoices post at `period_start`.
+Cheques post at `cleared_at`. The **only** mechanism that currently puts a
+future `entry_date` into the journal is `invoice_payments.payment_date` flowing
+straight through — which is the single future entry on production.
+
+So the second rule can be absolute: **no entry may post into a period later than
+the current one**, added to `enforce_period_lock` alongside the closed-period
+half, with the same `is_maintenance_session()` bypass and the same `P0001`
+errcode. The lock's existing shape supports it directly — it already reads
+`v_new_date` and `v_company` off the row and raises on
+`is_period_closed(v_company, v_new_date)`; the future test sits beside that
+call, not inside `is_period_closed`, because "closed" and "not yet reached" are
+different facts and one predicate answering both is how a detector's own
+predicate becomes the defect.
+
+Both are **logged, not built** — they come after the screens.
+
+---
+
+## Branch change, 2026-09-02
+
+`main` is the only branch. Local `main` was 84 commits behind and was
+fast-forwarded to `origin/main`; local `dev` (tip `4c952dc`, identical to
+`origin/main`) was deleted after confirming `origin/main..origin/dev` was
+empty, so nothing was lost. `origin/dev` still exists on the remote and was
+**not** deleted from here — a remote branch deletion is not a local decision.
+
+Two things share the name and are not the same thing, so CLAUDE.md now says so
+at the top: the git branch `dev` is gone; the Supabase project `crm-design-dev`
+(`wlyhbvunvdsropqzlpwx`) is not, and the dev-first discipline is unchanged.
+
+`scripts/check-migrations.mjs` needed **no change**. It has no git-branch logic
+at all — its repo side reads `supabase/migrations/` off the working tree, and
+every `dev` in that file names the database environment. Renaming them would
+have broken the checker to satisfy a change that did not touch it.
+
+## 0320 on production
+
+Digest `0a3706aba68741d6e802dc2c063ec15a`, identical to the file and the dev
+row. `prosecdef` false, `tenant_guard_gaps()` 0, `uninvoked_controls()` 11,
+`trial_balance_for(SANDBOX)` returns 28 accounts, `trial_balance_for(null)`
+returns 0.
+
+## 0321 / 0322 — the two date rules (dev applied, production pending)
+
+`0321` digest `f07086390d767ffb7b7c7ce73e9d4817`, `0322` digest
+`2beb92401d9f742a3ac94808f48e9bad`. Dev journal unchanged at 439 entries /
+1334 lines across both.
+
+### What 0322 had to correct in the instruction
+
+`enforce_period_lock` is attached to **seven** tables, including
+`invoices(invoice_date)` and `cheques(cheque_date)`. An unscoped future test
+inside it would have refused exactly the two columns 0321 established must stay
+unbounded. The rule is about entries, so the test is scoped to
+`tg_table_name = 'journal_entries'` and reads **`posting_period`** — the column
+that means what the rule means — not `date_trunc` on `entry_date`, which is a
+proxy for it and is allowed to diverge by policy under §9.19.
+
+The two rules are complementary and neither substitutes for the other: the
+entry that prompted this (2026-09-15, current period) is refused by **0321** at
+source, not by 0322.
+
+### A defect in the first 0321, and the rule it produced
+
+The first draft's proof did the accepted-case probe for real and then
+"restored" the old date. That is not a restore. Changing a source date makes
+the app reverse and repost its journal entry, and changing it back reverses and
+reposts again: it left **16 entries and 32 lines** of self-cancelling noise on
+dev (439/1334, up from 423/1302). Net balances were unchanged and
+debits-equal-credits still passed, which is precisely why nothing would have
+flagged it.
+
+Those 16 entries were **not deleted**. They are a faithful record of four date
+edits and four undos; deleting audit rows to tidy up my own mistake is the
+instinct this project distrusts. They are logged here instead, and they widen
+the already-recorded dev↔prod divergence.
+
+**The rule: a probe that writes must unwind through the transaction, not
+through a compensating write. A compensating write is another event, and the
+ledger records it.** Every probe in both migrations now ends in a deliberate
+`raise` that rolls its subtransaction back.
+
+### Also corrected before it shipped
+
+- The refusal message read "A expense records…". Reworded to "It records…".
+- A `check (d <= current_date)` constraint was **probed on dev, and Postgres
+  accepted it** — I had predicted it would be refused as non-immutable and was
+  wrong. The reasons for a trigger are different and still hold: ADD CONSTRAINT
+  validates existing rows and one row on each database violates it; a CHECK
+  cannot distinguish setting the date from editing an unrelated field; and a
+  trigger honours `is_maintenance_session()`.
+
+### Exemptions confirmed empirically on dev, after the triggers were live
+
+`cheques.cheque_date + 45`, `invoices.invoice_date + 45` and
+`payslips.period_month + 2 months` were each attempted and each **accepted**.
+`expenses.expense_date + 5` was refused with the 0321 message.
+A journal entry posting to December 2026 was refused with the 0322 message.
+
+---
+
+## 0321 and 0322 on production
+
+| migration | digest | matches |
+|---|---|---|
+| `0321_a_record_of_the_past_is_not_dated_ahead` | `f07086390d767ffb7b7c7ce73e9d4817` | file and dev row |
+| `0322_the_period_lock_sees_a_period_not_yet_reached` | `2beb92401d9f742a3ac94808f48e9bad` | file and dev row |
+
+Production journal **unchanged at 427 entries / 1304 lines** across both
+applies, and no `0322 probe` row exists. That is the direct evidence the proof
+correction worked: the uncorrected 0321 moved dev from 423/1302 to 439/1334,
+and the corrected one moved production not at all.
+
+`tenant_guard_gaps()` 0. `checks_evaluated` 28 on all four companies. Five
+`enforce_not_future_date` triggers attached. Every source max date unchanged,
+including the exempt `invoices.invoice_date` at 2026-10-01.
+
+### The two unattributed dev reds — isolated to dev's data
+
+Re-checked on production with 0321 and 0322 applied, as instructed.
+
+| check | production (all 4 companies) | dev (SANDBOX TESTING ORG) |
+|---|---|---|
+| `ar_control_equals_open_invoices` | **green** — SANDBOX 2,908,877.00 = 2,908,877.00 | **red** — 3,079,999.00 vs 3,081,999.00 |
+| `employee_advances_control_not_in_client_ar` | **green** — 0.00 everywhere | **red** — 2,000.00, expected 0.00 |
+
+Same code, same migrations, opposite results: **the cause is dev's data, not the
+code.**
+
+And the two reds are one fact, not two. The AR shortfall is **2,000.00** and the
+misfiled employee-advance balance is **2,000.00** — the same amount seen from
+two directions. One dev-only advance of 2,000.00 is sitting where a client
+receivable is counted. Recorded here rather than chased; it does not exist on
+production.

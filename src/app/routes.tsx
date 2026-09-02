@@ -148,6 +148,9 @@ export const router = createRouter([
       // Opening Balances + Chart of Accounts (which hosts TB + GL) merged → Accounting Core.
       { path: "accounting-core", element: guard(["coa.view", "reports.view"], <AccountingCore />) },
       { path: "chart-of-accounts", element: <Navigate to="/super-admin/accounting-core?tab=coa" replace /> },
+      { path: "trial-balance", element: <Navigate to="/super-admin/accounting-core?tab=tb" replace /> },
+      { path: "journal", element: <Navigate to="/super-admin/accounting-core?tab=journal" replace /> },
+      { path: "general-ledger", element: <Navigate to="/super-admin/accounting-core?tab=journal" replace /> },
       { path: "period-close", element: guard(["period_close.manage", "reports.view"], <PeriodClose />) },
       { path: "audit-log", element: <RequireAuth roles={["super_super_admin", "super_admin"]}><AuditLog /></RequireAuth> },
       { path: "employees", element: guard(["employees.view", "employees.edit"], <EmployeeManagement />) },

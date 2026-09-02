@@ -10,7 +10,8 @@ import {
   Search,
   ChevronRight,
   ChevronDown,
-  ChevronLeft,
+  Landmark,
+  Wallet,
 } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -24,51 +25,43 @@ import {
   type ChartAccount,
   type AccountType,
   type AccountNormalSide,
-  type JournalLine,
+  type TrialBalanceAccountRow,
 } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
+import { useRegion } from "../../lib/region";
 
-type Tab = "coa" | "tb" | "gl";
+// CHART OF ACCOUNTS
+//
+// The account tree, its control-account flags, the per-location and per-bank
+// sub-accounts, and each account's balance.
+//
+// The balance is READ from the ledger via `trial_balance_for` (0320), which
+// answers at the region grain this screen is looking at, over `trial_balance`
+// — 0299's single source, given a period by 0319. This screen used to host a
+// Trial Balance tab and a General Ledger tab that pulled every journal line and
+// summed them in the browser. Those are now their own screens reading the ledger; the tabs are
+// gone rather than left beside their replacements, so the old shape cannot
+// come back by habit.
 
-type GLRow = {
-  entry_date: string;
-  description: string | null;
-  source_table: string | null;
-  is_reversal: boolean;
-  debit: number;
-  credit: number;
-};
+const fmtPKR = (n: number) => `PKR ${Math.round(n).toLocaleString()}`;
 
-const fmtPKR = (n: number) =>
-  `PKR ${Math.round(n).toLocaleString()}`;
-
-const todayISO = () => new Date().toISOString().slice(0, 10);
-const monthStartISO = () => {
-  const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
-};
-const yearStartISO = () => `${new Date().getFullYear()}-01-01`;
+/** A cash or bank sub-account, named by the location it belongs to. */
+type SubAccountLabel = { name: string; kind: "bank" | "cash" };
 
 export default function ChartOfAccounts() {
-  const { profile } = useAuth();
+  const { profile, company } = useAuth();
+  const { regionId, region } = useRegion();
+  const companyId = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
   const isSuper = profile?.role === "super_admin" || profile?.role === "super_super_admin";
 
-  const [tab, setTab] = useState<Tab>("coa");
   const [accounts, setAccounts] = useState<ChartAccount[]>([]);
+  const [balances, setBalances] = useState<Map<string, { debit: number; credit: number }>>(
+    new Map(),
+  );
+  const [subAccounts, setSubAccounts] = useState<Map<string, SubAccountLabel>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Period for TB / GL.
-  const [periodStart, setPeriodStart] = useState<string>(yearStartISO());
-  const [periodEnd, setPeriodEnd] = useState<string>(todayISO());
-
-  // Journal-derived balances: Map<accountId, {debit, credit}>
-  const [accountBalances, setAccountBalances] = useState<Map<string, { debit: number; credit: number }>>(new Map());
-  // GL entries for a single account.
-  const [glRows, setGlRows] = useState<GLRow[]>([]);
-  const [txLoading, setTxLoading] = useState(false);
-
-  // CoA form state
   const [addOpen, setAddOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<ChartAccount | null>(null);
   const [form, setForm] = useState({
@@ -80,24 +73,7 @@ export default function ChartOfAccounts() {
     active: true,
   });
   const [submitting, setSubmitting] = useState(false);
-
-  // Manual journal entry state
-  const [manualOpen, setManualOpen] = useState(false);
-  const [manualForm, setManualForm] = useState({
-    entry_date: todayISO(),
-    description: "",
-    debit_account_id: "",
-    credit_account_id: "",
-    amount: "",
-  });
-  const [manualSubmitting, setManualSubmitting] = useState(false);
-
-  // GL drill-down
-  const [glAccountId, setGlAccountId] = useState<string | null>(null);
-
-  // Filters
   const [coaSearch, setCoaSearch] = useState("");
-  const [tbHideZero, setTbHideZero] = useState(true);
 
   const loadAccounts = async () => {
     setLoading(true);
@@ -114,128 +90,139 @@ export default function ChartOfAccounts() {
     loadAccounts();
   }, []);
 
-  // Load aggregated balances from journal_lines for the TB.
-  const loadBalances = async () => {
-    setTxLoading(true);
-    setError(null);
-    // Join journal_lines → journal_entries to filter by date, then SUM per account.
-    const { data, error: qErr } = await supabase
-      .from("journal_lines")
-      .select("account_id, debit, credit, journal_entry:journal_entry_id(entry_date)")
-      .gte("journal_entry.entry_date", periodStart)
-      .lte("journal_entry.entry_date", periodEnd);
-
-    if (qErr) {
-      setError(qErr.message);
-      setTxLoading(false);
-      return;
-    }
-
-    const map = new Map<string, { debit: number; credit: number }>();
-    for (const row of (data ?? []) as unknown as { account_id: string; debit: number; credit: number; journal_entry: { entry_date: string } | null }[]) {
-      if (!row.journal_entry) continue;
-      const existing = map.get(row.account_id) ?? { debit: 0, credit: 0 };
-      existing.debit += Number(row.debit);
-      existing.credit += Number(row.credit);
-      map.set(row.account_id, existing);
-    }
-    setAccountBalances(map);
-    setTxLoading(false);
-  };
-
-  // Load GL entries for a specific account.
-  const loadGL = async (accountId: string) => {
-    setTxLoading(true);
-    setError(null);
-    const { data, error: qErr } = await supabase
-      .from("journal_lines")
-      .select("debit, credit, journal_entry:journal_entry_id(entry_date, description, source_table, is_reversal)")
-      .eq("account_id", accountId)
-      .gte("journal_entry.entry_date", periodStart)
-      .lte("journal_entry.entry_date", periodEnd)
-      .order("journal_entry(entry_date)", { ascending: true });
-
-    if (qErr) {
-      setError(qErr.message);
-      setTxLoading(false);
-      return;
-    }
-
-    const rows: GLRow[] = [];
-    for (const r of (data ?? []) as unknown as { debit: number; credit: number; journal_entry: { entry_date: string; description: string | null; source_table: string | null; is_reversal: boolean } | null }[]) {
-      if (!r.journal_entry) continue;
-      rows.push({
-        entry_date: r.journal_entry.entry_date,
-        description: r.journal_entry.description,
-        source_table: r.journal_entry.source_table,
-        is_reversal: r.journal_entry.is_reversal,
-        debit: Number(r.debit),
-        credit: Number(r.credit),
-      });
-    }
-    setGlRows(rows);
-    setTxLoading(false);
-  };
-
+  // Which leaf accounts are the cash and bank sub-accounts, and what they are
+  // sub-accounts OF. `cash_locations` is the table that owns that fact — 0268
+  // is the reason a cash movement has to name one.
   useEffect(() => {
-    if (tab === "tb") loadBalances();
-    if (tab === "gl" && glAccountId) loadGL(glAccountId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, periodStart, periodEnd, glAccountId]);
+    let cancelled = false;
+    (async () => {
+      if (!companyId) return;
+      const { data } = await supabase
+        .from("cash_locations")
+        .select("name, location_type, coa_account_id, bank_account_id")
+        .eq("company_id", companyId);
+      if (cancelled) return;
+      const m = new Map<string, SubAccountLabel>();
+      for (const r of (data ?? []) as {
+        name: string;
+        location_type: string | null;
+        coa_account_id: string | null;
+        bank_account_id: string | null;
+      }[]) {
+        if (!r.coa_account_id) continue;
+        m.set(r.coa_account_id, {
+          name: r.name,
+          kind: r.bank_account_id ? "bank" : "cash",
+        });
+      }
+      setSubAccounts(m);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId]);
+
+  // Balances, read from the ledger. Cumulative across every period — the
+  // period-by-period view is the Trial Balance screen's job, not this one's.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!companyId) return;
+      // 0320 returns one row per account at the requested grain. A null period
+      // is every period, which is what a chart of accounts wants; the region
+      // comes from the selector. Nothing is added up here — the earlier version
+      // of this screen folded the view's branch and period rows itself, which
+      // is a second implementation of a total the ledger already has.
+      const { data, error: bErr } = await supabase.rpc("trial_balance_for", {
+        p_company_id: companyId,
+        p_period: null,
+        p_branch_id: regionId,
+      });
+      if (cancelled) return;
+      if (bErr) {
+        setError(bErr.message);
+        return;
+      }
+      const m = new Map<string, { debit: number; credit: number }>();
+      for (const r of (data ?? []) as TrialBalanceAccountRow[]) {
+        m.set(r.account_id, {
+          debit: Number(r.total_debit),
+          credit: Number(r.total_credit),
+        });
+      }
+      setBalances(m);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId, regionId]);
 
   const filteredAccounts = useMemo(() => {
     const q = coaSearch.trim().toLowerCase();
     if (!q) return accounts;
-    return accounts.filter(
-      (a) =>
+    // A matching child keeps its parent visible, otherwise a search for a
+    // custodian's cash account shows it floating with no control account above
+    // it and no indication of what it rolls up into.
+    const byId = new Map(accounts.map((a) => [a.id, a]));
+    const keep = new Set<string>();
+    for (const a of accounts) {
+      if (
         a.account_code.toLowerCase().includes(q) ||
-        a.account_name.toLowerCase().includes(q),
-    );
+        a.account_name.toLowerCase().includes(q)
+      ) {
+        keep.add(a.id);
+        let p = a.parent_id;
+        while (p && !keep.has(p)) {
+          keep.add(p);
+          p = byId.get(p)?.parent_id ?? null;
+        }
+      }
+    }
+    return accounts.filter((a) => keep.has(a.id));
   }, [accounts, coaSearch]);
 
-  const accountsByType = useMemo(() => {
-    const m = new Map<AccountType, ChartAccount[]>();
-    for (const t of ACCOUNT_TYPE_ORDER) m.set(t, []);
-    for (const a of filteredAccounts) m.get(a.account_type)!.push(a);
+  const childrenOf = useMemo(() => {
+    const m = new Map<string | null, ChartAccount[]>();
+    for (const a of filteredAccounts) {
+      const key = a.parent_id ?? null;
+      const arr = m.get(key) ?? [];
+      arr.push(a);
+      m.set(key, arr);
+    }
+    for (const arr of m.values()) {
+      arr.sort((x, y) => x.account_code.localeCompare(y.account_code));
+    }
     return m;
   }, [filteredAccounts]);
 
-  // TB rows: one per active account with nonzero balance.
-  const tbRows = useMemo(() => {
-    return accounts
-      .filter((a) => a.active)
-      .map((a) => {
-        const bal = accountBalances.get(a.id) ?? { debit: 0, credit: 0 };
-        return { account: a, debit: bal.debit, credit: bal.credit };
-      })
-      .filter((r) => !tbHideZero || r.debit !== 0 || r.credit !== 0)
-      .sort((a, b) => a.account.account_code.localeCompare(b.account.account_code));
-  }, [accounts, accountBalances, tbHideZero]);
+  const visibleIds = useMemo(
+    () => new Set(filteredAccounts.map((a) => a.id)),
+    [filteredAccounts],
+  );
 
-  const tbTotals = useMemo(() => {
-    let d = 0;
-    let c = 0;
-    for (const r of tbRows) { d += r.debit; c += r.credit; }
-    return { d, c };
-  }, [tbRows]);
+  // Roots per type: an account with no parent, or one whose parent is filtered
+  // out — otherwise a matched child would vanish along with its hidden parent.
+  const rootsByType = useMemo(() => {
+    const m = new Map<AccountType, ChartAccount[]>();
+    for (const t of ACCOUNT_TYPE_ORDER) m.set(t, []);
+    for (const a of filteredAccounts) {
+      if (!a.parent_id || !visibleIds.has(a.parent_id)) m.get(a.account_type)?.push(a);
+    }
+    for (const arr of m.values()) {
+      arr.sort((x, y) => x.account_code.localeCompare(y.account_code));
+    }
+    return m;
+  }, [filteredAccounts, visibleIds]);
 
-  // GL running balance.
-  const glRunning = useMemo(() => {
-    if (!glAccountId) return [] as { row: GLRow; running: number }[];
-    const acct = accounts.find((a) => a.id === glAccountId);
-    if (!acct) return [];
-    let r = 0;
-    return glRows.map((row) => {
-      const delta = acct.normal_side === "debit" ? row.debit - row.credit : row.credit - row.debit;
-      r += delta;
-      return { row, running: r };
+  const resetForm = () =>
+    setForm({
+      account_code: "",
+      account_name: "",
+      account_type: "expense",
+      normal_side: "debit",
+      parent_id: "",
+      active: true,
     });
-  }, [glAccountId, glRows, accounts]);
-
-  // -- CoA CRUD --
-  const resetForm = () => {
-    setForm({ account_code: "", account_name: "", account_type: "expense", normal_side: "debit", parent_id: "", active: true });
-  };
 
   const openEdit = (a: ChartAccount) => {
     setEditingRow(a);
@@ -263,11 +250,22 @@ export default function ChartOfAccounts() {
       active: form.active,
     };
     if (editingRow) {
-      const { error: upErr } = await supabase.from("chart_of_accounts").update(payload).eq("id", editingRow.id);
-      if (upErr) { setError(upErr.message); setSubmitting(false); return; }
+      const { error: upErr } = await supabase
+        .from("chart_of_accounts")
+        .update(payload)
+        .eq("id", editingRow.id);
+      if (upErr) {
+        setError(upErr.message);
+        setSubmitting(false);
+        return;
+      }
     } else {
       const { error: insErr } = await supabase.from("chart_of_accounts").insert(payload);
-      if (insErr) { setError(insErr.message); setSubmitting(false); return; }
+      if (insErr) {
+        setError(insErr.message);
+        setSubmitting(false);
+        return;
+      }
     }
     setSubmitting(false);
     setAddOpen(false);
@@ -277,84 +275,61 @@ export default function ChartOfAccounts() {
   };
 
   const handleDelete = async (a: ChartAccount) => {
-    if (a.system_account) { setError(`"${a.account_name}" is a system account — deactivate instead.`); return; }
+    if (a.system_account) {
+      setError(`"${a.account_name}" is a system account — deactivate instead.`);
+      return;
+    }
     if (!window.confirm(`Delete account "${a.account_code} — ${a.account_name}"?`)) return;
     const { error: delErr } = await supabase.from("chart_of_accounts").delete().eq("id", a.id);
-    if (delErr) { setError(delErr.message); return; }
+    if (delErr) {
+      setError(delErr.message);
+      return;
+    }
     await loadAccounts();
-  };
-
-  // -- Manual journal entry --
-  const handleManualJournal = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const amt = Number(manualForm.amount);
-    if (!amt || amt <= 0) { setError("Enter a positive amount."); return; }
-    if (!manualForm.debit_account_id || !manualForm.credit_account_id) { setError("Select both a debit and credit account."); return; }
-    if (manualForm.debit_account_id === manualForm.credit_account_id) { setError("Debit and credit accounts must differ."); return; }
-    setManualSubmitting(true);
-    setError(null);
-
-    // One transaction via post_journal (0220). Inserting the entry and its lines
-    // as two PostgREST calls left the entry momentarily line-less, which the
-    // deferred debits=credits check rejects.
-    const { error: jeErr } = await supabase.rpc("post_manual_journal", {
-      p_entry_date: manualForm.entry_date,
-      p_description: manualForm.description.trim() || "Manual adjustment",
-      p_debit_account_id: manualForm.debit_account_id,
-      p_credit_account_id: manualForm.credit_account_id,
-      p_amount: amt,
-    });
-    if (jeErr) { setError(jeErr.message); setManualSubmitting(false); return; }
-
-    setManualSubmitting(false);
-    setManualOpen(false);
-    setManualForm({ entry_date: todayISO(), description: "", debit_account_id: "", credit_account_id: "", amount: "" });
-    if (tab === "tb") loadBalances();
   };
 
   return (
     <>
       <Header
         title="Chart of Accounts"
-        subtitle="Editable account list, Trial Balance (from double-entry journal), and General Ledger drill-down"
+        subtitle={`The account tree, with balances read from the ledger${
+          region ? ` — ${region.name}` : ""
+        }`}
         actions={
-          <div className="flex gap-2">
-            {(tab === "tb" || tab === "gl") && isSuper && (
-              <Button variant="secondary" size="md" onClick={() => setManualOpen(true)}>
-                <Plus className="w-4 h-4 mr-2" /> Manual Journal Entry
-              </Button>
-            )}
-            <ExportButton
-              onExport={() => {
-                if (tab === "coa") {
-                  exportTable({
-                    fileName: "Chart of Accounts.xlsx",
-                    sheetName: "CoA",
-                    title: "Chart of Accounts",
-                    headers: ["Code", "Name", "Type", "Normal Side", "Active"],
-                    rows: accounts.map((a) => [a.account_code, a.account_name, ACCOUNT_TYPE_LABEL[a.account_type], a.normal_side, a.active ? "Yes" : "No"]),
-                  });
-                } else if (tab === "tb") {
-                  exportTable({
-                    fileName: `Trial Balance ${periodStart} to ${periodEnd}.xlsx`,
-                    sheetName: "Trial Balance",
-                    title: `Trial Balance — ${periodStart} to ${periodEnd}`,
-                    headers: ["Code", "Account", "Type", "Debit (PKR)", "Credit (PKR)"],
-                    rows: [...tbRows.map((r) => [r.account.account_code, r.account.account_name, ACCOUNT_TYPE_LABEL[r.account.account_type], r.debit, r.credit]), ["", "TOTAL", "", tbTotals.d, tbTotals.c]],
-                  });
-                } else if (glAccountId) {
-                  const acct = accounts.find((a) => a.id === glAccountId);
-                  exportTable({
-                    fileName: `GL ${acct?.account_code ?? ""}.xlsx`,
-                    sheetName: "General Ledger",
-                    title: `General Ledger — ${acct?.account_code} ${acct?.account_name}`,
-                    headers: ["Date", "Source", "Description", "Debit", "Credit", "Running"],
-                    rows: glRunning.map((r) => [r.row.entry_date, r.row.source_table ?? "manual", r.row.description ?? "", r.row.debit, r.row.credit, r.running]),
-                  });
-                }
-              }}
-            />
-          </div>
+          <ExportButton
+            onExport={() =>
+              exportTable({
+                fileName: "Chart of Accounts.xlsx",
+                sheetName: "CoA",
+                title: "Chart of Accounts",
+                headers: [
+                  "Code",
+                  "Name",
+                  "Type",
+                  "Normal Side",
+                  "Control",
+                  "Sub-account of",
+                  "Debit (PKR)",
+                  "Credit (PKR)",
+                  "Active",
+                ],
+                rows: accounts.map((a) => {
+                  const b = balances.get(a.id) ?? { debit: 0, credit: 0 };
+                  return [
+                    a.account_code,
+                    a.account_name,
+                    ACCOUNT_TYPE_LABEL[a.account_type],
+                    a.normal_side,
+                    a.is_control ? "Yes" : "",
+                    subAccounts.get(a.id)?.name ?? "",
+                    b.debit,
+                    b.credit,
+                    a.active ? "Yes" : "No",
+                  ];
+                }),
+              })
+            }
+          />
         }
       />
 
@@ -363,203 +338,102 @@ export default function ChartOfAccounts() {
           <div className="flex items-start gap-2 p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5" />
             <div className="flex-1">{error}</div>
-            <button onClick={() => setError(null)}><X className="w-4 h-4" /></button>
+            <button onClick={() => setError(null)}>
+              <X className="w-4 h-4" />
+            </button>
           </div>
         )}
 
-        <div className="bg-white rounded-lg border border-slate-200">
-          {/* Tabs + period range */}
-          <div className="p-4 md:p-5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex gap-2">
-              {([
-                { v: "coa", label: "Chart of Accounts" },
-                { v: "tb", label: "Trial Balance" },
-                { v: "gl", label: "General Ledger" },
-              ] as const).map((t) => (
-                <button
-                  key={t.v}
-                  onClick={() => setTab(t.v)}
-                  className={`px-4 py-2 rounded-md text-sm transition-colors ${tab === t.v ? "bg-brand-600 text-[#fff]" : "text-slate-600 hover:bg-slate-100"}`}
-                >
-                  {t.label}
-                </button>
-              ))}
+        <div className="bg-white rounded-lg border border-slate-200 p-4 md:p-6 space-y-4">
+          <div className="flex flex-wrap items-center gap-2 justify-between">
+            <div className="relative flex-1 max-w-md">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={coaSearch}
+                onChange={(e) => setCoaSearch(e.target.value)}
+                placeholder="Search code or name…"
+                className="w-full pl-10 pr-3 py-2 border border-slate-200 rounded-md text-sm"
+              />
             </div>
-            {(tab === "tb" || tab === "gl") && (
-              <div className="flex items-center gap-2 text-sm">
-                <label className="text-slate-600">From</label>
-                <input type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} className="px-2 py-1 border border-slate-200 rounded text-sm" />
-                <label className="text-slate-600">To</label>
-                <input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} className="px-2 py-1 border border-slate-200 rounded text-sm" />
-                <button type="button" onClick={() => { setPeriodStart(monthStartISO()); setPeriodEnd(todayISO()); }} className="px-2 py-1 text-xs border border-slate-200 rounded hover:bg-slate-50">MTD</button>
-                <button type="button" onClick={() => { setPeriodStart(yearStartISO()); setPeriodEnd(todayISO()); }} className="px-2 py-1 text-xs border border-slate-200 rounded hover:bg-slate-50">YTD</button>
-              </div>
+            {isSuper && (
+              <Button
+                variant="primary"
+                size="md"
+                onClick={() => {
+                  resetForm();
+                  setEditingRow(null);
+                  setAddOpen(true);
+                }}
+              >
+                <Plus className="w-4 h-4 mr-2" /> Add Account
+              </Button>
             )}
           </div>
 
-          {/* CoA tab */}
-          {tab === "coa" && (
-            <div className="p-4 md:p-6 space-y-4">
-              <div className="flex flex-wrap items-center gap-2 justify-between">
-                <div className="relative flex-1 max-w-md">
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input type="text" value={coaSearch} onChange={(e) => setCoaSearch(e.target.value)} placeholder="Search…" className="w-full pl-10 pr-3 py-2 border border-slate-200 rounded-md text-sm" />
-                </div>
-                {isSuper && (
-                  <Button variant="primary" size="md" onClick={() => { resetForm(); setEditingRow(null); setAddOpen(true); }}>
-                    <Plus className="w-4 h-4 mr-2" /> Add Account
-                  </Button>
-                )}
-              </div>
-              {loading ? (
-                <div className="py-10 text-center text-slate-500"><Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…</div>
-              ) : (
-                <div className="space-y-5">
-                  {ACCOUNT_TYPE_ORDER.map((type) => {
-                    const rows = accountsByType.get(type) ?? [];
-                    if (rows.length === 0) return null;
-                    return <CoaTypeSection key={type} type={type} rows={rows} isSuper={isSuper} onEdit={openEdit} onDelete={handleDelete} />;
-                  })}
-                </div>
-              )}
+          {loading ? (
+            <div className="py-10 text-center text-slate-500">
+              <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
             </div>
-          )}
-
-          {/* Trial Balance tab */}
-          {tab === "tb" && (
-            <div className="p-4 md:p-6 space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm text-slate-600">
-                  Balances from the double-entry journal. Every entry has matching debits and credits by construction.
-                </p>
-                <label className="flex items-center gap-2 text-sm text-slate-600">
-                  <input type="checkbox" checked={tbHideZero} onChange={(e) => setTbHideZero(e.target.checked)} />
-                  Hide zero balances
-                </label>
-              </div>
-              {txLoading ? (
-                <div className="py-10 text-center text-slate-500"><Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Computing…</div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-slate-200 bg-slate-50">
-                        <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Code</th>
-                        <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Account</th>
-                        <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Type</th>
-                        <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Debit</th>
-                        <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Credit</th>
-                        <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {tbRows.length === 0 && (
-                        <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-500 text-sm">No activity in this period.</td></tr>
-                      )}
-                      {tbRows.map((r) => (
-                        <tr key={r.account.id} className="hover:bg-slate-50">
-                          <td className="px-4 py-2 text-xs font-mono text-slate-900">{r.account.account_code}</td>
-                          <td className="px-4 py-2 text-sm text-slate-900">{r.account.account_name}</td>
-                          <td className="px-4 py-2 text-xs text-slate-500">{ACCOUNT_TYPE_LABEL[r.account.account_type]}</td>
-                          <td className="px-4 py-2 text-right text-sm">{r.debit !== 0 ? fmtPKR(r.debit) : ""}</td>
-                          <td className="px-4 py-2 text-right text-sm">{r.credit !== 0 ? fmtPKR(r.credit) : ""}</td>
-                          <td className="px-4 py-2 text-right">
-                            <button onClick={() => { setGlAccountId(r.account.id); setTab("gl"); }} className="text-xs text-brand-600 hover:text-brand-700">
-                              View ledger →
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      <tr className="border-t-2 border-slate-300 bg-slate-50">
-                        <td colSpan={3} className="px-4 py-3 text-sm text-slate-900 font-medium text-right">TOTAL</td>
-                        <td className="px-4 py-3 text-right text-sm text-slate-900 font-medium">{fmtPKR(tbTotals.d)}</td>
-                        <td className="px-4 py-3 text-right text-sm text-slate-900 font-medium">{fmtPKR(tbTotals.c)}</td>
-                        <td></td>
-                      </tr>
-                      <tr>
-                        <td colSpan={6} className="px-4 py-2 text-xs text-right">
-                          Difference:{" "}
-                          <span className={Math.abs(tbTotals.d - tbTotals.c) < 1 ? "text-success-700 font-medium" : "text-danger-700"}>
-                            {fmtPKR(tbTotals.d - tbTotals.c)}
-                          </span>
-                          {Math.abs(tbTotals.d - tbTotals.c) < 1 && (
-                            <span className="text-success-700 ml-2">✓ Balanced</span>
-                          )}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* General Ledger tab */}
-          {tab === "gl" && (
-            <div className="p-4 md:p-6 space-y-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <button type="button" onClick={() => setTab("tb")} className="text-sm text-brand-600 hover:text-brand-700 inline-flex items-center gap-1">
-                  <ChevronLeft className="w-4 h-4" /> Back to Trial Balance
-                </button>
-                <ThemedSelect value={glAccountId ?? ""} onChange={(e) => setGlAccountId(e.target.value || null)} className="px-3 py-2 border border-slate-200 rounded-md text-sm min-w-[280px]">
-                  <option value="">— Select an account —</option>
-                  {accounts.map((a) => <option key={a.id} value={a.id}>{a.account_code} — {a.account_name}</option>)}
-                </ThemedSelect>
-              </div>
-              {!glAccountId ? (
-                <p className="text-sm text-slate-500">Pick an account above (or click "View ledger" from the Trial Balance).</p>
-              ) : txLoading ? (
-                <div className="py-10 text-center text-slate-500"><Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…</div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-slate-200 bg-slate-50">
-                        <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Date</th>
-                        <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Source</th>
-                        <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Description</th>
-                        <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Debit</th>
-                        <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Credit</th>
-                        <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Running</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {glRunning.length === 0 && (
-                        <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-500 text-sm">No entries in this period.</td></tr>
-                      )}
-                      {glRunning.map((r, i) => (
-                        <tr key={i} className={`hover:bg-slate-50 ${r.row.is_reversal ? "opacity-60 italic" : ""}`}>
-                          <td className="px-4 py-2 text-xs text-slate-700">{r.row.entry_date}</td>
-                          <td className="px-4 py-2 text-xs text-slate-700">{r.row.source_table ?? "manual"}{r.row.is_reversal ? " (rev)" : ""}</td>
-                          <td className="px-4 py-2 text-sm text-slate-900">{r.row.description ?? "—"}</td>
-                          <td className="px-4 py-2 text-right text-sm">{r.row.debit ? fmtPKR(r.row.debit) : ""}</td>
-                          <td className="px-4 py-2 text-right text-sm">{r.row.credit ? fmtPKR(r.row.credit) : ""}</td>
-                          <td className="px-4 py-2 text-right text-sm text-slate-900">{fmtPKR(r.running)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+          ) : (
+            <div className="space-y-5">
+              {ACCOUNT_TYPE_ORDER.map((type) => {
+                const roots = rootsByType.get(type) ?? [];
+                if (roots.length === 0) return null;
+                return (
+                  <CoaTypeSection
+                    key={type}
+                    type={type}
+                    roots={roots}
+                    childrenOf={childrenOf}
+                    balances={balances}
+                    subAccounts={subAccounts}
+                    isSuper={isSuper}
+                    onEdit={openEdit}
+                    onDelete={handleDelete}
+                  />
+                );
+              })}
             </div>
           )}
         </div>
       </div>
 
-      {/* CoA add/edit modal */}
-      <Modal isOpen={addOpen} error={error} onDismissError={() => setError(null)} onClose={() => { setAddOpen(false); setEditingRow(null); resetForm(); }} title={editingRow ? `Edit ${editingRow.account_code}` : "Add Account"} size="md">
+      <Modal
+        isOpen={addOpen}
+        error={error}
+        onDismissError={() => setError(null)}
+        onClose={() => {
+          setAddOpen(false);
+          setEditingRow(null);
+          resetForm();
+        }}
+        title={editingRow ? `Edit ${editingRow.account_code}` : "Add Account"}
+        size="md"
+      >
         <form className="space-y-3" onSubmit={handleSubmit}>
           {editingRow?.system_account && (
             <div className="text-xs text-warning-700 bg-warning-50 border border-warning-200 rounded p-2">
               System account — rename is fine; changing type is not recommended.
             </div>
           )}
+          {editingRow?.is_control && (
+            <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded p-2">
+              Control account. Entries post to its children; its balance is their
+              total.
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm text-slate-700 mb-1">Account Code *</label>
-              <input required type="text" value={form.account_code} onChange={(e) => setForm({ ...form, account_code: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm font-mono" placeholder="e.g., 6400" />
+              <input
+                required
+                type="text"
+                value={form.account_code}
+                onChange={(e) => setForm({ ...form, account_code: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm font-mono"
+                placeholder="e.g., 6400"
+              />
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Account Type *</label>
@@ -567,27 +441,68 @@ export default function ChartOfAccounts() {
                 value={form.account_type}
                 onChange={(e) => {
                   const t = e.target.value as AccountType;
-                  setForm({ ...form, account_type: t, normal_side: t === "asset" || t === "expense" ? "debit" : "credit" });
+                  setForm({
+                    ...form,
+                    account_type: t,
+                    normal_side: t === "asset" || t === "expense" ? "debit" : "credit",
+                  });
                 }}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
               >
-                {ACCOUNT_TYPE_ORDER.map((t) => <option key={t} value={t}>{ACCOUNT_TYPE_LABEL[t]}</option>)}
+                {ACCOUNT_TYPE_ORDER.map((t) => (
+                  <option key={t} value={t}>
+                    {ACCOUNT_TYPE_LABEL[t]}
+                  </option>
+                ))}
               </ThemedSelect>
             </div>
             <div className="col-span-full">
               <label className="block text-sm text-slate-700 mb-1">Account Name *</label>
-              <input required type="text" value={form.account_name} onChange={(e) => setForm({ ...form, account_name: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm" />
+              <input
+                required
+                type="text"
+                value={form.account_name}
+                onChange={(e) => setForm({ ...form, account_name: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              />
+            </div>
+            <div className="col-span-full">
+              <label className="block text-sm text-slate-700 mb-1">Parent Account</label>
+              <ThemedSelect
+                value={form.parent_id}
+                onChange={(e) => setForm({ ...form, parent_id: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              >
+                <option value="">— None (top level) —</option>
+                {accounts
+                  .filter((a) => a.id !== editingRow?.id && a.account_type === form.account_type)
+                  .map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.account_code} — {a.account_name}
+                    </option>
+                  ))}
+              </ThemedSelect>
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Normal Side</label>
-              <ThemedSelect value={form.normal_side} onChange={(e) => setForm({ ...form, normal_side: e.target.value as AccountNormalSide })} className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm">
+              <ThemedSelect
+                value={form.normal_side}
+                onChange={(e) =>
+                  setForm({ ...form, normal_side: e.target.value as AccountNormalSide })
+                }
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              >
                 <option value="debit">Debit</option>
                 <option value="credit">Credit</option>
               </ThemedSelect>
             </div>
             <div className="flex items-end">
               <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} />
+                <input
+                  type="checkbox"
+                  checked={form.active}
+                  onChange={(e) => setForm({ ...form, active: e.target.checked })}
+                />
                 Active
               </label>
             </div>
@@ -597,51 +512,17 @@ export default function ChartOfAccounts() {
               {submitting ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : null}
               {editingRow ? "Save Changes" : "Add Account"}
             </Button>
-            <Button variant="secondary" size="md" onClick={() => { setAddOpen(false); resetForm(); setEditingRow(null); }}>Cancel</Button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* Manual journal entry modal */}
-      <Modal isOpen={manualOpen} error={error} onDismissError={() => setError(null)} onClose={() => setManualOpen(false)} title="Manual Journal Entry" size="md">
-        <form className="space-y-3" onSubmit={handleManualJournal}>
-          <p className="text-xs text-slate-500">
-            Post a balanced debit/credit entry. For adjustments, corrections, or entries not captured by the auto-journal triggers.
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm text-slate-700 mb-1">Date *</label>
-              <input required type="date" value={manualForm.entry_date} onChange={(e) => setManualForm({ ...manualForm, entry_date: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm" />
-            </div>
-            <div>
-              <label className="block text-sm text-slate-700 mb-1">Amount (PKR) *</label>
-              <input required type="number" min="0.01" step="0.01" value={manualForm.amount} onChange={(e) => setManualForm({ ...manualForm, amount: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm" />
-            </div>
-            <div>
-              <label className="block text-sm text-slate-700 mb-1">Debit Account *</label>
-              <ThemedSelect required value={manualForm.debit_account_id} onChange={(e) => setManualForm({ ...manualForm, debit_account_id: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm">
-                <option value="">— Select —</option>
-                {accounts.filter((a) => a.active).map((a) => <option key={a.id} value={a.id}>{a.account_code} — {a.account_name}</option>)}
-              </ThemedSelect>
-            </div>
-            <div>
-              <label className="block text-sm text-slate-700 mb-1">Credit Account *</label>
-              <ThemedSelect required value={manualForm.credit_account_id} onChange={(e) => setManualForm({ ...manualForm, credit_account_id: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm">
-                <option value="">— Select —</option>
-                {accounts.filter((a) => a.active).map((a) => <option key={a.id} value={a.id}>{a.account_code} — {a.account_name}</option>)}
-              </ThemedSelect>
-            </div>
-            <div className="col-span-full">
-              <label className="block text-sm text-slate-700 mb-1">Description</label>
-              <input type="text" value={manualForm.description} onChange={(e) => setManualForm({ ...manualForm, description: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm" placeholder="e.g., Opening balance adjustment" />
-            </div>
-          </div>
-          <div className="flex items-center gap-2 pt-3 border-t border-slate-200">
-            <Button variant="primary" size="md" disabled={manualSubmitting} className="flex-1">
-              {manualSubmitting ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Plus className="w-4 h-4 mr-1" />}
-              Post Entry
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => {
+                setAddOpen(false);
+                resetForm();
+                setEditingRow(null);
+              }}
+            >
+              Cancel
             </Button>
-            <Button variant="secondary" size="md" onClick={() => setManualOpen(false)}>Cancel</Button>
           </div>
         </form>
       </Modal>
@@ -649,47 +530,184 @@ export default function ChartOfAccounts() {
   );
 }
 
-function CoaTypeSection({ type, rows, isSuper, onEdit, onDelete }: {
+function CoaTypeSection({
+  type,
+  roots,
+  childrenOf,
+  balances,
+  subAccounts,
+  isSuper,
+  onEdit,
+  onDelete,
+}: {
   type: AccountType;
-  rows: ChartAccount[];
+  roots: ChartAccount[];
+  childrenOf: Map<string | null, ChartAccount[]>;
+  balances: Map<string, { debit: number; credit: number }>;
+  subAccounts: Map<string, SubAccountLabel>;
   isSuper: boolean;
   onEdit: (a: ChartAccount) => void;
   onDelete: (a: ChartAccount) => void;
 }) {
   const [open, setOpen] = useState(true);
+  const count = useMemo(() => {
+    let n = 0;
+    const walk = (rows: ChartAccount[]) => {
+      for (const r of rows) {
+        n += 1;
+        walk(childrenOf.get(r.id) ?? []);
+      }
+    };
+    walk(roots);
+    return n;
+  }, [roots, childrenOf]);
+
   return (
     <div className="border border-slate-200 rounded-md overflow-hidden">
-      <button type="button" onClick={() => setOpen((v) => !v)} className="w-full flex items-center gap-2 px-4 py-2.5 bg-slate-50 hover:bg-slate-100 text-sm text-slate-900 transition-colors">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-2 px-4 py-2.5 bg-slate-50 hover:bg-slate-100 text-sm text-slate-900 transition-colors"
+      >
         {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
         <span className="flex-1 text-left">{ACCOUNT_TYPE_LABEL[type]}</span>
-        <span className="text-xs text-slate-500">{rows.length} account{rows.length === 1 ? "" : "s"}</span>
+        <span className="text-xs text-slate-500">
+          {count} account{count === 1 ? "" : "s"}
+        </span>
       </button>
       {open && (
         <div className="overflow-x-auto">
           <table className="w-full">
+            <thead>
+              <tr className="border-b border-slate-100 bg-white">
+                <th className="text-left px-4 py-2 text-[11px] text-slate-400 uppercase w-24">
+                  Code
+                </th>
+                <th className="text-left px-4 py-2 text-[11px] text-slate-400 uppercase">
+                  Account
+                </th>
+                <th className="text-right px-4 py-2 text-[11px] text-slate-400 uppercase w-36">
+                  Debit
+                </th>
+                <th className="text-right px-4 py-2 text-[11px] text-slate-400 uppercase w-36">
+                  Credit
+                </th>
+                <th className="w-20" />
+              </tr>
+            </thead>
             <tbody className="divide-y divide-slate-100">
-              {rows.map((a) => (
-                <tr key={a.id} className={a.active ? "" : "opacity-50"}>
-                  <td className="px-4 py-2 text-xs font-mono text-slate-700 w-20">{a.account_code}</td>
-                  <td className="px-4 py-2 text-sm text-slate-900">
-                    {a.account_name}
-                    {a.system_account && <span className="ml-2 text-[10px] uppercase tracking-wide text-slate-400">system</span>}
-                  </td>
-                  <td className="px-4 py-2 text-xs text-slate-500 capitalize w-20">{a.normal_side}</td>
-                  <td className="px-4 py-2 text-right">
-                    {isSuper && (
-                      <div className="flex gap-1 justify-end">
-                        <button onClick={() => onEdit(a)} className="p-1.5 rounded text-slate-600 hover:bg-slate-100" title="Edit"><Pencil className="w-4 h-4" /></button>
-                        {!a.system_account && <button onClick={() => onDelete(a)} className="p-1.5 rounded text-danger-600 hover:bg-danger-50" title="Delete"><Trash2 className="w-4 h-4" /></button>}
-                      </div>
-                    )}
-                  </td>
-                </tr>
+              {roots.map((a) => (
+                <CoaRows
+                  key={a.id}
+                  account={a}
+                  depth={0}
+                  childrenOf={childrenOf}
+                  balances={balances}
+                  subAccounts={subAccounts}
+                  isSuper={isSuper}
+                  onEdit={onEdit}
+                  onDelete={onDelete}
+                />
               ))}
             </tbody>
           </table>
         </div>
       )}
     </div>
+  );
+}
+
+function CoaRows({
+  account,
+  depth,
+  childrenOf,
+  balances,
+  subAccounts,
+  isSuper,
+  onEdit,
+  onDelete,
+}: {
+  account: ChartAccount;
+  depth: number;
+  childrenOf: Map<string | null, ChartAccount[]>;
+  balances: Map<string, { debit: number; credit: number }>;
+  subAccounts: Map<string, SubAccountLabel>;
+  isSuper: boolean;
+  onEdit: (a: ChartAccount) => void;
+  onDelete: (a: ChartAccount) => void;
+}) {
+  const kids = childrenOf.get(account.id) ?? [];
+  const bal = balances.get(account.id) ?? { debit: 0, credit: 0 };
+  const sub = subAccounts.get(account.id);
+
+  return (
+    <>
+      <tr className={account.active ? "hover:bg-slate-50" : "opacity-50"}>
+        <td className="px-4 py-2 text-xs font-mono text-slate-700 align-top">
+          {account.account_code}
+        </td>
+        <td className="px-4 py-2 text-sm text-slate-900">
+          <span style={{ paddingLeft: depth * 18 }} className="inline-flex items-center gap-2">
+            {sub?.kind === "bank" && <Landmark className="w-3.5 h-3.5 text-slate-400" />}
+            {sub?.kind === "cash" && <Wallet className="w-3.5 h-3.5 text-slate-400" />}
+            <span>{account.account_name}</span>
+            {account.is_control && (
+              <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-brand-50 text-brand-700 border border-brand-200">
+                control
+              </span>
+            )}
+            {account.system_account && (
+              <span className="text-[10px] uppercase tracking-wide text-slate-400">system</span>
+            )}
+            {sub && (
+              <span className="text-[11px] text-slate-400">
+                {sub.kind === "bank" ? "bank" : "cash"} · {sub.name}
+              </span>
+            )}
+          </span>
+        </td>
+        <td className="px-4 py-2 text-right text-sm text-slate-800">
+          {bal.debit !== 0 ? fmtPKR(bal.debit) : ""}
+        </td>
+        <td className="px-4 py-2 text-right text-sm text-slate-800">
+          {bal.credit !== 0 ? fmtPKR(bal.credit) : ""}
+        </td>
+        <td className="px-4 py-2 text-right">
+          {isSuper && (
+            <div className="flex gap-1 justify-end">
+              <button
+                onClick={() => onEdit(account)}
+                className="p-1.5 rounded text-slate-600 hover:bg-slate-100"
+                title="Edit"
+              >
+                <Pencil className="w-4 h-4" />
+              </button>
+              {!account.system_account && (
+                <button
+                  onClick={() => onDelete(account)}
+                  className="p-1.5 rounded text-danger-600 hover:bg-danger-50"
+                  title="Delete"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          )}
+        </td>
+      </tr>
+      {kids.map((k) => (
+        <CoaRows
+          key={k.id}
+          account={k}
+          depth={depth + 1}
+          childrenOf={childrenOf}
+          balances={balances}
+          subAccounts={subAccounts}
+          isSuper={isSuper}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
+      ))}
+    </>
   );
 }
