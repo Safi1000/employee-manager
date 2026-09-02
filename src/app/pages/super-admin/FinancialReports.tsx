@@ -12,7 +12,7 @@ import {
   exportTable,
 } from "../../lib/excel";
 import Modal from "../../components/Modal";
-import { useAuth } from "../../lib/auth";
+import { useAuth, hasPermission } from "../../lib/auth";
 import Button from "../../components/Button";
 import Partners from "./Partners";
 import Cashflow from "./CashFlow";
@@ -88,6 +88,11 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
   // company's cash and .maybeSingle() errors outright once a second company
   // exists. Neither is a filter RLS applies for us.
   const { profile, company } = useAuth();
+  // Cash Basis is the same data as the standalone Cash Flow page (<Cashflow>),
+  // which the /cashflow route gates behind cashflow.view. Gate the embedded tab
+  // on the SAME permission so reports.view alone can't reach it (matches the
+  // coa.view / period_close.manage route-leak fixes: hide the option entirely).
+  const canViewCashflow = hasPermission(profile, "cashflow.view");
   const scopeCompanyId = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
   const scopeCompanyFilter = scopeCompanyId ?? "00000000-0000-0000-0000-000000000000";
   const [activeTab, setActiveTab] = useState<"pl" | "clients" | "partnership" | "rmd">(
@@ -547,7 +552,10 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
             Financial Reports
             {/* Basis toggle — compact segmented control (white active thumb on a
                 grey track), vertically centered beside the heading. Revenue Basis =
-                accrual Financial Report, Cash Basis = Cash Flow. */}
+                accrual Financial Report, Cash Basis = Cash Flow. The Cash Basis
+                option is hidden without cashflow.view (same data as /cashflow), so
+                the whole toggle disappears when there is nothing to switch to. */}
+            {canViewCashflow && (
             <span className="inline-flex items-center rounded-lg bg-slate-100 p-0.5">
               {([
                 { key: "financial", label: "Revenue Basis" },
@@ -567,6 +575,7 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                 </button>
               ))}
             </span>
+            )}
           </span>
           )
         }
@@ -628,7 +637,7 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
         {/* Mounted once opened, then just hidden on other tabs so it keeps its
             loaded data instead of re-fetching on every return to Cash Basis. */}
-        {cashflowOpened && (
+        {cashflowOpened && canViewCashflow && (
           <div className={topTab === "cashflow" ? undefined : "hidden"}>
             <Cashflow embedded />
           </div>
