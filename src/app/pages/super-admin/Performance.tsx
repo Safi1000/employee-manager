@@ -2,7 +2,7 @@ import ThemedSelect from "../../components/ThemedSelect";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
-import { useAuth } from "../../lib/auth";
+import { useAuth, hasPermission } from "../../lib/auth";
 import { formatDate } from "../../lib/date";
 import {
   supabase,
@@ -36,7 +36,11 @@ type EmpLite = {
 };
 
 export default function Performance() {
-  const { company } = useAuth();
+  const { company, profile } = useAuth();
+  // Approving pools / appraisals / bonuses requires performance.approve
+  // (super_admin + SSA implicit). NOTE: backend enforcement for these RPCs/tables
+  // is a pending follow-up (see 0313 recommendation) — this is FE-only for now.
+  const canApprovePerf = hasPermission(profile, "performance.approve");
   const companyId = company?.id ?? "";
   const [tab, setTab] = useState<Tab>("kpis");
   const [err, setErr] = useState<string | null>(null);
@@ -241,6 +245,7 @@ export default function Performance() {
           <div className="flex items-center gap-2 flex-wrap">
             <label className="text-sm text-slate-600">Year</label>
             <input type="number" className={FIELD + " w-24"} value={year} onChange={(e) => setYear(Number(e.target.value))} />
+            {canApprovePerf && (
             <Button
               variant="secondary"
               size="sm"
@@ -249,7 +254,8 @@ export default function Performance() {
             >
               Generate HO pool
             </Button>
-            {branches
+            )}
+            {canApprovePerf && branches
               .filter((b) => !b.is_head_office)
               .map((b) => (
                 <Button
@@ -278,7 +284,7 @@ export default function Performance() {
                     growth {Number(p.growth ?? 0).toLocaleString()} → pool {Number(p.pool_amount ?? 0).toLocaleString()}
                   </span>
                   <span className="text-xs px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200">{p.status}</span>
-                  {p.status === "draft" && (
+                  {p.status === "draft" && canApprovePerf && (
                     <Button variant="primary" size="sm" disabled={busy} onClick={() => run(supabase.rpc("approve_bonus_pool", { p_pool_id: p.id }))}>
                       Approve
                     </Button>
@@ -500,6 +506,7 @@ function GuardBonusTab({
               <div className="flex items-center gap-2">
                 <span className="text-xs px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200">{g.status}</span>
                 {g.status === "accrued" && (
+                  {canApprovePerf && (
                   <Button
                     variant="primary"
                     size="sm"
@@ -508,6 +515,7 @@ function GuardBonusTab({
                   >
                     Approve
                   </Button>
+                  )}
                 )}
               </div>
             </div>

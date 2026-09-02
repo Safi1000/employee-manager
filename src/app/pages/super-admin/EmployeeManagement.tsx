@@ -2018,7 +2018,7 @@ export default function EmployeeManagement() {
               actions={(employee) => (
                 <>
                   <Button variant="ghost" size="sm" onClick={() => openView(employee)}>View</Button>
-                  <Button variant="ghost" size="sm" onClick={() => openEdit(employee)}>Edit</Button>
+                  {canEditEmployees && <Button variant="ghost" size="sm" onClick={() => openEdit(employee)}>Edit</Button>}
                   {isFired(employee) && (
                     <Button
                       variant="ghost"
@@ -2159,9 +2159,11 @@ export default function EmployeeManagement() {
                             <Button variant="ghost" size="sm" onClick={() => openView(employee)}>
                               View
                             </Button>
+                            {canEditEmployees && (
                             <Button variant="ghost" size="sm" onClick={() => openEdit(employee)}>
                               Edit
                             </Button>
+                            )}
                             {isFired(employee) && (
                               <Button
                                 variant="ghost"
@@ -3490,6 +3492,7 @@ export default function EmployeeManagement() {
               </Button>
               {/* Phase 3G: Delete is gone — Archive requires a reason, is logged,
                   and never removes rows. */}
+              {canEditEmployees && (
               <button
                 type="button"
                 onClick={() => handleArchive(selectedEmployee)}
@@ -3498,6 +3501,7 @@ export default function EmployeeManagement() {
                 <Trash2 className="w-4 h-4" strokeWidth={1.5} />
                 Archive
               </button>
+              )}
             </div>
           </form>
         )}

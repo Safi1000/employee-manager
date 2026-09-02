@@ -13,7 +13,7 @@ import {
   type EmployeeDocument,
 } from "../../lib/supabase";
 import { guardDisplayCode } from "../../lib/guardCode";
-import { useAuth } from "../../lib/auth";
+import { useAuth, hasPermission } from "../../lib/auth";
 import { saveBlob } from "../../lib/saveFile";
 import { openExternal } from "../../lib/openExternal";
 
@@ -41,6 +41,9 @@ const formatDate = (iso: string | null) => {
 
 export default function Documents() {
   const { profile, company } = useAuth();
+  // Upload / delete documents — gated on documents.edit (super_admin + SSA
+  // implicit). Backend RLS (0312) enforces it on employee_documents.
+  const canEditDocuments = hasPermission(profile, "documents.edit");
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const empDisplay = (emp: { client_id?: string | null; display_number?: number | null; guard_code?: string | null; employee_code?: string | null }) =>
@@ -492,6 +495,7 @@ export default function Documents() {
             <div className="pt-4 border-t border-slate-200">
               <div className="flex items-center justify-between mb-4">
                 <h4 className="text-sm text-slate-900">Documents</h4>
+                {canEditDocuments && (
                 <Button
                   variant="secondary"
                   size="sm"
@@ -504,6 +508,7 @@ export default function Documents() {
                   <Upload className="w-4 h-4 mr-2" strokeWidth={1.5} />
                   Upload / Replace
                 </Button>
+                )}
               </div>
               {viewLoading ? (
                 <div className="text-sm text-slate-500 flex items-center gap-2">

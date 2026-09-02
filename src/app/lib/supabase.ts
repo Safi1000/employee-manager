@@ -5,7 +5,65 @@ import { isNative } from "./platform";
 const url = import.meta.env.VITE_SUPABASE_URL as string;
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
+// Friendly text shown when a write is refused by a permission check — either a
+// table RLS policy (the perm_write_* restrictive policies) or a require_perm()
+// guard inside an RPC. Exported so pages can reuse the exact wording if they
+// inspect an error object directly.
+export const PERMISSION_DENIED_MESSAGE =
+  "You don't have permission to do this. Contact your administrator if you need access.";
+
+// Is this PostgREST/Postgres error a permission refusal? 42501 covers both an
+// RLS violation and a require_perm() RAISE; the text checks catch older/edge
+// shapes. (A blocked UPDATE returns 0 rows with NO error and is not covered here
+// — the frontend gates hide those controls instead.)
+export function isPermissionDeniedError(err: unknown): boolean {
+  const e = err as { code?: string; message?: string } | null;
+  const code = e?.code ?? "";
+  const msg = (e?.message ?? "").toLowerCase();
+  return code === "42501" || /row-level security|permission denied/.test(msg);
+}
+
+// Map any error into a user-facing string, replacing raw DB permission errors
+// with PERMISSION_DENIED_MESSAGE and passing everything else through.
+export function friendlyDbError(err: unknown): string {
+  if (isPermissionDeniedError(err)) return PERMISSION_DENIED_MESSAGE;
+  const e = err as { message?: string } | null;
+  return e?.message ?? String(err);
+}
+
+// Single chokepoint so EVERY page — gated or not — shows the friendly message
+// when a REST write is refused by RLS or a require_perm() guard, instead of a
+// raw "new row violates row-level security policy" / "permission denied: x".
+// Only /rest/v1/ error responses carrying a 42501 are rewritten; auth, storage,
+// successful responses, and all other errors are returned untouched.
+const permissionAwareFetch: typeof fetch = async (input, init) => {
+  const res = await fetch(input as RequestInfo, init);
+  if (res.ok) return res;
+  const href =
+    typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+  if (!href || !href.includes("/rest/v1/")) return res;
+  try {
+    const text = await res.clone().text();
+    if (!/42501|row-level security|permission denied/i.test(text)) return res;
+    let body: Record<string, unknown> | null = null;
+    try { body = JSON.parse(text); } catch { body = null; }
+    if (!body || typeof body !== "object") return res;
+    body.message = PERMISSION_DENIED_MESSAGE;
+    if ("hint" in body) body.hint = null;
+    const headers = new Headers(res.headers);
+    headers.delete("content-length");
+    return new Response(JSON.stringify(body), {
+      status: res.status,
+      statusText: res.statusText,
+      headers,
+    });
+  } catch {
+    return res;
+  }
+};
+
 export const supabase = createClient(url, anonKey, {
+  global: { fetch: permissionAwareFetch },
   auth: {
     // Native: Capacitor Preferences (real persisted storage). Web: undefined,
     // which leaves supabase-js on its localStorage default. See ./authStorage
@@ -351,6 +409,9 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
     items: [
       { key: "compliance.view", label: "View important dates & alerts" },
       { key: "compliance.edit", label: "Add / edit dates & alerts" },
+      // Regulatory filings are held to a stricter, separate grant than general
+      // compliance edits (statutory_filings RLS, 0312).
+      { key: "compliance.filings", label: "File / edit statutory filings" },
     ],
   },
   {

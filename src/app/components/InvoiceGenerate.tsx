@@ -2,7 +2,7 @@ import ThemedSelect from "./ThemedSelect";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, AlertCircle, X, CheckCircle2, FileDown, Plus, Trash2, FileText } from "lucide-react";
 import Button from "./Button";
-import { useAuth } from "../lib/auth";
+import { useAuth, hasPermission } from "../lib/auth";
 import { generateInvoiceDocument } from "../lib/invoiceTemplates";
 import {
   supabase,
@@ -115,7 +115,10 @@ const monthBounds = (ym: string) => {
 };
 
 export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) {
-  const { company } = useAuth();
+  const { company, profile } = useAuth();
+  // Posting invoices is gated on invoices.edit (super_admin + SSA implicit).
+  // Backend RLS (0310) enforces invoice writes; this hides the control.
+  const canEditInvoices = hasPermission(profile, "invoices.edit");
   const [clients, setClients] = useState<Client[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [lines, setLines] = useState<ContractLine[]>([]);
@@ -740,7 +743,8 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
             variant="primary"
             size="md"
             onClick={generateAllCleared}
-            disabled={generating || clearedCount === 0}
+            disabled={generating || clearedCount === 0 || !canEditInvoices}
+            title={!canEditInvoices ? "You don't have permission to generate invoices" : undefined}
           >
             {generating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileDown className="w-4 h-4 mr-2" />}
             Generate All Cleared

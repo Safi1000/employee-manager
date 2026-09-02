@@ -987,7 +987,10 @@ function ShiftDrillModal({
   // The confirmation's uniqueness key is company-scoped (0195), so the company
   // has to travel with the row rather than being left to the fill_company_id
   // trigger — the ON CONFLICT arbiter names company_id.
-  const { company } = useAuth();
+  const { company, profile } = useAuth();
+  // Marking / confirming attendance requires attendance.edit (bulk-mark holders
+  // can mark too). Backend RLS (0310) enforces it; this disables the control.
+  const canMark = hasPermission(profile, "attendance.edit") || hasPermission(profile, "attendance.bulk_mark");
   // per-guard exception (undefined = presumed present)
   const [marks, setMarks] = useState<Map<string, { status: Status; absent_reason: AbsentReason | null }>>(new Map(shift.marks));
   // §7/§8.4 worked-shift selection per guard. Options come ENTIRELY from this
@@ -1213,7 +1216,7 @@ function ShiftDrillModal({
             <ThemedSelect value={source} onChange={(e) => setSource(e.target.value as any)} className="px-2 py-2 border border-slate-200 rounded-md text-sm" >
               <option value="app">App</option><option value="whatsapp">WhatsApp</option><option value="manual">Manual</option>
             </ThemedSelect>
-            <Button size="sm" onClick={confirm} disabled={saving}>
+            <Button size="sm" onClick={confirm} disabled={saving || !canMark} title={!canMark ? "You don't have permission to mark attendance" : undefined}>
               {saving && <Loader2 className="w-4 h-4 animate-spin mr-1" />} Confirm shift
             </Button>
           </div>

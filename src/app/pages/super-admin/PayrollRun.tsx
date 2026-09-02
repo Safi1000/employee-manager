@@ -5,7 +5,7 @@ import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import PayrollManagement from "./PayrollManagement";
 import { supabase } from "../../lib/supabase";
-import { useAuth } from "../../lib/auth";
+import { useAuth, hasPermission } from "../../lib/auth";
 import { useRegion } from "../../lib/region";
 
 // Payroll Run — a scoped Draft → Review → Finance Verify workflow.
@@ -60,6 +60,10 @@ const addTotals = (a: Totals, b: Totals): Totals => ({
 
 export default function PayrollRun() {
   const { profile } = useAuth();
+  // Payroll run sign-off (Send to Finance / Finance Verify) is gated on
+  // payroll.approve (super_admin + SSA implicit). NOTE: the phase table these
+  // write is not yet under backend RLS (see 0313 recommendation) — FE-only.
+  const canApprovePayroll = hasPermission(profile, "payroll.approve");
   const { regionId } = useRegion();
   const [month, setMonth] = useState(monthNow());
   const period = `${month}-01`;
@@ -343,9 +347,11 @@ export default function PayrollRun() {
                           )}
                         </button>
                         <Button size="sm" variant="ghost" disabled={busyKey === s.key} onClick={() => backToDraft(s)}>Back to Draft</Button>
+                        {canApprovePayroll && (
                         <Button size="sm" variant="secondary" disabled={busyKey === s.key} onClick={() => setPhase(s, "finance_verify")}>
                           {busyKey === s.key ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Send to Finance <ArrowRight className="w-4 h-4 ml-1.5" /></>}
                         </Button>
+                        )}
                       </div>
                       {open && (
                         <div className="border-t border-border">
@@ -367,7 +373,7 @@ export default function PayrollRun() {
                   <p className="text-xs text-muted-foreground bg-secondary/50 rounded-md px-3 py-2 flex-1 min-w-0">
                     Finance Verify is permanent — it locks OPS un-verify and all phase movement for that client/month and reveals it on Payroll Management. It cannot be reversed.
                   </p>
-                  {financeScopes.some((s) => !financeVerified.has(s.key)) && (
+                  {canApprovePayroll && financeScopes.some((s) => !financeVerified.has(s.key)) && (
                     <Button size="sm" variant="primary" disabled={busyKey === "__all__"} onClick={() => setConfirmFV({ all: true })}>
                       {busyKey === "__all__" ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Mark All as Finance Verified</>}
                     </Button>
@@ -400,9 +406,11 @@ export default function PayrollRun() {
                     ) : (
                       <>
                         <Button size="sm" variant="ghost" disabled={busyKey === s.key || busyKey === "__all__"} onClick={() => setPhase(s, "review")}>Back to Review</Button>
+                        {canApprovePayroll && (
                         <Button size="sm" variant="primary" disabled={busyKey === s.key || busyKey === "__all__"} onClick={() => setConfirmFV({ scope: s })}>
                           {busyKey === s.key ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Finance Verify</>}
                         </Button>
+                        )}
                       </>
                     )}
                   </div>
