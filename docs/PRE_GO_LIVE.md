@@ -954,3 +954,161 @@ environment is needed.
 
 Deferred to a later stage of Bastion. Weapons are allotted per client, not per
 post. Logged so it is not forgotten; not scoped here.
+
+---
+
+# Replay safety: a fresh environment built from this repo has holes production does not
+
+Measured 2026-09-02 against `crm-design` (production) and the repo. **Nothing
+has been built to fix this.**
+
+## The claim
+
+Applying `supabase/migrations/` in NUMERIC ORDER into an empty database ends
+with **five tenant guards missing** and **no check able to report it**.
+Production does not have those holes, and the reason it does not is an accident
+of the order the block was applied in.
+
+## Why production is correct
+
+`0287_close_the_nineteen` injects tenant guards into 16 SECURITY DEFINER
+functions by surgery. Three of those functions are RESTATED wholesale by later
+files, which discards the injection:
+
+| function | restated by | 0287 parameters lost |
+|---|---|---|
+| `ledger_checks` | 0288, 0313, 0316 | `p_company_id` |
+| `record_invoice_payment` | 0315 | `p_custodian_location_id` |
+| `settlement_account` | 0317 | `p_company_id`, `p_bank_account_id`, `p_custodian_location_id` |
+
+**Five (function, parameter) pairs.** On production they survive only because
+the block went on OUT of numeric order — `0286`, `0287` and `0288` were applied
+*after* `0313`–`0317`:
+
+    20:13  0313   restates ledger_checks
+    20:23  0315   restates record_invoice_payment
+    20:47  0316   restates ledger_checks
+    20:56  0317   restates settlement_account
+    21:30  0286   restates ledger_checks — adds the tenant-guard CHECK
+    21:34  0287   injects the 19 guards          <-- lands last, on top
+    21:35  0288   restates ledger_checks — keeps the check
+    22:38  0318   surgery — restores the two checks 0288's older list dropped
+    23:10  0305   surgery — tenant_guard_covered sees through the helper
+
+`0318` exists precisely because of this ordering, and its own header says so.
+What nobody wrote down is that the same ordering is the only thing holding the
+tenant guards up.
+
+## What a numeric replay produces
+
+    0286  adds tenant_guard_covers_every_parameter, wires tenant_guard_gaps()
+    0287  injects 19 guards
+    0288  restates ledger_checks -> strips the guard 0287 just put in it
+    0313  restates -> DROPS the tenant-guard check (its hand-list lacks it)
+    0315  restates record_invoice_payment -> strips its guard
+    0316  restates -> check still absent
+    0317  restates settlement_account -> strips three guards
+    0318  surgery -> restores total_due_not_read_as_a_balance and
+          no_invoice_time_withholding ONLY. Not the tenant-guard check.
+
+End state: **five guards missing, and `tenant_guard_covers_every_parameter`
+absent from `ledger_checks`.** The canary agrees with the shortened suite,
+because each restatement sets its own number. Nothing is red. Nothing is
+missing that anything looks for.
+
+**The detector is destroyed by the same act that creates the gaps.** That is
+what makes this silent rather than merely broken, and it is why it outranks the
+individual guards.
+
+## Proposed fix — not built, in order of value
+
+1. **Move the check where it cannot be dropped.** `tenant_guard_covers_every_parameter`
+   lives in a hand-listed arm of `ledger_checks`, so every restatement decides
+   its fate. `ledger_checks_base` is restated by nothing. Moving it there means
+   a future restatement of `ledger_checks` cannot silence it: the gaps go RED
+   instead of invisible. This is the one that changes the failure mode.
+
+2. **Close the five, terminally.** A migration numbered after the last restater
+   that replays 0287's own injector — its map, its guard text, and its
+   `tenant_guard_covered` skip, so it is idempotent and a no-op on production.
+   This is exactly what was run by hand on dev on 2026-09-02, proven by digest
+   equality with production, so the mechanism is already tested.
+
+3. **Prove it by replaying.** Build a database from `supabase/migrations/` in
+   numeric order in CI and assert `tenant_guard_gaps() = 0` and the full check
+   count. (1) and (2) fix this instance; only a replay catches the next one,
+   and the next one will not be `ledger_checks`.
+
+4. **Refuse the class in the repo.** `scripts/` gains a check that fails when a
+   migration file contains `create or replace function public.ledger_checks` —
+   the rule in CLAUDE.md, enforced rather than remembered.
+
+## A related fact that changes the cleanup plan
+
+`journal_entries.company_id` is the **one RESTRICT** among the 128 foreign keys
+inbound to `companies`. A company that owns journal entries cannot be deleted at
+all — the `guards n guides` delete worked *because* it had none, which is what
+made it the right rehearsal.
+
+Per-company ledger on production, 2026-09-02:
+
+| company | journal entries | employees | profiles |
+|---|---:|---:|---:|
+| SANDBOX TESTING ORG | **428** | 69 | 1 |
+| GUARDS AND GUIDES (PVT) LTD | 0 | 553 | 4 |
+| Sandboxx | 0 | 1 | 1 |
+
+**Deleting SANDBOX TESTING ORG is structurally unavailable.** It is not that the
+archive flag is preferred for it — a delete cannot happen without maintenance
+mode and a deliberate teardown of its ledger first. Anyone planning one should
+start from that.
+
+Worth noting separately: **every journal entry on production belongs to the
+sandbox.** The real company has no ledger yet, which is what the Trial Balance
+screen's empty state is reporting.
+
+## 0327 and 0328 — built, on dev (2026-09-02)
+
+Recorded digests equal the files: `2656e9ad9fae180f1b5142b858d99881` and
+`782e71af798197aa4b770ca3ff8f6b43`. **Production has neither; they need naming.**
+
+**0327** moves `tenant_guard_covers_every_parameter` out of a hand-listed arm of
+`ledger_checks` and into `ledger_checks_base`, which no migration file restates.
+The suite does not change length — the check simply arrives by a route a
+restatement cannot edit. `ledger_checks` on dev is still 28 rows / canary 27
+green; the base went 13 rows to 14, its own canary 12 -> 13, read and
+incremented rather than written as a literal.
+
+Its proof does not stop at "the check is present", which would be true of the
+old arrangement too. It **restates `ledger_checks` with the barest possible
+body** inside a rolled-back subtransaction and requires the check to survive.
+
+**0328** replays 0287's injector — its map, its guard text, its
+`tenant_guard_covered` skip — numbered after the last restater so a numeric
+replay reaches it last. On both databases today it injects **nothing**, because
+both already read zero gaps.
+
+That is exactly why it carries **proof E**. Every other assertion in the file is
+equally consistent with an injector that does nothing at all, so the proof
+reproduces the real failure: it restates `settlement_account` the way 0317 does,
+and requires, in order —
+
+  1. `tenant_guard_gaps()` reports exactly **3** on that function
+  2. the **check goes RED**, from the base where 0327 put it — the property that
+     turns a silent replay into a loud one
+  3. the injector restores all **3**
+
+— and then unwinds. All three held on dev, and `settlement_account`'s digest
+afterwards is `73b7497847bcd60515384bdededc204f`, identical to production's, so
+the probe left nothing behind.
+
+Dev after both: guard gaps **0**, journal unchanged at 444 / 1344.
+
+### Still logged, not built
+
+- **The CI replay.** Build from `supabase/migrations/` in numeric order and
+  assert `tenant_guard_gaps() = 0` and the full check count. 0327 and 0328 fix
+  this instance; only a replay catches the next, and the next will not be
+  `ledger_checks`.
+- **The repo check** refusing a migration that contains
+  `create or replace function public.ledger_checks`.
