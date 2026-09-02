@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Loader2, Lock } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
-import { useAuth } from "../../lib/auth";
+import { useAuth, hasPermission } from "../../lib/auth";
 import { supabase } from "../../lib/supabase";
 import { formatDate } from "../../lib/date";
 import { generateDailyOperationsReportPdf } from "../../lib/dailyReportPdf";
@@ -43,7 +43,11 @@ const shiftDay = (iso: string, days: number) => {
 type ClientRow = { id: string; name: string };
 
 export default function FieldOps() {
-  const { company } = useAuth();
+  const { company, profile } = useAuth();
+  // Writing daily reports requires roster.edit (super_admin + SSA implicit).
+  // Backend RLS (0313) enforces it on daily_client_reports; folding it into
+  // `locked` makes the textarea read-only AND blocks saveOne for view-only users.
+  const canWriteReports = hasPermission(profile, "roster.edit");
   const companyId = company?.id ?? "";
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -60,7 +64,7 @@ export default function FieldOps() {
   const isToday = date === todayIso();
   // A day that has ended is a record, not a draft. Future days cannot be typed
   // into either — there is nothing to report on a day that has not happened.
-  const locked = !isToday;
+  const locked = !isToday || !canWriteReports;
 
   const load = useCallback(async () => {
     if (!companyId) return;

@@ -505,8 +505,7 @@ function GuardBonusTab({
               </span>
               <div className="flex items-center gap-2">
                 <span className="text-xs px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200">{g.status}</span>
-                {g.status === "accrued" && (
-                  {canApprovePerf && (
+                {g.status === "accrued" && canApprovePerf && (
                   <Button
                     variant="primary"
                     size="sm"
@@ -515,7 +514,6 @@ function GuardBonusTab({
                   >
                     Approve
                   </Button>
-                  )}
                 )}
               </div>
             </div>

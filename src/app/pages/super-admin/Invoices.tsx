@@ -1069,7 +1069,9 @@ export default function Invoices() {
         )}
 
         <div className="flex gap-1 mb-6 border-b border-slate-200">
-          {(["ledger", "generate"] as const).map((t) => (
+          {/* Generate creates invoices — hidden without invoices.edit (backend
+              RLS also blocks the writes). */}
+          {(["ledger", "generate"] as const).filter((t) => t !== "generate" || canEditInvoices).map((t) => (
             <button
               key={t}
               type="button"
@@ -1085,7 +1087,7 @@ export default function Invoices() {
           ))}
         </div>
 
-        {tab === "generate" && <InvoiceGenerate onPosted={loadAll} />}
+        {tab === "generate" && canEditInvoices && <InvoiceGenerate onPosted={loadAll} />}
 
 
         {tab === "ledger" && (
@@ -1224,9 +1226,12 @@ export default function Invoices() {
                 <Button variant="ghost" size="sm" onClick={() => downloadInvoicePdf(inv)}>
                   <Download className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} /> PDF
                 </Button>
+                {canEditInvoices && (
                 <Button variant="ghost" size="sm" onClick={() => openEdit(inv)}>
                   <Pencil className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} /> Edit
                 </Button>
+                )}
+                {canEditInvoices && (
                 <button
                   type="button"
                   onClick={() => handleDelete(inv)}
@@ -1234,6 +1239,7 @@ export default function Invoices() {
                 >
                   <Trash2 className="w-4 h-4" strokeWidth={1.5} /> Delete
                 </button>
+                )}
               </>
             )}
           />
@@ -1315,6 +1321,7 @@ export default function Invoices() {
                           </span>
                         </td>
                         <td className="px-6 py-4 text-sm">
+                          {canEditInvoices ? (
                           <ThemedSelect
                             value={inv.status}
                             onChange={(e) =>
@@ -1334,6 +1341,9 @@ export default function Invoices() {
                             <option value="Partly-Paid">Partly-Paid</option>
                             <option value="Paid">Paid</option>
                           </ThemedSelect>
+                          ) : (
+                            <span className="text-xs text-slate-600">{inv.status}</span>
+                          )}
                         </td>
                         <td className="px-6 py-4 text-sm">
                           {(inv.drive_view_url || inv.attachment_path) ? (
@@ -1369,10 +1379,13 @@ export default function Invoices() {
                             <Download className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
                             PDF
                           </Button>
+                          {canEditInvoices && (
                           <Button variant="ghost" size="sm" onClick={() => openEdit(inv)}>
                             <Pencil className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
                             Edit
                           </Button>
+                          )}
+                          {canEditInvoices && (
                           <button
                             type="button"
                             onClick={() => handleDelete(inv)}
@@ -1381,6 +1394,7 @@ export default function Invoices() {
                           >
                             <Trash2 className="w-4 h-4" strokeWidth={1.5} />
                           </button>
+                          )}
                         </td>
                       </tr>
                     );
