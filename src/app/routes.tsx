@@ -172,7 +172,7 @@ export const router = createRouter([
       { path: "relievers", element: guard(["attendance.view", "attendance.edit"], <AttendanceManagement relieversOnly />) },
       { path: "relievers/attendance", element: <Navigate to="/super-admin/relievers" replace /> },
       { path: "relievers/payroll", element: guard(["payroll.view", "payroll.edit"], <PayrollManagement relieversOnly />) },
-      { path: "accounting", element: guard(["accounting.view", "accounting.edit"], <Accounting />) },
+      { path: "accounting", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit"], <Accounting />) },
       // Distinct `key` per route: both render the same FinancialReports, so
       // without it React reuses one instance across the two paths and the
       // activeTab state leaks (Financial Reports would show the Partnership tab
@@ -180,15 +180,15 @@ export const router = createRouter([
       { path: "reports", element: guard(["reports.view"], <FinancialReports key="reports" />) },
       // Partnership Report is its own page under Finance now, not a tab of
       // Financial Reports. Same component, pinned to that one report.
-      { path: "partnership-report", element: guard(["accounting.view", "accounting.edit"], <FinancialReports key="partnership" standalone="partnership" />) },
+      { path: "partnership-report", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit"], <FinancialReports key="partnership" standalone="partnership" />) },
       { path: "expenses", element: guard(["expenses.view", "expenses.edit"], <Expenses />) },
       { path: "invoices", element: guard(["invoices.view", "invoices.edit"], <Invoices />) },
       { path: "cashflow", element: guard(["cashflow.view"], <Cashflow />) },
-      { path: "treasury", element: guard(["accounting.view", "reports.view", "cashflow.view"], <Treasury />) },
+      { path: "treasury", element: guard(["banks.view", "reports.view", "cashflow.view"], <Treasury />) },
       // Receivables folded into Bank & Ledgers (Accounting has a Receivables tab).
       { path: "receivables", element: <Navigate to="/super-admin/accounting?tab=receivables" replace /> },
       { path: "opening-balances", element: <Navigate to="/super-admin/accounting-core?tab=opening" replace /> },
-      { path: "regional-scorecard", element: guard(["reports.view", "accounting.view"], <RegionalScorecard />) },
+      { path: "regional-scorecard", element: guard(["reports.view", "banks.view"], <RegionalScorecard />) },
       // Client Relationships dissolved: complaints → Incidents, renewals → Compliance,
       // reviews → client record. Landing on the client list.
       { path: "client-relationships", element: <Navigate to="/super-admin/clients" replace /> },
@@ -197,15 +197,15 @@ export const router = createRouter([
       { path: "field-ops", element: <Navigate to="/super-admin/daily-reports" replace /> },
       { path: "compliance-cases", element: guard(["compliance.view", "compliance.edit"], <ComplianceCases />) },
       // Inventory + Assets merged → Assets & Issuance (tabs: Register | Issuance).
-      { path: "assets-issuance", element: guard(["inventory.view", "inventory.edit", "accounting.view"], <AssetsIssuance />) },
+      { path: "assets-issuance", element: guard(["inventory.view", "inventory.edit", "banks.view"], <AssetsIssuance />) },
       { path: "assets", element: <Navigate to="/super-admin/assets-issuance?tab=register" replace /> },
       { path: "alerts", element: <Alerts /> },
       { path: "governance", element: <Navigate to="/super-admin/access-governance?tab=governance" replace /> },
-      { path: "partners", element: guard(["accounting.view", "accounting.edit"], <Partners />) },
+      { path: "partners", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit"], <Partners />) },
       // Cash Custody moved into Banks & Ledgers as a 4th tab; redirect the old route.
       { path: "cash-custody", element: <Navigate to="/super-admin/accounting?tab=cash-custody" replace /> },
-      { path: "profit-distribution", element: guard(["accounting.view", "accounting.edit"], <ProfitDistribution />) },
-      { path: "project-financing", element: guard(["accounting.view", "accounting.edit"], <ProjectFinancing />) },
+      { path: "profit-distribution", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit"], <ProfitDistribution />) },
+      { path: "project-financing", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit"], <ProjectFinancing />) },
       { path: "inventory", element: <Navigate to="/super-admin/assets-issuance?tab=issuance" replace /> },
       { path: "compliance", element: guard(["compliance.view", "compliance.edit"], <ComplianceHub />) },
       { path: "documents", element: guard(["documents.view", "documents.edit"], <Documents />) },

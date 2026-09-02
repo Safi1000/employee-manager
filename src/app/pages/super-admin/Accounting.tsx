@@ -36,7 +36,7 @@ import {
 } from "../../lib/supabase";
 import { validateBankAccount, validateIban } from "../../lib/validation";
 import { useFocusTarget, useFocusRow, FOCUS_ROW_CLASS } from "../../lib/focus";
-import { useAuth } from "../../lib/auth";
+import { useAuth, hasPermission } from "../../lib/auth";
 import { CashCustodyPanel } from "./CashCustody";
 import { generateDepositSlipPdf } from "../../lib/depositSlip";
 import { loadCustodianOptions, ensureCustodianLocation, type CustodianOption } from "../../lib/custodian";
@@ -88,6 +88,29 @@ export default function Accounting() {
     const t = searchParams.get("tab");
     return t === "cash-custody" || t === "banks" || t === "payables" ? t : "receivables";
   });
+
+  // Which tabs this user may see. banks.view / receivables.view /
+  // payables.view were split out of a single accounting.view, so each tab is
+  // gated on its own key; accounting.edit implies all of them, because someone
+  // who may edit banks and reconciliation can already see everything here.
+  const canEditAccounting = hasPermission(profile, "accounting.edit");
+  const visibleTabs = useMemo(() => {
+    const all = ["receivables", "payables", "banks", "cash-custody"] as const;
+    return all.filter((t) => {
+      if (canEditAccounting) return true;
+      if (t === "receivables") return hasPermission(profile, "receivables.view");
+      if (t === "payables") return hasPermission(profile, "payables.view");
+      return hasPermission(profile, "banks.view"); // banks + cash custody
+    });
+  }, [profile, canEditAccounting]);
+
+  // A tab in the URL the user cannot see must not be honoured, and the default
+  // must be a tab that exists for them — otherwise the screen renders its
+  // chrome around nothing and looks broken rather than restricted.
+  useEffect(() => {
+    if (visibleTabs.length === 0) return;
+    if (!visibleTabs.includes(activeTab)) setActiveTab(visibleTabs[0]);
+  }, [visibleTabs, activeTab]);
 
   const [banks, setBanks] = useState<BankAccount[]>([]);
   const [cheques, setCheques] = useState<Cheque[]>([]);
@@ -2017,7 +2040,7 @@ export default function Accounting() {
         <div className="bg-white rounded-lg border border-slate-200 mb-6">
           <div className="p-6 border-b border-slate-200 flex flex-wrap items-center gap-3">
             <div className="flex gap-2 flex-wrap">
-              {(["receivables", "payables", "banks", "cash-custody"] as const).map((tab) => (
+              {visibleTabs.map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}

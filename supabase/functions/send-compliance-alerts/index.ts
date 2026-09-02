@@ -580,6 +580,29 @@ Deno.serve(async (req) => {
     return json({ error: cfgErr.message }, 500);
   }
 
+  // 0329/0331. An archived company's records are read-only, enforced by a
+  // trigger on 129 tables, so every write sendForCompany makes for one is
+  // refused. Those refusals are caught per company, so this run would not
+  // abort the way the SQL cron jobs did — but the EMAIL IS SENT BEFORE the
+  // writes. Without this filter an archived company keeps receiving its daily
+  // digest and only the record of having sent it fails, which is the worst of
+  // the available outcomes.
+  //
+  // 0331 closed the same hole in the three SQL jobs. It could not close this
+  // one: the per-company loop lives here, in TypeScript, not in
+  // invoke_send_compliance_alerts, which only posts to this endpoint.
+  //
+  // Skipped companies are REPORTED, not silently omitted, so the response says
+  // what it did not do.
+  const { data: archivedRows, error: archErr } = await db
+    .from("companies")
+    .select("id")
+    .not("archived_at", "is", null);
+  if (archErr) {
+    return json({ error: archErr.message }, 500);
+  }
+  const archived = new Set((archivedRows ?? []).map((r) => r.id as string));
+
   const results: Array<{
     company_id: string;
     sent: boolean;
@@ -590,6 +613,10 @@ Deno.serve(async (req) => {
 
   for (const row of configured ?? []) {
     const companyId = row.company_id as string;
+    if (archived.has(companyId)) {
+      results.push({ company_id: companyId, sent: false, reason: "company_archived" });
+      continue;
+    }
     try {
       const r = await sendForCompany(db, companyId, today, false);
       results.push({ company_id: companyId, ...r });

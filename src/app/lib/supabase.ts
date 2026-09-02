@@ -307,7 +307,14 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
   {
     label: "Banks & Accounting",
     items: [
-      { key: "accounting.view", label: "View banks / receivables / payables" },
+      // Split out of a single accounting.view. The Banks & Ledgers screen has
+      // had separate Client Receivables / Accounts Payable / Bank Accounts tabs
+      // for a long time; one permission opened all three, so "let them see what
+      // we owe" also meant "let them see what every client owes us". These are
+      // the tabs, as permissions.
+      { key: "banks.view", label: "View bank accounts & cash custody" },
+      { key: "receivables.view", label: "View client receivables" },
+      { key: "payables.view", label: "View accounts payable" },
       { key: "accounting.edit", label: "Edit banks, transfers, reconciliation" },
     ],
   },
@@ -462,6 +469,10 @@ export type Client = {
   phone: string | null;
   allowed_leaves_per_month: number;
   opening_balance: number;
+  // 0337. An internal placeholder rather than a customer — a relief pool, an
+  // unassigned bench. Hidden from the Clients page; still listed everywhere a
+  // guard is assigned or paid, which is the only reason such a row exists.
+  is_internal: boolean;
   client_type: ClientType;
   leave_carry_forward: boolean;
   leave_carry_start: string | null;

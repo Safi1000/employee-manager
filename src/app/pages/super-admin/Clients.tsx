@@ -237,7 +237,10 @@ export default function Clients() {
     setLoading(true);
     setError(null);
     const [clientsRes, branchesRes, contractsRes, invoicesRes, employeesRes, rosterRes, linesRes, addendumsRes] = await Promise.all([
-      withRegion(supabase.from("clients").select("*").order("name"), regionId),
+      // 0337. Internal placeholders (the relief pool) are not customers and do
+      // not belong on a page of customers. They are deliberately NOT filtered
+      // out of Assignments & Pay, which is what they exist for.
+      withRegion(supabase.from("clients").select("*").eq("is_internal", false).order("name"), regionId),
       supabase
         .from("branches")
         .select("*")

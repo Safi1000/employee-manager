@@ -156,7 +156,7 @@ export default function SuperAdminDashboard() {
     attendance: hasPermission(profile, "attendance.view"),
     expenses: hasPermission(profile, "expenses.view"),
     payroll: hasPermission(profile, "payroll.view"),
-    accounting: hasPermission(profile, "accounting.view"),
+    accounting: hasPermission(profile, "banks.view"),
     reports: hasPermission(profile, "reports.view"),
     contracts: hasPermission(profile, "contracts.view"),
     roster: hasPermission(profile, "roster.view"),
