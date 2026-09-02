@@ -108,6 +108,36 @@ have aborted at an **assert** two hundred lines above its guarded `drop`,
 because the assert read the column the drop removes. Replay the whole file
 mentally against an already-migrated database, not just its DDL.
 
+### A function edited by more than one migration has no canonical file
+
+This generalises "never restate `ledger_checks`", and the general form is the
+one to remember, because the next function it applies to will not be
+`ledger_checks`.
+
+Once two or more migrations have edited a function, **no single file holds its
+true text.** Each file holds the text as of the moment it was written. Restating
+the function from any of them silently discards every edit made since — and it
+*succeeds*, which is what makes it dangerous. Nothing raises, nothing goes red,
+and the checks that vanish take their own alarm with them.
+
+- **Edited by many → amend by surgery against the live definition**
+  (`pg_get_functiondef`), with an anchor asserted to appear exactly once. If the
+  anchor is missing or doubled, refuse; do not widen it until it matches.
+- **Edited by exactly one → may be restated**, provided the migration first
+  asserts that the body it is replacing is a digest it recognises, and refuses
+  anything else. An unrecognised body means a third edit nobody recorded, which
+  is precisely the case where restating destroys something.
+
+How this was learned, twice. `0286` and `0288` restated `ledger_checks` from a
+copy and dropped two checks; `0318` had to put them back. Then a re-apply of
+`0316` to dev — approved, and obviously correct on its face — would have
+replaced a 27-check `ledger_checks` with the 9 checks that existed when `0316`
+was written, including one added the same afternoon, and reported success with
+the canary agreeing with itself at `0316`'s number. `0325` exists because
+`run_auto_invoices` is the *other* kind: one author, full text in the repo, so a
+restatement behind a digest precondition was safe. `0326` then had to use
+surgery, because after `0325` the function has two authors.
+
 ## Tests
 
 `supabase/tests/` runs inside a transaction that rolls back via a deliberate

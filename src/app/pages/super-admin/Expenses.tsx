@@ -10,6 +10,7 @@ import ExportButton from "../../components/ExportButton";
 import ClientFilterSelect from "../../components/ClientFilterSelect";
 import { exportExpenses, exportAdvances } from "../../lib/excel";
 import { formatDate } from "../../lib/date";
+import { useFocusTarget, useFocusRow, FOCUS_ROW_CLASS } from "../../lib/focus";
 import {
   PieChart,
   Pie,
@@ -304,6 +305,46 @@ export default function Expenses() {
   const [expenseByFilter, setExpenseByFilter] = useState<"all" | "none" | string>("all");
   const [monthFilter, setMonthFilter] = useState<string>(currentMonthKey());
   const [advMonthFilter, setAdvMonthFilter] = useState<string>(currentMonthKey());
+
+  // --- Drill-down from the Journal ----------------------------------------
+  //
+  // Arriving with ?focus=<id>&focusType=expenses|advances must OPEN that
+  // record, not merely land here. Scrolling alone is not enough: the month
+  // filter defaults to the current month, so a September link to a June
+  // expense would scroll to a row that is not rendered. Every filter that
+  // could hide the row is widened first, then the row is scrolled to and
+  // marked.
+  const focusExpense = useFocusTarget("expenses");
+  const focusAdvance = useFocusTarget("advances");
+  const focusExpenseRow = useFocusRow(focusExpense);
+  const focusAdvanceRow = useFocusRow(focusAdvance);
+
+  useEffect(() => {
+    if (focusExpense) {
+      setActiveTab("expenses");
+      setMonthFilter("all");
+      setCategoryFilter("all");
+      setClientFilter("all");
+      setModeFilter("all");
+      setExpenseByFilter("all");
+      setSearch("");
+    } else if (focusAdvance) {
+      setActiveTab("advances");
+      setAdvMonthFilter("all");
+      setAdvClientFilter("all");
+      setAdvModeFilter("all");
+      setAdvPaidByFilter("all");
+      setAdvBranchFilter("all");
+      setAdvSearch("");
+    }
+  }, [focusExpense, focusAdvance]);
+
+  // Said plainly when the record is not here, rather than leaving the operator
+  // on a list that looks like the link worked.
+  const focusMissing =
+    !loading &&
+    ((focusExpense && !expenses.some((e) => e.id === focusExpense)) ||
+      (focusAdvance && !advances.some((a) => a.id === focusAdvance)));
 
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -2087,6 +2128,16 @@ export default function Expenses() {
           </div>
         )}
 
+        {focusMissing && (
+          <div className="mb-4 flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-800">
+            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+            <span>
+              The record this ledger entry points at is not on this screen — it may have
+              been deleted, or it may be outside the region you can see.
+            </span>
+          </div>
+        )}
+
         <div className="flex items-center gap-2 mb-6 overflow-x-auto">
           {([
             ["expenses", "Expenses"],
@@ -2344,7 +2395,13 @@ export default function Expenses() {
                 )}
                 {!loading &&
                   filtered.map((exp) => (
-                    <tr key={exp.id} className="hover:bg-slate-50 transition-colors">
+                    <tr
+                      key={exp.id}
+                      ref={exp.id === focusExpense ? focusExpenseRow : undefined}
+                      className={`hover:bg-slate-50 transition-colors ${
+                        exp.id === focusExpense ? FOCUS_ROW_CLASS : ""
+                      }`}
+                    >
                       <td className="px-4 py-3 text-sm text-slate-600">{formatDate(exp.expense_date)}</td>
                       <td className="px-4 py-3 text-sm text-slate-900">{exp.category_name ?? "—"}</td>
                       <td className="px-4 py-3 text-sm text-slate-700">
@@ -2843,7 +2900,13 @@ export default function Expenses() {
                   )}
                   {!loading &&
                     filteredAdvances.map((adv) => (
-                      <tr key={adv.id} className="hover:bg-slate-50 transition-colors">
+                      <tr
+                        key={adv.id}
+                        ref={adv.id === focusAdvance ? focusAdvanceRow : undefined}
+                        className={`hover:bg-slate-50 transition-colors ${
+                          adv.id === focusAdvance ? FOCUS_ROW_CLASS : ""
+                        }`}
+                      >
                         <td className="px-4 py-3 text-sm text-slate-600">{adv.advance_date}</td>
                         <td className="px-4 py-3 text-sm text-slate-900">
                           <div>{adv.employee_name}</div>

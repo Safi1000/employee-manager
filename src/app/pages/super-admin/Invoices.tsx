@@ -45,6 +45,7 @@ import InvoiceGenerate from "../../components/InvoiceGenerate";
 import InvoiceStructureModal from "../../components/InvoiceStructureModal";
 import { validateInvoiceNumber, validateAmount, validateFreeText } from "../../lib/validation";
 import { formatDate, invoiceMonth } from "../../lib/date";
+import { useFocusTarget, useFocusRow, FOCUS_ROW_CLASS } from "../../lib/focus";
 
 type InvoiceRow = Invoice & { client?: { name: string; client_code: string } | null };
 
@@ -151,6 +152,20 @@ export default function Invoices() {
   const [tab, setTab] = useState<"ledger" | "generate">("ledger");
   const [clientFilter, setClientFilter] = useState<string>("");
   const [monthFilter, setMonthFilter] = useState<string>("all");
+
+  // --- Drill-down from the Journal ----------------------------------------
+  //
+  // The month filter defaults to "all" here, so only the client filter and the
+  // tab can hide the row. Both are cleared.
+  const focusInvoice = useFocusTarget("invoices");
+  const focusInvoiceRow = useFocusRow(focusInvoice);
+
+  useEffect(() => {
+    if (!focusInvoice) return;
+    setTab("ledger");
+    setClientFilter("");
+    setMonthFilter("all");
+  }, [focusInvoice]);
 
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [structureOpen, setStructureOpen] = useState(false);
@@ -1044,6 +1059,12 @@ export default function Invoices() {
 
         {tab === "ledger" && (
         <>
+        {focusInvoice && !loading && !invoices.some((i) => i.id === focusInvoice) && (
+          <div className="mb-4 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-800">
+            The invoice this ledger entry points at is not on this screen — it may have
+            been deleted, or it may be outside the region you can see.
+          </div>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-brand-500">
             <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Invoiced</p>
@@ -1228,7 +1249,13 @@ export default function Invoices() {
                     const outstanding = invoiceOutstanding(inv);
                     const isSettled = outstanding <= 0;
                     return (
-                      <tr key={inv.id} className="hover:bg-slate-50 transition-colors">
+                      <tr
+                        key={inv.id}
+                        ref={inv.id === focusInvoice ? focusInvoiceRow : undefined}
+                        className={`hover:bg-slate-50 transition-colors ${
+                          inv.id === focusInvoice ? FOCUS_ROW_CLASS : ""
+                        }`}
+                      >
                         <td className="px-6 py-4 text-sm text-slate-900 font-mono">
                           {inv.invoice_number}
                         </td>

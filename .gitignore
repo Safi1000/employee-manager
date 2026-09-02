@@ -57,3 +57,6 @@ ios/App/output/
 # Claude Code: session ledger of migrations applied but not yet written to a file.
 # See scripts/migration-ledger.mjs.
 .claude/applied-migrations.log
+
+# Data exports: real employee PII (CNICs, addresses, phone numbers). Never commit.
+exports/

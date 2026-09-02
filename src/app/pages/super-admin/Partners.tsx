@@ -5,6 +5,7 @@ import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import { supabase, fetchAllRows } from "../../lib/supabase";
+import { useFocusTarget, useFocusRow, FOCUS_ROW_CLASS } from "../../lib/focus";
 import { useAuth } from "../../lib/auth";
 
 const fmt = (n: number) => `PKR ${Math.round(n).toLocaleString()}`;
@@ -71,6 +72,45 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
   const [stmtLoading, setStmtLoading] = useState(false);
   const [stmtFrom, setStmtFrom] = useState("");
   const [stmtTo, setStmtTo] = useState(today());
+
+  // --- Drill-down from the Journal ----------------------------------------
+  //
+  // A partner entry is only ever shown inside one partner's statement, and the
+  // statement is filtered by a date range. Neither the partner nor the range is
+  // knowable from the entry id alone, so both are read off the entry first:
+  // the partner is selected, the range is opened wide enough to contain the
+  // entry's own date, and only then can the row exist to be marked.
+  const focusEntry = useFocusTarget("partner_account_entries");
+  const focusEntryRow = useFocusRow(focusEntry);
+  const [focusEntryMissing, setFocusEntryMissing] = useState(false);
+
+  useEffect(() => {
+    if (!focusEntry) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("partner_account_entries")
+        .select("id, partner_id, date")
+        .eq("id", focusEntry)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error || !data?.partner_id) {
+        setFocusEntryMissing(true);
+        return;
+      }
+      setTab("statement");
+      setStmtPartner(data.partner_id);
+      if (data.date) {
+        setStmtFrom(String(data.date));
+        if (String(data.date) > stmtTo) setStmtTo(String(data.date));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // stmtTo is read to widen the range, not to re-run this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusEntry]);
 
   // Summary balances
   const [summaryData, setSummaryData] = useState<Map<string, { allocated: number; drawn: number; contributed: number; balance: number }>>(new Map());
@@ -536,7 +576,13 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
                               else if (e.type === "PROFIT_ALLOCATION") { cr = e.amount; running += e.amount; }
                               else if (e.type === "CONTRIBUTION") { contrib = e.amount; running += e.amount; }
                               return (
-                                <tr key={e.id} className="hover:bg-slate-50 transition-colors">
+                                <tr
+                                  key={e.id}
+                                  ref={e.id === focusEntry ? focusEntryRow : undefined}
+                                  className={`hover:bg-slate-50 transition-colors ${
+                                    e.id === focusEntry ? FOCUS_ROW_CLASS : ""
+                                  }`}
+                                >
                                   <td className="px-6 py-3 text-xs text-slate-500">{e.date}</td>
                                   <td className="px-6 py-3">{typeBadge(e.type)}</td>
                                   <td className="px-6 py-3 text-sm text-slate-900">{e.description}{e.period_month ? <span className="ml-2 text-xs text-slate-400">({e.period_month.slice(0, 7)})</span> : null}</td>
@@ -552,6 +598,16 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
                         })()}
                         {stmtEntries.length === 0 && (
                           <tr><td colSpan={8} className="px-6 py-8 text-center text-slate-500 text-sm">No entries in this range.</td></tr>
+                        )}
+                        {(focusEntryMissing ||
+                          (focusEntry && !stmtLoading && stmtEntries.length > 0 &&
+                            !stmtEntries.some((e) => e.id === focusEntry))) && (
+                          <tr>
+                            <td colSpan={8} className="px-6 py-3 text-sm text-warning-800 bg-warning-50">
+                              The entry this ledger line points at is not on this screen — it
+                              may have been deleted, or it may be outside the region you can see.
+                            </td>
+                          </tr>
                         )}
                       </tbody>
                     </table>

@@ -59,14 +59,36 @@ const monthLabel = (iso: string) =>
  * translation, not a guess. An unmapped source degrades to no link rather than
  * to a wrong one.
  */
+// Where each source document can actually be opened.
+//
+// EVERY ROUTE HERE WAS CHECKED AGAINST THE SCREEN THAT LOADS THE TABLE, not
+// against where it seemed to belong. Four of the original ten were wrong, and
+// a wrong route is worse than none: it lands on a page that never had the
+// record, which looks like the link worked.
+//
+//   cheques         -> was /treasury. Treasury does not read the table at all;
+//                      Accounting's Payables tab is what lists cheques.
+//   advances        -> was /payroll. Both screens load the table, but the one
+//                      that LISTS advances to an operator is Expenses.
+//   invoice_payments-> was /invoices. On production 18 of 22 receipts carry no
+//                      invoice_id — they are client-only receipts (0315) — so
+//                      an invoice row cannot show them. Client Receivables can.
+//   bank_transfers  -> was /treasury. Nothing in src/ reads bank_transfers at
+//                      all, so there is no screen to open. It is now honest
+//                      about that instead of linking (see NO_DOCUMENT).
+//
+// `focusType` travels with the id because three destinations serve two source
+// tables each and a bare uuid does not say which table it came from.
 const SOURCE_ROUTE: Record<string, { path: string; label: string }> = {
   invoices: { path: "/super-admin/invoices", label: "Invoice" },
-  invoice_payments: { path: "/super-admin/invoices", label: "Invoice payment" },
   payslips: { path: "/super-admin/payroll", label: "Payslip" },
+  // The disbursement entry hangs off the SAME payslip id — verified on
+  // production, 120 of 120. It had no route at all, which left the second
+  // largest source in the ledger with no drill-down.
+  payslips_disbursement: { path: "/super-admin/payroll", label: "Payslip disbursement" },
   expenses: { path: "/super-admin/expenses", label: "Expense" },
-  advances: { path: "/super-admin/payroll", label: "Advance" },
-  cheques: { path: "/super-admin/treasury", label: "Cheque" },
-  bank_transfers: { path: "/super-admin/treasury", label: "Bank transfer" },
+  advances: { path: "/super-admin/expenses", label: "Advance" },
+  cheques: { path: "/super-admin/accounting?tab=payables", label: "Cheque" },
   custody_transfers: {
     path: "/super-admin/accounting?tab=cash-custody",
     label: "Custody transfer",
@@ -76,6 +98,32 @@ const SOURCE_ROUTE: Record<string, { path: string; label: string }> = {
     path: "/super-admin/accounting-core?tab=opening",
     label: "Opening balance",
   },
+};
+
+// Sources with no document to open, and why. Shown as text with the reason,
+// never as a link — a link to a section the record is not on is worse than no
+// link, because it looks like it worked.
+const NO_DOCUMENT: Record<string, string> = {
+  bank_transfers:
+    "Bank transfers have no screen in the app — nothing reads the table, so there is no record to open.",
+  ledger_correction_0219:
+    "A one-off ledger correction made by migration 0219. There is no source document behind it.",
+  // Checked rather than assumed. No screen renders a receipt as a row: the
+  // Receivables tab shows client totals and only the Excel export goes down to
+  // individual payments, and the one place a payment row exists — the invoice
+  // edit dialog — needs an invoice_id, which 18 of the 22 receipts on
+  // production do not have, because they are client-only receipts (0315).
+  // Linking to Receivables would land on a client summary that never shows the
+  // receipt, which is the failure this whole change removes. Closing this needs
+  // a receipts list, which is a new screen, not a link.
+  invoice_payments:
+    "Receipts are not listed individually on any screen — Receivables shows client totals, and most receipts are not attached to an invoice. There is no record to open yet.",
+};
+
+// The payslip id a disbursement entry points at is the payslip's own id, so
+// both payslip sources focus the same row type on the payroll screen.
+const FOCUS_TYPE: Record<string, string> = {
+  payslips_disbursement: "payslips",
 };
 
 type Entry = {
@@ -645,11 +693,20 @@ function EntryBlock({ entry }: { entry: Entry }) {
             {entry.region_name && <span>{entry.region_name}</span>}
             {source && entry.source_id ? (
               <Link
-                to={`${source.path}${source.path.includes("?") ? "&" : "?"}focus=${entry.source_id}`}
+                to={
+                  `${source.path}${source.path.includes("?") ? "&" : "?"}` +
+                  `focus=${entry.source_id}` +
+                  `&focusType=${FOCUS_TYPE[entry.source_table!] ?? entry.source_table}`
+                }
                 className="inline-flex items-center gap-1 text-brand-600 hover:text-brand-700"
               >
                 {source.label} <ExternalLink className="w-3 h-3" />
               </Link>
+            ) : entry.source_table && NO_DOCUMENT[entry.source_table] ? (
+              // Said plainly, with the reason. Not a link.
+              <span className="text-slate-500" title={NO_DOCUMENT[entry.source_table]}>
+                {entry.source_table} · no document to open
+              </span>
             ) : (
               <span>{entry.source_table ?? "manual"}</span>
             )}

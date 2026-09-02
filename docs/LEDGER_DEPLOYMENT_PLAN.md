@@ -2355,3 +2355,300 @@ policies reference it**, and `current_company_id()` reads
 `coalesce(view_as_company, company_id)` without consulting it. Setting
 `active = false` on `guards n guides` today hides it from nothing. An
 RLS-enforced archive flag has to be built before it can be relied on.
+
+---
+
+## 0323 / 0324 — advance invoicing (dev applied, production pending)
+
+| migration | digest | dev |
+|---|---|---|
+| `0323_advance_invoicing_defers_revenue` | `084bbe3c8c70159dc20c319f98d55c82` | applied |
+| `0324_revenue_belongs_to_the_service_month` | `714a966bd787caa7cdd4cf2bc3d9ee42` | applied |
+
+Dev after both: journal unchanged at **439 entries / 1334 lines** (every probe
+unwound), `tenant_guard_gaps()` **0**, `uninvoked_controls()` **11**, canary
+26 → **27**, one value across all four companies, `revenue_outside_service_month`
+**0** rows.
+
+### What 0323 does, and the two things it deliberately does not
+
+`ensure_unearned_revenue_account` (2700, liability, credit), backfilled to all
+four companies and created lazily thereafter. `post_invoice_journal` gains a
+NARROW branch: only when `invoice_date < period_start` does it post
+`Dr AR / Cr Unearned Revenue / Cr Sales Tax` at invoice_date. Arrears and
+same-day are byte-identical to before, which the proof requires.
+
+**It does not write the recognition entry at invoice time.** It cannot: 0322
+refuses an entry posting into a period that has not been reached, and an October
+entry written in September is exactly that. `recognise_advance_revenue(company,
+period)` posts `Dr Unearned Revenue / Cr Revenue` when the month arrives,
+refuses a future period by name, and is idempotent — the deferral carries no
+revenue line, so a revenue line against the invoice IS the marker, with no flag
+column anyone has to remember to set. The proof runs it twice and requires 1
+then 0.
+
+**It does not touch `run_auto_invoices`, and that is a finding.** The anchor
+assertion refused rather than guessing, because dev and production do not have
+the same function body:
+
+```
+production  99fc7c74281ed31d3fe7b8f5506cc516   2849 chars, uses v_period
+dev         8662cf340ad824e8c501ade31f0434b5   2546 chars, no v_period
+```
+
+Dev is missing 0316's rewrite. A patch anchored on one cannot be rehearsed on
+the other, and widening the anchor to accept both is teaching an assertion to
+accept what it finds. The `period_start` change waits for the two databases to
+agree — this is the logged repo↔dev divergence arriving as a concrete blocker
+rather than a note.
+
+Worth stating separately: **auto-invoicing does not produce advance-shaped
+invoices anyway.** For an advance client the function bills the first day of the
+service month, so `invoice_date = period_start`. A manual invoice with a future
+`period_start` is what 0323 is for.
+
+### 0324, and a defect of mine that its own subject caught
+
+The detector nets `credit - debit` per period rather than counting entries with
+revenue lines — an invoice edit reverses and reposts, so counting entries would
+score the reversal as a second recognition. Netting makes the pair cancel,
+because that is what it is. A null `period_start` with revenue posted is
+reported, not defaulted to `invoice_date`: §9.18.
+
+**The first draft wrote the tenant guard as a comment on a `language sql` body,
+and `tenant_guard_gaps()` went from 0 to 1** — the same defect 0316 shipped,
+caught by the same detector. Measured rather than assumed: all three sibling
+detectors `ledger_checks` reads (`closed_period_intrusions`,
+`alert_delivery_gaps`, `negative_custodian_balances`) are SECURITY DEFINER **and
+call `assert_same_company`**. The function is now plpgsql with a real call, and
+the proof asserts `tenant_guard_gaps() = 0` — nothing else in it would have
+noticed, because the check was green and the detector worked while the boundary
+was missing.
+
+---
+
+## 0323 / 0324 on production
+
+| migration | digest | matches |
+|---|---|---|
+| `0323_advance_invoicing_defers_revenue` | `084bbe3c8c70159dc20c319f98d55c82` | file and dev row |
+| `0324_revenue_belongs_to_the_service_month` | `714a966bd787caa7cdd4cf2bc3d9ee42` | file and dev row |
+
+Journal unchanged at **427 entries / 1304 lines** — every probe unwound.
+`tenant_guard_gaps()` **0**, `uninvoked_controls()` **11**, four
+`unearned_revenue` accounts, `revenue_outside_service_month` **0** rows, canary
+28 → **29**, green on all four companies. No probe residue.
+
+---
+
+## The repo↔dev backlog, measured (0230–0324)
+
+100 repo files in range, 84 dev rows.
+
+### Missing on dev — 16
+
+`0230`, `0231`, `0231b`, `0232`, `0233`, `0234`, `0235`, `0236`, `0285`,
+**`0313`, `0314`, `0315`, `0316`, `0316b`, `0317`, `0318`**.
+
+The bolded seven are the block that explains everything observed so far: dev's
+canary was 26 while production's was 28 because `0318` (which restored two
+checks) never ran there, and dev's `run_auto_invoices` is the pre-`0316` body.
+
+### Digest differs — 18
+
+`0265`, `0292`–`0303`, `0305`–`0308`, `0311`. Recorded SQL on dev does not match
+the repo file for any of these.
+
+### On dev with no repo file — 0
+
+The serious direction is clean: nothing has run against dev that the repo does
+not describe.
+
+---
+
+## Re-applying 0316 to dev was approved and I did NOT do it
+
+**0316 restates `ledger_checks` wholesale.** Its body rebuilds `real_checks`
+from `ledger_checks_base` plus an explicit list of nine checks:
+
+```
+create or replace function public.ledger_checks(p_company_id uuid)
+...
+  with real_checks as (
+    select ... from public.ledger_checks_base(p_company_id) b
+     where b.check_name <> 'checks_evaluated'
+    union all  -- nine checks listed by hand
+```
+
+Dev's `ledger_checks` currently returns **28 rows — 27 checks plus the canary**,
+because `0304`, `0310`, `0312` and `0324` amended it after `0316` was written.
+Applying `0316` to dev now would replace a 27-check function with a 9-check one
+and silently drop everything added since — including
+`revenue_recognised_in_service_month`, added minutes earlier.
+
+That is precisely the defect `0286` and `0288` shipped and `0318` had to repair.
+The approval was given before this was known; the literal action would cause the
+exact failure the instruction elsewhere forbids, so it was not taken.
+
+### The proposed substitute
+
+`run_auto_invoices` is safe to restate where `ledger_checks` is not, and the
+difference is the point: `ledger_checks` accumulates surgery from many
+migrations, so no single file holds its true text, while `run_auto_invoices` has
+exactly one author (`0316`) whose full text is in the repo.
+
+**0325** would state the agreed `run_auto_invoices` body outright, guarded by a
+precondition asserting the body it replaces is one of the two known digests —
+`8662cf34…` (dev, pre-0316) or `99fc7c74…` (production, post-0316) — and
+refusing anything else. On production that is a no-op it can prove; on dev it is
+the reconciliation. **0326** then adds `period_start` by surgery against the
+body both databases share.
+
+Nothing applied. Awaiting confirmation of the substitute.
+
+### The substitute was approved and is on dev (2026-09-02)
+
+Both applied to `crm-design-dev` (`wlyhbvunvdsropqzlpwx`) only. Production has
+neither; they need naming.
+
+| File | Recorded digest = file | Effect |
+|------|------------------------|--------|
+| `0325_the_auto_invoice_generator_says_its_own_body` | `614fc82594f92d668a8f168ccc7a8304` | dev's `run_auto_invoices` replaced with the shared body |
+| `0326_the_generator_states_the_month_it_bills_for` | `03a39552e07149cd853d1d79c7ac2029` | the generator writes `period_start` / `period_end` |
+
+`run_auto_invoices` digests, measured at each step:
+
+| | before 0325 | after 0325 | after 0326 |
+|---|---|---|---|
+| dev | `8662cf34…` (2546 b) | `99fc7c74…` | `13f91d69…` |
+| production | `99fc7c74…` (2849 b) | *not applied* | *not applied* |
+
+`99fc7c74…` is the digest production has held since `0316`, so `0325` on
+production is a no-op that proves itself; `13f91d69…` is where both databases
+land once `0326` follows.
+
+**0325's proof runs the generator, it does not read it.** `0316`'s header
+records why: the pre-`0316` body was *unrunnable* for any client with
+auto-invoicing switched on, and every read of it looked fine. So a client is
+planted with `auto_invoice_withholding = 999`, the generator is called, and the
+invoice it raises is required to carry `withholding_tax = 0` — withholding
+belongs to the receipt (A1). `next_invoice_number` computes `max+1` from the
+invoices table rather than drawing on a sequence, so the whole probe unwinds
+through the transaction and leaves nothing behind (`0321`).
+
+**0326 is surgery, and that is not an inconsistency.** Before `0325`,
+`run_auto_invoices` had one author and could be restated. After `0325` it has
+two, so the rule that made `0325` safe is exactly the rule that makes `0326`
+surgery. Its proof ends by asking `revenue_outside_service_month` whether it has
+anything to say about an invoice the generator just raised: before `0326` it
+would have reported "the invoice states no service month".
+
+Dev after both: `ledger_checks` still **28 rows (27 checks + canary), canary
+green on all four companies** — nothing dropped, which was the whole reason for
+not re-applying `0316`. `tenant_guard_gaps()` **0**. Journal unchanged at **439
+entries / 1334 lines**, invoices **9**, no probe residue.
+
+The rule this produced is now in `CLAUDE.md` under *"A function edited by more
+than one migration has no canonical file"* — the general form, because the next
+function it applies to will not be `ledger_checks`.
+
+### The repo↔dev backlog: read the shape, not the count
+
+Range `0230`–`0326`. **102 repo files, 86 dev rows.**
+
+**The direction that matters is clean: 0 rows on dev with no repo file.**
+Nothing has ever run against dev that the repo does not describe. That is the
+unrecoverable direction — a row with no file means SQL nobody can reproduce or
+review — and it is empty.
+
+The other 34 are all the same, recoverable thing: **dev is behind.**
+
+**Missing on dev — 16.** Two blocks, not a scatter:
+
+- `0230`, `0231`, `0231b`, `0232`–`0236` — the partner-remuneration block.
+- `0285`
+- `0313`, `0314`, `0315`, `0316`, `0316b`, `0317`, `0318`
+
+The second block explains everything already observed. `0318` never ran on dev,
+which is why dev's canary read 26 against production's 28. `0316` never ran,
+which is why dev's `run_auto_invoices` was the pre-`0316` body — the blocker
+`0325` has now cleared, without applying `0316`.
+
+**Digest differs — 18.** `0265`, `0292`–`0303`, `0305`–`0308`, `0311`. Mostly
+the 0300 block already logged: files edited after they were applied to dev, then
+applied to production in their corrected form. Production's digests match the
+files; dev's are the superseded text.
+
+Not fixed, deliberately — one blocker cleared, the backlog measured, nothing
+else touched.
+
+### 0325 and 0326 on production (2026-09-02)
+
+Applied to `crm-design` (`mmkfpnshxjcyijhuydgr`), named and approved, these two
+only. Recorded digests equal the files and equal the dev rows:
+`614fc82594f92d668a8f168ccc7a8304` and `03a39552e07149cd853d1d79c7ac2029`.
+
+`0325` behaved on production exactly as designed: the precondition read
+`99fc7c74…`, recognised it, and the restatement left the digest at `99fc7c74…`
+— a no-op that proved itself rather than one asserted in a comment. `0326` then
+moved both databases to the shared `13f91d69c78bc5e78dfdf63cedd5daee`.
+
+Production after both: journal unchanged at **427 entries / 1304 lines**,
+invoices **9**, no probe residue, `tenant_guard_gaps()` **0**,
+`uninvoked_controls()` **11**, `ledger_checks` **30 rows (29 checks + canary),
+canary green on all four companies**.
+
+Reds are the pre-existing set, unchanged: `every_control_is_invoked` (11, the
+`uninvoked_controls` backlog) on all four; `alert_delivery_is_healthy` and
+`no_gate_mode_in_attendance_status` on GUARDS AND GUIDES; and SANDBOX TESTING
+ORG's five, which are that company's own data.
+`revenue_recognised_in_service_month` is green everywhere.
+
+## Journal drill-down: the link was never the problem (2026-09-02)
+
+The reported defect was "the link discards the id". It does not — the Journal
+screen has always emitted `?focus=<source_id>`. **No destination read it.** Ten
+links, zero readers.
+
+Fixing that meant checking where each source document is actually rendered
+rather than where it looked like it belonged, and **four of the ten routes were
+pointing at screens that never had the record**:
+
+| source_table | was | now | why |
+|---|---|---|---|
+| `cheques` | `/treasury` | `/accounting?tab=payables` | Treasury does not read `cheques` at all |
+| `advances` | `/payroll` | `/expenses` | both load the table; Expenses is the one that lists them |
+| `invoice_payments` | `/invoices` | *no link* | 18 of 22 receipts have no `invoice_id` |
+| `bank_transfers` | `/treasury` | *no link* | nothing in `src/` reads the table |
+
+Two sources were found that the map never had at all:
+
+- **`payslips_disbursement` — 120 entries, the second largest source in the
+  ledger — had no route.** Its `source_id` is the payslip's own id (verified on
+  production, 120 of 120), so it now focuses the same payroll row as `payslips`.
+- `ledger_correction_0219` (1 entry) is a migration correction with no document,
+  and now says so.
+
+`focusType` travels with the id because three destinations serve two source
+tables each, and a bare uuid does not say which table it came from.
+
+### Scrolling was never going to be enough
+
+Every one of these screens filters by month, and most default to the current or
+previous one. A link to a June expense from a September journal would have
+scrolled to a row that was not rendered. Each destination now widens the filters
+that could hide the row *first* — and where the period is not knowable from the
+id (`payslips`, `partner_account_entries`), the record is read first to learn
+its period, and the screen is moved to it.
+
+### What genuinely cannot open a record, and why
+
+`bank_transfers`, `ledger_correction_0219`, and `invoice_payments`. The third is
+the one worth acting on: no screen lists receipts individually — Receivables
+shows client totals, only the Excel export goes down to payments, and the one
+place a payment row exists is the invoice edit dialog, which needs an
+`invoice_id` that most receipts do not have. Closing it needs a receipts list,
+which is a screen, not a link. Until then it says so instead of linking.
+
+`src/app/lib/focus.ts` holds the shared mechanism so every screen marks a
+focused row the same way.

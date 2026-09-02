@@ -35,6 +35,7 @@ import {
   type ChequeDirection,
 } from "../../lib/supabase";
 import { validateBankAccount, validateIban } from "../../lib/validation";
+import { useFocusTarget, useFocusRow, FOCUS_ROW_CLASS } from "../../lib/focus";
 import { useAuth } from "../../lib/auth";
 import { CashCustodyPanel } from "./CashCustody";
 import { generateDepositSlipPdf } from "../../lib/depositSlip";
@@ -136,6 +137,22 @@ export default function Accounting() {
   const [chequeSectionView, setChequeSectionView] = useState<"cheques" | "deposits">("cheques");
   const [chequeBankFilter, setChequeBankFilter] = useState<string>("all");
   const [chequeMonthFilter, setChequeMonthFilter] = useState<string>("all");
+
+  // --- Drill-down from the Journal ----------------------------------------
+  //
+  // Cheques used to be linked to /treasury, which does not read the table at
+  // all. They are listed here, on Payables. Three filters can hide the row —
+  // bank, status and month — and all three are widened before it is marked.
+  const focusCheque = useFocusTarget("cheques");
+  const focusChequeRow = useFocusRow(focusCheque);
+  useEffect(() => {
+    if (!focusCheque) return;
+    setActiveTab("payables");
+    setChequeSectionView("cheques");
+    setChequeBankFilter("all");
+    setChequeFilter("all");
+    setChequeMonthFilter("all");
+  }, [focusCheque]);
   const [cashBalance, setCashBalance] = useState<number>(0);
   const [cashOpeningBalance, setCashOpeningBalance] = useState<number>(0);
   const [cashOpeningLocked, setCashOpeningLocked] = useState<boolean>(false);
@@ -2532,7 +2549,13 @@ export default function Accounting() {
                             ? Math.abs(linkedSum - Number(c.amount)) < 0.005
                             : true;
                         return (
-                          <tr key={c.id} className="hover:bg-slate-50">
+                          <tr
+                            key={c.id}
+                            ref={c.id === focusCheque ? focusChequeRow : undefined}
+                            className={`hover:bg-slate-50 ${
+                              c.id === focusCheque ? FOCUS_ROW_CLASS : ""
+                            }`}
+                          >
                             <td className="px-4 py-2 text-sm text-slate-900 font-mono">{c.cheque_number}</td>
                             <td className="px-4 py-2 text-sm">
                               {isReceivables ? (

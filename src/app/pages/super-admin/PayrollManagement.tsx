@@ -27,6 +27,7 @@ import { useAuth } from "../../lib/auth";
 import { loadCustodianOptions, ensureCustodianLocation, type CustodianOption } from "../../lib/custodian";
 import { isSeparatedState, lifecycleStatusLabel } from "../../lib/employmentWindow";
 import { guardDisplayCode } from "../../lib/guardCode";
+import { useFocusTarget, useFocusRow, FOCUS_ROW_CLASS } from "../../lib/focus";
 
 type EmployeeRow = Employee & { client_name: string | null };
 
@@ -247,6 +248,54 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   const [selectedPeriod, setSelectedPeriod] = useState(() => readSel().period ?? previousPeriod);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // --- Drill-down from the Journal ----------------------------------------
+  //
+  // Both payslip sources land here: `payslips` (the accrual) and
+  // `payslips_disbursement` (the payment), which carries the SAME payslip id —
+  // verified on production, 120 of 120. The Journal sends both as
+  // focusType=payslips.
+  //
+  // The period has to be resolved before the row can exist. This screen shows
+  // one month at a time and defaults to the previous one, so a link to a
+  // payslip from any other month would otherwise scroll to a row that is not
+  // rendered. The payslip's own period_month is read first, the month selector
+  // is moved to it, and only then does the row appear to be marked.
+  const focusPayslip = useFocusTarget("payslips");
+  const focusPayslipRow = useFocusRow(focusPayslip);
+  const [focusPayslipMissing, setFocusPayslipMissing] = useState(false);
+
+  useEffect(() => {
+    if (!focusPayslip) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("payslips")
+        .select("id, period_month")
+        .eq("id", focusPayslip)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error || !data?.period_month) {
+        setFocusPayslipMissing(true);
+        return;
+      }
+      const month = String(data.period_month).slice(0, 7);
+      setPeriodOptions((prev) => (prev.includes(month) ? prev : [month, ...prev]));
+      setSelectedPeriod(month);
+      // Widen everything that could hide the row.
+      setSearch("");
+      setShiftFilter("all");
+      setClientFilter("all");
+      setSiteFilter("all");
+      setStatusFilter("all");
+      setDisbursedFilter("all");
+      setCategoryFilter("all");
+      setEmpTab("all");
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [focusPayslip]);
   const [rowEdits, setRowEdits] = useState<Map<string, Partial<RowState>>>(new Map());
   const [savingId, setSavingId] = useState<string | null>(null);
 
@@ -1707,6 +1756,17 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       <>
         <Header title="Payroll Management" subtitle="Finance-Verified clients — disburse & mark paid" />
         <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6">
+          {(focusPayslipMissing ||
+            (focusPayslip && !loading && !filtered.some((r) => r.payslip_id === focusPayslip))) && (
+            <div className="mb-4 flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-800">
+              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+              <span>
+                The payslip this ledger entry points at is not on this screen — it may
+                have been deleted, or it may be outside the region you can see.
+              </span>
+            </div>
+          )}
+
           <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
             <label className="flex items-center gap-2 text-sm text-muted-foreground">
               Month
@@ -2110,8 +2170,15 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                         return (
                           <Fragment key={e.id}>
                           <tr
+                            ref={
+                              focusPayslip && row.payslip_id === focusPayslip
+                                ? focusPayslipRow
+                                : undefined
+                            }
                             className={`transition-colors cursor-pointer border-b border-border ${
-                              selectedId === e.id
+                              focusPayslip && row.payslip_id === focusPayslip
+                                ? FOCUS_ROW_CLASS
+                                : selectedId === e.id
                                 ? "bg-brand-500/10"
                                 : afterNet && row.disbursed
                                   ? "bg-success-50 dark:bg-success-900/15 hover:bg-success-100 dark:hover:bg-success-900/25"

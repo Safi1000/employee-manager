@@ -4,6 +4,7 @@ import { Pencil, Trash2, AlertCircle, X, Loader2, Wallet, Building2 } from "luci
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import { supabase } from "../../lib/supabase";
+import { useFocusTarget, useFocusRow, FOCUS_ROW_CLASS } from "../../lib/focus";
 import { useAuth } from "../../lib/auth";
 
 // Rendered as the "Cash Custody" tab inside Banks & Ledgers (Accounting.tsx).
@@ -96,6 +97,24 @@ export function CashCustodyPanel({ onReady, onSummary }: {
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);
   const [ledgerStaffFilter, setLedgerStaffFilter] = useState<string>("all");
   const [ledgerMonth, setLedgerMonth] = useState<string>("all");
+
+  // --- Drill-down from the Journal ----------------------------------------
+  //
+  // A custody transfer becomes TWO ledger rows — `t-out-<id>` at the sending
+  // location and `t-in-<id>` at the receiving one — because that is what a
+  // transfer is. Both are marked; the first one reached is scrolled to. Marking
+  // only one would show half the movement and imply the other half was
+  // something else.
+  const focusTransfer = useFocusTarget("custody_transfers");
+  const focusTransferRow = useFocusRow(focusTransfer);
+  const isFocusRow = (id: string) =>
+    !!focusTransfer && (id === `t-in-${focusTransfer}` || id === `t-out-${focusTransfer}`);
+
+  useEffect(() => {
+    if (!focusTransfer) return;
+    setLedgerStaffFilter("all");
+    setLedgerMonth("all");
+  }, [focusTransfer]);
   const [locations, setLocations] = useState<CashLocation[]>([]);
   const [transfers, setTransfers] = useState<CustodyTransfer[]>([]);
   const [partners, setPartners] = useState<Partner[]>([]);
@@ -877,7 +896,11 @@ export function CashCustodyPanel({ onReady, onSummary }: {
                   {filteredLedger.map((e) => {
                     const delta = e.cashIn - e.cashOut;
                     return (
-                      <tr key={e.id}>
+                      <tr
+                        key={e.id}
+                        ref={isFocusRow(e.id) ? focusTransferRow : undefined}
+                        className={isFocusRow(e.id) ? FOCUS_ROW_CLASS : undefined}
+                      >
                         <td className="px-3 py-2 text-xs text-slate-600 whitespace-nowrap">{e.date}</td>
                         <td className="px-3 py-2 text-xs text-slate-700">{LEDGER_KIND_LABEL[e.kind]}</td>
                         <td className="px-3 py-2 text-xs text-slate-700">{staffName(e.employeeId)}</td>

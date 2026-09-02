@@ -4,6 +4,7 @@ import Header from "../../components/Header";
 import Button from "../../components/Button";
 import { useAuth } from "../../lib/auth";
 import { supabase, type Branch } from "../../lib/supabase";
+import { useFocusTarget, useFocusRow, FOCUS_ROW_CLASS } from "../../lib/focus";
 
 // Opening Trial Balance import (§4.4). Build a dated batch of debit/credit lines
 // against the chart of accounts (region-tagged), confirm it balances, then post
@@ -26,6 +27,15 @@ export default function OpeningBalances() {
   const [selected, setSelected] = useState<string>("");
   const [lines, setLines] = useState<any[]>([]);
   const [totals, setTotals] = useState<any>(null);
+
+  // --- Drill-down from the Journal ----------------------------------------
+  // Selecting the batch is what loads its lines, so the link opens the batch
+  // rather than merely scrolling the list to it.
+  const focusBatch = useFocusTarget("opening_balance_batches");
+  const focusBatchRow = useFocusRow(focusBatch);
+  useEffect(() => {
+    if (focusBatch) setSelected(focusBatch);
+  }, [focusBatch]);
 
   // create-batch form
   const [asOf, setAsOf] = useState(new Date().toISOString().slice(0, 10));
@@ -114,7 +124,12 @@ export default function OpeningBalances() {
           <section className="border border-slate-200 rounded-md divide-y divide-slate-100">
             {batches.map((b) => (
               <button key={b.id} onClick={() => setSelected(b.id)}
-                className={`w-full text-left px-3 py-2 text-sm ${selected === b.id ? "bg-brand-50" : "hover:bg-slate-50"}`}>
+                ref={b.id === focusBatch ? focusBatchRow : undefined}
+                className={`w-full text-left px-3 py-2 text-sm ${
+                  b.id === focusBatch
+                    ? FOCUS_ROW_CLASS
+                    : selected === b.id ? "bg-brand-50" : "hover:bg-slate-50"
+                }`}>
                 <div className="flex items-center justify-between">
                   <span className="text-slate-700">{b.as_of_date}</span>
                   <span className={`text-[10px] uppercase px-1.5 py-0.5 rounded ${String(b.status) === "draft" ? "bg-slate-100 text-slate-500" : "bg-success-50 text-success-700"}`}>{String(b.status)}</span>
