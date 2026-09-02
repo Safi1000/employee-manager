@@ -282,3 +282,160 @@ table**, never as a total — a total would let a drop in one and a rise in
 another cancel (§9.15).
 
 `guards n guides` is gone. The export and the verified dump both predate it.
+
+---
+
+# 2. The archive flag — design, before building
+
+Measured against production, 2026-09-02. **Nothing built.**
+
+## `companies.active` cannot be the flag
+
+It exists — `boolean not null default true` — and the report that it is unused
+by RLS is correct: **0 of 272 policies reference it**, and `current_company_id()`
+does not consult it. But it is not unused:
+
+- `RequireAuth.tsx:35` — `if (company.active === false || expired)` **blocks
+  sign-in entirely**
+- `Companies.tsx` (super-super-admin) toggles it, labelled **Active / Suspended**
+- `enforce_subscription_expiry` and `add_subscription_payment` read it, and so do
+  seven views
+
+`active` is the **billing suspension** flag. Reusing it would conflate "unpaid"
+with "archived", and worse, it would make an archived company's data
+*unviewable* rather than read-only, because suspension stops login. Archiving
+must keep the data readable — that is the whole point of archiving instead of
+deleting.
+
+**So: a new column, `companies.archived_at timestamptz null`.** Nullable rather
+than boolean, because when a company was archived is the first thing anyone will
+ask, and a boolean cannot answer it.
+
+## The enforcement layer: triggers, NOT RLS
+
+This is the decision the rest follows from, and it is measured:
+
+| | |
+|---|---:|
+| tables carrying `company_id` | 129 |
+| of those, RLS enabled | **129** |
+| of those, `FORCE ROW LEVEL SECURITY` | **0** |
+| table owner | `postgres` |
+| SECURITY DEFINER functions in `public` | **282** |
+
+A SECURITY DEFINER function runs as its owner, `postgres`, which owns the tables.
+Without `FORCE ROW LEVEL SECURITY`, **RLS does not apply to the owner** — so an
+archive flag written as an RLS policy would be enforced on direct PostgREST
+table writes and **silently ignored by all 282 RPCs**, which is how this
+application actually writes. `post_journal`, `record_invoice_payment`,
+`post_payslip_disbursement` and every other writer would sail straight through.
+
+A policy that the real write path bypasses is the vacuity this project keeps
+finding, and it would be worse than usual here because it would *look* enforced.
+
+**A `BEFORE INSERT OR UPDATE OR DELETE` row trigger fires regardless of caller** —
+PostgREST, RPC, psql, cron, migration. That is the same mechanism
+`enforce_period_lock` already uses across seven tables, so the pattern has
+precedent and a known shape in this codebase.
+
+## The shape
+
+1. `alter table public.companies add column archived_at timestamptz`.
+2. `enforce_company_not_archived()` — reads `new.company_id` (or `old` on
+   delete), looks up `companies.archived_at`, raises if set. One PK lookup per
+   modified row.
+3. Attached to **all 129 company-scoped tables**, generated in a loop, never
+   hand-listed — a hand-listed set is how a table gets missed.
+4. **Not** attached to `companies` itself, or archiving could not be undone.
+5. Reads: **completely untouched.** No RLS change, no change to
+   `current_company_id()`, no change to `RequireAuth`. An archived company still
+   opens, still shows its ledger, still exports.
+
+## How it interacts with `current_company_id()` — deliberately, not at all
+
+The tempting one-line version is to make `current_company_id()` return null for
+an archived company: every one of the 128 policies that reference it would stop
+matching, with no new triggers.
+
+It is wrong, and the reason is worth writing down. It would make archived data
+**invisible** rather than read-only, which is deletion with extra steps. It
+would also break `assert_same_company` for that tenant, so every guarded
+function would refuse rather than the writes specifically. Read and write are
+different questions and the flag must only answer the second.
+
+## Two things to decide before I build
+
+1. **Exemptions.** Should any company-scoped table stay writable while archived?
+   The candidates are `audit_log` (which would want to record the archiving
+   itself) and `notification_deliveries`. My inclination is **no exemptions** —
+   an archive that has exceptions is a policy, not a boundary — and to write the
+   audit row before setting `archived_at`. Confirm.
+2. **Archiving makes a company undeletable.** A `delete from companies` cascades
+   to the child tables, and the trigger would refuse those cascaded deletes. So
+   the order is always un-archive, then delete. That is arguably correct — it
+   makes removal require two deliberate acts — but it should be a decision, not
+   a surprise.
+
+## The proof it will carry
+
+- The same write **refused** against an archived company and **accepted**
+  against a live one. Both halves: a trigger that refuses everything passes a
+  test that only checks refusal (§9.11).
+- The refusal fires **inside a SECURITY DEFINER function** — `post_journal`
+  against an archived company must raise. This is the assertion the whole design
+  exists for; without it the trigger is only proved on the path RLS already
+  covered.
+- Every one of the 129 tables carries the trigger, counted, not sampled.
+- Un-archiving restores writes, so the flag is reversible.
+- All of it rolled back through a deliberate raise.
+
+**Stopping here for the two decisions.**
+
+## 0329 — built and on dev (2026-09-02)
+
+Recorded digest `3bdb39ae343f290d010606e87b8015bf`, equal to the file.
+**Production does not have it; it needs naming.**
+
+`companies.archived_at timestamptz` plus `enforce_company_not_archived()`,
+attached by a generated loop to **129 of 129** company-scoped tables — counted
+by asserting *zero without the trigger*, not by matching the number 129, so the
+assertion cannot pass against a stale count after a table is added or dropped.
+
+### The refusals, as an operator will read them
+
+    INSERT  Sandboxx is archived (since 2026-08-30) and its records are
+            read-only. Un-archive it before writing to it. [locations]
+
+    DELETE  Sandboxx is archived (since 2026-08-30) and its records are
+            read-only. Un-archive it before deleting — removal takes two
+            deliberate acts by design. [locations]
+
+    RPC     Sandboxx is archived (since 2026-09-02) and its records are
+            read-only. Un-archive it before writing to it. [chart_of_accounts]
+
+Each carries a `HINT` with the exact statement that lifts it.
+
+**The third line is the one that matters.** That refusal came from inside
+`ensure_unearned_revenue_account`, a SECURITY DEFINER function running as
+`postgres` — the table owner. An RLS policy would not have stopped it, and
+neither would it have stopped `post_journal` or `record_invoice_payment`. This
+is the path the whole design was chosen for, and it is now measured rather than
+argued.
+
+### What the migration's own proof asserts
+
+Coverage as a property; a write **accepted live and refused archived** (both
+halves — a trigger that refuses everything passes a test that only checks
+refusal); the refusal firing **inside a SECURITY DEFINER function**; DELETE
+refused with the way out named in the message; and **un-archiving restoring
+writes**, so the flag is not a one-way door. All inside a subtransaction that
+unwinds — dev afterwards has 0 companies archived, 0 probe rows, journal
+unchanged at 444, `tenant_guard_gaps()` still 0.
+
+### Not yet done
+
+Nothing archives a company yet. `archived_at` is set by hand
+(`update public.companies set archived_at = now() where id = …`) and there is no
+UI for it. That is deliberate for now — the boundary exists before anything
+relies on it — but SANDBOX will need the audit row written *before* the flag is
+set, per the no-exemptions rule.
