@@ -16,8 +16,11 @@ const FIELD =
 const money = (n: any) => Number(n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
 
 export default function OpeningBalances() {
-  const { company } = useAuth();
-  const companyId = company?.id ?? "";
+  const { profile, company } = useAuth();
+  // Resolved the way every other finance screen resolves it. useAuth already
+  // follows view_as_company when it loads `company`, so this is the same value
+  // — but stating it here means the page does not depend on that staying true.
+  const companyId = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? "";
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -83,6 +86,13 @@ export default function OpeningBalances() {
   };
 
   const createBatch = async () => {
+    // Without this the insert sends company_id: "" and Postgres answers
+    // 'invalid input syntax for type uuid: ""' — a parser error standing in for
+    // "you have not chosen a company", which is not a thing anyone can act on.
+    if (!companyId) {
+      setErr("No company is selected. A Super Super Admin must pick a company with the “Viewing as” selector before opening balances can be entered.");
+      return;
+    }
     setBusy(true); setErr(null);
     const { data, error } = await supabase.from("opening_balance_batches")
       .insert({ company_id: companyId, as_of_date: asOf, description: desc }).select("id").single();
@@ -106,6 +116,25 @@ export default function OpeningBalances() {
   const brName = useMemo(() => new Map(branches.map((b) => [b.id, b.name])), [branches]);
   const balanced = totals && Math.abs(Number(totals.total_debit ?? 0) - Number(totals.total_credit ?? 0)) < 0.005;
   const posted = selBatch && String(selBatch.status) !== "draft";
+
+  // A Super Super Admin who is not viewing a company has no company to enter an
+  // opening balance FOR. The page used to render its full chrome here — an
+  // empty account picker, a live "Create batch" button — and only failed when
+  // the button was pressed, with a uuid parse error. Say it up front instead.
+  if (!companyId) {
+    return (
+      <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
+        <Header title="Opening Balances" subtitle="Import & post the opening trial balance (§4.4)" />
+        <div className="border border-slate-200 rounded-md p-6 max-w-xl">
+          <p className="text-sm text-slate-900 mb-2">No company selected.</p>
+          <p className="text-sm text-slate-600">
+            Opening balances are entered against one company&rsquo;s chart of accounts. Choose a
+            company with the &ldquo;Viewing as&rdquo; selector at the top of the page, then come back.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
