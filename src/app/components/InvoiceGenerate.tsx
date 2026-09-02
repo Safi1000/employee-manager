@@ -136,21 +136,28 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
   // Editable drafts, keyed by contract id. Rebuilt whenever the filters or the
   // underlying data change (so any contract that just got an invoice drops out).
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+  // Persisted "Cleared" flags (0315), as a set of `${contractId}|${period}` keys
+  // from invoice_generation_clears — so Clear survives leaving/returning to the
+  // tab, refreshes and other sessions, instead of living only in `drafts`.
+  const [clearedKeys, setClearedKeys] = useState<Set<string>>(new Set());
 
   const loadData = async () => {
     setLoading(true);
-    const [cliRes, conRes, lineRes, addRes, invRes] = await Promise.all([
+    const [cliRes, conRes, lineRes, addRes, invRes, clrRes] = await Promise.all([
       supabase.from("clients").select("*").order("name"),
       supabase.from("contracts").select("*"),
       supabase.from("contract_lines").select("*"),
       supabase.from("contract_addendums").select("*"),
       supabase.from("invoices").select("*"),
+      supabase.from("invoice_generation_clears").select("contract_id, period"),
     ]);
     setClients((cliRes.data ?? []) as Client[]);
     setContracts((conRes.data ?? []) as Contract[]);
     setLines((lineRes.data ?? []) as ContractLine[]);
     setAddendums((addRes.data ?? []) as ContractAddendum[]);
     setInvoices((invRes.data ?? []) as Invoice[]);
+    setClearedKeys(new Set(((clrRes.data ?? []) as { contract_id: string; period: string }[])
+      .map((r) => `${r.contract_id}|${r.period}`)));
     setLoading(false);
   };
 
@@ -341,13 +348,15 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
         if (d) {
           // suggestNumber uses lowercase-insensitive set; register the built one.
           taken.add(d.invoiceNumber.trim().toLowerCase());
+          // Seed Cleared from the persisted flags (0315) so it survives remount.
+          d.status = clearedKeys.has(`${con.id}|${period}`) ? "Cleared" : "Pending";
           next[con.id] = d;
         }
       }
     }
     setDrafts(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, period, group, clients, contracts, lines, addendums, invoices]);
+  }, [loading, period, group, clients, contracts, lines, addendums, invoices, clearedKeys]);
 
   // The full filterable row set: existing invoices + draftable contracts, then
   // narrowed by the Status filter.
@@ -470,12 +479,41 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
     patchDraft(id, { variableRows: d.variableRows.filter((_, i) => i !== r) });
   };
 
-  const toggleCleared = (contractId: string) =>
+  // Clear / Reopen now PERSISTS to invoice_generation_clears (0315) keyed by
+  // (contract, period), so it survives navigation/refresh/other sessions — not
+  // just this component's `drafts` state. Optimistic local update, then the write.
+  const toggleCleared = async (contractId: string) => {
+    const key = `${contractId}|${period}`;
+    const willClear = !clearedKeys.has(key);
     setDrafts((prev) => {
       const d = prev[contractId];
       if (!d) return prev;
-      return { ...prev, [contractId]: { ...d, status: d.status === "Cleared" ? "Pending" : "Cleared" } };
+      return { ...prev, [contractId]: { ...d, status: willClear ? "Cleared" : "Pending" } };
     });
+    setClearedKeys((prev) => {
+      const n = new Set(prev);
+      if (willClear) n.add(key); else n.delete(key);
+      return n;
+    });
+    const { error: e } = willClear
+      ? await supabase.from("invoice_generation_clears").insert({ contract_id: contractId, period })
+      : await supabase.from("invoice_generation_clears").delete().eq("contract_id", contractId).eq("period", period);
+    // A duplicate insert just means it was already cleared elsewhere — ignore that,
+    // surface anything else and roll the optimistic change back.
+    if (e && !/duplicate key/i.test(e.message)) {
+      setError(e.message);
+      setClearedKeys((prev) => {
+        const n = new Set(prev);
+        if (willClear) n.delete(key); else n.add(key);
+        return n;
+      });
+      setDrafts((prev) => {
+        const d = prev[contractId];
+        if (!d) return prev;
+        return { ...prev, [contractId]: { ...d, status: willClear ? "Pending" : "Cleared" } };
+      });
+    }
+  };
 
   // Post a single cleared draft: insert the invoice (with contract_id), its
   // lines and taxes, then generate the PDF. Throws on any failure so the batch
@@ -620,6 +658,11 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
         await postDraft(d);
         posted++;
       }
+      // The posted contracts now have real invoices and drop out of the draft
+      // list; remove their persisted Cleared flags so the table doesn't accrue
+      // stale rows (0315).
+      await supabase.from("invoice_generation_clears").delete()
+        .in("contract_id", cleared.map((d) => d.contractId)).eq("period", period);
       setResult(`Posted ${posted} invoice${posted === 1 ? "" : "s"} as Unpaid and generated PDFs.`);
       await loadData();
       onPosted();
