@@ -6,24 +6,47 @@
 -- clients.opening_balance carried a stated receivable per client — the balance
 -- owed at the point the system took over, entered directly on the client rather
 -- than through an invoice. On GUARDS AND GUIDES (PVT) LTD, 13 of 43 clients
--- carried one, totalling PKR 10,122,416:
+-- carried one, totalling PKR 10,122,416 when this was measured at about 13:30.
+--
+-- TWO DIFFERENT THINGS HAPPENED TO THOSE THIRTEEN, and the distinction matters
+-- because only one of them is this file's doing. The first version of this
+-- header claimed all thirteen; it was corrected after the client count failed
+-- to reconcile (43 measured, 39 afterwards) and the audit log was read rather
+-- than the difference assumed.
+--
+-- FOUR CLIENTS WERE DELETED OUTRIGHT at 13:44 by techxserve@gmail.com, through
+-- the application, before this migration ran. The rows are gone, not merely
+-- their balances — PKR 256,086:
+--
+--   Spaces by Kaizen                 238,466
+--   NM Cables                          8,000
+--   Mr Fahad Prado 17                  5,000
+--   Mazen E-11                         4,620
+--
+-- THIS FILE CLEARED THE REMAINING NINE at 13:55 — PKR 9,866,330. The clients
+-- themselves are untouched and still on the Clients page:
 --
 --   Nova Group                     6,354,167
 --   SGC - Guards                   1,453,404
 --   CBR Town                         961,900
 --   Al Fajar                         769,004
---   Spaces by Kaizen                 238,466
 --   SGC - Weapons                    207,829
 --   Innovative                        90,664
 --   Mr Muzzamil                       12,500
 --   Tiges MZD                         10,362
---   NM Cables                          8,000
 --   Mr Waseem/ Kaloon Chemicals        6,500
---   Mr Fahad Prado 17                  5,000
---   Mazen E-11                         4,620
 --
--- Cleared on instruction. They are recoverable from the 2026-09-02 13:37 full
--- backup in C:\Users\Abuzar\db-backups\ and from the values above.
+-- 9,866,330 + 256,086 = 10,122,416, so nothing is unaccounted for.
+--
+-- All of it is recoverable from the 2026-09-02 13:37 full backup in
+-- C:\Users\Abuzar\db-backups\, which predates both acts, and from the values
+-- above. For the four deleted clients that backup is the only remaining copy of
+-- anything other than their name and balance.
+--
+-- This file is idempotent: re-running it clears nothing, because nothing is
+-- left to clear, and its proof still passes. It was re-applied once for exactly
+-- that reason — to correct this header without leaving the recorded SQL
+-- disagreeing with the file.
 --
 -- WHY THIS IS A DEFENSIBLE THING TO DO, AND WHERE THE BALANCE BELONGS INSTEAD
 --
