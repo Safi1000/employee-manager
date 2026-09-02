@@ -456,6 +456,8 @@ function GuardBonusTab({
   run: (p: PromiseLike<{ error: { message: string } | null }>) => Promise<boolean>;
   busy: boolean;
 }) {
+  const { profile } = useAuth();
+  const canApprovePerf = hasPermission(profile, "performance.approve");
   const [attMonth, setAttMonth] = useState(thisMonthStart());
   const [attAmount, setAttAmount] = useState("");
   const [eidDate, setEidDate] = useState(new Date().toISOString().slice(0, 10));

@@ -326,6 +326,11 @@ export type Profile = {
   display_company_name: string | null;
   view_as_company: string | null;
   permissions: string[];
+  // Partner scoping (0314): 'partner' users see ONLY the partners listed in
+  // partner_scope on the Partnership Report; 'office_staff'/null is unscoped
+  // (all company partners), the default. Mirrors branch_id scoping.
+  user_type?: "office_staff" | "partner" | null;
+  partner_scope?: string[] | null;
   must_change_password: boolean;
   created_at?: string;
   updated_at?: string;

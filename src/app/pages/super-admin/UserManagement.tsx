@@ -87,6 +87,10 @@ export default function UserManagement() {
   const [title, setTitle] = useState("");
   const [createBranchId, setCreateBranchId] = useState<string>("");
   const [createPerms, setCreatePerms] = useState<Set<string>>(new Set());
+  // User type + partner scope (0314). 'partner' reveals a partner multi-select;
+  // the chosen partner ids scope the Partnership Report for this user.
+  const [createUserType, setCreateUserType] = useState<"office_staff" | "partner">("office_staff");
+  const [createPartnerScope, setCreatePartnerScope] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
 
   // Edit
@@ -96,6 +100,8 @@ export default function UserManagement() {
   const [editBranchId, setEditBranchId] = useState<string>("");
   const [editRole, setEditRole] = useState<UserRole>("hr");
   const [editPerms, setEditPerms] = useState<Set<string>>(new Set());
+  const [editUserType, setEditUserType] = useState<"office_staff" | "partner">("office_staff");
+  const [editPartnerScope, setEditPartnerScope] = useState<Set<string>>(new Set());
   const [editSubmitting, setEditSubmitting] = useState(false);
 
   // Only a Super Super Admin may create/demote/delete a Super Admin (mirrors the
@@ -104,6 +110,8 @@ export default function UserManagement() {
   const isSSA = profile?.role === "super_super_admin";
 
   const [branches, setBranches] = useState<Branch[]>([]);
+  // Partners in the company, for the Partner-scope multi-select (0314).
+  const [partnersList, setPartnersList] = useState<{ id: string; name: string }[]>([]);
 
   // Reset password
   const [resetPwUserId, setResetPwUserId] = useState<string | null>(null);
@@ -114,18 +122,20 @@ export default function UserManagement() {
   const loadAll = async () => {
     setLoading(true);
     setError(null);
-    const [usersRes, branchesRes] = await Promise.all([
+    const [usersRes, branchesRes, partnersRes] = await Promise.all([
       supabase.from("profiles").select("*").order("created_at", { ascending: true }),
       supabase
         .from("branches")
         .select("*")
         .order("is_head_office", { ascending: false })
         .order("name"),
+      supabase.from("partners").select("id, name").order("name"),
     ]);
     if (usersRes.error) setError(usersRes.error.message);
     if (branchesRes.error) setError(branchesRes.error.message);
     setUsers((usersRes.data as Profile[]) ?? []);
     setBranches((branchesRes.data ?? []) as Branch[]);
+    setPartnersList((partnersRes.data ?? []) as { id: string; name: string }[]);
     setLoading(false);
   };
 
@@ -139,6 +149,50 @@ export default function UserManagement() {
     else next.add(key);
     setSet(next);
   };
+
+  // User Type + Partner scope, shared by the Create and Edit forms. Choosing
+  // "Partner" reveals a partner checklist; the picked partner ids scope the
+  // Partnership Report for this user (enforced by RLS, migration 0314). Mirrors
+  // the branch-scope philosophy: unset/Office Staff = unscoped (all partners).
+  const renderUserTypeFields = (
+    userType: "office_staff" | "partner",
+    setUserType: (t: "office_staff" | "partner") => void,
+    scope: Set<string>,
+    setScope: (s: Set<string>) => void,
+  ) => (
+    <div className="md:col-span-2">
+      <label className="block text-sm text-slate-700 mb-1">User Type</label>
+      <ThemedSelect
+        value={userType}
+        onChange={(e) => setUserType(e.target.value === "partner" ? "partner" : "office_staff")}
+        className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+      >
+        <option value="office_staff">Office Staff</option>
+        <option value="partner">Partner</option>
+      </ThemedSelect>
+      {userType === "partner" && (
+        <div className="mt-3">
+          <label className="block text-sm text-slate-700 mb-1">Partners this user represents</label>
+          {partnersList.length === 0 ? (
+            <p className="text-xs text-slate-500">No partners in this company yet.</p>
+          ) : (
+            <div className="border border-slate-200 rounded-md divide-y divide-slate-100 max-h-48 overflow-y-auto">
+              {partnersList.map((p) => (
+                <label key={p.id} className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-slate-50">
+                  <input type="checkbox" checked={scope.has(p.id)} onChange={() => togglePerm(scope, setScope, p.id)} />
+                  {p.name}
+                </label>
+              ))}
+            </div>
+          )}
+          <p className="text-xs text-slate-500 mt-1">
+            The Partnership Report shows ONLY the selected partners' data. None selected = this user sees no partner data.
+            Requires the Partnership Report view permission as well — this only narrows which partners are visible.
+          </p>
+        </div>
+      )}
+    </div>
+  );
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -181,12 +235,26 @@ export default function UserManagement() {
       );
       return;
     }
+    // User type + partner scope aren't part of the create-user edge function, so
+    // stamp them onto the fresh profile here (same channel the Edit form uses).
+    if ("user_id" in res && res.user_id) {
+      const { error: scopeErr } = await supabase
+        .from("profiles")
+        .update({
+          user_type: createUserType,
+          partner_scope: createUserType === "partner" ? Array.from(createPartnerScope) : null,
+        })
+        .eq("id", res.user_id);
+      if (scopeErr) { setError(scopeErr.message); return; }
+    }
     setEmail("");
     setFullName("");
     setPassword("");
     setTitle("");
     setCreateBranchId("");
     setCreatePerms(new Set());
+    setCreateUserType("office_staff");
+    setCreatePartnerScope(new Set());
     setCreateOpen(false);
     await loadAll();
   };
@@ -202,6 +270,8 @@ export default function UserManagement() {
     setEditBranchId(branchId);
     setEditRole(u.role);
     setEditPerms(new Set(u.permissions ?? []));
+    setEditUserType(u.user_type === "partner" ? "partner" : "office_staff");
+    setEditPartnerScope(new Set(u.partner_scope ?? []));
   };
 
   const handleSaveEdit = async (e: React.FormEvent) => {
@@ -227,6 +297,10 @@ export default function UserManagement() {
         // A Super Admin has implicit full access — don't persist a per-feature
         // list for them (kept empty), so demoting later starts from a clean slate.
         permissions: nextRole === "super_admin" ? [] : Array.from(editPerms),
+        user_type: editUserType,
+        // Empty array when Partner with none picked = sees no partners (not all);
+        // null when Office Staff = unscoped.
+        partner_scope: editUserType === "partner" ? Array.from(editPartnerScope) : null,
       })
       .eq("id", editUser.id);
     setEditSubmitting(false);
@@ -546,6 +620,7 @@ export default function UserManagement() {
                 If set, this user can only see and act on data inside the chosen branch. Leave empty for company-wide access.
               </p>
             </div>
+            {renderUserTypeFields(createUserType, setCreateUserType, createPartnerScope, setCreatePartnerScope)}
           </div>
 
           <div className="pt-4 border-t border-slate-200">
@@ -650,6 +725,7 @@ export default function UserManagement() {
                   Empty = company-wide access. Set a branch to scope this user's view to that branch only.
                 </p>
               </div>
+              {renderUserTypeFields(editUserType, setEditUserType, editPartnerScope, setEditPartnerScope)}
             </div>
 
             {editRole !== "super_admin" && (
