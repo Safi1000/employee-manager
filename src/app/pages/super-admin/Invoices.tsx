@@ -140,6 +140,23 @@ const emptyPaymentForm = (): PaymentForm => ({
 
 export default function Invoices() {
   const { profile, company } = useAuth();
+  // Every treasury write here used to omit company_id, which produced
+  //   'null value in column "company_id" of relation "treasury"'
+  // when setting cash in hand.
+  //
+  // public.treasury has NO fill_company_id trigger — it is one of 27
+  // company-scoped NOT NULL tables that do not have one, against 97 that do —
+  // so nothing was ever going to supply the column on the caller's behalf.
+  // This failed for every user, not only an unscoped Super Super Admin. There
+  // are 0 treasury rows on production, which is consistent: this path has never
+  // once succeeded.
+  //
+  // The read was unscoped too — `.limit(1)` with no company filter, against an
+  // RLS policy that shows an unscoped SSA every company's row — so it could
+  // pick up, and then UPDATE, a treasury belonging to somebody else. One
+  // company on production today makes that harmless; it would not stay so.
+  const treasuryCompanyId = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
+
   const { regionId } = useRegion();
   const [clients, setClients] = useState<Client[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
@@ -380,9 +397,18 @@ export default function Invoices() {
   };
 
   const applyCashDelta = async (delta: number) => {
-    const { data } = await supabase.from("treasury").select("id, cash_balance").limit(1).maybeSingle();
+    if (!treasuryCompanyId) {
+      throw new Error("No company is selected, so there is no cash balance to adjust. Pick a company with the “Viewing as” selector first.");
+    }
+    const { data } = await supabase
+      .from("treasury")
+      .select("id, cash_balance")
+      .eq("company_id", treasuryCompanyId)
+      .maybeSingle();
     if (!data) {
-      const { error: insErr } = await supabase.from("treasury").insert({ cash_balance: delta });
+      const { error: insErr } = await supabase
+        .from("treasury")
+        .insert({ company_id: treasuryCompanyId, cash_balance: delta });
       if (insErr) throw insErr;
       return;
     }

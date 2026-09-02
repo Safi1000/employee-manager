@@ -179,6 +179,12 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   const [priorLeavesByMonth, setPriorLeavesByMonth] = useState<Map<string, Map<string, number>>>(new Map());
   const [cashBalance, setCashBalance] = useState(0);
   const { profile } = useAuth();
+  // public.treasury has no fill_company_id trigger and its reads here were
+  // unscoped: `.limit(1)` against a policy that shows an unscoped SSA every
+  // company's row, then an UPDATE by that row's id. That is a cross-company
+  // write waiting for a second company to exist.
+  const treasuryCompanyId = profile?.view_as_company ?? profile?.company_id ?? null;
+
   const companyId = profile?.view_as_company ?? profile?.company_id ?? null;
   // Office-staff custodians (who physically holds/pays cash) — same list Cash
   // Custody & Expenses use. Required when a salary is paid in Cash so the payment
@@ -452,7 +458,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       supabase.from("clients").select("*").order("name"),
       supabase.from("contracts").select("*"),
       supabase.from("bank_accounts").select("*").order("bank_name"),
-      supabase.from("treasury").select("*").limit(1).maybeSingle(),
+      supabase.from("treasury").select("*").eq("company_id", treasuryCompanyId ?? "00000000-0000-0000-0000-000000000000").maybeSingle(),
       supabase.from("cheques").select("*").order("cheque_date", { ascending: false }),
       supabase.from("branches").select("*").order("is_head_office", { ascending: false }).order("name"),
     ]);
@@ -1341,7 +1347,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
           const { data: trea } = await supabase
             .from("treasury")
             .select("id, cash_balance")
-            .limit(1)
+            .eq("company_id", treasuryCompanyId ?? "00000000-0000-0000-0000-000000000000")
             .maybeSingle();
           if (trea) {
             await supabase
@@ -1522,7 +1528,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
           const { data: trea } = await supabase
             .from("treasury")
             .select("id, cash_balance")
-            .limit(1)
+            .eq("company_id", treasuryCompanyId ?? "00000000-0000-0000-0000-000000000000")
             .maybeSingle();
           if (!trea) throw new Error("Treasury row missing.");
           if (remaining > Number(trea.cash_balance)) {

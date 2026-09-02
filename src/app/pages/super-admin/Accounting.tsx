@@ -82,6 +82,23 @@ const payableDisplayStatus = (row: PayableRow): PayableDisplayStatus => {
 
 export default function Accounting() {
   const { profile, company } = useAuth();
+  // Every treasury write here used to omit company_id, which produced
+  //   'null value in column "company_id" of relation "treasury"'
+  // when setting cash in hand.
+  //
+  // public.treasury has NO fill_company_id trigger — it is one of 27
+  // company-scoped NOT NULL tables that do not have one, against 97 that do —
+  // so nothing was ever going to supply the column on the caller's behalf.
+  // This failed for every user, not only an unscoped Super Super Admin. There
+  // are 0 treasury rows on production, which is consistent: this path has never
+  // once succeeded.
+  //
+  // The read was unscoped too — `.limit(1)` with no company filter, against an
+  // RLS policy that shows an unscoped SSA every company's row — so it could
+  // pick up, and then UPDATE, a treasury belonging to somebody else. One
+  // company on production today makes that harmless; it would not stay so.
+  const treasuryCompanyId = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
+
   const isAdmin = profile?.role === "super_super_admin" || profile?.role === "super_admin";
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<"receivables" | "payables" | "banks" | "cash-custody">(() => {
@@ -592,7 +609,9 @@ export default function Accounting() {
       chequesRes,
     ] = await Promise.all([
       supabase.from("bank_accounts").select("*").order("created_at", { ascending: false }),
-      supabase.from("treasury").select("*").limit(1).maybeSingle(),
+      // Scoped: an unscoped SSA sees every company's treasury row through the
+      // ssa_all policy, and .limit(1) would pick an arbitrary one.
+      supabase.from("treasury").select("*").eq("company_id", treasuryCompanyId ?? "00000000-0000-0000-0000-000000000000").maybeSingle(),
       supabase
         .from("expenses")
         .select("*, vendor:vendor_id(id,name), category:category_id(id,name), client:client_id(id,name,client_code)")
@@ -804,9 +823,18 @@ export default function Accounting() {
   }, []);
 
   const applyCashDelta = async (delta: number) => {
-    const { data } = await supabase.from("treasury").select("id, cash_balance").limit(1).maybeSingle();
+    if (!treasuryCompanyId) {
+      throw new Error("No company is selected, so there is no cash balance to adjust. Pick a company with the “Viewing as” selector first.");
+    }
+    const { data } = await supabase
+      .from("treasury")
+      .select("id, cash_balance")
+      .eq("company_id", treasuryCompanyId)
+      .maybeSingle();
     if (!data) {
-      const { error: insErr } = await supabase.from("treasury").insert({ cash_balance: delta });
+      const { error: insErr } = await supabase
+        .from("treasury")
+        .insert({ company_id: treasuryCompanyId, cash_balance: delta });
       if (insErr) throw insErr;
       return;
     }
@@ -935,6 +963,14 @@ export default function Accounting() {
       setError("Opening cash balance must be a non-negative number.");
       return;
     }
+    // The company must be known BEFORE anything is written. Without this the
+    // insert below reached the database with no company_id and failed on the
+    // NOT NULL constraint — an error about a column, for what is really a
+    // missing selection.
+    if (!treasuryCompanyId) {
+      setError("No company is selected. A Super Super Admin must pick a company with the “Viewing as” selector before setting cash in hand.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -943,6 +979,7 @@ export default function Accounting() {
         const { data: ins, error: insErr } = await supabase
           .from("treasury")
           .insert({
+            company_id: treasuryCompanyId,
             cash_balance: amt,
           })
           .select("id")
