@@ -195,6 +195,9 @@ export default function Clients() {
   // Adding / editing a contract from the client detail is gated on contracts.edit
   // (super_admin + SSA get it implicitly). Without it the tab stays read-only.
   const canEditContracts = hasPermission(profile, "contracts.edit");
+  // Add / edit / delete a client is gated on clients.edit (super_admin + SSA
+  // implicit). Backend RLS (0310) enforces it too; this only hides the controls.
+  const canEditClients = hasPermission(profile, "clients.edit");
   const [rows, setRows] = useState<ClientRow[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
@@ -1159,10 +1162,12 @@ export default function Clients() {
         title="Clients"
         subtitle="Master records — every employee, contract and invoice anchors here"
         actions={
+          canEditClients ? (
           <Button variant="primary" size="md" onClick={() => { resetForm(); setAddOpen(true); }}>
             <Plus className="w-4 h-4 mr-2" />
             Add Client
           </Button>
+          ) : null
         }
       />
 
@@ -1254,7 +1259,7 @@ export default function Clients() {
               { label: "Employees", value: (row) => <span className="tabular-nums">{row.employees_count}</span> },
               { label: "Contracts", value: (row) => <span className="tabular-nums">{row.contracts_count}</span> },
             ]}
-            actions={(row) => (
+            actions={(row) => canEditClients ? (
               <>
                 <button
                   type="button"
@@ -1275,7 +1280,7 @@ export default function Clients() {
                   <Trash2 className="w-4 h-4" /> Delete
                 </button>
               </>
-            )}
+            ) : null}
           />
 
           <div className="hidden md:block overflow-x-auto">
@@ -1347,6 +1352,7 @@ export default function Clients() {
                           >
                             <Eye className="w-4 h-4" />
                           </button>
+                          {canEditClients && (
                           <button
                             type="button"
                             onClick={() => {
@@ -1359,6 +1365,8 @@ export default function Clients() {
                           >
                             <Pencil className="w-4 h-4" />
                           </button>
+                          )}
+                          {canEditClients && (
                           <button
                             type="button"
                             onClick={() => handleDelete(row)}
@@ -1367,6 +1375,7 @@ export default function Clients() {
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
+                          )}
                         </div>
                       </td>
                     </tr>

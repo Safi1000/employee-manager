@@ -25,7 +25,7 @@ means the **database** environment. Do not rename them.
 | **PRODUCTION** | `crm-design` | `mmkfpnshxjcyijhuydgr` | `.env.local` → `npm run build` |
 | **DEVELOPMENT** | `crm-design-dev` | `wlyhbvunvdsropqzlpwx` | `.env.development.local` → `npm run dev` |
 
-**Write to dev. Never to prod.**
+**write in PROD unless you are asked to write in dev.**
 
 This applies to every write channel without exception: `apply_migration`,
 `execute_sql`, the Supabase SQL editor, a psql session, a script. A migration

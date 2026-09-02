@@ -775,6 +775,9 @@ const PK_BANK_OPTIONS = PK_BANKS.map((b) => ({ id: b.name, name: b.name, client_
 
 export default function EmployeeManagement() {
   const { profile, company } = useAuth();
+  // Add / edit / delete employees is gated on employees.edit (super_admin + SSA
+  // implicit). Backend RLS (0310) enforces it; this hides the controls.
+  const canEditEmployees = hasPermission(profile, "employees.edit");
   const { regionId } = useRegion();
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -2204,6 +2207,7 @@ export default function EmployeeManagement() {
               <FileText className="w-4 h-4 mr-2" strokeWidth={1.5} />
               Generate documents ({filtered.length})
             </Button>
+            {canEditEmployees && (
             <Button
               variant="primary"
               size="md"
@@ -2218,6 +2222,7 @@ export default function EmployeeManagement() {
               <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
               Add Employee
             </Button>
+            )}
           </div>
         }
       />

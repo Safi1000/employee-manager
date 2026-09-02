@@ -39,7 +39,7 @@ import {
   type Branch,
 } from "../../lib/supabase";
 import { useRegion, withRegion } from "../../lib/region";
-import { useAuth } from "../../lib/auth";
+import { useAuth, hasPermission } from "../../lib/auth";
 import { generateInvoiceDocument } from "../../lib/invoiceTemplates";
 import InvoiceGenerate from "../../components/InvoiceGenerate";
 import InvoiceStructureModal from "../../components/InvoiceStructureModal";
@@ -140,6 +140,9 @@ const emptyPaymentForm = (): PaymentForm => ({
 
 export default function Invoices() {
   const { profile, company } = useAuth();
+  // Create / edit invoices & payments — gated on invoices.edit (super_admin + SSA
+  // implicit). Backend RLS + record_invoice_payment guard enforce it; hide controls.
+  const canEditInvoices = hasPermission(profile, "invoices.edit");
   // Every treasury write here used to omit company_id, which produced
   //   'null value in column "company_id" of relation "treasury"'
   // when setting cash in hand.
@@ -1031,6 +1034,7 @@ export default function Invoices() {
               <Settings2 className="w-4 h-4 mr-2" strokeWidth={1.5} />
               Invoice Structure
             </Button>
+            {canEditInvoices && (
             <Button
               variant="primary"
               size="md"
@@ -1046,6 +1050,7 @@ export default function Invoices() {
               <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
               New Invoice
             </Button>
+            )}
           </div>
         }
       />

@@ -37,7 +37,7 @@ import {
   type Branch,
 } from "../../lib/supabase";
 import { useRegion, withRegion } from "../../lib/region";
-import { useAuth } from "../../lib/auth";
+import { useAuth, hasPermission } from "../../lib/auth";
 import { loadCustodianOptions, ensureCustodianLocation, type CustodianOption } from "../../lib/custodian";
 
 const PIE_COLORS = CHART_COLORS;
@@ -235,6 +235,9 @@ const emptyForm: ExpenseForm = {
 
 export default function Expenses() {
   const { profile, company } = useAuth();
+  // Add / edit expenses & advances — gated on expenses.edit (super_admin + SSA
+  // implicit). Backend RLS (0310) enforces it; this hides the controls.
+  const canEditExpenses = hasPermission(profile, "expenses.edit");
   // Every treasury write here used to omit company_id, which produced
   //   'null value in column "company_id" of relation "treasury"'
   // when setting cash in hand.
@@ -2114,18 +2117,18 @@ export default function Expenses() {
                 }
               }}
             />
-            {activeTab === "expenses" && (
+            {activeTab === "expenses" && canEditExpenses && (
               <Button variant="secondary" size="md" onClick={() => setIsVendorModalOpen(true)}>
                 Manage Vendors
               </Button>
             )}
-            {activeTab === "expenses" && (
+            {activeTab === "expenses" && canEditExpenses && (
               <Button variant="primary" size="md" onClick={() => { setExpenseCustodianId(""); setIsAddOpen(true); }}>
                 <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
                 Add Expense
               </Button>
             )}
-            {activeTab === "advances" && (
+            {activeTab === "advances" && canEditExpenses && (
               <Button
                 variant="primary"
                 size="md"

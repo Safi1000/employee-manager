@@ -15,7 +15,7 @@ import {
   supabase,
   type AccountingPeriod,
 } from "../../lib/supabase";
-import { useAuth } from "../../lib/auth";
+import { useAuth, hasPermission } from "../../lib/auth";
 
 type MonthRow = {
   period_month: string;          // YYYY-MM-01
@@ -57,7 +57,9 @@ const lastOfMonth = (iso: string): string => {
 
 export default function PeriodClose() {
   const { profile } = useAuth();
-  const isAdmin = profile?.role === "super_admin" || profile?.role === "super_super_admin";
+  // Close / reopen is gated on period_close.manage (super_admin + SSA implicit).
+  // Backend RLS (0310) enforces it on accounting_periods; this hides the control.
+  const canManage = hasPermission(profile, "period_close.manage");
 
   const [periods, setPeriods] = useState<Map<string, AccountingPeriod>>(new Map());
   const [profilesById, setProfilesById] = useState<Map<string, string>>(new Map());
@@ -326,7 +328,7 @@ export default function PeriodClose() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        {!isAdmin ? (
+                        {!canManage ? (
                           <span className="text-xs text-slate-400">Admin only</span>
                         ) : closed ? (
                           <button
