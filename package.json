@@ -18,8 +18,8 @@
     "assets:gen": "node scripts/make-native-assets.mjs",
     "check:migrations": "node --env-file-if-exists=.env.local scripts/check-migrations.mjs",
     "backfill:migration-sql": "node scripts/backfill-migration-sql.mjs",
-    "//prepare": "Arms scripts/pre-push in every clone. A hook that needs a manual git config is a hook that is not installed.",
-    "prepare": "git config core.hooksPath scripts",
+    "//prepare": "Arms scripts/pre-push in every clone. A hook that needs a manual git config is a hook that is not installed. The `|| exit 0` is load-bearing: npm runs prepare after EVERY install, including builds that have no .git — a Vercel CLI upload, CI, a container. There `git config` exits 128 and, without the guard, fails the whole install. It failed a production deploy on 2026-09-03 exactly this way. Arming the hook is a developer convenience; it must never be able to break a build.",
+    "prepare": "git config core.hooksPath scripts || exit 0",
     "check:outstanding": "node scripts/check-outstanding.mjs",
     "check:view-readers": "node --env-file-if-exists=.env.local scripts/check-view-readers.mjs"
   },

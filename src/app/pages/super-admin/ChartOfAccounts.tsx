@@ -75,6 +75,17 @@ export default function ChartOfAccounts() {
   const [submitting, setSubmitting] = useState(false);
   const [coaSearch, setCoaSearch] = useState("");
 
+  // What 0342 will refuse, computed once for the edit dialog. See the note in
+  // the dialog for why this keys on system_key rather than system_account.
+  const isSystemControl = !!editingRow?.system_key;
+  // A proxy for "carries posted journal lines": the trial balance only lists
+  // accounts that have them. The DATABASE is authoritative — the trigger scans
+  // journal_lines directly — so a rare account whose lines net to zero may not
+  // be flagged here and will still be refused on save. That is the safe
+  // direction to be wrong in.
+  const hasPostedLines = !!editingRow && balances.has(editingRow.id);
+  const lockStructure = isSystemControl || hasPostedLines;
+
   const loadAccounts = async () => {
     setLoading(true);
     const { data, error: cErr } = await supabase
@@ -412,9 +423,30 @@ export default function ChartOfAccounts() {
         size="md"
       >
         <form className="space-y-3" onSubmit={handleSubmit}>
-          {editingRow?.system_account && (
+          {/* These flags MIRROR what 0342 enforces in the database; they do not
+              implement it. `chart_of_accounts` has more than one writer, so the
+              trigger is the control and this is the explanation — the fields are
+              disabled so the refusal is visible before the save, not after it.
+
+              Keyed on system_key, NOT system_account. They are different sets:
+              the 53 accounts with a system_key are the real control accounts
+              (1000, 1010, 1100, 3200 …); the 7 with system_account but no key
+              are the per-bank and per-custodian leaves (1010.01, 1000.02 …),
+              which may legitimately be restructured. Using system_account here
+              would disable fields the database allows. */}
+          {isSystemControl && (
             <div className="text-xs text-warning-700 bg-warning-50 border border-warning-200 rounded p-2">
-              System account — rename is fine; changing type is not recommended.
+              <span className="font-medium">System control account — name only.</span> Its code, type,
+              normal side and parent are fixed and the database refuses changes to them. Other objects
+              address this account by its code, and nesting it under another control account would put
+              its whole subtree into that account&rsquo;s balance.
+            </div>
+          )}
+          {!isSystemControl && hasPostedLines && (
+            <div className="text-xs text-warning-700 bg-warning-50 border border-warning-200 rounded p-2">
+              <span className="font-medium">This account already carries posted journal lines.</span> Its
+              parent and type are fixed — moving it would move a balance with no entry behind the move.
+              Post a correcting entry instead.
             </div>
           )}
           {editingRow?.is_control && (
@@ -429,9 +461,11 @@ export default function ChartOfAccounts() {
               <input
                 required
                 type="text"
+                disabled={isSystemControl}
+                title={isSystemControl ? "System control account — other objects address it by this code." : undefined}
                 value={form.account_code}
                 onChange={(e) => setForm({ ...form, account_code: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm font-mono"
+                className={`w-full px-3 py-2 border border-slate-200 rounded-md text-sm font-mono ${isSystemControl ? "bg-slate-50 text-slate-500" : ""}`}
                 placeholder="e.g., 6400"
               />
             </div>
@@ -439,6 +473,14 @@ export default function ChartOfAccounts() {
               <label className="block text-sm text-slate-700 mb-1">Account Type *</label>
               <ThemedSelect
                 value={form.account_type}
+                disabled={lockStructure}
+                title={
+                  isSystemControl
+                    ? "System control account — its type is fixed."
+                    : hasPostedLines
+                      ? "This account carries posted journal lines — changing its type would move a balance to the other side of the statement."
+                      : undefined
+                }
                 onChange={(e) => {
                   const t = e.target.value as AccountType;
                   setForm({
@@ -447,7 +489,7 @@ export default function ChartOfAccounts() {
                     normal_side: t === "asset" || t === "expense" ? "debit" : "credit",
                   });
                 }}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className={`w-full px-3 py-2 border border-slate-200 rounded-md text-sm ${lockStructure ? "bg-slate-50 text-slate-500" : ""}`}
               >
                 {ACCOUNT_TYPE_ORDER.map((t) => (
                   <option key={t} value={t}>
@@ -470,8 +512,16 @@ export default function ChartOfAccounts() {
               <label className="block text-sm text-slate-700 mb-1">Parent Account</label>
               <ThemedSelect
                 value={form.parent_id}
+                disabled={lockStructure}
+                title={
+                  isSystemControl
+                    ? "System control account — it belongs at the top level."
+                    : hasPostedLines
+                      ? "This account carries posted journal lines — moving it would move a balance with no entry behind the move."
+                      : undefined
+                }
                 onChange={(e) => setForm({ ...form, parent_id: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                className={`w-full px-3 py-2 border border-slate-200 rounded-md text-sm ${lockStructure ? "bg-slate-50 text-slate-500" : ""}`}
               >
                 <option value="">— None (top level) —</option>
                 {accounts

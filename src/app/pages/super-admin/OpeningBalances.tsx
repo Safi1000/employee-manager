@@ -111,6 +111,92 @@ export default function OpeningBalances() {
     if (ok) { setAccId(""); setDebit(""); setCredit(""); }
   };
 
+  // Prefill the batch from the balances already recorded operationally, so the
+  // same figure is never typed twice. Entering it in two places is how the two
+  // copies diverge, and this is the figure every later balance is measured from.
+  // Every line is an ordinary draft line: editable, removable, and posted by the
+  // same button as a hand-entered one.
+  //
+  // READING THE BANK FIGURE IS TWO NON-OBVIOUS FACTS ABOUT ONE RELATIONSHIP, AND
+  // THEY MUST STAY TOGETHER — separating them is how one of them gets simplified
+  // away by someone who can see only the other:
+  //
+  //   1. `bank_accounts` HAS NO GL COLUMN AT ALL. The account is reached through
+  //      the mirror `cash_locations.coa_account_id` — the BANK-type cash_location
+  //      that shadows the bank account. There is no bank_accounts.gl_account_id
+  //      to "simplify" this into; it does not exist.
+  //   2. THE AMOUNT MUST COME FROM `bank_accounts.opening_balance`, never from
+  //      the mirror's own. The mirror's `opening_balance` reads 0.00 — the money
+  //      lives on the bank row. Reading the mirror is the obvious-looking join,
+  //      it succeeds, and it silently posts ZERO for every bank while looking
+  //      like a clean answer. Measured on GGS: four banks, 7,271,847 lost.
+  //
+  // So: account_id from the mirror, amount from the bank row. Cash-in-hand
+  // locations are the simple case — both come from the location itself.
+  const prefillFromOperational = async () => {
+    if (!selected || !companyId) return;
+    setBusy(true); setErr(null);
+    try {
+      const [cli, loc] = await Promise.all([
+        supabase.from("clients").select("opening_balance").eq("company_id", companyId),
+        supabase
+          .from("cash_locations")
+          .select("name, location_type, opening_balance, coa_account_id, bank_accounts(opening_balance)")
+          .eq("company_id", companyId),
+      ]);
+      if (cli.error) throw cli.error;
+      if (loc.error) throw loc.error;
+
+      const rows: { account_id: string; debit: number; notes: string }[] = [];
+
+      const ar = (cli.data ?? []).reduce((s: number, c: any) => s + Number(c.opening_balance ?? 0), 0);
+      const arAcct = accounts.find((a) => a.account_code === "1100");
+      if (ar !== 0 && arAcct) {
+        const n = (cli.data ?? []).filter((c: any) => Number(c.opening_balance ?? 0) !== 0).length;
+        rows.push({ account_id: arAcct.id, debit: ar, notes: `clients.opening_balance — ${n} client${n === 1 ? "" : "s"}` });
+      }
+
+      for (const l of (loc.data ?? []) as any[]) {
+        if (!l.coa_account_id) continue;
+        const isBank = l.location_type === "BANK";
+        // See the note above: bank amount from the bank row, NOT l.opening_balance.
+        const amt = isBank
+          ? Number(l.bank_accounts?.opening_balance ?? 0)
+          : Number(l.opening_balance ?? 0);
+        if (amt === 0) continue;
+        rows.push({
+          account_id: l.coa_account_id,
+          debit: amt,
+          notes: `${isBank ? "bank_accounts" : "cash_locations"}.opening_balance — ${l.name}`,
+        });
+      }
+
+      if (rows.length === 0) {
+        setErr("Nothing to prefill — no bank, cash or client opening balance is recorded yet.");
+        return;
+      }
+
+      // Balance to Opening Balance Equity, so the batch is postable as it stands.
+      const obe = accounts.find((a) => a.account_code === "3200");
+      if (!obe) {
+        setErr("No 3200 Opening Balance Equity account — the batch cannot be balanced automatically.");
+        return;
+      }
+      const total = rows.reduce((s, r) => s + r.debit, 0);
+
+      const { error } = await supabase.from("opening_balance_lines").insert([
+        ...rows.map((r) => ({ batch_id: selected, account_id: r.account_id, branch_id: null, debit: r.debit, credit: 0, notes: r.notes })),
+        { batch_id: selected, account_id: obe.id, branch_id: null, debit: 0, credit: total, notes: "Balancing entry" },
+      ]);
+      if (error) throw error;
+      await loadLines();
+    } catch (e: any) {
+      setErr(e.message ?? String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const selBatch = batches.find((b) => b.id === selected);
   const acctName = useMemo(() => new Map(accounts.map((a) => [a.id, `${a.account_code} ${a.account_name}`])), [accounts]);
   const brName = useMemo(() => new Map(branches.map((b) => [b.id, b.name])), [branches]);
@@ -210,6 +296,19 @@ export default function OpeningBalances() {
                 </section>
               )}
 
+              {!posted && (
+                <div className="flex flex-wrap items-center gap-2 -mt-1">
+                  <Button variant="secondary" size="sm" disabled={busy || lines.length > 0} onClick={prefillFromOperational}>
+                    Prefill from recorded balances
+                  </Button>
+                  <span className="text-xs text-slate-500">
+                    {lines.length > 0
+                      ? "Prefill is available on an empty batch — remove the lines first, or add them by hand."
+                      : "Reads bank, cash and client opening balances already recorded, one line each, with its source. Editable before posting."}
+                  </span>
+                </div>
+              )}
+
               <div className="overflow-x-auto border border-slate-200 rounded-md">
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
@@ -224,7 +323,13 @@ export default function OpeningBalances() {
                   <tbody className="divide-y divide-slate-100">
                     {lines.map((l) => (
                       <tr key={l.id}>
-                        <td className="px-3 py-1.5 text-slate-700">{acctName.get(l.account_id) ?? "—"}</td>
+                        <td className="px-3 py-1.5 text-slate-700">
+                          {acctName.get(l.account_id) ?? "—"}
+                          {/* Where the figure came from, per line — so a
+                              prefilled batch can be checked against its source
+                              without leaving the screen. */}
+                          {l.notes && <div className="text-[11px] text-slate-400">{l.notes}</div>}
+                        </td>
                         <td className="px-3 py-1.5 text-slate-500">{l.branch_id ? brName.get(l.branch_id) : "—"}</td>
                         <td className="px-3 py-1.5 text-right tabular-nums">{Number(l.debit) ? money(l.debit) : ""}</td>
                         <td className="px-3 py-1.5 text-right tabular-nums">{Number(l.credit) ? money(l.credit) : ""}</td>
@@ -241,6 +346,16 @@ export default function OpeningBalances() {
                 </table>
               </div>
 
+              {/* ORDERING IS LOAD-BEARING: post this batch BEFORE recording any
+                  receipt against an opening balance.
+                  A receipt with no invoice posts Dr Bank/Cash, Cr 1100 — it
+                  clears the opening rather than settling a document. If the
+                  opening is not in 1100 yet, that credit drives the receivable
+                  control NEGATIVE, and ar_control_equals_open_invoices then
+                  reports a gap in the wrong direction. Measured: a 500,000
+                  receipt against a client whose opening had not posted took
+                  1100 to −465,000.
+                  Openings first, then receipts. */}
               {!posted && (
                 <div className="flex items-center gap-2">
                   <Button variant="primary" size="sm" disabled={busy || !balanced || lines.length === 0}
@@ -249,6 +364,12 @@ export default function OpeningBalances() {
                   </Button>
                   {!balanced && <span className="text-xs text-slate-400">Batch must balance before it can be posted.</span>}
                 </div>
+              )}
+              {!posted && lines.length > 0 && balanced && (
+                <p className="text-xs text-slate-500">
+                  Post this before recording receipts against an opening balance — a receipt credits
+                  the receivable control, so it would go negative if the opening is not in the ledger yet.
+                </p>
               )}
               {posted && <p className="text-xs text-success-600">Posted — seeded into the ledger via journal entry.</p>}
             </>

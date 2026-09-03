@@ -99,7 +99,6 @@ export default function Accounting() {
   // company on production today makes that harmless; it would not stay so.
   const treasuryCompanyId = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
 
-  const isAdmin = profile?.role === "super_super_admin" || profile?.role === "super_admin";
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<"receivables" | "payables" | "banks" | "cash-custody">(() => {
     const t = searchParams.get("tab");
@@ -1531,9 +1530,12 @@ export default function Accounting() {
   const recordPayment = (client: ReceivableRow) => {
     setSelectedClient(client);
     const openInvoice = client.invoices.find((i) => invoiceOutstanding(i) > 0);
-    // If admin and there are no open invoices, default to standalone mode.
+    // No open invoices → default to standalone. A client can be owed money with
+    // nothing open: an opening balance carries a receivable with no invoice row
+    // behind it, so this is the ordinary case at cutover and whenever a client
+    // pays down a prior balance — not a privileged one.
     const noOpen = !openInvoice;
-    setPaymentStandalone(isAdmin && noOpen);
+    setPaymentStandalone(canEditAccounting && noOpen);
     setPaymentInvoiceId(openInvoice?.id ?? "");
     setPaymentAmount("");
     setPaymentVia("Bank");
@@ -1658,10 +1660,17 @@ export default function Accounting() {
       return;
     }
 
-    // Standalone payment (no invoice). Only allowed for SSA / Super Admin.
+    // Standalone payment (no invoice) — gated on accounting.edit, the same
+    // permission as every other write on this screen. It used to ask for the
+    // super_admin ROLE, which blocked accountants who hold accounting.edit from
+    // an ordinary act; an unallocated receipt is no more privileged than an
+    // allocated one, and the role check did not manage the risk it looked like
+    // it was managing. (The real control for a misposting hidden in an
+    // unallocated receipt is a report of those outstanding, not who may make
+    // one.)
     if (paymentStandalone) {
-      if (!isAdmin) {
-        setError("Only Super Admin can record payments without an invoice.");
+      if (!canEditAccounting) {
+        setError("You don't have permission to record payments.");
         return;
       }
       setSubmitting(true);
@@ -1673,6 +1682,13 @@ export default function Accounting() {
         // oldest-first waterfall, the pro-rata withholding split,
         // assert_same_company, the balance move and the bank_transactions row.
         // Doing any of that here as well would double-count it.
+        //
+        // With nothing open this settles no document: journal_on_invoice_payment
+        // posts Dr Bank/Cash, Cr 1100, which CLEARS AN OPENING BALANCE. That
+        // requires the opening to be in the ledger already — the opening batch
+        // must be posted first, or this credit drives the receivable control
+        // negative and ar_control_equals_open_invoices reports a gap the wrong
+        // way round. See the ordering note on the Opening Balances screen.
         const { error: rpcErr } = await supabase.rpc("record_invoice_payment", {
           p_invoice_id: null,
           p_client_id: selectedClient.id,
@@ -2251,7 +2267,7 @@ export default function Accounting() {
                               size="sm"
                               onClick={() => recordPayment(item)}
                               disabled={
-                                !isAdmin &&
+                                !canEditAccounting &&
                                 item.invoices.every((i) => invoiceOutstanding(i) <= 0)
                               }
                             >
@@ -3921,7 +3937,7 @@ export default function Accounting() {
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
               />
             </div>
-            {isAdmin && (
+            {canEditAccounting && (
               <label className="flex items-start gap-2 text-sm text-slate-700 bg-warning-50 border border-warning-200 rounded p-2.5 cursor-pointer">
                 <input
                   type="checkbox"
@@ -3931,7 +3947,7 @@ export default function Accounting() {
                 />
                 <span>
                   <span className="text-slate-900">No specific invoice</span> — apply to client balance
-                  (advance / unallocated receipt). Admin-only.
+                  (advance / unallocated receipt, or paying down an opening balance).
                 </span>
               </label>
             )}
