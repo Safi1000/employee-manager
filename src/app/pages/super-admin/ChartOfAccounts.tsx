@@ -288,6 +288,30 @@ export default function ChartOfAccounts() {
     await loadAccounts();
   };
 
+  // 0341. WHAT THE DATABASE REFUSES, THE DIALOG DISABLES.
+  //
+  // trg_coa_edit_guard enforces all of this in the database, because
+  // chart_of_accounts has more than one writer and a rule that lives in a
+  // dialog is a recommendation. These flags exist so the form says the same
+  // thing the database will say — a disabled field with a reason beats a
+  // warning next to an editable one, which is what let 1000 Cash in Hand be
+  // nested under 1010 Bank Accounts.
+  //
+  // "Carries posted entries" is read from the balances the ledger returned for
+  // this account. The database is the authority: if it disagrees, the refusal
+  // surfaces in this modal rather than behind it.
+  const lockedByKey = !!editingRow?.system_key;
+  const hasPostings = !!editingRow && balances.has(editingRow.id);
+  const codeLocked = lockedByKey;
+  const sideLocked = lockedByKey;
+  const typeLocked = lockedByKey || hasPostings;
+  const parentLocked = lockedByKey || hasPostings;
+  const lockNote = lockedByKey
+    ? "System control account — the name can be changed, nothing structural."
+    : hasPostings
+      ? "This account already carries posted entries — its type and parent are fixed."
+      : null;
+
   return (
     <>
       <Header
@@ -412,9 +436,9 @@ export default function ChartOfAccounts() {
         size="md"
       >
         <form className="space-y-3" onSubmit={handleSubmit}>
-          {editingRow?.system_account && (
+          {lockNote && (
             <div className="text-xs text-warning-700 bg-warning-50 border border-warning-200 rounded p-2">
-              System account — rename is fine; changing type is not recommended.
+              {lockNote}
             </div>
           )}
           {editingRow?.is_control && (
@@ -431,9 +455,15 @@ export default function ChartOfAccounts() {
                 type="text"
                 value={form.account_code}
                 onChange={(e) => setForm({ ...form, account_code: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm font-mono"
+                disabled={codeLocked}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm font-mono disabled:bg-slate-50 disabled:text-slate-500"
                 placeholder="e.g., 6400"
               />
+              {codeLocked && (
+                <p className="text-xs text-slate-500 mt-1">
+                  Fixed — other objects address this account by its code.
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Account Type *</label>
@@ -447,7 +477,8 @@ export default function ChartOfAccounts() {
                     normal_side: t === "asset" || t === "expense" ? "debit" : "credit",
                   });
                 }}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                disabled={typeLocked}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm disabled:bg-slate-50 disabled:text-slate-500"
               >
                 {ACCOUNT_TYPE_ORDER.map((t) => (
                   <option key={t} value={t}>
@@ -455,6 +486,13 @@ export default function ChartOfAccounts() {
                   </option>
                 ))}
               </ThemedSelect>
+              {typeLocked && (
+                <p className="text-xs text-slate-500 mt-1">
+                  {lockedByKey
+                    ? "Fixed — changing it would move every balance under this account to a different statement."
+                    : "Fixed — this account carries posted entries, and retyping it moves a balance to the other side."}
+                </p>
+              )}
             </div>
             <div className="col-span-full">
               <label className="block text-sm text-slate-700 mb-1">Account Name *</label>
@@ -471,7 +509,8 @@ export default function ChartOfAccounts() {
               <ThemedSelect
                 value={form.parent_id}
                 onChange={(e) => setForm({ ...form, parent_id: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                disabled={parentLocked}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm disabled:bg-slate-50 disabled:text-slate-500"
               >
                 <option value="">— None (top level) —</option>
                 {accounts
@@ -482,6 +521,13 @@ export default function ChartOfAccounts() {
                     </option>
                   ))}
               </ThemedSelect>
+              {parentLocked && (
+                <p className="text-xs text-slate-500 mt-1">
+                  {lockedByKey
+                    ? "Fixed — a system control account belongs at the top level. Nesting it puts its whole subtree into another account's balance."
+                    : "Fixed — this account carries posted entries, and moving it would move a balance with no entry behind the move."}
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Normal Side</label>
@@ -490,7 +536,8 @@ export default function ChartOfAccounts() {
                 onChange={(e) =>
                   setForm({ ...form, normal_side: e.target.value as AccountNormalSide })
                 }
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                disabled={sideLocked}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm disabled:bg-slate-50 disabled:text-slate-500"
               >
                 <option value="debit">Debit</option>
                 <option value="credit">Credit</option>

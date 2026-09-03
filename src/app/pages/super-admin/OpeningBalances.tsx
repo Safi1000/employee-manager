@@ -11,6 +11,20 @@ import { useFocusTarget, useFocusRow, FOCUS_ROW_CLASS } from "../../lib/focus";
 // it through post_opening_balances — a single balanced journal that seeds the
 // ledger. This is what lifts GnG out of the red danger band.
 
+// A proposed opening line, with the record it came from. The SOURCE is carried
+// per line rather than inferred later: an opening balance that cannot say where
+// it came from is a number somebody has to re-derive, and re-deriving it is how
+// the two copies come to disagree in the first place.
+type PrefillLine = {
+  key: string;
+  account_id: string;
+  account_label: string;
+  branch_id: string | null;
+  source: string;
+  debit: number;
+  credit: number;
+};
+
 const FIELD =
   "px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent";
 const money = (n: any) => Number(n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
@@ -43,6 +57,11 @@ export default function OpeningBalances() {
   // create-batch form
   const [asOf, setAsOf] = useState(new Date().toISOString().slice(0, 10));
   const [desc, setDesc] = useState("Opening trial balance");
+
+  // Prefill preview. Staged in the browser, editable, and inserted only when
+  // the operator says so — nothing here posts.
+  const [prefill, setPrefill] = useState<PrefillLine[] | null>(null);
+  const [prefillErr, setPrefillErr] = useState<string | null>(null);
 
   // add-line form
   const [accId, setAccId] = useState("");
@@ -109,6 +128,115 @@ export default function OpeningBalances() {
       debit: Number(debit) || 0, credit: Number(credit) || 0,
     }));
     if (ok) { setAccId(""); setDebit(""); setCredit(""); }
+  };
+
+  // THE FIGURES ALREADY EXIST. Bank openings live on bank_accounts, custodian
+  // openings on cash_locations, client receivable openings on clients — and
+  // none of the three posts a journal entry, which is why this screen exists.
+  // Re-typing them here is how the ledger and the records that fed it come to
+  // disagree, so they are read instead.
+  const buildPrefill = async () => {
+    setPrefillErr(null);
+    const [banks, locs, cls] = await Promise.all([
+      supabase.from("bank_accounts").select("id,bank_name,account_number,opening_balance").eq("company_id", companyId),
+      supabase.from("cash_locations").select("id,name,location_type,opening_balance,coa_account_id,branch_id,bank_account_id").eq("company_id", companyId),
+      supabase.from("clients").select("id,name,opening_balance,branch_id,receivable_owner_branch_id").eq("company_id", companyId),
+    ]);
+    const qErr = banks.error ?? locs.error ?? cls.error;
+    if (qErr) { setPrefillErr(qErr.message); return; }
+
+    const bankById = new Map<string, any>((banks.data ?? []).map((b: any) => [b.id, b]));
+    const accById = new Map<string, any>(accounts.map((a: any) => [a.id, a]));
+    const label = (id: string) => {
+      const a: any = accById.get(id);
+      return a ? a.account_code + " " + a.account_name : "(account not in this chart)";
+    };
+    const rows: PrefillLine[] = [];
+
+    for (const l of (locs.data ?? []) as any[]) {
+      if (!l.coa_account_id) continue;
+      // A BANK location mirrors a bank account, and the figure the operator
+      // entered sits on the BANK ACCOUNT — cash_locations.opening_balance reads
+      // 0.00 on every mirrored row. Reading the mirror instead would propose
+      // zero for every bank and look like a clean answer.
+      const bank = l.bank_account_id ? bankById.get(l.bank_account_id) : null;
+      const amount = Number((bank ? bank.opening_balance : l.opening_balance) ?? 0);
+      if (!amount) continue;
+      rows.push({
+        key: "loc:" + l.id,
+        account_id: l.coa_account_id,
+        account_label: label(l.coa_account_id),
+        branch_id: l.branch_id ?? null,
+        source: bank
+          ? ("bank_accounts.opening_balance — " + bank.bank_name + " " + (bank.account_number ?? "")).trim()
+          : "cash_locations.opening_balance — " + l.name,
+        debit: amount,
+        credit: 0,
+      });
+    }
+
+    // Client receivables roll up to the AR control, one line per region that
+    // owns the receivable. Per client would be eighteen lines against one
+    // account, which is a subsidiary ledger the chart of accounts does not keep.
+    const ar: any = accounts.find((a: any) => a.account_code === "1100");
+    const byBranch = new Map<string, { total: number; count: number }>();
+    for (const c of (cls.data ?? []) as any[]) {
+      const amt = Number(c.opening_balance ?? 0);
+      if (!amt) continue;
+      const br: string = c.receivable_owner_branch_id ?? c.branch_id ?? "";
+      const cur = byBranch.get(br) ?? { total: 0, count: 0 };
+      byBranch.set(br, { total: cur.total + amt, count: cur.count + 1 });
+    }
+    if (ar) {
+      for (const [br, v] of byBranch) {
+        rows.push({
+          key: "ar:" + (br || "none"),
+          account_id: ar.id,
+          account_label: ar.account_code + " " + ar.account_name,
+          branch_id: br || null,
+          source:
+            "clients.opening_balance — " + v.count + " client" + (v.count === 1 ? "" : "s") +
+            (br ? ", " + (brName.get(br) ?? "region") : ""),
+          debit: v.total,
+          credit: 0,
+        });
+      }
+    } else if (byBranch.size > 0) {
+      setPrefillErr("Client receivable openings were found, but this chart of accounts has no 1100 Accounts Receivable to put them on.");
+    }
+
+    // The balancing credit. Opening Balance Equity is what an opening batch
+    // credits by definition; it is a line like any other and can be edited or
+    // removed before the batch is posted.
+    const eq: any = accounts.find((a: any) => a.account_code === "3200");
+    const totalDr = rows.reduce((t, r) => t + r.debit, 0);
+    if (eq && totalDr) {
+      rows.push({
+        key: "equity",
+        account_id: eq.id,
+        account_label: eq.account_code + " " + eq.account_name,
+        branch_id: null,
+        source: "balancing credit — the sum of the lines above",
+        debit: 0,
+        credit: totalDr,
+      });
+    }
+
+    setPrefill(rows);
+  };
+
+  const insertPrefill = async () => {
+    if (!selected || !prefill?.length) return;
+    const ok = await run(supabase.from("opening_balance_lines").insert(
+      prefill.filter((r) => r.debit || r.credit).map((r) => ({
+        batch_id: selected,
+        account_id: r.account_id,
+        branch_id: r.branch_id,
+        debit: r.debit,
+        credit: r.credit,
+      })),
+    ));
+    if (ok) setPrefill(null);
   };
 
   const selBatch = batches.find((b) => b.id === selected);
@@ -180,6 +308,69 @@ export default function OpeningBalances() {
                   <span>Debit {money(totals.total_debit)} · Credit {money(totals.total_credit)}</span>
                   <span className="font-medium">{balanced ? "Balanced" : `Out by ${money(Math.abs(Number(totals.total_debit ?? 0) - Number(totals.total_credit ?? 0)))}`}</span>
                 </div>
+              )}
+
+              {!posted && (
+                <section className="border border-slate-200 rounded-md p-3 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm text-slate-900">Prefill from the records</h3>
+                      <p className="text-xs text-slate-500">
+                        Bank openings from the bank accounts, cash openings from the custodians,
+                        receivable openings from the clients. Nothing is posted — review, edit, add.
+                      </p>
+                    </div>
+                    <Button variant="secondary" size="sm" disabled={busy} onClick={buildPrefill}>
+                      {prefill ? "Rebuild" : "Prefill"}
+                    </Button>
+                  </div>
+                  {prefillErr && <p className="text-xs text-danger-600">{prefillErr}</p>}
+                  {prefill && prefill.length === 0 && (
+                    <p className="text-xs text-slate-500">
+                      No opening figures are recorded on the bank accounts, cash locations or
+                      clients for this company.
+                    </p>
+                  )}
+                  {prefill && prefill.length > 0 && (
+                    <>
+                      <div className="overflow-x-auto border border-slate-200 rounded-md">
+                        <table className="w-full text-sm">
+                          <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+                            <tr>
+                              <th className="text-left px-3 py-2">Account</th>
+                              <th className="text-left px-3 py-2">Source</th>
+                              <th className="text-right px-3 py-2">Debit</th>
+                              <th className="text-right px-3 py-2">Credit</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {prefill.map((r, i) => (
+                              <tr key={r.key}>
+                                <td className="px-3 py-1.5 text-slate-700">{r.account_label}</td>
+                                <td className="px-3 py-1.5 text-xs text-slate-500">{r.source}</td>
+                                {(["debit", "credit"] as const).map((side) => (
+                                  <td key={side} className="px-3 py-1 text-right">
+                                    <input
+                                      className={FIELD + " w-28 text-right tabular-nums"}
+                                      value={String(r[side] || "")}
+                                      onChange={(e) => {
+                                        const v = Number(e.target.value) || 0;
+                                        setPrefill(prefill.map((x, j) => (j === i ? { ...x, [side]: v } : x)));
+                                      }}
+                                    />
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <Button variant="primary" size="sm" disabled={busy} onClick={insertPrefill}>
+                        Add these lines to the batch
+                      </Button>
+                    </>
+                  )}
+                </section>
               )}
 
               {!posted && (
