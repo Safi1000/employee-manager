@@ -340,13 +340,18 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
         });
       }
       if (draftLines.length === 0) return null;
-      const taxes: DraftTax[] = (client.tax_profile ?? []).map((t) => ({
-        name: t.name,
-        rate: String(t.rate),
-        base: t.base,
-        direction: t.direction,
-        component: t.component,
-      }));
+      // Invoice-time withholding is gone (A1: bill GROSS, recognise withholding on
+      // the receipt via record-payment). Drop WITHHELD tax-profile entries so no
+      // WHT line is computed, displayed or posted; ADDED taxes (e.g. GST) stay.
+      const taxes: DraftTax[] = (client.tax_profile ?? [])
+        .filter((t) => t.direction !== "WITHHELD")
+        .map((t) => ({
+          name: t.name,
+          rate: String(t.rate),
+          base: t.base,
+          direction: t.direction,
+          component: t.component,
+        }));
       const remitIndex = Math.max(0, (client.remit_accounts ?? []).findIndex((r) => r.is_default));
       const number = suggestNumber(client, taken);
       taken.add(number);
@@ -1199,7 +1204,7 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
                   ))}
                   {f.carried !== 0 && <Row label="Previous balance" value={f.carried} muted />}
                   <div className="flex items-center justify-between border-t border-slate-200 pt-1 font-semibold text-slate-900">
-                    <span>Total Due{f.withheldTotal > 0 ? " (net of withholding)" : ""}</span>
+                    <span>Total Due</span>
                     <span className="tabular-nums">PKR {f.totalDue.toLocaleString()}</span>
                   </div>
                   <div className="text-[11px] italic text-slate-500">{amountInWords(f.totalDue)}</div>
