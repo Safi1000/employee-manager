@@ -39,6 +39,7 @@ import {
 } from "../../lib/supabase";
 import { useRegion, withRegion } from "../../lib/region";
 import { useAuth, hasPermission } from "../../lib/auth";
+import { fetchLedgerStart, monthKeysFrom } from "../../lib/monthRange";
 import { loadCustodianOptions, ensureCustodianLocation, type CustodianOption } from "../../lib/custodian";
 
 const PIE_COLORS = CHART_COLORS;
@@ -665,17 +666,11 @@ export default function Expenses() {
   }, [expenses, search, monthFilter, categoryFilter, clientFilter, modeFilter, expenseByFilter]);
 
   // Last 18 months of options + "All" for the month select.
-  const monthOptions = useMemo(() => {
-    const opts: { key: string; label: string }[] = [];
-    const d = new Date();
-    for (let i = 0; i < 18; i++) {
-      const dt = new Date(d.getFullYear(), d.getMonth() - i, 1);
-      const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
-      const label = dt.toLocaleDateString(undefined, { month: "short", year: "numeric" });
-      opts.push({ key, label });
-    }
-    return opts;
-  }, []);
+  // Bounded by the ledger's own start, not by a fixed count of months back
+  // from today. See src/app/lib/monthRange.ts.
+  const [ledgerStart, setLedgerStart] = useState<string | null>(null);
+  useEffect(() => { fetchLedgerStart().then(setLedgerStart); }, []);
+  const monthOptions = useMemo(() => monthKeysFrom(ledgerStart), [ledgerStart]);
 
   const expenseMetrics = useMemo(() => {
     let total = 0;

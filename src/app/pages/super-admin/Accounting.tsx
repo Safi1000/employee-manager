@@ -37,6 +37,7 @@ import {
 import { validateBankAccount, validateIban } from "../../lib/validation";
 import { useFocusTarget, useFocusRow, FOCUS_ROW_CLASS } from "../../lib/focus";
 import { useAuth, hasPermission } from "../../lib/auth";
+import { fetchLedgerStart, monthKeysFrom } from "../../lib/monthRange";
 import { CashCustodyPanel } from "./CashCustody";
 import { generateDepositSlipPdf } from "../../lib/depositSlip";
 import { loadCustodianOptions, ensureCustodianLocation, type CustodianOption } from "../../lib/custodian";
@@ -215,17 +216,11 @@ export default function Accounting() {
   const [branchesList, setBranchesList] = useState<{ id: string; name: string }[]>([]);
   const [payablesMonth, setPayablesMonth] = useState<string>(currentMonthKey());
   const [txLogMonth, setTxLogMonth] = useState<string>("all");
-  const monthOptions = useMemo(() => {
-    const opts: { key: string; label: string }[] = [];
-    const d = new Date();
-    for (let i = 0; i < 18; i++) {
-      const dt = new Date(d.getFullYear(), d.getMonth() - i, 1);
-      const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
-      const label = dt.toLocaleDateString(undefined, { month: "short", year: "numeric" });
-      opts.push({ key, label });
-    }
-    return opts;
-  }, []);
+  // Bounded by the ledger's own start, not by a fixed count of months back
+  // from today. See src/app/lib/monthRange.ts.
+  const [ledgerStart, setLedgerStart] = useState<string | null>(null);
+  useEffect(() => { fetchLedgerStart().then(setLedgerStart); }, []);
+  const monthOptions = useMemo(() => monthKeysFrom(ledgerStart), [ledgerStart]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
