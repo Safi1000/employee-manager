@@ -70,7 +70,17 @@ type Row =
   | { kind: "existing"; key: string; client: Client; contract: Contract; invoice: Invoice }
   | { kind: "draft"; key: string; client: Client; contract: Contract };
 
-const num = (s: string) => Number(s) || 0;
+// Comma-tolerant: "100,000" (typed or pasted) must parse to 100000, not NaN→0.
+const num = (s: string) => Number(String(s).replace(/,/g, "").trim()) || 0;
+
+// Re-group a numeric string with thousands separators on blur ("100000" →
+// "100,000"); leave non-numeric / empty input exactly as typed so a partial
+// entry is never destroyed. num() parses the grouped string back regardless.
+const formatGrouped = (s: string): string => {
+  const cleaned = String(s).replace(/,/g, "").trim();
+  if (cleaned === "" || Number.isNaN(Number(cleaned))) return s;
+  return Number(cleaned).toLocaleString("en-US", { maximumFractionDigits: 2 });
+};
 
 // Variable grid: the final column is always "Amount" (locked). It's the money
 // column the Total Due is summed from. Normalise any column set so exactly one
@@ -1056,6 +1066,7 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
                                 value={cell}
                                 inputMode={isAmount ? "decimal" : undefined}
                                 onChange={(e) => setVarCell(d.contractId, ri, ci, e.target.value)}
+                                onBlur={isAmount ? (e) => setVarCell(d.contractId, ri, ci, formatGrouped(e.target.value)) : undefined}
                                 placeholder={isAmount ? "0" : undefined}
                                 className={`w-full px-2 py-1 border border-slate-200 rounded text-sm ${isAmount ? "text-right tabular-nums" : ""}`}
                               />
