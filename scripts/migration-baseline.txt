@@ -7,6 +7,34 @@
 # Do NOT add to this list to silence a failure. A new name here means a
 # migration was applied without committing the file — write the file instead.
 #
+# ── FOUR FINDINGS ARE MEANT TO STAY. DO NOT FINISH THE JOB. ─────────────────
+#
+# After the 2026-09-04 pass the nightly check (0364) reports exactly four, and
+# all four are TRUE AND PERMANENT:
+#
+#   0179c_drop_partnership_allocation_before_0180
+#   0182c_drop_partnership_allocation_before_0183
+#   0203b_drop_partnership_allocation_before_0204
+#   0205b_drop_partnership_allocation_before_0206
+#
+# Two facts hold at once, and both are correct:
+#
+#   * A fresh replay into an empty database NEEDS them. Postgres refuses
+#     `create or replace function` across a change of return type, so without
+#     each drop the replay dies at the migration that redefines
+#     partnership_allocation.
+#   * Production NEVER RAN THEM, and rightly so. The drop was done by hand in
+#     the SQL editor at the time, so the ledger has no row and should not.
+#
+# So the check is not wrong and there is nothing to fix. It is reporting a real,
+# durable difference between what a replay needs and what production did.
+# Baselining them would trade four accurate lines for a silence that says the
+# repo and production agree about these files when they do not.
+#
+# A report that is permanently at four, for a reason written down, is a working
+# control. A report at zero because the last four were swept into this file is
+# the failure this whole exercise was about. Leave them.
+#
 add_must_change_password
 allow_disbursement_and_invoice_payment_in_closed_period
 allow_invoice_receivable_update_in_closed_period
