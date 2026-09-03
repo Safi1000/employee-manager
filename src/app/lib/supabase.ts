@@ -2108,12 +2108,26 @@ export type Vendor = {
 
 export type InvoiceStatus = "Pending" | "Delivered" | "Unpaid" | "Partly-Paid" | "Paid";
 
+export type InvoiceKind = "primary" | "supplementary";
+
 export type Invoice = {
   id: string;
   client_id: string;
+  /**
+   * 0357. `primary` is the month's invoice for the contract — one only,
+   * enforced by uq_invoice_contract_month. `supplementary` is an additional
+   * bill against the SAME service month (a rate increase approved late and
+   * backdated), linked to its primary and carrying a reason. It is NOT a
+   * correction: the primary stays exactly as issued, because it was right at
+   * the time. Anything counting "has this month been invoiced" must count
+   * primaries only.
+   */
+  invoice_kind?: InvoiceKind | null;
+  supplements_invoice_id?: string | null;
+  supplementary_reason?: string | null;
   // Which contract this invoice bills (0109). Null on legacy/unlinked invoices
   // and on multi-contract clients that weren't auto-backfilled. Enforces the
-  // "one invoice per contract per month" rule together with period_start.
+  // "one PRIMARY invoice per contract per month" rule together with period_start.
   contract_id?: string | null;
   invoice_number: string;
   invoice_date: string;

@@ -393,7 +393,7 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
       OPENING: { label: "Opening", cls: "bg-slate-100 text-slate-700" },
       PROFIT_ALLOCATION: { label: "Allocation", cls: "bg-success-50 text-success-700" },
       DRAWING: { label: "Drawing", cls: "bg-danger-50 text-danger-700" },
-      CONTRIBUTION: { label: "Contribution", cls: "bg-brand-50 text-brand-700" },
+      CONTRIBUTION: { label: "Contribution / repayment", cls: "bg-brand-50 text-brand-700" },
     };
     const c = cfg[type];
     return <span className={`inline-flex px-2 py-0.5 rounded text-xs ${c.cls}`}>{c.label}</span>;
@@ -502,7 +502,7 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
                             className="p-1.5 rounded hover:bg-danger-50 text-slate-500 hover:text-danger-600 transition-colors">
                             <ArrowUpRight className="w-4 h-4" strokeWidth={1.5} />
                           </button>
-                          <button title="Record Contribution" onClick={() => { setContribPartnerId(p.id); setContribForm({ date: today(), amount: "", payment_method: "CASH", description: "" }); setIsContribOpen(true); }}
+                          <button title="Record a contribution or repayment — a partner settling a negative balance posts Dr Bank/Cash, Cr their current account, which is exactly a contribution" onClick={() => { setContribPartnerId(p.id); setContribForm({ date: today(), amount: "", payment_method: "CASH", description: "" }); setIsContribOpen(true); }}
                             className="p-1.5 rounded hover:bg-success-50 text-slate-500 hover:text-success-600 transition-colors">
                             <ArrowDownLeft className="w-4 h-4" strokeWidth={1.5} />
                           </button>

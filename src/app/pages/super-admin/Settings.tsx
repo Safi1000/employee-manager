@@ -13,7 +13,7 @@ import {
 import { useAuth } from "../../lib/auth";
 import { THEME_OPTIONS, DEFAULT_THEME, applyTheme, type ThemeKey } from "../../lib/theme";
 
-type BranchRow = { id: string; name: string; is_head_office: boolean; employees: number };
+type BranchRow = { id: string; name: string; is_head_office: boolean; employees: number; ho_excluded: boolean; ho_excluded_reason: string | null };
 type ClientRow = {
   id: string;
   client_code: string;
@@ -298,7 +298,7 @@ export default function Settings() {
         .order("client_code"),
       supabase
         .from("branches")
-        .select("id, name, is_head_office")
+        .select("id, name, is_head_office, ho_excluded, ho_excluded_reason")
         .order("is_head_office", { ascending: false })
         .order("name"),
     ]);
@@ -315,6 +315,8 @@ export default function Settings() {
         name: r.name,
         is_head_office: !!r.is_head_office,
         employees: brCounts[r.id] ?? 0,
+        ho_excluded: !!r.ho_excluded,
+        ho_excluded_reason: r.ho_excluded_reason ?? null,
       })),
     );
 
@@ -353,6 +355,75 @@ export default function Settings() {
     loadAll();
     loadNotificationSettings();
   }, []);
+
+  // ── HO exclusion (0353) ───────────────────────────────────────────────────
+  //
+  // A flag only settable through SQL is one nobody uses, and this one changes
+  // what a regional partner takes home. So: a control, a REQUIRED reason (the
+  // database enforces ten characters — the form should not be the first place
+  // that rule is discovered), and the preview BEFORE it applies.
+  //
+  // The preview is the whole point. Excluding a region does not reduce the head
+  // office pool, it redistributes it, so the figures that move are the OTHER
+  // regions'. Showing only the region being changed would hide the entire
+  // effect of the change.
+  const [hoModalBranch, setHoModalBranch] = useState<BranchRow | null>(null);
+  const [hoReason, setHoReason] = useState("");
+  const [hoPreview, setHoPreview] = useState<
+    { branch_id: string; region_name: string; absorbs_now: number; absorbs_after: number; delta: number }[]
+  >([]);
+  const [hoBusy, setHoBusy] = useState(false);
+  const [hoErr, setHoErr] = useState<string | null>(null);
+
+  const hoCompanyId = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
+
+  const openHoModal = async (b: BranchRow) => {
+    setHoModalBranch(b);
+    setHoReason(b.ho_excluded_reason ?? "");
+    setHoErr(null);
+    setHoPreview([]);
+    if (!hoCompanyId) return;
+    setHoBusy(true);
+    try {
+      // The proposed set = today's exclusions with this region toggled.
+      const proposed = branches
+        .filter((x) => (x.id === b.id ? !b.ho_excluded : x.ho_excluded))
+        .map((x) => x.id);
+      const { data, error: e } = await supabase.rpc("ho_exclusion_preview", {
+        p_company_id: hoCompanyId,
+        p_period: new Date().toISOString().slice(0, 8) + "01",
+        p_excluded: proposed,
+      });
+      if (e) throw e;
+      setHoPreview((data ?? []) as any[]);
+    } catch (e: any) {
+      setHoErr(e.message ?? String(e));
+    } finally {
+      setHoBusy(false);
+    }
+  };
+
+  const saveHoExclusion = async () => {
+    if (!hoModalBranch) return;
+    const turningOn = !hoModalBranch.ho_excluded;
+    setHoBusy(true);
+    setHoErr(null);
+    const { error: e } = await supabase
+      .from("branches")
+      .update(
+        turningOn
+          ? { ho_excluded: true, ho_excluded_reason: hoReason.trim(), ho_excluded_at: new Date().toISOString(), ho_excluded_by: profile?.id ?? null }
+          : { ho_excluded: false },
+      )
+      .eq("id", hoModalBranch.id);
+    setHoBusy(false);
+    // The database refuses an exclusion that would strand the pool, and one
+    // with too short a reason. Both messages are written to be read by a
+    // person, so they are surfaced as-is rather than replaced.
+    if (e) { setHoErr(e.message); return; }
+    setHoModalBranch(null);
+    await loadAll();
+  };
 
   const handleAddBranch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -471,9 +542,26 @@ export default function Settings() {
                       </span>
                     )}
                   </div>
-                  <p className="text-xs text-slate-500 mt-1">{b.employees} employees</p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {b.employees} employees
+                    {b.ho_excluded && (
+                      <span className="ml-2 text-warning-700">
+                        · does not absorb head office
+                      </span>
+                    )}
+                  </p>
+                  {b.ho_excluded && b.ho_excluded_reason && (
+                    <p className="text-[11px] text-slate-400 mt-0.5 truncate">{b.ho_excluded_reason}</p>
+                  )}
                 </div>
                 <div className="flex gap-1">
+                  {/* Head office cannot be excluded from itself — it is the
+                      giver of the pool, and the database refuses the flag. */}
+                  {!b.is_head_office && (
+                    <Button variant="ghost" size="sm" onClick={() => openHoModal(b)}>
+                      {b.ho_excluded ? "Re-include" : "Exclude HO"}
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="sm"
@@ -723,6 +811,78 @@ export default function Settings() {
           </div>
         )}
       </div>
+
+      {/* HO exclusion — the preview is shown BEFORE it applies, and it shows
+          every region, not just the one being changed, because excluding one
+          moves the others' figures. */}
+      <Modal
+        isOpen={!!hoModalBranch}
+        onClose={() => setHoModalBranch(null)}
+        title={hoModalBranch?.ho_excluded ? `Re-include ${hoModalBranch?.name}` : `Exclude ${hoModalBranch?.name} from head office`}
+        size="md"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">
+            {hoModalBranch?.ho_excluded
+              ? "This region will start absorbing head office cost again. The pool is redistributed across every region that absorbs it."
+              : "This region will stop absorbing head office cost. The pool is not reduced — it redistributes across the remaining regions by invoiced revenue, so their share goes up."}
+          </p>
+
+          {!hoModalBranch?.ho_excluded && (
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Reason *</label>
+              <textarea
+                value={hoReason}
+                onChange={(e) => setHoReason(e.target.value)}
+                rows={2}
+                placeholder="e.g. Kashmir is managed independently and receives no head office support"
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+              />
+              <p className="text-[11px] text-slate-500 mt-1">
+                Stored with the flag and required — this changes what a regional partner takes home,
+                and an exclusion with no reason cannot be told from a mistake later.
+              </p>
+            </div>
+          )}
+
+          <div className="border border-slate-200 rounded-md overflow-hidden">
+            <div className="px-3 py-2 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+              This month, if applied
+            </div>
+            {hoBusy && <div className="p-3 text-sm text-slate-500">Loading preview…</div>}
+            {!hoBusy && hoPreview.length === 0 && (
+              <div className="p-3 text-sm text-slate-500">No regions to preview.</div>
+            )}
+            {!hoBusy && hoPreview.map((r) => (
+              <div key={r.branch_id} className="flex justify-between items-center px-3 py-2 text-sm border-t border-slate-100">
+                <span className="text-slate-700">{r.region_name}</span>
+                <span className="tabular-nums text-slate-600">
+                  {Math.round(r.absorbs_now).toLocaleString()} → {Math.round(r.absorbs_after).toLocaleString()}
+                  {Number(r.delta) !== 0 && (
+                    <span className={Number(r.delta) > 0 ? "ml-2 text-danger-600" : "ml-2 text-success-600"}>
+                      {Number(r.delta) > 0 ? "+" : ""}{Math.round(Number(r.delta)).toLocaleString()}
+                    </span>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {hoErr && <p className="text-sm text-danger-600 whitespace-pre-line">{hoErr}</p>}
+
+          <div className="flex gap-2 justify-end">
+            <Button variant="ghost" size="sm" onClick={() => setHoModalBranch(null)}>Cancel</Button>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={hoBusy || (!hoModalBranch?.ho_excluded && hoReason.trim().length < 10)}
+              onClick={saveHoExclusion}
+            >
+              {hoModalBranch?.ho_excluded ? "Re-include" : "Exclude"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         isOpen={branchAddOpen}

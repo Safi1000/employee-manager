@@ -401,7 +401,11 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
       for (const con of clientContracts) {
         // Never draft a period outside the contract's own start→(effective)end window.
         if (!periodInContractWindow(con, period, addendums.filter((a) => a.contract_id === con.id))) continue;
-        const already = invoices.some((i) => i.contract_id === con.id && invoiceMonth(i) === period);
+        // 0357: PRIMARIES ONLY. A supplementary raised against this month must
+        // not make the contract look already-invoiced, or the month's primary
+        // could never be drafted -- and a supplementary adjusts a primary, so
+        // one existing without the other is precisely the gap to surface.
+        const already = invoices.some((i) => i.contract_id === con.id && invoiceMonth(i) === period && (i.invoice_kind ?? "primary") === "primary");
         if (already) continue;
         const d = buildDraft(client, con, taken);
         if (d) {
@@ -427,7 +431,7 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
     for (const client of groupClients) {
       const clientContracts = contracts.filter((c) => c.client_id === client.id && isInvoiceableContract(c));
       for (const con of clientContracts) {
-        const existing = invoices.find((i) => i.contract_id === con.id && invoiceMonth(i) === period);
+        const existing = invoices.find((i) => i.contract_id === con.id && invoiceMonth(i) === period && (i.invoice_kind ?? "primary") === "primary");
         if (existing) {
           out.push({ kind: "existing", key: con.id, client, contract: con, invoice: existing });
         } else if (drafts[con.id]) {

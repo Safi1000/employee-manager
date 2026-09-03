@@ -77,6 +77,9 @@ export default function RegionalPerformance() {
   const [clients, setClients] = useState<ClientRow[]>([]);
   const [pool, setPool] = useState<number>(0);
   const [open, setOpen] = useState<Set<string>>(new Set());
+  // branch id (or "__HO__") → category name → amount, on the chosen basis.
+  const [categories, setCategories] = useState<Map<string, Map<string, number>>>(new Map());
+  const [poolOpen, setPoolOpen] = useState(false);
 
   const load = useCallback(async () => {
     if (!companyId) return;
@@ -86,18 +89,30 @@ export default function RegionalPerformance() {
       const start = firstOf(period);
       const end = lastOf(period);
 
-      const [pl, prev, cs] = await Promise.all([
-        supabase.rpc("regional_pl_range", { p_start: start, p_end: end }),
+      const [pl, prev, cs, ex] = await Promise.all([
+        // 0359: pass the company. This used to be session-scoped and returned
+        // nothing to any caller without a JWT.
+        supabase.rpc("regional_pl_range", { p_start: start, p_end: end, p_company_id: companyId }),
         supabase.rpc("ho_exclusion_preview", {
           p_company_id: companyId, p_period: start, p_excluded: null,
         }),
         supabase.rpc("client_statement_loaded", {
           p_start: start, p_end: end, p_basis: basis, p_company_id: companyId,
         }),
+        // ITEM 2 — the Regional Operating Expenses breakdown, folded in here.
+        // It was accrual-only as a separate tab, so this is completion rather
+        // than a fix: the basis toggle now governs its pool as it governs
+        // everything else. Cash shows what was PAID in the month; accrual shows
+        // what RELATES to it, which is the expense_date.
+        supabase
+          .from("expenses")
+          .select("amount, branch_id, client_id, expense_date, payment_mode, payable_status, paid_at, category:expense_categories(name)")
+          .eq("company_id", companyId),
       ]);
       if (pl.error) throw pl.error;
       if (prev.error) throw prev.error;
       if (cs.error) throw cs.error;
+      if (ex.error) throw ex.error;
 
       const alloc = new Map<string, { absorbs: number; invoiced: number; excluded: boolean }>();
       for (const r of (prev.data ?? []) as any[]) {
@@ -133,6 +148,30 @@ export default function RegionalPerformance() {
           excluded: a.excluded,
         });
       }
+
+      // Category breakdown, on the chosen basis, split into what each region
+      // spent directly and what head office spent (which becomes the pool).
+      // A POOL NOBODY CAN BREAK DOWN IS A NUMBER PEOPLE ARGUE ABOUT — so the
+      // head office side is decomposed exactly the same way as a region's.
+      const inPeriod = (e: any): boolean => {
+        if (basis !== "cash") return e.expense_date >= start && e.expense_date <= end;
+        const d =
+          e.payment_mode === "Cash" || e.payment_mode === "Bank" ? e.expense_date
+          : e.payment_mode === "Payable" && e.payable_status === "Paid" ? (e.paid_at ?? "").slice(0, 10)
+          : null;                       // Cheque: only when it clears, which we cannot see here
+        return !!d && d >= start && d <= end;
+      };
+      const hoId = new Set((pl.data ?? []).map((r: any) => r.branch_id).filter((id: string) => !alloc.has(id)));
+      const catBy = new Map<string, Map<string, number>>();
+      for (const e of (ex.data ?? []) as any[]) {
+        if (!inPeriod(e)) continue;
+        const key = hoId.has(e.branch_id) ? "__HO__" : (e.branch_id ?? "__NONE__");
+        const name = e.category?.name ?? "Uncategorised";
+        if (!catBy.has(key)) catBy.set(key, new Map());
+        const m = catBy.get(key)!;
+        m.set(name, (m.get(name) ?? 0) + Number(e.amount ?? 0));
+      }
+      setCategories(catBy);
 
       setRegions(rows);
       setClients((cs.data ?? []) as ClientRow[]);
@@ -219,7 +258,34 @@ export default function RegionalPerformance() {
           {/* THE POOL, AND ITS SHARES, SO THEY VISIBLY SUM TO IT. */}
           <div className="border border-slate-200 rounded-lg p-5">
             <p className="text-[11px] uppercase tracking-wide text-slate-500">Head office pool</p>
-            <p className="text-2xl text-slate-900 tabular-nums">{money(pool)}</p>
+            <button
+              type="button"
+              onClick={() => setPoolOpen((v) => !v)}
+              className="text-2xl text-slate-900 tabular-nums inline-flex items-center gap-1 hover:text-brand-700"
+              title="What the pool is made of"
+            >
+              {money(pool)}
+              {poolOpen ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+            </button>
+            {/* THE POOL DECOMPOSED, the same way a region's own cost is. A pool
+                nobody can break down is a number people argue about. */}
+            {poolOpen && (
+              <div className="mt-2 mb-3 pl-3 border-l-2 border-slate-200 space-y-1">
+                {Array.from(categories.get("__HO__") ?? new Map())
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([name, amt]) => (
+                    <div key={name} className="flex justify-between text-xs">
+                      <span className="text-slate-500">{name}</span>
+                      <span className="tabular-nums text-slate-600">{money(amt)}</span>
+                    </div>
+                  ))}
+                {(categories.get("__HO__")?.size ?? 0) === 0 && (
+                  <p className="text-xs text-slate-400">
+                    No head office expenses on this basis for the month.
+                  </p>
+                )}
+              </div>
+            )}
             <div className="mt-4 space-y-1">
               {regions.map((r) => (
                 <div key={r.branch_id} className="flex justify-between text-sm">
@@ -291,6 +357,28 @@ export default function RegionalPerformance() {
                           {money(net)}
                         </td>
                       </tr>
+                      {/* ITEM 2: the region's own cost, by category — what the
+                          separate Regional Operating Expenses tab used to show,
+                          now under the same basis toggle as everything else. */}
+                      {isOpen && (categories.get(r.branch_id)?.size ?? 0) > 0 && (
+                        <tr key={`${r.branch_id}-cats`} className="bg-slate-50">
+                          <td colSpan={6} className="px-10 py-2">
+                            <p className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">
+                              Own cost by category
+                            </p>
+                            <div className="grid sm:grid-cols-2 gap-x-8 gap-y-0.5">
+                              {Array.from(categories.get(r.branch_id) ?? new Map())
+                                .sort((a, b) => b[1] - a[1])
+                                .map(([name, amt]) => (
+                                  <div key={name} className="flex justify-between text-xs">
+                                    <span className="text-slate-500">{name}</span>
+                                    <span className="tabular-nums text-slate-600">{money(amt)}</span>
+                                  </div>
+                                ))}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
                       {isOpen && kids.length === 0 && (
                         <tr key={`${r.branch_id}-none`} className="bg-slate-50">
                           <td colSpan={6} className="px-10 py-2 text-xs text-slate-500">No clients in this region for the period.</td>
