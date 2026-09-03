@@ -201,11 +201,17 @@ if (envs.length === 0) {
   process.exit(2);
 }
 
-// A run that audits one of the two real environments is not a clean bill of
-// health for both, and the report must not read like one. prod and dev have
-// diverged before and will again.
+// A run that does not audit production is not a clean bill of health, and the
+// report must not read like one.
+//
+// This used to name dev alongside prod. crm-design-dev no longer exists, so a
+// standing "NOT AUDITED: dev" on every run is a warning about a database nobody
+// can audit — noise that trains the reader to skim the line that will one day
+// say prod. The pinned ref for dev stays in PROJECT_REFS: if a dev database
+// returns, a URL under that name is still checked for identity before it is
+// believed.
 const audited = new Set(envs.map((e) => e.name));
-const unaudited = ["prod", "dev"].filter((n) => !audited.has(n));
+const unaudited = ["prod"].filter((n) => !audited.has(n));
 if (unaudited.length && !process.argv.includes("--env")) {
   console.warn(`\nNOT AUDITED: ${unaudited.join(", ")} — no URL/key pair configured. This run says nothing about ${unaudited.length === 1 ? "it" : "them"}.`);
 }

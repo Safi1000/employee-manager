@@ -20,6 +20,7 @@ import PayrollManagement from "./pages/super-admin/PayrollManagement";
 import PayrollRun from "./pages/super-admin/PayrollRun";
 import Accounting from "./pages/super-admin/Accounting";
 import FinancialReports from "./pages/super-admin/FinancialReports";
+import PartnershipRun from "./pages/super-admin/PartnershipRun";
 import Expenses from "./pages/super-admin/Expenses";
 import Invoices from "./pages/super-admin/Invoices";
 import Cashflow from "./pages/super-admin/CashFlow";
@@ -181,6 +182,9 @@ export const router = createRouter([
       // Partnership Report is its own page under Finance now, not a tab of
       // Financial Reports. Same component, pinned to that one report.
       { path: "partnership-report", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit"], <FinancialReports key="partnership" standalone="partnership" />) },
+      // Partnership Run — draft / review / post. The database has been able to
+      // do this since 0361; nothing could reach it until now.
+      { path: "partnership-run", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit"], <PartnershipRun />) },
       { path: "expenses", element: guard(["expenses.view", "expenses.edit"], <Expenses />) },
       { path: "invoices", element: guard(["invoices.view", "invoices.edit"], <Invoices />) },
       { path: "cashflow", element: guard(["cashflow.view"], <Cashflow />) },

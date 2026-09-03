@@ -19,3 +19,19 @@ partner_allocation_and_opex_detail       = partnership_allocation_and_opex_detai
 partnership_allocation_client_overrides  = partnership_allocation_honours_client_overrides
 partnership_revenue_basis_total_income   = partnership_revenue_basis_uses_total_income
 cash_locations_base                      = create_cash_locations
+
+# ── 2026-09-04. The six drop_partnership_allocation files, renamed uniquely.
+#
+# Six files carried one name, so the check could only ever say "6 files, only 2
+# recorded" — a collision reported as a count, naming nothing. Each file now
+# says which redefinition it clears the way for. Two of the six ARE recorded on
+# production, under the old shared name, so these two pairs keep the file and
+# its recorded row pointing at each other across the rename. Without them the
+# rename would invent drift in BOTH directions at once: two files suddenly
+# unrecorded, and two recorded rows suddenly without a file.
+#
+# The other four are genuinely unrecorded and stay visible. Production never ran
+# them because the drop was done by hand in the SQL editor at the time; each
+# file's own header says so. They are replay-only, needed to rebuild from empty.
+drop_partnership_allocation_before_0225  = drop_partnership_allocation
+drop_partnership_allocation_before_0232  = drop_partnership_allocation

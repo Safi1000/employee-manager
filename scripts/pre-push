@@ -11,9 +11,8 @@
 # core.hooksPath). Install by hand with:
 #     git config core.hooksPath scripts
 #
-# Requires BOTH environments configured:
+# Requires PRODUCTION configured:
 #   SUPABASE_PROD_URL / SUPABASE_PROD_SERVICE_ROLE_KEY
-#   SUPABASE_DEV_URL  / SUPABASE_DEV_SERVICE_ROLE_KEY
 #
 # THIS USED TO SKIP ITSELF WHEN THOSE WERE ABSENT. The reasoning was that a hook
 # which blocks work over a missing secret gets disabled, and a disabled hook
@@ -22,30 +21,27 @@
 # and the check has not run once. 0240 and 0241 reached PRODUCTION without a repo
 # file while this hook was sitting in the tree, notionally guarding exactly that.
 #
-# A control with a silent skip is a control nobody looks at. It now fails, and
+# A control with a silent skip is a control nobody looks at. It still fails, and
 # says how to proceed — which is the difference between a blocked push and a
 # disabled hook.
 #
+# IT USED TO GATE ON BOTH prod AND dev, and that was right while both existed.
+# crm-design-dev is gone. Two of the four credentials named a database that no
+# longer answers, so the gate became unsatisfiable, and an unsatisfiable control
+# is one that gets --no-verify'd every time — with the workaround printed in its
+# own failure message. Lowering a threshold because a database was switched off
+# is a bad reason to move a control; leaving it at a level nobody can reach is a
+# worse one. It gates on prod, which is the environment holding the money.
+#
 # To bypass deliberately: git push --no-verify
 
-have_prod=0; have_dev=0
-[ -n "$SUPABASE_PROD_URL" ] && [ -n "$SUPABASE_PROD_SERVICE_ROLE_KEY" ] && have_prod=1
-[ -n "$SUPABASE_DEV_URL" ]  && [ -n "$SUPABASE_DEV_SERVICE_ROLE_KEY" ]  && have_dev=1
-
-# BOTH, not either. This hook used to gate on the unnamed SUPABASE_URL pair,
-# which is one database. prod and dev have diverged more than once - 0231, 0231b
-# and 0232 were applied to production through the SQL editor and recorded
-# nothing - so a green run against one environment is not evidence about the
-# other. check-migrations.mjs audits every configured environment; the gate's
-# job is to make sure both are configured.
-if [ "$have_prod" -eq 0 ] || [ "$have_dev" -eq 0 ]; then
-  echo "pre-push: BLOCKED - the migration drift check needs BOTH environments."
+if [ -z "$SUPABASE_PROD_URL" ] || [ -z "$SUPABASE_PROD_SERVICE_ROLE_KEY" ]; then
+  echo "pre-push: BLOCKED - the migration drift check needs production."
   echo "pre-push:"
-  [ "$have_prod" -eq 0 ] && echo "pre-push:   missing SUPABASE_PROD_URL / SUPABASE_PROD_SERVICE_ROLE_KEY"
-  [ "$have_dev"  -eq 0 ] && echo "pre-push:   missing SUPABASE_DEV_URL / SUPABASE_DEV_SERVICE_ROLE_KEY"
+  echo "pre-push:   missing SUPABASE_PROD_URL / SUPABASE_PROD_SERVICE_ROLE_KEY"
   echo "pre-push:"
-  echo "pre-push: Each URL is checked against a pinned project ref, so a"
-  echo "pre-push: copy-pasted URL cannot make one environment stand in for the other."
+  echo "pre-push: The URL is checked against a pinned project ref, so a"
+  echo "pre-push: copy-pasted URL cannot make another database stand in for prod."
   echo "pre-push:"
   echo "pre-push: Then: npm run check:migrations"
   echo "pre-push: Or bypass this push with 'git push --no-verify' if you know why."

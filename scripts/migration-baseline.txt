@@ -61,3 +61,102 @@ sgc_backdate_postings_to_join_date
 clone_org_guards_n_guides
 prune_inactive_separated_from_new_org
 correct_overrecorded_advances
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 2026-09-04. THE EIGHTEEN THE NIGHTLY CHECK FOUND ON ITS FIRST RUN.
+#
+# 0364 gave run_scheduled_ledger_checks the repo's file list, and its first pass
+# reported eighteen repo migrations production has no recorded row for. Every
+# one below was investigated before it was written down. THE EVIDENCE IS THE
+# POINT: a baseline whose entries carry no reason is a list of things nobody
+# looked at, which is what this file's own header warns against. Each entry
+# names the object probed on production and what was found.
+#
+# NOTE THE DIRECTION. The entries above are applied names with no repo file.
+# These are the opposite — repo files with no applied row — and the baseline is
+# keyed on the stem, so it exempts both directions. Said out loud because the
+# header at the top of this file describes only the first direction, and a
+# reader would otherwise think these were filed under the wrong heading.
+#
+# A reason NEVER goes on the same line as an entry: the parser strips whole
+# comment lines and does not strip trailing ones, so "name  # why" becomes part
+# of the key and silently matches nothing. The reason goes above the name.
+#
+# ── Fourteen that ran under a descriptive pre-0109 name. Object found on prod.
+#
+# 0012: invoices.withholding_tax exists.
+invoice_withholding_tax
+# 0013: invoice_payments.client_id exists.
+standalone_invoice_payments
+# 0014: attendance_records.marked_by_role and stamp_attendance_marker() exist.
+attendance_sa_lock
+# 0042: coa_id() and journal_on_expense() exist.
+sprint5_double_entry_journal
+# 0053: policies no_modify_sa_locked and no_delete_sa_locked exist.
+fix_attendance_sa_lock_upsert
+# 0059: is_period_closed() and enforce_period_lock() exist.
+reattach_period_lock_triggers
+# 0060: cheques.direction and cheque_apply_balance() exist.
+deposit_cheques_and_cash_deposit
+# 0078b: tables expense_receipts and partner_account_entries exist.
+missing_base_tables
+# 0079b: partners.allocation_method and partners.default_share_pct exist.
+partners_missing_columns
+# 0108: payslips.unmarked_days, is_attendance_locked() and
+#       acknowledge_payroll_exception() exist.
+payroll_exceptions_and_attendance_lock
+# 0109: assess_clearance() and employee_clearance_gates() exist.
+fire_clearance_salary_and_attendance_window
+# 0179b: expenses.expense_by exists.
+missing_prod_columns
+# 0200: contract_addendums.shift_code exists.
+addendum_shift_code
+# 0234: attendance_confirmations.client_id and .site_id are both nullable.
+attendance_confirmations_optional_scope
+#
+# ── 0078c CREATES NO OBJECT, so presence could not be the test.
+#
+# It drops a legacy `company_isolation` policy from every table that also
+# carries `company_members`. Production has ZERO such pairs left, which is the
+# state only a run produces. Verified by the absence of what it removes rather
+# than the presence of what it adds — the only test available, and a real one.
+guard_legacy_company_isolation
+#
+# ── 0058 IS THE ENTRY A FUTURE READER MOST NEEDS, because the obvious reading
+#    of it is wrong.
+#
+# apply_monthly_account_zeroing() is genuinely ABSENT from production. That is
+# not evidence the migration never ran. It ran, and
+# 0308_remove_monthly_account_zeroing and 0311_drop_auto_zero_columns — both
+# recorded — deliberately removed it afterwards. The absence is a LATER
+# migration's success, not this one's failure.
+#
+# Stopping at "object missing" here would have reported a migration that never
+# ran, inside a report whose entire purpose is to find migrations that never
+# ran. WHEN A PROBE COMES BACK ABSENT, ASK WHAT REMOVED IT BEFORE CONCLUDING
+# NOTHING CREATED IT.
+auto_zero_monthly_accounts
+#
+# ── Two that CANNOT BE SETTLED BY INSPECTION. Not "ran": UNDECIDABLE.
+#
+# Both are pure `update public.profiles` data backfills. They create nothing, so
+# there is no object to probe, and a data backfill leaves no durable trace of
+# having happened. Worse, the evidence has since been overwritten: the RBAC
+# series (0310-0315) grants and revokes these same permission arrays
+# deliberately, so today's values reflect RBAC's intent and not these backfills.
+#
+#   0009 cleared permissions for the hr and accounting roles. Six profiles carry
+#        permissions today — which RBAC explains completely, so the number is
+#        evidence of nothing in either direction.
+#
+#   0043 added clients.*/contracts.* alongside settings.*. Exactly ONE profile
+#        holds settings.view, and it does carry clients.view. That is consistent
+#        with having run and is not evidence that it did. A sample of one is not
+#        evidence.
+#
+# They are baselined so the check stops re-reporting them, with the reason
+# recorded as UNDECIDABLE rather than as "ran". Anyone who later needs the true
+# answer should learn from this file that it is not in the database to be found
+# — not read a line claiming it was verified when it was not.
+clear_role_backfill_permissions
+backfill_new_permissions

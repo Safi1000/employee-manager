@@ -322,3 +322,37 @@ is:
 All three exercised through the UI, logged in. `TENANT_GUARD_REPORT.md` §9.17
 records why: the constraint has to be proved against what it accepts, against
 the writers, and against the rows those writers are about to move.
+
+---
+
+# Candidates — recorded, NOT scheduled and NOT built
+
+## C1. A report of unallocated receipts outstanding
+
+**Status: candidate only. Do not build without it being scheduled.**
+
+Recorded 2026-09-03, when the standalone-receipt gate on Banks & Ledgers →
+Client Receivables was changed from a `super_admin` **role** check to
+`hasPermission(profile, "accounting.edit")`.
+
+The role gate had been read as a control over a real risk: **an unallocated
+receipt — one recorded against a client with no invoice — can hide a
+misposting**, because nothing ties the money to a document that says what it
+was for.
+
+The risk is real. The role gate did not address it. An unallocated receipt can
+hide a misposting whether an admin or an accountant records it; restricting
+*who* may create one does not make the ones that exist visible, and the
+restriction blocked the ordinary case — a client paying down an opening balance
+— for the accountant whose job that is.
+
+The control that would address it is **visibility, not permission**: a report of
+unallocated receipts outstanding, i.e. `invoice_payments` rows with
+`invoice_id is null` that have not since been matched to a document. That is
+also what would surface a genuine misposting after the fact, which the role
+gate never could.
+
+Why it is a candidate and not an item: nobody has asked for it, and the
+receivables screen already exposes the underlying figure per client through
+`standaloneMap`. Build it when someone needs to answer "what unallocated money
+is sitting on the ledger", not before.

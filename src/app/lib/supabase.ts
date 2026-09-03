@@ -386,6 +386,12 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
     items: [
       { key: "expenses.view", label: "View expenses & advances" },
       { key: "expenses.edit", label: "Add / edit expenses & advances" },
+      // 0346. A REVIEW, not a payment gate — cash may already have left with a
+      // custodian. Approving locks the expense against further edits; the same
+      // permission is what lifts the lock again. A permission and not a role
+      // literal: asking the role instead of the permission was the cause of
+      // three separate defects in the week this was built.
+      { key: "expenses.approve", label: "Approve / unapprove expenses (locks them)" },
     ],
   },
   {
@@ -448,6 +454,12 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
       { key: "cashflow.view", label: "View cashflow" },
       { key: "coa.view", label: "View Chart of Accounts & Trial Balance" },
       { key: "period_close.manage", label: "Close / reopen accounting periods" },
+      // 0361 enforces this in post_profit_allocation and it was never added
+      // here, so the only people who could post a partnership run were the two
+      // roles has_permission() waves through outright. A permission the
+      // database demands and the grant screen cannot offer is a permission
+      // nobody can be given.
+      { key: "partnership.post", label: "Post / reverse a partnership run" },
     ],
   },
   {
@@ -2102,12 +2114,26 @@ export type Vendor = {
 
 export type InvoiceStatus = "Pending" | "Delivered" | "Unpaid" | "Partly-Paid" | "Paid";
 
+export type InvoiceKind = "primary" | "supplementary";
+
 export type Invoice = {
   id: string;
   client_id: string;
+  /**
+   * 0357. `primary` is the month's invoice for the contract — one only,
+   * enforced by uq_invoice_contract_month. `supplementary` is an additional
+   * bill against the SAME service month (a rate increase approved late and
+   * backdated), linked to its primary and carrying a reason. It is NOT a
+   * correction: the primary stays exactly as issued, because it was right at
+   * the time. Anything counting "has this month been invoiced" must count
+   * primaries only.
+   */
+  invoice_kind?: InvoiceKind | null;
+  supplements_invoice_id?: string | null;
+  supplementary_reason?: string | null;
   // Which contract this invoice bills (0109). Null on legacy/unlinked invoices
   // and on multi-contract clients that weren't auto-backfilled. Enforces the
-  // "one invoice per contract per month" rule together with period_start.
+  // "one PRIMARY invoice per contract per month" rule together with period_start.
   contract_id?: string | null;
   invoice_number: string;
   invoice_date: string;
@@ -2383,6 +2409,30 @@ export type Expense = {
   receipt_file_name: string | null;
   notes: string | null;
   expense_by: string | null;
+  /**
+   * 0346. Approval is a REVIEW, not a payment gate — `payable_status` answers
+   * payment and is null on every non-Payable expense, so it cannot carry this.
+   * Non-null approved_at means the database refuses UPDATE of anything that
+   * changes what was reviewed, and refuses DELETE. Unapproving is the way back.
+   */
+  approved_at: string | null;
+  approved_by: string | null;
+  unapproved_at: string | null;
+  unapproved_by: string | null;
+  /**
+   * 0347. Prepaid amortisation window, stored as first-of-month at both ends.
+   * Both null = the whole cost belongs to expense_date, which is every expense
+   * under the 50,000 threshold. Set = the payment debits Prepaid Expenses and
+   * release_prepaid_expenses moves one month across as each month arrives.
+   */
+  coverage_start: string | null;
+  coverage_end: string | null;
   created_at?: string;
   updated_at?: string;
 };
+
+/** 0347. Below this, no amortisation option is offered — eleven journal entries
+ *  to move 166 rupees each is more bookkeeping than the accuracy is worth.
+ *  Mirrored by the expenses_coverage_valid constraint, because the UI is not
+ *  the only writer. */
+export const PREPAID_THRESHOLD = 50000;

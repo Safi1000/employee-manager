@@ -17,7 +17,15 @@ type Partner = {
   scope: "COMPANY" | "BRANCH";
   branch_id: string | null;
   allocation_method: "FIXED_PCT" | "MANUAL";
+  /** What this screen used to show and edit. NOTHING in the posting path reads
+   *  it — run_profit_allocation, partnership_allocation and
+   *  partner_client_breakdown all read profit_share_percent. It is kept because
+   *  the deferred 0078b participation-rules screen reads it, and it is written
+   *  here only at creation, alongside profit_share_percent, so the two cannot
+   *  come apart. */
   default_share_pct: number | null;
+  /** The column the ledger actually allocates on. */
+  profit_share_percent: number | null;
   opening_balance: number;
   opening_balance_date: string | null;
   opening_balance_locked: boolean;
@@ -180,17 +188,61 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
 
   useEffect(() => { if (stmtPartner) loadStatement(stmtPartner); }, [stmtPartner, stmtFrom, stmtTo]);
 
+  // THE SUMMARY READS THE LEDGER. It used to recompute from a SUBSET.
+  //
+  // What stood here summed partner_account_entries — OPENING, PROFIT_ALLOCATION,
+  // DRAWING, CONTRIBUTION — and called the result the partner's balance. Those
+  // four types are only the hand-entered half of a partner's current account.
+  // partner_ledger() also carries, and this screen silently omitted, every
+  // AGENCY movement:
+  //
+  //   client cash received into the partner's custody   CUSTODY:CLIENT_CASH
+  //   expenses and advances they paid out of it         CUSTODY:EXPENSE / ADVANCE
+  //   custody handed to or taken from them              CUSTODY:TRANSFER_IN / OUT
+  //   cash cheques they cashed                          CUSTODY:CHEQUE
+  //   payroll drawn through their custody               CUSTODY:BANK
+  //   movements on a bank account they own              BANK:*
+  //   anything posted straight to their capital account GL:*
+  //
+  // So the Statement tab and the Summary tab answered the same question with
+  // different numbers — the §9.16 shape this project exists to remove. A partner
+  // who received 75,000 of client cash and spent 80,000 is owed 5,000, and this
+  // screen showed zero.
+  //
+  // AGENCY AND PROFIT ARE STILL SEPARATE, which is the accounting point: the
+  // ledger keeps `cash_paid` and `remuneration` as distinct columns and nets
+  // them into one running balance. The table below shows the net AND both
+  // components, so nobody has to subtract anything by hand.
   const loadSummary = async () => {
     if (!companyId || partners.length === 0) return;
     setSummaryLoading(true);
     try {
-      const { data } = await supabase.from("partner_account_entries").select("partner_id, type, amount").in("partner_id", partners.map((p) => p.id));
       const map = new Map<string, { allocated: number; drawn: number; contributed: number; balance: number }>();
-      for (const p of partners) {
-        const entries = (data ?? []).filter((e) => e.partner_id === p.id) as unknown as AccountEntry[];
-        const res = computeBalance(p.opening_balance, entries);
-        map.set(p.id, res);
-      }
+      const results = await Promise.all(
+        partners.map(async (p) => {
+          const { data, error: lerr } = await supabase.rpc("partner_ledger", {
+            p_partner_id: p.id, p_start: null, p_end: null,
+          });
+          if (lerr) throw lerr;
+          const rows = (data ?? []) as { cash_paid: number; remuneration: number; balance: number }[];
+          const allocated = rows.reduce((s, r) => s + Number(r.remuneration ?? 0), 0);
+          // cash_paid is signed: positive = money left the company through the
+          // partner, negative = the partner is holding company money.
+          const cash = rows.reduce((s, r) => s + Number(r.cash_paid ?? 0), 0);
+          return {
+            id: p.id,
+            res: {
+              allocated,
+              drawn: cash > 0 ? cash : 0,
+              contributed: cash < 0 ? -cash : 0,
+              // The ledger's own running balance, last row. Not recomputed here:
+              // recomputing it is exactly what produced the disagreement.
+              balance: rows.length > 0 ? Number(rows[rows.length - 1].balance ?? 0) : p.opening_balance,
+            },
+          };
+        }),
+      );
+      for (const r of results) map.set(r.id, r.res);
       setSummaryData(map);
     } catch (e: any) { setError(e.message); }
     finally { setSummaryLoading(false); }
@@ -208,7 +260,11 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
     setEditPartner(p);
     setPartnerForm({
       name: p.name, scope: p.scope, branch_id: p.branch_id ?? "",
-      allocation_method: p.allocation_method, default_share_pct: p.default_share_pct != null ? String(p.default_share_pct) : "",
+      // Show the ledger's column in the locked field, not default_share_pct —
+      // on a partner created before the two were written together they can
+      // already disagree, and the true number is the one being allocated on.
+      allocation_method: p.allocation_method,
+      default_share_pct: p.profit_share_percent != null ? String(p.profit_share_percent) : "",
       opening_balance: String(p.opening_balance), opening_balance_date: p.opening_balance_date ?? today(),
       is_active: p.is_active,
     });
@@ -234,6 +290,13 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
       };
       if (editPartner) {
         const updatePayload: any = { ...payload };
+        // The share is locked on edit, so it must not travel in the update at
+        // all. Sending it would write default_share_pct — the column no
+        // allocation function reads — and leave profit_share_percent, the one
+        // they all read, untouched. Deleting the key is what makes the wrong
+        // write impossible rather than merely unlikely; a disabled input alone
+        // would still post whatever state happened to hold.
+        delete updatePayload.default_share_pct;
         if (editPartner.opening_balance_locked) {
           delete updatePayload.opening_balance;
           delete updatePayload.opening_balance_date;
@@ -241,6 +304,8 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
         const { error: e } = await supabase.from("partners").update(updatePayload).eq("id", editPartner.id);
         if (e) throw e;
       } else {
+        // Both columns, one value, one statement — the create path is the only
+        // place either is written, so they cannot diverge afterwards.
         const { error: e } = await supabase.from("partners").insert({ ...payload, profit_share_percent: parseFloat(partnerForm.default_share_pct) || 0 });
         if (e) throw e;
       }
@@ -349,7 +414,7 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
       OPENING: { label: "Opening", cls: "bg-slate-100 text-slate-700" },
       PROFIT_ALLOCATION: { label: "Allocation", cls: "bg-success-50 text-success-700" },
       DRAWING: { label: "Drawing", cls: "bg-danger-50 text-danger-700" },
-      CONTRIBUTION: { label: "Contribution", cls: "bg-brand-50 text-brand-700" },
+      CONTRIBUTION: { label: "Contribution / repayment", cls: "bg-brand-50 text-brand-700" },
     };
     const c = cfg[type];
     return <span className={`inline-flex px-2 py-0.5 rounded text-xs ${c.cls}`}>{c.label}</span>;
@@ -395,7 +460,7 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
 
         {/* Tab bar */}
         <div className="flex gap-1 bg-slate-100 rounded-md p-1 mb-6 w-fit">
-          {([["partners", "Partners"], ["statement", "Partner Statement"], ["summary", "Summary"]] as const).map(([key, label]) => (
+          {([["partners", "Partners"], ["statement", "Capital Entries"], ["summary", "Summary"]] as const).map(([key, label]) => (
             <button key={key} type="button" onClick={() => setTab(key)}
               className={`px-3 py-1.5 text-sm rounded transition-colors ${tab === key ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}>
               {label}
@@ -421,7 +486,7 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Name</th>
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Scope</th>
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Method</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Default %</th>
+                    <th className="text-left px-6 py-3 text-sm text-slate-500">Profit Share %</th>
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Status</th>
                     <th className="text-right px-6 py-3 text-sm text-slate-500">Actions</th>
                   </tr>
@@ -442,7 +507,11 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
                         </span>
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-600">{p.allocation_method === "MANUAL" ? "Manual" : "Fixed %"}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{p.default_share_pct != null ? `${p.default_share_pct}%` : "—"}</td>
+                      {/* profit_share_percent, not default_share_pct. This column
+                          used to show the one the ledger does not read, so a share
+                          edited here appeared to change while every allocation kept
+                          using the old number. */}
+                      <td className="px-6 py-4 text-sm text-slate-600">{p.profit_share_percent != null ? `${p.profit_share_percent}%` : "—"}</td>
                       <td className="px-6 py-4">
                         <span className={`inline-flex px-2 py-0.5 rounded text-xs ${p.is_active ? "bg-success-50 text-success-700" : "bg-slate-100 text-slate-500"}`}>
                           {p.is_active ? "Active" : "Inactive"}
@@ -450,7 +519,7 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center justify-end gap-2">
-                          <button title="View Statement" onClick={() => { setStmtPartner(p.id); setTab("statement"); }}
+                          <button title="Capital entries (hand-entered only — the full statement with agency is in the partner detail view)" onClick={() => { setStmtPartner(p.id); setTab("statement"); }}
                             className="p-1.5 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors">
                             <Landmark className="w-4 h-4" strokeWidth={1.5} />
                           </button>
@@ -458,7 +527,7 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
                             className="p-1.5 rounded hover:bg-danger-50 text-slate-500 hover:text-danger-600 transition-colors">
                             <ArrowUpRight className="w-4 h-4" strokeWidth={1.5} />
                           </button>
-                          <button title="Record Contribution" onClick={() => { setContribPartnerId(p.id); setContribForm({ date: today(), amount: "", payment_method: "CASH", description: "" }); setIsContribOpen(true); }}
+                          <button title="Record a contribution or repayment — a partner settling a negative balance posts Dr Bank/Cash, Cr their current account, which is exactly a contribution" onClick={() => { setContribPartnerId(p.id); setContribForm({ date: today(), amount: "", payment_method: "CASH", description: "" }); setIsContribOpen(true); }}
                             className="p-1.5 rounded hover:bg-success-50 text-slate-500 hover:text-success-600 transition-colors">
                             <ArrowDownLeft className="w-4 h-4" strokeWidth={1.5} />
                           </button>
@@ -479,6 +548,21 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
         {/* ── STATEMENT TAB ── */}
         {tab === "statement" && (
           <div className="space-y-4">
+            {/* Renamed from "Partner Statement" deliberately. This tab reads
+                partner_account_entries directly, which is ONLY the hand-entered
+                half of a current account — openings, profit allocations,
+                drawings and contributions. It carries none of the agency
+                movements (client cash held, expenses and advances paid out of
+                custody, custody transfers, partner-owned bank activity), so
+                calling it "the statement" invited it to be read as the whole
+                position. partner_ledger() is the whole position, and the
+                partner detail view shows it. The narrow list stays because the
+                journal drill-down targets these rows by id. */}
+            <div className="bg-white rounded-lg border border-brand-200 bg-brand-50 p-3 text-xs text-brand-800">
+              Hand-entered capital movements only. Cash the partner holds or has spent on the
+              company&rsquo;s behalf is <strong>not</strong> shown here — open the partner for the full
+              statement, which nets agency against profit share.
+            </div>
             {/* Controls */}
             <div className="bg-white rounded-lg border border-slate-200 p-4 flex flex-wrap gap-4 items-end">
               <div className="flex-1 min-w-[180px]">
@@ -635,10 +719,10 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Partner</th>
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Scope</th>
                     <th className="text-right px-6 py-3 text-sm text-slate-500">Opening</th>
-                    <th className="text-right px-6 py-3 text-sm text-slate-500">Allocated</th>
-                    <th className="text-right px-6 py-3 text-sm text-slate-500">Contributed</th>
-                    <th className="text-right px-6 py-3 text-sm text-slate-500">Drawn</th>
-                    <th className="text-right px-6 py-3 text-sm text-slate-500">Net Balance</th>
+                    <th className="text-right px-6 py-3 text-sm text-slate-500">Profit share</th>
+                    <th className="text-right px-6 py-3 text-sm text-slate-500">Holding for co.</th>
+                    <th className="text-right px-6 py-3 text-sm text-slate-500">Paid out</th>
+                    <th className="text-right px-6 py-3 text-sm text-slate-500">Net owed</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -732,10 +816,32 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
           )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Default Share %</label>
+              {/* Set at creation, locked afterwards — the same rule the Partnership
+                  Report's dialog already enforces, and for the same reason: the
+                  headline share is NOT effective-dated (0212 dated the per-client
+                  overrides, not this), so editing it silently restates every month
+                  that has not been posted yet.
+
+                  It was also writing the wrong column. This form wrote
+                  default_share_pct and never profit_share_percent, so the list
+                  showed the new number while run_profit_allocation went on
+                  allocating at the old one. Locking the field on edit is what makes
+                  that impossible rather than merely unlikely; the create path below
+                  writes both columns together so they cannot come apart. */}
+              <label className="block text-sm text-slate-700 mb-1">
+                Profit Share % {editPartner && <span className="text-xs text-slate-400 ml-1">(locked)</span>}
+              </label>
               <input type="number" min="0" max="100" step="0.01" value={partnerForm.default_share_pct}
+                disabled={!!editPartner}
                 onChange={(e) => setPartnerForm({ ...partnerForm, default_share_pct: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 disabled:bg-slate-50 disabled:text-slate-400" />
+              {editPartner && (
+                <p className="text-[11px] text-slate-500 mt-1">
+                  The share the ledger allocates on. Changing it restates every unposted
+                  month, so it is set once when the partner is added; per-client overrides
+                  on the Partnership Report are the effective-dated way to vary it.
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">

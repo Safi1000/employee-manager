@@ -75,6 +75,17 @@ export default function ChartOfAccounts() {
   const [submitting, setSubmitting] = useState(false);
   const [coaSearch, setCoaSearch] = useState("");
 
+  // What 0342 will refuse, computed once for the edit dialog. See the note in
+  // the dialog for why this keys on system_key rather than system_account.
+  const isSystemControl = !!editingRow?.system_key;
+  // A proxy for "carries posted journal lines": the trial balance only lists
+  // accounts that have them. The DATABASE is authoritative — the trigger scans
+  // journal_lines directly — so a rare account whose lines net to zero may not
+  // be flagged here and will still be refused on save. That is the safe
+  // direction to be wrong in.
+  const hasPostedLines = !!editingRow && balances.has(editingRow.id);
+  const lockStructure = isSystemControl || hasPostedLines;
+
   const loadAccounts = async () => {
     setLoading(true);
     const { data, error: cErr } = await supabase
@@ -288,30 +299,6 @@ export default function ChartOfAccounts() {
     await loadAccounts();
   };
 
-  // 0341. WHAT THE DATABASE REFUSES, THE DIALOG DISABLES.
-  //
-  // trg_coa_edit_guard enforces all of this in the database, because
-  // chart_of_accounts has more than one writer and a rule that lives in a
-  // dialog is a recommendation. These flags exist so the form says the same
-  // thing the database will say — a disabled field with a reason beats a
-  // warning next to an editable one, which is what let 1000 Cash in Hand be
-  // nested under 1010 Bank Accounts.
-  //
-  // "Carries posted entries" is read from the balances the ledger returned for
-  // this account. The database is the authority: if it disagrees, the refusal
-  // surfaces in this modal rather than behind it.
-  const lockedByKey = !!editingRow?.system_key;
-  const hasPostings = !!editingRow && balances.has(editingRow.id);
-  const codeLocked = lockedByKey;
-  const sideLocked = lockedByKey;
-  const typeLocked = lockedByKey || hasPostings;
-  const parentLocked = lockedByKey || hasPostings;
-  const lockNote = lockedByKey
-    ? "System control account — the name can be changed, nothing structural."
-    : hasPostings
-      ? "This account already carries posted entries — its type and parent are fixed."
-      : null;
-
   return (
     <>
       <Header
@@ -335,6 +322,8 @@ export default function ChartOfAccounts() {
                   "Sub-account of",
                   "Debit (PKR)",
                   "Credit (PKR)",
+                  "Net (PKR)",
+                  "Side",
                   "Active",
                 ],
                 rows: accounts.map((a) => {
@@ -348,6 +337,8 @@ export default function ChartOfAccounts() {
                     subAccounts.get(a.id)?.name ?? "",
                     b.debit,
                     b.credit,
+                    Math.abs(b.debit - b.credit),
+                    b.debit - b.credit === 0 ? "" : b.debit - b.credit > 0 ? "Dr" : "Cr",
                     a.active ? "Yes" : "No",
                   ];
                 }),
@@ -436,9 +427,30 @@ export default function ChartOfAccounts() {
         size="md"
       >
         <form className="space-y-3" onSubmit={handleSubmit}>
-          {lockNote && (
+          {/* These flags MIRROR what 0342 enforces in the database; they do not
+              implement it. `chart_of_accounts` has more than one writer, so the
+              trigger is the control and this is the explanation — the fields are
+              disabled so the refusal is visible before the save, not after it.
+
+              Keyed on system_key, NOT system_account. They are different sets:
+              the 53 accounts with a system_key are the real control accounts
+              (1000, 1010, 1100, 3200 …); the 7 with system_account but no key
+              are the per-bank and per-custodian leaves (1010.01, 1000.02 …),
+              which may legitimately be restructured. Using system_account here
+              would disable fields the database allows. */}
+          {isSystemControl && (
             <div className="text-xs text-warning-700 bg-warning-50 border border-warning-200 rounded p-2">
-              {lockNote}
+              <span className="font-medium">System control account — name only.</span> Its code, type,
+              normal side and parent are fixed and the database refuses changes to them. Other objects
+              address this account by its code, and nesting it under another control account would put
+              its whole subtree into that account&rsquo;s balance.
+            </div>
+          )}
+          {!isSystemControl && hasPostedLines && (
+            <div className="text-xs text-warning-700 bg-warning-50 border border-warning-200 rounded p-2">
+              <span className="font-medium">This account already carries posted journal lines.</span> Its
+              parent and type are fixed — moving it would move a balance with no entry behind the move.
+              Post a correcting entry instead.
             </div>
           )}
           {editingRow?.is_control && (
@@ -453,13 +465,14 @@ export default function ChartOfAccounts() {
               <input
                 required
                 type="text"
+                disabled={isSystemControl}
+                title={isSystemControl ? "System control account — other objects address it by this code." : undefined}
                 value={form.account_code}
                 onChange={(e) => setForm({ ...form, account_code: e.target.value })}
-                disabled={codeLocked}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm font-mono disabled:bg-slate-50 disabled:text-slate-500"
+                className={`w-full px-3 py-2 border border-slate-200 rounded-md text-sm font-mono ${isSystemControl ? "bg-slate-50 text-slate-500" : ""}`}
                 placeholder="e.g., 6400"
               />
-              {codeLocked && (
+              {isSystemControl && (
                 <p className="text-xs text-slate-500 mt-1">
                   Fixed — other objects address this account by its code.
                 </p>
@@ -469,6 +482,14 @@ export default function ChartOfAccounts() {
               <label className="block text-sm text-slate-700 mb-1">Account Type *</label>
               <ThemedSelect
                 value={form.account_type}
+                disabled={lockStructure}
+                title={
+                  isSystemControl
+                    ? "System control account — its type is fixed."
+                    : hasPostedLines
+                      ? "This account carries posted journal lines — changing its type would move a balance to the other side of the statement."
+                      : undefined
+                }
                 onChange={(e) => {
                   const t = e.target.value as AccountType;
                   setForm({
@@ -477,8 +498,7 @@ export default function ChartOfAccounts() {
                     normal_side: t === "asset" || t === "expense" ? "debit" : "credit",
                   });
                 }}
-                disabled={typeLocked}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm disabled:bg-slate-50 disabled:text-slate-500"
+                className={`w-full px-3 py-2 border border-slate-200 rounded-md text-sm ${lockStructure ? "bg-slate-50 text-slate-500" : ""}`}
               >
                 {ACCOUNT_TYPE_ORDER.map((t) => (
                   <option key={t} value={t}>
@@ -486,9 +506,9 @@ export default function ChartOfAccounts() {
                   </option>
                 ))}
               </ThemedSelect>
-              {typeLocked && (
+              {lockStructure && (
                 <p className="text-xs text-slate-500 mt-1">
-                  {lockedByKey
+                  {isSystemControl
                     ? "Fixed — changing it would move every balance under this account to a different statement."
                     : "Fixed — this account carries posted entries, and retyping it moves a balance to the other side."}
                 </p>
@@ -508,9 +528,16 @@ export default function ChartOfAccounts() {
               <label className="block text-sm text-slate-700 mb-1">Parent Account</label>
               <ThemedSelect
                 value={form.parent_id}
+                disabled={lockStructure}
+                title={
+                  isSystemControl
+                    ? "System control account — it belongs at the top level."
+                    : hasPostedLines
+                      ? "This account carries posted journal lines — moving it would move a balance with no entry behind the move."
+                      : undefined
+                }
                 onChange={(e) => setForm({ ...form, parent_id: e.target.value })}
-                disabled={parentLocked}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm disabled:bg-slate-50 disabled:text-slate-500"
+                className={`w-full px-3 py-2 border border-slate-200 rounded-md text-sm ${lockStructure ? "bg-slate-50 text-slate-500" : ""}`}
               >
                 <option value="">— None (top level) —</option>
                 {accounts
@@ -521,9 +548,9 @@ export default function ChartOfAccounts() {
                     </option>
                   ))}
               </ThemedSelect>
-              {parentLocked && (
+              {lockStructure && (
                 <p className="text-xs text-slate-500 mt-1">
-                  {lockedByKey
+                  {isSystemControl
                     ? "Fixed — a system control account belongs at the top level. Nesting it puts its whole subtree into another account's balance."
                     : "Fixed — this account carries posted entries, and moving it would move a balance with no entry behind the move."}
                 </p>
@@ -536,7 +563,7 @@ export default function ChartOfAccounts() {
                 onChange={(e) =>
                   setForm({ ...form, normal_side: e.target.value as AccountNormalSide })
                 }
-                disabled={sideLocked}
+                disabled={isSystemControl}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm disabled:bg-slate-50 disabled:text-slate-500"
               >
                 <option value="debit">Debit</option>
@@ -639,6 +666,15 @@ function CoaTypeSection({
                 <th className="text-right px-4 py-2 text-[11px] text-slate-400 uppercase w-36">
                   Credit
                 </th>
+                {/* The Debit and Credit columns are GROSS totals, and without
+                    this one the screen states no account's balance anywhere.
+                    Accounts Receivable read 4,102,659 Dr against 4,140,659 Cr
+                    on 2026-09-03 and was reported as a 4.1m receivable; it was
+                    a 38,000 credit. A reader who cannot find a balance will use
+                    the debit column as one. */}
+                <th className="text-right px-4 py-2 text-[11px] text-slate-400 uppercase w-40">
+                  Net
+                </th>
                 <th className="w-20" />
               </tr>
             </thead>
@@ -685,6 +721,8 @@ function CoaRows({
 }) {
   const kids = childrenOf.get(account.id) ?? [];
   const bal = balances.get(account.id) ?? { debit: 0, credit: 0 };
+  const net = bal.debit - bal.credit;
+  const contra = net !== 0 && (net > 0 ? account.normal_side === "credit" : account.normal_side === "debit");
   const sub = subAccounts.get(account.id);
 
   return (
@@ -718,6 +756,22 @@ function CoaRows({
         </td>
         <td className="px-4 py-2 text-right text-sm text-slate-800">
           {bal.credit !== 0 ? fmtPKR(bal.credit) : ""}
+        </td>
+        {/* Net, with the side named. An unsigned figure in a column beside two
+            gross ones is the same ambiguity again, so the balance always says
+            Dr or Cr rather than relying on the reader knowing the account's
+            normal side. A balance sitting on the side OPPOSITE its normal one
+            is shown in amber: legitimate and temporary (AR ran credit while a
+            receipt waited for its opening batch), but worth seeing. */}
+        <td className="px-4 py-2 text-right text-sm tabular-nums">
+          {net === 0 ? (
+            <span className="text-slate-300">—</span>
+          ) : (
+            <span className={contra ? "text-warning-700" : "text-slate-900 font-medium"}>
+              {fmtPKR(Math.abs(net))}
+              <span className="ml-1 text-[11px] text-slate-400">{net > 0 ? "Dr" : "Cr"}</span>
+            </span>
+          )}
         </td>
         <td className="px-4 py-2 text-right">
           {isSuper && (

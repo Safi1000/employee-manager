@@ -35,6 +35,7 @@ import {
   Lock,
   History,
   Users2,
+  Play,
   PieChart,
   Briefcase,
   MapPin,
@@ -102,6 +103,7 @@ export default function SuperAdminLayout() {
   const PERIOD_CLOSE: LinkDef = { to: "/super-admin/period-close", label: "Period Close", icon: Lock, perms: ["period_close.manage", "reports.view"] };
   const AUDIT_LOG: LinkDef = { to: "/super-admin/audit-log", label: "Audit Log", icon: History, roles: ["super_super_admin", "super_admin"] };
   const PARTNERS: LinkDef = { to: "/super-admin/partners", label: "Partner Accounts", icon: Users2, perms: ["banks.view", "receivables.view", "payables.view", "accounting.edit"] };
+  const PARTNERSHIP_RUN: LinkDef = { to: "/super-admin/partnership-run", label: "Partnership Run", icon: Play, perms: ["banks.view", "receivables.view", "payables.view", "accounting.edit"] };
   const PROFIT_DIST: LinkDef = { to: "/super-admin/profit-distribution", label: "Profit Distribution", icon: PieChart, perms: ["banks.view", "receivables.view", "payables.view", "accounting.edit"] };
   const PROJECT_FIN: LinkDef = { to: "/super-admin/project-financing", label: "Project Financing", icon: Briefcase, perms: ["banks.view", "receivables.view", "payables.view", "accounting.edit"] };
   const COMPLIANCE: LinkDef = { to: "/super-admin/compliance", label: "Compliance Calendar", icon: Bell, perms: ["compliance.view", "compliance.edit"] };
@@ -230,6 +232,10 @@ export default function SuperAdminLayout() {
     // report about partners, not about the P&L, and burying it behind another
     // report's tab strip is what kept it hard to find.
     PARTNERSHIP_REPORT,
+    // The run itself, beside the report it is a run of. One door: this is the
+    // only way to draft, review, post or reverse a month, and it is in the nav
+    // rather than behind a route only a typed URL reaches.
+    PARTNERSHIP_RUN,
     // Unhidden and rehomed. It used to sit in the hidden Profit-Share group,
     // which is why it disappeared with it; it is a financial report about
     // regions, so Finance is where it belongs rather than beside partner

@@ -25,6 +25,7 @@ import {
   fetchAllRows,
   EXPENSE_RECEIPTS_BUCKET,
   isHardcodedCategory,
+  PREPAID_THRESHOLD,
   type Expense,
   type ExpenseCategory,
   type ExpensePaymentMode,
@@ -198,6 +199,15 @@ const emptyAdvanceForm: AdvanceForm = {
   paid_by_employee_id: "",
 };
 
+/** 0347. Inclusive month count between two "YYYY-MM" strings. The same count
+ *  the release run derives in SQL — both ends inclusive, so Mar–Mar is 1. */
+const prepaidMonths = (start: string, end: string): number => {
+  if (!start || !end) return 0;
+  const [sy, sm] = start.split("-").map(Number);
+  const [ey, em] = end.split("-").map(Number);
+  return (ey - sy) * 12 + (em - sm) + 1;
+};
+
 type ExpenseForm = {
   category_id: string;
   pl_category: "cost_of_services" | "operating_expense";
@@ -213,6 +223,13 @@ type ExpenseForm = {
   due_date: string;
   notes: string;
   expense_by: string;
+  /**
+   * 0347. Prepaid coverage, held as "YYYY-MM" because the decision is MONTHS,
+   * not a count — a licence running 14 March to 13 March is 13 touched months
+   * and "12" would be wrong at both ends. Empty = not amortised.
+   */
+  coverage_start: string;
+  coverage_end: string;
   receipts?: File[];
 };
 
@@ -231,6 +248,8 @@ const emptyForm: ExpenseForm = {
   due_date: "",
   notes: "",
   expense_by: "",
+  coverage_start: "",
+  coverage_end: "",
 };
 
 export default function Expenses() {
@@ -238,6 +257,11 @@ export default function Expenses() {
   // Add / edit expenses & advances — gated on expenses.edit (super_admin + SSA
   // implicit). Backend RLS (0310) enforces it; this hides the controls.
   const canEditExpenses = hasPermission(profile, "expenses.edit");
+  // 0346. Approving is a REVIEW and it LOCKS the expense: the database refuses
+  // any later edit or delete. The same permission lifts the lock again, because
+  // a lock nobody can open is not a control. A permission, never a role
+  // literal — asking the role instead was the cause of three defects this week.
+  const canApproveExpenses = hasPermission(profile, "expenses.approve");
   // Every treasury write here used to omit company_id, which produced
   //   'null value in column "company_id" of relation "treasury"'
   // when setting cash in hand.
@@ -933,9 +957,9 @@ export default function Expenses() {
         if (upErr) throw upErr;
       } else {
         const amount = Number(row.amount);
-        if (row.payment_mode === "Cash" && amount > cashBalance) {
-          throw new Error("Cash balance is insufficient to approve this.");
-        }
+        // Company-wide treasury block removed with the one on the add form —
+        // approving a fixed expense creates an ordinary expense, and a
+        // custodian may be overdrawn by design.
         if (row.payment_mode === "Cash" && !decisionCustodianId) {
           throw new Error("Select the office-staff member who paid the cash.");
         }
@@ -1167,6 +1191,14 @@ export default function Expenses() {
     return `${cat} ${who}${desc ? `: ${desc}` : ""}`;
   };
 
+  // 0347. Amortisation is offered only above the threshold, so an amount edited
+  // back down below it must not leave a stale coverage window behind — the
+  // expenses_coverage_valid constraint would refuse the insert, correctly but
+  // opaquely. Deriving it from both facts here means the form cannot send one
+  // without the other.
+  const isAmortising = (f: ExpenseForm) =>
+    !!f.coverage_start && !!f.coverage_end && Number(f.amount) >= PREPAID_THRESHOLD;
+
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
@@ -1196,10 +1228,23 @@ export default function Expenses() {
       setFormError("Select a vendor for Payable expense. Add one via Manage Vendors.");
       return;
     }
-    if (form.payment_mode === "Cash" && amount > cashBalance) {
-      setFormError("Cash balance is insufficient.");
-      return;
-    }
+    // 0349-era fix: THE COMPANY-WIDE CASH BLOCK IS GONE, DELIBERATELY.
+    //
+    // What stood here refused the expense when `amount > cashBalance`, and
+    // cashBalance is `treasury.cash_balance` — one cached company-wide scalar.
+    // GGS deliberately allows a custodian to go overdrawn: they spend on the
+    // company's behalf and are reimbursed later. A custodian who spends more
+    // than they hold has created a PAYABLE, not negative cash, and the ledger
+    // already models that — no_negative_custodian_balance reads 2 today
+    // (Gul Rehman −1,640, M. Zamir Khan −10,093) and is an accepted red that
+    // surfaces the position for someone to settle.
+    //
+    // The guard also asked the wrong question. It compared one expense against
+    // the COMPANY total, while the per-custodian test — the one that matches
+    // how this actually works — already sits immediately below as a
+    // NON-BLOCKING confirm. Repointing the blocker at a better source would
+    // have entangled this with the treasury de-duplication; deleting it does
+    // not, because the correct test was already written.
     if (form.payment_mode === "Cash" && !expenseCustodianId) {
       setFormError("Select the office-staff member who paid the cash.");
       return;
@@ -1268,6 +1313,11 @@ export default function Expenses() {
           payable_status: form.payment_mode === "Payable" ? "Pending" : null,
           notes: form.notes.trim() || null,
           expense_by: form.expense_by || null,
+          // 0347. Both or neither, and only above the threshold — the
+          // expenses_coverage_valid constraint enforces the same rule, because
+          // this form is not the only writer.
+          coverage_start: isAmortising(form) ? `${form.coverage_start}-01` : null,
+          coverage_end: isAmortising(form) ? `${form.coverage_end}-01` : null,
         })
         .select()
         .single();
@@ -1342,6 +1392,33 @@ export default function Expenses() {
     return loc;
   };
 
+  // 0346. Approve stamps who and when; unapprove clears the lock and is itself
+  // recorded (unapproved_at / unapproved_by are written by the trigger, so the
+  // trail survives even if this screen is not the caller). The trigger refuses
+  // an unapproval that arrives bundled with an edit, which is why this sends
+  // the approval fields ALONE.
+  const toggleApproval = async (expense: ExpenseRow) => {
+    const approving = !expense.approved_at;
+    if (approving) {
+      if (!window.confirm(
+        `Approve this expense of PKR ${Number(expense.amount).toLocaleString()}?\n\n` +
+        `It locks: no further edits, no deletion. A correction after this is a reversal. ` +
+        `You can unapprove it again if you need to.`,
+      )) return;
+    }
+    setError(null);
+    const { error: apErr } = await supabase
+      .from("expenses")
+      .update(
+        approving
+          ? { approved_at: new Date().toISOString(), approved_by: profile?.id ?? null }
+          : { approved_at: null },
+      )
+      .eq("id", expense.id);
+    if (apErr) { setError(apErr.message); return; }
+    await loadAll();
+  };
+
   const openEdit = (expense: ExpenseRow) => {
     setSelected(expense);
     // 0268: seed the custodian picker from the row, so an edit that keeps Cash
@@ -1365,6 +1442,9 @@ export default function Expenses() {
       due_date: expense.due_date ?? "",
       notes: expense.notes ?? "",
       expense_by: expense.expense_by ?? "",
+      // Stored as first-of-month dates; the <input type="month"> wants YYYY-MM.
+      coverage_start: expense.coverage_start?.slice(0, 7) ?? "",
+      coverage_end: expense.coverage_end?.slice(0, 7) ?? "",
     });
     setReplaceReceipt(false);
     setIsEditOpen(true);
@@ -1455,11 +1535,9 @@ export default function Expenses() {
     try {
       await reverseExistingPayment(selected);
 
-      if (editForm.payment_mode === "Cash" && amount > cashBalance + (selected.payment_mode === "Cash" ? Number(selected.amount) : 0)) {
-        setFormError("Cash balance is insufficient after reversal.");
-        setSubmitting(false);
-        return;
-      }
+      // The "insufficient after reversal" block is gone for the same reason as
+      // the one on the add form: it measured a company-wide cached scalar, and
+      // an overdrawn custodian is a payable the ledger already holds.
       if (editForm.payment_mode === "Bank") {
         const bank = banks.find((b) => b.id === editForm.bank_account_id);
         const reversedBack = selected.payment_mode === "Bank" && selected.bank_account_id === editForm.bank_account_id
@@ -1555,6 +1633,11 @@ export default function Expenses() {
           cheque_id: editForm.payment_mode === "Cheque" ? editForm.cheque_id : null,
           due_date: editForm.payment_mode === "Payable" ? editForm.due_date : null,
           payable_status: payableStatus,
+          // 0347. Same derivation as the insert. Dropping below the threshold
+          // on edit clears the window rather than leaving one the constraint
+          // would refuse.
+          coverage_start: isAmortising(editForm) ? `${editForm.coverage_start}-01` : null,
+          coverage_end: isAmortising(editForm) ? `${editForm.coverage_end}-01` : null,
           paid_via: editForm.payment_mode === "Payable" ? selected.paid_via : null,
           paid_bank_account_id: editForm.payment_mode === "Payable" ? selected.paid_bank_account_id : null,
           paid_at: editForm.payment_mode === "Payable" ? selected.paid_at : null,
@@ -1666,10 +1749,12 @@ export default function Expenses() {
         return `Advance exceeds the cheque's remaining capacity (PKR ${remaining.toLocaleString()}).`;
       }
     }
-    if (f.payment_mode === "Cash") {
-      const budget = cashBalance + (existingAmount ?? 0);
-      if (amt > budget) return "Cash balance is insufficient.";
-    }
+    // An ADVANCE paid in cash is the same act as an expense paid in cash: the
+    // custodian hands over money on the company's behalf. Blocked on the same
+    // company-wide scalar, removed for the same reason. The BANK test below
+    // stays — a bank account genuinely cannot go below its own balance, that
+    // figure is per-account rather than a shared cached total, and nobody has
+    // ruled that an overdrawn bank account is allowed.
     if (f.payment_mode === "Bank") {
       const bank = banks.find((b) => b.id === f.bank_account_id);
       if (bank) {
@@ -2380,14 +2465,24 @@ export default function Expenses() {
             actions={(exp) => (
               <>
                 <Button variant="ghost" size="sm" onClick={() => openView(exp)}>View</Button>
-                <Button variant="ghost" size="sm" onClick={() => openEdit(exp)}>Edit</Button>
-                <button
-                  type="button"
-                  onClick={() => handleDelete(exp)}
-                  className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-danger-700"
-                >
-                  <Trash2 className="w-4 h-4" strokeWidth={1.5} /> Delete
-                </button>
+                {/* Same rule as the table: an approved expense offers neither. */}
+                {!exp.approved_at && (
+                  <>
+                    <Button variant="ghost" size="sm" onClick={() => openEdit(exp)}>Edit</Button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(exp)}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-danger-700"
+                    >
+                      <Trash2 className="w-4 h-4" strokeWidth={1.5} /> Delete
+                    </button>
+                  </>
+                )}
+                {canApproveExpenses && (
+                  <Button variant="ghost" size="sm" onClick={() => toggleApproval(exp)}>
+                    {exp.approved_at ? "Unapprove" : "Approve"}
+                  </Button>
+                )}
               </>
             )}
           />
@@ -2455,6 +2550,18 @@ export default function Expenses() {
                           {exp.payment_mode}
                           {exp.payment_mode === "Payable" && exp.payable_status ? ` · ${exp.payable_status}` : ""}
                         </span>
+                        {/* Approval is a REVIEW state, separate from payable_status,
+                            which answers payment. Both can show at once. */}
+                        {exp.approved_at && (
+                          <span className="ml-1 inline-flex items-center px-2 py-0.5 rounded text-xs bg-success-50 text-success-700" title={`Approved ${exp.approved_at.slice(0, 10)} — locked against edits`}>
+                            Approved
+                          </span>
+                        )}
+                        {exp.coverage_start && exp.coverage_end && (
+                          <span className="ml-1 inline-flex items-center px-2 py-0.5 rounded text-xs bg-brand-50 text-brand-700" title={`Spread over ${prepaidMonths(exp.coverage_start.slice(0, 7), exp.coverage_end.slice(0, 7))} months`}>
+                            Prepaid
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-700">
                         {exp.expense_by_name ?? <span className="text-slate-400">—</span>}
@@ -2463,17 +2570,39 @@ export default function Expenses() {
                         <Button variant="ghost" size="sm" onClick={() => openView(exp)}>
                           View
                         </Button>
-                        <Button variant="ghost" size="sm" onClick={() => openEdit(exp)}>
-                          Edit
-                        </Button>
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(exp)}
-                          className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-danger-700 hover:bg-danger-50"
-                          title="Delete expense"
-                        >
-                          <Trash2 className="w-4 h-4" strokeWidth={1.5} />
-                        </button>
+                        {/* Edit and Delete disappear once approved rather than
+                            failing on click. The database refuses them either
+                            way (0346); showing a control that cannot work is
+                            how a lock gets mistaken for a bug. */}
+                        {!exp.approved_at && (
+                          <>
+                            <Button variant="ghost" size="sm" onClick={() => openEdit(exp)}>
+                              Edit
+                            </Button>
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(exp)}
+                              className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-danger-700 hover:bg-danger-50"
+                              title="Delete expense"
+                            >
+                              <Trash2 className="w-4 h-4" strokeWidth={1.5} />
+                            </button>
+                          </>
+                        )}
+                        {canApproveExpenses && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => toggleApproval(exp)}
+                            title={
+                              exp.approved_at
+                                ? "Unapprove — reopens the expense for editing. Recorded."
+                                : "Approve — locks the expense against edits and deletion."
+                            }
+                          >
+                            {exp.approved_at ? "Unapprove" : "Approve"}
+                          </Button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -4113,6 +4242,74 @@ export default function Expenses() {
               className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
             />
           </div>
+
+          {/* 0347 — SPREAD OVER THE MONTHS IT COVERS.
+              Offered only above PKR 50,000, because eleven journal entries to
+              move 166 rupees each is more bookkeeping than the accuracy is
+              worth. Months, not a count: a licence running 14 March to 13 March
+              touches 13 months and "12" would be wrong at both ends.
+              The cash still leaves in full today — only the P&L is spread. */}
+          {Number(state.amount) >= PREPAID_THRESHOLD && (
+            <div className="col-span-2 border border-slate-200 rounded-md p-3 bg-slate-50">
+              <label className="flex items-center gap-2 text-sm text-slate-800">
+                <input
+                  type="checkbox"
+                  checked={!!state.coverage_start}
+                  onChange={(e) => {
+                    const m = state.expense_date.slice(0, 7);
+                    setState(
+                      e.target.checked
+                        ? { ...state, coverage_start: m, coverage_end: m }
+                        : { ...state, coverage_start: "", coverage_end: "" },
+                    );
+                  }}
+                />
+                Spread this cost over the months it covers
+              </label>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Insurance paid six months ahead, a licence paid for a year. The full amount leaves
+                the bank now and the cash flow shows that; the P&amp;L takes one month at a time, so
+                one month does not look bad while five look good.
+              </p>
+              {!!state.coverage_start && (
+                <div className="grid grid-cols-2 gap-3 mt-3">
+                  <div>
+                    <label className="block text-xs text-slate-600 mb-1">First month covered *</label>
+                    <input
+                      type="month"
+                      required
+                      value={state.coverage_start}
+                      onChange={(e) => setState({ ...state, coverage_start: e.target.value })}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-600 mb-1">Last month covered *</label>
+                    <input
+                      type="month"
+                      required
+                      min={state.coverage_start}
+                      value={state.coverage_end}
+                      onChange={(e) => setState({ ...state, coverage_end: e.target.value })}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                    />
+                  </div>
+                  {state.coverage_end >= state.coverage_start && (
+                    <p className="col-span-2 text-[11px] text-slate-600">
+                      {(() => {
+                        const n = prepaidMonths(state.coverage_start, state.coverage_end);
+                        const amt = Number(state.amount) || 0;
+                        const per = Math.round((amt / n) * 100) / 100;
+                        const last = Math.round((amt - per * (n - 1)) * 100) / 100;
+                        return `${n} month${n === 1 ? "" : "s"} · PKR ${per.toLocaleString()} each` +
+                          (last !== per ? `, PKR ${last.toLocaleString()} in the final month so the schedule sums to the amount exactly.` : ".");
+                      })()}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           <div className="col-span-2">
             <label className="block text-sm text-slate-700 mb-1">Payment Mode *</label>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
