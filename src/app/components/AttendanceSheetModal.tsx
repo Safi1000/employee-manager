@@ -13,6 +13,17 @@ import { exportAttendance, deriveAttendanceShifts, shiftAbbr, type AttendanceEmp
 
 const todayMonth = () => new Date().toISOString().slice(0, 7);
 
+// Frozen left columns (Ser. / Name / Desg. / Emp #) — fixed widths + cumulative
+// left offsets so they stick in place while the day columns scroll horizontally.
+const LEAD = [
+  { w: 44, left: 0 },    // Ser.
+  { w: 210, left: 44 },  // Name
+  { w: 52, left: 254 },  // Desg.
+  { w: 96, left: 306 },  // Emp #
+] as const;
+const LEAD_TOTAL = LEAD.reduce((s, c) => s + c.w, 0); // 402 — width the totals row's label spans
+const leadCell = (i: number) => ({ left: LEAD[i].left, width: LEAD[i].w, minWidth: LEAD[i].w, maxWidth: LEAD[i].w });
+
 const statusClass = (s: string): string =>
   s === "P" ? "text-success-700 dark:text-success-500"
     : s === "DD" ? "text-info-700 dark:text-info-500"
@@ -446,10 +457,17 @@ export default function AttendanceSheetModal({
             <p className="text-sm text-muted-foreground py-8 text-center">No employees on this {siteId ? "site" : "client"} for {monthLabel}.</p>
           ) : (
             <table className="text-xs border-collapse">
-              <thead className="sticky top-0 z-10">
+              <thead className="sticky top-0 z-20">
                 <tr className="bg-secondary">
-                  {["Ser.", "Name", "Desg.", "Emp #"].map((h) => (
-                    <th key={h} rowSpan={2} className="border border-border px-2 py-1 text-left whitespace-nowrap bg-secondary">{h}</th>
+                  {["Ser.", "Name", "Desg.", "Emp #"].map((h, ci) => (
+                    <th
+                      key={h}
+                      rowSpan={2}
+                      style={leadCell(ci)}
+                      className={`sticky z-30 border border-border px-2 py-1 text-left whitespace-nowrap bg-secondary${ci === LEAD.length - 1 ? " border-r-2" : ""}`}
+                    >
+                      {h}
+                    </th>
                   ))}
                   {days.map((d) => (
                     <th key={d} colSpan={S} className="border border-border px-1 py-1 text-center tabular-nums bg-secondary">{d}</th>
@@ -469,8 +487,8 @@ export default function AttendanceSheetModal({
               <tbody>
                 {rows.map((row) => (
                   <tr key={row.empCode + row.serial} className="hover:bg-accent/40">
-                    <td className="border border-border px-2 py-0.5 tabular-nums">{String(row.serial).padStart(2, "0")}</td>
-                    <td className="border border-border px-2 py-0.5 whitespace-nowrap">
+                    <td style={leadCell(0)} className="sticky z-10 bg-card border border-border px-2 py-0.5 tabular-nums">{String(row.serial).padStart(2, "0")}</td>
+                    <td style={leadCell(1)} className="sticky z-10 bg-card border border-border px-2 py-0.5 whitespace-nowrap overflow-hidden text-ellipsis">
                       {row.name}
                       {row.isReliever && (
                         <span className="ml-1.5 inline-flex items-center rounded-sm border border-brand-200 bg-brand-50 px-1.5 py-0.5 text-[10px] font-medium text-brand-700 dark:border-brand-800 dark:bg-brand-900/20 dark:text-brand-400">
@@ -479,8 +497,8 @@ export default function AttendanceSheetModal({
                       )}
                       {row.separationNote && <span className="text-muted-foreground"> ({row.separationNote})</span>}
                     </td>
-                    <td className="border border-border px-2 py-0.5">{row.designation}</td>
-                    <td className="border border-border px-2 py-0.5 whitespace-nowrap font-mono text-[11px]">{row.empCode}</td>
+                    <td style={leadCell(2)} className="sticky z-10 bg-card border border-border px-2 py-0.5">{row.designation}</td>
+                    <td style={leadCell(3)} className="sticky z-10 bg-card border border-border border-r-2 px-2 py-0.5 whitespace-nowrap font-mono text-[11px]">{row.empCode}</td>
                     {days.map((_, i) => {
                       const st = row.statusByDay[i] ?? "";
                       const ds = String(row.shiftByDay?.[i] ?? row.shift ?? "day").toLowerCase();
@@ -546,19 +564,19 @@ export default function AttendanceSheetModal({
                   </tr>
                 ))}
                 <tr className="bg-secondary/60 font-medium">
-                  <td colSpan={4} className="border border-border px-2 py-0.5">Total Presents</td>
+                  <td colSpan={4} style={{ left: 0, width: LEAD_TOTAL, minWidth: LEAD_TOTAL, maxWidth: LEAD_TOTAL }} className="sticky left-0 z-10 bg-secondary border border-border border-r-2 px-2 py-0.5">Total Presents</td>
                   {totalRowCells(totals.P, [String(totals.sumP), String(totals.sumA), String(totals.sumL), String(totals.sumDD), String(totals.sumPD)])}
                 </tr>
                 <tr className="bg-secondary/40">
-                  <td colSpan={4} className="border border-border px-2 py-0.5">Total Leaves</td>
+                  <td colSpan={4} style={{ left: 0, width: LEAD_TOTAL, minWidth: LEAD_TOTAL, maxWidth: LEAD_TOTAL }} className="sticky left-0 z-10 bg-secondary border border-border border-r-2 px-2 py-0.5">Total Leaves</td>
                   {totalRowCells(totals.L)}
                 </tr>
                 <tr className="bg-secondary/40">
-                  <td colSpan={4} className="border border-border px-2 py-0.5">Total Absents</td>
+                  <td colSpan={4} style={{ left: 0, width: LEAD_TOTAL, minWidth: LEAD_TOTAL, maxWidth: LEAD_TOTAL }} className="sticky left-0 z-10 bg-secondary border border-border border-r-2 px-2 py-0.5">Total Absents</td>
                   {totalRowCells(totals.A)}
                 </tr>
                 <tr className="bg-secondary/60 font-medium">
-                  <td colSpan={4} className="border border-border px-2 py-0.5">Grand Total</td>
+                  <td colSpan={4} style={{ left: 0, width: LEAD_TOTAL, minWidth: LEAD_TOTAL, maxWidth: LEAD_TOTAL }} className="sticky left-0 z-10 bg-secondary border border-border border-r-2 px-2 py-0.5">Grand Total</td>
                   {totalRowCells(totals.grand)}
                 </tr>
               </tbody>
