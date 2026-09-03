@@ -19,6 +19,8 @@
 //      An already-overdue active contract lands on the tightest threshold and is
 //      announced there — it used to be filtered out for being in the past, which
 //      is exactly backwards: past its end and still active is the urgent case.
+//   3. Invoice reminders on every odd day (0358's cadence), naming the clients
+//      whose previous month has no primary invoice. Added by 0362.
 //
 // Source 2 used to read clients.contract_end. That column is unset on every
 // client here, while the real end dates live on the contracts table — so the
@@ -63,7 +65,7 @@ type AlertItem = {
   category: string;
   daysRemaining: number;
   priority?: string | null;
-  source: "important_date" | "contract_end";
+  source: "important_date" | "contract_end" | "invoice_reminder";
 };
 
 /** A threshold notice that must be recorded — but only once the email is away. */
@@ -221,6 +223,43 @@ async function collectAlerts(
       source: "contract_end",
     });
     if (useLog) toLog.push({ alert_key: alertKey, threshold });
+  }
+
+  // ── 3. Invoice reminders — 1st, 3rd, 5th, then every two days ─────────────
+  //
+  // The CADENCE IS NOT DECIDED HERE. invoice_reminder_items() returns nothing
+  // on a day that is not a reminder day, so this arm cannot send on an even day
+  // by forgetting to ask, and the rule cannot drift from the one the screens
+  // read. That is the whole reason 0358 wrote it as a predicate rather than a
+  // schedule.
+  //
+  // No threshold log either, deliberately. The contract-end ladder announces a
+  // thing once and goes quiet; this is the opposite — it is meant to keep
+  // arriving, more often as the month runs on, until the invoices are raised.
+  const { data: reminders, error: remErr } = await db.rpc("invoice_reminder_items", {
+    p_company_id: companyId,
+    p_date: today,
+  });
+  if (remErr) {
+    // Loud in the log, but not fatal: a compliance digest that fails to send
+    // because one arm broke is worse than a digest missing one arm.
+    console.error(`invoice_reminder_items failed company=${companyId}:`, remErr.message);
+  }
+  // The month being reminded about ended on the 1st, so "days overdue" is
+  // simply how far into the current month we are. It climbs with the cadence,
+  // which is what the urgency colours should show.
+  const daysIntoMonth = Number(today.slice(8, 10));
+  for (const r of (reminders ?? []) as Array<
+    { client_name: string; contract_code: string | null; region_name: string | null; reason: string }
+  > ) {
+    const code = r.contract_code ? ` (${r.contract_code})` : "";
+    alerts.push({
+      title: `${r.client_name}${code} — not invoiced: ${r.reason}`,
+      category: "Invoicing",
+      daysRemaining: -daysIntoMonth,
+      priority: "high",
+      source: "invoice_reminder",
+    });
   }
 
   // Most urgent first.

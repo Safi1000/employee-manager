@@ -7,6 +7,7 @@ import Modal from "../../components/Modal";
 import { supabase, fetchAllRows } from "../../lib/supabase";
 import { useFocusTarget, useFocusRow, FOCUS_ROW_CLASS } from "../../lib/focus";
 import { useAuth } from "../../lib/auth";
+import PartnershipRun from "./PartnershipRun";
 
 const fmt = (n: number) => `PKR ${Math.round(n).toLocaleString()}`;
 const today = () => new Date().toISOString().slice(0, 10);
@@ -59,7 +60,7 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
   const { profile } = useAuth();
   const companyId = profile?.view_as_company ?? profile?.company_id ?? null;
 
-  const [tab, setTab] = useState<"partners" | "statement" | "summary">("partners");
+  const [tab, setTab] = useState<"partners" | "statement" | "summary" | "run">("partners");
   const [partners, setPartners] = useState<Partner[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
@@ -439,7 +440,7 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
 
         {/* Tab bar */}
         <div className="flex gap-1 bg-slate-100 rounded-md p-1 mb-6 w-fit">
-          {([["partners", "Partners"], ["statement", "Capital Entries"], ["summary", "Summary"]] as const).map(([key, label]) => (
+          {([["partners", "Partners"], ["statement", "Capital Entries"], ["summary", "Summary"], ["run", "Partnership Run"]] as const).map(([key, label]) => (
             <button key={key} type="button" onClick={() => setTab(key)}
               className={`px-3 py-1.5 text-sm rounded transition-colors ${tab === key ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}>
               {label}
@@ -751,6 +752,11 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
             )}
           </div>
         )}
+        {/* ── PARTNERSHIP RUN TAB ──
+             Its own component, and its own file. The run is a different kind of
+             thing from the rest of this screen: everything else here edits a
+             partner, and this posts a month. */}
+        {tab === "run" && <PartnershipRun />}
       </div>
 
       {/* ── Add/Edit Partner Modal ── */}
