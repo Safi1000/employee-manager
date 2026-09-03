@@ -482,6 +482,16 @@ export type AttendanceEmployeeRow = {
   // Set for a guard who left/was fired: shown after their name and used for the
   // legend, e.g. "Fired 10/03/2026". Days from that date on carry "X".
   separationNote?: string | null;
+  // A row whose EVERY day is reliever cover (a standalone coverage row for a
+  // guard not on this client's roster). The Monthly Board badges it and excludes
+  // it from the assigned-roster strength totals.
+  isReliever?: boolean;
+  // Per-day reliever flag: relieverByDay[day-1] = true when the guard was a
+  // reliever ON THAT DAY (their attendance record carried worked_for_client_id).
+  // Drives the per-day "Reliever" marker and the day-level OPS-Verify exemption,
+  // so a guard who was a reliever for part of a month and regular for the rest is
+  // split correctly. Absent → the whole row is treated as regular.
+  relieverByDay?: boolean[];
 };
 
 // Compact one-letter column badge for a shift code (day → D, night → N,

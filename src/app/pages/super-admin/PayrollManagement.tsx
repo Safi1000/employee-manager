@@ -1872,7 +1872,10 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
 
   return (
     <>
-      {!embedded && totalUnmarkedDays > 0 && !warningDismissed && (
+      {/* Relievers are expected to have unmarked days (they cover single days),
+          so the "silently earn zero" completeness banner does not apply to them —
+          their pay is per-day, not a full-month expectation. */}
+      {!embedded && !relieversOnly && totalUnmarkedDays > 0 && !warningDismissed && (
         <div className="bg-danger-50 border-b border-danger-200 px-4 md:px-8 py-2 text-sm text-danger-700 dark:text-danger-500 flex items-center justify-between gap-3">
           <span>
             <strong>{totalUnmarkedDays.toLocaleString()}</strong> unmarked attendance-day
