@@ -23,7 +23,7 @@
 // session: on unexpected input they exit 0 silently. The one thing they will do
 // loudly is block on a real, verifiable gap.
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -51,8 +51,27 @@ function readLedger() {
 }
 
 // A migration is "written" if a file of that name exists. The name recorded by
-// apply_migration is the bare name; the repo stores it with a .sql suffix.
-const hasFile = (name) => existsSync(join(migrationsDir, `${name}.sql`));
+// apply_migration is the BARE name; the repo stores it NUMBERED —
+// `NNNN[a-z]_name.sql`, per CLAUDE.md. The first version of this looked only for
+// `<name>.sql`, which no correctly-named file in this repo has ever matched: it
+// blocked on every applied migration and could only be satisfied by writing an
+// UNNUMBERED file, which is itself the divergence this script exists to stop.
+// A guard that can only be satisfied by doing the wrong thing is worse than no
+// guard, because it teaches people to route around it.
+//
+// So: the numbered form is the one that counts, and the bare form is still
+// accepted for the handful of unnumbered files that predate the convention.
+const hasFile = (name) => {
+  if (existsSync(join(migrationsDir, `${name}.sql`))) return true;
+  const suffix = `_${name}.sql`;
+  try {
+    return readdirSync(migrationsDir).some(
+      (f) => f.endsWith(suffix) && /^\d{4}[a-z]?_/.test(f),
+    );
+  } catch {
+    return false;
+  }
+};
 
 if (mode === "record") {
   let payload;
@@ -93,7 +112,10 @@ if (mode === "check") {
 
   if (stillOwed.length === 0) process.exit(0);
 
-  const list = stillOwed.map((n) => `  supabase/migrations/${n}.sql`).join("\n");
+  // NNNN in the suggested path, not a bare name. The message is the only
+  // instruction anybody reads at this moment, so it must name the convention
+  // the check actually accepts.
+  const list = stillOwed.map((n) => `  supabase/migrations/NNNN_${n}.sql`).join("\n");
   const reason =
     `${stillOwed.length} migration(s) were applied to the database this session ` +
     `with no file in the repo:\n\n${list}\n\n` +
