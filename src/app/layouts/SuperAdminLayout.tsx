@@ -102,7 +102,6 @@ export default function SuperAdminLayout() {
   const PERIOD_CLOSE: LinkDef = { to: "/super-admin/period-close", label: "Period Close", icon: Lock, perms: ["period_close.manage", "reports.view"] };
   const AUDIT_LOG: LinkDef = { to: "/super-admin/audit-log", label: "Audit Log", icon: History, roles: ["super_super_admin", "super_admin"] };
   const PARTNERS: LinkDef = { to: "/super-admin/partners", label: "Partner Accounts", icon: Users2, perms: ["banks.view", "receivables.view", "payables.view", "accounting.edit"] };
-  const PROFIT_DIST: LinkDef = { to: "/super-admin/profit-distribution", label: "Profit Distribution", icon: PieChart, perms: ["banks.view", "receivables.view", "payables.view", "accounting.edit"] };
   const PROJECT_FIN: LinkDef = { to: "/super-admin/project-financing", label: "Project Financing", icon: Briefcase, perms: ["banks.view", "receivables.view", "payables.view", "accounting.edit"] };
   const COMPLIANCE: LinkDef = { to: "/super-admin/compliance", label: "Compliance Calendar", icon: Bell, perms: ["compliance.view", "compliance.edit"] };
   const DOCUMENTS: LinkDef = { to: "/super-admin/documents", label: "Documents", icon: Folder, perms: ["documents.view", "documents.edit"] };
@@ -132,9 +131,17 @@ export default function SuperAdminLayout() {
   // Super admins only — it grants permissions, so it must not be reachable via
   // the permissions it grants. Matches the route guard in routes.tsx.
   const ACCESS_GOVERNANCE: LinkDef = { to: "/super-admin/access-governance", label: "Access & Governance", icon: Users, roles: ["super_super_admin", "super_admin"] };
-  const PARTICIPATION_RULES: LinkDef = { to: "/super-admin/profit-distribution", label: "Participation Rules", icon: PieChart, perms: ["banks.view", "receivables.view", "payables.view", "accounting.edit"] };
+  // PROFIT_DIST and PARTICIPATION_RULES removed with the route they pointed at.
+  // Two labels, one dead screen: "Profit Distribution" was defined and never
+  // pushed into a group, "Participation Rules" only ever appeared in the hidden
+  // Profit-Share group. A link to a removed route is worse than no link.
   const RMD_STATEMENTS: LinkDef = { to: "/super-admin/partners", label: "RMD Statements", icon: Users2, perms: ["banks.view", "receivables.view", "payables.view", "accounting.edit"] };
   const PARTNERSHIP_REPORT: LinkDef = { to: "/super-admin/partnership-report", label: "Partnership Report", icon: Users2, perms: ["banks.view", "receivables.view", "payables.view", "accounting.edit"] };
+  // The partnership RUN — drafting, reviewing and posting a month — as opposed
+  // to the partnership REPORT, which reads one back. It had no door at all
+  // before this: Partner Accounts is in no nav group and RMD Statements is
+  // not in the Financial Reports tab strip.
+  const PARTNERSHIP_RUN: LinkDef = { to: "/super-admin/partnership-run", label: "Partnership Run", icon: Users2, perms: ["banks.view", "receivables.view", "payables.view", "accounting.edit"] };
 
   // Build groups, dropping any link the user lacks permission for. Drop the
   // group entirely if it ends up with no visible children.
@@ -230,6 +237,7 @@ export default function SuperAdminLayout() {
     // report about partners, not about the P&L, and burying it behind another
     // report's tab strip is what kept it hard to find.
     PARTNERSHIP_REPORT,
+    PARTNERSHIP_RUN,
     // Unhidden and rehomed. It used to sit in the hidden Profit-Share group,
     // which is why it disappeared with it; it is a financial report about
     // regions, so Finance is where it belongs rather than beside partner
@@ -248,7 +256,6 @@ export default function SuperAdminLayout() {
     ? null
     : buildGroup("Profit-Share", "/super-admin/partnership", [
         TREASURY,
-        PARTICIPATION_RULES,
         RMD_STATEMENTS,
         PROJECT_FIN,
       ]);

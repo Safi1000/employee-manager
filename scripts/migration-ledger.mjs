@@ -73,6 +73,79 @@ const hasFile = (name) => {
   }
 };
 
+// ---------------------------------------------------------------------------
+// guard (PreToolUse): refuse an apply_migration whose SQL does not assert that
+// tenant_guard_gaps() is empty.
+//
+// FOUR REGRESSIONS, ONE CAUSE. 0348 fixed two guard gaps introduced by 0345 and
+// 0347, 0352 fixed one from 0349, 0363 fixed a fourth from 0361. Every one was a
+// guard that was CORRECT and simply never checked against the detector — and
+// tenant_guard_covered() matches on the parameter name appearing inside the
+// guard call, so being right is not the same as being visible.
+//
+// "Remember to check" failed four times, so this stops being remembered. The
+// assertion is cheap (a pure read), every migration can run it, and it fires in
+// the same transaction as the change — so a migration that opens a gap rolls
+// itself back instead of leaving one for the next session to find.
+//
+// THE ESCAPE HATCH IS A SENTENCE, NOT A FLAG. A migration that genuinely cannot
+// assert says so in its own text with a reason. Skipping then costs a written
+// justification that survives in the recorded SQL, which is the difference
+// between a decision and an omission.
+// ---------------------------------------------------------------------------
+const ASSERTION_RE = /tenant_guard_gaps\s*\(\s*\)/;
+const OPT_OUT_RE = /TENANT GUARD ASSERTION NOT APPLICABLE:\s*\S/;
+
+if (mode === "guard") {
+  let payload;
+  try {
+    payload = JSON.parse(readStdin());
+  } catch {
+    process.exit(0);
+  }
+  const sql = payload?.tool_input?.query;
+  // Not a string means not a shape this understands. Never crash the session.
+  if (typeof sql !== "string" || !sql) process.exit(0);
+  if (ASSERTION_RE.test(sql) || OPT_OUT_RE.test(sql)) process.exit(0);
+
+  const reason =
+    `This migration does not assert that tenant_guard_gaps() is empty, so it can ` +
+    `open a cross-tenant hole and report success.\n\n` +
+    `That has happened four times: 0348 fixed two gaps from 0345/0347, 0352 one ` +
+    `from 0349, 0363 a fourth from 0361 — every one a guard that was written ` +
+    `correctly and never checked against the detector that has to be able to READ ` +
+    `it.\n\n` +
+    `Add this before applying (it is the tail of scripts/migration-template.sql):\n\n` +
+    `  do $$\n` +
+    `  declare v_n int; v_who text;\n` +
+    `  begin\n` +
+    `    select count(*), string_agg(g.function_name || '.' || g.parameter_name, ', ')\n` +
+    `      into v_n, v_who\n` +
+    `      from public.tenant_guard_gaps() g;\n` +
+    `    if v_n <> 0 then\n` +
+    `      raise exception 'REFUSED: tenant_guard_gaps() reports % gap(s): %', v_n, v_who;\n` +
+    `    end if;\n` +
+    `  end $$;\n\n` +
+    `If it genuinely does not apply, say so IN THE MIGRATION with a reason:\n` +
+    `  -- TENANT GUARD ASSERTION NOT APPLICABLE: <why>\n` +
+    `A written justification survives in the recorded SQL; an omission does not.`;
+
+  // Both shapes, so this works whichever the harness reads. `deny` and `block`
+  // mean the same thing here: the apply does not happen.
+  process.stdout.write(
+    JSON.stringify({
+      decision: "block",
+      reason,
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "deny",
+        permissionDecisionReason: reason,
+      },
+    }),
+  );
+  process.exit(0);
+}
+
 if (mode === "record") {
   let payload;
   try {

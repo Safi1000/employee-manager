@@ -39,7 +39,7 @@ import ChartOfAccounts from "./pages/super-admin/ChartOfAccounts";
 import PeriodClose from "./pages/super-admin/PeriodClose";
 import AuditLog from "./pages/super-admin/AuditLog";
 import Partners from "./pages/super-admin/Partners";
-import ProfitDistribution from "./pages/super-admin/ProfitDistribution";
+import PartnershipRun from "./pages/super-admin/PartnershipRun";
 import ProjectFinancing from "./pages/super-admin/ProjectFinancing";
 import Treasury from "./pages/super-admin/Treasury";
 import FieldOps from "./pages/super-admin/FieldOps";
@@ -202,9 +202,20 @@ export const router = createRouter([
       { path: "alerts", element: <Alerts /> },
       { path: "governance", element: <Navigate to="/super-admin/access-governance?tab=governance" replace /> },
       { path: "partners", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit"], <Partners />) },
+      // The partnership run is its own page, not a tab of Partner Accounts.
+      // Partner Accounts has no nav link and RMD Statements is not in the tab
+      // strip, so the run screen built for it was unreachable by any route a
+      // person could take — the same defect as the run having no caller at all.
+      { path: "partnership-run", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit"], <PartnershipRun />) },
       // Cash Custody moved into Banks & Ledgers as a 4th tab; redirect the old route.
       { path: "cash-custody", element: <Navigate to="/super-admin/accounting?tab=cash-custody" replace /> },
-      { path: "profit-distribution", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit"], <ProfitDistribution />) },
+      // PROFIT DISTRIBUTION: ROUTE REMOVED. The screen maintained
+      // profit_distribution_rules / profit_distribution_rule_lines /
+      // referral_arrangements, which NO ledger function reads — configuring a
+      // partner there changed nothing at all. The component and the tables are
+      // deliberately left in place: removing a route is reversible, removing
+      // tables is not, and the referral model it describes has no equivalent
+      // anywhere else yet. See the 0078b subsystem report.
       { path: "project-financing", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit"], <ProjectFinancing />) },
       { path: "inventory", element: <Navigate to="/super-admin/assets-issuance?tab=issuance" replace /> },
       { path: "compliance", element: guard(["compliance.view", "compliance.edit"], <ComplianceHub />) },

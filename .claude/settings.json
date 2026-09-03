@@ -10,6 +10,19 @@
     ]
   },
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp__claude_ai_Supabase__apply_migration",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node scripts/migration-ledger.mjs guard",
+            "timeout": 15,
+            "statusMessage": "Checking the migration asserts tenant_guard_gaps() = 0..."
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "mcp__claude_ai_Supabase__apply_migration",
