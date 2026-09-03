@@ -180,17 +180,61 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
 
   useEffect(() => { if (stmtPartner) loadStatement(stmtPartner); }, [stmtPartner, stmtFrom, stmtTo]);
 
+  // THE SUMMARY READS THE LEDGER. It used to recompute from a SUBSET.
+  //
+  // What stood here summed partner_account_entries — OPENING, PROFIT_ALLOCATION,
+  // DRAWING, CONTRIBUTION — and called the result the partner's balance. Those
+  // four types are only the hand-entered half of a partner's current account.
+  // partner_ledger() also carries, and this screen silently omitted, every
+  // AGENCY movement:
+  //
+  //   client cash received into the partner's custody   CUSTODY:CLIENT_CASH
+  //   expenses and advances they paid out of it         CUSTODY:EXPENSE / ADVANCE
+  //   custody handed to or taken from them              CUSTODY:TRANSFER_IN / OUT
+  //   cash cheques they cashed                          CUSTODY:CHEQUE
+  //   payroll drawn through their custody               CUSTODY:BANK
+  //   movements on a bank account they own              BANK:*
+  //   anything posted straight to their capital account GL:*
+  //
+  // So the Statement tab and the Summary tab answered the same question with
+  // different numbers — the §9.16 shape this project exists to remove. A partner
+  // who received 75,000 of client cash and spent 80,000 is owed 5,000, and this
+  // screen showed zero.
+  //
+  // AGENCY AND PROFIT ARE STILL SEPARATE, which is the accounting point: the
+  // ledger keeps `cash_paid` and `remuneration` as distinct columns and nets
+  // them into one running balance. The table below shows the net AND both
+  // components, so nobody has to subtract anything by hand.
   const loadSummary = async () => {
     if (!companyId || partners.length === 0) return;
     setSummaryLoading(true);
     try {
-      const { data } = await supabase.from("partner_account_entries").select("partner_id, type, amount").in("partner_id", partners.map((p) => p.id));
       const map = new Map<string, { allocated: number; drawn: number; contributed: number; balance: number }>();
-      for (const p of partners) {
-        const entries = (data ?? []).filter((e) => e.partner_id === p.id) as unknown as AccountEntry[];
-        const res = computeBalance(p.opening_balance, entries);
-        map.set(p.id, res);
-      }
+      const results = await Promise.all(
+        partners.map(async (p) => {
+          const { data, error: lerr } = await supabase.rpc("partner_ledger", {
+            p_partner_id: p.id, p_start: null, p_end: null,
+          });
+          if (lerr) throw lerr;
+          const rows = (data ?? []) as { cash_paid: number; remuneration: number; balance: number }[];
+          const allocated = rows.reduce((s, r) => s + Number(r.remuneration ?? 0), 0);
+          // cash_paid is signed: positive = money left the company through the
+          // partner, negative = the partner is holding company money.
+          const cash = rows.reduce((s, r) => s + Number(r.cash_paid ?? 0), 0);
+          return {
+            id: p.id,
+            res: {
+              allocated,
+              drawn: cash > 0 ? cash : 0,
+              contributed: cash < 0 ? -cash : 0,
+              // The ledger's own running balance, last row. Not recomputed here:
+              // recomputing it is exactly what produced the disagreement.
+              balance: rows.length > 0 ? Number(rows[rows.length - 1].balance ?? 0) : p.opening_balance,
+            },
+          };
+        }),
+      );
+      for (const r of results) map.set(r.id, r.res);
       setSummaryData(map);
     } catch (e: any) { setError(e.message); }
     finally { setSummaryLoading(false); }
@@ -395,7 +439,7 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
 
         {/* Tab bar */}
         <div className="flex gap-1 bg-slate-100 rounded-md p-1 mb-6 w-fit">
-          {([["partners", "Partners"], ["statement", "Partner Statement"], ["summary", "Summary"]] as const).map(([key, label]) => (
+          {([["partners", "Partners"], ["statement", "Capital Entries"], ["summary", "Summary"]] as const).map(([key, label]) => (
             <button key={key} type="button" onClick={() => setTab(key)}
               className={`px-3 py-1.5 text-sm rounded transition-colors ${tab === key ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}>
               {label}
@@ -450,7 +494,7 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center justify-end gap-2">
-                          <button title="View Statement" onClick={() => { setStmtPartner(p.id); setTab("statement"); }}
+                          <button title="Capital entries (hand-entered only — the full statement with agency is in the partner detail view)" onClick={() => { setStmtPartner(p.id); setTab("statement"); }}
                             className="p-1.5 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors">
                             <Landmark className="w-4 h-4" strokeWidth={1.5} />
                           </button>
@@ -479,6 +523,21 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
         {/* ── STATEMENT TAB ── */}
         {tab === "statement" && (
           <div className="space-y-4">
+            {/* Renamed from "Partner Statement" deliberately. This tab reads
+                partner_account_entries directly, which is ONLY the hand-entered
+                half of a current account — openings, profit allocations,
+                drawings and contributions. It carries none of the agency
+                movements (client cash held, expenses and advances paid out of
+                custody, custody transfers, partner-owned bank activity), so
+                calling it "the statement" invited it to be read as the whole
+                position. partner_ledger() is the whole position, and the
+                partner detail view shows it. The narrow list stays because the
+                journal drill-down targets these rows by id. */}
+            <div className="bg-white rounded-lg border border-brand-200 bg-brand-50 p-3 text-xs text-brand-800">
+              Hand-entered capital movements only. Cash the partner holds or has spent on the
+              company&rsquo;s behalf is <strong>not</strong> shown here — open the partner for the full
+              statement, which nets agency against profit share.
+            </div>
             {/* Controls */}
             <div className="bg-white rounded-lg border border-slate-200 p-4 flex flex-wrap gap-4 items-end">
               <div className="flex-1 min-w-[180px]">
@@ -635,10 +694,10 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Partner</th>
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Scope</th>
                     <th className="text-right px-6 py-3 text-sm text-slate-500">Opening</th>
-                    <th className="text-right px-6 py-3 text-sm text-slate-500">Allocated</th>
-                    <th className="text-right px-6 py-3 text-sm text-slate-500">Contributed</th>
-                    <th className="text-right px-6 py-3 text-sm text-slate-500">Drawn</th>
-                    <th className="text-right px-6 py-3 text-sm text-slate-500">Net Balance</th>
+                    <th className="text-right px-6 py-3 text-sm text-slate-500">Profit share</th>
+                    <th className="text-right px-6 py-3 text-sm text-slate-500">Holding for co.</th>
+                    <th className="text-right px-6 py-3 text-sm text-slate-500">Paid out</th>
+                    <th className="text-right px-6 py-3 text-sm text-slate-500">Net owed</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">

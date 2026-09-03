@@ -16,6 +16,7 @@ import { useAuth, hasPermission } from "../../lib/auth";
 import Button from "../../components/Button";
 import Partners from "./Partners";
 import Cashflow from "./CashFlow";
+import RegionalPerformance from "./RegionalPerformance";
 import {
   supabase,
   INVOICE_ATTACHMENTS_BUCKET,
@@ -95,7 +96,7 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
   const canViewCashflow = hasPermission(profile, "cashflow.view");
   const scopeCompanyId = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
   const scopeCompanyFilter = scopeCompanyId ?? "00000000-0000-0000-0000-000000000000";
-  const [activeTab, setActiveTab] = useState<"pl" | "clients" | "partnership" | "rmd">(
+  const [activeTab, setActiveTab] = useState<"pl" | "regional" | "clients" | "partnership" | "rmd">(
     partnershipOnly ? "partnership" : "pl",
   );
   // Top-level switch merging the Financial Report and Cash Flow pages under one
@@ -106,6 +107,9 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
   const [cashflowOpened, setCashflowOpened] = useState(false);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [plBranchFilter, setPlBranchFilter] = useState<string>("all");
+  // Item 3. Null unless a single non-head-office region is selected — see the
+  // long note in plFigures for why the company P&L must NOT apportion.
+  const [allocatedHoForBranch, setAllocatedHoForBranch] = useState<number | null>(null);
   const [statementBranchFilter, setStatementBranchFilter] = useState<string>("all");
   const [isClientStatementModalOpen, setIsClientStatementModalOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<ClientStatementRow | null>(null);
@@ -278,6 +282,30 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
     loadPl();
   }, [plPeriod]);
 
+  // Item 3. Read the region's head-office share rather than deriving it, so
+  // this screen and the Regional Performance view cannot disagree.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const ho = branches.find((b) => b.is_head_office)?.id ?? null;
+      if (plBranchFilter === "all" || plBranchFilter === ho || !scopeCompanyId) {
+        setAllocatedHoForBranch(null);
+        return;
+      }
+      const { data, error: e } = await supabase.rpc("ho_exclusion_preview", {
+        p_company_id: scopeCompanyId,
+        p_period: `${plPeriod}-01`,
+        p_excluded: null,
+      });
+      if (cancelled) return;
+      if (e) { setAllocatedHoForBranch(null); return; }
+      const row = ((data ?? []) as { branch_id: string; absorbs_now: number }[])
+        .find((r) => r.branch_id === plBranchFilter);
+      setAllocatedHoForBranch(row ? Number(row.absorbs_now) : 0);
+    })();
+    return () => { cancelled = true; };
+  }, [plBranchFilter, plPeriod, scopeCompanyId, branches]);
+
   const plFigures = useMemo(() => {
     const headOfficeId = branches.find((b) => b.is_head_office)?.id ?? null;
     const isHeadOfficeSelected = plBranchFilter === headOfficeId;
@@ -354,7 +382,25 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
     const totalCos =
       guardPayroll + cosStatutory + cosTransport + cosEquipment + cosOther;
     const grossProfit = totalRevenue - totalCos;
-    const totalOpex = officePayroll + opUtilities + opInsurance + opLicenses + opOther;
+    // ITEM 3 — A REGIONAL P&L ABSORBS ITS SHARE OF HEAD OFFICE.
+    //
+    // A P&L for Lahore that excludes Lahore's share of head office is not a P&L
+    // for Lahore. Until now, selecting a branch counted only directly-tagged
+    // cost: office expenses (no client) were skipped for every branch except
+    // head office itself, and nothing added the apportioned share back.
+    //
+    // The COMPANY P&L is deliberately unchanged. With "All Branches" selected,
+    // head office cost already appears in full as its own cost — apportioning
+    // it there would double it, and a company P&L should show head office as
+    // what it is. So this line is non-zero ONLY for a single non-head-office
+    // region, which is exactly when it is missing today.
+    //
+    // The figure is READ, not recomputed: ho_exclusion_preview (0353) already
+    // answers "what does this region absorb", honours ho_excluded, and uses the
+    // 0349 invoiced-revenue driver. Computing it a second time here is how the
+    // two would drift.
+    const allocatedHo = allocatedHoForBranch ?? 0;
+    const totalOpex = officePayroll + opUtilities + opInsurance + opLicenses + opOther + allocatedHo;
     const operatingProfit = grossProfit - totalOpex;
     // No "Other Income / (Expenses)" line yet — EBT == Operating Profit.
     const ebt = operatingProfit;
@@ -376,13 +422,14 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
       opInsurance,
       opLicenses,
       opOther,
+      allocatedHo,
       totalOpex,
       operatingProfit,
       ebt,
       taxes,
       netProfit,
     };
-  }, [plInvoices, plPayslips, plExpenses, plBranchFilter, branches]);
+  }, [plInvoices, plPayslips, plExpenses, plBranchFilter, branches, allocatedHoForBranch]);
 
   useEffect(() => {
     const loadClientData = async () => {
@@ -654,8 +701,15 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                   in `standalone` mode (see the top of the file). RMD Statements
                   stays hidden: its tab-content block below remains, just not
                   reachable from the tab bar. */}
+              {/* Item 2 adds Regional Performance and REMOVES NOTHING. The
+                  brief was explicit that every statement type currently
+                  available must remain available, so the P&L and Client
+                  Statements tabs are untouched; the new view is the one place
+                  where basis is a toggle and region/client is a drill-down
+                  instead of four separate destinations. */}
               {([
                 { key: "pl", label: "Profit & Loss" },
+                { key: "regional", label: "Regional Performance" },
                 { key: "clients", label: "Client Statements" },
               ] as const).map((tab) => (
                 <button
@@ -788,6 +842,16 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                         { name: "Insurance", amount: plFigures.opInsurance },
                         { name: "Licences (company-level)", amount: plFigures.opLicenses },
                         { name: "Other Operating Expenses", amount: plFigures.opOther },
+                        // Item 3. Present only for a single non-head-office
+                        // region, where it is the share of head office that
+                        // region absorbs. Absent on the company P&L by design:
+                        // there, head office cost already appears in full.
+                        ...(allocatedHoForBranch != null
+                          ? [{
+                              name: `Allocated Head Office (${branches.find((b) => b.id === plBranchFilter)?.name ?? "region"})`,
+                              amount: plFigures.allocatedHo,
+                            }]
+                          : []),
                       ].map((item) => (
                         <div key={item.name} className="flex justify-between items-center pl-4">
                           <span className="text-sm text-slate-600">{item.name}</span>
@@ -845,6 +909,12 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {activeTab === "regional" && (
+            <div className="p-6">
+              <RegionalPerformance />
             </div>
           )}
 

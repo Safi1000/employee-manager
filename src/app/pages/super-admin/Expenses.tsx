@@ -957,9 +957,9 @@ export default function Expenses() {
         if (upErr) throw upErr;
       } else {
         const amount = Number(row.amount);
-        if (row.payment_mode === "Cash" && amount > cashBalance) {
-          throw new Error("Cash balance is insufficient to approve this.");
-        }
+        // Company-wide treasury block removed with the one on the add form —
+        // approving a fixed expense creates an ordinary expense, and a
+        // custodian may be overdrawn by design.
         if (row.payment_mode === "Cash" && !decisionCustodianId) {
           throw new Error("Select the office-staff member who paid the cash.");
         }
@@ -1228,10 +1228,23 @@ export default function Expenses() {
       setFormError("Select a vendor for Payable expense. Add one via Manage Vendors.");
       return;
     }
-    if (form.payment_mode === "Cash" && amount > cashBalance) {
-      setFormError("Cash balance is insufficient.");
-      return;
-    }
+    // 0349-era fix: THE COMPANY-WIDE CASH BLOCK IS GONE, DELIBERATELY.
+    //
+    // What stood here refused the expense when `amount > cashBalance`, and
+    // cashBalance is `treasury.cash_balance` — one cached company-wide scalar.
+    // GGS deliberately allows a custodian to go overdrawn: they spend on the
+    // company's behalf and are reimbursed later. A custodian who spends more
+    // than they hold has created a PAYABLE, not negative cash, and the ledger
+    // already models that — no_negative_custodian_balance reads 2 today
+    // (Gul Rehman −1,640, M. Zamir Khan −10,093) and is an accepted red that
+    // surfaces the position for someone to settle.
+    //
+    // The guard also asked the wrong question. It compared one expense against
+    // the COMPANY total, while the per-custodian test — the one that matches
+    // how this actually works — already sits immediately below as a
+    // NON-BLOCKING confirm. Repointing the blocker at a better source would
+    // have entangled this with the treasury de-duplication; deleting it does
+    // not, because the correct test was already written.
     if (form.payment_mode === "Cash" && !expenseCustodianId) {
       setFormError("Select the office-staff member who paid the cash.");
       return;
@@ -1522,11 +1535,9 @@ export default function Expenses() {
     try {
       await reverseExistingPayment(selected);
 
-      if (editForm.payment_mode === "Cash" && amount > cashBalance + (selected.payment_mode === "Cash" ? Number(selected.amount) : 0)) {
-        setFormError("Cash balance is insufficient after reversal.");
-        setSubmitting(false);
-        return;
-      }
+      // The "insufficient after reversal" block is gone for the same reason as
+      // the one on the add form: it measured a company-wide cached scalar, and
+      // an overdrawn custodian is a payable the ledger already holds.
       if (editForm.payment_mode === "Bank") {
         const bank = banks.find((b) => b.id === editForm.bank_account_id);
         const reversedBack = selected.payment_mode === "Bank" && selected.bank_account_id === editForm.bank_account_id
@@ -1738,10 +1749,12 @@ export default function Expenses() {
         return `Advance exceeds the cheque's remaining capacity (PKR ${remaining.toLocaleString()}).`;
       }
     }
-    if (f.payment_mode === "Cash") {
-      const budget = cashBalance + (existingAmount ?? 0);
-      if (amt > budget) return "Cash balance is insufficient.";
-    }
+    // An ADVANCE paid in cash is the same act as an expense paid in cash: the
+    // custodian hands over money on the company's behalf. Blocked on the same
+    // company-wide scalar, removed for the same reason. The BANK test below
+    // stays — a bank account genuinely cannot go below its own balance, that
+    // figure is per-account rather than a shared cached total, and nobody has
+    // ruled that an overdrawn bank account is allowed.
     if (f.payment_mode === "Bank") {
       const bank = banks.find((b) => b.id === f.bank_account_id);
       if (bank) {
