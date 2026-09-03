@@ -56,14 +56,8 @@ export async function buildAttendanceRows(opts: {
   // attendance — an unconfirmed mark (bulk-marked, reported, awaiting) renders
   // as blank, exactly as if it were never entered.
   confirmedOnly?: (empId: string, iso: string, workedShift: string) => boolean;
-  // The client whose board this is (null for a category group). A day a roster
-  // guard spent as a RELIEVER (attendance_records.worked_for_client_id set) is
-  // split out per-day: shown+labelled when they covered THIS client, blanked when
-  // they covered another, and always exempt from the no-gaps rule. Reliever marks
-  // bypass confirmedOnly (they have no supervisor-confirm loop).
-  boardClientId?: string | null;
 }): Promise<{ rows: AttendanceEmployeeRow[]; daysInMonth: number; monthLabel: string; cellsByEmp: Map<string, Map<string, string>> }> {
-  const { month, employees, contracts, clients, confirmedOnly, boardClientId = null } = opts;
+  const { month, employees, contracts, clients, confirmedOnly } = opts;
   const [yStr, mStr] = month.split("-");
   const y = Number(yStr);
   const m = Number(mStr);
@@ -85,7 +79,7 @@ export async function buildAttendanceRows(opts: {
   const records = await fetchAllRows<any>(() =>
     supabase
       .from("attendance_records")
-      .select("employee_id, attendance_date, status, worked_shift, supervisor_override, worked_for_client_id")
+      .select("employee_id, attendance_date, status, worked_shift, supervisor_override")
       .gte("attendance_date", monthStart)
       .lte("attendance_date", monthEnd)
       .in("employee_id", empIds)
@@ -99,7 +93,7 @@ export async function buildAttendanceRows(opts: {
     },
   );
 
-  const byEmp = new Map<string, Map<number, { sym: string; ws: string; ovr: boolean; wfc: string | null }>>();
+  const byEmp = new Map<string, Map<number, { sym: string; ws: string; ovr: boolean }>>();
   // Per-(day, shift) status for EVERY visible mark a guard has — the grid renders
   // a cell per shift column from this, so a double-duty day (two worked shifts)
   // shows in both columns. A mark is visible if the supervisor confirmed it OR it
@@ -109,18 +103,12 @@ export async function buildAttendanceRows(opts: {
     const day = Number(String(r.attendance_date).slice(8, 10));
     const ws = (r.worked_shift as string) ?? "day";
     const ovr = !!r.supervisor_override;
-    const wfc = (r.worked_for_client_id as string | null) ?? null; // set ⇒ reliever day
     if (!byEmp.has(r.employee_id)) byEmp.set(r.employee_id, new Map());
     // dayMap keeps one record per day for the export's single-column view (last
     // wins, as before). `cells` below keeps every shift for the on-screen grid.
-    byEmp.get(r.employee_id)!.set(day, { sym: symbolOf(r.status), ws, ovr, wfc });
-    // A reliever day is shown without confirmation (no confirm loop for it); a
-    // reliever day for ANOTHER client isn't this board's mark. Regular days keep
-    // the confirmed-only gate.
-    const relieverHere = wfc !== null && (!boardClientId || wfc === boardClientId);
-    const relieverElsewhere = wfc !== null && !relieverHere;
-    const visible = relieverHere || (wfc === null && (!confirmedOnly || confirmedOnly(r.employee_id, String(r.attendance_date), ws) || ovr));
-    if (visible && !relieverElsewhere) {
+    byEmp.get(r.employee_id)!.set(day, { sym: symbolOf(r.status), ws, ovr });
+    const visible = !confirmedOnly || confirmedOnly(r.employee_id, String(r.attendance_date), ws) || ovr;
+    if (visible) {
       const m = cellsByEmp.get(r.employee_id) ?? new Map<string, string>();
       m.set(`${day}|${ws}`, symbolOf(r.status));
       cellsByEmp.set(r.employee_id, m);
@@ -132,42 +120,26 @@ export async function buildAttendanceRows(opts: {
   const contractById = new Map(contracts.map((c) => [c.id, c]));
 
   const rows: AttendanceEmployeeRow[] = roster.map((emp, idx) => {
-    const dayMap = byEmp.get(emp.id) ?? new Map<number, { sym: string; ws: string; ovr: boolean; wfc: string | null }>();
+    const dayMap = byEmp.get(emp.id) ?? new Map<number, { sym: string; ws: string; ovr: boolean }>();
     const contract = emp.contract_id ? contractById.get(emp.contract_id) ?? null : null;
     const statusByDay: string[] = [];
     const shiftByDay: string[] = [];
-    const relieverByDay: boolean[] = [];
     let p = 0, a = 0, l = 0, dd = 0;
     for (let d = 1; d <= dim; d += 1) {
-      const rec = dayMap.get(d);
+      let cell = dayMap.get(d);
       const iso = `${yStr}-${mStr}-${String(d).padStart(2, "0")}`;
-      // Reliever day (record carried worked_for_client_id) — the per-day category
-      // was "reliever", whatever the guard's category is now.
-      const isReliever = !!rec && rec.wfc !== null;
-      relieverByDay.push(isReliever);
-      let sym = "";
-      if (rec) {
-        if (isReliever) {
-          // Shown without confirmation, but only for the client they actually
-          // covered; a reliever day for a different client is not this board's.
-          sym = !boardClientId || rec.wfc === boardClientId ? rec.sym : "";
-        } else {
-          // Regular day: hide any mark the supervisor hasn't confirmed (override
-          // always shows — the one edit allowed on a locked day).
-          const shown = !confirmedOnly || confirmedOnly(emp.id, iso, rec.ws) || rec.ovr;
-          sym = shown ? rec.sym : "";
-        }
-      }
-      // No record AND not employed that day → "X" (separated / pre-join /
-      // off-contract). Never on a reliever day — a reliever's off-days are blank
-      // (allowed gaps), not separation marks.
-      if (!sym && !isReliever && attendanceWindowError(emp, contract, iso)) sym = SEPARATION_MARK;
+      // Hide any mark the supervisor hasn't confirmed — it reads as unmarked.
+      // An override always shows (it's the one edit allowed on a locked day).
+      if (cell && confirmedOnly && !confirmedOnly(emp.id, iso, cell.ws) && !cell.ovr) cell = undefined;
+      // No record AND not employed that day → "X" (separated / pre-join / off-contract),
+      // otherwise blank. A real record always wins — history is reported as-is.
+      const sym = cell?.sym ?? (attendanceWindowError(emp, contract, iso) ? SEPARATION_MARK : "");
       statusByDay.push(sym);
       if (sym === "P") p += 1;
       else if (sym === "DD") { p += 1; dd += 1; }
       else if (sym === "A") a += 1;
       else if (sym === "L") l += 1;
-      shiftByDay.push((rec?.ws ?? resolveShift(emp.id, iso)) || "day");
+      shiftByDay.push((cell?.ws ?? resolveShift(emp.id, iso)) || "day");
     }
     const allowed = resolveAllowedLeaves(
       contract,
@@ -189,25 +161,24 @@ export async function buildAttendanceRows(opts: {
       doubleDuties: dd,
       payDays,
       separationNote: separationNote(emp),
-      relieverByDay: relieverByDay.some(Boolean) ? relieverByDay : undefined,
     };
   });
 
   return { rows, daysInMonth: dim, monthLabel, cellsByEmp };
 }
 
-// Standalone reliever-coverage rows for ONE client's Monthly Board: guards who
-// stood for this client as a reliever on some day(s) but are NOT on its roster
-// (pure relievers, or former relievers now assigned to a different client).
-// Coverage is keyed per-day by attendance_records.worked_for_client_id (0030),
-// set at mark time for whoever was a reliever that day — so this is day-level and
-// category-history-independent. Each guard becomes one row with ONLY those days
-// marked, every other day BLANK (never "X" — a reliever gap is expected).
+// Standalone reliever-coverage rows for ONE client's Monthly Board: employees who
+// are CURRENTLY relievers (category='reliever') and stood for this client on some
+// day(s), keyed by attendance_records.worked_for_client_id (0030). Detection is by
+// current category — NOT by worked_for_client_id alone, because the Attendance
+// board's confirm() writes worked_for_client_id for every roster guard, so that
+// column is set on ordinary regular-guard attendance too and cannot mark a
+// reliever day on its own. Each reliever becomes one row with ONLY the days they
+// covered marked, every other day BLANK (never "X" — a reliever gap is expected).
 // relieverByDay is all-true, so the OPS-Verify no-gaps rule and the strength
 // totals skip them. Not gated on attendance_confirmations (no confirm loop for
-// reliever marks). Guards already on the roster are excluded (excludeEmpIds) —
-// their reliever-for-this-client days are folded into their roster row instead,
-// so nothing is shown twice.
+// reliever marks). Guards on the roster are excluded (excludeEmpIds) as a safety
+// net — a reliever has no client_id so isn't on a roster anyway.
 export async function buildRelieverRows(opts: {
   month: string; // "YYYY-MM"
   clientId: string; // real client uuid (relievers never attribute to a category group)
@@ -239,15 +210,15 @@ export async function buildRelieverRows(opts: {
   const recs = (records ?? []) as any[];
   if (recs.length === 0) return [];
 
-  // Any id carrying worked_for_client_id for this client was a reliever on those
-  // days (day-level), whatever their category is now — EXCEPT ids already on the
-  // roster, whose reliever days are folded into their roster row.
   const empIds = [...new Set(recs.map((r) => r.employee_id))].filter((id) => !exclude.has(id));
   if (empIds.length === 0) return [];
+  // Only CURRENT relievers. worked_for_client_id is written for all roster guards
+  // by confirm(), so filtering by it alone would surface every regular guard here.
   const { data: emps } = await supabase
     .from("employees")
     .select("id, full_name, guard_code, display_number, employee_code")
-    .in("id", empIds);
+    .in("id", empIds)
+    .eq("category", "reliever");
   const empById = new Map(((emps ?? []) as any[]).map((e) => [e.id, e]));
   if (empById.size === 0) return [];
 
@@ -271,7 +242,7 @@ export async function buildRelieverRows(opts: {
       const cell = dayMap.get(d);
       const sym = cell?.sym ?? ""; // unworked day → blank, never X
       statusByDay.push(sym);
-      relieverByDay.push(!!sym); // labelled on the days they actually covered
+      relieverByDay.push(true); // whole row is reliever cover → every day gap-exempt
       if (sym === "P") p += 1;
       else if (sym === "DD") { p += 1; dd += 1; }
       else if (sym === "A") a += 1;

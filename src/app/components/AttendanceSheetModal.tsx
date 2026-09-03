@@ -169,7 +169,6 @@ export default function AttendanceSheetModal({
           contracts: (contracts ?? []) as any[],
           clients: client ? ([client] as any[]) : [],
           confirmedOnly,
-          boardClientId: realClientId,
         });
         // Standalone reliever coverage: guards who covered THIS client on some
         // day(s) but aren't on its roster (real clients only). Roster guards'
@@ -243,12 +242,11 @@ export default function AttendanceSheetModal({
     const list: { empId: string; empName: string; date: string }[] = [];
     for (const row of rows) {
       if (!row.empId) continue;
+      // Reliever coverage rows are allowed gaps (a reliever may cover 1 day of
+      // 31) — they never flag or block OPS Verify, and need no per-gap override.
+      if (row.isReliever) continue;
       for (let i = 0; i < daysInMonth; i += 1) {
-        // Reliever DAY exemption (day-level): a day the guard was a reliever is
-        // allowed to be blank — its gap never flags or blocks OPS Verify, and
-        // needs no override. Days the same guard was a REGULAR employee still
-        // follow the every-day-marked rule, so a mid-month category change is
-        // split correctly within one row.
+        // Belt-and-braces per-day exemption (also covers any future mixed row).
         if (row.relieverByDay?.[i]) continue;
         if ((row.statusByDay[i] ?? "") !== "") continue;          // marked or X (not applicable)
         const date = dayDate(i);
