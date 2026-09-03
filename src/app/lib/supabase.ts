@@ -386,6 +386,12 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
     items: [
       { key: "expenses.view", label: "View expenses & advances" },
       { key: "expenses.edit", label: "Add / edit expenses & advances" },
+      // 0346. A REVIEW, not a payment gate — cash may already have left with a
+      // custodian. Approving locks the expense against further edits; the same
+      // permission is what lifts the lock again. A permission and not a role
+      // literal: asking the role instead of the permission was the cause of
+      // three separate defects in the week this was built.
+      { key: "expenses.approve", label: "Approve / unapprove expenses (locks them)" },
     ],
   },
   {
@@ -2383,6 +2389,30 @@ export type Expense = {
   receipt_file_name: string | null;
   notes: string | null;
   expense_by: string | null;
+  /**
+   * 0346. Approval is a REVIEW, not a payment gate — `payable_status` answers
+   * payment and is null on every non-Payable expense, so it cannot carry this.
+   * Non-null approved_at means the database refuses UPDATE of anything that
+   * changes what was reviewed, and refuses DELETE. Unapproving is the way back.
+   */
+  approved_at: string | null;
+  approved_by: string | null;
+  unapproved_at: string | null;
+  unapproved_by: string | null;
+  /**
+   * 0347. Prepaid amortisation window, stored as first-of-month at both ends.
+   * Both null = the whole cost belongs to expense_date, which is every expense
+   * under the 50,000 threshold. Set = the payment debits Prepaid Expenses and
+   * release_prepaid_expenses moves one month across as each month arrives.
+   */
+  coverage_start: string | null;
+  coverage_end: string | null;
   created_at?: string;
   updated_at?: string;
 };
+
+/** 0347. Below this, no amortisation option is offered — eleven journal entries
+ *  to move 166 rupees each is more bookkeeping than the accuracy is worth.
+ *  Mirrored by the expenses_coverage_valid constraint, because the UI is not
+ *  the only writer. */
+export const PREPAID_THRESHOLD = 50000;

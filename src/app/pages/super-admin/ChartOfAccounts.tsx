@@ -322,6 +322,8 @@ export default function ChartOfAccounts() {
                   "Sub-account of",
                   "Debit (PKR)",
                   "Credit (PKR)",
+                  "Net (PKR)",
+                  "Side",
                   "Active",
                 ],
                 rows: accounts.map((a) => {
@@ -335,6 +337,8 @@ export default function ChartOfAccounts() {
                     subAccounts.get(a.id)?.name ?? "",
                     b.debit,
                     b.credit,
+                    Math.abs(b.debit - b.credit),
+                    b.debit - b.credit === 0 ? "" : b.debit - b.credit > 0 ? "Dr" : "Cr",
                     a.active ? "Yes" : "No",
                   ];
                 }),
@@ -642,6 +646,15 @@ function CoaTypeSection({
                 <th className="text-right px-4 py-2 text-[11px] text-slate-400 uppercase w-36">
                   Credit
                 </th>
+                {/* The Debit and Credit columns are GROSS totals, and without
+                    this one the screen states no account's balance anywhere.
+                    Accounts Receivable read 4,102,659 Dr against 4,140,659 Cr
+                    on 2026-09-03 and was reported as a 4.1m receivable; it was
+                    a 38,000 credit. A reader who cannot find a balance will use
+                    the debit column as one. */}
+                <th className="text-right px-4 py-2 text-[11px] text-slate-400 uppercase w-40">
+                  Net
+                </th>
                 <th className="w-20" />
               </tr>
             </thead>
@@ -688,6 +701,8 @@ function CoaRows({
 }) {
   const kids = childrenOf.get(account.id) ?? [];
   const bal = balances.get(account.id) ?? { debit: 0, credit: 0 };
+  const net = bal.debit - bal.credit;
+  const contra = net !== 0 && (net > 0 ? account.normal_side === "credit" : account.normal_side === "debit");
   const sub = subAccounts.get(account.id);
 
   return (
@@ -721,6 +736,22 @@ function CoaRows({
         </td>
         <td className="px-4 py-2 text-right text-sm text-slate-800">
           {bal.credit !== 0 ? fmtPKR(bal.credit) : ""}
+        </td>
+        {/* Net, with the side named. An unsigned figure in a column beside two
+            gross ones is the same ambiguity again, so the balance always says
+            Dr or Cr rather than relying on the reader knowing the account's
+            normal side. A balance sitting on the side OPPOSITE its normal one
+            is shown in amber: legitimate and temporary (AR ran credit while a
+            receipt waited for its opening batch), but worth seeing. */}
+        <td className="px-4 py-2 text-right text-sm tabular-nums">
+          {net === 0 ? (
+            <span className="text-slate-300">—</span>
+          ) : (
+            <span className={contra ? "text-warning-700" : "text-slate-900 font-medium"}>
+              {fmtPKR(Math.abs(net))}
+              <span className="ml-1 text-[11px] text-slate-400">{net > 0 ? "Dr" : "Cr"}</span>
+            </span>
+          )}
         </td>
         <td className="px-4 py-2 text-right">
           {isSuper && (

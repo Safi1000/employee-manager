@@ -133,10 +133,11 @@ export default function OpeningBalances() {
   //
   // So: account_id from the mirror, amount from the bank row. Cash-in-hand
   // locations are the simple case — both come from the location itself.
-  const prefillFromOperational = async () => {
-    if (!selected || !companyId) return;
-    setBusy(true); setErr(null);
-    try {
+  // Reading the source columns is factored out because it now has TWO callers:
+  // the prefill that stages the batch, and the check that runs when Post is
+  // pressed. They must read the same columns the same way, or the check would
+  // pass a batch the prefill would never have produced.
+  const readOperationalRows = async (): Promise<{ account_id: string; debit: number; notes: string }[]> => {
       const [cli, loc] = await Promise.all([
         supabase.from("clients").select("opening_balance").eq("company_id", companyId),
         supabase
@@ -171,6 +172,15 @@ export default function OpeningBalances() {
         });
       }
 
+      return rows;
+  };
+
+  const prefillFromOperational = async () => {
+    if (!selected || !companyId) return;
+    setBusy(true); setErr(null);
+    try {
+      const rows = await readOperationalRows();
+
       if (rows.length === 0) {
         setErr("Nothing to prefill — no bank, cash or client opening balance is recorded yet.");
         return;
@@ -190,6 +200,68 @@ export default function OpeningBalances() {
       ]);
       if (error) throw error;
       await loadLines();
+    } catch (e: any) {
+      setErr(e.message ?? String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // A BATCH STAGED AN HOUR AGO AND POSTED NOW IS A WRONG NUMBER THAT BALANCES.
+  //
+  // Measured on GGS while this was being built: the client receivable total was
+  // 23,064,296, then 22,343,298, then 32,510,370 across 28 clients, all within
+  // two days, because Shayan is still entering openings. A draft prefilled at
+  // any one of those figures still balances against its own Opening Balance
+  // Equity line, still shows green, and still posts — as the wrong opening
+  // balance for the company, seeded into the ledger as the figure every later
+  // balance is measured from.
+  //
+  // Nothing else catches this. `balanced` compares the batch against ITSELF,
+  // not against the source. So Post re-reads the source columns and refuses if
+  // the draft no longer matches them, naming what moved.
+  //
+  // Only prefilled lines are checked, by design: a line typed by hand has no
+  // source column to drift from, and refusing it would make the check
+  // impossible to satisfy on a hand-built batch. Prefilled lines are the ones
+  // carrying a `notes` marker, which is what the prefill writes and nothing
+  // else does.
+  const postBatch = async () => {
+    if (!selected || !companyId) return;
+    setBusy(true); setErr(null);
+    try {
+      const fresh = await readOperationalRows();
+      const drafted = lines.filter((l: any) => typeof l.notes === "string" && l.notes && l.notes !== "Balancing entry");
+
+      if (drafted.length > 0) {
+        const freshBy = new Map(fresh.map((r) => [r.account_id, r.debit]));
+        const draftBy = new Map(drafted.map((l: any) => [l.account_id as string, Number(l.debit ?? 0)]));
+        const changes: string[] = [];
+
+        for (const [acct, amt] of freshBy) {
+          const was = draftBy.get(acct);
+          if (was === undefined) {
+            changes.push(`${acctName.get(acct) ?? acct}: not in the draft, now ${money(amt)}`);
+          } else if (Math.abs(was - amt) >= 0.005) {
+            changes.push(`${acctName.get(acct) ?? acct}: drafted ${money(was)}, now ${money(amt)}`);
+          }
+        }
+        for (const [acct, was] of draftBy) {
+          if (!freshBy.has(acct)) {
+            changes.push(`${acctName.get(acct) ?? acct}: drafted ${money(was)}, now zero or removed`);
+          }
+        }
+
+        if (changes.length > 0) {
+          setErr(
+            `This draft no longer matches the recorded balances, so posting it would seed the wrong opening. ` +
+            `Delete the lines and prefill again.\n\n${changes.join("\n")}`,
+          );
+          return;
+        }
+      }
+
+      await run(supabase.rpc("post_opening_balances", { p_batch_id: selected }));
     } catch (e: any) {
       setErr(e.message ?? String(e));
     } finally {
@@ -225,7 +297,9 @@ export default function OpeningBalances() {
   return (
     <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
       <Header title="Opening Balances" subtitle="Import & post the opening trial balance (§4.4)" />
-      {err && <p className="text-sm text-danger-600 mb-3">{err}</p>}
+      {/* whitespace-pre-line: the staleness refusal lists what moved, one
+          account per line, and a single-line paragraph would run them together. */}
+      {err && <p className="text-sm text-danger-600 mb-3 whitespace-pre-line">{err}</p>}
 
       <div className="grid md:grid-cols-3 gap-6">
         {/* Batch list + create */}
@@ -359,7 +433,7 @@ export default function OpeningBalances() {
               {!posted && (
                 <div className="flex items-center gap-2">
                   <Button variant="primary" size="sm" disabled={busy || !balanced || lines.length === 0}
-                    onClick={() => run(supabase.rpc("post_opening_balances", { p_batch_id: selected }))}>
+                    onClick={postBatch}>
                     Post opening balances
                   </Button>
                   {!balanced && <span className="text-xs text-slate-400">Batch must balance before it can be posted.</span>}
