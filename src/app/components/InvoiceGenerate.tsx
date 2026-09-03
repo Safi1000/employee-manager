@@ -1,5 +1,5 @@
 import ThemedSelect from "./ThemedSelect";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, AlertCircle, X, CheckCircle2, FileDown, Plus, Trash2, FileText } from "lucide-react";
 import Button from "./Button";
 import { useAuth, hasPermission } from "../lib/auth";
@@ -123,6 +123,31 @@ const monthBounds = (ym: string) => {
   return { start, end };
 };
 
+// The editable subset of a draft, persisted to invoice_generation_drafts.data
+// (0340). Everything else (client, previousBalance, taxes, status) is derived on
+// rebuild and never stored — so a saved draft always reflects current contract
+// data while keeping exactly what the user typed.
+type DraftBlob = Partial<Pick<
+  Draft,
+  | "invoiceNumber" | "periodStart" | "periodEnd" | "notes" | "remitIndex"
+  | "overrideTotal" | "overrideReason" | "includePreviousBalance"
+  | "lines" | "variableColumns" | "variableRows"
+>>;
+const serializeDraft = (d: Draft): DraftBlob => ({
+  invoiceNumber: d.invoiceNumber,
+  periodStart: d.periodStart,
+  periodEnd: d.periodEnd,
+  notes: d.notes,
+  remitIndex: d.remitIndex,
+  overrideTotal: d.overrideTotal,
+  overrideReason: d.overrideReason,
+  includePreviousBalance: d.includePreviousBalance,
+  lines: d.lines,
+  variableColumns: d.variableColumns,
+  variableRows: d.variableRows,
+});
+const applyBlob = (d: Draft, blob: DraftBlob | undefined): Draft => (blob ? { ...d, ...blob } : d);
+
 export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) {
   const { company, profile } = useAuth();
   // Posting invoices is gated on invoices.edit (super_admin + SSA implicit).
@@ -145,28 +170,40 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
   // Editable drafts, keyed by contract id. Rebuilt whenever the filters or the
   // underlying data change (so any contract that just got an invoice drops out).
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
-  // Persisted "Cleared" flags (0315), as a set of `${contractId}|${period}` keys
-  // from invoice_generation_clears — so Clear survives leaving/returning to the
-  // tab, refreshes and other sessions, instead of living only in `drafts`.
+  // Persisted "Cleared" flags (0315/0340), as a set of `${contractId}|${period}`
+  // keys — so Clear survives leaving/returning to the tab, refreshes and other
+  // sessions, instead of living only in `drafts`.
   const [clearedKeys, setClearedKeys] = useState<Set<string>>(new Set());
+  // Persisted editable draft blobs (0340), keyed by `${contractId}|${period}`.
+  // A ref (not state): it's written synchronously on every edit and read on the
+  // next rebuild, and must never itself trigger a re-render/rebuild loop.
+  const savedData = useRef<Map<string, DraftBlob>>(new Map());
+  // Debounced DB autosave bookkeeping: which keys changed, and the pending timer.
+  const dirtyKeys = useRef<Set<string>>(new Set());
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadData = async () => {
     setLoading(true);
-    const [cliRes, conRes, lineRes, addRes, invRes, clrRes] = await Promise.all([
+    const [cliRes, conRes, lineRes, addRes, invRes, drfRes] = await Promise.all([
       supabase.from("clients").select("*").order("name"),
       supabase.from("contracts").select("*"),
       supabase.from("contract_lines").select("*"),
       supabase.from("contract_addendums").select("*"),
       supabase.from("invoices").select("*"),
-      supabase.from("invoice_generation_clears").select("contract_id, period"),
+      supabase.from("invoice_generation_drafts").select("contract_id, period, data, cleared"),
     ]);
     setClients((cliRes.data ?? []) as Client[]);
     setContracts((conRes.data ?? []) as Contract[]);
     setLines((lineRes.data ?? []) as ContractLine[]);
     setAddendums((addRes.data ?? []) as ContractAddendum[]);
     setInvoices((invRes.data ?? []) as Invoice[]);
-    setClearedKeys(new Set(((clrRes.data ?? []) as { contract_id: string; period: string }[])
-      .map((r) => `${r.contract_id}|${r.period}`)));
+    const drfRows = (drfRes.data ?? []) as { contract_id: string; period: string; data: DraftBlob | null; cleared: boolean }[];
+    savedData.current = new Map(
+      drfRows
+        .filter((r) => r.data && Object.keys(r.data).length > 0)
+        .map((r) => [`${r.contract_id}|${r.period}`, r.data as DraftBlob]),
+    );
+    setClearedKeys(new Set(drfRows.filter((r) => r.cleared).map((r) => `${r.contract_id}|${r.period}`)));
     setLoading(false);
   };
 
@@ -353,11 +390,14 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
         if (already) continue;
         const d = buildDraft(client, con, taken);
         if (d) {
-          // suggestNumber uses lowercase-insensitive set; register the built one.
-          taken.add(d.invoiceNumber.trim().toLowerCase());
-          // Seed Cleared from the persisted flags (0315) so it survives remount.
-          d.status = clearedKeys.has(`${con.id}|${period}`) ? "Cleared" : "Pending";
-          next[con.id] = d;
+          // Overlay any previously-typed values (0340) so grid cells, remit,
+          // notes, override, dates and line items survive remount — then seed
+          // Cleared from the persisted flags. Everything not in the blob (client,
+          // previousBalance, taxes) stays freshly derived from current data.
+          const withBlob = applyBlob(d, savedData.current.get(`${con.id}|${period}`));
+          taken.add(withBlob.invoiceNumber.trim().toLowerCase());
+          withBlob.status = clearedKeys.has(`${con.id}|${period}`) ? "Cleared" : "Pending";
+          next[con.id] = withBlob;
         }
       }
     }
@@ -441,8 +481,59 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
     return { subtotal, computed, addedTotal, withheldTotal, lineTotal, totalDue, carried, overridden };
   };
 
-  const patchDraft = (contractId: string, patch: Partial<Draft>) =>
-    setDrafts((prev) => (prev[contractId] ? { ...prev, [contractId]: { ...prev[contractId], ...patch } } : prev));
+  // Push every dirty draft blob to the DB. Uses only refs, so it's stable and
+  // safe to call from the unmount cleanup (fire-and-forget). update-or-insert:
+  // a row may not exist yet for a draft that was edited but never Cleared.
+  const flushSaves = useCallback(async () => {
+    const keys = [...dirtyKeys.current];
+    dirtyKeys.current.clear();
+    for (const key of keys) {
+      const blob = savedData.current.get(key);
+      if (!blob) continue;
+      const [contractId, per] = key.split("|");
+      const { data: upd, error: e } = await supabase
+        .from("invoice_generation_drafts")
+        .update({ data: blob, updated_at: new Date().toISOString() })
+        .eq("contract_id", contractId).eq("period", per).select("id");
+      if (e || (upd && upd.length > 0)) continue;
+      const { error: insE } = await supabase
+        .from("invoice_generation_drafts")
+        .insert({ contract_id: contractId, period: per, data: blob });
+      // A racing insert (e.g. Clear created the row) — just re-apply the data.
+      if (insE && /duplicate key/i.test(insE.message)) {
+        await supabase.from("invoice_generation_drafts")
+          .update({ data: blob, updated_at: new Date().toISOString() })
+          .eq("contract_id", contractId).eq("period", per);
+      }
+    }
+  }, []);
+
+  const scheduleSave = (key: string) => {
+    dirtyKeys.current.add(key);
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => { void flushSaves(); }, 700);
+  };
+
+  // Flush any pending edits when the tab unmounts (the whole reason drafts were
+  // being lost). Fire-and-forget: the request is dispatched even as we unmount.
+  useEffect(() => () => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    void flushSaves();
+  }, [flushSaves]);
+
+  // A single choke point for every draft edit (grid cells, remit, notes,
+  // override, dates, lines). It updates the render state, mirrors the editable
+  // subset into savedData synchronously (so the next rebuild keeps it), and
+  // schedules the debounced DB write.
+  const patchDraft = (contractId: string, patch: Partial<Draft>) => {
+    const cur = drafts[contractId];
+    if (!cur) return;
+    const nextD = { ...cur, ...patch };
+    const key = `${contractId}|${period}`;
+    savedData.current.set(key, serializeDraft(nextD));
+    setDrafts((prev) => (prev[contractId] ? { ...prev, [contractId]: nextD } : prev));
+    scheduleSave(key);
+  };
 
   // ── Variable manual-grid editors (no calculation; pure structure/value edits) ──
   const setVarHeader = (id: string, c: number, val: string) => {
@@ -482,9 +573,10 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
     patchDraft(id, { variableRows: d.variableRows.filter((_, i) => i !== r) });
   };
 
-  // Clear / Reopen now PERSISTS to invoice_generation_clears (0315) keyed by
-  // (contract, period), so it survives navigation/refresh/other sessions — not
-  // just this component's `drafts` state. Optimistic local update, then the write.
+  // Clear / Reopen PERSISTS the `cleared` flag on invoice_generation_drafts
+  // (0340) keyed by (contract, period), so it survives navigation/refresh/other
+  // sessions. It never touches the draft's `data` blob — reopening keeps every
+  // typed value. Optimistic local update, then the write.
   const toggleCleared = async (contractId: string) => {
     const key = `${contractId}|${period}`;
     const willClear = !clearedKeys.has(key);
@@ -498,12 +590,22 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
       if (willClear) n.add(key); else n.delete(key);
       return n;
     });
-    const { error: e } = willClear
-      ? await supabase.from("invoice_generation_clears").insert({ contract_id: contractId, period })
-      : await supabase.from("invoice_generation_clears").delete().eq("contract_id", contractId).eq("period", period);
-    // A duplicate insert just means it was already cleared elsewhere — ignore that,
-    // surface anything else and roll the optimistic change back.
-    if (e && !/duplicate key/i.test(e.message)) {
+    // update-or-insert the flag; a fresh draft may have no row yet, so carry its
+    // current edits into the insert so nothing is lost.
+    const blob = savedData.current.get(key) ?? (drafts[contractId] ? serializeDraft(drafts[contractId]) : {});
+    const { data: upd, error: updErr } = await supabase
+      .from("invoice_generation_drafts")
+      .update({ cleared: willClear, updated_at: new Date().toISOString() })
+      .eq("contract_id", contractId).eq("period", period).select("id");
+    let e = updErr;
+    if (!updErr && (!upd || upd.length === 0)) {
+      const { error: insE } = await supabase
+        .from("invoice_generation_drafts")
+        .insert({ contract_id: contractId, period, cleared: willClear, data: blob });
+      e = insE && !/duplicate key/i.test(insE.message) ? insE : null;
+    }
+    // Surface a real failure and roll the optimistic change back.
+    if (e) {
       setError(e.message);
       setClearedKeys((prev) => {
         const n = new Set(prev);
@@ -662,9 +764,9 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
         posted++;
       }
       // The posted contracts now have real invoices and drop out of the draft
-      // list; remove their persisted Cleared flags so the table doesn't accrue
-      // stale rows (0315).
-      await supabase.from("invoice_generation_clears").delete()
+      // list; remove their persisted draft rows (flag + data) so the table
+      // doesn't accrue stale rows (0340). loadData() below re-reads savedData.
+      await supabase.from("invoice_generation_drafts").delete()
         .in("contract_id", cleared.map((d) => d.contractId)).eq("period", period);
       setResult(`Posted ${posted} invoice${posted === 1 ? "" : "s"} as Unpaid and generated PDFs.`);
       await loadData();
