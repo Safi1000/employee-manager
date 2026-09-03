@@ -47,6 +47,7 @@ export default function PartnerFormModal({
   onClose,
   onSaved,
   onChanged,
+  onOpenPolicy,
 }: {
   isOpen: boolean;
   /** null = add */
@@ -61,6 +62,10 @@ export default function PartnerFormModal({
   onSaved: () => void;
   /** A client-share override was written — refresh the report WITHOUT closing. */
   onChanged?: () => void;
+  /** Close this dialog and take the reader to the Partnership policy control.
+   *  Without it the note falls back to naming where the control is, which is
+   *  still true — it just costs the reader a scroll. */
+  onOpenPolicy?: () => void;
 }) {
   const [name, setName] = useState("");
   const [scope, setScope] = useState<"COMPANY" | "BRANCH">("COMPANY");
@@ -292,15 +297,28 @@ export default function PartnerFormModal({
                   writing partners.basis — which is exactly how two partners could
                   come to disagree about what a rupee of profit is, so 0232 hoisted
                   it to finance_settings and dropped the column. Read-only here;
-                  change it once, for the company, in Finance settings. */}
+                  change it once, for the company, in Partnership policy — which
+                  is now a control on the report behind this dialog rather than
+                  a sentence naming a screen that did not exist. */}
               <div className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm bg-slate-50 text-slate-600">
                 {companyBasis === "cash" ? "Net Cash — cash basis"
                   : companyBasis === "revenue" ? "Total Income — revenue basis"
                     : "Not configured"}
               </div>
               <p className="text-[11px] text-slate-500 mt-1">
-                Company-wide setting — the Client Statements column every partner's
-                share is taken from. Change it in Finance settings.
+                Company-wide setting — the Client Statements column every partner&apos;s
+                share is taken from.{" "}
+                {onOpenPolicy ? (
+                  <button
+                    type="button"
+                    onClick={onOpenPolicy}
+                    className="text-brand-600 underline underline-offset-2 hover:text-brand-700"
+                  >
+                    Change it in Partnership policy
+                  </button>
+                ) : (
+                  "Change it in Partnership policy, on the Partnership Report."
+                )}
               </p>
             </div>
           </div>

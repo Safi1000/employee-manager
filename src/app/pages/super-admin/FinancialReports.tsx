@@ -6,6 +6,7 @@ import { formatDate, invoicePeriodFilter } from "../../lib/date";
 import ExportButton from "../../components/ExportButton";
 import PartnerFormModal from "../../components/PartnerFormModal";
 import PartnerDetailModal from "../../components/PartnerDetailModal";
+import PartnershipPolicyPanel from "../../components/PartnershipPolicyPanel";
 import {
   exportProfitLoss,
   exportClientStatements,
@@ -94,6 +95,10 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
   // on the SAME permission so reports.view alone can't reach it (matches the
   // coa.view / period_close.manage route-leak fixes: hide the option entirely).
   const canViewCashflow = hasPermission(profile, "cashflow.view");
+  // Partnership policy is a write to finance_settings. RLS only scopes it to
+  // the tenant — every company member can write it as far as the database is
+  // concerned — so the permission has to be checked here or nowhere.
+  const canEditAccounting = hasPermission(profile, "accounting.edit");
   const scopeCompanyId = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
   const scopeCompanyFilter = scopeCompanyId ?? "00000000-0000-0000-0000-000000000000";
   const [activeTab, setActiveTab] = useState<"pl" | "regional" | "clients" | "partnership" | "rmd">(
@@ -1115,6 +1120,20 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                 <div className="text-sm text-danger-600 bg-danger-50 border border-danger-200 px-4 py-2 rounded mb-4">{partnerError}</div>
               )}
 
+              {/* The two company-wide settings the partner dialog links to.
+                  They live here, on the report the dialog is opened from,
+                  because this page is in the Finance nav group and carries the
+                  same permissions — the other finance_settings editor is on a
+                  page that routes.tsx imports and never renders. */}
+              {scopeCompanyId && (
+                <PartnershipPolicyPanel
+                  companyId={scopeCompanyId}
+                  period={partnershipPeriod}
+                  canEdit={canEditAccounting}
+                  onSaved={loadPartnership}
+                />
+              )}
+
               <div className="mb-6 flex justify-end">
                 <Button variant="primary" size="md" onClick={() => { setFormPartner(null); setIsPartnerFormOpen(true); }}>
                   <Plus className="w-4 h-4 mr-2" />
@@ -1241,6 +1260,14 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
         onClose={() => setIsPartnerFormOpen(false)}
         onSaved={() => { setIsPartnerFormOpen(false); setFormPartner(null); loadPartnership(); }}
         onChanged={() => loadPartnership()}
+        onOpenPolicy={() => {
+          setIsPartnerFormOpen(false);
+          setFormPartner(null);
+          // After the dialog unmounts, or the panel is still behind it.
+          requestAnimationFrame(() =>
+            document.getElementById("partnership-policy")?.scrollIntoView({ behavior: "smooth", block: "center" }),
+          );
+        }}
       />
 
       <PartnerDetailModal

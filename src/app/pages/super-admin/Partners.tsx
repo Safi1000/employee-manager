@@ -17,7 +17,15 @@ type Partner = {
   scope: "COMPANY" | "BRANCH";
   branch_id: string | null;
   allocation_method: "FIXED_PCT" | "MANUAL";
+  /** What this screen used to show and edit. NOTHING in the posting path reads
+   *  it — run_profit_allocation, partnership_allocation and
+   *  partner_client_breakdown all read profit_share_percent. It is kept because
+   *  the deferred 0078b participation-rules screen reads it, and it is written
+   *  here only at creation, alongside profit_share_percent, so the two cannot
+   *  come apart. */
   default_share_pct: number | null;
+  /** The column the ledger actually allocates on. */
+  profit_share_percent: number | null;
   opening_balance: number;
   opening_balance_date: string | null;
   opening_balance_locked: boolean;
@@ -252,7 +260,11 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
     setEditPartner(p);
     setPartnerForm({
       name: p.name, scope: p.scope, branch_id: p.branch_id ?? "",
-      allocation_method: p.allocation_method, default_share_pct: p.default_share_pct != null ? String(p.default_share_pct) : "",
+      // Show the ledger's column in the locked field, not default_share_pct —
+      // on a partner created before the two were written together they can
+      // already disagree, and the true number is the one being allocated on.
+      allocation_method: p.allocation_method,
+      default_share_pct: p.profit_share_percent != null ? String(p.profit_share_percent) : "",
       opening_balance: String(p.opening_balance), opening_balance_date: p.opening_balance_date ?? today(),
       is_active: p.is_active,
     });
@@ -278,6 +290,13 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
       };
       if (editPartner) {
         const updatePayload: any = { ...payload };
+        // The share is locked on edit, so it must not travel in the update at
+        // all. Sending it would write default_share_pct — the column no
+        // allocation function reads — and leave profit_share_percent, the one
+        // they all read, untouched. Deleting the key is what makes the wrong
+        // write impossible rather than merely unlikely; a disabled input alone
+        // would still post whatever state happened to hold.
+        delete updatePayload.default_share_pct;
         if (editPartner.opening_balance_locked) {
           delete updatePayload.opening_balance;
           delete updatePayload.opening_balance_date;
@@ -285,6 +304,8 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
         const { error: e } = await supabase.from("partners").update(updatePayload).eq("id", editPartner.id);
         if (e) throw e;
       } else {
+        // Both columns, one value, one statement — the create path is the only
+        // place either is written, so they cannot diverge afterwards.
         const { error: e } = await supabase.from("partners").insert({ ...payload, profit_share_percent: parseFloat(partnerForm.default_share_pct) || 0 });
         if (e) throw e;
       }
@@ -465,7 +486,7 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Name</th>
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Scope</th>
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Method</th>
-                    <th className="text-left px-6 py-3 text-sm text-slate-500">Default %</th>
+                    <th className="text-left px-6 py-3 text-sm text-slate-500">Profit Share %</th>
                     <th className="text-left px-6 py-3 text-sm text-slate-500">Status</th>
                     <th className="text-right px-6 py-3 text-sm text-slate-500">Actions</th>
                   </tr>
@@ -486,7 +507,11 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
                         </span>
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-600">{p.allocation_method === "MANUAL" ? "Manual" : "Fixed %"}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{p.default_share_pct != null ? `${p.default_share_pct}%` : "—"}</td>
+                      {/* profit_share_percent, not default_share_pct. This column
+                          used to show the one the ledger does not read, so a share
+                          edited here appeared to change while every allocation kept
+                          using the old number. */}
+                      <td className="px-6 py-4 text-sm text-slate-600">{p.profit_share_percent != null ? `${p.profit_share_percent}%` : "—"}</td>
                       <td className="px-6 py-4">
                         <span className={`inline-flex px-2 py-0.5 rounded text-xs ${p.is_active ? "bg-success-50 text-success-700" : "bg-slate-100 text-slate-500"}`}>
                           {p.is_active ? "Active" : "Inactive"}
@@ -791,10 +816,32 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
           )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-slate-700 mb-1">Default Share %</label>
+              {/* Set at creation, locked afterwards — the same rule the Partnership
+                  Report's dialog already enforces, and for the same reason: the
+                  headline share is NOT effective-dated (0212 dated the per-client
+                  overrides, not this), so editing it silently restates every month
+                  that has not been posted yet.
+
+                  It was also writing the wrong column. This form wrote
+                  default_share_pct and never profit_share_percent, so the list
+                  showed the new number while run_profit_allocation went on
+                  allocating at the old one. Locking the field on edit is what makes
+                  that impossible rather than merely unlikely; the create path below
+                  writes both columns together so they cannot come apart. */}
+              <label className="block text-sm text-slate-700 mb-1">
+                Profit Share % {editPartner && <span className="text-xs text-slate-400 ml-1">(locked)</span>}
+              </label>
               <input type="number" min="0" max="100" step="0.01" value={partnerForm.default_share_pct}
+                disabled={!!editPartner}
                 onChange={(e) => setPartnerForm({ ...partnerForm, default_share_pct: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 disabled:bg-slate-50 disabled:text-slate-400" />
+              {editPartner && (
+                <p className="text-[11px] text-slate-500 mt-1">
+                  The share the ledger allocates on. Changing it restates every unposted
+                  month, so it is set once when the partner is added; per-client overrides
+                  on the Partnership Report are the effective-dated way to vary it.
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">

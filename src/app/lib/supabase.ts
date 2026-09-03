@@ -454,6 +454,12 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
       { key: "cashflow.view", label: "View cashflow" },
       { key: "coa.view", label: "View Chart of Accounts & Trial Balance" },
       { key: "period_close.manage", label: "Close / reopen accounting periods" },
+      // 0361 enforces this in post_profit_allocation and it was never added
+      // here, so the only people who could post a partnership run were the two
+      // roles has_permission() waves through outright. A permission the
+      // database demands and the grant screen cannot offer is a permission
+      // nobody can be given.
+      { key: "partnership.post", label: "Post / reverse a partnership run" },
     ],
   },
   {
