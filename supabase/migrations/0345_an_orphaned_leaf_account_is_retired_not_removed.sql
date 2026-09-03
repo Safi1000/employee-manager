@@ -168,9 +168,11 @@ begin
     insert into public.cash_locations (company_id, name, location_type, opening_balance, is_active, coa_account_id)
     values (v_co, '0345 probe drop', 'CUSTODIAN', 0, true, v_drop) returning id into v_loc_d;
 
-    -- Give ONLY the first one history.
-    insert into public.journal_entries (company_id, entry_date, description, source_table, manual)
-    values (v_co, current_date, '0345 probe', 'probe', true) returning id into v_je;
+    -- Give ONLY the first one history. posting_period is NOT NULL and has no
+    -- default on a raw insert — post_journal() is what normally fills it.
+    insert into public.journal_entries (company_id, entry_date, posting_period, description, source_table, manual)
+    values (v_co, current_date, date_trunc('month', current_date)::date, '0345 probe', 'probe', true)
+    returning id into v_je;
     insert into public.journal_lines (journal_entry_id, account_id, debit, credit)
     values (v_je, v_keep, 1, 0), (v_je, v_keep, 0, 1);
 

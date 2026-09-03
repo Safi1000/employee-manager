@@ -56,6 +56,14 @@
 
 -- ---------------------------------------------------------------------------
 -- Step 1. The account, lazily, like ensure_unearned_revenue_account (0323).
+--
+-- THE CODE IS 1160, AND NOT 1300. 1300 is already 'Inter-Region Receivable'
+-- (system_key interregion_receivable) on every company, so the first attempt at
+-- this migration was refused by chart_of_accounts_company_id_account_code_key
+-- and the whole thing rolled back. 1160 sits after 1150 Withholding Tax
+-- Receivable and before 1200 Inventory, which is where a current-asset prepaid
+-- belongs. Check the range before adding to it — the 1xxx band is denser than
+-- it looks.
 -- ---------------------------------------------------------------------------
 create or replace function public.ensure_prepaid_expenses_account(p_company_id uuid)
 returns uuid
@@ -77,7 +85,7 @@ begin
     (company_id, account_code, account_name, account_type, normal_side,
      system_key, active, system_account, is_control)
   values
-    (p_company_id, '1300', 'Prepaid Expenses', 'asset', 'debit',
+    (p_company_id, '1160', 'Prepaid Expenses', 'asset', 'debit',
      'prepaid_expenses', true, true, false)
   returning id into v_id;
 
@@ -93,7 +101,7 @@ comment on function public.ensure_prepaid_expenses_account(uuid) is
 insert into public.chart_of_accounts
   (company_id, account_code, account_name, account_type, normal_side,
    system_key, active, system_account, is_control)
-select c.id, '1300', 'Prepaid Expenses', 'asset', 'debit',
+select c.id, '1160', 'Prepaid Expenses', 'asset', 'debit',
        'prepaid_expenses', true, true, false
   from public.companies c
  where not exists (
@@ -231,7 +239,7 @@ begin
 
     -- Rounding: every month takes the rounded share except the LAST, which
     -- takes whatever is left. The schedule therefore sums to the amount
-    -- exactly, rather than leaving a stub of a rupee or two behind in 1300
+    -- exactly, rather than leaving a stub of a rupee or two behind in 1160
     -- forever — which the check below would then report as a stuck balance.
     v_share := round(r.amount / v_months, 2);
     if v_idx = v_months then
@@ -275,7 +283,7 @@ grant execute on function public.release_prepaid_expenses(uuid, date) to authent
 -- ---------------------------------------------------------------------------
 -- Step 5. The check — no prepaid balance older than its coverage end.
 --
--- This is the failure nobody would notice: the release run stops, and 1300
+-- This is the failure nobody would notice: the release run stops, and 1160
 -- quietly holds a balance for months that have already passed while the P&L
 -- under-reports every one of them. Silence would look identical to working.
 -- ---------------------------------------------------------------------------
@@ -316,7 +324,7 @@ as $fn$
 $fn$;
 
 comment on function public.stale_prepaid_expenses(uuid) is
-  '0347: prepaid expenses whose coverage period has fully passed and that still carry an unreleased balance in 1300. Non-empty means the release run stopped — the failure mode whose symptom is silence.';
+  '0347: prepaid expenses whose coverage period has fully passed and that still carry an unreleased balance in 1160. Non-empty means the release run stopped — the failure mode whose symptom is silence.';
 
 revoke execute on function public.stale_prepaid_expenses(uuid) from public, anon;
 grant execute on function public.stale_prepaid_expenses(uuid) to authenticated;
@@ -377,6 +385,19 @@ end $$;
 
 -- ---------------------------------------------------------------------------
 -- Step 6. Probe. Rollback only. Proves the split, the remainder and idempotency.
+--
+-- THE COVERAGE WINDOW ENDS IN THE CURRENT MONTH, AND THAT IS THE POINT, NOT A
+-- CONVENIENCE. The first version of this probe covered the current month plus
+-- the next two, and 0322 refused the second release outright:
+--
+--   'This entry posts to October 2026, a period that has not been reached yet.'
+--
+-- The refusal was correct and it came from the function under test doing
+-- exactly what this migration's header claims — release_prepaid_expenses CANNOT
+-- post ahead of the calendar, which is precisely why the schedule is not
+-- written at entry time. So the probe now covers the two months BEHIND the
+-- current one and ends on it: three releases, all into months that have been
+-- reached, exercising the same split and the same remainder.
 -- ---------------------------------------------------------------------------
 do $$
 declare
@@ -385,6 +406,8 @@ declare
   v_n     int;
   v_pre   numeric;
   v_rel   numeric;
+  v_start date := (date_trunc('month', current_date) - interval '2 months')::date;
+  v_end   date := date_trunc('month', current_date)::date;
 begin
   select id into v_co from public.companies order by created_at limit 1;
   if v_co is null then raise notice '0347: no company to probe; skipped.'; return; end if;
@@ -395,9 +418,8 @@ begin
       (company_id, amount, expense_date, payment_mode, pl_category, description,
        coverage_start, coverage_end)
     values
-      (v_co, 100000, date_trunc('month', current_date)::date, 'Payable', 'operating_expense',
-       '0347 probe', date_trunc('month', current_date)::date,
-       (date_trunc('month', current_date) + interval '2 months')::date)
+      (v_co, 100000, v_start, 'Payable', 'operating_expense',
+       '0347 probe', v_start, v_end)
     returning id into v_id;
 
     -- The payment debited the asset, not an expense account.
@@ -412,14 +434,26 @@ begin
     end if;
 
     -- Release month 1, then month 1 again (must be a no-op), then 2 and 3.
-    v_n := public.release_prepaid_expenses(v_co, current_date);
+    v_n := public.release_prepaid_expenses(v_co, v_start);
     if v_n <> 1 then raise exception '0347 FAILED: first release posted % entries, expected 1.', v_n; end if;
 
-    v_n := public.release_prepaid_expenses(v_co, current_date);
+    v_n := public.release_prepaid_expenses(v_co, v_start);
     if v_n <> 0 then raise exception '0347 FAILED: re-running the same month posted % entries. The run is not idempotent.', v_n; end if;
 
-    perform public.release_prepaid_expenses(v_co, (current_date + interval '1 month')::date);
-    perform public.release_prepaid_expenses(v_co, (current_date + interval '2 months')::date);
+    perform public.release_prepaid_expenses(v_co, (v_start + interval '1 month')::date);
+    perform public.release_prepaid_expenses(v_co, v_end);
+
+    -- And it must REFUSE to run ahead of the calendar. 0322 is what stops it;
+    -- this asserts that the release run is subject to that rule rather than
+    -- exempt from it, because an exemption here would post next month's cost
+    -- into next month's P&L today.
+    begin
+      perform public.release_prepaid_expenses(v_co, (v_end + interval '1 month')::date);
+      -- No open prepaid covers that month, so zero entries is the correct and
+      -- expected outcome; a raise would mean coverage_end was not respected.
+    exception when others then
+      raise exception '0347 FAILED: releasing a month beyond coverage raised % instead of doing nothing.', sqlerrm;
+    end;
 
     select coalesce(sum(jl.credit), 0) into v_rel
       from public.journal_entries je
