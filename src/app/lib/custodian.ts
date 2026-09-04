@@ -108,10 +108,15 @@ export async function loadCustodianOptions(companyId: string): Promise<Custodian
     const loc = locByPerson.get(id);
     return { employeeId: id, kind, fullName: name, locationId: loc?.id ?? null, held: loc ? heldByLoc.get(loc.id) ?? 0 : 0 };
   };
+  // Only people who have actually been REGISTERED as a custodian location (via
+  // Cash Custody ▸ Add Location) belong in the "who paid / who received cash"
+  // dropdowns — not every office-staff member or partner. Someone with no
+  // custodian cash_location (locationId === null) is not a cash holder yet, so
+  // they are excluded here; add them on the Cash Custody screen first.
   return [
     ...((staff ?? []) as any[]).map((s) => opt(s.id, s.full_name, "employee")),
     ...((partnersList ?? []) as any[]).map((p) => opt(p.id, p.name, "partner")),
-  ];
+  ].filter((o) => o.locationId !== null);
 }
 
 /**
