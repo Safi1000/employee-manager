@@ -186,15 +186,14 @@ begin
     select employee_id, attendance_date
       from public.attendance_records
      group by 1, 2
-    having count(*) filter (where status = 'double_duty') > 0
-       and (count(*) filter (where status = 'absent') > 0
-         or count(*) filter (where public.attendance_status_is_leave(status)) > 0
-         or count(*) filter (where status <> 'double_duty') > 1
-         or count(*) filter (where status = 'present'
-                               and worked_shift::text is distinct from scheduled_shift::text) > 0)) x;
+    having (count(*) > 1
+            and count(*) filter (where status = 'present'
+                                   and worked_shift::text is distinct from scheduled_shift::text) > 0)
+        or (count(*) filter (where status = 'double_duty') > 0
+            and count(*) filter (where status = 'absent') > 0)) x;
   if v_bad <> 0 then
     raise exception
-      '0394 REFUSED: % double-duty day(s) would still break the rule after the repair. The trigger is not installed.', v_bad;
+      '0394 REFUSED: % day(s) would still break the rule after the repair. The trigger is not installed.', v_bad;
   end if;
 end $$;
 
@@ -206,14 +205,29 @@ end $$;
 -- present is not an "other shift". It is the shift the double duty was extra
 -- to, and the encoding requires it. So:
 --
---   on a day carrying any double_duty,
---     * no absent, and no leave, anywhere on the day;
---     * at most ONE non-DD worked row, and it must be the base row.
+--   * a PRESENT on a shift that is not the one rostered, on a day that has
+--     another row, must be double_duty instead;
+--   * no ABSENT on a day carrying a double duty.
 --
--- The leave half overlaps 0393 deliberately. Two triggers refusing the same
--- thing is not duplication when they are refusing it for different reasons —
--- 0393 because a leave is a whole day, this one because a double duty is a day
--- fully worked — and each carries the message that fits its own case.
+-- Note the first rule is not phrased "on a day carrying a double duty", and
+-- that is the whole correction. A first draft was, and its own probe caught it:
+-- updating the day's only DD row back to a plain present left TWO plain
+-- presents, the day no longer carried a double duty, so the guard stopped
+-- applying to it — which is precisely defect 1 above, waved straight through by
+-- the trigger written to prevent it. A rule that only holds while it is already
+-- being obeyed is not a rule.
+--
+-- Two things this deliberately does NOT refuse, both real on production:
+--
+--   * A single row on a shift that is not the rostered one. That is a SWAP —
+--     one shift stood, just not his — and 33 days are exactly that.
+--   * Two absences on one day, e.g. day=absent(s:day) | evening=absent(s:evening).
+--     Seven days are this: a guard holding two postings who missed both. The
+--     first draft refused these too, via an "at most one non-DD row" clause
+--     that read plausibly and was checked against the shapes it was written for
+--     rather than against the whole table.
+--
+-- Leave is left entirely to 0393, which refuses it for its own reason.
 -- ---------------------------------------------------------------------------
 create or replace function public.enforce_double_duty_owns_the_day()
 returns trigger
@@ -222,27 +236,20 @@ security definer
 set search_path to 'public'
 as $function$
 declare
-  v_has_dd   boolean;
-  v_bad      text;
-  v_name     text;
+  v_rows int;
+  v_bad  text;
+  v_name text;
 begin
-  -- Does the day carry a double duty once this row is in place?
-  v_has_dd := NEW.status = 'double_duty'
-           or exists (select 1 from public.attendance_records r
-                       where r.employee_id = NEW.employee_id
-                         and r.attendance_date = NEW.attendance_date
-                         and r.id is distinct from NEW.id
-                         and r.status = 'double_duty');
-  if not v_has_dd then
-    return NEW;
-  end if;
+  -- How many rows does this day have once NEW is in place? A day with ONE row
+  -- is a guard standing one shift, and that shift not being his rostered one is
+  -- a SWAP — perfectly ordinary, and 33 days of production are exactly that. It
+  -- only becomes an extra duty when there is another shift for it to be extra to.
+  select count(*) + 1 into v_rows
+    from public.attendance_records r
+   where r.employee_id = NEW.employee_id
+     and r.attendance_date = NEW.attendance_date
+     and r.id is distinct from NEW.id;
 
-  select full_name into v_name from public.employees where id = NEW.employee_id;
-
-  -- Every row of the day, this one included. Each is judged against ITS OWN
-  -- scheduled_shift, never against NEW's: on a day where two rows disagree about
-  -- which shift was scheduled, taking the incoming row's answer as the day's
-  -- would flag whichever row happened not to be the one being written.
   with all_rows as (
     select r.worked_shift::text as ws, r.status as st, r.scheduled_shift::text as ss
       from public.attendance_records r
@@ -254,19 +261,23 @@ begin
   )
   select string_agg(t.ws || '=' || t.st, ', ' order by t.ws) into v_bad
     from all_rows t
-   where t.st <> 'double_duty'
-     and (public.attendance_status_is_leave(t.st)
-          or t.st = 'absent'
-          -- A non-DD worked row is allowed ONLY on its own rostered shift (it is
-          -- the base the double duty was extra to) and only one such row may
-          -- exist — a second means two shifts claiming to be the base.
-          or t.ws is distinct from t.ss
-          or (select count(*) from all_rows u where u.st <> 'double_duty') > 1);
+   where
+     -- A worked shift that is NOT the one rostered, beside another shift, is by
+     -- definition the extra duty. It has to say so. Each row is judged against
+     -- ITS OWN scheduled_shift, never against NEW's: where two rows disagree
+     -- about which shift was scheduled, taking the incoming row's answer would
+     -- flag whichever row happened not to be the one being written.
+     (v_rows > 1 and t.st = 'present' and t.ws is distinct from t.ss)
+     -- A double duty is a day fully worked, so nothing on it can be an absence.
+     -- (Leave is refused by 0393, for its own reason.)
+     or (t.st = 'absent'
+         and exists (select 1 from all_rows u where u.st = 'double_duty'));
 
   if v_bad is not null then
+    select full_name into v_name from public.employees where id = NEW.employee_id;
     raise exception
-      'A double duty means % worked his own shift and at least one more, so nothing else that day can be present, absent or on leave. Found: %.',
-      coalesce(v_name, 'this guard'), v_bad
+      'A double duty is % own shift plus every extra shift beside it, so an extra shift must be marked Double Duty and nothing that day can be absent. Found: %.',
+      coalesce(v_name || '''s', 'this guard''s'), v_bad
       using errcode = '23514',
             hint = 'The rostered shift stays Present and every EXTRA shift is Double Duty. Clear the day and mark it again if the shifts have changed.';
   end if;
@@ -276,7 +287,7 @@ end;
 $function$;
 
 comment on function public.enforce_double_duty_owns_the_day() is
-  '0394: on a day carrying a double_duty, the only permitted non-DD row is the ONE base row on the rostered shift (worked_shift = scheduled_shift) marked present. No absent, no leave, no second plain present. Encodes what the Attendance board already assumed and nothing checked: a double duty is the rostered shift worked plus every extra shift beside it, and `worked_shift <> scheduled_shift` is what distinguishes them. Before this, 25 days recorded two worked shifts as two plain presents and counted no extra duty at all, and 33 more had the double_duty on the rostered shift instead of the cover.';
+  '0394: a worked shift that is not the rostered one (worked_shift <> scheduled_shift), on a day that has another row, IS the extra duty and must be marked double_duty rather than present; and no day carrying a double duty may also carry an absent. Encodes what the Attendance board already assumed and nothing checked. Deliberately not conditioned on the day already having a double duty — an earlier draft was, and could be escaped by removing the last DD row, which is defect 1 exactly. A lone off-roster row is a SHIFT SWAP and is allowed (33 days); two absences on a day are a guard with two postings who missed both, and are allowed (7 days). Before this, 25 days recorded two worked shifts as two plain presents and counted no extra duty at all, and 33 more had the double_duty on the rostered shift instead of the cover.';
 
 drop trigger if exists trg_double_duty_owns_the_day on public.attendance_records;
 create trigger trg_double_duty_owns_the_day
@@ -301,14 +312,13 @@ begin
     select employee_id, attendance_date
       from public.attendance_records
      group by 1, 2
-    having count(*) filter (where status = 'double_duty') > 0
-       and (count(*) filter (where status = 'absent') > 0
-         or count(*) filter (where public.attendance_status_is_leave(status)) > 0
-         or count(*) filter (where status = 'present'
-                               and worked_shift::text is distinct from scheduled_shift::text) > 0
-         or count(*) filter (where status <> 'double_duty') > 1)) x;
+    having (count(*) > 1
+            and count(*) filter (where status = 'present'
+                                   and worked_shift::text is distinct from scheduled_shift::text) > 0)
+        or (count(*) filter (where status = 'double_duty') > 0
+            and count(*) filter (where status = 'absent') > 0)) x;
   if v_left <> 0 then
-    raise exception '0394 FAILED: % double-duty day(s) still break the rule after the repair.', v_left;
+    raise exception '0394 FAILED: % day(s) still break the rule after the repair.', v_left;
   end if;
 
   select e.id, e.company_id into v_emp, v_co
@@ -338,7 +348,7 @@ begin
     values (v_co, v_emp, v_date, 'present', 'evening', 'night', 'manual');
     raise exception '0394 FAILED: a plain present was accepted beside a double duty.';
   exception when others then
-    if sqlerrm not like '%nothing else that day%' then
+    if sqlerrm not like '%must be marked Double Duty%' then
       raise exception '0394 FAILED: the extra present raised "%", not the refusal being tested.', sqlerrm;
     end if;
   end;
@@ -350,7 +360,7 @@ begin
     values (v_co, v_emp, v_date, 'absent', 'evening', 'night', 'manual');
     raise exception '0394 FAILED: an absent was accepted beside a double duty.';
   exception when others then
-    if sqlerrm not like '%nothing else that day%' then
+    if sqlerrm not like '%must be marked Double Duty%' then
       raise exception '0394 FAILED: the absent raised "%", not the refusal being tested.', sqlerrm;
     end if;
   end;
@@ -363,7 +373,7 @@ begin
      where employee_id = v_emp and attendance_date = v_date and worked_shift::text = 'day';
     raise exception '0394 FAILED: an UPDATE turned the cover shift into a second plain present.';
   exception when others then
-    if sqlerrm not like '%nothing else that day%' then
+    if sqlerrm not like '%must be marked Double Duty%' then
       raise exception '0394 FAILED: the update raised "%", not the refusal being tested.', sqlerrm;
     end if;
   end;
