@@ -1134,14 +1134,16 @@ function ShiftDrillModal({
           ? [...new Set(sel)]                        // one row per chosen shift
           : [sel[0] ?? g.scheduled_shift];           // single worked shift
         return workedShifts.map((ws) => {
-          // Double duty = the rostered (scheduled) shift worked as Present + each
-          // EXTRA shift as Double Duty. Only the extra shift(s) carry DD, never
-          // two Presents and never DD on the normal shift.
-          const isExtraDuty = status === "double_duty" && ws !== g.scheduled_shift;
-          const rowStatus = status === "double_duty"
-            ? (isExtraDuty ? "double_duty" : "present")
+          // Double duty = TWO shifts, and BOTH rows say double_duty (0395).
+          // It used to write the rostered shift as Present and only the extra as
+          // DD, which made a double duty unreadable without joining each row to
+          // its scheduled_shift — and made the rostered leg indistinguishable
+          // from an ordinary day. The database now refuses the old shape.
+          const isDouble = status === "double_duty";
+          const rowStatus = isDouble
+            ? "double_duty"
             : (status === "rotation_leave" ? "leave" : status);
-          const entry_type: EntryType = isExtraDuty ? "double_duty"
+          const entry_type: EntryType = isDouble ? "double_duty"
             : status === "relief_cover" ? "relief_cover"
             : "normal";
           return {

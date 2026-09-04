@@ -563,7 +563,12 @@ export default function AttendanceSheetModal({
                       // A SECOND shift = double duty, which only exists when the
                       // guard is PRESENT that day. If they're absent/leave the other
                       // shift columns stay inert, and adding one is Present-only.
-                      const canAddSecond = !!row.empId && !isRelieverDay && monthEnded && !verifiedAt && (st === "P" || st === "DD");
+                      //
+                      // A day already showing DD is excluded: it is already two
+                      // shifts, and two is the maximum a guard can cover (0395).
+                      // Offering a third here would only produce a refusal at
+                      // save time, which is a worse way to learn the rule.
+                      const canAddSecond = !!row.empId && !isRelieverDay && monthEnded && !verifiedAt && st === "P";
                       return shifts.map((cShift, s) => {
                         const isPrimary = s === si;
                         // Primary column = the guard's own status; other columns =
@@ -739,6 +744,21 @@ function OverrideModal({
       override_reason: reason.trim(),
     }, { onConflict: "employee_id,attendance_date,worked_shift" });
     if (mErr) { setBusy(false); setErr(mErr.message); return; }
+    // 1b. Adding a SECOND shift makes the day a double duty, and a double duty is
+    // two rows that BOTH say double_duty (0395). The row just written says it;
+    // the guard's original shift for that day still says `present`, so it has to
+    // be brought along or the day is half a double duty and the database refuses
+    // the whole thing at commit.
+    if (presentOnly) {
+      const { error: pErr } = await supabase
+        .from("attendance_records")
+        .update({ status: "double_duty", entry_type: "double_duty" })
+        .eq("employee_id", target.empId)
+        .eq("attendance_date", target.date)
+        .neq("worked_shift", target.shift)
+        .eq("status", "present");
+      if (pErr) { setBusy(false); setErr(pErr.message); return; }
+    }
     // 2. Permanent audit record (before → after + reason).
     const { error: aErr } = await supabase.from("attendance_overrides").insert({
       client_id: clientId,

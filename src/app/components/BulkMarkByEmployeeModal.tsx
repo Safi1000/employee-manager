@@ -100,10 +100,6 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
   const [empId, setEmpId] = useState(initialEmployeeId ?? "");
   const [month, setMonth] = useState(initialMonth ?? today().slice(0, 7));
   const [existing, setExisting] = useState<Map<string, Status>>(new Map());
-  // Shift(s) actually worked on each already-marked date (from the saved
-  // worked_shift), so a marked cell pre-highlights the shift it was saved under
-  // — e.g. a day guard's one-off night stays on N after saving.
-  const [existingShift, setExistingShift] = useState<Map<string, string[]>>(new Map());
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loadingMonth, setLoadingMonth] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -111,11 +107,7 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
   const [notice, setNotice] = useState<string | null>(null);
   const [overrideReason, setOverrideReason] = useState("");
   const [siteShifts, setSiteShifts] = useState<string[]>([]);
-  const [cellShifts, setCellShifts] = useState<Map<string, string[]>>(new Map());
   const [pendingStatus, setPendingStatus] = useState<Status>("present");
-  // Leave in all its forms — a non-worked day, so no shift applies to it. The
-  // "Leave" button writes rotation_leave; rest_day is the same kind of day.
-  const statusIsLeave = pendingStatus === "rotation_leave" || pendingStatus === "rest_day";
   const [defaultShift, setDefaultShift] = useState<string>("day");
   // Per-date shift comes from the dated deployment segment for THAT date, so a
   // mid-month shift change pre-highlights the correct chip per day (not the
@@ -194,7 +186,6 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
   }, [emp]);
 
   useEffect(() => {
-    setCellShifts(new Map());
     setPendingStatus("present");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [empId]);
@@ -240,21 +231,16 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
     const end = `${monthKey}-${String(lastDay).padStart(2, "0")}`;
     const { data, error } = await supabase
       .from("attendance_records")
-      .select("attendance_date, status, worked_shift")
+      .select("attendance_date, status")
       .eq("employee_id", employeeId)
       .gte("attendance_date", start)
       .lte("attendance_date", end);
     if (error) setBulkError(error.message);
+    // Status per date, and nothing about shifts: the cell no longer offers a
+    // shift to pre-highlight, so the saved worked_shift is not read back here.
     const map = new Map<string, Status>();
-    const shiftMap = new Map<string, string[]>();
-    for (const r of (data ?? []) as any[]) {
-      map.set(r.attendance_date, normalizeStatus(r.status));
-      const ws = (r.worked_shift as string) ?? "day";
-      const arr = shiftMap.get(r.attendance_date);
-      if (arr) { if (!arr.includes(ws)) arr.push(ws); } else shiftMap.set(r.attendance_date, [ws]);
-    }
+    for (const r of (data ?? []) as any[]) map.set(r.attendance_date, normalizeStatus(r.status));
     setExisting(map);
-    setExistingShift(shiftMap);
     setLoadingMonth(false);
   };
 
@@ -342,59 +328,40 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
   // of truth); falls back to the current default until the resolver loads.
   const defaultShiftFor = (date: string): string =>
     (resolveShift && emp ? resolveShift(emp.id, date) : defaultShift);
-  // Priority: a manual pick this session → the shift already saved for that date
-  // → the dated segment default.
-  const shiftsFor = (date: string): string[] =>
-    cellShifts.get(date) ?? existingShift.get(date) ?? (emp ? [defaultShiftFor(date)] : []);
-
-  const changeStatus = (s: Status) => {
-    setPendingStatus(s);
-    if (s === "double_duty") {
-      // Seed each selected date with its ROSTERED shift already chosen. Double
-      // duty is "the shift you were on, plus one more", so the first pick is
-      // never a real decision — pre-selecting it leaves the operator with the
-      // single question that matters: which second shift did they cover?
-      setCellShifts((prev) => {
-        const next = new Map(prev);
-        for (const d of selected) {
-          const cur = next.get(d) ?? existingShift.get(d) ?? (emp ? [defaultShiftFor(d)] : []);
-          if (cur.length === 0) continue;
-          next.set(d, [cur[0]]);
-        }
-        return next;
-      });
-      return;
-    }
-    setCellShifts((prev) => {
-      const next = new Map<string, string[]>();
-      for (const [d, arr] of prev) next.set(d, arr.length ? [arr[0]] : arr);
-      return next;
-    });
+  // WHICH SHIFTS A DAY'S ROWS GO ON — derived, never picked.
+  //
+  // This calendar used to show D / N / E chips in every date cell and ask the
+  // operator to tap them. They are gone (2026-09-04). A day carries ONE status
+  // — Present, Absent, Leave, or Double Duty — and which shift it lands on is
+  // not a separate decision:
+  //
+  //   * The guard's rostered shift for that date is already known, from the
+  //     dated deployment segment (lib/shiftOnDate). Asking for it again invited
+  //     an answer that disagreed with the roster.
+  //   * A leave has no shift at all — it covers the day (0393).
+  //   * A double duty is the rostered shift plus one more, and both rows say
+  //     `double_duty` (0395), so neither is a choice the operator has to make.
+  //
+  // The chips were also where the worst defects of this screen came from: a
+  // leave written under two different chips on two visits produced 17 broken
+  // days, and the [rostered, cover] ordering being re-sorted inverted 33 more.
+  // Removing the control removes both, permanently.
+  const secondShiftFor = (sched: string): string => {
+    // Double duty pairs a guard's own shift with another the client runs. The
+    // conventional opposite first (day↔night), then whatever else is on the
+    // contract — a deterministic answer, so the same day never lands on two
+    // different second shifts on two different saves.
+    const others = siteShifts.filter((c) => c !== sched);
+    if (others.length === 0) return sched === "day" ? "night" : "day";
+    const opposite = sched === "day" ? "night" : sched === "night" ? "day" : null;
+    return (opposite && others.includes(opposite)) ? opposite : others[0];
+  };
+  const shiftsFor = (date: string): string[] => {
+    const sched = defaultShiftFor(date);
+    return pendingStatus === "double_duty" ? [sched, secondShiftFor(sched)] : [sched];
   };
 
-  const pickCellShift = (date: string, code: string) => {
-    if (!inWindow(date)) return;
-    setSelected((prev) => new Set(prev).add(date));
-    setCellShifts((prev) => {
-      const next = new Map(prev);
-      const cur = next.get(date) ?? existingShift.get(date) ?? (emp ? [defaultShiftFor(date)] : []);
-      if (pendingStatus !== "double_duty") { next.set(date, [code]); return next; }
-      const primary = cur[0] ?? defaultShiftFor(date);
-      // Tapping the rostered shift is a no-op — it is the duty they were on.
-      if (code === primary) { next.set(date, [primary]); return next; }
-      // Tapping the current second shift clears it; any other shift replaces it.
-      const second = cur[1];
-      // ORDER IS THE MEANING HERE: [rostered, cover]. This used to end with
-      // `siteShifts.filter(c => chosen.includes(c))`, which rebuilt the array in
-      // the SITE's shift order and threw that meaning away — a night guard
-      // covering a day shift came back as [day, night], so applyMark's "index 0
-      // is the rostered shift" marked the COVER as present and the ROSTERED
-      // shift as the double duty. Inverted on 33 days before it was noticed,
-      // and invisible on the board because both rows were there either way.
-      next.set(date, second === code ? [primary] : [primary, code]);
-      return next;
-    });
-  };
+  const changeStatus = (s: Status) => setPendingStatus(s);
 
   const gateSelectedDays = async (): Promise<{ days: string[]; overrideSet: Set<string>; overrodeCount: number; blockedCount: number; blockedReasons: string[] } | null> => {
     if (!emp) return null;
@@ -439,40 +406,27 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
       );
       return;
     }
-    // Double duty means two shifts worked in one day — enforce two picks per date.
-    if (isDouble) {
-      const short = gate.days.filter((d) => shiftsFor(d).length < 2);
-      if (short.length > 0) {
-        setSubmitting(false);
-        setBulkError(`Double duty needs two shifts on each day — tap a second shift (e.g. D and N) on ${short.length} selected day(s).`);
-        return;
-      }
-    }
     const nowIso = new Date().toISOString();
     const rows = gate.days.flatMap((d) => {
-      const picks = shiftsFor(d);
       const sched = defaultShiftFor(d);
-      const shifts = isDouble ? picks : [picks[0] ?? sched];
+      // One row, except a double duty, which is two (0395).
+      const shifts = shiftsFor(d);
       return shifts.map((ws) => {
-      // Double duty = the rostered shift worked as Present + one EXTRA shift.
-      // Only the extra (cover) shift is Double Duty; the rostered shift stays P.
-      //
-      // Decided by COMPARING TO THE ROSTERED SHIFT, not by position in the
-      // array. Position is the same fact one indirection away, and it is the
-      // indirection that broke: any re-ordering upstream silently swapped which
-      // row was the cover. This is also the exact test the Attendance board uses
-      // (`ws !== g.scheduled_shift`) and the one migration 0394 repairs against,
-      // so all three now agree by construction rather than by coincidence.
-      const isSecondDuty = isDouble && ws !== sched;
+      // Double duty = TWO shifts, and BOTH rows say double_duty (0395). There is
+      // no longer a "primary" row to distinguish, which also retires the bug
+      // that lived here: the two shifts were held as [rostered, cover] and then
+      // re-sorted into the site's shift order, so "index 0 is the rostered one"
+      // silently picked the wrong row and inverted 33 days. Nothing now depends
+      // on which of the two is which.
       return {
         employee_id: emp.id,
         attendance_date: d,
         // Fold Rotation leave into the single canonical "Leave" token.
-        status: isDouble ? (isSecondDuty ? "double_duty" : "present") : (status === "rotation_leave" ? "leave" : status),
+        status: isDouble ? "double_duty" : (status === "rotation_leave" ? "leave" : status),
         absent_reason: status === "absent" ? "awol" : null,
         scheduled_shift: sched,
         worked_shift: ws,
-        entry_type: isSecondDuty ? "double_duty" : "normal",
+        entry_type: isDouble ? "double_duty" : "normal",
         source: "manual",
         // worked_for_client_id is deliberately NOT sent: this calendar marks a
         // whole month at once, and the guard's current client is the wrong
@@ -511,7 +465,6 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
     setOverrideReason("");
     await loadMonth(emp.id, month);
     setSelected(new Set());
-    setCellShifts(new Map());
     await onSaved();
   };
 
@@ -543,7 +496,6 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
     setOverrideReason("");
     await loadMonth(emp.id, month);
     setSelected(new Set());
-    setCellShifts(new Map());
     await onSaved();
   };
 
@@ -625,7 +577,7 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
             <div className="flex flex-wrap gap-2 text-xs">
               <button type="button" onClick={() => { const s = new Set<string>(); for (const c of cells) if (c.date && inWindow(c.date)) s.add(c.date); setSelected(s); }} className="px-2 py-1 rounded border border-slate-200 text-slate-700 hover:bg-slate-50">Select month</button>
               <button type="button" onClick={() => { const s = new Set<string>(); for (const c of cells) { if (!c.date || !inWindow(c.date)) continue; const dow = new Date(`${c.date}T00:00:00`).getDay(); if (dow !== 0 && dow !== 6) s.add(c.date); } setSelected(s); }} className="px-2 py-1 rounded border border-slate-200 text-slate-700 hover:bg-slate-50">Weekdays only</button>
-              <button type="button" onClick={() => { setSelected(new Set()); setCellShifts(new Map()); }} className="px-2 py-1 rounded border border-slate-200 text-slate-700 hover:bg-slate-50">Clear selection</button>
+              <button type="button" onClick={() => { setSelected(new Set()); }} className="px-2 py-1 rounded border border-slate-200 text-slate-700 hover:bg-slate-50">Clear selection</button>
               <span className="ml-auto text-slate-500 self-center">{selected.size} day{selected.size === 1 ? "" : "s"} selected</span>
             </div>
 
@@ -659,43 +611,18 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
                           <span className="text-xs font-medium tabular-nums">{c.day}</span>
                           {win && status && <span className="text-[9px] font-bold uppercase tracking-wider">{STATUS_SHORT[status]}</span>}
                         </div>
-                        {/* No shift picker when the day is being marked as
-                            leave. A leave day is not worked, so "which shift"
-                            has no answer — offering day/night there only invited
-                            a meaningless choice that then got written to the
-                            record. Absent keeps its shift: the guard was
-                            rostered on a shift and did not turn up, which is
-                            exactly what the client is told. */}
-                        {win && siteShifts.length > 0 && !statusIsLeave && (
-                          <div className="flex flex-wrap gap-0.5">
-                            {siteShifts.map((code) => {
-                              const chosen = picks.includes(code);
-                              // Under Double Duty the first pick is the rostered
-                              // shift and is fixed; a second chip is the cover.
-                              const isDD = pendingStatus === "double_duty" && sel;
-                              const isPrimary = isDD && picks[0] === code;
-                              const isSecond = isDD && picks[1] === code;
-                              const cls = isPrimary
-                                ? "bg-slate-600 text-white border-slate-600 cursor-default"
-                                : isSecond
-                                  ? "bg-info-600 text-white border-info-600"
-                                  : chosen
-                                    ? sel
-                                      ? "bg-brand-600 text-white border-brand-600"
-                                      : "bg-brand-50 text-brand-700 border-brand-400"
-                                    : "bg-card/70 text-muted-foreground border-slate-200 hover:border-brand-400";
-                              return (
-                                <button key={code} type="button"
-                                  onMouseDown={(e) => e.stopPropagation()}
-                                  onClick={(e) => { e.stopPropagation(); pickCellShift(c.date!, code); }}
-                                  title={isPrimary ? `${catLabel(code)} — rostered shift` : isDD ? `${catLabel(code)} — tap to set as the second shift` : catLabel(code)}
-                                  className={`px-1 py-0.5 rounded text-[9px] font-bold leading-none border transition-colors ${cls}`}>
-                                  {shiftAbbr(code)}
-                                </button>
-                              );
-                            })}
+                        {/* The shift chips that used to sit here are gone
+                            (2026-09-04). A day carries one status and the shift
+                            follows from the roster, so the only thing this cell
+                            still shows is which shift(s) the save will land on —
+                            as a label, not a control. */}
+                        {win && (
+                          <div className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground/70">
+                            {pendingStatus === "rotation_leave" || pendingStatus === "rest_day"
+                              ? "All day"
+                              : shiftsFor(c.date).map(shiftAbbr).join(" + ")}
                           </div>
-                        )}
+                                                )}
                       </div>
                     );
                   })}

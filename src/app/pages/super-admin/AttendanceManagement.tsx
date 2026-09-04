@@ -610,14 +610,22 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       delete n[employeeId];
       return n;
     });
-    // Delete only the shift the page manages — a multi-shift day's sibling row
-    // (e.g. a night mark made on the board/calendar) must survive a daily unmark.
-    const { error: delErr } = await supabase
+    // Normally delete only the shift this page manages — a multi-shift day's
+    // sibling row (e.g. a night mark made on the board/calendar) must survive a
+    // daily unmark.
+    //
+    // A DOUBLE DUTY is the exception, and it has to be: it is two rows that are
+    // only meaningful together (0395), so removing one leg would leave half a
+    // double duty — which the database refuses at commit, and rightly. Unmarking
+    // one shift of a double duty means unmarking the day.
+    const wasDoubleDuty = prevStatus === "double_duty";
+    let del = supabase
       .from("attendance_records")
       .delete()
       .eq("employee_id", employeeId)
-      .eq("attendance_date", date)
-      .eq("worked_shift", prevShift);
+      .eq("attendance_date", date);
+    if (!wasDoubleDuty) del = del.eq("worked_shift", prevShift);
+    const { error: delErr } = await del;
     setSaving((s) => {
       const n = { ...s };
       delete n[employeeId];
