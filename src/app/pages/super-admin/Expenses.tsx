@@ -976,52 +976,28 @@ export default function Expenses() {
 
         // Dated to the 1st of the month it belongs to, not the day it happened
         // to be approved: a February rent approved on the 6th is February's.
-        const { data: inserted, error: insErr } = await supabase
-          .from("expenses")
-          .insert({
-            category_id: row.category_id,
-            pl_category: row.pl_category,
-            client_id: row.client_id,
-            branch_id: row.branch_id,
-            vendor_id: row.payment_mode === "Payable" ? row.vendor_id : null,
-            description: row.description,
-            amount,
-            expense_date: row.period_month,
-            payment_mode: row.payment_mode,
-            custodian_location_id: custodianLocId,
-            bank_account_id: row.payment_mode === "Bank" ? row.bank_account_id : null,
-            due_date: row.payment_mode === "Payable" ? row.due_date : null,
-            payable_status: row.payment_mode === "Payable" ? "Pending" : null,
-            notes: row.notes,
-          })
-          .select()
-          .single();
+        //
+        // 0364, same as the Add form: one call, one transaction. pl_category IS
+        // sent here — it comes off the fixed_expenses definition and may
+        // legitimately differ from "does this name a client", so the function
+        // takes the caller's word rather than overruling it.
+        const { data: newId, error: insErr } = await supabase.rpc("record_expense", {
+          p_category_id: row.category_id,
+          p_amount: amount,
+          p_expense_date: row.period_month,
+          p_payment_mode: row.payment_mode,
+          p_client_id: row.client_id,
+          p_branch_id: row.branch_id,
+          p_vendor_id: row.payment_mode === "Payable" ? row.vendor_id : null,
+          p_description: row.description,
+          p_custodian_location_id: custodianLocId,
+          p_bank_account_id: row.payment_mode === "Bank" ? row.bank_account_id : null,
+          p_due_date: row.payment_mode === "Payable" ? row.due_date : null,
+          p_notes: row.notes,
+          p_pl_category: row.pl_category,
+        });
         if (insErr) throw insErr;
-        const expId = (inserted as Expense).id;
-
-        const clientName = row.client?.name ?? null;
-        const desc = describeExpense(row.category_id ?? "", clientName, row.description);
-        if (row.payment_mode === "Cash") {
-          await applyCashDelta(-amount);
-          await logExpenseTransaction({
-            bank_account_id: null,
-            amount,
-            cash_delta: -amount,
-            account_delta: 0,
-            description: desc,
-            reference_id: expId,
-          });
-        } else if (row.payment_mode === "Bank" && row.bank_account_id) {
-          await applyBankDelta(row.bank_account_id, -amount);
-          await logExpenseTransaction({
-            bank_account_id: row.bank_account_id,
-            amount,
-            cash_delta: 0,
-            account_delta: -amount,
-            description: desc,
-            reference_id: expId,
-          });
-        }
+        const expId = newId as string;
 
         const { error: upErr } = await supabase
           .from("fixed_expense_instances")
@@ -1288,42 +1264,47 @@ export default function Expenses() {
       if (form.payment_mode === "Cash") {
         custodianLocId = await requireCustodianLoc(expenseCustodianId, "paid this cash");
       }
-      const { data: inserted, error: insErr } = await supabase
-        .from("expenses")
-        .insert({
-          category_id: form.category_id,
-          // Locked: always derived from the client, never a manual choice.
-          pl_category: form.client_id ? "cost_of_services" : "operating_expense",
-          client_id: form.client_id || null,
-          branch_id: resolvedBranch,
-          vendor_id: vendorId,
-          description: form.description.trim() || null,
-          amount,
-          expense_date: form.expense_date,
-          payment_mode: form.payment_mode,
-          custodian_location_id: custodianLocId,
-          bank_account_id:
-            form.payment_mode === "Bank"
-              ? form.bank_account_id
-              : form.payment_mode === "Cheque"
-                ? chequeBank
-                : null,
-          cheque_id: form.payment_mode === "Cheque" ? form.cheque_id : null,
-          due_date: form.payment_mode === "Payable" ? form.due_date : null,
-          payable_status: form.payment_mode === "Payable" ? "Pending" : null,
-          notes: form.notes.trim() || null,
-          expense_by: form.expense_by || null,
-          // 0347. Both or neither, and only above the threshold — the
-          // expenses_coverage_valid constraint enforces the same rule, because
-          // this form is not the only writer.
-          coverage_start: isAmortising(form) ? `${form.coverage_start}-01` : null,
-          coverage_end: isAmortising(form) ? `${form.coverage_end}-01` : null,
-        })
-        .select()
-        .single();
+      // 0364. ONE CALL. This used to be an insert, then a read of the balance,
+      // then a write-back of (read + delta), then a bank_transactions insert —
+      // four round trips with no transaction around them. A failure after the
+      // first left a recorded expense whose money never moved, and the bank
+      // write-back could affect ZERO ROWS AND RETURN NO ERROR when RLS hid the
+      // account. record_expense is SECURITY INVOKER, so every policy still
+      // applies; what it adds is that all of it commits together or not at all.
+      const { data: newId, error: insErr } = await supabase.rpc("record_expense", {
+        p_category_id: form.category_id,
+        p_amount: amount,
+        p_expense_date: form.expense_date,
+        p_payment_mode: form.payment_mode,
+        p_client_id: form.client_id || null,
+        p_branch_id: resolvedBranch,
+        p_vendor_id: vendorId,
+        p_description: form.description.trim() || null,
+        p_custodian_location_id: custodianLocId,
+        p_bank_account_id:
+          form.payment_mode === "Bank"
+            ? form.bank_account_id
+            : form.payment_mode === "Cheque"
+              ? chequeBank
+              : null,
+        p_cheque_id: form.payment_mode === "Cheque" ? form.cheque_id : null,
+        p_due_date: form.payment_mode === "Payable" ? form.due_date : null,
+        p_notes: form.notes.trim() || null,
+        p_expense_by: form.expense_by || null,
+        // 0347. Both or neither, and only above the threshold — the
+        // expenses_coverage_valid constraint enforces the same rule, because
+        // this form is not the only writer.
+        p_coverage_start: isAmortising(form) ? `${form.coverage_start}-01` : null,
+        p_coverage_end: isAmortising(form) ? `${form.coverage_end}-01` : null,
+        // pl_category is NOT sent: it is always derived from whether a client is
+        // named, and 0364 moved that derivation into the function so the rule
+        // has one home rather than one per caller.
+      });
       if (insErr) throw insErr;
-      const expId = (inserted as Expense).id;
+      const expId = newId as string;
 
+      // Receipts upload AFTER the money is settled. They are slow, they are
+      // optional, and a failed upload must not be able to strand a balance.
       if (form.receipts && form.receipts.length > 0) {
         const effectiveCompanyId = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
         let firstDrive: { drive_file_id: string; drive_view_url: string; file_name: string } | null = null;
@@ -1337,29 +1318,6 @@ export default function Expenses() {
         if (firstDrive) {
           await supabase.from("expenses").update({ drive_file_id: firstDrive.drive_file_id, drive_view_url: firstDrive.drive_view_url, receipt_file_name: firstDrive.file_name }).eq("id", expId);
         }
-      }
-
-      const desc = describeExpense(form.category_id, clientName, form.description.trim() || null);
-      if (form.payment_mode === "Cash") {
-        await applyCashDelta(-amount);
-        await logExpenseTransaction({
-          bank_account_id: null,
-          amount,
-          cash_delta: -amount,
-          account_delta: 0,
-          description: desc,
-          reference_id: expId,
-        });
-      } else if (form.payment_mode === "Bank") {
-        await applyBankDelta(form.bank_account_id, -amount);
-        await logExpenseTransaction({
-          bank_account_id: form.bank_account_id,
-          amount,
-          cash_delta: 0,
-          account_delta: -amount,
-          description: desc,
-          reference_id: expId,
-        });
       }
 
       setForm(emptyForm);
