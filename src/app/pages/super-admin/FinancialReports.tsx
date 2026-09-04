@@ -14,6 +14,7 @@ import {
 } from "../../lib/excel";
 import Modal from "../../components/Modal";
 import { useAuth, hasPermission } from "../../lib/auth";
+import { useRegion } from "../../lib/region";
 import Button from "../../components/Button";
 import Partners from "./Partners";
 import Cashflow from "./CashFlow";
@@ -111,11 +112,15 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
   // other tabs — so it fetches once instead of re-loading on every visit.
   const [cashflowOpened, setCashflowOpened] = useState(false);
   const [branches, setBranches] = useState<Branch[]>([]);
-  const [plBranchFilter, setPlBranchFilter] = useState<string>("all");
+  // Branch scoping is driven by the global region selector at the top of the app
+  // (not a per-page dropdown). "All Regions" (regionId null) → the consolidated
+  // company view ("all"); a selected region → that branch id.
+  const { regionId } = useRegion();
+  const plBranchFilter = regionId ?? "all";
   // Item 3. Null unless a single non-head-office region is selected — see the
   // long note in plFigures for why the company P&L must NOT apportion.
   const [allocatedHoForBranch, setAllocatedHoForBranch] = useState<number | null>(null);
-  const [statementBranchFilter, setStatementBranchFilter] = useState<string>("all");
+  const statementBranchFilter = regionId ?? "all";
   const [isClientStatementModalOpen, setIsClientStatementModalOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<ClientStatementRow | null>(null);
 
@@ -741,17 +746,8 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                   </p>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <label className="text-sm text-slate-600">Branch:</label>
-                  <ThemedSelect
-                    value={plBranchFilter}
-                    onChange={(e) => setPlBranchFilter(e.target.value)}
-                    className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
-                  >
-                    <option value="all">All Branches</option>
-                    {branches.map((b) => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
-                    ))}
-                  </ThemedSelect>
+                  {/* Branch is driven by the global region selector at the top of
+                      the app (Head Office / All Regions), not a per-page filter. */}
                   <label className="text-sm text-slate-600">Month:</label>
                   <ThemedSelect
                     value={plPeriod}
@@ -937,17 +933,8 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                   </p>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <label className="text-sm text-slate-600">Branch:</label>
-                  <ThemedSelect
-                    value={statementBranchFilter}
-                    onChange={(e) => setStatementBranchFilter(e.target.value)}
-                    className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
-                  >
-                    <option value="all">All Branches</option>
-                    {branches.map((b) => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
-                    ))}
-                  </ThemedSelect>
+                  {/* Branch is driven by the global region selector at the top of
+                      the app, not a per-page filter. */}
                   <label className="text-sm text-slate-600">Month:</label>
                   <ThemedSelect
                     value={statementPeriod}
