@@ -728,6 +728,25 @@ const EMPLOYEE_FIELD_LABELS: Record<string, string> = {
 // Lists the fields that failed validation as clickable chips. Clicking one
 // scrolls the matching input into view (by DOM id `${idPrefix}${fieldKey}`) and
 // focuses it, so the operator is taken straight to what needs fixing.
+// Shown on the Add form when required fields are blank. Not an error — the save
+// goes through — so it is deliberately not styled like one: the record is
+// allowed to be incomplete, and this says exactly which parts of it will be,
+// using the same field names the "Incomplete" badge lists afterwards.
+function IncompleteOnSaveNotice({ missing }: { missing: string[] }) {
+  if (missing.length === 0) return null;
+  return (
+    <div className="rounded-md border border-warning-200 bg-warning-50 p-3">
+      <p className="text-sm text-warning-700 dark:text-warning-500">
+        This employee will be saved and marked <span className="font-medium">Incomplete</span> —
+        {" "}{missing.length} required field{missing.length > 1 ? "s are" : " is"} still empty.
+      </p>
+      <p className="mt-1 text-xs text-warning-700/80 dark:text-warning-500/80">
+        {missing.join(" · ")}
+      </p>
+    </div>
+  );
+}
+
 function FieldErrorSummary({
   errors,
   idPrefix,
@@ -1364,47 +1383,67 @@ export default function EmployeeManagement() {
   // the Add modal signals it with lifecycle_intake while the Edit modal signals
   // it with the record's own lifecycle_state — and the Hire flow deliberately
   // holds an intake record to the FULL employee set.
+  // `missingBlocks` = does an EMPTY required field count as an error?
+  //
+  // Both answers are needed at once, and for different jobs. The Add form shows
+  // every missing field inline so the operator can see what the record still
+  // owes — but it must not REFUSE the save for them: a guard turns up with a
+  // name and a phone number, and his CNIC expiry and branch code arrive days
+  // later. Blocking the save meant the record could not exist until somebody
+  // had every answer, so it was either not created or created with invented
+  // data, which is worse than an incomplete one.
+  //
+  // A MALFORMED field still blocks, and that distinction is the whole point. A
+  // blank CNIC is a fact about the paperwork; "1234" in the CNIC box is a fact
+  // about the record being wrong, and saving it would put a value nobody can
+  // use where the badge would otherwise say the truth.
   const computeEmployeeErrors = (
     f: FormState,
     intakeOnly = false,
+    missingBlocks = true,
   ): Record<string, string | null> => {
+    // Reads as "required, unless we are only collecting format errors".
+    const req = (msg: string) => (missingBlocks ? msg : null);
     // Requiring a CNIC, bank details or an emergency contact from someone who
     // has not been hired would make them unsaveable, so the required set is
     // reduced to what the intake form actually asks for. Everything else is
     // still format-checked if it happens to be filled.
     if (intakeOnly) return {
       full_name: f.full_name.trim() ? validateFreeText(f.full_name) : "Full Name is required.",
-      phone: f.phone.trim() ? validatePhone(f.phone) : "Phone Number is required.",
+      phone: f.phone.trim() ? validatePhone(f.phone) : req("Phone Number is required."),
       preferred_location: validateFreeText(f.preferred_location),
       current_address: validateFreeText(f.current_address),
     };
     return {
+    // Full Name alone stays hard-required: employees.full_name is NOT NULL with
+    // no default, so a nameless record cannot be written at all, and a row you
+    // cannot identify is not an incomplete record but an unusable one.
     full_name: f.full_name.trim() ? validateFreeText(f.full_name) : "Full Name is required.",
-    phone: f.phone.trim() ? validatePhone(f.phone) : "Phone Number is required.",
-    cnic_number: f.cnic_number.trim() ? validateCnic(f.cnic_number) : "CNIC Number is required.",
-    date_of_birth: f.date_of_birth ? null : "Date of Birth is required.",
+    phone: f.phone.trim() ? validatePhone(f.phone) : req("Phone Number is required."),
+    cnic_number: f.cnic_number.trim() ? validateCnic(f.cnic_number) : req("CNIC Number is required."),
+    date_of_birth: f.date_of_birth ? null : req("Date of Birth is required."),
     father_or_husband_name: f.father_or_husband_name.trim()
       ? validateFreeText(f.father_or_husband_name)
-      : "Father / Husband Name is required.",
-    cnic_expiry: f.cnic_expiry ? null : "CNIC Expiry is required.",
+      : req("Father / Husband Name is required."),
+    cnic_expiry: f.cnic_expiry ? null : req("CNIC Expiry is required."),
     iban: isPkWallet(f.bank_name) ? null : validateIban(f.iban, pkBankCode(f.bank_name)),
     // The bank block is what payroll actually pays into — a record short any
     // part of it cannot be disbursed, so all four are required together.
-    bank_name: f.bank_name.trim() ? null : "Bank Name is required.",
-    account_title: f.account_title.trim() ? null : "Account Title is required.",
+    bank_name: f.bank_name.trim() ? null : req("Bank Name is required."),
+    account_title: f.account_title.trim() ? null : req("Account Title is required."),
     bank_account: f.bank_account.trim()
       ? accountFieldError(f.bank_name, f.bank_account)
-      : "Bank Account Number is required.",
+      : req("Bank Account Number is required."),
     // A mobile wallet has no branch, so the code only applies to real banks.
     bank_branch_code: isPkWallet(f.bank_name) || f.bank_branch_code.trim()
       ? null
-      : "Branch Code is required.",
+      : req("Branch Code is required."),
     // At least ONE usable emergency contact — a name with no number can't be
     // called, so a contact only counts when both halves are there. Either slot
     // satisfies it; the second is still optional on its own.
     emergency_contact_name: hasEmergencyContact(f)
       ? null
-      : "At least one emergency contact (name and phone) is required.",
+      : req("At least one emergency contact (name and phone) is required."),
     emergency_contact_phone: validatePhone(f.emergency_contact_phone),
     emergency_contact2_phone: validatePhone(f.emergency_contact2_phone),
     // Optional — only format-checked, and only once something is typed.
@@ -1421,21 +1460,30 @@ export default function EmployeeManagement() {
     // these surface inline under the field + in the summary + auto-scroll, so the
     // user never gets a message hidden behind the modal.
     const errs = computeEmployeeErrors(form, Boolean(form.lifecycle_intake));
+    // What actually STOPS the save: malformed values, never merely absent ones.
+    // The record is allowed to be born incomplete and wear the "Incomplete"
+    // badge until somebody fills the rest in — that badge already exists
+    // (missingRequiredFields) and this is what makes it reachable on Add
+    // instead of only on records that predate the rules.
+    const blocking = computeEmployeeErrors(form, Boolean(form.lifecycle_intake), false);
     // CNIC must be unique across employees (compared on digits, so formatting
     // differences don't slip a duplicate through). Enforced on ADD only.
     const cnicDigits = form.cnic_number.replace(/\D/g, "");
     if (cnicDigits) {
       const dup = employees.find((e) => (e.cnic_number ?? "").replace(/\D/g, "") === cnicDigits);
       if (dup) {
-        errs.cnic_number = isFired(dup)
+        // A duplicate is a conflict, not an omission — it blocks either way.
+        const msg = isFired(dup)
           ? `This CNIC already belongs to ${dup.full_name} (${dup.employee_code}), who was separated. Use Rehire instead of adding a duplicate.`
           : `This CNIC is already registered to ${dup.full_name} (${dup.employee_code}). Duplicate CNICs are not allowed.`;
+        errs.cnic_number = msg;
+        blocking.cnic_number = msg;
       }
     }
-    if (Object.values(errs).some(Boolean)) {
+    if (Object.values(blocking).some(Boolean)) {
       setFormErrors(errs);
       setAddSubmitAttempted(true);
-      scrollToFirstError(errs);
+      scrollToFirstError(blocking);
       return;
     }
     // Non-field blockers → modal-scoped banner (inside the modal, always visible).
@@ -2790,6 +2838,21 @@ export default function EmployeeManagement() {
           )}
 
           {addSubmitAttempted && <FieldErrorSummary errors={formErrors} idPrefix="empfield-" />}
+
+          {/* Missing required fields no longer refuse the save — they are stated
+              plainly instead, so nobody discovers the record is short only when
+              the badge turns up in the list. Live, not gated on a submit
+              attempt: the point is to be read BEFORE saving. */}
+          <IncompleteOnSaveNotice
+            missing={(() => {
+              const intake = Boolean(form.lifecycle_intake);
+              const all = computeEmployeeErrors(form, intake);
+              const fmt = computeEmployeeErrors(form, intake, false);
+              return Object.keys(all)
+                .filter((k) => all[k] && !fmt[k])
+                .map((k) => EMPLOYEE_FIELD_LABELS[k] ?? k);
+            })()}
+          />
 
           <div className="flex items-center gap-3 pt-4">
             <Button variant="primary" size="md" className="flex-1" disabled={submitting}>

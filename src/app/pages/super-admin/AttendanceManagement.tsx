@@ -26,6 +26,7 @@ import { hasPermission, useAuth } from "../../lib/auth";
 import { guardDisplayCode } from "../../lib/guardCode";
 import { attendanceWindowError, isSeparatedState, hiddenFromAttendance, buildClientCoverage, effectiveWindowContract, SEPARATION_MARK } from "../../lib/employmentWindow";
 import { formatDate } from "../../lib/date";
+import { clearConflictingDayRows } from "../../lib/attendanceDay";
 
 type EmployeeLite = {
   id: string;
@@ -547,6 +548,14 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       ...m,
       [employeeId]: status === "present" ? workedForClientId ?? null : null,
     }));
+    // A leave is the whole day and must replace it, not join it (0393).
+    try {
+      await clearConflictingDayRows([{ employee_id: employeeId, attendance_date: date, status }]);
+    } catch (e) {
+      setSaving((s) => { const n = { ...s }; delete n[employeeId]; return n; });
+      setError((e as { message?: string }).message ?? "Could not clear the existing marks on that day.");
+      return;
+    }
     const { error: upErr } = await supabase
       .from("attendance_records")
       .upsert(
@@ -735,6 +744,15 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       payload.forEach((r) => { n[r.employee_id] = profile?.id ?? null; });
       return n;
     });
+    // Bulk "mark present" must clear any leave already standing on those days —
+    // a present beside a leave is the contradiction 0393 refuses.
+    try {
+      await clearConflictingDayRows(payload);
+    } catch (e) {
+      setError((e as { message?: string }).message ?? "Could not clear the existing marks on that day.");
+      await loadRecordsForDate(date);
+      return;
+    }
     const { error: upErr } = await supabase
       .from("attendance_records")
       .upsert(payload, { onConflict: "employee_id,attendance_date,worked_shift" });

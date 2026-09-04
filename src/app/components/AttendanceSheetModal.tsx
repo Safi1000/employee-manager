@@ -3,13 +3,14 @@
 // by shift, P/A/L/X marks, per-day and grand totals, legend — plus a Download
 // button that hands the identical rows to exportAttendance. View without downloading.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { X, Download, Loader2, ChevronLeft, ChevronRight, ShieldCheck, AlertTriangle, Lock } from "lucide-react";
 import Button from "./Button";
 import { supabase } from "../lib/supabase";
 import { guardDisplayCode } from "../lib/guardCode";
 import { buildAttendanceRows, buildRelieverRows, type SheetEmployee } from "../lib/attendanceSheet";
 import { exportAttendance, deriveAttendanceShifts, shiftAbbr, type AttendanceEmployeeRow } from "../lib/excel";
+import { clearConflictingDayRows } from "../lib/attendanceDay";
 
 const todayMonth = () => new Date().toISOString().slice(0, 7);
 
@@ -23,6 +24,27 @@ const LEAD = [
 ] as const;
 const LEAD_TOTAL = LEAD.reduce((s, c) => s + c.w, 0); // 402 — width the totals row's label spans
 const leadCell = (i: number) => ({ left: LEAD[i].left, width: LEAD[i].w, minWidth: LEAD[i].w, maxWidth: LEAD[i].w });
+
+// The header is frozen the same way the lead columns are: per-CELL `position:
+// sticky`, never on <thead> or <tr>.
+//
+// Sticky on a row or a row group is the obvious way to write it and it is the
+// reason the headings drifted. Browsers only began honouring it on <thead>
+// recently and still disagree with `border-collapse: collapse`, under which
+// borders belong to the table's own grid rather than to the cells — so a header
+// that did stick left its borders behind and opened a line of bare background
+// between itself and the first row. Sticky cells have always worked.
+//
+// Two header rows means two offsets: the day numbers at 0, the D/N/E letters
+// directly beneath them. The second offset is the MEASURED height of the first
+// row, not a constant — the row's height follows the font and the theme, and a
+// guessed number is a gap that reappears the moment either changes.
+const stickyHead = (top: number) => ({
+  top,
+  // border-collapse drops a sticky cell's own borders. Redrawing the bottom
+  // edge as an inset shadow keeps the rule under the header while it floats.
+  boxShadow: "inset 0 -1px 0 var(--border, rgb(226 232 240))",
+});
 
 const statusClass = (s: string): string =>
   s === "P" ? "text-success-700 dark:text-success-500"
@@ -302,6 +324,22 @@ export default function AttendanceSheetModal({
   const S = shifts.length;
   const shiftIndex = useMemo(() => new Map(shifts.map((c, i) => [c, i])), [shifts]);
 
+  // Measured height of the day-number row, so the shift-letter row underneath it
+  // freezes flush against it instead of at a guessed offset. Observed rather
+  // than read once: the row resizes with the theme, the font and the month.
+  const dayRowRef = useRef<HTMLTableRowElement>(null);
+  const [dayRowH, setDayRowH] = useState(0);
+  useLayoutEffect(() => {
+    const el = dayRowRef.current;
+    if (!el) return;
+    const measure = () => setDayRowH(el.getBoundingClientRect().height);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [loading, rows.length, S]);
+
   // Per-day per-shift totals + grand sums, mirroring exportAttendance.
   const totals = useMemo(() => {
     const zeros = () => Array.from({ length: daysInMonth }, () => Array(S).fill(0) as number[]);
@@ -457,29 +495,32 @@ export default function AttendanceSheetModal({
             <p className="text-sm text-muted-foreground py-8 text-center">No employees on this {siteId ? "site" : "client"} for {monthLabel}.</p>
           ) : (
             <table className="text-xs border-collapse">
-              <thead className="sticky top-0 z-20">
-                <tr className="bg-secondary">
+              <thead>
+                <tr ref={dayRowRef} className="bg-secondary">
                   {["Ser.", "Name", "Desg.", "Emp #"].map((h, ci) => (
                     <th
                       key={h}
                       rowSpan={2}
-                      style={leadCell(ci)}
-                      className={`sticky z-30 border border-border px-2 py-1 text-left whitespace-nowrap bg-secondary${ci === LEAD.length - 1 ? " border-r-2" : ""}`}
+                      // The corner: frozen in BOTH directions, and so above
+                      // every other sticky cell — it is the one thing that must
+                      // never be scrolled under.
+                      style={{ ...leadCell(ci), ...stickyHead(0) }}
+                      className={`sticky z-40 border border-border px-2 py-1 text-left whitespace-nowrap bg-secondary${ci === LEAD.length - 1 ? " border-r-2" : ""}`}
                     >
                       {h}
                     </th>
                   ))}
                   {days.map((d) => (
-                    <th key={d} colSpan={S} className="border border-border px-1 py-1 text-center tabular-nums bg-secondary">{d}</th>
+                    <th key={d} colSpan={S} style={stickyHead(0)} className="sticky z-30 border border-border px-1 py-1 text-center tabular-nums bg-secondary">{d}</th>
                   ))}
                   {["Presents", "Absents", "Leaves", "Double Duty", "Pay Days"].map((h) => (
-                    <th key={h} rowSpan={2} className="border border-border px-1.5 py-1 text-center whitespace-nowrap bg-secondary">{h}</th>
+                    <th key={h} rowSpan={2} style={stickyHead(0)} className="sticky z-30 border border-border px-1.5 py-1 text-center whitespace-nowrap bg-secondary">{h}</th>
                   ))}
                 </tr>
                 <tr className="bg-secondary">
                   {days.map((d) =>
                     shifts.map((c) => (
-                      <th key={`${d}-${c}`} className="border border-border px-1 py-0.5 text-center text-[10px] text-muted-foreground bg-secondary" title={`${c} shift`}>{shiftAbbr(c)}</th>
+                      <th key={`${d}-${c}`} style={stickyHead(dayRowH)} className="sticky z-30 border border-border px-1 py-0.5 text-center text-[10px] text-muted-foreground bg-secondary" title={`${c} shift`}>{shiftAbbr(c)}</th>
                     )),
                   )}
                 </tr>
@@ -661,6 +702,21 @@ function OverrideModal({
     if (!status) { setErr("Choose Present, Absent, or Leave."); return; }
     if (!reason.trim()) { setErr("A reason is required to override."); return; }
     setBusy(true); setErr(null);
+    // 0. An override to Leave replaces the whole day. This is the path that made
+    // the worst of the found cases — a night cell overridden to Leave while the
+    // day cell still said double duty, one guard both working and on leave
+    // (0393). Overriding a WORKED status likewise clears a standing leave.
+    try {
+      await clearConflictingDayRows([{
+        employee_id: target.empId,
+        attendance_date: target.date,
+        status: presentOnly ? "double_duty" : status,
+      }]);
+    } catch (e) {
+      setBusy(false);
+      setErr((e as { message?: string }).message ?? "Could not clear the existing marks on that day.");
+      return;
+    }
     // 1. Mark the day (upsert keyed on employee+date+worked_shift, per the model).
     const { error: mErr } = await supabase.from("attendance_records").upsert({
       employee_id: target.empId,

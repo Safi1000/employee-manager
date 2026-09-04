@@ -7,6 +7,7 @@ import { useAuth } from "../lib/auth";
 import { guardDisplayCode } from "../lib/guardCode";
 import { attendanceWindowError, hiddenFromAttendance, buildClientCoverage, effectiveWindowContract } from "../lib/employmentWindow";
 import { loadShiftResolver, type ShiftResolver } from "../lib/shiftOnDate";
+import { clearConflictingDayRows } from "../lib/attendanceDay";
 
 // ── Shared "Bulk Mark by Employee" calendar ──────────────────────────────────
 // Single source of truth used by BOTH the Attendance board and the Attendance
@@ -383,8 +384,14 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
       if (code === primary) { next.set(date, [primary]); return next; }
       // Tapping the current second shift clears it; any other shift replaces it.
       const second = cur[1];
-      const chosen = second === code ? [primary] : [primary, code];
-      next.set(date, siteShifts.filter((c) => chosen.includes(c)));
+      // ORDER IS THE MEANING HERE: [rostered, cover]. This used to end with
+      // `siteShifts.filter(c => chosen.includes(c))`, which rebuilt the array in
+      // the SITE's shift order and threw that meaning away — a night guard
+      // covering a day shift came back as [day, night], so applyMark's "index 0
+      // is the rostered shift" marked the COVER as present and the ROSTERED
+      // shift as the double duty. Inverted on 33 days before it was noticed,
+      // and invisible on the board because both rows were there either way.
+      next.set(date, second === code ? [primary] : [primary, code]);
       return next;
     });
   };
@@ -446,10 +453,17 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
       const picks = shiftsFor(d);
       const sched = defaultShiftFor(d);
       const shifts = isDouble ? picks : [picks[0] ?? sched];
-      return shifts.map((ws, idx) => {
+      return shifts.map((ws) => {
       // Double duty = the rostered shift worked as Present + one EXTRA shift.
-      // Only the second (cover) shift is Double Duty; the normal shift stays P.
-      const isSecondDuty = isDouble && idx > 0;
+      // Only the extra (cover) shift is Double Duty; the rostered shift stays P.
+      //
+      // Decided by COMPARING TO THE ROSTERED SHIFT, not by position in the
+      // array. Position is the same fact one indirection away, and it is the
+      // indirection that broke: any re-ordering upstream silently swapped which
+      // row was the cover. This is also the exact test the Attendance board uses
+      // (`ws !== g.scheduled_shift`) and the one migration 0394 repairs against,
+      // so all three now agree by construction rather than by coincidence.
+      const isSecondDuty = isDouble && ws !== sched;
       return {
         employee_id: emp.id,
         attendance_date: d,
@@ -472,6 +486,17 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
       };
       });
     });
+    // A leave is the whole day, so writing one must REPLACE the day rather than
+    // add a row beside it — the upsert key carries worked_shift and would not
+    // collide (0393). Cleared before the write, not after, so a failure here
+    // leaves the day as it was instead of half-rewritten.
+    try {
+      await clearConflictingDayRows(rows);
+    } catch (e) {
+      setSubmitting(false);
+      setBulkError((e as { message?: string }).message ?? "Could not clear the existing marks on those days.");
+      return;
+    }
     const { error } = await supabase
       .from("attendance_records")
       .upsert(rows, { onConflict: "employee_id,attendance_date,worked_shift" });

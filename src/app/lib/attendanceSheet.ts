@@ -93,27 +93,104 @@ export async function buildAttendanceRows(opts: {
     },
   );
 
-  const byEmp = new Map<string, Map<number, { sym: string; ws: string; ovr: boolean }>>();
-  // Per-(day, shift) status for EVERY visible mark a guard has — the grid renders
-  // a cell per shift column from this, so a double-duty day (two worked shifts)
-  // shows in both columns. A mark is visible if the supervisor confirmed it OR it
-  // was set by an override (the one edit allowed once locked). Keyed `${day}|${shift}`.
+  type Mark = { sym: string; ws: string; ovr: boolean };
+  // Every visible mark a guard has, grouped by day — a day legitimately holds
+  // several, because a double duty is two (or three) shifts and writes a row per
+  // shift. Keyed `${day}|${shift}` in cellsByEmp for the grid's per-shift cells;
+  // gathered per day in marksByDay so the day's SINGLE symbol can be derived
+  // from all of them below. A mark is visible if the supervisor confirmed it OR
+  // it was set by an override (the one edit allowed once locked).
+  const marksByDay = new Map<string, Map<number, Mark[]>>();
   const cellsByEmp = new Map<string, Map<string, string>>();
   for (const r of records ?? []) {
     const day = Number(String(r.attendance_date).slice(8, 10));
     const ws = (r.worked_shift as string) ?? "day";
     const ovr = !!r.supervisor_override;
-    if (!byEmp.has(r.employee_id)) byEmp.set(r.employee_id, new Map());
-    // dayMap keeps one record per day for the export's single-column view (last
-    // wins, as before). `cells` below keeps every shift for the on-screen grid.
-    byEmp.get(r.employee_id)!.set(day, { sym: symbolOf(r.status), ws, ovr });
     const visible = !confirmedOnly || confirmedOnly(r.employee_id, String(r.attendance_date), ws) || ovr;
-    if (visible) {
-      const m = cellsByEmp.get(r.employee_id) ?? new Map<string, string>();
-      m.set(`${day}|${ws}`, symbolOf(r.status));
-      cellsByEmp.set(r.employee_id, m);
-    }
+    if (!visible) continue;
+    const perDay = marksByDay.get(r.employee_id) ?? new Map<number, Mark[]>();
+    perDay.set(day, [...(perDay.get(day) ?? []), { sym: symbolOf(r.status), ws, ovr }]);
+    marksByDay.set(r.employee_id, perDay);
+    const m = cellsByEmp.get(r.employee_id) ?? new Map<string, string>();
+    m.set(`${day}|${ws}`, symbolOf(r.status));
+    cellsByEmp.set(r.employee_id, m);
   }
+
+  // ── The day's one symbol, DERIVED ──────────────────────────────────────────
+  //
+  // This used to be "last row wins": each record overwrote the day as it was
+  // read, so the surviving symbol was whichever shift sorted last — `day` before
+  // `evening` before `night`, alphabetically and for no other reason.
+  //
+  // A double duty writes the base shift as `present` and each extra shift as
+  // `double_duty`. So the day's DD survived only when the extra shift's NAME
+  // sorted after the base's. A night guard covering a day shift wrote
+  // day=double_duty + night=present, `night` sorted last, and the day was
+  // counted a plain present. That silently lost 99 of 259 double duties on
+  // production — 38% — which is the discrepancy between this board and the daily
+  // one. The daily board is the source of truth: it recorded two shifts, so the
+  // month must read two shifts, whatever the shifts are called.
+  //
+  // Precedence, highest first:
+  //   L   a leave is the whole day and cannot be worked (0393)
+  //   DD  a double duty, but ONLY if it really spans two or more shifts
+  //   P   worked
+  //   A   did not turn up
+  const symbolForDay = (marks: Mark[]): string => {
+    if (marks.some((m) => m.sym === "L")) return "L";
+    // "At least 2 shifts" is the whole point of the mark: one DD row on its own
+    // is half a record — the extra duty without the shift it was extra TO — and
+    // counting it as a double duty would credit a second shift nobody logged.
+    // It still counts as the one shift that was worked.
+    if (marks.some((m) => m.sym === "DD")) return marks.length >= 2 ? "DD" : "P";
+    if (marks.some((m) => m.sym === "P")) return "P";
+    if (marks.some((m) => m.sym === "A")) return "A";
+    return marks[0]?.sym ?? "";
+  };
+
+  const byEmp = new Map<string, Map<number, Mark>>();
+  for (const [empId, perDay] of marksByDay) {
+    const dayMap = new Map<number, Mark>();
+    for (const [day, marks] of perDay) {
+      // The primary column follows the BASE shift — the one that is not an extra
+      // duty — so the grid puts the day's symbol on the shift the guard was
+      // rostered to and leaves the cover shifts to cellsByEmp.
+      const base = marks.find((m) => m.sym !== "DD") ?? marks[0];
+      dayMap.set(day, {
+        sym: symbolForDay(marks),
+        ws: base.ws,
+        ovr: marks.some((m) => m.ovr),
+      });
+    }
+    byEmp.set(empId, dayMap);
+  }
+
+  // A leave is the WHOLE day, so it cannot share the day with a P/A/DD in
+  // another shift column, and it cannot appear twice (migration 0393). The
+  // database now refuses to record that and 0393 repaired every past case, but
+  // this code may be pointed at a database that predates the trigger. So the
+  // grid folds a leave day down to one L here too: given a choice between
+  // showing a contradiction and showing the leave, show the leave. Displaying
+  // both is how nobody noticed for seventeen days' worth.
+  for (const [empId, cells] of cellsByEmp) {
+    const leaveDays = new Set<string>();
+    for (const [key, sym] of cells) if (sym === "L") leaveDays.add(key.split("|")[0]);
+    if (leaveDays.size === 0) continue;
+    let kept = cells;
+    for (const [key, sym] of cells) {
+      const day = key.split("|")[0];
+      if (!leaveDays.has(day)) continue;
+      // Everything on a leave day goes except ONE L — the first in shift order,
+      // which is the order the records were fetched in and so is stable.
+      if (sym !== "L" || [...kept.keys()].some((k) => k.startsWith(`${day}|`) && kept.get(k) === "L" && k < key)) {
+        kept = new Map(kept);
+        kept.delete(key);
+      }
+    }
+    cellsByEmp.set(empId, kept);
+  }
+  // (The single-column view needs no equivalent fold: symbolForDay already gives
+  // a leave precedence over everything else on the day.)
 
   const resolveShift = await loadShiftResolver(empIds);
   const clientById = new Map(clients.map((c) => [c.id, c]));
@@ -126,11 +203,12 @@ export async function buildAttendanceRows(opts: {
     const shiftByDay: string[] = [];
     let p = 0, a = 0, l = 0, dd = 0;
     for (let d = 1; d <= dim; d += 1) {
-      let cell = dayMap.get(d);
+      // Unconfirmed marks were already dropped when the day was gathered, so a
+      // cell here is a visible one. Re-testing confirmation on cell.ws would now
+      // be wrong: ws is the BASE shift, and a double duty whose base shift is
+      // unconfirmed while its cover shift is would vanish entirely.
+      const cell = dayMap.get(d);
       const iso = `${yStr}-${mStr}-${String(d).padStart(2, "0")}`;
-      // Hide any mark the supervisor hasn't confirmed — it reads as unmarked.
-      // An override always shows (it's the one edit allowed on a locked day).
-      if (cell && confirmedOnly && !confirmedOnly(emp.id, iso, cell.ws) && !cell.ovr) cell = undefined;
       // No record AND not employed that day → "X" (separated / pre-join / off-contract),
       // otherwise blank. A real record always wins — history is reported as-is.
       const sym = cell?.sym ?? (attendanceWindowError(emp, contract, iso) ? SEPARATION_MARK : "");

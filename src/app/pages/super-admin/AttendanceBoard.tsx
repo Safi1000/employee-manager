@@ -15,6 +15,7 @@ import { brandingFromCompany, type PdfBranding } from "../../lib/pdfBranding";
 import { generateClientAttendancePdf, generateGuardAttendancePdf } from "../../lib/attendanceSheetPdf";
 import { exportAttendance, type AttendanceEmployeeRow } from "../../lib/excel";
 import { loadShiftResolver } from "../../lib/shiftOnDate";
+import { clearConflictingDayRows } from "../../lib/attendanceDay";
 import { hiddenFromAttendance } from "../../lib/employmentWindow";
 import { saveText } from "../../lib/saveFile";
 import { useRegion } from "../../lib/region";
@@ -1166,6 +1167,12 @@ function ShiftDrillModal({
         };
         });
       });
+      // A leave covers the whole day, so a guard marked Leave here must not keep
+      // a P/A/DD left behind by a DIFFERENT client-shift's confirmation on the
+      // same date — the upsert key carries worked_shift and never collides with
+      // it (0393). This is how the found defect was actually made: two shifts of
+      // one client confirmed on two days, the guard on both rosters.
+      await clearConflictingDayRows(rows);
       const { error: upErr } = await supabase
         .from("attendance_records")
         .upsert(rows, { onConflict: "employee_id,attendance_date,worked_shift" });
