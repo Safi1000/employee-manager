@@ -1212,3 +1212,76 @@ in a second round trip. Same two-round-trip shape, but not a read-modify-write �
 the balance is *set at creation* rather than moved, so there is no value read
 earlier to go stale. The remaining risk is an account created with a balance and
 no ledger line explaining it. Logged, not fixed; scope was the cash opening.
+
+---
+
+## 13. FOR SHAYAN: which permission should an advance require?
+
+`advances` had **no permission at all** until 0372 put it behind
+`expenses.edit`, explicitly as a provisional answer — *wrong key beats no key*.
+This is the question that was owed, and reading the payroll side to ask it
+properly turned up something that changes it.
+
+### 13a. The fact that decides it: TWO screens write this table
+
+| Writer | Screen | Key its users hold |
+|---|---|---|
+| `record_advance` / `amend_advance` / `delete_advance` | Expenses | `expenses.edit` |
+| `syncOverpayAdvance` | **PayrollManagement** | `payroll.edit` |
+
+An advance is not only "cash handed to a guard". Payroll **writes** advances
+too: when a payslip is overpaid, `syncOverpayAdvance` creates or updates an
+advance row (`payment_mode: 'Carry-forward'`, no money moves) so next month's
+`employee_advance_outstanding` deducts it. Payroll also **reads** them —
+`employee_advance_outstanding` is what puts the deduction on the payslip — and
+`employee_clearance_gates` blocks an exit while one is outstanding.
+
+So **any single key locks out one of the two writers.** `expenses.edit` locks
+out payroll; `payroll.edit` locks out the Expenses screen.
+
+### 13b. LIVE DEFECT, and 0372 caused it
+
+`syncOverpayAdvance` issues its insert, update and delete with **no error check
+at all** — no `if (error) throw`, and it does not read the result. Under 0372's
+`expenses.edit` policy:
+
+1. A payroll operator without `expenses.edit` saves a payslip that is overpaid.
+2. The `insert into advances` is refused by RLS — **zero rows, no error**.
+3. No carry-forward row is created.
+4. Next month `employee_advance_outstanding` finds nothing to deduct.
+5. **The overpayment is silently written off.** Real money the employee owes,
+   gone, with nothing anywhere recording that it was.
+
+That is the silent zero-row write this entire round is about, arriving inside a
+fix of mine. `super_admin` and SSA are unaffected (`has_perm` waves them
+through), so it bites exactly the non-admin payroll operator the permission
+system exists for. **No `Carry-forward` rows exist on production today**, so
+nothing has been lost yet — but nothing has protected it either.
+
+### 13c. The recommendation
+
+**Split the table by what the row is, not by which screen wrote it.**
+
+- **A disbursed advance** — cash or bank actually handed over, recovered from
+  future pay — is a payment. `expenses.edit`, as now.
+- **A carry-forward** — `payment_mode = 'Carry-forward'`, no money moves, a
+  payroll artefact created by payroll and recovered by payroll — should require
+  `payroll.edit`, and should go through an RPC rather than a bare insert whose
+  failure nobody reads.
+
+That is a policy per row shape rather than per table, which the `perm_write_*`
+predicates can express directly. It also answers the original question honestly:
+neither key is right for the whole table **because the table holds two different
+things**.
+
+**Three questions, then:**
+
+1. Is the split right, or should one key cover both?
+2. If one key: which — accepting that the other screen's writer must then be
+   granted it, or moved behind a definer RPC?
+3. Either way, `syncOverpayAdvance` must stop swallowing its errors. That is not
+   optional and is not a judgement call — but making it throw *before* the key
+   is settled turns today's silent write-off into a hard payroll-save failure
+   for the same operator. **Which is why it is being asked rather than shipped.**
+
+Nothing here is built. Awaiting the answer.
