@@ -347,14 +347,25 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
   // days, and the [rostered, cover] ordering being re-sorted inverted 33 more.
   // Removing the control removes both, permanently.
   const secondShiftFor = (sched: string): string => {
-    // Double duty pairs a guard's own shift with another the client runs. The
-    // conventional opposite first (day↔night), then whatever else is on the
-    // contract — a deterministic answer, so the same day never lands on two
-    // different second shifts on two different saves.
+    // Double duty pairs a guard's own shift with ONE other, and which other is
+    // not a question the operator is asked any more — so it has to be decided
+    // here, deterministically. The rule is THE SHIFT BEFORE IT in the daily
+    // cycle (day ← evening ← night ← day): a guard who stays on for his own
+    // shift has most often just covered the one that ran into it.
+    //
+    // Deterministic matters more than clever: the same day marked twice must
+    // land on the same second shift both times, or a re-save silently moves the
+    // duty to a different column.
+    const CYCLE = ["day", "evening", "night"];
     const others = siteShifts.filter((c) => c !== sched);
-    if (others.length === 0) return sched === "day" ? "night" : "day";
-    const opposite = sched === "day" ? "night" : sched === "night" ? "day" : null;
-    return (opposite && others.includes(opposite)) ? opposite : others[0];
+    const i = CYCLE.indexOf(sched);
+    const previous = i >= 0 ? CYCLE[(i + CYCLE.length - 1) % CYCLE.length] : null;
+    if (previous && others.includes(previous)) return previous;
+    // The client does not run that one — take any other shift it does run,
+    // and only fall back to the cycle when the contract names no second shift
+    // at all (a single-shift client, where a double duty is unusual anyway).
+    if (others.length > 0) return others[0];
+    return previous ?? (sched === "day" ? "night" : "day");
   };
   const shiftsFor = (date: string): string[] => {
     const sched = defaultShiftFor(date);
