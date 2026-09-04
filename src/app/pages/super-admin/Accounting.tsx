@@ -196,7 +196,6 @@ export default function Accounting() {
   const [cashBalance, setCashBalance] = useState<number>(0);
   const [cashOpeningBalance, setCashOpeningBalance] = useState<number>(0);
   const [cashOpeningLocked, setCashOpeningLocked] = useState<boolean>(false);
-  const [treasuryId, setTreasuryId] = useState<string | null>(null);
   const [isCashOpeningOpen, setIsCashOpeningOpen] = useState(false);
   const [cashOpeningInput, setCashOpeningInput] = useState<string>("");
   const [transactions, setTransactions] = useState<BankTransaction[]>([]);
@@ -745,7 +744,9 @@ export default function Accounting() {
     const openingTx = txRows.find((t) => t.kind === "opening" && !t.bank_account_id);
     setCashOpeningBalance(Number(openingTx?.cash_delta ?? 0));
     setCashOpeningLocked(Boolean(openingTx));
-    setTreasuryId(treasuryRes.data?.id ?? null);
+    // 0390: the treasury row id is no longer held. Nothing in this screen
+    // writes that row any more — set_cash_opening_balance() does, by company —
+    // and a balance row id kept in component state is an invitation to.
     setTransactions(txRows);
     setPayables((payablesRes.data ?? []) as PayableRow[]);
 
@@ -940,37 +941,25 @@ export default function Accounting() {
     setSubmitting(true);
     setError(null);
     try {
-      let id = treasuryId;
-      if (!id) {
-        const { data: ins, error: insErr } = await supabase
-          .from("treasury")
-          .insert({
-            company_id: treasuryCompanyId,
-            cash_balance: amt,
-          })
-          .select("id")
-          .single();
-        if (insErr) throw insErr;
-        id = (ins as { id: string }).id;
-      } else {
-        const { error: upErr } = await supabase
-          .from("treasury")
-          .update({
-            cash_balance: cashBalance + amt,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", id);
-        if (upErr) throw upErr;
-      }
-      await logTransaction({
-        bank_account_id: null,
-        kind: "opening",
-        amount: amt,
-        cash_delta: amt,
-        account_delta: 0,
-        description: "Opening cash balance",
+      // 0390. ONE CALL, and it takes no company: current_company_id() already
+      // resolves coalesce(view_as_company, company_id), which is exactly what
+      // treasuryCompanyId computes above.
+      //
+      // This was the last read-modify-write on a balance in the codebase —
+      // `cash_balance: cashBalance + amt`, where cashBalance is React state
+      // read when the screen last loaded — followed by the ledger line in a
+      // separate round trip. The arithmetic now happens under the row lock.
+      //
+      // The "Opening locked" rule moved with it. It lived only here, so a
+      // second tab could set the opening again, and because the write ADDED
+      // rather than replaced, doing so DOUBLED the cash. The RPC refuses it by
+      // name and a unique partial index refuses it for callers that never
+      // reach the RPC.
+      const { error: openErr } = await supabase.rpc("set_cash_opening_balance", {
+        p_amount: amt,
       });
-      setIsCashOpeningOpen(false);
+      if (openErr) throw openErr;
+            setIsCashOpeningOpen(false);
       setCashOpeningInput("");
       await loadAll();
     } catch (err: any) {

@@ -1145,3 +1145,70 @@ codebase. Not fixed here; scope was transfers.
 - **`advances` behind `expenses.edit`, provisionally.** An advance to a guard is
   money against their future pay, and neither `expenses.edit` nor `payroll.edit`
   is obviously right. Owed to Shayan as its own question.
+
+---
+
+## 12. The last read-modify-write on a balance (0390)
+
+`handleSetCashOpening` wrote `cash_balance: cashBalance + amt`, where
+`cashBalance` is **React state** — a number read when the screen last loaded,
+possibly before an expense on another tab took money out. Every other balance
+write does its arithmetic inside the UPDATE under the row lock; this one did it
+in a browser and posted the answer. The `opening` ledger line went in a second
+round trip, so a refusal there left the balance moved and nothing explaining it.
+
+### 12a. The bigger half: the lock was only ever a UI state
+
+The screen decided whether the opening may be set at all by looking for an
+existing `opening` row with no bank account:
+
+```ts
+setCashOpeningLocked(Boolean(openingTx))
+```
+
+A correct rule, enforced **nowhere but the browser**. A second tab, a stale tab
+or one direct API call sets it again — and because the write **added** rather
+than replaced, setting it twice does not overwrite the opening, it **doubles the
+cash**. The only trace is a second `opening` row nothing was looking for.
+
+`set_cash_opening_balance()` refuses a second opening **and names the figure
+already recorded** — "you cannot do this" is a refusal, "this is already PKR
+9,874, and cash that arrived later is a deposit" is an answer. And
+`bank_transactions_one_cash_opening_per_company`, a unique partial index, makes
+it impossible for any caller that never reaches the function: **a check inside
+one function binds only the callers who use it.** Production had exactly one
+such row per company, so the index took without a repair.
+
+### 12b. Smaller decisions worth reading
+
+- **No `p_company_id`.** `current_company_id()` already resolves
+  `coalesce(view_as_company, company_id)`, which is the same expression the
+  screen computed. A parameter would be a claim to check against the session
+  when the session *is* the answer — fewer claimed parameters is fewer guards
+  that can be got wrong.
+- **An opening of zero is legitimate** ("we had no cash") and still writes the
+  marker row. `apply_money_delta()` is a deliberate no-op at zero, so a naive
+  implementation would leave the screen unlocked for ever and let a real
+  opening replace the zero one tomorrow.
+- **`treasuryId` is deleted from component state.** It was set and never read
+  after the rewire; a balance row's id held in a screen is an invitation to
+  write to it.
+
+### 12c. The probe
+
+The refusal arm runs against **real state** — GGS already has its opening — so
+it is exercised exactly as it stands. The success arm has to manufacture the
+"not yet set" state, which means deleting that row **inside the rolled-back
+block**; skipping it would be a test reporting success without having run. Then
+a third arm inserts a second opening row **directly**, bypassing the function
+entirely, and asserts the index refuses it. Function and index are separately
+proved, because only one of them binds a caller that does not use the RPC.
+
+### 12d. What is left
+
+`logTransaction` survives with **one** caller: `handleAddBank`, which creates a
+bank account with an opening balance and then writes its `opening` ledger line
+in a second round trip. Same two-round-trip shape, but not a read-modify-write —
+the balance is *set at creation* rather than moved, so there is no value read
+earlier to go stale. The remaining risk is an account created with a balance and
+no ledger line explaining it. Logged, not fixed; scope was the cash opening.

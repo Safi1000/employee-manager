@@ -264,6 +264,48 @@ So: **adding a `require_perm('x')` or a `has_perm('x')` policy means adding `x`
 to both `PERMISSION_GROUPS` and `public.permission_keys`.** Skipping either
 turns the check red that night, which is the point.
 
+### DECIDED and DEFERRED are different words
+
+When a question about the system is put to Shayan and answered, say **DECIDED**
+on the object — the table comment, the function comment, the doc section.
+When it is put and deliberately left open, say **DEFERRED**.
+
+- **DECIDED** — asked, answered, do not reopen without a reason.
+- **DEFERRED** — asked, deliberately left open, still owed an answer.
+
+**An unmarked flag becomes the first by default.** Nothing on an object
+distinguishes "settled" from "not yet returned to", so six months on the note
+reads as a decision nobody made, and the next person implements against it.
+
+Two consequences worth following:
+
+- **Do not widen a decided wording to cover a deferred case.** 0387 put
+  `COMPANY-WIDE BY DESIGN` on four tables; 0388 took it off `bonus_pools` alone
+  and marked that one DEFERRED. "By design" is a claim about settled intent, and
+  that was the exact claim not being made — the scoping was identical, the
+  confidence was not. Its migration asserts the deferred marker is on that table
+  and on **none** of the other three, so the one open question cannot be buried
+  in three closed ones.
+- **A deferred note says what the change would be** if the answer comes back the
+  other way, so acting on it later is a lookup rather than a re-derivation.
+
+### Where a defect was found says where to look next
+
+`Accounting.tsx` moved money in five unprotected round trips for a bank
+transfer, while the two *harder* moves on the same screen — a withdrawal to a
+custodian and a cash deposit — had been atomic RPCs for a long time. The simple
+one was the one left in the browser.
+
+**Difficulty does not predict this. Whether somebody happened to reach for an
+RPC does.** So when one instance of a defect turns up, do not search by
+"which of these looks complicated enough to be wrong" — search for **the same
+shape written by hand**, and expect to find it in the easy cases, which is
+where nobody thought a helper was warranted.
+
+The same heuristic found `handleSetCashOpening` (0390): every balance write in
+the codebase had moved under the row lock except the one that only *sets* an
+opening, because it did not look like a movement.
+
 ### Money moves in one place
 
 `apply_money_delta()` (0380) is the only definition of how a cash or bank
@@ -272,8 +314,12 @@ the row lock, row count asserted, the two zero-row cases diagnosed separately.
 
 **Do not move a balance from the frontend.** The helpers that did —
 `applyCashDelta`, `applyBankDelta`, `logExpenseTransaction` and their advance
-and receipt twins — are gone from Expenses and Invoices. A screen that needs to
-move money needs an RPC that does the row and the money in one transaction.
+and receipt twins — are gone from Expenses, Invoices and Accounting. A screen
+that needs to move money needs an RPC that does the row and the money in one
+transaction. **No screen in this codebase moves a balance any more**, and
+nothing should reintroduce one: `cash_balance + <value read earlier>` is the
+race in its purest form, and it survived longest on the one flow that only
+*set* a balance rather than moving one (0390).
 
 ## Tests
 
