@@ -358,6 +358,106 @@ case advance and the filing row in one statement, or the advance refused.
 
 ---
 
+## 4b. Converting the 21 `writes` to INVOKER — the shape, before converting any
+
+**Asked: which write only branch_scope tables (clean invoker), and which also
+touch something needing a key their caller may not hold?**
+
+Every table each of the 21 writes, with its write key and whether it is
+branch-scoped:
+
+| Companion table | Write key | Under invoker |
+|---|---|---|
+| `employees` `[branch]` | `employees.edit` | caller holds it — 0368 gated every one of these on the same key |
+| `contracts` | `contracts.edit` | `renew_contract`'s own key |
+| `invoices` `[branch]` | `invoices.edit` | `write_off_receivable`'s own key |
+| `payslips` `[branch]` | none | `company_members` + `branch_scope` — passes |
+| `deployments`, `employee_lifecycle_events`, `employee_code_history`, `employee_salary_history`, `employee_approval_events`, `appraisals`, `contract_lines`, `payroll_runs` | none | `company_members` (ALL) — passes |
+| **`audit_log`** | none | **NO INSERT POLICY AT ALL** — `company_members_read` and `ssa_all` only |
+
+**18 of 21 are clean. Three are not, and they are not the three you would
+guess.**
+
+### Blocker 1 — `audit_log` has no insert policy
+
+`amend_employee_identity` and `unverify_employee_identity` write `audit_log`
+directly. RLS is on and the only policies are a **read** policy and `ssa_all`.
+Under invoker both functions would be **refused at the audit write** — the
+`record_invoice_payment` problem exactly, on two functions.
+
+It is also the more interesting half: an audit row is written *because* an
+action happened, and the actor should not need a separate permission to be
+audited. The fix is an insert policy on `audit_log` for company members — the
+same reasoning as 0369's receipt carve-out — not a definer helper.
+
+### Blocker 2 — 0368's three exceptions are the three invoker blockers
+
+`renew_contract` is gated `contracts.edit`, `transition_appraisal` and
+`set_performance_enrollment` are gated `performance.approve`. All three write
+`employees`, which requires `employees.edit`.
+
+**Under a definer gate that was correct**: the employees write is a cascade of an
+authorised action, and requiring both keys would mean nobody could renew a
+contract without HR rights. **Under invoker it stops working**, because RLS does
+not know what a cascade is — it sees a user without `employees.edit` writing
+`employees` and refuses.
+
+So the three exceptions argued in 0368 are exactly the three functions that
+cannot simply become invoker. That is not a contradiction; it is the same fact
+seen from both sides — **a cascade is a thing only a definer function can
+express**. Converting them means deciding that renewing a contract really does
+require the right to edit staff records, or keeping them definer with a resolved
+branch assertion.
+
+### So: one migration, plus two decisions
+
+**18 clean conversions** are one migration of one shape — remove `SECURITY
+DEFINER`, and `branch_scope` plus the permission policies do the rest. The
+`require_perm` calls 0368 added become redundant for those and should stay
+anyway: they fail fast with a better message than an RLS refusal.
+
+**Two decisions first**, neither of which is mine:
+
+1. An insert policy on `audit_log` for company members — needed before the two
+   identity functions can convert, and arguably needed regardless.
+2. Whether `renew_contract`, `transition_appraisal` and
+   `set_performance_enrollment` should require `employees.edit` as well. If yes,
+   they convert with the rest. If no, they stay definer and get
+   `assert_branch_writable((select branch_id from employees where id = ...))` —
+   a resolved branch assertion rather than an invoker conversion.
+
+---
+
+## 4c. Two migrations recorded with no repo file, and one number used twice
+
+`migration_ledger_drift()` reports 13, and it does **not** read the working tree
+— it compares `schema_migrations` against `public.migration_manifest`, fetched
+from the remote. Local commits do not clear it; a push and a re-fetch do.
+
+Nine "recorded, no repo file" break down as **seven of mine (0364-0370, files
+now written, awaiting a push)** and **two that predate this work**:
+
+- `0341_employee_branch_follows_client` — applied 2026-09-03 23:36
+- `0365_an_expenses_own_audit_row_belongs_to_expenses_edit` — applied 2026-09-04 00:45
+
+**The second one collides with a number I then used.** I picked 0365 from the
+highest file in the repo (0364) without checking `schema_migrations` for higher
+*recorded* numbers, so `0365` now names two different migrations: the recorded
+one above, and my `0365_a_detector_for_the_branch...`. The drift check was
+already red and already listing it before I started.
+
+That earlier migration is the source of the `expenses.edit` carve-out on
+`bank_transactions` that 0369 widened. 0369 rebuilt those policies from the live
+policy text rather than from a file, so the carve-out was preserved and 0369's
+own proof asserts it survived on all three — but that was the method saving it,
+not intent.
+
+**Rule this earns: number a new migration from `max(repo file, recorded name)`,
+not from the repo alone.** The repo is only half the ledger, which is the whole
+premise of `check-migrations.mjs` checking both directions.
+
+---
+
 ## 5. Branch guard detector
 
 `branch_guard_gaps()` shipped in 0365 and was refined by 0367 with both
