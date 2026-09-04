@@ -46,11 +46,29 @@ export default function ComplianceCases() {
 
   useEffect(() => { load(); }, [load]);
 
-  const run = async (p: PromiseLike<{ error: { message: string } | null }>) => {
+  // 0385. A BARE UPDATE UNDER RLS AFFECTS ZERO ROWS AND RAISES NOTHING.
+  //
+  // This helper used to treat "no error" as success. A user without
+  // compliance.edit clicking "→ submitted" got no error, a refreshed screen,
+  // and a case still sitting on the stage it started on — with nothing to tell
+  // them why. Same for the File and Pay buttons and compliance.filings.
+  //
+  // Every caller now asks for the rows back with .select(), and zero rows is
+  // reported as what it is: a refusal, naming the permission that would have
+  // allowed it. This is the frontend half of the rule the RPCs enforce with
+  // `get diagnostics row_count` — silence is not success.
+  const run = async (
+    p: PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>,
+    needs: string,
+  ) => {
     setBusy(true); setErr(null);
-    const { error } = await p;
+    const { data, error } = await p;
     setBusy(false);
     if (error) { setErr(error.message); return false; }
+    if (!data || data.length === 0) {
+      setErr(`That change was not saved — it needs the ${needs} permission. Nothing has been recorded.`);
+      return false;
+    }
     await load();
     return true;
   };
@@ -106,7 +124,7 @@ export default function ComplianceCases() {
                   if (await run(supabase.from("compliance_cases").insert({
                     title: nc.title, case_type: nc.case_type, jurisdiction: nc.jurisdiction,
                     authority: nc.authority || null, target_date: nc.target_date || null,
-                  }))) setNc({ title: "", case_type: "licence", jurisdiction: "ict", authority: "", target_date: "" });
+                  }).select("id"), "compliance.edit")) setNc({ title: "", case_type: "licence", jurisdiction: "ict", authority: "", target_date: "" });
                 }}>
                 Add case
               </Button>
@@ -141,7 +159,7 @@ export default function ComplianceCases() {
                         </Button>
                         {nextStage(c.stage) && (
                           <Button variant="secondary" size="sm" disabled={busy}
-                            onClick={() => run(supabase.from("compliance_cases").update({ stage: nextStage(c.stage) }).eq("id", c.id))}>
+                            onClick={() => run(supabase.from("compliance_cases").update({ stage: nextStage(c.stage) }).eq("id", c.id).select("id"), "compliance.edit")}>
                             → {String(nextStage(c.stage)).replace(/_/g, " ")}
                           </Button>
                         )}
@@ -176,7 +194,7 @@ export default function ComplianceCases() {
                   if (await run(supabase.from("statutory_filings").insert({
                     filing_type: nf.filing_type, period_month: nf.period_month, due_date: nf.due_date,
                     amount: nf.amount ? Number(nf.amount) : null,
-                  }))) setNf({ filing_type: "eobi", period_month: "", due_date: "", amount: "" });
+                  }).select("id"), "compliance.filings")) setNf({ filing_type: "eobi", period_month: "", due_date: "", amount: "" });
                 }}>
                 Add filing
               </Button>
@@ -207,9 +225,9 @@ export default function ComplianceCases() {
                       <td className="px-3 py-1.5 text-center"><span className="capitalize text-xs">{status}</span></td>
                       <td className="px-3 py-1.5 text-right space-x-1">
                         {!f.filed_date && <Button variant="secondary" size="sm" disabled={busy}
-                          onClick={() => run(supabase.from("statutory_filings").update({ filed_date: new Date().toISOString().slice(0, 10) }).eq("id", f.id))}>File</Button>}
+                          onClick={() => run(supabase.from("statutory_filings").update({ filed_date: new Date().toISOString().slice(0, 10) }).eq("id", f.id).select("id"), "compliance.filings")}>File</Button>}
                         {f.filed_date && !f.paid_date && <Button variant="primary" size="sm" disabled={busy}
-                          onClick={() => run(supabase.from("statutory_filings").update({ paid_date: new Date().toISOString().slice(0, 10) }).eq("id", f.id))}>Pay</Button>}
+                          onClick={() => run(supabase.from("statutory_filings").update({ paid_date: new Date().toISOString().slice(0, 10) }).eq("id", f.id).select("id"), "compliance.filings")}>Pay</Button>}
                       </td>
                     </tr>
                   );

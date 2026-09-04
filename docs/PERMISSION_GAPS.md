@@ -712,3 +712,238 @@ So the fix is three parts and none of them belongs in a branch migration:
 add both keys to `PERMISSION_GROUPS`, replace the role literals with
 `require_perm`, and only then convert the function. **Awaiting a decision on
 the two key names before any of it.**
+
+---
+
+## 7. The cross-key flows closed (0380–0383), and two defects found doing it
+
+### 7a. It was EIGHT flows, not nine — and then it was eight again
+
+Two corrections to §4, in opposite directions:
+
+- **`nextStage` was never cross-key.** `ComplianceCases.tsx:144` is a single
+  `update compliance_cases set stage`. The `statutory_filings` writes are
+  separate buttons on a separate tab, and neither table has a trigger linking
+  them. The description in §4 — a case worker advancing a case and failing to
+  record the filing — describes something this code does not do. Removed.
+- **`handleDeletePayment` (Invoices.tsx:984) was missing.** It shares
+  `reverseOldPaymentEffects` with `handleEditPayment`, exactly as
+  `reverseExistingPayment` served both expense edit and expense delete. The
+  list counted helpers, not the callers that reach them — the same mistake
+  §4's own reconciliation note called out, made again.
+
+### 7b. `apply_money_delta()` — one definition of how money moves (0380)
+
+Eight bodies would have grown eight copies of decisions that each took a probe
+to get right: the arithmetic under the row lock, the row-count assert, the
+treasury bootstrap, and the two different zero-row diagnoses (treasury reads
+and writes under one policy, so an invisible row is genuinely absent;
+`bank_accounts` reads under `company_members` and writes under
+`accounting.edit`, so a *visible* row that did not update is a permission
+refusal and says so by name).
+
+`p_delta` is **signed**. A reversal is not a separate concept — it is the same
+call with the opposite sign, which is what the frontend helpers were already
+doing one round trip at a time.
+
+`record_expense` was **restated onto it** in the same migration, behind an md5
+precondition (single author, so restatement is the sanctioned path). Leaving it
+with its own copy would have meant the helper is the definition of how money
+moves everywhere except in the one place that already worked.
+
+**The probe caught a real bug.** `bank_transactions.company_id` is NOT NULL and
+was being left to `fill_company_id`, which reads the session. The fix is better
+than the bug: `p_company` is passed explicitly, because it came off the row
+whose balance just moved rather than off the session, and those differ for
+cron, SQL and definer callers.
+
+`describe_expense()` and `describe_advance()` moved into the database for the
+same reason — the sentence on an audit line is now built in one place whether
+the row was created, amended or reversed.
+
+### 7c. The expense flows (0381)
+
+`expense_reverse_money()` holds "undo the money this expense represents", which
+is four rules and not one:
+
+| State | Reversal |
+|---|---|
+| Cash | return the cash |
+| Bank | return it to `bank_account_id` |
+| Payable, Pending | nothing moved, nothing to return |
+| Payable, **Paid** | return it via `paid_via` / `paid_bank_account_id` |
+| Cheque | nothing — a cheque moves money when it clears |
+
+The fourth line is the one that gets forgotten, **because a settled payable
+pays out of a different account from the one on the expense**. It is read off
+the row, so no caller can pass the wrong account for its own reversal.
+
+On top of it: `amend_expense`, `delete_expense`, `settle_payable_expense`,
+`revert_payable_expense`.
+
+**`handleMarkPaid` had the worst ordering of the four** — it moved the money
+first and updated the expense last. A user with `accounting.edit` and without
+`expenses.edit` paid the vendor and left the payable at Pending, learning why
+only after the cash was gone. `settle_payable_expense` writes the row first,
+and refuses a payable that is already settled rather than paying it twice.
+
+`revert_payable_expense` reverses **before** clearing the status, because the
+refund reads `paid_via` off the row and the update is what erases it. Clearing
+first would refund nothing and report success.
+
+**Probe:** record → amend → delete returns cash to exactly the starting figure;
+recording a Payable moves nothing; settle → revert returns it again; a second
+settle is refused *by message*. The round trip is the assertion that matters —
+each step on its own "succeeds", and only the closing balance shows a sign or
+an account being wrong.
+
+### 7d. The advance flows (0382)
+
+`record_advance`, `amend_advance`, `delete_advance`, plus
+`advance_reverse_money`. Deliberately **not** folded into the expense helpers:
+an advance has no payable state, so there is no `paid_via` to read back, and
+its audit lines carry `kind = 'advance'`, which the cashflow screens filter on.
+What they share is `apply_money_delta()` — the part that was worth sharing.
+
+These flows became *more* cross-key than §4 recorded, not less: 0372 gave
+`advances` a permission (`expenses.edit`, provisionally) where it had none, so
+the row and the bank balance now need two different keys.
+
+**Probe:** a **Cash → Bank amend**, which the expense probe could not test.
+Both balances are measured, because a reversal reading the caller's *new*
+parameters instead of the stored row would return the money to the account the
+advance is moving *to* — cash short, bank twice credited — and a test watching
+one balance would call that correct.
+
+### 7e. The receipt flows (0383), and a defect that is not about permissions
+
+`record_invoice_payment` credits the receivable with **cash and withholding
+together** (A1: outstanding is gross). Both frontend flows undid the cash only:
+
+```
+handleEditPayment:   newReceived = amount_received - old.amount + new
+handleDeletePayment: newReceived = amount_received - old.amount
+```
+
+So **every edit or delete of a payment carrying withholding left the invoice
+over-credited by exactly the withholding** — silently and permanently, because
+nothing recomputes `amount_received` from the payment rows.
+
+Not yet money on GGS: no `invoice_payments` row carries a non-zero
+`withholding_amount` today. It is a live defect waiting for the first client
+with a WHT rate, which is why it is fixed rather than logged.
+
+`amend_invoice_payment` and `delete_invoice_payment` move
+`amount + withholding_amount` in both directions, read off the stored row. The
+"exceeds invoice total" check moved into the RPC, where it can be made *after*
+the reversal against a figure nothing else can move in between.
+
+**Probe:** the withholding half specifically. Production holds **zero
+invoices**, so the probe creates one inside the rolled-back block rather than
+skipping the arm — a skipped arm is a test reporting success without having
+run.
+
+### 7f. What the frontend lost
+
+`applyCashDelta`, `applyBankDelta`, `logExpenseTransaction`,
+`logAdvanceTransaction`, `describeExpense`, `describeAdvance`,
+`reverseExistingPayment`, `reverseAdvancePayment` and
+`reverseOldPaymentEffects` are **deleted** from `Expenses.tsx` and
+`Invoices.tsx`. Leaving them would have left the next flow a way to move a
+balance in a round trip.
+
+**Still client-side, and out of scope:** `Accounting.tsx` keeps
+`applyCashDelta`/`applyBankDelta`/`logTransaction` for bank transfers and
+reconciliation. Those are single-key (`accounting.edit`), so they are not
+cross-key — **but a transfer debits one account and credits another in two
+separate round trips**, which is an atomicity hole of a different kind. Next
+candidate.
+
+### 7g. `ComplianceCases.tsx` — silence is not success
+
+The `run()` helper treated "no error" as success. A user without
+`compliance.edit` clicking "→ submitted" got no error, a refreshed screen, and
+a case still on the stage it started on. Same for File/Pay and
+`compliance.filings`.
+
+Every caller now asks for the rows back with `.select()`, and zero rows is
+reported as a refusal naming the permission that would have allowed it. This is
+the frontend half of the rule the RPCs enforce with
+`get diagnostics v_n = row_count`.
+
+---
+
+## 8. `transition_record_state` and the permission catalogue (0384–0385)
+
+### 8a. The check that would have caught it twice
+
+`permission_keys` mirrors `PERMISSION_GROUPS`. `permission_keys_demanded()`
+reads every key actually required — `require_perm`/`has_perm` in any function
+body, and `has_perm` inside any RLS policy — and `permission_key_gaps()`
+reports demanded-but-uncatalogued. `ledger_checks()` evaluates it nightly as
+`every_demanded_permission_is_grantable` (canary 33 → 34).
+
+Only the harmful direction is reported. Catalogued-but-unused is not a defect —
+a key may gate a screen rather than a row.
+
+**0384's probe runs the check against the real historical case before closing
+it:** the catalogue is seeded *without* `employees.ops_verify`, and the gap
+report must name that key and nothing else. Then the two new keys are added and
+the arm must be green. A checker that came back empty at the first step would
+have been inert, and adding the keys would have made it look like it worked.
+
+### 8b. The two stage keys
+
+`employees.ops_verify` and `employees.finance_approve`, replacing four role
+literals. `employees.ops_verify` was **already demanded by the body** and had
+never been in `PERMISSION_GROUPS`, so it could not be granted to anybody and
+the role list has been the entire gate since it was written.
+
+The rule — require what a direct write to the target table would require —
+is set aside here, and the exception is now in CLAUDE.md beside it: **where a
+function exists so that two different people act, the key follows the stage,
+not the table.**
+
+### 8c. It stays SECURITY DEFINER, and that is a departure
+
+The brief said: add the keys, replace the literals, **then convert**. The
+conversion is not done, and doing it would undo what the keys just bought.
+
+Under invoker the `update employees set record_state` runs against the caller's
+own policies, and `employees` carries `perm_write_*` on `employees.edit`. A
+converted `transition_record_state` would demand `employees.ops_verify` **and**
+`employees.edit` — putting back exactly the flattening the stage keys were
+chosen to avoid. An Ops verifier would need full staff-edit rights to verify a
+record.
+
+This is 0375's cascade argument in its clearest form. So it pays for the
+definer body the same way — with a resolved branch assertion, from the employee
+being moved. **That closes the last `writes` row.**
+
+The probe asserts the function is **still definer**, because a conversion would
+have quietened the detector and passed a "does it ask a permission" test while
+quietly requiring `employees.edit` of every verifier.
+
+---
+
+## 9. State after this round
+
+| | |
+|---|---|
+| `branch_guard_gaps()` | **9** — all `reads`, all logged as a policy decision (§6d) |
+| `writes` / `stamps` | **0 / 0** |
+| `tenant_guard_gaps()` | **0** |
+| `permission_key_gaps()` | **0** |
+| `ledger_checks()` | 34 checks; canary green; the permission arm green |
+| Probe residue | none — no PROBE expenses, advances, invoices, payments or bank transactions |
+
+**Open, and for Shayan:**
+
+1. `alerts`, `approval_requests`, `bonus_pools`, `bonus_pool_allocations` carry
+   no branch policy (§6b). Company-wide by design, or branch-scoped?
+2. `regional_scorecard` and `cash_entitlements` show regions side by side by
+   design; the nine `reads` feed them (§6d). Same question, possibly a
+   different answer.
+3. `advances` is still behind `expenses.edit`, explicitly provisional (§2).
+4. Bank transfers in `Accounting.tsx` debit and credit in two round trips
+   (§7f).

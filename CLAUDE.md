@@ -218,6 +218,63 @@ the canary agreeing with itself at `0316`'s number. `0325` exists because
 restatement behind a digest precondition was safe. `0326` then had to use
 surgery, because after `0325` the function has two authors.
 
+## Permissions
+
+### Which key a function should require, and the one exception
+
+The rule: **require what a direct write to the target table would require.** A
+function that writes `employees` asks `employees.edit`; one that writes
+`expenses` asks `expenses.edit`. It answers "what is the minimum coherent
+gate", it needs no per-function judgement, and it is right almost every time —
+0370 gated nineteen ungated RPCs with it in one migration.
+
+**The exception: where a function exists so that two DIFFERENT PEOPLE act, the
+key follows the STAGE, not the table.**
+
+`transition_record_state` moves an employee record Draft → Ops-verified →
+Finance-approved. Every arm writes `employees`, so the rule says
+`employees.edit` for all of them — and `employees.edit` is held by everyone who
+can edit staff at all, so one key would let the same person do both stages.
+That deletes the separation of duties the two-stage design is for. It asks
+`employees.ops_verify` and `employees.finance_approve` instead (0384/0385).
+
+The test for the exception is not "is this important". It is: **would one key
+let one person complete a sequence the design requires two people to complete?**
+If so, split it by stage.
+
+Note the consequence for `SECURITY INVOKER`: a stage-gated function usually
+CANNOT be converted, because under invoker the table's own `perm_write_*`
+policy adds `employees.edit` back on top of the stage key and re-flattens what
+the split just separated. That is the cascade case — see 0375 and 0385.
+
+### A key the grant screen cannot offer is a key nobody can be given
+
+`PERMISSION_GROUPS` in `src/app/lib/supabase.ts` is what the grant screen
+renders. A key demanded by `require_perm()`/`has_perm()` but absent from it can
+never be granted, so its gate is unreachable — and it fails silently, because
+`has_perm()` returning false looks exactly like a correct denial.
+
+This has happened twice: `partnership.post` (0361) and `employees.ops_verify`
+(0384, which had been ungrantable since it was written). **It is now checked.**
+`public.permission_keys` mirrors `PERMISSION_GROUPS`, `permission_key_gaps()`
+reports every demanded-but-uncatalogued key, and `ledger_checks()` evaluates it
+nightly as `every_demanded_permission_is_grantable`.
+
+So: **adding a `require_perm('x')` or a `has_perm('x')` policy means adding `x`
+to both `PERMISSION_GROUPS` and `public.permission_keys`.** Skipping either
+turns the check red that night, which is the point.
+
+### Money moves in one place
+
+`apply_money_delta()` (0380) is the only definition of how a cash or bank
+balance moves and how that movement is logged. Signed delta, arithmetic under
+the row lock, row count asserted, the two zero-row cases diagnosed separately.
+
+**Do not move a balance from the frontend.** The helpers that did —
+`applyCashDelta`, `applyBankDelta`, `logExpenseTransaction` and their advance
+and receipt twins — are gone from Expenses and Invoices. A screen that needs to
+move money needs an RPC that does the row and the money in one transaction.
+
 ## Tests
 
 `supabase/tests/` runs inside a transaction that rolls back via a deliberate

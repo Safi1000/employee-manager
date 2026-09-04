@@ -343,6 +343,18 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
     items: [
       { key: "employees.view", label: "View employees" },
       { key: "employees.edit", label: "Add / edit / delete employees" },
+      // 0384/0385. The two stages of the employee record approval, as
+      // PERMISSIONS rather than role literals. employees.ops_verify was
+      // already demanded by transition_record_state and had never been listed
+      // here — so it could not be granted to anybody, and the role list was
+      // the whole gate. Second instance of the partnership.post defect; the
+      // permission_key_gaps() check added in 0384 catches the next one.
+      //
+      // Deliberately NOT folded into employees.edit: the two-stage design
+      // exists so that two different people act, and employees.edit is held
+      // by everyone who can edit staff at all.
+      { key: "employees.ops_verify", label: "Ops-verify a draft employee record" },
+      { key: "employees.finance_approve", label: "Finance-approve an Ops-verified employee record" },
     ],
   },
   {

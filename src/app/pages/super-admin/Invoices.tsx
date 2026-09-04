@@ -845,33 +845,17 @@ export default function Invoices() {
     setIsEditPaymentOpen(true);
   };
 
-  const reverseOldPaymentEffects = async (p: PaymentRow, invoiceNumber: string, clientName: string) => {
-    const oldAmt = Number(p.amount);
-    const desc = `Payment edit reversal (${p.payment_mode.toLowerCase()}) · ${clientName} · Invoice ${invoiceNumber}`;
-    if (p.payment_mode === "Cash") {
-      await applyCashDelta(-oldAmt);
-      await logTransaction({
-        bank_account_id: null,
-        kind: "receipt",
-        amount: oldAmt,
-        cash_delta: -oldAmt,
-        account_delta: 0,
-        description: desc,
-        reference_id: p.id,
-      });
-    } else if (p.bank_account_id) {
-      await applyBankDelta(p.bank_account_id, -oldAmt);
-      await logTransaction({
-        bank_account_id: p.bank_account_id,
-        kind: "receipt",
-        amount: oldAmt,
-        cash_delta: 0,
-        account_delta: -oldAmt,
-        description: desc,
-        reference_id: p.id,
-      });
-    }
-  };
+  // 0383. reverseOldPaymentEffects is GONE. It undid the CASH half of a
+  // receipt and left the WITHHOLDING credited to the invoice, because
+  // record_invoice_payment clears the receivable with cash and withholding
+  // together (A1: outstanding is gross) while this undid only `amount`. Every
+  // edit or delete of a payment carrying WHT therefore left the invoice
+  // looking more paid than it was, permanently, since nothing recomputes
+  // amount_received from the payment rows.
+  //
+  // amend_invoice_payment() and delete_invoice_payment() move
+  // `amount + withholding_amount` in both directions, read off the stored row,
+  // inside the transaction that changes it.
 
   const handleEditPayment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -889,79 +873,34 @@ export default function Invoices() {
       setError("Select a bank account for Bank payments.");
       return;
     }
-    // 0268. Checked HERE, before reverseOldPaymentEffects moves anything: the
-    // update below is the last step, so a constraint rejection at that point
-    // would leave the cash and bank balances already adjusted for a payment
-    // row that never changed.
+    // 0268. Checked here so the operator is told before anything is attempted.
+    // 0383 made this belt-and-braces rather than load-bearing: the RPC refuses
+    // a cash receipt with no custodian too, and does it inside the transaction,
+    // so a stale form can no longer get past it.
     if (editPaymentForm.payment_mode === "Cash" && !editPaymentForm.custodian_location_id) {
       setError("Select the custodian who received this cash.");
-      return;
-    }
-    const oldAmt = Number(editingPayment.amount);
-    const currentReceived = Number(editInvoice.amount_received);
-    const receivedWithoutThis = currentReceived - oldAmt;
-    const maxAllowed = Number(editInvoice.invoice_amount) - receivedWithoutThis;
-    if (newAmt > maxAllowed + 0.0001) {
-      setError(`Amount exceeds invoice total. Max allowed: PKR ${maxAllowed.toLocaleString()}.`);
       return;
     }
     setEditPaymentSubmitting(true);
     setError(null);
     try {
-      const invoiceNumber = editInvoice.invoice_number;
-      const clientName = editInvoice.client?.name ?? "Client";
-
-      await reverseOldPaymentEffects(editingPayment, invoiceNumber, clientName);
-
-      const newBankId =
-        editPaymentForm.payment_mode === "Bank" ? editPaymentForm.bank_account_id : null;
-      const desc = `Payment updated (${editPaymentForm.payment_mode.toLowerCase()}) · ${clientName} · Invoice ${invoiceNumber}`;
-      if (editPaymentForm.payment_mode === "Cash") {
-        await applyCashDelta(newAmt);
-        await logTransaction({
-          bank_account_id: null,
-          kind: "receipt",
-          amount: newAmt,
-          cash_delta: newAmt,
-          account_delta: 0,
-          description: desc,
-          reference_id: editingPayment.id,
-        });
-      } else {
-        await applyBankDelta(newBankId!, newAmt);
-        await logTransaction({
-          bank_account_id: newBankId,
-          kind: "receipt",
-          amount: newAmt,
-          cash_delta: 0,
-          account_delta: newAmt,
-          description: desc,
-          reference_id: editingPayment.id,
-        });
-      }
-
-      const { error: upPayErr } = await supabase
-        .from("invoice_payments")
-        .update({
-          amount: newAmt,
-          payment_date: editPaymentForm.payment_date,
-          payment_mode: editPaymentForm.payment_mode,
-          bank_account_id: newBankId,
-          custodian_location_id:
-            editPaymentForm.payment_mode === "Cash"
-              ? editPaymentForm.custodian_location_id
-              : null,
-          notes: editPaymentForm.notes.trim() || null,
-        })
-        .eq("id", editingPayment.id);
-      if (upPayErr) throw upPayErr;
-
-      const newReceived = receivedWithoutThis + newAmt;
-      const { error: invUpErr } = await supabase
-        .from("invoices")
-        .update({ amount_received: newReceived, updated_at: new Date().toISOString() })
-        .eq("id", editInvoice.id);
-      if (invUpErr) throw invUpErr;
+      // 0383. ONE CALL. The old receipt comes out — cash and withholding — the
+      // row changes, the invoice is re-credited and the new cash goes in, all
+      // in one transaction. The "exceeds invoice total" check moved into the
+      // RPC with it: it has to be made after the reversal, against a figure
+      // nothing else can move in between.
+      const { error: amendErr } = await supabase.rpc("amend_invoice_payment", {
+        p_payment_id: editingPayment.id,
+        p_amount: newAmt,
+        p_payment_date: editPaymentForm.payment_date,
+        p_payment_mode: editPaymentForm.payment_mode,
+        p_bank_account_id:
+          editPaymentForm.payment_mode === "Bank" ? editPaymentForm.bank_account_id : null,
+        p_custodian_location_id:
+          editPaymentForm.payment_mode === "Cash" ? editPaymentForm.custodian_location_id : null,
+        p_notes: editPaymentForm.notes.trim() || null,
+      });
+      if (amendErr) throw amendErr;
 
       setIsEditPaymentOpen(false);
       setEditingPayment(null);
@@ -986,21 +925,13 @@ export default function Invoices() {
     if (!window.confirm(`Delete this PKR ${Number(p.amount).toLocaleString()} payment? The amount will be reversed from balances.`)) return;
     setError(null);
     try {
-      const invoiceNumber = editInvoice.invoice_number;
-      const clientName = editInvoice.client?.name ?? "Client";
-      await reverseOldPaymentEffects(p, invoiceNumber, clientName);
-      const { error: delErr } = await supabase
-        .from("invoice_payments")
-        .delete()
-        .eq("id", p.id);
+      // 0383. The money, the receivable and the row together — and the
+      // receivable gets the withholding back as well as the cash.
+      const { error: delErr } = await supabase.rpc("delete_invoice_payment", {
+        p_payment_id: p.id,
+      });
       if (delErr) throw delErr;
-      const newReceived = Number(editInvoice.amount_received) - Number(p.amount);
-      const { error: invUpErr } = await supabase
-        .from("invoices")
-        .update({ amount_received: newReceived, updated_at: new Date().toISOString() })
-        .eq("id", editInvoice.id);
-      if (invUpErr) throw invUpErr;
-      await loadAll();
+            await loadAll();
       const refreshedInv = (await supabase
         .from("invoices")
         .select("*, client:client_id(name, client_code)")

@@ -1052,58 +1052,15 @@ export default function Expenses() {
     return { pending, approved, denied, count: fixedInstances.length };
   }, [fixedInstances]);
 
-  const applyCashDelta = async (delta: number) => {
-    if (!treasuryCompanyId) {
-      throw new Error("No company is selected, so there is no cash balance to adjust. Pick a company with the “Viewing as” selector first.");
-    }
-    const { data } = await supabase
-      .from("treasury")
-      .select("id, cash_balance")
-      .eq("company_id", treasuryCompanyId)
-      .maybeSingle();
-    if (!data) {
-      const { error: insErr } = await supabase
-        .from("treasury")
-        .insert({ company_id: treasuryCompanyId, cash_balance: delta });
-      if (insErr) throw insErr;
-      return;
-    }
-    const { error: upErr } = await supabase
-      .from("treasury")
-      .update({ cash_balance: Number(data.cash_balance) + delta, updated_at: new Date().toISOString() })
-      .eq("id", data.id);
-    if (upErr) throw upErr;
-  };
-
-  const applyBankDelta = async (bankId: string, delta: number) => {
-    const { data } = await supabase.from("bank_accounts").select("balance").eq("id", bankId).single();
-    if (!data) throw new Error("Bank account not found");
-    const { error: upErr } = await supabase
-      .from("bank_accounts")
-      .update({ balance: Number(data.balance) + delta, updated_at: new Date().toISOString() })
-      .eq("id", bankId);
-    if (upErr) throw upErr;
-  };
-
-  const logExpenseTransaction = async (args: {
-    bank_account_id: string | null;
-    amount: number;
-    cash_delta: number;
-    account_delta: number;
-    description: string;
-    reference_id: string | null;
-  }) => {
-    const { error: txErr } = await supabase.from("bank_transactions").insert({
-      bank_account_id: args.bank_account_id,
-      kind: "expense",
-      amount: args.amount,
-      cash_delta: args.cash_delta,
-      account_delta: args.account_delta,
-      description: args.description,
-      reference_id: args.reference_id,
-    });
-    if (txErr) throw txErr;
-  };
+  // 0380/0381. applyCashDelta, applyBankDelta and logExpenseTransaction are
+  // GONE. Every one of them moved money in its own round trip, outside any
+  // transaction, and read-then-wrote a balance it had already released the
+  // lock on. apply_money_delta() in the database does the arithmetic under the
+  // row lock, asserts its own row count, and is only ever reached from inside
+  // the transaction that carries the row the money belongs to.
+  //
+  // Nothing in this screen moves a balance any more. If something here needs
+  // to, it needs an RPC, not a helper.
 
   // Receipts now upload to Google Drive (under <Company>/Expenses/<year>/).
   // Returns the triple we persist on the expenses row. Legacy rows still
@@ -1156,11 +1113,9 @@ export default function Expenses() {
     }
   };
 
-  const describeExpense = (catId: string, client: string | null, desc: string | null) => {
-    const cat = categories.find((c) => c.id === catId)?.name ?? "Expense";
-    const who = client ? `(${client})` : "(Office)";
-    return `${cat} ${who}${desc ? `: ${desc}` : ""}`;
-  };
+  // 0380. describeExpense moved into the database as describe_expense(), so
+  // the sentence on an expense's audit line is built in one place whether the
+  // expense was created, amended or reversed.
 
   // 0347. Amortisation is offered only above the threshold, so an amount edited
   // back down below it must not leave a stale coverage window behind — the
@@ -1242,7 +1197,6 @@ export default function Expenses() {
     setError(null);
     try {
       const vendorId = form.payment_mode === "Payable" ? form.vendor_id || null : null;
-      const clientName = form.client_id ? clients.find((c) => c.id === form.client_id)?.name ?? null : null;
 
       const chequeBank =
         form.payment_mode === "Cheque"
@@ -1403,51 +1357,16 @@ export default function Expenses() {
     setIsEditOpen(true);
   };
 
-  const reverseExistingPayment = async (exp: ExpenseRow) => {
-    if (exp.payment_mode === "Cash") {
-      await applyCashDelta(Number(exp.amount));
-      await logExpenseTransaction({
-        bank_account_id: null,
-        amount: Number(exp.amount),
-        cash_delta: Number(exp.amount),
-        account_delta: 0,
-        description: `Reverse expense (edit) — ${exp.description ?? exp.category_name ?? ""}`,
-        reference_id: exp.id,
-      });
-    } else if (exp.payment_mode === "Bank" && exp.bank_account_id) {
-      await applyBankDelta(exp.bank_account_id, Number(exp.amount));
-      await logExpenseTransaction({
-        bank_account_id: exp.bank_account_id,
-        amount: Number(exp.amount),
-        cash_delta: 0,
-        account_delta: Number(exp.amount),
-        description: `Reverse expense (edit) — ${exp.description ?? exp.category_name ?? ""}`,
-        reference_id: exp.id,
-      });
-    } else if (exp.payment_mode === "Payable" && exp.payable_status === "Paid") {
-      if (exp.paid_via === "Cash") {
-        await applyCashDelta(Number(exp.amount));
-        await logExpenseTransaction({
-          bank_account_id: null,
-          amount: Number(exp.amount),
-          cash_delta: Number(exp.amount),
-          account_delta: 0,
-          description: `Reverse paid expense (edit) — ${exp.description ?? exp.category_name ?? ""}`,
-          reference_id: exp.id,
-        });
-      } else if (exp.paid_via === "Bank" && exp.paid_bank_account_id) {
-        await applyBankDelta(exp.paid_bank_account_id, Number(exp.amount));
-        await logExpenseTransaction({
-          bank_account_id: exp.paid_bank_account_id,
-          amount: Number(exp.amount),
-          cash_delta: 0,
-          account_delta: Number(exp.amount),
-          description: `Reverse paid expense (edit) — ${exp.description ?? exp.category_name ?? ""}`,
-          reference_id: exp.id,
-        });
-      }
-    }
-  };
+  // 0381. reverseExistingPayment is GONE. It spelled out "undo the money this
+  // expense represents" — four rules, including the one everybody forgets,
+  // that a settled payable refunds out of paid_via and not bank_account_id —
+  // and it did it in round trips with no transaction around them, so a refusal
+  // on the write that followed left the money already moved.
+  //
+  // It now lives once, in the database, as expense_reverse_money(), reading the
+  // mode and the account OFF THE ROW rather than from whatever the caller
+  // passes. amend_expense() and delete_expense() both call it inside the same
+  // transaction as the row they change.
 
   const handleEdit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1486,8 +1405,6 @@ export default function Expenses() {
     setSubmitting(true);
     setError(null);
     try {
-      await reverseExistingPayment(selected);
-
       // The "insufficient after reversal" block is gone for the same reason as
       // the one on the add form: it measured a company-wide cached scalar, and
       // an overdrawn custodian is a payable the ledger already holds.
@@ -1504,7 +1421,6 @@ export default function Expenses() {
       }
 
       const vendorId = editForm.payment_mode === "Payable" ? editForm.vendor_id || null : null;
-      const clientName = editForm.client_id ? clients.find((c) => c.id === editForm.client_id)?.name ?? null : null;
 
       // Receipt edit: keep existing values unless the user opted to replace.
       let receiptPath: string | null = selected.receipt_path;
@@ -1541,15 +1457,6 @@ export default function Expenses() {
         }
       }
 
-      const payableStatus =
-        editForm.payment_mode === "Payable"
-          ? (selected.payment_mode === "Payable" ? selected.payable_status ?? "Pending" : "Pending")
-          : null;
-
-      const chequeBank =
-        editForm.payment_mode === "Cheque"
-          ? cheques.find((c) => c.id === editForm.cheque_id)?.bank_account_id ?? null
-          : null;
       // 0268. The edit form let the mode be changed to Cash but HID the
       // custodian picker (`&& !edit`) and never wrote the column, so a
       // Bank -> Cash edit produced a cash expense naming nobody. The picker is
@@ -1563,70 +1470,41 @@ export default function Expenses() {
         (editForm.client_id ? clients.find((c) => c.id === editForm.client_id)?.branch_id ?? null : null) ||
         headOfficeBranchId ||
         null;
-      const { error: upErr } = await supabase
-        .from("expenses")
-        .update({
-          category_id: editForm.category_id,
-          // Locked: always derived from the client, never a manual choice.
-          pl_category: editForm.client_id ? "cost_of_services" : "operating_expense",
-          client_id: editForm.client_id || null,
-          branch_id: resolvedEditBranch,
-          vendor_id: vendorId,
-          description: editForm.description.trim() || null,
-          amount,
-          expense_date: editForm.expense_date,
-          payment_mode: editForm.payment_mode,
-          custodian_location_id: editCustodianLocId,
-          bank_account_id:
-            editForm.payment_mode === "Bank"
-              ? editForm.bank_account_id
-              : editForm.payment_mode === "Cheque"
-                ? chequeBank
-                : null,
-          cheque_id: editForm.payment_mode === "Cheque" ? editForm.cheque_id : null,
-          due_date: editForm.payment_mode === "Payable" ? editForm.due_date : null,
-          payable_status: payableStatus,
-          // 0347. Same derivation as the insert. Dropping below the threshold
-          // on edit clears the window rather than leaving one the constraint
-          // would refuse.
-          coverage_start: isAmortising(editForm) ? `${editForm.coverage_start}-01` : null,
-          coverage_end: isAmortising(editForm) ? `${editForm.coverage_end}-01` : null,
-          paid_via: editForm.payment_mode === "Payable" ? selected.paid_via : null,
-          paid_bank_account_id: editForm.payment_mode === "Payable" ? selected.paid_bank_account_id : null,
-          paid_at: editForm.payment_mode === "Payable" ? selected.paid_at : null,
-          notes: editForm.notes.trim() || null,
-          expense_by: editForm.expense_by || null,
-          receipt_path: receiptPath,
-          drive_file_id: receiptDriveFileId,
-          drive_view_url: receiptDriveViewUrl,
-          receipt_file_name: receiptFileName,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", selected.id);
-      if (upErr) throw upErr;
-
-      const desc = describeExpense(editForm.category_id, clientName, editForm.description.trim() || null);
-      if (editForm.payment_mode === "Cash") {
-        await applyCashDelta(-amount);
-        await logExpenseTransaction({
-          bank_account_id: null,
-          amount,
-          cash_delta: -amount,
-          account_delta: 0,
-          description: desc,
-          reference_id: selected.id,
-        });
-      } else if (editForm.payment_mode === "Bank") {
-        await applyBankDelta(editForm.bank_account_id, -amount);
-        await logExpenseTransaction({
-          bank_account_id: editForm.bank_account_id,
-          amount,
-          cash_delta: 0,
-          account_delta: -amount,
-          description: desc,
-          reference_id: selected.id,
-        });
-      }
+      // 0381. ONE CALL. The old money comes back, the row changes and the new
+      // money goes out inside a single transaction, so a refusal on any of the
+      // three leaves all three undone. Before this, the reversal above had
+      // already committed by the time the UPDATE was refused.
+      //
+      // payable_status, paid_via, paid_bank_account_id and paid_at are no
+      // longer computed here: amend_expense carries them forward from the
+      // stored row, which is the only place that knows whether this payable
+      // was already settled. The cheque's bank account is resolved there too.
+      const { error: amendErr } = await supabase.rpc("amend_expense", {
+        p_expense_id: selected.id,
+        p_category_id: editForm.category_id,
+        p_amount: amount,
+        p_expense_date: editForm.expense_date,
+        p_payment_mode: editForm.payment_mode,
+        p_client_id: editForm.client_id || null,
+        p_branch_id: resolvedEditBranch,
+        p_vendor_id: vendorId,
+        p_description: editForm.description.trim() || null,
+        p_custodian_location_id: editCustodianLocId,
+        p_bank_account_id: editForm.payment_mode === "Bank" ? editForm.bank_account_id : null,
+        p_cheque_id: editForm.payment_mode === "Cheque" ? editForm.cheque_id : null,
+        p_due_date: editForm.payment_mode === "Payable" ? editForm.due_date : null,
+        p_notes: editForm.notes.trim() || null,
+        p_expense_by: editForm.expense_by || null,
+        // 0347. Same derivation as the insert. Dropping below the threshold on
+        // edit clears the window rather than leaving one the constraint refuses.
+        p_coverage_start: isAmortising(editForm) ? `${editForm.coverage_start}-01` : null,
+        p_coverage_end: isAmortising(editForm) ? `${editForm.coverage_end}-01` : null,
+        p_receipt_path: receiptPath,
+        p_drive_file_id: receiptDriveFileId,
+        p_drive_view_url: receiptDriveViewUrl,
+        p_receipt_file_name: receiptFileName,
+      });
+      if (amendErr) throw amendErr;
 
       setIsEditOpen(false);
       await loadAll();
@@ -1642,12 +1520,15 @@ export default function Expenses() {
       return;
     setError(null);
     try {
-      await reverseExistingPayment(exp);
+      // 0381. The money and the row go together. The receipt is removed FIRST
+      // and deliberately: Drive is not part of the transaction, so it is the
+      // one step that cannot be rolled back, and a receipt left behind for a
+      // deletion that was refused is recoverable in a way a missing one is not.
       await removeReceipt({
         drive_file_id: exp.drive_file_id,
         receipt_path: exp.receipt_path,
       });
-      const { error: delErr } = await supabase.from("expenses").delete().eq("id", exp.id);
+      const { error: delErr } = await supabase.rpc("delete_expense", { p_expense_id: exp.id });
       if (delErr) throw delErr;
       await loadAll();
     } catch (err: any) {
@@ -1663,29 +1544,8 @@ export default function Expenses() {
     setViewReceipts((data ?? []) as typeof viewReceipts);
   };
 
-  const logAdvanceTransaction = async (args: {
-    bank_account_id: string | null;
-    amount: number;
-    cash_delta: number;
-    account_delta: number;
-    description: string;
-    reference_id: string | null;
-  }) => {
-    const { error: txErr } = await supabase.from("bank_transactions").insert({
-      bank_account_id: args.bank_account_id,
-      kind: "advance",
-      amount: args.amount,
-      cash_delta: args.cash_delta,
-      account_delta: args.account_delta,
-      description: args.description,
-      reference_id: args.reference_id,
-    });
-    if (txErr) throw txErr;
-  };
-
-  const describeAdvance = (empName: string, empCode: string, clientName: string | null) => {
-    return `Advance · ${empCode} ${empName}${clientName ? ` (${clientName})` : ""}`;
-  };
+  // 0382. logAdvanceTransaction and describeAdvance moved into the database
+  // alongside the advance RPCs, for the same reason their expense twins did.
 
   const validateAdvance = (f: AdvanceForm, existingAmount?: number): string | null => {
     if (!f.employee_id) return "Select an employee.";
@@ -1750,51 +1610,26 @@ export default function Expenses() {
         advCustodianLocId = await requireCustodianLoc(
           advForm.paid_by_employee_id, "handed over this cash");
       }
-      const { data: inserted, error: insErr } = await supabase
-        .from("advances")
-        .insert({
-          employee_id: advForm.employee_id,
-          client_id: advForm.client_id || null,
-          amount,
-          advance_date: advForm.advance_date,
-          payment_mode: advForm.payment_mode,
-          bank_account_id:
-            advForm.payment_mode === "Bank"
-              ? advForm.bank_account_id
-              : advForm.payment_mode === "Cheque"
-                ? chequeBank
-                : null,
-          cheque_id: advForm.payment_mode === "Cheque" ? advForm.cheque_id : null,
-          custodian_location_id: advCustodianLocId,
-          notes: advForm.notes.trim() || null,
-        })
-        .select()
-        .single();
-      if (insErr) throw insErr;
-      const advId = (inserted as Advance).id;
-      const desc = describeAdvance(emp?.full_name ?? "", emp?.employee_code ?? "", client?.name ?? null);
-      if (advForm.payment_mode === "Cash") {
-        await applyCashDelta(-amount);
-        await logAdvanceTransaction({
-          bank_account_id: null,
-          amount,
-          cash_delta: -amount,
-          account_delta: 0,
-          description: desc,
-          reference_id: advId,
-        });
-      } else if (advForm.payment_mode === "Bank") {
-        await applyBankDelta(advForm.bank_account_id, -amount);
-        await logAdvanceTransaction({
-          bank_account_id: advForm.bank_account_id,
-          amount,
-          cash_delta: 0,
-          account_delta: -amount,
-          description: desc,
-          reference_id: advId,
-        });
-      }
-      // Cheque mode: balance already deducted by cheque trigger; no cashflow until cleared.
+      // 0382. ONE CALL: the advance row and the cash or bank movement in one
+      // transaction. advances only gained a permission at all in 0372
+      // (expenses.edit, provisionally), so this flow became genuinely
+      // cross-key — expenses.edit for the row, accounting.edit for a bank
+      // balance — which is exactly when a transaction boundary starts to
+      // matter. Cheque mode still moves nothing here: the cheque trigger
+      // reserves the balance and the money leaves when it clears.
+      const { error: advErr } = await supabase.rpc("record_advance", {
+        p_employee_id: advForm.employee_id,
+        p_amount: amount,
+        p_advance_date: advForm.advance_date,
+        p_payment_mode: advForm.payment_mode,
+        p_client_id: advForm.client_id || null,
+        p_bank_account_id: advForm.payment_mode === "Bank" ? advForm.bank_account_id : null,
+        p_cheque_id: advForm.payment_mode === "Cheque" ? advForm.cheque_id : null,
+        p_custodian_location_id: advCustodianLocId,
+        p_notes: advForm.notes.trim() || null,
+      });
+      if (advErr) throw advErr;
+            // Cheque mode: balance already deducted by cheque trigger; no cashflow until cleared.
       resetAdvAddModal();
       await loadAll();
     } catch (err: any) {
@@ -1822,31 +1657,11 @@ export default function Expenses() {
     setIsAdvEditOpen(true);
   };
 
-  const reverseAdvancePayment = async (adv: AdvanceRow) => {
-    const amount = Number(adv.amount);
-    const desc = `Reverse advance · ${adv.employee_code} ${adv.employee_name}${adv.client_name ? ` (${adv.client_name})` : ""}`;
-    if (adv.payment_mode === "Cash") {
-      await applyCashDelta(amount);
-      await logAdvanceTransaction({
-        bank_account_id: null,
-        amount,
-        cash_delta: amount,
-        account_delta: 0,
-        description: desc,
-        reference_id: adv.id,
-      });
-    } else if (adv.payment_mode === "Bank" && adv.bank_account_id) {
-      await applyBankDelta(adv.bank_account_id, amount);
-      await logAdvanceTransaction({
-        bank_account_id: adv.bank_account_id,
-        amount,
-        cash_delta: 0,
-        account_delta: amount,
-        description: desc,
-        reference_id: adv.id,
-      });
-    }
-  };
+  // 0382. reverseAdvancePayment is GONE, for the same reason
+  // reverseExistingPayment is: it moved money in its own round trip and left
+  // the caller to write the row afterwards. advance_reverse_money() in the
+  // database reads the mode and the account off the stored row, and
+  // amend_advance()/delete_advance() call it inside their own transaction.
 
   const handleEditAdvance = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1865,61 +1680,30 @@ export default function Expenses() {
     setAdvSubmitting(true);
     setError(null);
     try {
-      await reverseAdvancePayment(advEditing);
       const amount = Number(advEditForm.amount);
-      const emp = employees.find((x) => x.id === advEditForm.employee_id);
-      const client = advEditForm.client_id
-        ? clients.find((c) => c.id === advEditForm.client_id) ?? null
-        : null;
       let advEditCustodianLocId: string | null = null;
       if (advEditForm.payment_mode === "Cash") {
         advEditCustodianLocId = await requireCustodianLoc(
           advEditForm.paid_by_employee_id, "handed over this cash");
       }
-      const { error: upErr } = await supabase
-        .from("advances")
-        .update({
-          employee_id: advEditForm.employee_id,
-          client_id: advEditForm.client_id || null,
-          amount,
-          advance_date: advEditForm.advance_date,
-          payment_mode: advEditForm.payment_mode,
-          bank_account_id:
-            advEditForm.payment_mode === "Bank"
-              ? advEditForm.bank_account_id
-              : advEditForm.payment_mode === "Cheque"
-                ? cheques.find((c) => c.id === advEditForm.cheque_id)?.bank_account_id ?? null
-                : null,
-          cheque_id: advEditForm.payment_mode === "Cheque" ? advEditForm.cheque_id : null,
-          custodian_location_id: advEditCustodianLocId,
-          notes: advEditForm.notes.trim() || null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", advEditing.id);
-      if (upErr) throw upErr;
-      const desc = describeAdvance(emp?.full_name ?? "", emp?.employee_code ?? "", client?.name ?? null);
-      if (advEditForm.payment_mode === "Cash") {
-        await applyCashDelta(-amount);
-        await logAdvanceTransaction({
-          bank_account_id: null,
-          amount,
-          cash_delta: -amount,
-          account_delta: 0,
-          description: desc,
-          reference_id: advEditing.id,
-        });
-      } else if (advEditForm.payment_mode === "Bank") {
-        await applyBankDelta(advEditForm.bank_account_id, -amount);
-        await logAdvanceTransaction({
-          bank_account_id: advEditForm.bank_account_id,
-          amount,
-          cash_delta: 0,
-          account_delta: -amount,
-          description: desc,
-          reference_id: advEditing.id,
-        });
-      }
-      // Cheque: balance reserved by cheque trigger, no immediate cashflow.
+      // 0382. Old money back, row changed, new money out — one transaction.
+      // The reversal reads the OLD mode off the row, which is what makes a
+      // Cash -> Bank edit return the cash rather than crediting the bank twice.
+      const { error: advEditErr } = await supabase.rpc("amend_advance", {
+        p_advance_id: advEditing.id,
+        p_employee_id: advEditForm.employee_id,
+        p_amount: amount,
+        p_advance_date: advEditForm.advance_date,
+        p_payment_mode: advEditForm.payment_mode,
+        p_client_id: advEditForm.client_id || null,
+        p_bank_account_id: advEditForm.payment_mode === "Bank" ? advEditForm.bank_account_id : null,
+        p_cheque_id: advEditForm.payment_mode === "Cheque" ? advEditForm.cheque_id : null,
+        p_custodian_location_id: advEditCustodianLocId,
+        p_notes: advEditForm.notes.trim() || null,
+      });
+      if (advEditErr) throw advEditErr;
+
+            // Cheque: balance reserved by cheque trigger, no immediate cashflow.
       setIsAdvEditOpen(false);
       setAdvEditing(null);
       await loadAll();
@@ -1935,8 +1719,7 @@ export default function Expenses() {
       return;
     setError(null);
     try {
-      await reverseAdvancePayment(adv);
-      const { error: delErr } = await supabase.from("advances").delete().eq("id", adv.id);
+      const { error: delErr } = await supabase.rpc("delete_advance", { p_advance_id: adv.id });
       if (delErr) throw delErr;
       await loadAll();
     } catch (err: any) {

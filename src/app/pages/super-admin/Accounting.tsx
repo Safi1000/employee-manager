@@ -1375,48 +1375,29 @@ export default function Accounting() {
     setSubmitting(true);
     setError(null);
     try {
-      const nowIso = new Date().toISOString();
-      const vendorName = selectedPayable.vendor?.name ?? "vendor";
+      // 0381. ONE CALL, and the ORDER inside it is the fix.
+      //
+      // This flow used to move the money FIRST and update the expense last, in
+      // separate round trips. A user with accounting.edit and without
+      // expenses.edit therefore paid the vendor and left the payable sitting at
+      // Pending — the cash gone, the obligation still open, and the error
+      // message arriving after the fact. settle_payable_expense writes the row
+      // first and moves the money second, inside one transaction, and refuses
+      // a payable that is already settled rather than paying it twice.
       let custodianLocId: string | null = null;
       if (markPaidVia === "Cash") {
         const cid = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
         const staff = custodians.find((c) => c.employeeId === markPaidCustodianId);
         if (cid && staff) custodianLocId = await ensureCustodianLocation(cid, staff.employeeId, staff.fullName);
-        await applyCashDelta(-amount);
-        await logTransaction({
-          bank_account_id: null,
-          kind: "expense",
-          amount,
-          cash_delta: -amount,
-          account_delta: 0,
-          description: `Payable settled (cash) · ${vendorName}`,
-          reference_id: selectedPayable.id,
-        });
-      } else {
-        await applyBankDelta(markPaidBankId, -amount);
-        await logTransaction({
-          bank_account_id: markPaidBankId,
-          kind: "expense",
-          amount,
-          cash_delta: 0,
-          account_delta: -amount,
-          description: `Payable settled (bank) · ${vendorName}`,
-          reference_id: selectedPayable.id,
-        });
       }
-      const { error: upErr } = await supabase
-        .from("expenses")
-        .update({
-          payable_status: "Paid",
-          paid_via: markPaidVia,
-          paid_bank_account_id: markPaidVia === "Bank" ? markPaidBankId : null,
-          custodian_location_id: custodianLocId,
-          paid_at: nowIso,
-          updated_at: nowIso,
-        })
-        .eq("id", selectedPayable.id);
-      if (upErr) throw upErr;
-      setIsMarkPaidModalOpen(false);
+      const { error: settleErr } = await supabase.rpc("settle_payable_expense", {
+        p_expense_id: selectedPayable.id,
+        p_paid_via: markPaidVia,
+        p_paid_bank_account_id: markPaidVia === "Bank" ? markPaidBankId : null,
+        p_custodian_location_id: custodianLocId,
+      });
+      if (settleErr) throw settleErr;
+            setIsMarkPaidModalOpen(false);
       setSelectedPayable(null);
       await loadAll();
     } catch (err: any) {
@@ -1432,44 +1413,16 @@ export default function Accounting() {
       return;
     setError(null);
     try {
-      const amount = Number(row.amount);
-      const vendorName = row.vendor?.name ?? "vendor";
-      if (row.paid_via === "Cash") {
-        await applyCashDelta(amount);
-        await logTransaction({
-          bank_account_id: null,
-          kind: "expense",
-          amount,
-          cash_delta: amount,
-          account_delta: 0,
-          description: `Payable reverted to pending (cash refund) · ${vendorName}`,
-          reference_id: row.id,
-        });
-      } else if (row.paid_via === "Bank" && row.paid_bank_account_id) {
-        await applyBankDelta(row.paid_bank_account_id, amount);
-        await logTransaction({
-          bank_account_id: row.paid_bank_account_id,
-          kind: "expense",
-          amount,
-          cash_delta: 0,
-          account_delta: amount,
-          description: `Payable reverted to pending (bank refund) · ${vendorName}`,
-          reference_id: row.id,
-        });
-      }
-      const { error: upErr } = await supabase
-        .from("expenses")
-        .update({
-          payable_status: "Pending",
-          paid_via: null,
-          paid_bank_account_id: null,
-          custodian_location_id: null,
-          paid_at: null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", row.id);
-      if (upErr) throw upErr;
-      await loadAll();
+      // 0381. The refund and the status change together. The refund reads
+      // paid_via off the row — a payable settled in cash is refunded to cash
+      // even if the expense itself names a bank account — which is the case
+      // this screen used to spell out for itself, and the one that goes wrong
+      // when it is spelled out anywhere twice.
+      const { error: revertErr } = await supabase.rpc("revert_payable_expense", {
+        p_expense_id: row.id,
+      });
+      if (revertErr) throw revertErr;
+            await loadAll();
     } catch (err: any) {
       setError(err.message ?? String(err));
     }
