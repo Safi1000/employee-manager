@@ -428,35 +428,65 @@ anyway: they fail fast with a better message than an RLS refusal.
 
 ---
 
-## 4c. Two migrations recorded with no repo file, and one number used twice
+## 4c. There was no orphan. This tree was twelve commits behind.
 
-`migration_ledger_drift()` reports 13, and it does **not** read the working tree
-— it compares `schema_migrations` against `public.migration_manifest`, fetched
-from the remote. Local commits do not clear it; a push and a re-fetch do.
+**Correcting §4c as first written.** I reported two migrations "recorded with no
+repo file" and proposed recovering them from their recorded SQL. That premise
+was wrong and the correction is the finding.
 
-Nine "recorded, no repo file" break down as **seven of mine (0364-0370, files
-now written, awaiting a push)** and **two that predate this work**:
+`git fetch` showed `main` and `origin/main` **diverged: 9 commits mine, 12
+theirs**. All three files I could not see already exist on `origin/main`:
 
-- `0341_employee_branch_follows_client` — applied 2026-09-03 23:36
-- `0365_an_expenses_own_audit_row_belongs_to_expenses_edit` — applied 2026-09-04 00:45
+- `0341_employee_branch_follows_client.sql`
+- `0364_the_repo_reaches_the_database_on_a_schedule.sql`
+- `0365_an_expenses_own_audit_row_belongs_to_expenses_edit.sql`
 
-**The second one collides with a number I then used.** I picked 0365 from the
-highest file in the repo (0364) without checking `schema_migrations` for higher
-*recorded* numbers, so `0365` now names two different migrations: the recorded
-one above, and my `0365_a_detector_for_the_branch...`. The drift check was
-already red and already listing it before I started.
+Nothing was lost. Another session applied and pushed through 0365 while this
+working tree sat twelve commits behind, and I read "the highest file is 0364"
+off a stale tree. `migration_ledger_drift()` was right the whole time — it
+compares the database against the **fetched remote manifest**, which had those
+files, against a local tree that did not.
 
-That earlier migration is the source of the `expenses.edit` carve-out on
-`bank_transactions` that 0369 widened. 0369 rebuilt those policies from the live
-policy text rather than from a file, so the carve-out was preserved and 0369's
-own proof asserts it survived on all three — but that was the method saving it,
-not intent.
+### The collision, and how it is repaired
 
-**Rule this earns: number a new migration from `max(repo file, recorded name)`,
-not from the repo alone.** The repo is only half the ledger, which is the whole
-premise of `check-migrations.mjs` checking both directions.
+My seven migrations were numbered 0364-0370 from that stale reading, so `0364`
+and `0365` each named two different migrations. Renumbered, preserving the order
+they actually ran in:
 
----
+| was | now |
+|---|---|
+| `0364_an_expense_and_the_money_it_moved_are_one_transaction` | **0366** |
+| `0365_a_detector_for_the_branch_the_tenant_detector_never_looked_at` | **0367** |
+| `0366_a_branch_handed_in_is_asserted_not_inherited` | **0368** |
+| `0367_the_branch_detector_stops_reporting_triggers_and_readers_as_stampers` | **0369** |
+| `0368_nineteen_definer_rpcs_ask_for_a_permission_before_they_touch_an_employee` | **0370** |
+| `0369_a_receipt_is_recorded_by_the_caller_not_on_their_behalf` | **0371** |
+| `0370_an_advance_needs_a_permission_wrong_key_beats_no_key` | **0372** |
+
+**Mine renumbered, not the existing three**, and the reason is not preference:
+the three on `origin/main` are already applied, already pushed, and their
+recorded names embed those numbers. Moving them would mean editing a file whose
+SQL has run. Mine were recorded under BARE names with no number at all, so the
+prefix on my files is purely a repo-side ordering device and renaming is free.
+
+**The files were renamed and their contents were NOT touched.** Every header
+still cites the old number — `0364 REFUSED`, `0365's header warned`, and so on.
+That is deliberate: the recorded SQL must equal the file, and rewriting those
+strings would break the digest for seven migrations that have already run. The
+prefix is stripped from both sides before `migration_ledger_drift()` compares,
+so the renamed files still match their rows.
+
+So the numbers inside those seven headers are two lower than the filenames that
+carry them. Ugly, correct, and the reason to get the number right the first
+time. The rule is now in CLAUDE.md.
+
+### What is still owed
+
+`main` and `origin/main` have diverged and **that is not mine to resolve.** Nine
+local commits, twelve remote. Until they are reconciled and pushed,
+`migration_ledger_matches_repo` stays red for my seven — and it reads the
+fetched manifest, not the working tree, so **no amount of local committing will
+clear it.** A push and the next manifest fetch will.
 
 ## 5. Branch guard detector
 

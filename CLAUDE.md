@@ -93,6 +93,37 @@ Consequences worth stating plainly:
 - `scripts/migration-aliases.txt` maps genuine renames. Adding a pair to silence
   a failure defeats the file's purpose; leave the discrepancy visible instead.
 
+### Number from `max(repo file, recorded name)`, never from the repo alone
+
+`supabase/migrations/` is HALF the ledger. The other half is
+`supabase_migrations.schema_migrations`, which is exactly why
+`scripts/check-migrations.mjs` reads both directions.
+
+Numbering a new migration from the highest file in a `git`-stale working tree
+produced two collisions in one sitting: `0364` and `0365` each named two
+different migrations, because another session had applied — and pushed — through
+0365 while this tree sat twelve commits behind. The database knew. The tree did
+not.
+
+Before choosing a number:
+
+```sql
+select name from supabase_migrations.schema_migrations order by version desc limit 5;
+```
+
+and `git fetch` first. Take the higher of the two maxima.
+
+**A collision is repaired by renaming the FILE and never by editing its
+contents.** The recorded SQL must equal the file, and the numeric prefix is not
+part of the recorded name — `migration_ledger_drift()` strips `^\d{4}[a-z]?_`
+from both sides before comparing. So a renamed file still matches its recorded
+row, while rewriting the `NNNN` inside the header to agree with the new filename
+would break the digest for a migration that has already run.
+
+The consequence is a file whose header cites a number the filename no longer
+carries. That is ugly and it is correct. It is also why the number should be
+right the first time.
+
 ### Guards must test the condition they mean
 
 A guard that compares `max(schema_migrations.version)` against a string literal
