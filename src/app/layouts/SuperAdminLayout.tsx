@@ -121,9 +121,9 @@ export default function SuperAdminLayout() {
   const GOVERNANCE: LinkDef = { to: "/super-admin/governance", label: "Governance", icon: Users2, perms: ["users.manage", "payroll.approve", "performance.approve", "accounting.edit"] };
   const RECEIVABLES: LinkDef = { to: "/super-admin/receivables", label: "Receivables", icon: ReceiptText, perms: ["invoices.view", "invoices.edit", "receivables.view"] };
   const OPENING_BAL: LinkDef = { to: "/super-admin/opening-balances", label: "Opening Balances", icon: BookOpen, perms: ["accounting.edit", "coa.view"] };
-  // Renamed with the page: the §22 scorecard cards were scrapped, and what is
-  // left is operating expenses and profit per region. Route unchanged.
-  const REGIONAL_SCORECARD: LinkDef = { to: "/super-admin/regional-scorecard", label: "Regional Operating Expenses", icon: PieChart, perms: ["reports.view", "banks.view"] };
+  // "Regional Operating Expenses" (route /super-admin/regional-scorecard) is
+  // hidden from the nav by request — its LinkDef is intentionally not defined
+  // here so it isn't listed. The route still exists in routes.tsx.
   const CLIENT_REL: LinkDef = { to: "/super-admin/client-relationships", label: "Client Relationships", icon: Users2, perms: ["clients.view", "clients.edit"] };
 
   // Consolidation restructure — merged / renamed / moved homes.
@@ -236,11 +236,9 @@ export default function SuperAdminLayout() {
     // only way to draft, review, post or reverse a month, and it is in the nav
     // rather than behind a route only a typed URL reaches.
     PARTNERSHIP_RUN,
-    // Unhidden and rehomed. It used to sit in the hidden Profit-Share group,
-    // which is why it disappeared with it; it is a financial report about
-    // regions, so Finance is where it belongs rather than beside partner
-    // profit-share screens that remain hidden.
-    REGIONAL_SCORECARD,
+    // REGIONAL_SCORECARD ("Regional Operating Expenses") is hidden from the nav
+    // by request. The route still exists (routes.tsx) so a saved link resolves;
+    // it just isn't listed. Re-add it here to bring it back.
     PERIOD_CLOSE,
   ]);
   if (finance) links.push(finance);
