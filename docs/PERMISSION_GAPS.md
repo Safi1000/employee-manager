@@ -1285,3 +1285,94 @@ things**.
    for the same operator. **Which is why it is being asked rather than shipped.**
 
 Nothing here is built. Awaiting the answer.
+
+---
+
+## 14. ANSWERED: an advance is two things, so it takes two keys (0391–0392)
+
+**Shayan: the split is correct — policy per row shape, not per screen.**
+
+- A **disbursed** advance is a payment → `expenses.edit`, unchanged.
+- A **carry-forward** (`payment_mode = 'Carry-forward'`) moves no money, is
+  created by payroll and recovered by payroll → `payroll.edit`, behind an RPC.
+
+This closes §13 and settles 0372's provisional key. The `advances` table comment
+records it.
+
+### 14a. What the UPDATE split means, stated rather than discovered
+
+`USING` tests the row as it **stands**; `WITH CHECK` tests the row as it
+**would be**. So converting a disbursed advance into a carry-forward, or back,
+requires **both** keys. That is correct — the edit changes whether money was
+handed over — and it is worth knowing in advance rather than meeting as a
+confusing refusal.
+
+### 14b. The swallowed error, closed in the same migration
+
+`syncOverpayAdvance` is now `sync_overpayment_carry_forward()`: SECURITY
+INVOKER, every write asserting its own row count and raising. The note string,
+the carry date and the rounding moved in with it — **the note is the key the row
+is found by on the next save, and a convention that identifies a row belongs
+where the row is written.**
+
+Both halves shipped together deliberately: fixing the error first would have
+turned a silent write-off into a hard payroll-save failure for the same
+operator; widening the policy first would have left the error swallowed.
+
+### 14c. A THIRD defect, which the first probe run turned up
+
+The carry-forward was **also failing for a reason that has nothing to do with
+permissions** — and failing silently for the same reason.
+
+`trg_advances_not_future` refuses any advance dated after today: *"it records
+something that has already happened"*. A carry-forward is dated the **first of
+the following month**, and that dating is load-bearing:
+`employee_advance_outstanding(p)` counts advances with
+`advance_date < p + interval '1 month'`, so next-month dating is exactly what
+keeps the row out of the payslip that created it and puts it into the next one.
+
+**So saving an overpaid payslip at any time before the first of the following
+month — the ordinary case — raised, and the error was swallowed.** The row had
+never been created in that case, by anybody, regardless of permissions.
+
+The trigger now carries `when (new.payment_mode is distinct from
+'Carry-forward')` — narrowed with a `WHEN` clause rather than by editing
+`enforce_not_future_date()`, which is shared by several tables and means exactly
+what it says for all of them. The argument is the trigger's own words: **a
+disbursed advance is dated by when the money changed hands and cannot be in the
+future; a carry-forward is dated by when it becomes recoverable.** The date
+means a different thing for the two shapes — the same reason they take different
+keys.
+
+The probe asserts the exemption is **narrow**: a future-dated *Cash* advance is
+still refused, by message. Otherwise 1b would have turned a rule off rather than
+taught it a distinction.
+
+### 14d. 0392 — the refusal must not say something false
+
+0391's two write refusals ended *"The payslip has not been saved."* Checking the
+callers rather than assuming them shows that is **false at both**: `handleSaveRow`
+saves the payslip first, and the disburse path has already **moved the money**.
+
+An operator would have been told nothing was recorded at the exact moment a
+payslip was saved and, in one case, cash had left the building. **That is worse
+than the silence 0391 replaced: silence leaves you looking, a confident false
+statement stops you looking.**
+
+The message now says what happened, what did not, and what arrives next month:
+*"The payslip IS saved — but the overpayment is NOT carried forward, so it will
+not be deducted next month. Ask someone with payroll.edit to re-save this
+payslip."* The DELETE arm keeps "Nothing has been recorded", which is true there.
+
+Its own migration because 0391 was already applied and recorded — **the recorded
+SQL must equal the file.**
+
+### 14e. What could not be proved, said plainly
+
+This session connects as an owner that **bypasses RLS**, so neither the
+`payroll.edit` nor the `expenses.edit` requirement can be exercised from a
+migration. Borrowing a profile's claim sets `auth.uid()` for `has_perm()` but
+does not make the connection subject to the policies. The policy half is
+asserted **structurally** — all three predicates must name both keys and the
+row-shape test — and the behavioural half by running it: create, re-save,
+reconcile, remove, each leaving exactly one row or none.

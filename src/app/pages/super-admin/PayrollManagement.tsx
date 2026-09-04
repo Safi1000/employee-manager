@@ -1027,60 +1027,44 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     if (upErr) throw upErr;
   };
 
-  const firstOfNextMonth = (periodMonth: string) => {
-    const [y, m] = periodMonth.split("-").map(Number);
-    return firstOfMonth(new Date(y, m, 1)); // m is 1-based, so index m = next month
-  };
-  const overpayNote = (periodMonth: string) =>
-    `Payroll overpayment carry-forward · ${formatPeriod(periodMonth)}`;
-
   /**
-   * Keep a single "advance" row that carries this period's overpayment (paid −
-   * net, when positive) into next month, where employee_advance_outstanding
-   * picks it up and deducts it. Idempotent: one marker row per (employee,
-   * period), reconciled to the current overpaid amount — so it nets with any
-   * manual advance the employee has rather than double-counting, and re-saving
-   * never stacks duplicates. Deleting/zeroing it reverses its journal entry.
+   * 0391. Keeps a single "advance" row carrying this period's overpayment
+   * (paid − net, when positive) into next month, where
+   * employee_advance_outstanding picks it up and deducts it.
+   *
+   * WHAT THIS REPLACED, because both halves were invisible:
+   *
+   *  1. A bare insert/update/delete on `advances` WITH NO ERROR CHECK AT ALL.
+   *     0372 put that table behind expenses.edit, so a payroll operator
+   *     without that key got zero rows and no error — no carry-forward row,
+   *     nothing to deduct next month, and the overpayment silently written
+   *     off. `advances` is now gated per ROW SHAPE: a disbursed advance still
+   *     needs expenses.edit, a Carry-forward needs payroll.edit.
+   *
+   *  2. trg_advances_not_future refused the row outright whenever the payslip
+   *     was saved before the first of the following month — the ordinary
+   *     case — because a carry-forward is dated by when it becomes
+   *     RECOVERABLE, not by when anything happened. That error was swallowed
+   *     too, so the row had never been created in that case by anybody. The
+   *     trigger now skips Carry-forward rows and refuses every other shape
+   *     exactly as before.
+   *
+   * The note string, the carry date and the round-to-whole-rupees all moved
+   * into the RPC: the note is the key the row is found by on the next save,
+   * and a convention that identifies a row belongs where the row is written.
+   * Every write in there asserts its own row count and raises.
    */
   const syncOverpayAdvance = async (
     employeeId: string,
     periodMonth: string,
     overpay: number,
   ): Promise<void> => {
-    const note = overpayNote(periodMonth);
-    const target = Math.max(0, Math.round(overpay));
-    const { data: existingRows } = await supabase
-      .from("advances")
-      .select("id, amount")
-      .eq("employee_id", employeeId)
-      .eq("notes", note);
-    const existing = (existingRows ?? [])[0] as { id: string; amount: number } | undefined;
-    if (target <= 0) {
-      if (existing) await supabase.from("advances").delete().eq("id", existing.id);
-      return;
-    }
-    if (existing) {
-      if (Math.round(Number(existing.amount)) !== target) {
-        await supabase
-          .from("advances")
-          .update({ amount: target, advance_date: firstOfNextMonth(periodMonth) })
-          .eq("id", existing.id);
-      }
-    } else {
-      await supabase.from("advances").insert({
-        employee_id: employeeId,
-        amount: target,
-        advance_date: firstOfNextMonth(periodMonth),
-        // 0317: NO MONEY MOVES here. This row records that the employee was
-        // overpaid and owes the difference; it is not a cash disbursement.
-        // It was "Cash" only because that was the only mode the CHECK allowed
-        // without a bank account, and the ledger believed it — posting a credit
-        // against the undifferentiated cash control for money that never left
-        // the building. journal_on_advance skips Carry-forward entirely.
-        payment_mode: "Carry-forward",
-        notes: note,
-      });
-    }
+    const { error } = await supabase.rpc("sync_overpayment_carry_forward", {
+      p_employee_id: employeeId,
+      p_period_month: periodMonth,
+      p_overpay: overpay,
+    });
+    if (error) throw error;
   };
 
   // Item 4: a friendlier message when a write is blocked by the period-close
