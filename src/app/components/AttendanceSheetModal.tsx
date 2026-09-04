@@ -8,10 +8,21 @@ import { X, Download, Loader2, ChevronLeft, ChevronRight, ShieldCheck, AlertTria
 import Button from "./Button";
 import { supabase } from "../lib/supabase";
 import { guardDisplayCode } from "../lib/guardCode";
-import { buildAttendanceRows, type SheetEmployee } from "../lib/attendanceSheet";
+import { buildAttendanceRows, buildRelieverRows, type SheetEmployee } from "../lib/attendanceSheet";
 import { exportAttendance, deriveAttendanceShifts, shiftAbbr, type AttendanceEmployeeRow } from "../lib/excel";
 
 const todayMonth = () => new Date().toISOString().slice(0, 7);
+
+// Frozen left columns (Ser. / Name / Desg. / Emp #) — fixed widths + cumulative
+// left offsets so they stick in place while the day columns scroll horizontally.
+const LEAD = [
+  { w: 44, left: 0 },    // Ser.
+  { w: 210, left: 44 },  // Name
+  { w: 52, left: 254 },  // Desg.
+  { w: 96, left: 306 },  // Emp #
+] as const;
+const LEAD_TOTAL = LEAD.reduce((s, c) => s + c.w, 0); // 402 — width the totals row's label spans
+const leadCell = (i: number) => ({ left: LEAD[i].left, width: LEAD[i].w, minWidth: LEAD[i].w, maxWidth: LEAD[i].w });
 
 const statusClass = (s: string): string =>
   s === "P" ? "text-success-700 dark:text-success-500"
@@ -89,7 +100,10 @@ export default function AttendanceSheetModal({
         const empQuery = supabase
           .from("employees")
           .select("id, full_name, display_number, guard_code, employee_code, contract_id, client_id, join_date, last_working_day, termination_date, lifecycle_state, shift")
-          .neq("lifecycle_state", "archived");
+          .neq("lifecycle_state", "archived")
+          // Relievers are never part of the assigned roster — they're surfaced
+          // separately (below) by the day(s) they actually covered this client.
+          .neq("category", "reliever");
         const [{ data: client }, { data: contracts }, { data: emps }] = await Promise.all([
           // Synthetic groups have no real client row.
           synthetic
@@ -167,8 +181,20 @@ export default function AttendanceSheetModal({
           clients: client ? ([client] as any[]) : [],
           confirmedOnly,
         });
+        // Standalone reliever coverage: guards who covered THIS client on some
+        // day(s) but aren't on its roster (real clients only). Roster guards'
+        // own reliever days are already folded into their row above, so they're
+        // excluded here to avoid a duplicate row.
+        const relieverRows = synthetic
+          ? []
+          : await buildRelieverRows({
+              month, clientId, clientPrefix: prefix,
+              excludeEmpIds: employees.map((e) => e.id),
+            });
+        // Continue the serial column past the roster so numbering is unbroken.
+        relieverRows.forEach((r, i) => (r.serial = built.rows.length + i + 1));
         if (cancelled) return;
-        setRows(built.rows);
+        setRows([...built.rows, ...relieverRows]);
         setCells(built.cellsByEmp);
         setDaysInMonth(built.daysInMonth);
         setMonthLabel(built.monthLabel);
@@ -227,7 +253,12 @@ export default function AttendanceSheetModal({
     const list: { empId: string; empName: string; date: string }[] = [];
     for (const row of rows) {
       if (!row.empId) continue;
+      // Reliever coverage rows are allowed gaps (a reliever may cover 1 day of
+      // 31) — they never flag or block OPS Verify, and need no per-gap override.
+      if (row.isReliever) continue;
       for (let i = 0; i < daysInMonth; i += 1) {
+        // Belt-and-braces per-day exemption (also covers any future mixed row).
+        if (row.relieverByDay?.[i]) continue;
         if ((row.statusByDay[i] ?? "") !== "") continue;          // marked or X (not applicable)
         const date = dayDate(i);
         if (overriddenKeys.has(`${row.empId}|${date}`)) continue;  // resolved via override
@@ -275,7 +306,11 @@ export default function AttendanceSheetModal({
   const totals = useMemo(() => {
     const zeros = () => Array.from({ length: daysInMonth }, () => Array(S).fill(0) as number[]);
     const P = zeros(), L = zeros(), A = zeros();
-    for (const row of rows) {
+    // Totals describe the ASSIGNED roster's strength (grand = P+A+L per day = the
+    // bodies the client contracted). Relievers are cover on top of that, so they
+    // are excluded here — counting them would double the head on a covered day.
+    const assigned = rows.filter((r) => !r.isReliever);
+    for (const row of assigned) {
       for (let i = 0; i < daysInMonth; i += 1) {
         const st = row.statusByDay[i] ?? "";
         const ds = String(row.shiftByDay?.[i] ?? row.shift ?? "day").toLowerCase();
@@ -288,11 +323,11 @@ export default function AttendanceSheetModal({
     const grand = P.map((per, i) => per.map((v, s) => v + L[i][s] + A[i][s]));
     return {
       P, L, A, grand,
-      sumP: rows.reduce((s, r) => s + r.presents, 0),
-      sumA: rows.reduce((s, r) => s + r.absents, 0),
-      sumL: rows.reduce((s, r) => s + r.leaves, 0),
-      sumDD: rows.reduce((s, r) => s + r.doubleDuties, 0),
-      sumPD: rows.reduce((s, r) => s + r.payDays, 0),
+      sumP: assigned.reduce((s, r) => s + r.presents, 0),
+      sumA: assigned.reduce((s, r) => s + r.absents, 0),
+      sumL: assigned.reduce((s, r) => s + r.leaves, 0),
+      sumDD: assigned.reduce((s, r) => s + r.doubleDuties, 0),
+      sumPD: assigned.reduce((s, r) => s + r.payDays, 0),
     };
   }, [rows, daysInMonth, S, shiftIndex]);
 
@@ -422,10 +457,17 @@ export default function AttendanceSheetModal({
             <p className="text-sm text-muted-foreground py-8 text-center">No employees on this {siteId ? "site" : "client"} for {monthLabel}.</p>
           ) : (
             <table className="text-xs border-collapse">
-              <thead className="sticky top-0 z-10">
+              <thead className="sticky top-0 z-20">
                 <tr className="bg-secondary">
-                  {["Ser.", "Name", "Desg.", "Emp #"].map((h) => (
-                    <th key={h} rowSpan={2} className="border border-border px-2 py-1 text-left whitespace-nowrap bg-secondary">{h}</th>
+                  {["Ser.", "Name", "Desg.", "Emp #"].map((h, ci) => (
+                    <th
+                      key={h}
+                      rowSpan={2}
+                      style={leadCell(ci)}
+                      className={`sticky z-30 border border-border px-2 py-1 text-left whitespace-nowrap bg-secondary${ci === LEAD.length - 1 ? " border-r-2" : ""}`}
+                    >
+                      {h}
+                    </th>
                   ))}
                   {days.map((d) => (
                     <th key={d} colSpan={S} className="border border-border px-1 py-1 text-center tabular-nums bg-secondary">{d}</th>
@@ -445,32 +487,42 @@ export default function AttendanceSheetModal({
               <tbody>
                 {rows.map((row) => (
                   <tr key={row.empCode + row.serial} className="hover:bg-accent/40">
-                    <td className="border border-border px-2 py-0.5 tabular-nums">{String(row.serial).padStart(2, "0")}</td>
-                    <td className="border border-border px-2 py-0.5 whitespace-nowrap">
+                    <td style={leadCell(0)} className="sticky z-10 bg-card border border-border px-2 py-0.5 tabular-nums">{String(row.serial).padStart(2, "0")}</td>
+                    <td style={leadCell(1)} className="sticky z-10 bg-card border border-border px-2 py-0.5 whitespace-nowrap overflow-hidden text-ellipsis">
                       {row.name}
+                      {row.isReliever && (
+                        <span className="ml-1.5 inline-flex items-center rounded-sm border border-brand-200 bg-brand-50 px-1.5 py-0.5 text-[10px] font-medium text-brand-700 dark:border-brand-800 dark:bg-brand-900/20 dark:text-brand-400">
+                          Reliever
+                        </span>
+                      )}
                       {row.separationNote && <span className="text-muted-foreground"> ({row.separationNote})</span>}
                     </td>
-                    <td className="border border-border px-2 py-0.5">{row.designation}</td>
-                    <td className="border border-border px-2 py-0.5 whitespace-nowrap font-mono text-[11px]">{row.empCode}</td>
+                    <td style={leadCell(2)} className="sticky z-10 bg-card border border-border px-2 py-0.5">{row.designation}</td>
+                    <td style={leadCell(3)} className="sticky z-10 bg-card border border-border border-r-2 px-2 py-0.5 whitespace-nowrap font-mono text-[11px]">{row.empCode}</td>
                     {days.map((_, i) => {
                       const st = row.statusByDay[i] ?? "";
                       const ds = String(row.shiftByDay?.[i] ?? row.shift ?? "day").toLowerCase();
                       const si = shiftIndex.get(ds) ?? 0;
                       const date = dayDate(i);
                       const flagged = row.empId ? flaggedKeys.has(`${row.empId}|${i}`) : false;
+                      // Was this guard a RELIEVER on this specific day? (day-level,
+                      // from worked_for_client_id). Drives the per-day marker and
+                      // keeps reliever days non-overridable while REGULAR days of
+                      // the same row stay overridable.
+                      const isRelieverDay = !!row.relieverByDay?.[i];
                       // A confirmed day only shows a real P/A/L here (unconfirmed =
                       // blank). Override is the ONE way to change such a day, and
                       // only once the month has ended (and while it isn't yet
                       // OPS-verified). Before month-end the board stays read-only;
                       // editing happens on the Attendance board until it locks.
-                      // The guard's own (primary) shift is overridable to any
-                      // status once the day is confirmed, the month has ended, and
-                      // it isn't OPS-verified.
-                      const canOverridePrimary = !!row.empId && monthEnded && !verifiedAt && (st === "P" || st === "A" || st === "L" || st === "DD");
+                      // Reliever days are not overridable here — their marks come
+                      // from the Relievers section and carry per-day client
+                      // attribution an override can't reproduce.
+                      const canOverridePrimary = !!row.empId && !isRelieverDay && monthEnded && !verifiedAt && (st === "P" || st === "A" || st === "L" || st === "DD");
                       // A SECOND shift = double duty, which only exists when the
                       // guard is PRESENT that day. If they're absent/leave the other
                       // shift columns stay inert, and adding one is Present-only.
-                      const canAddSecond = !!row.empId && monthEnded && !verifiedAt && (st === "P" || st === "DD");
+                      const canAddSecond = !!row.empId && !isRelieverDay && monthEnded && !verifiedAt && (st === "P" || st === "DD");
                       return shifts.map((cShift, s) => {
                         const isPrimary = s === si;
                         // Primary column = the guard's own status; other columns =
@@ -479,19 +531,27 @@ export default function AttendanceSheetModal({
                           ? st
                           : (row.empId ? cells.get(row.empId)?.get(`${i + 1}|${cShift}`) ?? "" : "");
                         const clickable = isPrimary ? canOverridePrimary : canAddSecond;
+                        // Reliever days get a brand tint so the reliever segment is
+                        // visible at a glance; the flagged (unconfirmed regular)
+                        // red always wins.
                         const cellBg = isPrimary && flagged ? "bg-danger-100 dark:bg-danger-900/30"
+                          : isPrimary && isRelieverDay ? "bg-brand-50 dark:bg-brand-900/20"
                           : clickable ? "cursor-pointer hover:bg-accent" : "";
                         return (
                           <td
                             key={`${i}-${s}`}
                             onClick={clickable ? () => setOvTarget({ empId: row.empId!, empName: row.name, date, current: cellStatus, shift: cShift, presentOnly: !isPrimary }) : undefined}
-                            title={isPrimary && flagged ? "Not confirmed — confirm this shift on the Attendance board to show it here"
+                            title={isPrimary && isRelieverDay ? "Reliever day — covered as a reliever (gaps allowed)"
+                              : isPrimary && flagged ? "Not confirmed — confirm this shift on the Attendance board to show it here"
                               : !clickable ? undefined
                               : isPrimary ? "Confirmed & month ended — click to override"
                               : cellStatus ? "Double duty — click to edit" : `Click to add a ${cShift} shift (double duty)`}
                             className={`border border-border px-1 py-0.5 text-center font-medium ${cellBg} ${statusClass(cellStatus)}`}
                           >
                             {cellStatus}
+                            {isPrimary && isRelieverDay && cellStatus && (
+                              <sup className="ml-0.5 text-[8px] font-semibold text-brand-600 dark:text-brand-400" title="Reliever day">R</sup>
+                            )}
                           </td>
                         );
                       });
@@ -504,19 +564,19 @@ export default function AttendanceSheetModal({
                   </tr>
                 ))}
                 <tr className="bg-secondary/60 font-medium">
-                  <td colSpan={4} className="border border-border px-2 py-0.5">Total Presents</td>
+                  <td colSpan={4} style={{ left: 0, width: LEAD_TOTAL, minWidth: LEAD_TOTAL, maxWidth: LEAD_TOTAL }} className="sticky left-0 z-10 bg-secondary border border-border border-r-2 px-2 py-0.5">Total Presents</td>
                   {totalRowCells(totals.P, [String(totals.sumP), String(totals.sumA), String(totals.sumL), String(totals.sumDD), String(totals.sumPD)])}
                 </tr>
                 <tr className="bg-secondary/40">
-                  <td colSpan={4} className="border border-border px-2 py-0.5">Total Leaves</td>
+                  <td colSpan={4} style={{ left: 0, width: LEAD_TOTAL, minWidth: LEAD_TOTAL, maxWidth: LEAD_TOTAL }} className="sticky left-0 z-10 bg-secondary border border-border border-r-2 px-2 py-0.5">Total Leaves</td>
                   {totalRowCells(totals.L)}
                 </tr>
                 <tr className="bg-secondary/40">
-                  <td colSpan={4} className="border border-border px-2 py-0.5">Total Absents</td>
+                  <td colSpan={4} style={{ left: 0, width: LEAD_TOTAL, minWidth: LEAD_TOTAL, maxWidth: LEAD_TOTAL }} className="sticky left-0 z-10 bg-secondary border border-border border-r-2 px-2 py-0.5">Total Absents</td>
                   {totalRowCells(totals.A)}
                 </tr>
                 <tr className="bg-secondary/60 font-medium">
-                  <td colSpan={4} className="border border-border px-2 py-0.5">Grand Total</td>
+                  <td colSpan={4} style={{ left: 0, width: LEAD_TOTAL, minWidth: LEAD_TOTAL, maxWidth: LEAD_TOTAL }} className="sticky left-0 z-10 bg-secondary border border-border border-r-2 px-2 py-0.5">Grand Total</td>
                   {totalRowCells(totals.grand)}
                 </tr>
               </tbody>
@@ -527,6 +587,10 @@ export default function AttendanceSheetModal({
             <div className="mt-3 text-[11px] text-muted-foreground space-y-0.5">
               {shifts.map((c) => <span key={c} className="inline-block mr-3">{shiftAbbr(c)} = {c} shift</span>)}
               <div>P / A / L = present / absent / leave · X = not markable (separated / before joining / off-contract) · pay days = presents + allowed leaves − excess</div>
+              <div>
+                <span className="inline-block align-middle rounded-sm bg-brand-50 dark:bg-brand-900/20 px-1 mr-1">P<sup className="text-[8px] font-semibold text-brand-600 dark:text-brand-400">R</sup></span>
+                = reliever day (the guard covered as a reliever that day) — gaps in a reliever segment are expected and never block OPS Verify.
+              </div>
               <div className="text-muted-foreground">
                 Shows only attendance the supervisor has confirmed on the Attendance board; unconfirmed days stay blank.
                 {monthEnded

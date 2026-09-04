@@ -472,6 +472,11 @@ export default function ChartOfAccounts() {
                 className={`w-full px-3 py-2 border border-slate-200 rounded-md text-sm font-mono ${isSystemControl ? "bg-slate-50 text-slate-500" : ""}`}
                 placeholder="e.g., 6400"
               />
+              {isSystemControl && (
+                <p className="text-xs text-slate-500 mt-1">
+                  Fixed — other objects address this account by its code.
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Account Type *</label>
@@ -501,6 +506,13 @@ export default function ChartOfAccounts() {
                   </option>
                 ))}
               </ThemedSelect>
+              {lockStructure && (
+                <p className="text-xs text-slate-500 mt-1">
+                  {isSystemControl
+                    ? "Fixed — changing it would move every balance under this account to a different statement."
+                    : "Fixed — this account carries posted entries, and retyping it moves a balance to the other side."}
+                </p>
+              )}
             </div>
             <div className="col-span-full">
               <label className="block text-sm text-slate-700 mb-1">Account Name *</label>
@@ -536,6 +548,13 @@ export default function ChartOfAccounts() {
                     </option>
                   ))}
               </ThemedSelect>
+              {lockStructure && (
+                <p className="text-xs text-slate-500 mt-1">
+                  {isSystemControl
+                    ? "Fixed — a system control account belongs at the top level. Nesting it puts its whole subtree into another account's balance."
+                    : "Fixed — this account carries posted entries, and moving it would move a balance with no entry behind the move."}
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Normal Side</label>
@@ -544,7 +563,8 @@ export default function ChartOfAccounts() {
                 onChange={(e) =>
                   setForm({ ...form, normal_side: e.target.value as AccountNormalSide })
                 }
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                disabled={isSystemControl}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm disabled:bg-slate-50 disabled:text-slate-500"
               >
                 <option value="debit">Debit</option>
                 <option value="credit">Credit</option>

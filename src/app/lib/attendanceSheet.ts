@@ -6,6 +6,7 @@
 import { supabase, fetchAllRows, resolveAllowedLeaves, type Contract, type Client } from "./supabase";
 import { loadShiftResolver } from "./shiftOnDate";
 import { attendanceWindowError, hiddenFromAttendance, isSeparatedState, SEPARATION_MARK } from "./employmentWindow";
+import { guardDisplayCode } from "./guardCode";
 import { formatDate } from "./date";
 import type { AttendanceEmployeeRow } from "./excel";
 
@@ -164,4 +165,109 @@ export async function buildAttendanceRows(opts: {
   });
 
   return { rows, daysInMonth: dim, monthLabel, cellsByEmp };
+}
+
+// Standalone reliever-coverage rows for ONE client's Monthly Board: employees who
+// are CURRENTLY relievers (category='reliever') and stood for this client on some
+// day(s), keyed by attendance_records.worked_for_client_id (0030). Detection is by
+// current category — NOT by worked_for_client_id alone, because the Attendance
+// board's confirm() writes worked_for_client_id for every roster guard, so that
+// column is set on ordinary regular-guard attendance too and cannot mark a
+// reliever day on its own. Each reliever becomes one row with ONLY the days they
+// covered marked, every other day BLANK (never "X" — a reliever gap is expected).
+// relieverByDay is all-true, so the OPS-Verify no-gaps rule and the strength
+// totals skip them. Not gated on attendance_confirmations (no confirm loop for
+// reliever marks). Guards on the roster are excluded (excludeEmpIds) as a safety
+// net — a reliever has no client_id so isn't on a roster anyway.
+export async function buildRelieverRows(opts: {
+  month: string; // "YYYY-MM"
+  clientId: string; // real client uuid (relievers never attribute to a category group)
+  clientPrefix?: string | null;
+  excludeEmpIds?: Iterable<string>; // roster ids already rendered as regular rows
+}): Promise<AttendanceEmployeeRow[]> {
+  const { month, clientId, clientPrefix = null } = opts;
+  const exclude = new Set(opts.excludeEmpIds ?? []);
+  const [yStr, mStr] = month.split("-");
+  const y = Number(yStr);
+  const m = Number(mStr);
+  const dim = new Date(y, m, 0).getDate();
+  const monthStart = `${yStr}-${mStr}-01`;
+  const monthEnd = `${yStr}-${mStr}-${String(dim).padStart(2, "0")}`;
+
+  const records = await fetchAllRows<any>(() =>
+    supabase
+      .from("attendance_records")
+      .select("employee_id, attendance_date, status, worked_shift")
+      .eq("worked_for_client_id", clientId)
+      .gte("attendance_date", monthStart)
+      .lte("attendance_date", monthEnd)
+      .order("attendance_date", { ascending: true })
+      .order("employee_id", { ascending: true })
+      .order("worked_shift", { ascending: true }) as unknown as {
+      range: (from: number, to: number) => Promise<{ data: unknown; error: { message: string } | null }>;
+    },
+  );
+  const recs = (records ?? []) as any[];
+  if (recs.length === 0) return [];
+
+  const empIds = [...new Set(recs.map((r) => r.employee_id))].filter((id) => !exclude.has(id));
+  if (empIds.length === 0) return [];
+  // Only CURRENT relievers. worked_for_client_id is written for all roster guards
+  // by confirm(), so filtering by it alone would surface every regular guard here.
+  const { data: emps } = await supabase
+    .from("employees")
+    .select("id, full_name, guard_code, display_number, employee_code")
+    .in("id", empIds)
+    .eq("category", "reliever");
+  const empById = new Map(((emps ?? []) as any[]).map((e) => [e.id, e]));
+  if (empById.size === 0) return [];
+
+  const byEmp = new Map<string, Map<number, { sym: string; ws: string }>>();
+  for (const r of recs) {
+    if (!empById.has(r.employee_id)) continue;
+    const day = Number(String(r.attendance_date).slice(8, 10));
+    const ws = (r.worked_shift as string) ?? "day";
+    if (!byEmp.has(r.employee_id)) byEmp.set(r.employee_id, new Map());
+    byEmp.get(r.employee_id)!.set(day, { sym: symbolOf(r.status), ws });
+  }
+
+  const rows: AttendanceEmployeeRow[] = [];
+  for (const [empId, dayMap] of byEmp) {
+    const e = empById.get(empId)!;
+    const statusByDay: string[] = [];
+    const shiftByDay: string[] = [];
+    const relieverByDay: boolean[] = [];
+    let p = 0, a = 0, l = 0, dd = 0;
+    for (let d = 1; d <= dim; d += 1) {
+      const cell = dayMap.get(d);
+      const sym = cell?.sym ?? ""; // unworked day → blank, never X
+      statusByDay.push(sym);
+      relieverByDay.push(true); // whole row is reliever cover → every day gap-exempt
+      if (sym === "P") p += 1;
+      else if (sym === "DD") { p += 1; dd += 1; }
+      else if (sym === "A") a += 1;
+      else if (sym === "L") l += 1;
+      shiftByDay.push(cell?.ws ?? "day");
+    }
+    rows.push({
+      serial: 0,
+      empId,
+      name: e.full_name,
+      designation: "Reliever",
+      empCode: guardDisplayCode(e, clientPrefix),
+      shift: shiftByDay.find((s) => s) ?? "day",
+      shiftByDay,
+      statusByDay,
+      presents: p,
+      absents: a,
+      leaves: l,
+      doubleDuties: dd,
+      payDays: p, // display only — reliever pay is per-day, computed in payroll
+      isReliever: true,
+      relieverByDay,
+    });
+  }
+  rows.sort((x, z) => x.name.localeCompare(z.name));
+  rows.forEach((r, i) => (r.serial = i + 1));
+  return rows;
 }

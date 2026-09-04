@@ -1412,6 +1412,9 @@ export default function EmployeeAssignments() {
                                       realSites <= 1
                                         ? g.recon?.contracted_billed_qty ?? requiredBySite.get(b.id) ?? 0
                                         : requiredBySite.get(b.id) ?? 0;
+                                    // No contracted requirement (office staff / a
+                                    // region bucket) → a plain head-count, not "N/0".
+                                    if (req <= 0) return `${b.rows.length} employee${b.rows.length === 1 ? "" : "s"}`;
                                     return `${b.rows.length}/${req} assigned`;
                                   })()}
                                 </span>
@@ -1662,6 +1665,7 @@ export default function EmployeeAssignments() {
           displayCode={displayCodeFor(transferTarget)}
           sites={sites}
           currentSiteId={siteByGuard.get(transferTarget.id) ?? ""}
+          branches={branches}
           contractsForClient={contractsForClient}
           linesForContract={linesForContract}
           linesForSite={personnelLinesForSite}
@@ -3130,16 +3134,17 @@ function AssignEmployeesModal({
 // posting", so a future date would move the guard immediately while the form
 // claimed they stay until then.
 // ─────────────────────────────────────────────────────────────────────────────
-type TransferDest = "client" | "site" | "office_staff" | "reliever";
+type TransferDest = "client" | "site" | "office_staff" | "reliever" | "branch";
 
 function TransferModal({
-  employee, clients, displayCode, sites, currentSiteId, contractsForClient, linesForContract, linesForSite, onClose, onDone, onError,
+  employee, clients, displayCode, sites, currentSiteId, branches, contractsForClient, linesForContract, linesForSite, onClose, onDone, onError,
 }: {
   employee: EmployeeRow;
   clients: Client[];
   displayCode: string;
   sites: { id: string; client_id: string; name: string }[];
   currentSiteId: string;
+  branches: Branch[];
   contractsForClient: (clientId: string) => Contract[];
   linesForContract: (contractId: string) => ContractLine[];
   linesForSite: (clientId: string, siteId: string) => ContractLine[];
@@ -3148,9 +3153,14 @@ function TransferModal({
   onError: (m: string) => void;
 }) {
   const currentCategory = (employee.category ?? "client") as EmployeeCategory;
-  const [dest, setDest] = useState<TransferDest>("client");
+  // Office staff / relievers have no client, so their region is set directly on
+  // the employee — they can be moved to another branch. A client guard's branch
+  // follows their client (0341), so a direct branch move isn't offered for them.
+  const canMoveBranch = !employee.client_id;
+  const [dest, setDest] = useState<TransferDest>(canMoveBranch ? "branch" : "client");
   const [clientId, setClientId] = useState("");
   const [siteId, setSiteId] = useState("");
+  const [branchId, setBranchId] = useState("");
   const [contractLineId, setContractLineId] = useState("");
   const [effectiveDate, setEffectiveDate] = useState(todayIso());
   const [saving, setSaving] = useState(false);
@@ -3180,6 +3190,22 @@ function TransferModal({
     !!employee.client_id && sites.filter((s) => s.client_id === employee.client_id).length > 1;
 
   const save = async () => {
+    // Branch move (office staff / reliever): set the region directly. No client,
+    // so no posting/display-code changes — just the branch.
+    if (dest === "branch") {
+      if (!branchId) { setErr("Pick the branch to transfer to."); return; }
+      if (branchId === (employee.branch_id ?? "")) { setErr("That is the branch they're already in."); return; }
+      setSaving(true); setErr(null);
+      try {
+        const { error } = await supabase.from("employees").update({ branch_id: branchId }).eq("id", employee.id);
+        if (error) throw error;
+        await onDone(`${employee.full_name} moved to ${branches.find((b) => b.id === branchId)?.name ?? "the new branch"}.`);
+      } catch (e: any) {
+        const m = e.message ?? String(e);
+        setErr(m); onError(m); setSaving(false);
+      }
+      return;
+    }
     if (movingToClient && !clientId) { setErr("Pick the client to transfer to."); return; }
     if (movingToSite && !employee.client_id) {
       setErr("This employee isn't posted to a client, so there's no site to move within.");
@@ -3285,16 +3311,29 @@ function TransferModal({
             value={dest}
             onChange={(e) => {
               setDest(e.target.value as TransferDest);
-              setClientId(""); setSiteId(""); setContractLineId("");
+              setClientId(""); setSiteId(""); setContractLineId(""); setBranchId("");
             }}
             className={inputCls}
           >
+            {canMoveBranch && <option value="branch">Another branch</option>}
             <option value="client">Another client</option>
             {canMoveSite && <option value="site">Another site</option>}
             <option value="office_staff">Office Staff</option>
             <option value="reliever">Reliever</option>
           </ThemedSelect>
         </label>
+
+        {dest === "branch" && (
+          <label className="block">
+            <span className="text-xs text-muted-foreground">Branch</span>
+            <ThemedSelect value={branchId} onChange={(e) => setBranchId(e.target.value)} className={inputCls}>
+              <option value="">— Select —</option>
+              {branches
+                .filter((b) => b.id !== (employee.branch_id ?? ""))
+                .map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </ThemedSelect>
+          </label>
+        )}
 
         {(movingToClient || movingToSite) && (
           <>

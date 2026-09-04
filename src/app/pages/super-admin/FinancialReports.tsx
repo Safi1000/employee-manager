@@ -6,6 +6,7 @@ import { formatDate, invoicePeriodFilter } from "../../lib/date";
 import ExportButton from "../../components/ExportButton";
 import PartnerFormModal from "../../components/PartnerFormModal";
 import PartnerDetailModal from "../../components/PartnerDetailModal";
+import PartnershipPolicyPanel from "../../components/PartnershipPolicyPanel";
 import {
   exportProfitLoss,
   exportClientStatements,
@@ -13,6 +14,7 @@ import {
 } from "../../lib/excel";
 import Modal from "../../components/Modal";
 import { useAuth, hasPermission } from "../../lib/auth";
+import { useRegion } from "../../lib/region";
 import Button from "../../components/Button";
 import Partners from "./Partners";
 import Cashflow from "./CashFlow";
@@ -94,6 +96,10 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
   // on the SAME permission so reports.view alone can't reach it (matches the
   // coa.view / period_close.manage route-leak fixes: hide the option entirely).
   const canViewCashflow = hasPermission(profile, "cashflow.view");
+  // Partnership policy is a write to finance_settings. RLS only scopes it to
+  // the tenant — every company member can write it as far as the database is
+  // concerned — so the permission has to be checked here or nowhere.
+  const canEditAccounting = hasPermission(profile, "accounting.edit");
   const scopeCompanyId = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
   const scopeCompanyFilter = scopeCompanyId ?? "00000000-0000-0000-0000-000000000000";
   const [activeTab, setActiveTab] = useState<"pl" | "regional" | "clients" | "partnership" | "rmd">(
@@ -106,11 +112,15 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
   // other tabs — so it fetches once instead of re-loading on every visit.
   const [cashflowOpened, setCashflowOpened] = useState(false);
   const [branches, setBranches] = useState<Branch[]>([]);
-  const [plBranchFilter, setPlBranchFilter] = useState<string>("all");
+  // Branch scoping is driven by the global region selector at the top of the app
+  // (not a per-page dropdown). "All Regions" (regionId null) → the consolidated
+  // company view ("all"); a selected region → that branch id.
+  const { regionId } = useRegion();
+  const plBranchFilter = regionId ?? "all";
   // Item 3. Null unless a single non-head-office region is selected — see the
   // long note in plFigures for why the company P&L must NOT apportion.
   const [allocatedHoForBranch, setAllocatedHoForBranch] = useState<number | null>(null);
-  const [statementBranchFilter, setStatementBranchFilter] = useState<string>("all");
+  const statementBranchFilter = regionId ?? "all";
   const [isClientStatementModalOpen, setIsClientStatementModalOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<ClientStatementRow | null>(null);
 
@@ -736,17 +746,8 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                   </p>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <label className="text-sm text-slate-600">Branch:</label>
-                  <ThemedSelect
-                    value={plBranchFilter}
-                    onChange={(e) => setPlBranchFilter(e.target.value)}
-                    className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
-                  >
-                    <option value="all">All Branches</option>
-                    {branches.map((b) => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
-                    ))}
-                  </ThemedSelect>
+                  {/* Branch is driven by the global region selector at the top of
+                      the app (Head Office / All Regions), not a per-page filter. */}
                   <label className="text-sm text-slate-600">Month:</label>
                   <ThemedSelect
                     value={plPeriod}
@@ -932,17 +933,8 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                   </p>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <label className="text-sm text-slate-600">Branch:</label>
-                  <ThemedSelect
-                    value={statementBranchFilter}
-                    onChange={(e) => setStatementBranchFilter(e.target.value)}
-                    className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
-                  >
-                    <option value="all">All Branches</option>
-                    {branches.map((b) => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
-                    ))}
-                  </ThemedSelect>
+                  {/* Branch is driven by the global region selector at the top of
+                      the app, not a per-page filter. */}
                   <label className="text-sm text-slate-600">Month:</label>
                   <ThemedSelect
                     value={statementPeriod}
@@ -1115,6 +1107,20 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                 <div className="text-sm text-danger-600 bg-danger-50 border border-danger-200 px-4 py-2 rounded mb-4">{partnerError}</div>
               )}
 
+              {/* The two company-wide settings the partner dialog links to.
+                  They live here, on the report the dialog is opened from,
+                  because this page is in the Finance nav group and carries the
+                  same permissions — the other finance_settings editor is on a
+                  page that routes.tsx imports and never renders. */}
+              {scopeCompanyId && (
+                <PartnershipPolicyPanel
+                  companyId={scopeCompanyId}
+                  period={partnershipPeriod}
+                  canEdit={canEditAccounting}
+                  onSaved={loadPartnership}
+                />
+              )}
+
               <div className="mb-6 flex justify-end">
                 <Button variant="primary" size="md" onClick={() => { setFormPartner(null); setIsPartnerFormOpen(true); }}>
                   <Plus className="w-4 h-4 mr-2" />
@@ -1241,6 +1247,14 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
         onClose={() => setIsPartnerFormOpen(false)}
         onSaved={() => { setIsPartnerFormOpen(false); setFormPartner(null); loadPartnership(); }}
         onChanged={() => loadPartnership()}
+        onOpenPolicy={() => {
+          setIsPartnerFormOpen(false);
+          setFormPartner(null);
+          // After the dialog unmounts, or the panel is still behind it.
+          requestAnimationFrame(() =>
+            document.getElementById("partnership-policy")?.scrollIntoView({ behavior: "smooth", block: "center" }),
+          );
+        }}
       />
 
       <PartnerDetailModal

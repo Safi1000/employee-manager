@@ -16,6 +16,7 @@ import {
   type AccountingPeriod,
 } from "../../lib/supabase";
 import { useAuth, hasPermission } from "../../lib/auth";
+import { fetchLedgerStart, monthsFrom } from "../../lib/monthRange";
 
 type MonthRow = {
   period_month: string;          // YYYY-MM-01
@@ -30,18 +31,6 @@ type MonthRow = {
   closed_at: string | null;
   closed_by_name: string | null;
   note: string | null;
-};
-
-const monthsBack = (n: number): string[] => {
-  const out: string[] = [];
-  const d = new Date();
-  d.setDate(1);
-  for (let i = 0; i < n; i += 1) {
-    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
-    out.push(iso);
-    d.setMonth(d.getMonth() - 1);
-  }
-  return out;
 };
 
 const monthLabel = (iso: string): string => {
@@ -73,7 +62,12 @@ export default function PeriodClose() {
   const [actionNote, setActionNote] = useState("");
   const [actionSubmitting, setActionSubmitting] = useState(false);
 
-  const monthList = useMemo(() => monthsBack(18), []);
+  // The months this company can actually have books for. monthsBack(18) offered
+  // March 2025 on a ledger that starts in August 2026 — sixteen months that
+  // cannot hold anything, in the one screen whose job is to say which months are
+  // settled.
+  const [ledgerStart, setLedgerStart] = useState<string | null>(null);
+  const monthList = useMemo(() => monthsFrom(ledgerStart), [ledgerStart]);
 
   const loadAll = async () => {
     setLoading(true);
@@ -173,10 +167,14 @@ export default function PeriodClose() {
     setLoading(false);
   };
 
+  useEffect(() => { fetchLedgerStart().then((s) => setLedgerStart(s ?? null)); }, []);
+
+  // Reload once the bound is known: monthList drives the fetch window below, so
+  // loading before it resolves would query the wrong range and then discard it.
   useEffect(() => {
     loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [ledgerStart]);
 
   const askClose = (row: MonthRow) => {
     setActionRow(row);

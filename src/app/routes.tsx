@@ -181,6 +181,9 @@ export const router = createRouter([
       // Partnership Report is its own page under Finance now, not a tab of
       // Financial Reports. Same component, pinned to that one report.
       { path: "partnership-report", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit"], <FinancialReports key="partnership" standalone="partnership" />) },
+      // Partnership Run — draft / review / post. The database has been able to
+      // do this since 0361; nothing could reach it until now.
+      { path: "partnership-run", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit"], <PartnershipRun />) },
       { path: "expenses", element: guard(["expenses.view", "expenses.edit"], <Expenses />) },
       { path: "invoices", element: guard(["invoices.view", "invoices.edit"], <Invoices />) },
       { path: "cashflow", element: guard(["cashflow.view"], <Cashflow />) },
@@ -202,11 +205,6 @@ export const router = createRouter([
       { path: "alerts", element: <Alerts /> },
       { path: "governance", element: <Navigate to="/super-admin/access-governance?tab=governance" replace /> },
       { path: "partners", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit"], <Partners />) },
-      // The partnership run is its own page, not a tab of Partner Accounts.
-      // Partner Accounts has no nav link and RMD Statements is not in the tab
-      // strip, so the run screen built for it was unreachable by any route a
-      // person could take — the same defect as the run having no caller at all.
-      { path: "partnership-run", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit"], <PartnershipRun />) },
       // Cash Custody moved into Banks & Ledgers as a 4th tab; redirect the old route.
       { path: "cash-custody", element: <Navigate to="/super-admin/accounting?tab=cash-custody" replace /> },
       // PROFIT DISTRIBUTION: ROUTE REMOVED. The screen maintained

@@ -35,6 +35,7 @@ import {
   Lock,
   History,
   Users2,
+  Play,
   PieChart,
   Briefcase,
   MapPin,
@@ -102,6 +103,12 @@ export default function SuperAdminLayout() {
   const PERIOD_CLOSE: LinkDef = { to: "/super-admin/period-close", label: "Period Close", icon: Lock, perms: ["period_close.manage", "reports.view"] };
   const AUDIT_LOG: LinkDef = { to: "/super-admin/audit-log", label: "Audit Log", icon: History, roles: ["super_super_admin", "super_admin"] };
   const PARTNERS: LinkDef = { to: "/super-admin/partners", label: "Partner Accounts", icon: Users2, perms: ["banks.view", "receivables.view", "payables.view", "accounting.edit"] };
+  // The partnership RUN — drafting, reviewing and posting a month — as opposed
+  // to the partnership REPORT, which reads one back.
+  const PARTNERSHIP_RUN: LinkDef = { to: "/super-admin/partnership-run", label: "Partnership Run", icon: Play, perms: ["banks.view", "receivables.view", "payables.view", "accounting.edit"] };
+  // PROFIT_DIST is deliberately absent: the /profit-distribution route was
+  // removed because the screen maintained a share model no ledger function
+  // reads. A LinkDef pointing at a removed route is worse than no link.
   const PROJECT_FIN: LinkDef = { to: "/super-admin/project-financing", label: "Project Financing", icon: Briefcase, perms: ["banks.view", "receivables.view", "payables.view", "accounting.edit"] };
   const COMPLIANCE: LinkDef = { to: "/super-admin/compliance", label: "Compliance Calendar", icon: Bell, perms: ["compliance.view", "compliance.edit"] };
   const DOCUMENTS: LinkDef = { to: "/super-admin/documents", label: "Documents", icon: Folder, perms: ["documents.view", "documents.edit"] };
@@ -118,9 +125,9 @@ export default function SuperAdminLayout() {
   const GOVERNANCE: LinkDef = { to: "/super-admin/governance", label: "Governance", icon: Users2, perms: ["users.manage", "payroll.approve", "performance.approve", "accounting.edit"] };
   const RECEIVABLES: LinkDef = { to: "/super-admin/receivables", label: "Receivables", icon: ReceiptText, perms: ["invoices.view", "invoices.edit", "receivables.view"] };
   const OPENING_BAL: LinkDef = { to: "/super-admin/opening-balances", label: "Opening Balances", icon: BookOpen, perms: ["accounting.edit", "coa.view"] };
-  // Renamed with the page: the §22 scorecard cards were scrapped, and what is
-  // left is operating expenses and profit per region. Route unchanged.
-  const REGIONAL_SCORECARD: LinkDef = { to: "/super-admin/regional-scorecard", label: "Regional Operating Expenses", icon: PieChart, perms: ["reports.view", "banks.view"] };
+  // "Regional Operating Expenses" (route /super-admin/regional-scorecard) is
+  // hidden from the nav by request — its LinkDef is intentionally not defined
+  // here so it isn't listed. The route still exists in routes.tsx.
   const CLIENT_REL: LinkDef = { to: "/super-admin/client-relationships", label: "Client Relationships", icon: Users2, perms: ["clients.view", "clients.edit"] };
 
   // Consolidation restructure — merged / renamed / moved homes.
@@ -137,11 +144,6 @@ export default function SuperAdminLayout() {
   // Profit-Share group. A link to a removed route is worse than no link.
   const RMD_STATEMENTS: LinkDef = { to: "/super-admin/partners", label: "RMD Statements", icon: Users2, perms: ["banks.view", "receivables.view", "payables.view", "accounting.edit"] };
   const PARTNERSHIP_REPORT: LinkDef = { to: "/super-admin/partnership-report", label: "Partnership Report", icon: Users2, perms: ["banks.view", "receivables.view", "payables.view", "accounting.edit"] };
-  // The partnership RUN — drafting, reviewing and posting a month — as opposed
-  // to the partnership REPORT, which reads one back. It had no door at all
-  // before this: Partner Accounts is in no nav group and RMD Statements is
-  // not in the Financial Reports tab strip.
-  const PARTNERSHIP_RUN: LinkDef = { to: "/super-admin/partnership-run", label: "Partnership Run", icon: Users2, perms: ["banks.view", "receivables.view", "payables.view", "accounting.edit"] };
 
   // Build groups, dropping any link the user lacks permission for. Drop the
   // group entirely if it ends up with no visible children.
@@ -237,12 +239,13 @@ export default function SuperAdminLayout() {
     // report about partners, not about the P&L, and burying it behind another
     // report's tab strip is what kept it hard to find.
     PARTNERSHIP_REPORT,
+    // The run itself, beside the report it is a run of. One door: this is the
+    // only way to draft, review, post or reverse a month, and it is in the nav
+    // rather than behind a route only a typed URL reaches.
     PARTNERSHIP_RUN,
-    // Unhidden and rehomed. It used to sit in the hidden Profit-Share group,
-    // which is why it disappeared with it; it is a financial report about
-    // regions, so Finance is where it belongs rather than beside partner
-    // profit-share screens that remain hidden.
-    REGIONAL_SCORECARD,
+    // REGIONAL_SCORECARD ("Regional Operating Expenses") is hidden from the nav
+    // by request. The route still exists (routes.tsx) so a saved link resolves;
+    // it just isn't listed. Re-add it here to bring it back.
     PERIOD_CLOSE,
   ]);
   if (finance) links.push(finance);

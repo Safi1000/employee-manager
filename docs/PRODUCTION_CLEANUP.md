@@ -1341,3 +1341,82 @@ exactly the shape `every_control_is_invoked` was written to name — a control
 reporting nothing while doing nothing. Equally, deleting a control someone
 intended is not a cleanup decision to take on someone else's behalf. Hence: his
 call, both costs stated, no action taken.
+
+---
+
+# 4. Referral commission — DEFERRED, and the three tables stay
+
+**Status: specced, not built, not dead. Do not purge these as orphans.**
+
+| object | rows on prod | reads it | writes it |
+|---|---:|---|---|
+| `referral_arrangements` | 0 | `ProfitDistribution.tsx` | `ProfitDistribution.tsx` |
+| `profit_distribution_rules` | 0 | `ProfitDistribution.tsx` | `ProfitDistribution.tsx` |
+| `profit_distribution_rule_lines` | 0 | `ProfitDistribution.tsx` | `ProfitDistribution.tsx` |
+
+All three are from `0078b_missing_base_tables.sql`. Nothing in the posting path
+touches any of them: no allocation function, no check, no trigger. The only
+caller is a screen with no nav link.
+
+Shayan confirms referral commission is a **real arrangement at GGS**. It is
+therefore not a feature nobody wanted — it is a feature nobody has yet decided
+the accounting for, and it should not hold up his start.
+
+## The question that has to be answered before anything is built
+
+> Safi refers a client in Lahore. Shafqat runs Lahore and takes his percentage
+> on it. **Where does Safi's cut come from?**
+>
+> - **Off the top** (`OFF_THE_TOP`) — taken before any share is calculated. The
+>   company bears it, and every partner's share shrinks slightly.
+> - **Partners only** (`PARTNERS_ONLY`) — taken out of the partner pool, so
+>   Shafqat bears it and equity is unaffected.
+> - **Custom split** (`CUSTOM_SPLIT`) — decided per arrangement, with the
+>   split named on the arrangement itself.
+
+Two more, which are the same size of question and are not answered anywhere:
+
+- Is the rate a **percentage of that client's Net Cash**, or of something else?
+  (Net Cash is what `partner_remuneration_basis` currently resolves to for GGS
+  — see `LEDGER_PHASE1_POSTING_RULES.md` and A4.)
+- Does it run **in perpetuity**, or for a **fixed term** from the referral?
+  Perpetuity and "first 24 months" are different columns, not different values.
+
+## Why the tables are the reason not to delete the tables
+
+`referral_arrangements.funding_method` already carries exactly those three
+values, constrained:
+
+```sql
+funding_method text not null default 'OFF_THE_TOP'
+  check (funding_method in ('OFF_THE_TOP', 'PARTNERS_ONLY', 'CUSTOM_SPLIT')),
+custom_split_lines jsonb,
+```
+
+along with `basis in ('CLIENT_PROFIT','BRANCH_PROFIT')`, a `percentage`, a
+`client_id` and a `source_branch_id`. That schema **is** the written record of
+the requirement — it is the only place the three funding methods are enumerated
+anywhere in the repo. Dropping the tables would delete the specification along
+with the storage, and the conversation would restart from nothing.
+
+It also has no `term_months` and no `effective_from`, which is how we know the
+perpetuity question was never answered rather than answered and forgotten.
+
+## Consequence, stated so nobody has to re-derive it
+
+The 0078b subsystem is **neither wired nor removed**. That is a deliberate
+resting state, not an oversight:
+
+- Leaving it wired to nothing costs three rows on `every_control_is_invoked`
+  and nothing else — no posting behaviour depends on it, and all three tables
+  are empty.
+- Removing it costs the specification above.
+
+Compare the bonus-subsystem decision in section 3: there, "leaving it as it is"
+was explicitly *not* an option, because a detector that never runs actively
+misleads a reader into thinking something is being checked. These three tables
+check nothing and claim to check nothing. An empty table is not a false
+assurance; a silent detector is. That is the whole difference, and it is why
+this one is allowed to wait and that one is not.
+
+**Revisit when:** the funding-method question above has an answer. Not before.

@@ -454,10 +454,11 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
       { key: "cashflow.view", label: "View cashflow" },
       { key: "coa.view", label: "View Chart of Accounts & Trial Balance" },
       { key: "period_close.manage", label: "Close / reopen accounting periods" },
-      // Posting a partnership run credits every partner's capital account. Who
-      // may do that is a PERMISSION, not a role — post_profit_allocation (0360)
-      // enforces this same key server-side, so hiding the button is not the
-      // control, it is only the courtesy.
+      // 0361 enforces this in post_profit_allocation and it was never added
+      // here, so the only people who could post a partnership run were the two
+      // roles has_permission() waves through outright. A permission the
+      // database demands and the grant screen cannot offer is a permission
+      // nobody can be given.
       { key: "partnership.post", label: "Post / reverse a partnership run" },
     ],
   },
