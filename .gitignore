@@ -60,3 +60,4 @@ ios/App/output/
 
 # Data exports: real employee PII (CNICs, addresses, phone numbers). Never commit.
 exports/
+scripts/_service-split-lifted.mjs

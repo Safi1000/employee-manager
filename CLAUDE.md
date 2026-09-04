@@ -247,6 +247,95 @@ CANNOT be converted, because under invoker the table's own `perm_write_*`
 policy adds `employees.edit` back on top of the stage key and re-flattens what
 the split just separated. That is the cascade case — see 0375 and 0385.
 
+## A comment is a measurement of the moment it was written
+
+It does not know when it stopped being true. Nothing about a stale note
+announces its age, so it reads as current for as long as it survives — and a
+note is most dangerous exactly where it is most useful, because a reader who
+trusts it does not go and look.
+
+The instance. 0347 added a check to `ledger_checks` and left:
+
+> The canary literal inside `ledger_checks_base` counts the checks it
+> evaluates. The new check lives in `ledger_checks`, not the base, so
+> `rows_before_canary` is deliberately NOT touched
+
+True the day it was written. **0302 had already moved the canary out of
+`ledger_checks_base` and into `ledger_checks`**, where it counts the
+`real_checks` CTE — which is where 0347's own check landed, and 0400's after
+it. 0400 followed the note, skipped the bump, and turned
+`checks_evaluated` red on every company. 0402 repaired it.
+
+So:
+
+- **Verify a note against the object before acting on it.** The canary's verdict
+  was one query away. Reading `pg_get_functiondef` costs a second and a comment
+  costs nothing to be wrong.
+- **The correction goes in the NEW file, never in the old one.** 0347 is applied;
+  editing it manufactures drift. 0402's header carries the correction instead —
+  the same disposition as the seven files whose headers cite a number two lower
+  than their filename. Ugly, correct, and the alternative is worse.
+- **This is the header-figure rule one level up.** A header figure fetched
+  separately contradicts the table beneath it; a note written separately
+  contradicts the code beneath it. Both are a second copy of a fact, and the
+  second copy is where the disagreement lives.
+
+### Assert on the thing that can break, not on the thing that moved
+
+0400's verification of that same change:
+
+```sql
+select count(*) into v_after from public.ledger_checks(v_co);
+if v_after <> v_before + 1 then raise ...
+```
+
+Both counts **include the canary row**, so adding one check moves both by one
+and the assertion passes whether or not the canary agrees with itself. It
+measured that a row had been added — which was never in doubt — and not the one
+thing that could go wrong. **A control reporting its own input, written inside
+the migration that was adding a control.**
+
+The test: name the failure you are guarding against, then ask whether your
+assertion can distinguish it. "The canary disagrees with the count" is answered
+only by reading the canary's own `passed`. Nothing about the total row count
+can see it.
+
+## A column a user must fill is not done until a user can fill it
+
+A migration that adds a column, a state or a key **the user is expected to
+supply** is half a feature until a screen supplies it. The database side reads
+as finished — the column exists, the constraint holds, the release run is
+scheduled, the check is wired into `ledger_checks()` — and it is never used,
+because nothing can reach it. Nothing goes red. The check watching it is
+green precisely *because* the column is empty.
+
+This has now happened four times:
+
+- **Partnership Run** — built, behind two closed doors.
+- **ProfitDistribution** — routed, and reading nothing.
+- **`partnership.post`** (0361) — demanded by a policy, absent from
+  `PERMISSION_GROUPS`, so no screen could grant it.
+- **0347 `coverage_start`/`coverage_end` and 0356 `service_start`/
+  `service_end`** — both live, both with the release run scheduled, and
+  0356's pair had no field on any form at all.
+
+So the rule: **a migration whose value comes from a human typing something is
+not complete at `apply_migration`.** Either land the screen in the same
+sitting, or write DEFERRED on the column saying which screen owes it — the same
+DECIDED/DEFERRED discipline as everything else here, for the same reason: an
+unmarked gap reads six months later as a decision nobody made.
+
+Two consequences worth stating, because both bit:
+
+- **A threshold-gated control is invisible below the threshold.** 0347's prepaid
+  block *did* exist and rendered only from PKR 50,000. Eleven of GGS's twelve
+  expenses are under it, so the screen honestly showed nothing and the field was
+  reported as missing. When someone says a field is not there, ask what the
+  form was holding when they looked.
+- **A green check is not evidence of use.** `no_stale_prepaid_balance` has been
+  green since 0347 and there has never been a prepaid expense. Before trusting a
+  check as proof, ask what its count is over — zero rows satisfy almost anything.
+
 ### A key the grant screen cannot offer is a key nobody can be given
 
 `PERMISSION_GROUPS` in `src/app/lib/supabase.ts` is what the grant screen

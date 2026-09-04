@@ -209,6 +209,49 @@ const prepaidMonths = (start: string, end: string): number => {
   return (ey - sy) * 12 + (em - sm) + 1;
 };
 
+/** 0356. First and last day of the month containing an ISO date. The service
+ *  period defaults to these, so a bill covering exactly one month is one click
+ *  rather than two date pickers. */
+const monthBounds = (isoDate: string): [string, string] => {
+  const [y, m] = isoDate.slice(0, 7).split("-").map(Number);
+  const last = new Date(y, m, 0).getDate();
+  return [`${isoDate.slice(0, 7)}-01`, `${isoDate.slice(0, 7)}-${String(last).padStart(2, "0")}`];
+};
+
+/** 0356. The same day-weighted split release_prepaid_expenses performs in SQL:
+ *  each month takes the days of the period falling inside it over the total
+ *  days, and the LAST month takes the remainder so the schedule sums exactly.
+ *  Shown in the form so the operator sees the months before committing. It
+ *  POSTS NOTHING — release_prepaid_expenses is the authority and 0356 probes
+ *  it; scripts/check-service-split.mjs checks this preview against the same
+ *  arithmetic, because it already got a timezone wrong once. */
+const serviceSplit = (start: string, end: string, amount: number) => {
+  if (!start || !end || end < start) return [];
+  // LOCAL DATES ON BOTH SIDES. new Date("2026-03-31") is parsed as UTC while
+  // new Date(y, m, 0) is local, and in any positive-offset zone — Pakistan is
+  // UTC+5 — the month end then compares as EARLIER than the period end. The
+  // final-month branch never fired and the schedule came up a rupee short.
+  const at = (iso: string) => { const [y, m, d] = iso.split("-").map(Number); return new Date(y, m - 1, d); };
+  const s = at(start), e = at(end);
+  const total = Math.round((e.getTime() - s.getTime()) / 86400000) + 1;
+  if (total <= 0) return [];
+  const out: { key: string; days: number; amount: number }[] = [];
+  let cur = new Date(s.getFullYear(), s.getMonth(), 1);
+  let done = 0;
+  while (cur <= e) {
+    const mEnd = new Date(cur.getFullYear(), cur.getMonth() + 1, 0);
+    const from = cur > s ? cur : s;
+    const to = mEnd < e ? mEnd : e;
+    const days = Math.round((to.getTime() - from.getTime()) / 86400000) + 1;
+    const raw = mEnd >= e ? amount - done : (amount * days) / total;
+    const amt = Math.round(raw * 100) / 100;
+    done += amt;
+    out.push({ key: `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}`, days, amount: amt });
+    cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+  }
+  return out;
+};
+
 type ExpenseForm = {
   category_id: string;
   pl_category: "cost_of_services" | "operating_expense";
@@ -231,7 +274,39 @@ type ExpenseForm = {
    */
   coverage_start: string;
   coverage_end: string;
+  /**
+   * 0356. Service period, held as full ISO DATES because the split is weighted
+   * by DAYS — a bill running 15 Aug to 15 Sep belongs to both months in the
+   * proportion of days it spent in each, and truncating to months would put
+   * half of September into August. Mutually exclusive with coverage_* by
+   * constraint (expenses_one_spreading_mechanism); the form makes it a radio so
+   * the invalid pair cannot be typed rather than being refused on submit.
+   */
+  service_start: string;
+  service_end: string;
   receipts?: File[];
+};
+
+/** 0401. One row of prepaid_schedule() — a deferred expense and where its
+ *  release has got to. Every figure here is COMPUTED BY THE LEDGER: released is
+ *  a sum over journal_lines and months_released is counted from the entries
+ *  that actually posted, not from the calendar. A screen that recomputed either
+ *  would be able to disagree with the trial balance beside it. */
+type DeferredRow = {
+  expense_id: string;
+  expense_date: string;
+  description: string | null;
+  category_name: string | null;
+  shape: "prepaid" | "service_period";
+  period_start: string;
+  period_end: string;
+  amount: number;
+  released: number;
+  remaining: number;
+  months_total: number;
+  months_released: number;
+  final_month: string;
+  is_stale: boolean;
 };
 
 const emptyForm: ExpenseForm = {
@@ -251,6 +326,8 @@ const emptyForm: ExpenseForm = {
   expense_by: "",
   coverage_start: "",
   coverage_end: "",
+  service_start: "",
+  service_end: "",
 };
 
 export default function Expenses() {
@@ -281,7 +358,13 @@ export default function Expenses() {
   const treasuryCompanyId = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
 
   const { regionId } = useRegion();
-  const [activeTab, setActiveTab] = useState<"expenses" | "fixed" | "advances">("expenses");
+  const [activeTab, setActiveTab] = useState<"expenses" | "fixed" | "advances" | "deferred">("expenses");
+  // 0401. "What is sitting in prepaid and when does it clear" is a LIST
+  // question, not a fact about one expense, so it gets a tab rather than a
+  // section on a detail screen. The 1160 balance belongs in the financial
+  // reports; the schedule is operational and belongs where expenses are entered.
+  const [deferred, setDeferred] = useState<DeferredRow[]>([]);
+  const [deferredErr, setDeferredErr] = useState<string | null>(null);
   const [expenses, setExpenses] = useState<ExpenseRow[]>([]);
   const [advances, setAdvances] = useState<AdvanceRow[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -459,6 +542,22 @@ export default function Expenses() {
       supabase.from("branches").select("*").order("is_head_office", { ascending: false }).order("name"),
     ]);
     if (catRes.error) setError(catRes.error.message);
+
+    // 0401. Its own call and its own error: the schedule is the one thing here
+    // that depends on a migration the rest of the screen does not, and a
+    // failure to read it must not blank the expense list.
+    if (treasuryCompanyId) {
+      const { data: schedData, error: schedErr } = await supabase.rpc("prepaid_schedule", {
+        p_company_id: treasuryCompanyId,
+      });
+      setDeferredErr(schedErr?.message ?? null);
+      setDeferred(((schedData ?? []) as DeferredRow[]).map((d) => ({
+        ...d,
+        amount: Number(d.amount),
+        released: Number(d.released),
+        remaining: Number(d.remaining),
+      })));
+    }
     // Paginate the two potentially-large tables so we never silently miss rows.
     let expData: any[] = [];
     let advData: any[] = [];
@@ -1125,6 +1224,18 @@ export default function Expenses() {
   const isAmortising = (f: ExpenseForm) =>
     !!f.coverage_start && !!f.coverage_end && Number(f.amount) >= PREPAID_THRESHOLD;
 
+  // 0356. A service period is sent only when it says something the expense date
+  // does not. A period that is exactly the expense's own month puts the cost in
+  // the month it would have landed in anyway — so sending it would defer the
+  // whole amount into 1160 and make it wait on a monthly run for no gain. The
+  // default the form offers IS that month, because it is the common case; the
+  // common case therefore posts normally and the field is still explained.
+  const isServicePeriod = (f: ExpenseForm) => {
+    if (!f.service_start || !f.service_end || f.service_end < f.service_start) return false;
+    const [a, b] = monthBounds(f.expense_date);
+    return !(f.service_start === a && f.service_end === b);
+  };
+
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
@@ -1245,6 +1356,10 @@ export default function Expenses() {
         // this form is not the only writer.
         p_coverage_start: isAmortising(form) ? `${form.coverage_start}-01` : null,
         p_coverage_end: isAmortising(form) ? `${form.coverage_end}-01` : null,
+        // 0356. Day-granular, and mutually exclusive with the pair above: the
+        // radio guarantees at most one is set, the constraint proves it.
+        p_service_start: isServicePeriod(form) ? form.service_start : null,
+        p_service_end: isServicePeriod(form) ? form.service_end : null,
         // pl_category is NOT sent: it is always derived from whether a client is
         // named, and 0364 moved that derivation into the function so the rule
         // has one home rather than one per caller.
@@ -1352,6 +1467,9 @@ export default function Expenses() {
       // Stored as first-of-month dates; the <input type="month"> wants YYYY-MM.
       coverage_start: expense.coverage_start?.slice(0, 7) ?? "",
       coverage_end: expense.coverage_end?.slice(0, 7) ?? "",
+      // 0356. Stored as real dates; <input type="date"> wants them whole.
+      service_start: expense.service_start?.slice(0, 10) ?? "",
+      service_end: expense.service_end?.slice(0, 10) ?? "",
     });
     setReplaceReceipt(false);
     setIsEditOpen(true);
@@ -1499,6 +1617,8 @@ export default function Expenses() {
         // edit clears the window rather than leaving one the constraint refuses.
         p_coverage_start: isAmortising(editForm) ? `${editForm.coverage_start}-01` : null,
         p_coverage_end: isAmortising(editForm) ? `${editForm.coverage_end}-01` : null,
+        p_service_start: isServicePeriod(editForm) ? editForm.service_start : null,
+        p_service_end: isServicePeriod(editForm) ? editForm.service_end : null,
         p_receipt_path: receiptPath,
         p_drive_file_id: receiptDriveFileId,
         p_drive_view_url: receiptDriveViewUrl,
@@ -1907,6 +2027,21 @@ export default function Expenses() {
                     })),
                     `Fixed Expenses ${monthLabel(fixedMonth)}.xlsx`,
                   );
+                } else if (activeTab === "deferred") {
+                  // Export what the tab SHOWS. Falling through to the expense
+                  // export would have handed somebody a file from a different
+                  // tab without saying so, which is the quietest kind of wrong.
+                  exportExpenses(
+                    deferred.map((d) => ({
+                      date: d.expense_date,
+                      particulars: `${d.description ?? ""} — ${d.months_released}/${d.months_total} months released, finishes ${monthLabel(d.final_month.slice(0, 7))}${d.is_stale ? " (STUCK)" : ""}`.trim(),
+                      category: d.category_name ?? "",
+                      client: d.shape === "prepaid" ? "Prepaid" : "Service period",
+                      amount: d.remaining,
+                      mode: `${formatDate(d.period_start)}–${formatDate(d.period_end)}`,
+                    })),
+                    `Deferred Expenses ${new Date().toISOString().slice(0, 10)}.xlsx`,
+                  );
                 } else if (activeTab === "advances") {
                   exportAdvances(
                     filteredAdvances.map((a) => ({
@@ -1993,6 +2128,7 @@ export default function Expenses() {
             ["expenses", "Expenses"],
             ["fixed", "Fixed Expenses"],
             ["advances", "Advances"],
+            ["deferred", "Deferred"],
           ] as const).map(([t, label]) => (
             <button
               key={t}
@@ -2013,6 +2149,13 @@ export default function Expenses() {
               {t === "fixed" && fixedTotals.count > 0 && (
                 <span className="ml-2 text-[11px] opacity-75">
                   {fixedInstances.filter((i) => i.status === "pending").length} pending
+                </span>
+              )}
+              {/* The count is of what is still OPEN. A settled schedule is
+                  listed but is not something anybody is waiting on. */}
+              {t === "deferred" && deferred.some((d) => d.remaining !== 0) && (
+                <span className="ml-2 text-[11px] opacity-75">
+                  {deferred.filter((d) => d.remaining !== 0).length} open
                 </span>
               )}
             </button>
@@ -2293,6 +2436,16 @@ export default function Expenses() {
                             Approved
                           </span>
                         )}
+                        {exp.service_start && exp.service_end && (
+                          <span
+                            className="ml-1 inline-flex items-center px-2 py-0.5 rounded text-xs bg-brand-50 text-brand-700"
+                            title={`Split across ${serviceSplit(exp.service_start.slice(0, 10), exp.service_end.slice(0, 10), Number(exp.amount))
+                              .map((x) => `${monthLabel(x.key)} ${x.days}d`)
+                              .join(", ")}`}
+                          >
+                            Service period
+                          </span>
+                        )}
                         {exp.coverage_start && exp.coverage_end && (
                           <span className="ml-1 inline-flex items-center px-2 py-0.5 rounded text-xs bg-brand-50 text-brand-700" title={`Spread over ${prepaidMonths(exp.coverage_start.slice(0, 7), exp.coverage_end.slice(0, 7))} months`}>
                             Prepaid
@@ -2401,6 +2554,93 @@ export default function Expenses() {
             </div>
           )}
         </div>
+        )}
+
+        {activeTab === "deferred" && (
+          <div className="bg-white border border-slate-200 rounded-md overflow-hidden">
+            <div className="px-4 py-3 border-b border-slate-200">
+              <h3 className="text-sm font-medium text-slate-900">Deferred expenses</h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Costs that left the bank in full but reach the profit and loss a month at a time.
+                Until they do, the remainder sits on account 1160 Prepaid Expenses. The monthly
+                run releases each month as it arrives.
+              </p>
+            </div>
+
+            {deferredErr && (
+              <div className="px-4 py-3 text-sm text-danger-700 bg-danger-50 border-b border-danger-200">
+                {deferredErr}
+              </div>
+            )}
+
+            {deferred.length === 0 && !deferredErr ? (
+              <div className="px-4 py-8 text-sm text-slate-500 text-center">
+                Nothing is deferred. An expense is deferred by choosing a service period or a
+                prepaid coverage window when it is entered.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-slate-50 border-b border-slate-200">
+                    <tr>
+                      {["Expense", "Shape", "Period", "Amount", "Released", "Remaining", "Progress", "Finishes"].map((h) => (
+                        <th key={h} className="px-4 py-2 text-left text-xs font-medium text-slate-500">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {deferred.map((d) => (
+                      <tr key={d.expense_id} className={d.is_stale ? "bg-danger-50" : undefined}>
+                        <td className="px-4 py-3 text-sm">
+                          <div className="text-slate-900">{d.description ?? "—"}</div>
+                          <div className="text-xs text-slate-500">
+                            {d.category_name ?? "—"} · {formatDate(d.expense_date)}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-slate-700">
+                          {d.shape === "prepaid" ? "Prepaid" : "Service period"}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-slate-700 whitespace-nowrap">
+                          {formatDate(d.period_start)} – {formatDate(d.period_end)}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-slate-900">PKR {d.amount.toLocaleString()}</td>
+                        <td className="px-4 py-3 text-sm text-slate-700">PKR {d.released.toLocaleString()}</td>
+                        <td className="px-4 py-3 text-sm text-slate-900">PKR {d.remaining.toLocaleString()}</td>
+                        <td className="px-4 py-3 text-sm text-slate-700 whitespace-nowrap">
+                          {d.months_released} of {d.months_total} months
+                        </td>
+                        <td className="px-4 py-3 text-sm text-slate-700 whitespace-nowrap">
+                          {monthLabel(d.final_month.slice(0, 7))}
+                          {/* THE ONE ROW-LEVEL ALARM. no_stale_prepaid_balance
+                              goes red for the company; this says WHICH expense,
+                              because "something is stuck" is not an instruction. */}
+                          {d.is_stale && (
+                            <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs bg-danger-100 text-danger-700"
+                                  title="Its period has fully passed and it still carries a balance on 1160 — the monthly release run has not finished it.">
+                              Stuck
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-slate-50 border-t border-slate-200">
+                    {/* Folded from the rows above, not fetched. A footer that
+                        can contradict the table it sits under is worse than the
+                        duplication — see CLAUDE.md, the stated exception. */}
+                    <tr>
+                      <td colSpan={5} className="px-4 py-2 text-sm text-slate-600 text-right">
+                        Still on 1160 for the rows shown
+                      </td>
+                      <td colSpan={3} className="px-4 py-2 text-sm font-medium text-slate-900">
+                        PKR {deferred.reduce((a, d) => a + d.remaining, 0).toLocaleString()}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </div>
         )}
 
         {activeTab === "fixed" && (
@@ -3367,6 +3607,27 @@ export default function Expenses() {
                 <p className="text-slate-500 mb-1">Payment Mode</p>
                 <p className="text-slate-900">{selected.payment_mode}</p>
               </div>
+              {/* 0401. Somebody looking at one expense should not have to leave
+                  it to find out it was split. Read from the same function the
+                  Deferred tab reads, so the two cannot disagree. */}
+              {(() => {
+                const d = deferred.find((x) => x.expense_id === selected.id);
+                if (!d) return null;
+                return (
+                  <div className="sm:col-span-2">
+                    <p className="text-slate-500 mb-1">
+                      {d.shape === "prepaid" ? "Prepaid — spread over the months it covers" : "Service period — split across the months it covers"}
+                    </p>
+                    <p className="text-slate-900">
+                      {formatDate(d.period_start)} – {formatDate(d.period_end)} · {d.months_released} of{" "}
+                      {d.months_total} months released · PKR {d.released.toLocaleString()} of{" "}
+                      {d.amount.toLocaleString()}, PKR {d.remaining.toLocaleString()} still on 1160 ·
+                      finishes {monthLabel(d.final_month.slice(0, 7))}
+                      {d.is_stale && " — STUCK: its period has passed and it still carries a balance."}
+                    </p>
+                  </div>
+                );
+              })()}
               {selected.payment_mode === "Bank" && (
                 <div>
                   <p className="text-slate-500 mb-1">Bank Account</p>
@@ -3979,73 +4240,181 @@ export default function Expenses() {
             />
           </div>
 
-          {/* 0347 — SPREAD OVER THE MONTHS IT COVERS.
-              Offered only above PKR 50,000, because eleven journal entries to
-              move 166 rupees each is more bookkeeping than the accuracy is
-              worth. Months, not a count: a licence running 14 March to 13 March
-              touches 13 months and "12" would be wrong at both ends.
-              The cash still leaves in full today — only the P&L is spread. */}
-          {Number(state.amount) >= PREPAID_THRESHOLD && (
-            <div className="col-span-2 border border-slate-200 rounded-md p-3 bg-slate-50">
-              <label className="flex items-center gap-2 text-sm text-slate-800">
-                <input
-                  type="checkbox"
-                  checked={!!state.coverage_start}
-                  onChange={(e) => {
-                    const m = state.expense_date.slice(0, 7);
-                    setState(
-                      e.target.checked
-                        ? { ...state, coverage_start: m, coverage_end: m }
-                        : { ...state, coverage_start: "", coverage_end: "" },
-                    );
-                  }}
-                />
-                Spread this cost over the months it covers
-              </label>
-              <p className="text-[11px] text-slate-500 mt-1">
-                Insurance paid six months ahead, a licence paid for a year. The full amount leaves
-                the bank now and the cash flow shows that; the P&amp;L takes one month at a time, so
-                one month does not look bad while five look good.
-              </p>
-              {!!state.coverage_start && (
-                <div className="grid grid-cols-2 gap-3 mt-3">
-                  <div>
-                    <label className="block text-xs text-slate-600 mb-1">First month covered *</label>
-                    <input
-                      type="month"
-                      required
-                      value={state.coverage_start}
-                      onChange={(e) => setState({ ...state, coverage_start: e.target.value })}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-600 mb-1">Last month covered *</label>
-                    <input
-                      type="month"
-                      required
-                      min={state.coverage_start}
-                      value={state.coverage_end}
-                      onChange={(e) => setState({ ...state, coverage_end: e.target.value })}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-                    />
-                  </div>
-                  {state.coverage_end >= state.coverage_start && (
-                    <p className="col-span-2 text-[11px] text-slate-600">
-                      {(() => {
-                        const n = prepaidMonths(state.coverage_start, state.coverage_end);
-                        const amt = Number(state.amount) || 0;
-                        const per = Math.round((amt / n) * 100) / 100;
-                        const last = Math.round((amt - per * (n - 1)) * 100) / 100;
-                        return `${n} month${n === 1 ? "" : "s"} · PKR ${per.toLocaleString()} each` +
-                          (last !== per ? `, PKR ${last.toLocaleString()} in the final month so the schedule sums to the amount exactly.` : ".");
-                      })()}
+          {/* 0347 + 0356 — WHICH MONTHS THIS COST BELONGS TO.
+
+              ONE QUESTION, THREE ANSWERS, AND A RADIO RATHER THAN TWO
+              CHECKBOXES. expenses_one_spreading_mechanism refuses an expense
+              carrying BOTH a coverage window and a service period, because it
+              would be released twice. A radio cannot hold both, so the invalid
+              combination is unreachable instead of being typed and then refused
+              — the difference between a form that teaches the rule and a form
+              that enforces it by rejecting people.
+
+              The two spreads are not the same mechanism and the wording says so:
+                * SERVICE PERIOD (0356) — day-granular, weighted by the days of
+                  the period falling in each month, at any amount.
+                * PREPAID (0347) — month-granular, split equally, offered only
+                  from PKR 50,000 because eleven entries to move 166 rupees each
+                  is more bookkeeping than the accuracy is worth.
+
+              Either way the cash leaves in full today. Only the P&L is spread. */}
+          <div className="col-span-2 border border-slate-200 rounded-md p-3 bg-slate-50">
+            <div className="text-sm font-medium text-slate-800">Which months does this cost belong to?</div>
+            <p className="text-[11px] text-slate-500 mt-0.5 mb-2">
+              Almost every expense belongs entirely to the month it was paid. Two do not: a bill
+              that pays for a stretch of service, and a cost paid a long way ahead. In both, the
+              full amount still leaves the bank today and the cash flow shows that — only the
+              profit and loss takes it a month at a time.
+            </p>
+
+            {(() => {
+              const belowThreshold = Number(state.amount) < PREPAID_THRESHOLD;
+              const mode = state.coverage_start ? "prepaid" : state.service_start ? "service" : "none";
+              const pick = (next: "none" | "service" | "prepaid") => {
+                if (next === "none") {
+                  setState({ ...state, coverage_start: "", coverage_end: "", service_start: "", service_end: "" });
+                } else if (next === "service") {
+                  const [a, b] = monthBounds(state.expense_date);
+                  setState({ ...state, coverage_start: "", coverage_end: "", service_start: a, service_end: b });
+                } else {
+                  const m = state.expense_date.slice(0, 7);
+                  setState({ ...state, service_start: "", service_end: "", coverage_start: m, coverage_end: m });
+                }
+              };
+              const opts: { key: "none" | "service" | "prepaid"; label: string; hint: string; disabled?: boolean }[] = [
+                {
+                  key: "none",
+                  label: "All of it in the expense month",
+                  hint: "The whole cost lands in the month of the date above. Right for almost everything.",
+                },
+                {
+                  key: "service",
+                  label: "It pays for a period of service",
+                  hint: "A bill covering 15 August to 15 September belongs to both months, split by how many days of the period fall in each. Any amount.",
+                },
+                {
+                  key: "prepaid",
+                  label: "Paid ahead — spread over the months it covers",
+                  hint: belowThreshold
+                    ? "Insurance six months ahead, a licence paid for a year. Offered from PKR 50,000 upwards."
+                    : "Insurance six months ahead, a licence paid for a year. Split equally across the months, the last taking the remainder.",
+                  disabled: belowThreshold,
+                },
+              ];
+              return (
+                <div className="space-y-2">
+                  {opts.map((o) => (
+                    <label
+                      key={o.key}
+                      className={`block border rounded-md px-3 py-2 ${
+                        mode === o.key ? "border-slate-900 bg-white" : "border-slate-200"
+                      } ${o.disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                    >
+                      <div className="flex items-center gap-2 text-sm text-slate-800">
+                        <input
+                          type="radio"
+                          name={`spread_${submitLabel}`}
+                          checked={mode === o.key}
+                          disabled={o.disabled}
+                          onChange={() => pick(o.key)}
+                        />
+                        <span>{o.label}</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 ml-6 mt-0.5">{o.hint}</p>
+                    </label>
+                  ))}
+
+                  {/* The amount can be edited back down after prepaid was chosen.
+                      Say so rather than silently dropping the window at submit,
+                      which is what isAmortising does — correctly, and invisibly. */}
+                  {mode === "prepaid" && belowThreshold && (
+                    <p className="text-[11px] text-warning-700">
+                      Below PKR {PREPAID_THRESHOLD.toLocaleString()} this is not applied — the whole
+                      cost will land in the expense month.
                     </p>
                   )}
+
+                  {mode === "service" && (
+                    <div className="grid grid-cols-2 gap-3 pt-1">
+                      <div>
+                        <label className="block text-xs text-slate-600 mb-1">Service from *</label>
+                        <input
+                          type="date"
+                          required
+                          value={state.service_start}
+                          onChange={(e) => setState({ ...state, service_start: e.target.value })}
+                          className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-600 mb-1">Service to *</label>
+                        <input
+                          type="date"
+                          required
+                          min={state.service_start}
+                          value={state.service_end}
+                          onChange={(e) => setState({ ...state, service_end: e.target.value })}
+                          className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                        />
+                      </div>
+                      <div className="col-span-2 text-[11px] text-slate-600">
+                        {(() => {
+                          const parts = serviceSplit(state.service_start, state.service_end, Number(state.amount) || 0);
+                          if (parts.length === 0) return "The end of the period cannot be before its start.";
+                          if (parts.length === 1)
+                            return "The period sits inside one month, so nothing is spread — the cost lands in " +
+                              monthLabel(parts[0].key) + ".";
+                          return parts
+                            .map((x) => `${monthLabel(x.key)}: ${x.days}d, PKR ${x.amount.toLocaleString()}`)
+                            .join(" · ");
+                        })()}
+                      </div>
+                    </div>
+                  )}
+
+                  {mode === "prepaid" && !belowThreshold && (
+                    <div className="grid grid-cols-2 gap-3 pt-1">
+                      <div>
+                        <label className="block text-xs text-slate-600 mb-1">First month covered *</label>
+                        <input
+                          type="month"
+                          required
+                          value={state.coverage_start}
+                          onChange={(e) => setState({ ...state, coverage_start: e.target.value })}
+                          className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-600 mb-1">Last month covered *</label>
+                        <input
+                          type="month"
+                          required
+                          min={state.coverage_start}
+                          value={state.coverage_end}
+                          onChange={(e) => setState({ ...state, coverage_end: e.target.value })}
+                          className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+                        />
+                      </div>
+                      {state.coverage_end >= state.coverage_start && (
+                        <p className="col-span-2 text-[11px] text-slate-600">
+                          {(() => {
+                            const n = prepaidMonths(state.coverage_start, state.coverage_end);
+                            const amt = Number(state.amount) || 0;
+                            const per = Math.round((amt / n) * 100) / 100;
+                            const last = Math.round((amt - per * (n - 1)) * 100) / 100;
+                            return `${n} month${n === 1 ? "" : "s"} · PKR ${per.toLocaleString()} each` +
+                              (last !== per
+                                ? `, PKR ${last.toLocaleString()} in the final month so the schedule sums to the amount exactly.`
+                                : ".");
+                          })()}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          )}
+              );
+            })()}
+          </div>
           <div className="col-span-2">
             <label className="block text-sm text-slate-700 mb-1">Payment Mode *</label>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">

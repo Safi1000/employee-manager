@@ -2439,6 +2439,16 @@ export type Expense = {
    */
   coverage_start: string | null;
   coverage_end: string | null;
+  /**
+   * 0356. Service period — the stretch of time this expense pays for, as real
+   * DATES rather than months, because the release is weighted by the days of
+   * the period falling in each month. No threshold: a 3,000 utility bill
+   * spanning two months still belongs to two months. Mutually exclusive with
+   * coverage_* (expenses_one_spreading_mechanism), since an expense answering
+   * "which months" twice would be released twice.
+   */
+  service_start: string | null;
+  service_end: string | null;
   created_at?: string;
   updated_at?: string;
 };
