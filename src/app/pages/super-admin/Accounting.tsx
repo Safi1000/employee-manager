@@ -816,28 +816,15 @@ export default function Accounting() {
     loadAll();
   }, []);
 
-  const applyCashDelta = async (delta: number) => {
-    if (!treasuryCompanyId) {
-      throw new Error("No company is selected, so there is no cash balance to adjust. Pick a company with the “Viewing as” selector first.");
-    }
-    const { data } = await supabase
-      .from("treasury")
-      .select("id, cash_balance")
-      .eq("company_id", treasuryCompanyId)
-      .maybeSingle();
-    if (!data) {
-      const { error: insErr } = await supabase
-        .from("treasury")
-        .insert({ company_id: treasuryCompanyId, cash_balance: delta });
-      if (insErr) throw insErr;
-      return;
-    }
-    const { error: upErr } = await supabase
-      .from("treasury")
-      .update({ cash_balance: Number(data.cash_balance) + delta, updated_at: new Date().toISOString() })
-      .eq("id", data.id);
-    if (upErr) throw upErr;
-  };
+  // 0380/0389. applyCashDelta and applyBankDelta are GONE from this screen.
+  // Both read a balance, released the lock, and wrote back a figure computed
+  // from what they had read — and both were called one leg at a time, outside
+  // any transaction. apply_money_delta() in the database does the arithmetic
+  // under the row lock and asserts its own row count, and every caller reaches
+  // it from inside the transaction that carries the row the money belongs to.
+  //
+  // NOTHING ON THIS SCREEN MOVES A BALANCE FROM THE BROWSER ANY MORE.
+  // Withdrawals, deposits and transfers are all RPCs.
 
   const logTransaction = async (row: {
     bank_account_id: string | null;
@@ -853,24 +840,9 @@ export default function Accounting() {
     if (logErr) throw logErr;
   };
 
-  // Convert a YYYY-MM-DD date into a midday ISO timestamp so the ledger entry
-  // lands on the chosen day regardless of timezone.
-  const dateToTs = (d: string) => new Date(`${d}T12:00:00`).toISOString();
-
-  const applyBankDelta = async (bankId: string, delta: number) => {
-    const { data: bank, error: selErr } = await supabase
-      .from("bank_accounts")
-      .select("balance")
-      .eq("id", bankId)
-      .maybeSingle();
-    if (selErr) throw selErr;
-    if (!bank) throw new Error("Bank account not found.");
-    const { error: upErr } = await supabase
-      .from("bank_accounts")
-      .update({ balance: Number(bank.balance) + delta, updated_at: new Date().toISOString() })
-      .eq("id", bankId);
-    if (upErr) throw upErr;
-  };
+  // 0389. dateToTs went with the transfer: record_bank_transfer() dates both
+  // legs itself, at noon on the transfer date, for the same timezone reason
+  // this helper existed.
 
   const handleAddBank = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1026,41 +998,28 @@ export default function Accounting() {
     setSubmitting(true);
     setError(null);
     try {
-      const fromBank = banks.find((b) => b.id === transferFromId);
-      const toBank = banks.find((b) => b.id === transferToId);
-      const pairId = crypto.randomUUID();
-      const noteSuffix = transferNotes.trim() ? ` · ${transferNotes.trim()}` : "";
-      const desc = `Transfer ${fromBank?.bank_name ?? "?"} → ${toBank?.bank_name ?? "?"}${noteSuffix}`;
-      const ts = dateToTs(transferDate);
-      await applyBankDelta(transferFromId, -amount);
-      await applyBankDelta(transferToId, amount);
-      await logTransaction({
-        bank_account_id: transferFromId,
-        kind: "transfer",
-        amount,
-        cash_delta: 0,
-        account_delta: -amount,
-        description: desc,
-        reference_id: pairId,
-        created_at: ts,
+      // 0389. ONE CALL. This was five round trips with nothing around them —
+      // debit, credit, two log lines, then a pairing update — and a failure
+      // between the first two DESTROYED MONEY: the company's total bank
+      // balance fell and nothing anywhere said why.
+      //
+      // Not a cross-key defect: a transfer needs accounting.edit and nothing
+      // else. The same shape one layer down — several writes that are only
+      // correct together, issued separately.
+      //
+      // The description, the pair id and the noon-dated timestamp are all
+      // built in the RPC now, from the two account rows it reads rather than
+      // from whatever this screen has cached.
+      const { error: transferErr } = await supabase.rpc("record_bank_transfer", {
+        p_from_bank_account_id: transferFromId,
+        p_to_bank_account_id: transferToId,
+        p_amount: amount,
+        p_date: transferDate,
+        p_notes: transferNotes.trim() || null,
       });
-      await logTransaction({
-        bank_account_id: transferToId,
-        kind: "transfer",
-        amount,
-        cash_delta: 0,
-        account_delta: amount,
-        description: desc,
-        reference_id: pairId,
-        created_at: ts,
-      });
-      // Mark transfer_pair_id explicitly on both rows
-      await supabase
-        .from("bank_transactions")
-        .update({ transfer_pair_id: pairId })
-        .eq("reference_id", pairId);
+      if (transferErr) throw transferErr;
 
-      setTransferFromId("");
+            setTransferFromId("");
       setTransferToId("");
       setTransferAmount("");
       setTransferNotes("");

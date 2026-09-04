@@ -1047,3 +1047,101 @@ parameter. Nothing mechanical is lost. The check count does not change (35).
 (§2), and bank transfers in `Accounting.tsx` debiting one account and crediting
 another in two round trips (§7f) — single-key, so not cross-key, but an
 atomicity hole of a different kind. Next.
+
+---
+
+## 11. Bank transfers, and the last balance moved in a browser (0388–0389)
+
+### 11a. `bonus_pools` is DEFERRED, not DECIDED (0388)
+
+Shayan is leaving the `generate_bonus_pool` flag as it stands: the guard stays
+off, which follows from the company-wide decision exactly as stated. **But it
+was asked and left open, not settled**, and the table comment now says so in
+those words.
+
+The distinction that earned the flag is unchanged: the other three company-wide
+tables are **visibility** — who may see or file a record about another region.
+This one determines a **payment**. A pool sets
+`bonus_pool_allocations.share_amount`, which is the figure an employee is
+actually paid, and `generate_bonus_pool()` rebuilds those allocations
+wholesale.
+
+`DECIDED` means asked, answered, do not reopen without a reason. `DEFERRED`
+means asked, deliberately left open, still owed an answer. **A flag that is not
+marked slides into the first by default**, because nothing on the object
+distinguishes "settled" from "not yet returned to" — six months on, the comment
+reads as a decision nobody made.
+
+The phrase `COMPANY-WIDE BY DESIGN` is deliberately **dropped from this one
+comment** and kept on the other three: "by design" is a claim about settled
+intent, and that is the exact claim not being made. The scoping is the same; the
+confidence is not. 0388's probe asserts the marker is on `bonus_pools` and on
+**none** of the other three — widening the wording to all four would bury the
+one open question in three closed ones.
+
+Reversing it is one line: re-add `assert_branch_writable(v_scope_branch)` to
+`generate_bonus_pool()`.
+
+### 11b. `record_bank_transfer()` (0389)
+
+`handleTransfer` did **five round trips with nothing around them**: debit,
+credit, two log lines, then a pairing update.
+
+**A failure between the first two destroys money.** Not "leaves a record
+inconsistent" — the company's total bank balance is lower than it was and
+nothing anywhere says why. A failure between 2 and 3 leaves both balances right
+and the movement absent from the transaction log, so the next reconciliation
+cannot explain either side.
+
+This is **not** the cross-key defect the eight flows had: a transfer needs
+`accounting.edit` and nothing else, so no half can be refused for want of a
+second permission. It is the same shape one layer down — **several writes that
+are only correct together, issued separately.**
+
+**The observation that says where to look next:** the two *harder* cash-and-bank
+moves on this screen were already atomic RPCs — `record_bank_to_custodian()`
+for a withdrawal, `record_cash_deposit()` for a deposit. The simple one was the
+one left in the browser. **Difficulty does not predict this; whether somebody
+happened to reach for an RPC does.**
+
+**Deliberately not added: an overdraw refusal.** The old path did not check, and
+0366 removed exactly that kind of check from the expense form on purpose — it
+measured a cached company-wide scalar, and an overdrawn account is a fact the
+ledger holds rather than something to prevent at the keyboard. Adding one here
+would smuggle a new refusal in under a transaction fix. If transfers should
+refuse an overdraw, that is its own decision.
+
+**Added, because the browser could not enforce them:** the two accounts must
+differ (checked in a form a stale tab can get round) and must belong to the same
+company (**not checked at all** — RLS would have caught a foreign account, but
+as a silent zero-row UPDATE on the *second* leg, after the first had committed).
+
+**Probe:** **conservation.** After a transfer the two balances have moved by
+equal and opposite amounts and the total is unchanged — the property the old
+path could break, and the one thing neither leg can demonstrate alone, since
+each leg "succeeds". Then two paired legs summing to zero in the log, dated by
+the transfer date; then both refusals **asserted on their messages**. The
+cross-company arm says out loud when it cannot run rather than passing silently.
+
+### 11c. What is left on that screen
+
+`applyCashDelta`, `applyBankDelta` and `dateToTs` are **deleted** from
+`Accounting.tsx`. **Nothing on that screen moves a balance from the browser any
+more** — withdrawals, deposits and transfers are all RPCs.
+
+`logTransaction` stays, used by two flows that write a *log line* beside an
+opening balance rather than moving money.
+
+**Next, and found while doing this:** `handleSetCashOpening` writes
+`cash_balance: cashBalance + amt`, where `cashBalance` comes from React state.
+That is the read-modify-write race in its purest form, on the cash balance
+itself, and it is followed by a separate log-line insert. It *sets* an opening
+balance rather than moving one, so it is a different thing from the eight flows
+and from the transfer — but it is the last read-modify-write on a balance in the
+codebase. Not fixed here; scope was transfers.
+
+### 11d. Also still open
+
+- **`advances` behind `expenses.edit`, provisionally.** An advance to a guard is
+  money against their future pay, and neither `expenses.edit` nor `payroll.edit`
+  is obviously right. Owed to Shayan as its own question.
