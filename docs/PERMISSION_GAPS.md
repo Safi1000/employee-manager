@@ -9,7 +9,117 @@ measured, not inferred.
 
 ---
 
-## 1. The four SECURITY DEFINER RPCs do not scope the branch
+## 1. Eighteen employee RPCs have no permission check at all
+
+**This outranks everything else in this file, including the branch gaps, and it
+is not what the investigation was looking for.**
+
+The 23 volatile writers `branch_guard_gaps()` reported were opened one by one to
+answer "is the branch a property of the row or a parameter?". The answer turned
+out to be uniform and almost beside the point.
+
+**Not one of the 23 takes a branch parameter.** Every one identifies its target
+by a row id — `p_employee_id`, `p_guard`, `p_run_id`, `p_invoice_id`,
+`p_contract_id`, `p_appraisal_id`. The branch is a property of the row in all of
+them, which settles the fix shape. But reading them turned up this instead:
+
+**Eighteen of the 23 contain no permission check of any kind** — no
+`require_perm`, no `has_perm`, no role test — while being `SECURITY DEFINER`
+with `EXECUTE` granted to `authenticated`. They check the *company* and nothing
+else.
+
+```
+amend_employee_identity      archive_employee            assign_display_number
+assign_employee_code         assign_guard_code           change_category
+change_guard_shift           mark_form_signed            record_separation
+rehire_guard                 renew_contract              run_auto_invoices
+set_employee_salary          set_performance_enrollment  transition_appraisal
+transition_employee_lifecycle  unverify_employee_identity  verify_employee_identity
+```
+
+Only five gate: `record_invoice_payment` and `write_off_receivable`
+(`invoices.edit`), `disburse_payroll_run` and `payroll_run_attach`
+(`payroll.edit`), `transition_record_state`.
+
+`set_employee_salary`, read in full to be sure the grep was not lying:
+
+```sql
+CREATE OR REPLACE FUNCTION public.set_employee_salary(...)
+ SECURITY DEFINER
+AS $function$
+declare v_company uuid;
+begin
+  -- tenant guard [resolved]: owning company looked up from p_employee_id
+  if p_employee_id is not null then perform public.assert_same_company(...); end if;
+  ...
+  insert into public.employee_salary_history (...)
+```
+
+The tenant guard is there and correct. There is nothing else. **Any
+authenticated user of GGS can set any GGS employee's salary**, archive them,
+record their separation, change their category or amend their identity.
+
+### Why this matters more than the branch finding it came from
+
+The branch escalations need a user who already holds a finance permission. This
+needs **no permission at all**. GGS has five `hr` users, two of them branched,
+and `hr users hold employees.edit` is **false** — so the permission model
+already says these five may not edit employees, and eighteen functions ignore
+that.
+
+The branch gap is then a second, smaller layer on the same functions: a branched
+user reaches another region's employee. But the first question is not "whose
+region" — it is "who said they could edit an employee at all".
+
+### Shape of the fix, and why it is not a sweep
+
+Because the branch is a property of the row in all 23, the same two options
+apply as to `record_invoice_payment`, and the same reasoning picks between them:
+
+- **`SECURITY INVOKER`** brings back both `perm_write_upd` (`employees.edit`)
+  and `branch_scope` in one change, restating nothing. It is the right answer
+  for most of the eighteen.
+- **A gate plus a resolved branch assertion** is needed where the function
+  legitimately writes rows the caller could not write directly — which is what
+  `assign_employee_code` and `assign_display_number` may be for, since they
+  exist to allocate a value under a lock.
+
+Three need reading individually before anything is decided:
+`run_auto_invoices` (cron, company-wide, correct to have no gate — it should be
+`BRANCH GUARD EXEMPT` and permission-exempt by comment), `disburse_payroll_run`
+and `payroll_run_attach` (gated on `payroll.edit`, and `payroll_runs` carries
+its own `branch_id`, so the branch question there is real but different).
+
+**Nothing has been changed.** Eighteen functions is not a sweep, and the two
+that look identical from outside are `verify_employee_identity` and
+`unverify_employee_identity` — which is exactly the pair where a careless sweep
+would get the direction wrong.
+
+---
+
+## 2. An advance needs no permission to create
+
+`advances` carries **no `perm_write_*` policy at all** — only `company_members`
+and `branch_scope`. Every other money table has one.
+
+So any authenticated company member can create, edit and delete an advance.
+That is **money leaving on nobody's authority**, and unlike finding 1 it is not
+a missing check inside a function — it is a missing policy on the table, which
+means every path reaches it, not just the RPCs.
+
+It is smaller than finding 1 only because an advance is bounded by what the
+custodian holds, and because the balance leg still needs `accounting.edit` — so
+the money movement half-fails and shows up as a non-atomic flow (see §4). The
+`advances` row itself commits regardless.
+
+**Fix is one policy**, matching the shape every neighbouring table uses. The
+open question is which key: `payroll.edit` (an advance is against wages) or
+`expenses.edit` (it is money out of the till). That is Shayan's call and it is
+the only reason this is not already done.
+
+---
+
+## 3. The four SECURITY DEFINER RPCs do not scope the branch
 
 **Status: reported, not built.** Same class as the tenant-guard work and it
 deserves the same care.
@@ -78,6 +188,64 @@ Three shapes are available, in increasing order of how much they change:
 `post_manual_journal`, nothing for the other two.** They are different defects
 and a single sweep would disguise that.
 
+**`post_manual_journal` is DONE (0366).** `assert_branch_writable()` is one
+helper, the branch it is handed is now asserted against the caller's own, and
+`branch_guard_gaps()` confirms it no longer reports the function. The helper
+also gained a tenant check it did not start with — the migration's own required
+tail refused it for `assert_branch_writable.p_branch_id`, and spelling the guard
+made the function better rather than merely quieter: a branch from another
+*company* is now refused loudly instead of falling through to "not mine".
+
+### `record_invoice_payment` after widening `bank_transactions` — the answer
+
+Widening `bank_transactions` INSERT to admit `invoices.edit` for
+`kind = 'receipt'` is the right call and it is **not sufficient on its own**.
+Walked write by write for an operator holding `invoices.edit` and nothing else,
+under INVOKER, with the widening in place:
+
+| Write | Result |
+|---|---|
+| `invoice_payments` INSERT | passes — `invoices.edit` |
+| `invoices` UPDATE (+ `branch_scope`) | passes — and this is the fix |
+| reading `invoices` in the oldest-first loop | scoped to their region — the fix |
+| `treasury` UPDATE (Cash) | passes — no permission policy |
+| `bank_transactions` INSERT `kind='receipt'` | passes **after the widening** |
+| `bank_accounts` UPDATE (Bank) | **REFUSES — needs `accounting.edit`** |
+
+**So: Cash-mode receipts work. Bank-mode receipts still refuse.** Said plainly,
+because that is the honest limit and it is exactly the shape 0365 carries.
+
+`bank_accounts` cannot be widened the same way. Its UPDATE policy governs the
+whole row — name, account number, balance — and RLS is row-level, so there is no
+way to express "`invoices.edit` may move the balance and nothing else" through a
+policy. Widening it hands over the account.
+
+**Three options, and the third is one neither of us named:**
+
+1. **Accept the limit.** Receipts clerks hold `accounting.edit`, or they record
+   Cash receipts only. Zero new code. On GGS today the single `accounting` user
+   holds both keys, so nothing breaks either way.
+2. **Widen `bank_accounts` too.** Rejected: hands over the balance and the
+   account number to anyone who can record a receipt.
+3. **A narrow definer helper for the balance leg alone**, called from the
+   invoker function and gated on `invoices.edit OR accounting.edit`. This gives
+   up nothing about the branch — `bank_accounts` carries no `branch_scope`, so a
+   definer body there loses no regional protection — and keeps every
+   branch-scoped write under invoker where the policy does the work. It costs
+   one more definer function and restates one permission rule.
+
+**Recommendation: (1) unless Shayan wants receipts clerks who cannot touch bank
+transfers.** If he does, (3) is the only version that keeps the branch fix
+intact. Not (2).
+
+### The allocation change, to be stated in the migration header
+
+Under INVOKER a branched caller's payment settles only **their own region's**
+oldest open invoices. Today it settles the client's oldest across every region.
+Almost certainly the intent — but it changes *where money lands*, not just who
+may act, and it goes in the header of whatever migration applies it rather than
+being discovered afterwards.
+
 ### Is it exploitable on GGS today? No — and that is a timing fact, not a defence
 
 Measured on production, GGS profiles:
@@ -137,7 +305,7 @@ that would keep this closed once it is fixed, rather than fixed once.
 
 ---
 
-## 2. Cross-key follow-ups — one reconciled list
+## 4. Cross-key follow-ups — one reconciled list
 
 Two lists were being kept: the agreed cross-key seven, and the five sibling
 flows found while building `record_expense`. They overlap. **One table.**
@@ -190,38 +358,35 @@ case advance and the filing row in one statement, or the advance refused.
 
 ---
 
-## 3. Branch guard detector — first run
+## 5. Branch guard detector
 
-`branch_guard_gaps()` shipped in 0365 and is **deliberately not wired into
-`ledger_checks`** until this list is classified. Its first run returns **47
-rows across 44 functions**, which is why.
+`branch_guard_gaps()` shipped in 0365 and was refined by 0367 with both
+approved changes: trigger functions excluded, and arm B split by volatility so
+readers are labelled as readers.
 
-| Shape | Kind | Functions | Verdict |
-|---|---|---|---|
-| `writes` | trigger | 8 | **Exempt.** A trigger fires as a consequence of a write RLS already vetted, and is not directly callable. A branch assertion here would be wrong. |
-| `writes` | volatile | 23 | Mixed — see below |
-| `stamps` | reader (stable) | 9 | **Different, lesser defect.** These read a region they were handed. A branched user learns another region's numbers; nothing is written. |
-| `stamps` | volatile | 4 | `post_manual_journal`, `generate_bonus_pool`, `raise_alert`, `request_approval` |
+**47 rows across 44 functions → 36 rows across 35.** Eight triggers dropped,
+`post_manual_journal` fixed and cleared, nine readers relabelled.
 
-**Two refinements the first run earned, and neither is guesswork:**
+| Shape | Rows | What it means |
+|---|---|---|
+| `writes` | 24 | Writes a `branch_scope` table without referencing the branch. **§1 is this list.** |
+| `stamps` | 3 | Volatile, accepts a branch it never checks: `generate_bonus_pool`, `raise_alert`, `request_approval` |
+| `reads` | 9 | Stable, accepts a branch it never checks. **Read escalation** — a branched user learns another region's figures. Real, lesser, separate decision. |
 
-1. **Exclude trigger functions** (`prorettype = 'trigger'`). Eight of the 47
-   vanish and none of them was ever an attack surface.
-2. **Split arm B by volatility.** It was written for functions that *stamp* a
-   branch onto a row, and it is catching nine pure readers as well. Those are a
-   real but lesser gap — read escalation, not write — and folding them into one
-   number hides the difference.
+The three `stamps` are `assert_branch_writable()`'s exact shape and are the
+cheapest remaining fix in this file. The nine `reads` are
+`avg_deployed_guards`, `branch_revenue_for_month`, `employee_in_branch`,
+`ho_apportionment_driver`, `interregion_net_position`, `region_cash_entitlement`,
+`region_operating_profit`, `region_operating_profit_range`, `region_profit`.
 
-Of the 23 volatile writers, most are employee-lifecycle functions
-(`archive_employee`, `record_separation`, `transition_employee_lifecycle`,
-`set_employee_salary`, …) that write `employees`, which carries `branch_scope`.
-**That is a real hole and a larger one than the RPCs** — a branched HR user can
-plausibly reach another region's employee record through any of them — but it is
-its own investigation, not a footnote to this one. `run_auto_invoices`,
-`disburse_payroll_run` and `payroll_run_attach` are company-wide jobs and are
-correct to have no branch assertion; they need exempting by name.
+**Still not wired into `ledger_checks`**, and now for a better-stated reason
+than "unclassified": 24 of the 36 rows are finding §1, which is a live defect
+with no fix applied. Wiring the detector in now would ship a check that is red
+because the database is wrong, not because the check is noisy — correct, but it
+would sit red for as long as §1 takes, and a permanently red check is one people
+stop reading. Wire it the day §1 closes.
 
-**Do not wire this into `ledger_checks` until the 23 are classified.** A check
-that is red on day one with 47 rows teaches people to ignore reds, which is the
-failure this project exists to remove.
-
+0367 asserts its own refinements in both directions: no trigger survives, the
+readers were **relabelled and not dropped**, and arm A still finds
+`record_invoice_payment`. A detector that quietly stopped matching would
+otherwise look identical to one that correctly narrowed.
