@@ -558,6 +558,10 @@ on the `branch_guard_gaps()` comment.
 
 ### 6b. The three stampers (0378), and what guarding them does not close
 
+> **SUPERSEDED BY §10 (0387).** The four tables are company-wide by design and
+> the three guards below have been reverted. Kept because the reasoning that
+> reached the wrong conclusion is worth reading beside the answer.
+
 `generate_bonus_pool`, `raise_alert` and `request_approval` all took a
 `p_branch_id` that decided which region the row landed in, and all three already
 called `assert_branch_in_company(p_branch_id)` — **the company boundary wearing
@@ -629,6 +633,9 @@ functions are different:
   feature; refusing it states what it already is.
 
 ### 6d. The nine `reads` — what each actually exposes
+
+> **DECIDED BY §10 (0387).** Same answer: not a defect. The table below still
+> describes accurately what each one exposes.
 
 Reported, not fixed, per the brief. Two facts frame the whole list:
 
@@ -947,3 +954,96 @@ quietly requiring `employees.edit` of every verifier.
 3. `advances` is still behind `expenses.edit`, explicitly provisional (§2).
 4. Bank transfers in `Accounting.tsx` debit and credit in two round trips
    (§7f).
+
+---
+
+## 10. DECIDED: the four tables are company-wide, and three guards come out (0387)
+
+**Shayan, 2026-09-04: `alerts`, `approval_requests`, `bonus_pools` and
+`bonus_pool_allocations` stay company-scoped with no branch policy. That is the
+design, not a gap.**
+
+This supersedes the open questions in **§6b** and **§6d**. Both are now
+**DECIDED**. Nothing above has been deleted — the reasoning that led to the
+wrong conclusion is worth keeping next to the answer.
+
+### 10a. What was wrong, and what was right
+
+§6b was right that *a function guard on top of an unguarded table makes the
+detector go green and leaves the hole.* It was wrong that there was a hole. It
+read "no branch policy" and inferred an omission, because **a table with no
+branch policy looks identical whether that is a decision or an oversight** —
+there was nothing on the table saying which.
+
+There is now. All four carry a `COMPANY-WIDE BY DESIGN` table comment naming
+the decision, the date, and the reason, so the next reader does not have to
+infer it from silence as 0378 did.
+
+### 10b. The three guards are reverted
+
+0378 guarded `generate_bonus_pool`, `raise_alert` and `request_approval`
+against a boundary that does not exist. **Left standing, a wrong assumption
+becomes the system's behaviour**, so they come out.
+
+| Function | Was the guard over-tight? | What the revert gives back |
+|---|---|---|
+| `raise_alert` | **Yes, and it cost something** | `sweep_ammo_discrepancy_alerts()` works again for a branched user. 0378's guard aborted it on the first foreign branch and rolled the whole sweep back — a refusal-over-partial-result trade that was justified by the boundary Shayan has now said does not exist |
+| `request_approval` | Yes | Nothing was lost while it stood — no in-database caller — but a regional user filing a request naming another region is the queue working as designed |
+| `generate_bonus_pool` | Yes — **and flagged, see below** | A holder of `performance.approve` can generate any region's pool again, head office included |
+
+**The flag, said out loud rather than buried in a revert.** Of the four tables,
+`bonus_pools` is the only one where a row determines a **payment**:
+`bonus_pool_allocations.share_amount` is what an employee is actually paid. So
+"company-wide" here means someone with `performance.approve` can generate any
+region's pool, head office included, and rebuild its allocations wholesale.
+That follows from the decision exactly as stated, and `performance.approve`
+remains the gate — but it is a materially different sentence from "anyone can
+file an alert about another region". **One word from Shayan puts that one guard
+back on its own**; the table comment on `bonus_pools` records the same note.
+
+### 10c. The `reads` are decided too, by the same answer
+
+The nine `reads` (§6d) follow from the same decision and are **closed as
+decided, not open**. `regional_scorecard` and `cash_entitlements` exist to show
+regions side by side; the tables behind the shape are company-wide; a scalar
+aggregate about another region is not an escalation.
+
+`employee_in_branch` remains a separate and permanent NO: it is the
+`branch_scope` predicate's own helper, called with `current_branch_id()`, and a
+guard would make it refuse the question it exists to answer.
+
+### 10d. So the detector's own description had to change
+
+Otherwise `branch_guard_gaps()` reads **12 forever** and somebody eventually
+"finishes" it, putting back exactly the guards 0387 removes. The function
+comment now records, per shape:
+
+- **`writes`** — the **mechanical** shape. A table carrying `branch_scope` is
+  branch-scoped by definition. **This is the only shape `ledger_checks`
+  asserts**, and it is at zero.
+- **`stamps`** — **advisory**. It fires on any definer function taking a uuid
+  branch parameter, regardless of what that function writes, so each member
+  needs a judgement about its target table. The three current members are
+  DECIDED.
+- **`reads`** — **decided**, as above.
+- And: **a new stamp or read is a new judgement.** It does not inherit this one.
+
+`ledger_checks`'s `no_definer_function_crosses_a_branch` arm narrowed from
+`writes + stamps` to **`writes` only**. That is not a carve-out to keep it
+green: `stamps` stopped being a mechanical property the moment the tables
+behind it were decided, and a future stamper writing a genuinely branch-scoped
+table is caught by the `writes` arm anyway — arm A tests the **table**, not the
+parameter. Nothing mechanical is lost. The check count does not change (35).
+
+### 10e. State
+
+| | |
+|---|---|
+| `branch_guard_gaps()` | **12** — 3 stamps + 9 reads, **all decided**, 0 writes |
+| `no_definer_function_crosses_a_branch` | green, asserting `writes` only |
+| `tenant_guard_gaps()` / `permission_key_gaps()` | 0 / 0 |
+
+**Still open after this:** `advances` behind `expenses.edit` provisionally
+(§2), and bank transfers in `Accounting.tsx` debiting one account and crediting
+another in two round trips (§7f) — single-key, so not cross-key, but an
+atomicity hole of a different kind. Next.
