@@ -520,3 +520,195 @@ stop reading. Wire it the day §1 closes.
 readers were **relabelled and not dropped**, and arm A still finds
 `record_invoice_payment`. A detector that quietly stopped matching would
 otherwise look identical to one that correctly narrowed.
+
+---
+
+## 6. The branch detector taken to zero `writes` and zero `stamps` (0377–0379)
+
+`branch_guard_gaps()` went **15 rows → 10**: `writes` 3 → 1, `stamps` 3 → 0,
+`reads` 9 (untouched, see §6d). `tenant_guard_gaps()` = 0 throughout.
+
+### 6a. The two set-processors (0377)
+
+`disburse_payroll_run` and `payroll_run_attach` were held out of 0376's
+conversion because both take a RUN and write many payslips. Under invoker a
+regional operator would not be refused — they would process only their own
+region's payslips and be told it worked.
+
+Both keep the definer body and assert the run's own branch:
+
+```sql
+perform public.assert_branch_writable(
+  (select branch_id from public.payroll_runs where id = p_run_id));
+```
+
+**The NULL run is the part worth reading.** `payroll_runs.branch_id` is
+nullable and NULL means "every region". `assert_branch_writable()` returns
+early on NULL — correct for a head-office journal line and exactly wrong here,
+because it would let a regional operator disburse the whole company. So the
+NULL case is refused explicitly in both bodies rather than left to the helper.
+**A helper's NULL semantics are a property of the helper, not of every caller.**
+
+Production holds **zero** `payroll_runs`, so neither arm has ever executed
+against real data here.
+
+The general rule this produced is in CLAUDE.md ("A set operation is not safe to
+convert to SECURITY INVOKER"), in `scripts/migration-template.sql` §3(a), and
+on the `branch_guard_gaps()` comment.
+
+### 6b. The three stampers (0378), and what guarding them does not close
+
+`generate_bonus_pool`, `raise_alert` and `request_approval` all took a
+`p_branch_id` that decided which region the row landed in, and all three already
+called `assert_branch_in_company(p_branch_id)` — **the company boundary wearing
+a branch helper's name**, which is why `branch_guard_covered()` deliberately
+does not count it. All three now call `assert_branch_writable()`.
+
+Two things are not uniform and both matter:
+
+- **`generate_bonus_pool` is guarded on `v_scope_branch`, not `p_branch_id`.**
+  The head-office arm writes `head_office_region()` while `p_branch_id` is
+  NULL, so a guard on the parameter would return early on that NULL and let a
+  regional approver generate the head-office pool and its allocations. 0378's
+  probe asserts the guard's **position** is after the scope assignment, because
+  a guard placed too early reads NULL, asserts nothing, and still reads as
+  covered to the detector.
+
+- **`raise_alert` has three in-database callers and the guard changes one.**
+  `sweep_ammo_discrepancy_alerts()` loops over every discrepancy in the company
+  and raises one alert per branch; a regional caller now hits the guard on the
+  first foreign branch and the whole sweep rolls back. That is a refusal rather
+  than a partial result, which is the preferred failure mode — but **a branched
+  user can no longer run the company-wide sweep at all.** That is a behaviour
+  change, not a no-op. `check_deploy_guard` and `check_disbursement` pass a
+  branch resolved from the row they act on and are unaffected;
+  `run_scheduled_ledger_checks` is cron-only, has no `auth.uid()`, and
+  `assert_branch_writable()` returns early for it.
+
+**STILL OPEN, and this is the finding of 0378.** `alerts`,
+`approval_requests`, `bonus_pools` and `bonus_pool_allocations` carry
+`company_members` (ALL, `company_id = current_company_id()`) and **no branch
+policy at all**. So a regional user can still insert an alert or an approval
+request naming another branch by writing the table directly, and one with
+`performance.approve` can still write `bonus_pools` directly.
+
+> **A function guard on top of an unguarded table makes the detector go green
+> and leaves the hole.**
+
+The real fix is `branch_scope` on those four tables, which is a policy question
+— is the alert feed company-wide by design? — and is **not** taken.
+
+### 6c. The definer parents conversion did not close (0379)
+
+`CURRENT_USER` inside a definer body is the owner, so an invoker child called
+from a definer parent still bypasses RLS. The full audit of definer functions
+calling a now-invoker plpgsql child:
+
+| Parent | Child | Shape |
+|---|---|---|
+| `auto_standdown_on_adverse_vetting` | `transition_employee_lifecycle` | trigger — intended cascade, left alone |
+| `enforce_identity_lock` | `amend_employee_identity` | trigger — left alone |
+| `sync_employee_active_client` | `assign_display_number` | trigger — left alone |
+| `reassign_client_employee_codes` | `assign_employee_code` | **callable — fixed** |
+| `run_appreciation` | `set_employee_salary` | **callable — fixed** |
+
+(`client_statement_loaded`, `partner_basis_for_report`,
+`partnership_allocation` and `regional_pl_range` call `resolve_company_scope`,
+which reads and writes nothing. Not a path.)
+
+Both callable parents are set-processors returning a count, so **neither is
+converted** — they get body assertions of two different shapes, because the two
+functions are different:
+
+- `reassign_client_employee_codes` takes a CLIENT and a client has a branch →
+  resolved from `clients.branch_id`.
+- `run_appreciation` takes a COMPANY and re-salaries every enrolled employee in
+  it. There is no branch to resolve because the act is company-wide by
+  construction, so a regional caller is **refused outright** — the same shape
+  as 0377's NULL run. Giving it a branch parameter would be inventing a
+  feature; refusing it states what it already is.
+
+### 6d. The nine `reads` — what each actually exposes
+
+Reported, not fixed, per the brief. Two facts frame the whole list:
+
+1. **All nine return a SCALAR** — one `numeric`, or one `boolean`. None returns
+   rows. The exposure is an aggregate figure per call, never row-level data.
+2. **None is called by the frontend.** A repo-wide grep of `src/` and
+   `supabase/functions/` finds no `rpc(` call to any of them. The one hit —
+   `Treasury.tsx:182` — reads a **column named** `interregion_net_position` off
+   the `cash_entitlements` view, not the function.
+
+| Function | Returns | Reached from | What a branched caller learns |
+|---|---|---|---|
+| `employee_in_branch(p_employee, p_branch)` | boolean | `user_can_see_employee` | **Not a leak, and must NOT be guarded — see below** |
+| `region_operating_profit(co, branch, year)` | numeric | `generate_bonus_pool`, `regional_scorecard` view | another region's annual operating profit |
+| `region_operating_profit_range(co, branch, from, to)` | numeric | `accrue_bonus_reserve` | the same for an arbitrary window |
+| `region_profit(co, branch, year)` | numeric | nothing in-database | another region's profit |
+| `region_cash_entitlement(co, branch)` | numeric | nothing in-database | another region's cash + bank + bonus-reserve balance |
+| `interregion_net_position(co, branch)` | numeric | `cash_entitlements`, `regional_scorecard` views | what another region owes or is owed |
+| `branch_revenue_for_month(co, branch, period, basis)` | numeric | nothing in-database | another region's monthly revenue |
+| `avg_deployed_guards(co, branch, period)` | numeric | nothing in-database | another region's headcount |
+| `ho_apportionment_driver(co, branch, period)` | numeric | `run_ho_cost_allocation` | another region's share of HO cost |
+
+**`employee_in_branch` is a false positive of a fourth shape the detector does
+not have: a POLICY HELPER.** Its only in-database caller is
+`user_can_see_employee`, which is the `branch_scope` predicate on `payslips` —
+and it is always called as `employee_in_branch(emp, current_branch_id())`, the
+caller's own branch. Guarding it against the caller's branch would be circular:
+the policy asks "is this employee in branch X" and the helper would refuse to
+answer. **Do not guard it.** Its residual direct-call exposure is a branched
+user enumerating "is employee E also attached to branch B" one boolean at a
+time, which is smaller than what `employees` RLS already permits about the
+existence of a row.
+
+The remaining eight are genuine read escalation, all of the same kind: a
+regional manager can read another region's financial aggregates. Whether that
+should be refused is a **policy decision, not a defect** — regional scorecards
+are commonly comparative on purpose, and two of the eight already feed views
+(`regional_scorecard`, `cash_entitlements`) whose whole point is a company-wide
+table of regions side by side. Guarding the functions while those views stay
+open would close nothing and would break `generate_bonus_pool`,
+`accrue_bonus_reserve` and `run_ho_cost_allocation`, which call them across
+regions by design.
+
+**Recommendation:** guard nothing here; instead decide whether the
+`regional_scorecard` and `cash_entitlements` *views* are company-wide, and let
+the functions follow that answer. Awaiting a decision.
+
+### 6e. `transition_record_state` asks a role where everything else asks a permission
+
+The last remaining `writes` row, deliberately untouched by 0377. It is not
+ungated — which is why it was never in 0370's nineteen — but it gates on a role
+string:
+
+```sql
+select role::text into v_role from public.profiles where id = auth.uid();
+...
+if v_role not in ('finance_director','super_admin','super_super_admin') then
+```
+
+**Which permission should it ask?** The rule is: what a direct write to the
+target table would require. It writes `employees` → `employees.edit`. But that
+flattens a deliberate two-stage separation of duties into one key: Ops-verify
+and Finance-approve are meant to be different people, and `employees.edit` is
+held by everyone who can edit staff at all. So the answer is **two keys, one
+per stage**:
+
+| Arm | Should ask | Exists in `PERMISSION_GROUPS`? |
+|---|---|---|
+| `ops_verify` | `employees.ops_verify` | **NO** |
+| `finance_approve` | `employees.finance_approve` | **NO** |
+| `reverse` | the key for the stage being reversed from | — |
+
+`employees.ops_verify` is **already referenced in the body today**, as an
+alternative to the role list — and it is not in `PERMISSION_GROUPS`, so it can
+never be granted to anybody. That is the `partnership.post` defect of 0361
+repeating exactly: *a permission the database demands and the grant screen
+cannot offer is a permission nobody can be given.* (Note `attendance.ops_verify`
+does exist and is a different thing.)
+
+So the fix is three parts and none of them belongs in a branch migration:
+add both keys to `PERMISSION_GROUPS`, replace the role literals with
+`require_perm`, and only then convert the function. **Awaiting a decision on
+the two key names before any of it.**

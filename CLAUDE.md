@@ -132,6 +132,55 @@ that and were correct on prod only by accident — prod's versions are timestamp
 so `'2' > '0'` returned early for the wrong reason. Both now test a real marker:
 does the column/function that the later migration creates or drops exist?
 
+### A set operation is not safe to convert to SECURITY INVOKER
+
+Converting a `SECURITY DEFINER` function to `SECURITY INVOKER` is the cleanest
+way to restore RLS to a body that was bypassing it — the policy is restated
+nowhere and cannot drift. **It is safe for a single-row operation and unsafe for
+a set one, and the difference does not show up in the syntax.**
+
+- **Single row.** `update t set … where id = $1` under RLS affects zero rows
+  when the policy hides the row. With the row-count assert this project already
+  requires, the caller is **refused**. A refusal is a control.
+- **A set.** `update t set … where run_id = $1` under RLS simply touches fewer
+  rows. The function returns a smaller count, reports success, and the work
+  looks done. **An unauthorised act becomes a silently smaller result** — a
+  defect wearing success's clothes, which is the failure mode this project
+  exists to remove.
+
+So: **anything processing a set behind a permission boundary must be checked
+for this before conversion.** If the write touches N rows chosen by a
+predicate rather than one row named by an id, invoker is the wrong instrument;
+keep the definer body and assert the boundary inside it.
+
+Found on `disburse_payroll_run` and `payroll_run_attach` (0377), which were in
+0376's conversion list and were pulled out of it; then again on
+`reassign_client_employee_codes` and `run_appreciation` (0379), which are not
+detected at all because they write nothing directly. There will be others.
+
+This is deliberately **not** automated. Whether a write is "a set" is a
+judgement about intent — `where id = $1` and `where run_id = $1` are the same
+shape — and a checker that guessed would be advisory, which is the one thing
+this file does not tolerate. It is stated here, in
+`scripts/migration-template.sql`, and on `branch_guard_gaps()` itself.
+
+### Converting a child does not close its definer parents
+
+`CURRENT_USER` inside a `SECURITY DEFINER` body is the function's **owner**. A
+child converted to invoker, called from a definer parent, still runs with the
+parent's privileges and still bypasses RLS. Conversion closes the direct path
+and nothing above it.
+
+This makes `branch_guard_gaps()`'s transitive blindness an **enforcement** gap
+and not only a detection one: it reads one body at a time, so a parent that
+writes nothing itself and delegates every write to a child is invisible to it
+and is exactly as open as the child used to be. After converting anything, list
+the definer functions whose source names it, and treat each as its own case.
+
+A definer **trigger** parent is the exception and is left alone: it fires inside
+a statement the caller already passed RLS to make, which is why permission gates
+in this codebase skip themselves at `pg_trigger_depth() > 0`.
+
 ### Idempotency is a property of the whole migration
 
 `add column if not exists` on every DDL statement is not enough. `0232` would

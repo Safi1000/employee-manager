@@ -111,3 +111,33 @@ begin
       v_n, v_who;
   end if;
 end $$;
+
+-- ---------------------------------------------------------------------------
+-- 3. BEFORE YOU CONVERT ANYTHING TO SECURITY INVOKER. Two questions, both of
+--    which have already been answered wrong here once.
+--
+-- (a) IS IT A SET? Invoker is safe for a SINGLE-ROW write: RLS hides the row,
+--     the write affects zero rows, the row-count assert refuses, and a refusal
+--     is a control. It is NOT safe for a write that touches N rows chosen by a
+--     predicate: RLS just touches fewer of them, the function returns a smaller
+--     count and reports success. An unauthorised act becomes a QUIETLY SMALLER
+--     RESULT. `where id = $1` and `where run_id = $1` look identical, so this
+--     is a judgement and not a check — make it deliberately.
+--     (0377: disburse_payroll_run, payroll_run_attach. 0379: two more.)
+--
+-- (b) WHO CALLS IT FROM ABOVE? CURRENT_USER inside a SECURITY DEFINER body is
+--     the OWNER, so a converted child called from a definer parent still
+--     bypasses RLS. Conversion closes the direct path and nothing else. List
+--     the parents before you claim the function is closed:
+--
+--       with inv as (select oid, proname from pg_proc p
+--                     join pg_namespace n on n.oid = p.pronamespace
+--                    where n.nspname='public' and not p.prosecdef)
+--       select d.proname, i.proname
+--         from pg_proc d join pg_namespace dn on dn.oid = d.pronamespace
+--         join inv i on public.executable_source(pg_get_functiondef(d.oid))
+--                       ~ ('\m' || i.proname || '\s*\(')
+--        where dn.nspname='public' and d.prosecdef and d.proname <> i.proname;
+--
+--     A definer TRIGGER parent is the intended cascade and is left alone.
+-- ---------------------------------------------------------------------------
