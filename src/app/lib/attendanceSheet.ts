@@ -46,8 +46,142 @@ const separationNote = (e: SheetEmployee): string | null => {
   return on ? `${label} ${formatDate(on)}` : label;
 };
 
+/** Every ISO date from start..end inclusive. The sheet's columns, in order. */
+export function enumerateDates(start: string, end: string): string[] {
+  const out: string[] = [];
+  const [sy, sm, sd] = start.split("-").map(Number);
+  const [ey, em, ed] = end.split("-").map(Number);
+  const cur = new Date(sy, sm - 1, sd);
+  const last = new Date(ey, em - 1, ed);
+  while (cur <= last) {
+    out.push(`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(cur.getDate()).padStart(2, "0")}`);
+    cur.setDate(cur.getDate() + 1);
+  }
+  return out;
+}
+
+/** The window a caller asked for, as dates + a label, from EITHER a month or an
+ *  explicit range. One place decides what "the sheet's columns" means. */
+function windowOf(opts: { month?: string; startDate?: string; endDate?: string }) {
+  if (opts.month) {
+    const [yStr, mStr] = opts.month.split("-");
+    const y = Number(yStr), m = Number(mStr);
+    const dim = new Date(y, m, 0).getDate();
+    return {
+      dates: enumerateDates(`${opts.month}-01`, `${opts.month}-${String(dim).padStart(2, "0")}`),
+      label: new Date(y, m - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" }),
+    };
+  }
+  const start = opts.startDate!, end = opts.endDate!;
+  const fmtLong = (iso: string) => {
+    const [yy, mm, dd] = iso.split("-").map(Number);
+    return new Date(yy, mm - 1, dd).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  };
+  return {
+    dates: enumerateDates(start, end),
+    label: start.slice(0, 7) === end.slice(0, 7)
+      ? new Date(Number(start.slice(0, 4)), Number(start.slice(5, 7)) - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" })
+      : `${fmtLong(start)} – ${fmtLong(end)}`,
+  };
+}
+
+/** Guard → the site they are posted to for this client. Open posting (end_date
+ *  null) wins; otherwise the most recent closed one, so a separated guard's
+ *  confirmed attendance still matches the site it was confirmed under instead
+ *  of silently failing the site test and rendering blank. */
+export async function loadSiteByGuard(clientId: string | null): Promise<Map<string, string | null>> {
+  const out = new Map<string, string | null>();
+  if (!clientId) return out;
+  const { data } = await supabase
+    .from("deployments").select("guard_id, site_id, end_date").eq("client_id", clientId)
+    .order("end_date", { ascending: false, nullsFirst: true });
+  for (const d of (data ?? []) as any[]) if (!out.has(d.guard_id)) out.set(d.guard_id, d.site_id ?? null);
+  return out;
+}
+
+/**
+ * THE CONFIRMATION GATE — the single definition of "this mark is real".
+ *
+ * A mark counts only where the supervisor confirmed that (site, shift, date).
+ * A confirmation carrying site_id null is client-wide (or a category group) and
+ * matches any of the client's sites.
+ *
+ * This used to live inline in AttendanceSheetModal while the Daily Board's
+ * exporter applied NO gate at all, so the same client and month produced two
+ * different sheets — 305 marks against 251 on Dolmen City for August 2026. It
+ * is a function here so there is one answer rather than one per caller.
+ */
+export async function loadConfirmationGate(opts: {
+  clientId?: string | null;
+  category?: string | null;
+  startDate: string;
+  endDate: string;
+  siteByGuard: Map<string, string | null>;
+}): Promise<(empId: string, iso: string, workedShift: string) => boolean> {
+  const q = supabase
+    .from("attendance_confirmations")
+    .select("site_id, shift_code, attendance_date")
+    .gte("attendance_date", opts.startDate)
+    .lte("attendance_date", opts.endDate);
+  const { data } = await (opts.category ? q.eq("category", opts.category) : q.eq("client_id", opts.clientId as string));
+
+  const anySite = new Set<string>(); // `${shift}|${date}`
+  const bySite = new Set<string>();  // `${site}|${shift}|${date}`
+  for (const c of (data ?? []) as any[]) {
+    if (c.site_id) bySite.add(`${c.site_id}|${c.shift_code}|${c.attendance_date}`);
+    else anySite.add(`${c.shift_code}|${c.attendance_date}`);
+  }
+  return (empId, iso, ws) => {
+    if (anySite.has(`${ws}|${iso}`)) return true;
+    const site = opts.siteByGuard.get(empId) ?? null;
+    return site ? bySite.has(`${site}|${ws}|${iso}`) : false;
+  };
+}
+
+/** The roster a sheet is built from: one client's guards, or a synthetic
+ *  category group. Relievers and archived rows are excluded — a reliever is
+ *  never on a roster and is surfaced by buildRelieverRows instead. */
+export async function loadSheetEmployees(opts: {
+  clientId?: string | null;
+  category?: string | null;
+  siteId?: string | null;
+  siteByGuard?: Map<string, string | null>;
+  clientPrefix?: string | null;
+}): Promise<SheetEmployee[]> {
+  const q = supabase
+    .from("employees")
+    .select("id, full_name, display_number, guard_code, employee_code, contract_id, client_id, join_date, last_working_day, termination_date, lifecycle_state, shift")
+    .neq("lifecycle_state", "archived")
+    .neq("category", "reliever");
+  const { data } = await (opts.category ? q.eq("category", opts.category) : q.eq("client_id", opts.clientId as string));
+
+  let list = (data ?? []) as any[];
+  if (opts.siteId && opts.siteByGuard) list = list.filter((e) => opts.siteByGuard!.get(e.id) === opts.siteId);
+
+  return list
+    .map((e) => ({
+      id: e.id,
+      full_name: e.full_name,
+      display_code: guardDisplayCode(e, opts.clientPrefix ?? null),
+      contract_id: e.contract_id ?? null,
+      client_id: e.client_id ?? null,
+      join_date: e.join_date ?? null,
+      last_working_day: e.last_working_day ?? null,
+      termination_date: e.termination_date ?? null,
+      lifecycle_state: e.lifecycle_state ?? null,
+      shift: e.shift ?? null,
+    }))
+    .sort((a, b) => a.full_name.localeCompare(b.full_name));
+}
+
 export async function buildAttendanceRows(opts: {
-  month: string; // "YYYY-MM"
+  // The window, given as EITHER a month or an explicit inclusive range. The
+  // Monthly Board passes a month; the Attendance board's client-range export
+  // passes two dates and may span a month boundary (20 Jul → 10 Aug). Columns
+  // are indexed positionally, so both work through the same code.
+  month?: string; // "YYYY-MM"
+  startDate?: string; // "YYYY-MM-DD", with endDate, when month is not given
+  endDate?: string;
   employees: SheetEmployee[];
   contracts: Contract[];
   clients: Client[];
@@ -57,14 +191,15 @@ export async function buildAttendanceRows(opts: {
   // as blank, exactly as if it were never entered.
   confirmedOnly?: (empId: string, iso: string, workedShift: string) => boolean;
 }): Promise<{ rows: AttendanceEmployeeRow[]; daysInMonth: number; monthLabel: string; cellsByEmp: Map<string, Map<string, string>> }> {
-  const { month, employees, contracts, clients, confirmedOnly } = opts;
-  const [yStr, mStr] = month.split("-");
-  const y = Number(yStr);
-  const m = Number(mStr);
-  const dim = new Date(y, m, 0).getDate();
-  const monthStart = `${yStr}-${mStr}-01`;
-  const monthEnd = `${yStr}-${mStr}-${String(dim).padStart(2, "0")}`;
-  const monthLabel = new Date(y, m - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const { employees, contracts, clients, confirmedOnly } = opts;
+  const { dates, label: monthLabel } = windowOf(opts);
+  const dim = dates.length;
+  const monthStart = dates[0];
+  const monthEnd = dates[dim - 1];
+  // Column index (0-based) for a date. For a whole month this is day-of-month
+  // minus one, which is why nothing downstream had to change; for a range that
+  // crosses a month boundary it is the only key that does not collide.
+  const dateIndex = new Map(dates.map((d, i) => [d, i]));
 
   // A guard separated BEFORE this month is not on this month's sheet at all.
   // Without this the caller's roster (built for "now") carried anyone who left
@@ -103,7 +238,12 @@ export async function buildAttendanceRows(opts: {
   const marksByDay = new Map<string, Map<number, Mark[]>>();
   const cellsByEmp = new Map<string, Map<string, string>>();
   for (const r of records ?? []) {
-    const day = Number(String(r.attendance_date).slice(8, 10));
+    // 1-based column index. Identical to day-of-month for a whole-month sheet,
+    // which is the key AttendanceSheetModal's grid already reads
+    // (`${i + 1}|${shift}`), so the viewer is untouched.
+    const idx0 = dateIndex.get(String(r.attendance_date).slice(0, 10));
+    if (idx0 === undefined) continue;
+    const day = idx0 + 1;
     const ws = (r.worked_shift as string) ?? "day";
     const ovr = !!r.supervisor_override;
     const visible = !confirmedOnly || confirmedOnly(r.employee_id, String(r.attendance_date), ws) || ovr;
@@ -203,12 +343,12 @@ export async function buildAttendanceRows(opts: {
     const shiftByDay: string[] = [];
     let p = 0, a = 0, l = 0, dd = 0;
     for (let d = 1; d <= dim; d += 1) {
+      const iso = dates[d - 1];
       // Unconfirmed marks were already dropped when the day was gathered, so a
       // cell here is a visible one. Re-testing confirmation on cell.ws would now
       // be wrong: ws is the BASE shift, and a double duty whose base shift is
       // unconfirmed while its cover shift is would vanish entirely.
       const cell = dayMap.get(d);
-      const iso = `${yStr}-${mStr}-${String(d).padStart(2, "0")}`;
       // No record AND not employed that day → "X" (separated / pre-join / off-contract),
       // otherwise blank. A real record always wins — history is reported as-is.
       const sym = cell?.sym ?? (attendanceWindowError(emp, contract, iso) ? SEPARATION_MARK : "");
@@ -258,19 +398,20 @@ export async function buildAttendanceRows(opts: {
 // reliever marks). Guards on the roster are excluded (excludeEmpIds) as a safety
 // net — a reliever has no client_id so isn't on a roster anyway.
 export async function buildRelieverRows(opts: {
-  month: string; // "YYYY-MM"
+  month?: string; // "YYYY-MM"
+  startDate?: string; // or an explicit inclusive range, as buildAttendanceRows
+  endDate?: string;
   clientId: string; // real client uuid (relievers never attribute to a category group)
   clientPrefix?: string | null;
   excludeEmpIds?: Iterable<string>; // roster ids already rendered as regular rows
 }): Promise<AttendanceEmployeeRow[]> {
-  const { month, clientId, clientPrefix = null } = opts;
+  const { clientId, clientPrefix = null } = opts;
   const exclude = new Set(opts.excludeEmpIds ?? []);
-  const [yStr, mStr] = month.split("-");
-  const y = Number(yStr);
-  const m = Number(mStr);
-  const dim = new Date(y, m, 0).getDate();
-  const monthStart = `${yStr}-${mStr}-01`;
-  const monthEnd = `${yStr}-${mStr}-${String(dim).padStart(2, "0")}`;
+  const { dates } = windowOf(opts);
+  const dim = dates.length;
+  const monthStart = dates[0];
+  const monthEnd = dates[dim - 1];
+  const dateIndex = new Map(dates.map((d, i) => [d, i]));
 
   const records = await fetchAllRows<any>(() =>
     supabase
@@ -303,7 +444,9 @@ export async function buildRelieverRows(opts: {
   const byEmp = new Map<string, Map<number, { sym: string; ws: string }>>();
   for (const r of recs) {
     if (!empById.has(r.employee_id)) continue;
-    const day = Number(String(r.attendance_date).slice(8, 10));
+    const idx0 = dateIndex.get(String(r.attendance_date).slice(0, 10));
+    if (idx0 === undefined) continue;
+    const day = idx0 + 1;
     const ws = (r.worked_shift as string) ?? "day";
     if (!byEmp.has(r.employee_id)) byEmp.set(r.employee_id, new Map());
     byEmp.get(r.employee_id)!.set(day, { sym: symbolOf(r.status), ws });

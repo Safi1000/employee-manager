@@ -6,7 +6,7 @@ import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import Tabs from "../../components/Tabs";
 import ThemedSelect from "../../components/ThemedSelect";
-import { supabase, fetchAllRows, resolveAllowedLeaves } from "../../lib/supabase";
+import { supabase } from "../../lib/supabase";
 import { useAuth, hasPermission } from "../../lib/auth";
 import { guardDisplayCode } from "../../lib/guardCode";
 import BulkMarkByEmployeeModal from "../../components/BulkMarkByEmployeeModal";
@@ -14,7 +14,10 @@ import AttendanceSheetModal from "../../components/AttendanceSheetModal";
 import { brandingFromCompany, type PdfBranding } from "../../lib/pdfBranding";
 import { generateClientAttendancePdf, generateGuardAttendancePdf } from "../../lib/attendanceSheetPdf";
 import { exportAttendance, type AttendanceEmployeeRow } from "../../lib/excel";
-import { loadShiftResolver } from "../../lib/shiftOnDate";
+import {
+  buildAttendanceRows, buildRelieverRows, enumerateDates,
+  loadSheetEmployees, loadSiteByGuard, loadConfirmationGate,
+} from "../../lib/attendanceSheet";
 import { clearConflictingDayRows } from "../../lib/attendanceDay";
 import { hiddenFromAttendance } from "../../lib/employmentWindow";
 import { saveText } from "../../lib/saveFile";
@@ -66,15 +69,11 @@ const BULK_STATUS_OPTIONS: { status: Status; label: string; activeBtn: string }[
   { status: "double_duty", label: "Double Duty", activeBtn: "bg-brand-600 text-white border-brand-600" },
 ];
 
-// Board (new-model) status → the P/A/L vocabulary of the shared monthly export
-// (lib/excel exportAttendance). Worked statuses count as Present; leave-type
-// statuses as Leave; blocked/unknown leave the cell blank.
-const EXPORT_SYMBOL: Record<Status, string> = {
-  // Double duty carries its own symbol so the sheet shows the second shift. It
-  // still counts as a day present wherever presents are tallied.
-  present: "P", double_duty: "DD", relief_cover: "P",
-  absent: "A", rotation_leave: "L", rest_day: "L", blocked: "",
-};
+// EXPORT_SYMBOL used to live here — a second board-status → P/A/L mapping,
+// beside the one in lib/attendanceSheet. It had one reader, the client range
+// export, and that now goes through the shared builder. Deleted rather than
+// left for reuse: two spellings of the same vocabulary is how the sheets came
+// to disagree in the first place.
 
 const VALID_STATUS = new Set<string>(["present", "absent", "rotation_leave", "rest_day", "double_duty", "relief_cover", "blocked"]);
 // Legacy attendance rows (pre-Phase-6) store capitalized Present/Absent/Leave and
@@ -1421,128 +1420,90 @@ async function exportClientMonth(client: ExportClient, date: string) {
   return exportClientRange(client, monthStart, monthEnd);
 }
 
-// Enumerate every ISO date from start..end inclusive (both "YYYY-MM-DD").
-function enumerateDates(start: string, end: string): string[] {
-  const out: string[] = [];
-  const [sy, sm, sd] = start.split("-").map(Number);
-  const [ey, em, ed] = end.split("-").map(Number);
-  const cur = new Date(sy, sm - 1, sd);
-  const last = new Date(ey, em - 1, ed);
-  while (cur <= last) {
-    out.push(`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(cur.getDate()).padStart(2, "0")}`);
-    cur.setDate(cur.getDate() + 1);
-  }
-  return out;
-}
-
 // Client attendance sheet over an arbitrary [startDate, endDate] range. Same XLSX
 // format as the monthly export; columns are one-per-date (labelled by day-of-month
 // so the sheet can span a month boundary, e.g. 20 Jul → 10 Aug).
+//
+// ── THE DATA COMES FROM THE MONTHLY BOARD'S BUILDER, NOT FROM ITS OWN QUERY ──
+//
+// This function used to read attendance_records directly and hand every mark it
+// found to the exporter. The Monthly Board reads the same table through
+// buildAttendanceRows and shows ONLY the marks a supervisor confirmed. So the
+// two sheets for one client and month were different documents: on Dolmen City
+// for August 2026, 305 marks here against 251 there.
+//
+// Three further differences went with it, all of them the same mistake — a
+// second implementation of a rule that already had one:
+//
+//   * DOUBLE DUTY. This function keyed marks by (employee, day) and overwrote,
+//     so a day with two shift rows kept whichever the server happened to return
+//     last. buildAttendanceRows derives the day's symbol from ALL its rows with
+//     a stated precedence (L > DD > P > A). Last-row-wins lost 99 of 259 double
+//     duties on production when the Monthly Board did it — see attendanceSheet.
+//   * LEAVE. A leave is the whole day (0393); the shared builder folds a day
+//     that contradicts itself down to the leave. This one showed both.
+//   * RELIEVERS. Standalone reliever coverage rows did not exist here at all —
+//     the query excludes category='reliever' and nothing added them back.
+//
+// The SHEET'S SHAPE IS UNCHANGED: same exportAttendance call, same columns, same
+// dayLabels, same filename. Only what fills it moved.
 async function exportClientRange(client: ExportClient, startDate: string, endDate: string) {
   const dates = enumerateDates(startDate, endDate);
   if (dates.length === 0) return 0;
-  const monthStart = startDate;
-  const monthEnd = endDate;
-  const dayIndex = new Map(dates.map((d, i) => [d, i]));
-  const fmtLong = (iso: string) => {
-    const [yy, mm, dd] = iso.split("-").map(Number);
-    return new Date(yy, mm - 1, dd).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-  };
-  const monthLabel = startDate.slice(0, 7) === endDate.slice(0, 7)
-    ? new Date(Number(startDate.slice(0, 4)), Number(startDate.slice(5, 7)) - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" })
-    : `${fmtLong(startDate)} – ${fmtLong(endDate)}`;
 
-  // The selected client's employees (real client_id, or the category for a
-  // synthetic office-staff group). Relievers + archived excluded, mirroring
-  // the board's roster rules.
-  let q = supabase
-    .from("employees")
-    .select("id, full_name, employee_code, guard_code, display_number, shift, contract_id, client_id, clients:client_id(employee_id_prefix)")
-    .neq("category", "reliever")
-    .neq("lifecycle_state", "archived");
-  q = client.synthetic ? q.eq("category", client.id.replace(/^cat:/, "")) : q.eq("client_id", client.id);
-  const { data: empData, error: empErr } = await q.order("full_name");
-  if (empErr) throw empErr;
-  const emps = (empData ?? []) as any[];
-  if (emps.length === 0) return 0;
-  const empIds = emps.map((e) => e.id);
+  const realClientId = client.synthetic ? null : client.id;
+  const category = client.synthetic ? client.id.replace(/^cat:/, "") : null;
 
-  // Month's attendance for exactly those employees. worked_shift decides the
-  // D/N column so a day guard who covered one night lands under N that day.
-  const records = await fetchAllRows<any>(() =>
-    supabase.from("attendance_records")
-      .select("employee_id, attendance_date, status, worked_shift")
-      .gte("attendance_date", monthStart)
-      .lte("attendance_date", monthEnd)
-      .in("employee_id", empIds)
-      .order("attendance_date", { ascending: true }) as any,
-  );
-  // Keyed by column index within the range (not day-of-month, which would collide
-  // across a month boundary).
-  const byEmp = new Map<string, Map<number, { st: Status; ws: string }>>();
-  for (const r of records ?? []) {
-    const idx = dayIndex.get(String(r.attendance_date).slice(0, 10));
-    if (idx === undefined) continue;
-    if (!byEmp.has(r.employee_id)) byEmp.set(r.employee_id, new Map());
-    byEmp.get(r.employee_id)!.set(idx, { st: normalizeStatus(r.status), ws: (r.worked_shift as string) ?? "day" });
-  }
-
-  // Allowed leaves for the pay-day tally (contract value, client fallback).
-  const contractIds = [...new Set(emps.map((e) => e.contract_id).filter(Boolean))];
-  const clientIds = [...new Set(emps.map((e) => e.client_id).filter(Boolean))];
-  const [{ data: conRows }, { data: cliRows }] = await Promise.all([
-    contractIds.length ? supabase.from("contracts").select("id, allowed_leaves_per_month").in("id", contractIds) : Promise.resolve({ data: [] as any[] }),
-    clientIds.length ? supabase.from("clients").select("id, allowed_leaves_per_month").in("id", clientIds) : Promise.resolve({ data: [] as any[] }),
+  // Prefix and allowed-leaves come from the client row exactly as the Monthly
+  // Board takes them, so the Emp # column and the pay-day tally agree too.
+  const [{ data: clientRow }, { data: contracts }] = await Promise.all([
+    realClientId
+      ? supabase.from("clients").select("id, name, employee_id_prefix, allowed_leaves_per_month").eq("id", realClientId).single()
+      : Promise.resolve({ data: null }),
+    realClientId
+      ? supabase.from("contracts").select("id, allowed_leaves_per_month").eq("client_id", realClientId)
+      : Promise.resolve({ data: [] }),
   ]);
-  const conById = new Map((conRows ?? []).map((c: any) => [c.id, c]));
-  const cliById = new Map((cliRows ?? []).map((c: any) => [c.id, c]));
+  const prefix = (clientRow as any)?.employee_id_prefix ?? client.prefix ?? null;
 
-  // Per-date shift from the dated posting segments. employees.shift is only the
-  // CURRENT shift, so using it for unmarked days back-dates a shift change over
-  // the whole range — a guard who moved to nights on the 15th would read as
-  // nights from the 1st.
-  const resolveShift = await loadShiftResolver(empIds);
+  const siteByGuard = await loadSiteByGuard(realClientId);
+  const employees = await loadSheetEmployees({
+    clientId: realClientId, category, siteByGuard, clientPrefix: prefix,
+  });
+  if (employees.length === 0) return 0;
 
-  const rows: AttendanceEmployeeRow[] = emps.map((emp, idx) => {
-    const dayMap = byEmp.get(emp.id) ?? new Map<number, { st: Status; ws: string }>();
-    const statusByDay: string[] = [];
-    const shiftByDay: string[] = [];
-    // Row-level shift is a fallback only (shiftByDay is always supplied); take it
-    // from the first date in range rather than "now".
-    const defShift: string = resolveShift(emp.id, dates[0]) || "day";
-    let p = 0, a = 0, l = 0, dd = 0;
-    for (let d = 0; d < dates.length; d += 1) {
-      const cell = dayMap.get(d);
-      const sym = cell ? EXPORT_SYMBOL[cell.st] : "";
-      statusByDay.push(sym);
-      // A double-duty day is still one day present; dd counts the extra duty.
-      if (sym === "P") p += 1;
-      else if (sym === "DD") { p += 1; dd += 1; }
-      else if (sym === "A") a += 1;
-      else if (sym === "L") l += 1;
-      // The shift column follows the shift actually worked that day, falling back
-      // to the shift the guard was rostered on for THAT date. Real shift code
-      // (day/night/evening/…) — the exporter builds columns from these.
-      const ws = cell?.ws ?? resolveShift(emp.id, dates[d]);
-      shiftByDay.push(ws || "day");
-    }
-    const allowed = resolveAllowedLeaves(conById.get(emp.contract_id) ?? null, cliById.get(emp.client_id) ?? null);
-    const payDays = p + Math.min(l, allowed);
-    return {
-      serial: idx + 1,
-      name: emp.full_name,
-      designation: "",
-      empCode: guardDisplayCode(emp, emp.clients?.employee_id_prefix ?? client.prefix),
-      shift: defShift,
-      shiftByDay, statusByDay,
-      presents: p, absents: a, leaves: l, doubleDuties: dd, payDays,
-    };
+  // THE GATE. This is the line that was missing.
+  const confirmedOnly = await loadConfirmationGate({
+    clientId: realClientId, category,
+    startDate, endDate, siteByGuard,
   });
 
+  const built = await buildAttendanceRows({
+    startDate, endDate,
+    employees,
+    contracts: (contracts ?? []) as any[],
+    clients: clientRow ? ([clientRow] as any[]) : [],
+    confirmedOnly,
+  });
+
+  // Standalone reliever coverage, appended and serialled on after the roster,
+  // exactly as the Monthly Board does it. Real clients only — a reliever day is
+  // attributed to a client, never to a category group.
+  const relieverRows = realClientId
+    ? await buildRelieverRows({
+        startDate, endDate, clientId: realClientId, clientPrefix: prefix,
+        excludeEmpIds: employees.map((e) => e.id),
+      })
+    : [];
+  relieverRows.forEach((r, i) => (r.serial = built.rows.length + i + 1));
+
+  const rows: AttendanceEmployeeRow[] = [...built.rows, ...relieverRows];
+  if (rows.length === 0) return 0;
+
   exportAttendance({
-    monthLabel, daysInMonth: dates.length, clientLabel: client.name, rows,
+    monthLabel: built.monthLabel, daysInMonth: dates.length, clientLabel: client.name, rows,
     dayLabels: dates.map((d) => Number(d.slice(8, 10))),
-    fileName: `Attendance ${client.name} ${monthLabel}.xlsx`,
+    fileName: `Attendance ${client.name} ${built.monthLabel}.xlsx`,
   });
   return rows.length;
 }

@@ -8,7 +8,7 @@ import { X, Download, Loader2, ChevronLeft, ChevronRight, ShieldCheck, AlertTria
 import Button from "./Button";
 import { supabase } from "../lib/supabase";
 import { guardDisplayCode } from "../lib/guardCode";
-import { buildAttendanceRows, buildRelieverRows, type SheetEmployee } from "../lib/attendanceSheet";
+import { buildAttendanceRows, buildRelieverRows, loadSheetEmployees, loadSiteByGuard, loadConfirmationGate } from "../lib/attendanceSheet";
 import { exportAttendance, deriveAttendanceShifts, shiftAbbr, type AttendanceEmployeeRow } from "../lib/excel";
 import { clearConflictingDayRows } from "../lib/attendanceDay";
 
@@ -119,14 +119,11 @@ export default function AttendanceSheetModal({
       setLoading(true);
       setErr(null);
       try {
-        const empQuery = supabase
-          .from("employees")
-          .select("id, full_name, display_number, guard_code, employee_code, contract_id, client_id, join_date, last_working_day, termination_date, lifecycle_state, shift")
-          .neq("lifecycle_state", "archived")
-          // Relievers are never part of the assigned roster — they're surfaced
-          // separately (below) by the day(s) they actually covered this client.
-          .neq("category", "reliever");
-        const [{ data: client }, { data: contracts }, { data: emps }] = await Promise.all([
+        // The roster, the site map and the confirmation gate all come from
+        // lib/attendanceSheet now. They used to be written out here, and the
+        // Attendance board's client export wrote its OWN version of the first
+        // two and NONE of the third — which is why the two sheets disagreed.
+        const [{ data: client }, { data: contracts }] = await Promise.all([
           // Synthetic groups have no real client row.
           synthetic
             ? Promise.resolve({ data: null })
@@ -134,67 +131,24 @@ export default function AttendanceSheetModal({
           synthetic
             ? Promise.resolve({ data: [] })
             : supabase.from("contracts").select("id, allowed_leaves_per_month").eq("client_id", clientId),
-          synthetic
-            ? empQuery.eq("category", category as string)
-            : empQuery.eq("client_id", clientId),
         ]);
-
-        let list = (emps ?? []) as any[];
-        // Guard → current site (open posting). Used both to narrow to one site
-        // AND to match each guard against the right per-site supervisor
-        // confirmation below.
-        const siteByGuard = new Map<string, string | null>();
-        if (!synthetic) {
-          const { data: deps } = await supabase
-            .from("deployments").select("guard_id, site_id, end_date").eq("client_id", clientId)
-            .order("end_date", { ascending: false, nullsFirst: true });
-          // Open posting (end_date null) wins; else fall back to the guard's most
-          // recent closed posting so separated/fired guards' confirmed attendance
-          // still matches its site instead of rendering a blank row.
-          for (const d of (deps ?? []) as any[]) if (!siteByGuard.has(d.guard_id)) siteByGuard.set(d.guard_id, d.site_id ?? null);
-        }
-        // Narrow to one site by the guard's current open posting.
-        if (siteId) list = list.filter((e) => siteByGuard.get(e.id) === siteId);
-
         const prefix = (client as any)?.employee_id_prefix ?? null;
-        const employees: SheetEmployee[] = list
-          .map((e) => ({
-            id: e.id,
-            full_name: e.full_name,
-            display_code: guardDisplayCode(e, prefix),
-            contract_id: e.contract_id ?? null,
-            client_id: e.client_id ?? null,
-            join_date: e.join_date ?? null,
-            last_working_day: e.last_working_day ?? null,
-            termination_date: e.termination_date ?? null,
-            lifecycle_state: e.lifecycle_state ?? null,
-            shift: e.shift ?? null,
-          }))
-          .sort((a, b) => a.full_name.localeCompare(b.full_name));
 
-        // Monthly Board shows ONLY supervisor-confirmed attendance. Load the
-        // month's confirmations for this client/category and gate every mark on
-        // a matching (site, shift, date). A confirmation with site_id null is
-        // client-wide / a category group — it matches any of the client's sites.
+        // Guard → current site (open posting). Used both to narrow to one site
+        // AND to match each guard against the right per-site confirmation.
+        const siteByGuard = await loadSiteByGuard(realClientId);
+        const employees = await loadSheetEmployees({
+          clientId: realClientId, category, siteId, siteByGuard, clientPrefix: prefix,
+        });
+
+        // Monthly Board shows ONLY supervisor-confirmed attendance: an
+        // unconfirmed mark renders blank, exactly as if it were never entered.
         const [cy, cm] = month.split("-").map(Number);
         const monthEndDate = `${month}-${String(new Date(cy, cm, 0).getDate()).padStart(2, "0")}`;
-        const confQ = supabase
-          .from("attendance_confirmations")
-          .select("site_id, shift_code, attendance_date")
-          .gte("attendance_date", monthStartDate)
-          .lte("attendance_date", monthEndDate);
-        const { data: confs } = await (synthetic ? confQ.eq("category", category as string) : confQ.eq("client_id", clientId));
-        const anySite = new Set<string>(); // `${shift}|${date}`
-        const bySite = new Set<string>(); // `${site}|${shift}|${date}`
-        for (const c of (confs ?? []) as any[]) {
-          if (c.site_id) bySite.add(`${c.site_id}|${c.shift_code}|${c.attendance_date}`);
-          else anySite.add(`${c.shift_code}|${c.attendance_date}`);
-        }
-        const confirmedOnly = (empId: string, iso: string, ws: string): boolean => {
-          if (anySite.has(`${ws}|${iso}`)) return true;
-          const site = siteByGuard.get(empId) ?? null;
-          return site ? bySite.has(`${site}|${ws}|${iso}`) : false;
-        };
+        const confirmedOnly = await loadConfirmationGate({
+          clientId: realClientId, category,
+          startDate: monthStartDate, endDate: monthEndDate, siteByGuard,
+        });
 
         const built = await buildAttendanceRows({
           month,
