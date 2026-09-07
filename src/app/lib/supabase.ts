@@ -358,6 +358,18 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
     ],
   },
   {
+    // Assignments & Pay is split so Accounts and HR hold different halves of the
+    // page (0343). Base salary / allowance / joining date + viewing fired staff
+    // are Accounts; everything else (fire, transfer, category, shift, posting) is
+    // HR. A user can hold one, both, or neither. employees.edit is a superset of
+    // both (grandfathered). Enforced at the DB by enforce_assignment_field_perms.
+    label: "Assignments & Pay",
+    items: [
+      { key: "assignments.accounts", label: "Assignments & Pay — edit pay (base salary / allowance) & joining date, view fired" },
+      { key: "assignments.hr", label: "Assignments & Pay — fire, rehire, transfer, posting & everything else" },
+    ],
+  },
+  {
     label: "Attendance",
     items: [
       { key: "attendance.view", label: "View attendance" },

@@ -5,7 +5,7 @@ import ClientFilterSelect from "./ClientFilterSelect";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../lib/auth";
 import { guardDisplayCode } from "../lib/guardCode";
-import { attendanceWindowError, hiddenFromAttendance, buildClientCoverage, effectiveWindowContract } from "../lib/employmentWindow";
+import { attendanceWindowError, isSeparatedState, lifecycleStatusLabel, buildClientCoverage, effectiveWindowContract } from "../lib/employmentWindow";
 import { loadShiftResolver, type ShiftResolver } from "../lib/shiftOnDate";
 import { clearConflictingDayRows } from "../lib/attendanceDay";
 
@@ -78,6 +78,9 @@ type BulkEmp = {
   termination_date: string | null;
   contract_id: string | null;
   lifecycle_state: string | null;
+  exit_date: string | null;
+  eligible_for_rehire: boolean | null;
+  status: string;
   category: string;
 };
 
@@ -129,7 +132,7 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
           .from("employees")
           .select(
             "id, full_name, guard_code, display_number, employee_code, client_id, shift, " +
-              "join_date, last_working_day, termination_date, contract_id, lifecycle_state, category, " +
+              "join_date, last_working_day, termination_date, exit_date, eligible_for_rehire, status, contract_id, lifecycle_state, category, " +
               "clients:client_id(name, employee_id_prefix)",
           )
           .neq("category", "reliever")
@@ -143,7 +146,9 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
         employee_code: e.employee_code, client_id: e.client_id, client_name: e.clients?.name ?? null,
         client_prefix: e.clients?.employee_id_prefix ?? null, shift: (e.shift ?? "day") as "day" | "night",
         join_date: e.join_date, last_working_day: e.last_working_day,
-        termination_date: e.termination_date, contract_id: e.contract_id,
+        termination_date: e.termination_date, exit_date: e.exit_date ?? null,
+        eligible_for_rehire: e.eligible_for_rehire ?? null, status: e.status ?? "",
+        contract_id: e.contract_id,
         lifecycle_state: e.lifecycle_state,
         category: e.category,
       })));
@@ -206,9 +211,11 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
 
   const options = useMemo(() => {
     const q = search.trim().toLowerCase();
-    // Drop guards separated before this month starts — no markable day here, so
-    // they shouldn't clutter the picker. A mid-month separation stays selectable.
-    let pool = employees.filter((e) => !hiddenFromAttendance(e, `${month}-01`));
+    // Fired / separated employees are KEPT in the list (tagged "Fired" below) so
+    // their final days can still be marked. Dates on/after their termination stay
+    // non-markable via attendanceWindowError + the DB window trigger, so nothing
+    // past separation can be entered.
+    let pool = employees;
     if (clientFilter !== "all") {
       pool = clientFilter.startsWith("cat:")
         ? pool.filter((e) => !e.client_id && `cat:${e.category}` === clientFilter)
@@ -528,6 +535,11 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-slate-900 truncate">{emp.full_name}</span>
+                  {isSeparatedState(emp.lifecycle_state) && (
+                    <span className="shrink-0 inline-flex items-center rounded-md border border-danger-200 bg-danger-50 px-2 py-0.5 text-[11px] font-medium text-danger-800 dark:border-danger-800 dark:bg-danger-900/20 dark:text-danger-400" title={emp.termination_date ? `Separated ${emp.termination_date} — later dates can't be marked` : "Separated"}>
+                      {lifecycleStatusLabel({ lifecycle_state: emp.lifecycle_state ?? "", status: emp.status, eligible_for_rehire: emp.eligible_for_rehire })}
+                    </span>
+                  )}
                   <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border capitalize ${emp.shift === "day" ? "bg-warning-50 text-warning-700 border-warning-200" : "bg-info-50 text-info-700 border-info-200"}`} title="Guard's default shift">{emp.shift} shift</span>
                 </div>
                 <div className="text-xs text-slate-500 font-mono">
@@ -563,7 +575,14 @@ export default function BulkMarkByEmployeeModal({ onClose, onSaved, initialEmplo
                   options.map((e) => (
                     <button type="button" key={e.id} onClick={() => setEmpId(e.id)}
                       className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 border-b border-slate-100 last:border-b-0">
-                      <div className="text-slate-900">{e.full_name}</div>
+                      <div className="text-slate-900 flex items-center gap-1.5">
+                        <span className="truncate">{e.full_name}</span>
+                        {isSeparatedState(e.lifecycle_state) && (
+                          <span className="shrink-0 inline-flex items-center rounded-sm border border-danger-200 bg-danger-50 px-1.5 py-0.5 text-[10px] font-medium text-danger-800 dark:border-danger-800 dark:bg-danger-900/20 dark:text-danger-400">
+                            {lifecycleStatusLabel({ lifecycle_state: e.lifecycle_state ?? "", status: e.status, eligible_for_rehire: e.eligible_for_rehire })}
+                          </span>
+                        )}
+                      </div>
                       <div className="text-xs text-slate-500 font-mono">
                         {guardDisplayCode(e, e.client_prefix)}{e.client_name && ` · ${e.client_name}`}
                       </div>

@@ -729,6 +729,34 @@ function OverrideModal({
     onSaved();
   };
 
+  // Clear Marks — revert to the true UNMARKED state (delete the row(s)), as if
+  // nothing was ever recorded. Goes through a SECURITY DEFINER RPC that gets past
+  // the confirmed-month-end lock (Override's authority) but NOT the OPS-verified
+  // lock, and writes an audit row. A reason is required, same as an override.
+  const clearDay = async () => {
+    if (locked) { setErr("This month is OPS-verified and locked. Un-verify it to change attendance."); return; }
+    if (!reason.trim()) { setErr("A reason is required to clear this day."); return; }
+    setBusy(true); setErr(null);
+    const { error } = await supabase.rpc("clear_attendance_day", {
+      p_employee: target.empId, p_date: target.date, p_reason: reason.trim(),
+    });
+    setBusy(false);
+    if (error) { setErr(error.message); return; }
+    onSaved();
+  };
+  const clearMonth = async () => {
+    if (locked) { setErr("This month is OPS-verified and locked. Un-verify it to change attendance."); return; }
+    if (!reason.trim()) { setErr("A reason is required to clear the month."); return; }
+    if (!window.confirm(`Clear ALL of ${target.empName}'s marks for ${target.date.slice(0, 7)}? Every day goes back to unmarked. This cannot be undone.`)) return;
+    setBusy(true); setErr(null);
+    const { error } = await supabase.rpc("clear_attendance_month", {
+      p_employee: target.empId, p_month: target.date.slice(0, 7), p_reason: reason.trim(),
+    });
+    setBusy(false);
+    if (error) { setErr(error.message); return; }
+    onSaved();
+  };
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-3" onClick={onClose}>
       <div className="bg-card rounded-xl shadow-xl w-full max-w-md flex flex-col max-h-[85dvh]" onClick={(e) => e.stopPropagation()}>
@@ -775,6 +803,22 @@ function OverrideModal({
             </Button>
             <Button size="sm" variant="secondary" className="flex-1" onClick={onClose}>Cancel</Button>
           </div>
+
+          {/* Clear Marks — revert to unmarked (blank), as if never recorded.
+              Offered on the guard's own (primary) cell; needs the same reason. */}
+          {!presentOnly && (
+            <div className="pt-2 border-t border-border space-y-1.5">
+              <p className="text-xs text-muted-foreground">Or revert to <span className="font-medium">unmarked</span> (blank), as if nothing was recorded:</p>
+              <div className="flex gap-2">
+                <Button size="sm" variant="secondary" className="flex-1" onClick={clearDay} disabled={busy || locked || !reason.trim()} title={!reason.trim() ? "Enter a reason first" : "Clear this day back to unmarked"}>
+                  Clear this day
+                </Button>
+                <Button size="sm" variant="secondary" className="flex-1" onClick={clearMonth} disabled={busy || locked || !reason.trim()} title={!reason.trim() ? "Enter a reason first" : "Clear the whole month for this employee"}>
+                  Clear whole month
+                </Button>
+              </div>
+            </div>
+          )}
 
           <div className="pt-2 border-t border-border">
             <p className="text-xs font-medium text-foreground mb-1.5">Override History</p>

@@ -156,7 +156,7 @@ export const router = createRouter([
       { path: "employees", element: guard(["employees.view", "employees.edit"], <EmployeeManagement />) },
       // Assignments & Pay: employees grouped under their client, so posting and
       // pay can be edited for one guard or the whole client at once.
-      { path: "assignments", element: guard(["employees.view", "employees.edit"], <EmployeeAssignments />) },
+      { path: "assignments", element: guard(["employees.view", "employees.edit", "assignments.accounts", "assignments.hr"], <EmployeeAssignments />) },
       { path: "attendance", element: guard(["attendance.view", "attendance.edit"], <AttendanceBoard />) },
       // Month calendar retained as a CORRECTION-only Timesheet (§8.8), reached
       // from the guard's record (History tab), not the daily flow.

@@ -229,7 +229,13 @@ function applyPayMode(mode: PayMode, raw: string, current: number | null): numbe
 export default function EmployeeAssignments() {
   const { profile } = useAuth();
   const { regionId } = useRegion();
-  const canEdit = hasPermission(profile, "employees.edit");
+  // Assignments & Pay is split (0343): Accounts edits pay + joining date and sees
+  // fired staff; HR does fire/rehire/transfer/posting/everything else. employees.edit
+  // (and super_admin/SSA via hasPermission) is a superset of both. Enforced at the DB.
+  const canAccounts = hasPermission(profile, "assignments.accounts") || hasPermission(profile, "employees.edit");
+  const canHr = hasPermission(profile, "assignments.hr") || hasPermission(profile, "employees.edit");
+  // May open the Edit / Edit-rules dialog (individual fields are gated inside).
+  const canOpen = canAccounts || canHr;
 
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -879,25 +885,28 @@ export default function EmployeeAssignments() {
                     fields={[
                       { label: "Department", value: (e) => departmentOf(e) ?? "—" },
                       { label: "Shift", value: (e) => <span className="capitalize">{e.shift}</span> },
-                      { label: "Base", value: (e) => <span className="tabular-nums">{money(e.base_salary)}</span> },
-                      { label: "Per day", value: (e) => <span className="tabular-nums">{money(perDayOf(e.base_salary))}</span> },
-                      { label: "Allowance", value: (e) => <span className="tabular-nums">{money(e.allowance)}</span> },
-                      {
-                        label: showFired ? "Left on" : "Joined",
-                        value: (e) =>
-                          showFired
-                            ? formatDate(e.termination_date ?? e.last_working_day ?? e.exit_date) || "—"
-                            : e.join_date
-                              ? formatDate(e.join_date)
-                              : "—",
-                      },
+                      // Pay + joining/left-on are Accounts-only (0343).
+                      ...(canAccounts ? [
+                        { label: "Base", value: (e: EmployeeRow) => <span className="tabular-nums">{money(e.base_salary)}</span> },
+                        { label: "Per day", value: (e: EmployeeRow) => <span className="tabular-nums">{money(perDayOf(e.base_salary))}</span> },
+                        { label: "Allowance", value: (e: EmployeeRow) => <span className="tabular-nums">{money(e.allowance)}</span> },
+                        {
+                          label: showFired ? "Left on" : "Joined",
+                          value: (e: EmployeeRow) =>
+                            showFired
+                              ? formatDate(e.termination_date ?? e.last_working_day ?? e.exit_date) || "—"
+                              : e.join_date ? formatDate(e.join_date) : "—",
+                        },
+                      ] : []),
                     ]}
                     actions={(e) => (
                       <>
-                        <Button variant="ghost" size="sm" onClick={() => setRowTarget(e)}>
-                          {canEdit ? "Edit" : "View"}
-                        </Button>
-                        {canEdit && (
+                        {canOpen && (
+                          <Button variant="ghost" size="sm" onClick={() => setRowTarget(e)}>
+                            {canHr || canAccounts ? "Edit" : "View"}
+                          </Button>
+                        )}
+                        {canHr && (
                           <Button variant="ghost" size="sm" onClick={() => setTransferTarget(e)}>
                             <ArrowLeftRight className="w-3.5 h-3.5 mr-1" strokeWidth={1.75} />
                             Transfer
@@ -919,7 +928,7 @@ export default function EmployeeAssignments() {
                               aria-label={`Select all in ${g.label}`}
                             />
                           </th>
-                          {["Code", "Name", "Department", "Shift", "Base", "Per day", "Allowance", showFired ? "Left on" : "Joined"].map((h) => (
+                          {["Code", "Name", "Department", "Shift", ...(canAccounts ? ["Base", "Per day", "Allowance", showFired ? "Left on" : "Joined"] : [])].map((h) => (
                             <th key={h} className="text-left px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground whitespace-nowrap">
                               {h}
                             </th>
@@ -932,7 +941,7 @@ export default function EmployeeAssignments() {
                       <tbody>
                         {rowsToShow.length === 0 && (
                           <tr>
-                            <td colSpan={10} className="px-4 py-8 text-center text-sm text-muted-foreground">
+                            <td colSpan={canAccounts ? 10 : 6} className="px-4 py-8 text-center text-sm text-muted-foreground">
                               Nobody is posted here yet — use “Assign employees” above.
                             </td>
                           </tr>
@@ -962,27 +971,27 @@ export default function EmployeeAssignments() {
                               )}
                             </td>
                             <td className="px-3 py-2 text-sm text-muted-foreground capitalize whitespace-nowrap">{e.shift}</td>
+                            {/* Pay + joining/left-on columns are Accounts-only (0343). */}
+                            {canAccounts && (<>
                             <td className="px-3 py-2 text-sm text-foreground tabular-nums whitespace-nowrap">{money(e.base_salary)}</td>
                             <td className="px-3 py-2 text-sm text-muted-foreground tabular-nums whitespace-nowrap">{money(perDayOf(e.base_salary))}</td>
                             <td className="px-3 py-2 text-sm text-muted-foreground tabular-nums whitespace-nowrap">{money(e.allowance)}</td>
                             <td className="px-3 py-2 text-sm text-muted-foreground whitespace-nowrap">
                               {/* In Fired mode this column carries the date they
-                                  LEFT, which is the thing being looked up. The
-                                  termination date is the day the separation took
-                                  effect; last_working_day covers older records
-                                  that only ever carried that one. */}
+                                  LEFT, which is the thing being looked up. */}
                               {showFired
                                 ? formatDate(e.termination_date ?? e.last_working_day ?? e.exit_date) || "—"
                                 : e.join_date ? formatDate(e.join_date) : "—"}
                             </td>
+                            </>)}
                             {/* Sticky column: opaque in every state, or the columns
                                 underneath show through while scrolling sideways. */}
                             <td className="px-3 py-2 sticky right-0 z-10 border-l border-border bg-card group-hover:bg-accent transition-colors">
                               <div className="flex gap-1">
                                 <Button variant="ghost" size="sm" onClick={() => setRowTarget(e)}>
-                                  {canEdit ? "Edit" : "View"}
+                                  {canOpen ? "Edit" : "View"}
                                 </Button>
-                                {canEdit && (
+                                {canHr && (
                                   <Button
                                     variant="ghost"
                                     size="sm"
@@ -1112,14 +1121,17 @@ export default function EmployeeAssignments() {
               className="w-full pl-9 pr-4 py-2 border border-border rounded-md text-sm bg-card"
             />
           </div>
-          <label className="flex items-center gap-2 text-sm text-muted-foreground whitespace-nowrap">
-            <input
-              type="checkbox"
-              checked={showFired}
-              onChange={(e) => setShowFired(e.target.checked)}
-            />
-            Fired / left
-          </label>
+          {/* Viewing fired / left staff is Accounts-only (0343). */}
+          {canAccounts && (
+            <label className="flex items-center gap-2 text-sm text-muted-foreground whitespace-nowrap">
+              <input
+                type="checkbox"
+                checked={showFired}
+                onChange={(e) => setShowFired(e.target.checked)}
+              />
+              Fired / left
+            </label>
+          )}
           <label className="flex items-center gap-2 text-sm text-muted-foreground whitespace-nowrap">
             <input type="checkbox" checked={onlyMismatch} onChange={(e) => setOnlyMismatch(e.target.checked)} />
             Only mismatches
@@ -1259,7 +1271,7 @@ export default function EmployeeAssignments() {
                       keeps them up here, where the group IS the whole target. */}
                   {/* Warnings are the steps that lead to a separation, so they
                       sit next to it. Same picker, same roster. */}
-                  {canEdit && (g.clientId || g.categoryKey) && (
+                  {canHr && (g.clientId || g.categoryKey) && (
                     <Button
                       variant="secondary"
                       size="sm"
@@ -1283,7 +1295,7 @@ export default function EmployeeAssignments() {
                       is. Gating it the same way hid it from every client that
                       has sites, which was most of them. g.rows spans all of the
                       group's sites, so the picker covers the whole client. */}
-                  {canEdit && (g.clientId || g.categoryKey) && (
+                  {canHr && (g.clientId || g.categoryKey) && (
                     <Button
                       variant="secondary"
                       size="sm"
@@ -1296,7 +1308,7 @@ export default function EmployeeAssignments() {
                       Fire / Resign
                     </Button>
                   )}
-                  {canEdit && !g.siteBuckets && (g.clientId || g.categoryKey) && (
+                  {canHr && !g.siteBuckets && (g.clientId || g.categoryKey) && (
                     <Button
                       variant="secondary"
                       size="sm"
@@ -1314,7 +1326,7 @@ export default function EmployeeAssignments() {
                       Assign employees
                     </Button>
                   )}
-                  {canEdit && !g.siteBuckets && (
+                  {canOpen && !g.siteBuckets && (
                     <Button
                       variant="secondary"
                       size="sm"
@@ -1425,7 +1437,7 @@ export default function EmployeeAssignments() {
                                   whoever landed there. For Office Staff the
                                   bucket is a REGION, so the target carries the
                                   branch instead of a site. */}
-                              {canEdit && (g.clientId || g.categoryKey) && b.id !== "" && (
+                              {canHr && (g.clientId || g.categoryKey) && b.id !== "" && (
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -1456,7 +1468,7 @@ export default function EmployeeAssignments() {
                                   <span className="hidden sm:inline">Assign employees</span>
                                 </Button>
                               )}
-                              {canEdit && (
+                              {canOpen && (
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -1491,6 +1503,8 @@ export default function EmployeeAssignments() {
       {rulesTarget && (
         <EditRulesModal
           target={rulesTarget}
+          canAccounts={canAccounts}
+          canHr={canHr}
           selectedIds={selectionFor(rulesTarget.group.key)}
           lines={
             rulesTarget.group.clientId
@@ -1513,7 +1527,8 @@ export default function EmployeeAssignments() {
       {rowTarget && (
         <RowEditModal
           employee={rowTarget}
-          canEdit={canEdit}
+          canAccounts={canAccounts}
+          canHr={canHr}
           displayCode={displayCodeFor(rowTarget)}
           departmentLabel={departmentOf(rowTarget)}
           lineOptions={
@@ -1647,6 +1662,7 @@ export default function EmployeeAssignments() {
       {assignTo && (
         <AssignEmployeesModal
           target={assignTo}
+          canAccounts={canAccounts}
           candidates={assignable}
           contractsForClient={contractsForClient}
           linesForContract={linesForContract}
@@ -1768,9 +1784,12 @@ const CATEGORY_RANK = new Map(PERSONNEL_LINE_CATEGORIES.map((c, i) => [c, i]));
 // were actually run on.
 // ─────────────────────────────────────────────────────────────────────────────
 function EditRulesModal({
-  target, selectedIds, lines, allLines, locations, branches, onClose, onDone,
+  target, canAccounts, canHr, selectedIds, lines, allLines, locations, branches, onClose, onDone,
 }: {
   target: RulesTarget;
+  // Pay (base/allowance) + joining date are Accounts; branch/location are HR (0343).
+  canAccounts: boolean;
+  canHr: boolean;
   selectedIds: Set<string>;
   /** Personnel contract lines that staff this site — the posts on offer. */
   lines: ContractLine[];
@@ -2045,6 +2064,8 @@ function EditRulesModal({
       }
     >
       <div className="space-y-6">
+        {/* Pay rules (base / allowance) are Accounts-only (0343). */}
+        {canAccounts && (
         <section>
           <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
             <div className="min-w-0">
@@ -2251,6 +2272,7 @@ function EditRulesModal({
             </div>
           )}
         </section>
+        )}
 
         <section className="pt-4 border-t border-border">
           <h4 className="text-sm font-medium text-foreground mb-1">Other details</h4>
@@ -2258,33 +2280,40 @@ function EditRulesModal({
             Applies to all {targets.length} — these are not per-post.
           </p>
           <div className="space-y-3">
-            <RuleField
-              label="Location"
-              checked={other.setLocation}
-              onToggle={(v) => setOtherField("setLocation", v)}
-            >
-              <ThemedSelect value={other.locationId} onChange={(e) => setOtherField("locationId", e.target.value)} className={inputCls}>
-                <option value="">— Clear —</option>
-                {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-              </ThemedSelect>
-            </RuleField>
-            <RuleField
-              label="Primary branch"
-              checked={other.setBranch}
-              onToggle={(v) => setOtherField("setBranch", v)}
-            >
-              <ThemedSelect value={other.branchId} onChange={(e) => setOtherField("branchId", e.target.value)} className={inputCls}>
-                <option value="">Head Office (default)</option>
-                {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </ThemedSelect>
-            </RuleField>
-            <RuleField
-              label="Joining date"
-              checked={other.setJoinDate}
-              onToggle={(v) => setOtherField("setJoinDate", v)}
-            >
-              <input type="date" value={other.joinDate} onChange={(e) => setOtherField("joinDate", e.target.value)} className={inputCls} />
-            </RuleField>
+            {/* Location + branch are HR; joining date is Accounts (0343). */}
+            {canHr && (
+              <RuleField
+                label="Location"
+                checked={other.setLocation}
+                onToggle={(v) => setOtherField("setLocation", v)}
+              >
+                <ThemedSelect value={other.locationId} onChange={(e) => setOtherField("locationId", e.target.value)} className={inputCls}>
+                  <option value="">— Clear —</option>
+                  {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </ThemedSelect>
+              </RuleField>
+            )}
+            {canHr && (
+              <RuleField
+                label="Primary branch"
+                checked={other.setBranch}
+                onToggle={(v) => setOtherField("setBranch", v)}
+              >
+                <ThemedSelect value={other.branchId} onChange={(e) => setOtherField("branchId", e.target.value)} className={inputCls}>
+                  <option value="">Head Office (default)</option>
+                  {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </ThemedSelect>
+              </RuleField>
+            )}
+            {canAccounts && (
+              <RuleField
+                label="Joining date"
+                checked={other.setJoinDate}
+                onToggle={(v) => setOtherField("setJoinDate", v)}
+              >
+                <input type="date" value={other.joinDate} onChange={(e) => setOtherField("joinDate", e.target.value)} className={inputCls} />
+              </RuleField>
+            )}
           </div>
           <p className="text-xs text-muted-foreground mt-3">
             Client, category and shift are dated posting changes and stay one-at-a-time — use Edit on the row.
@@ -2320,12 +2349,14 @@ function RuleField({
 // goes through the dated increment panel.
 // ─────────────────────────────────────────────────────────────────────────────
 function RowEditModal({
-  employee, canEdit, displayCode, clients,
+  employee, canAccounts, canHr, displayCode, clients,
   onClose, onSaved, onChangeClient, onChangeCategory, onChangeShift, onError, departmentLabel,
   lineOptions, slotForLine, siteNoteForLine,
 }: {
   employee: EmployeeRow;
-  canEdit: boolean;
+  // Pay + joining date are Accounts (0343); posting (category/shift/line) is HR.
+  canAccounts: boolean;
+  canHr: boolean;
   displayCode: string;
   /** The contract line this employee fills — shown in place of a free-text department. */
   departmentLabel: string | null;
@@ -2356,11 +2387,10 @@ function RowEditModal({
   const [shift, setShift] = useState<string>(employee.shift);
   const [draftCategory, setDraftCategory] = useState<EmployeeCategory>(category);
   const [lineId, setLineId] = useState(employee.contract_line_id ?? "");
-  // Offer the picker whenever the client has a post to pin them to. It used to
-  // need two or more, on the reasoning that a single line is already inferred —
-  // but inferring a Department is not the same as recording one, and a guard
-  // left unpinned drops out of every per-post figure on this page.
-  const canPickLine = canEdit && category === "client" && lineOptions.length > 0;
+  const canEdit = canAccounts || canHr; // may save at all (fields gated below)
+  // Offer the picker whenever the client has a post to pin them to. Posting is an
+  // HR change, so only HR may re-pin the contract line.
+  const canPickLine = canHr && category === "client" && lineOptions.length > 0;
 
   /**
    * A post is full when it already holds everyone the contract commits to it.
@@ -2460,7 +2490,7 @@ function RowEditModal({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-muted-foreground mb-1">Category</label>
-              {neverPosted && canEdit ? (
+              {neverPosted && canHr ? (
                 <ThemedSelect value={draftCategory} onChange={(e) => setDraftCategory(e.target.value as EmployeeCategory)} className={inputCls}>
                   <option value="client">Client</option>
                   <option value="office_staff">Office Staff</option>
@@ -2469,7 +2499,7 @@ function RowEditModal({
               ) : (
                 <>
                   <input value={CATEGORY_LABEL[category]} disabled readOnly className={lockedCls} />
-                  {canEdit && canPost && (
+                  {canHr && canPost && (
                     <button type="button" onClick={onChangeCategory} className="text-xs text-brand-700 dark:text-brand-500 hover:underline mt-1">
                       Change category (dated)
                     </button>
@@ -2480,12 +2510,12 @@ function RowEditModal({
             <div>
               <label className="block text-xs text-muted-foreground mb-1">Client</label>
               <input value={category === "client" ? clientName : "—"} disabled readOnly className={lockedCls} />
-              {canEdit && neverPosted && (
+              {canHr && neverPosted && (
                 <p className="text-[11px] text-muted-foreground mt-1">
                   Assign from the client's card — use its “Assign employees” button.
                 </p>
               )}
-              {canEdit && !neverPosted && canPost && category === "client" && (
+              {canHr && !neverPosted && canPost && category === "client" && (
                 <button type="button" onClick={onChangeClient} className="text-xs text-brand-700 dark:text-brand-500 hover:underline mt-1">
                   Change client (dated)
                 </button>
@@ -2493,7 +2523,7 @@ function RowEditModal({
             </div>
             <div>
               <label className="block text-xs text-muted-foreground mb-1">Shift</label>
-              {neverPosted && canEdit ? (
+              {neverPosted && canHr ? (
                 <ThemedSelect value={shift} onChange={(e) => setShift(e.target.value)} className={inputCls}>
                   <option value="day">Day</option>
                   <option value="evening">Evening</option>
@@ -2502,7 +2532,7 @@ function RowEditModal({
               ) : (
                 <>
                   <input value={employee.shift} disabled readOnly className={lockedCls + " capitalize"} />
-                  {canEdit && canPost && category === "client" && (
+                  {canHr && canPost && category === "client" && (
                     <button type="button" onClick={onChangeShift} className="text-xs text-brand-700 dark:text-brand-500 hover:underline mt-1">
                       Change shift (dated)
                     </button>
@@ -2560,14 +2590,18 @@ function RowEditModal({
               <input
                 type="date"
                 value={joinDate}
-                disabled={!canEdit}
+                disabled={!canAccounts}
                 onChange={(e) => setJoinDate(e.target.value)}
-                className={canEdit ? inputCls : lockedCls}
+                className={canAccounts ? inputCls : lockedCls}
+                title={canAccounts ? undefined : "Joining date is Accounts-only"}
               />
             </div>
           </div>
         </section>
 
+        {/* Pay (base salary / allowance) is Accounts-only (0343) — hidden entirely
+            from anyone without it. */}
+        {canAccounts && (
         <section className="pt-4 border-t border-border">
           <h4 className="text-sm font-medium text-foreground mb-3">Pay</h4>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
@@ -2585,15 +2619,14 @@ function RowEditModal({
               <input value={money(employee.allowance)} disabled readOnly className={lockedCls} />
             </div>
           </div>
-          {canEdit && (
-            <SalaryHistoryPanel
-              employeeId={employee.id}
-              currentBase={employee.base_salary != null ? String(employee.base_salary) : ""}
-              currentAllowance={employee.allowance != null ? String(employee.allowance) : ""}
-              onApplied={() => { void onSaved(); }}
-            />
-          )}
+          <SalaryHistoryPanel
+            employeeId={employee.id}
+            currentBase={employee.base_salary != null ? String(employee.base_salary) : ""}
+            currentAllowance={employee.allowance != null ? String(employee.allowance) : ""}
+            onApplied={() => { void onSaved(); }}
+          />
         </section>
+        )}
         <section>
           <div className="rounded-lg border border-border p-4">
             <h4 className="text-sm font-medium text-foreground mb-3">Shift history</h4>
@@ -2621,10 +2654,12 @@ function RowEditModal({
 // different action ("Change client") and still goes through the RPC.
 // ─────────────────────────────────────────────────────────────────────────────
 function AssignEmployeesModal({
-  target, candidates, contractsForClient, linesForContract, addendums, allEmployees,
+  target, canAccounts, candidates, contractsForClient, linesForContract, addendums, allEmployees,
   onClose, onDone, onError,
 }: {
   target: AssignTarget;
+  // Pay can only be set by Accounts (0343); HR-only assigns and pay is set later.
+  canAccounts: boolean;
   candidates: EmployeeRow[];
   contractsForClient: (clientId: string) => Contract[];
   linesForContract: (contractId: string) => ContractLine[];
@@ -3101,6 +3136,9 @@ function AssignEmployeesModal({
                 <option value="night">Night</option>
               </ThemedSelect>
             </div>
+            {/* Pay can only be set by Accounts (0343). HR-only assigns without
+                pay; Accounts sets it here or later via Edit rules. */}
+            {canAccounts && (<>
             <div>
               <label className="block text-xs text-muted-foreground mb-1">Base salary (PKR)</label>
               <input type="number" value={baseSalary} onChange={(e) => setBaseSalary(e.target.value)} className={inputCls} placeholder="Leave blank to set later" />
@@ -3109,6 +3147,7 @@ function AssignEmployeesModal({
               <label className="block text-xs text-muted-foreground mb-1">Allowance (PKR)</label>
               <input type="number" min={0} value={allowance} onChange={(e) => setAllowance(e.target.value)} className={inputCls} placeholder="0" />
             </div>
+            </>)}
           </div>
         </div>
       </div>
