@@ -10,7 +10,6 @@ import { supabase } from "../lib/supabase";
 import { guardDisplayCode } from "../lib/guardCode";
 import { buildAttendanceRows, buildRelieverRows, loadSheetEmployees, loadSiteByGuard, loadConfirmationGate } from "../lib/attendanceSheet";
 import { exportAttendance, deriveAttendanceShifts, shiftAbbr, type AttendanceEmployeeRow } from "../lib/excel";
-import { clearConflictingDayRows } from "../lib/attendanceDay";
 
 const todayMonth = () => new Date().toISOString().slice(0, 7);
 
@@ -665,15 +664,20 @@ function OverrideModal({
     // the worst of the found cases — a night cell overridden to Leave while the
     // day cell still said double duty, one guard both working and on leave
     // (0393). Overriding a WORKED status likewise clears a standing leave.
-    try {
-      await clearConflictingDayRows([{
-        employee_id: target.empId,
-        attendance_date: target.date,
-        status: presentOnly ? "double_duty" : status,
-      }]);
-    } catch (e) {
+    // Sanctioned server-side clear: a plain DELETE here is refused by the
+    // confirmed-month-end lock, which is the whole point of Override (0407). A
+    // worked/DD override clears only leave rows (keep a DD sibling); a Leave
+    // override clears the whole day.
+    const pLeaveOnly = presentOnly ? true : status !== "leave";
+    const { error: cErr } = await supabase.rpc("clear_attendance_conflicts", {
+      p_employee: target.empId,
+      p_date: target.date,
+      p_leave_only: pLeaveOnly,
+      p_reason: reason.trim(),
+    });
+    if (cErr) {
       setBusy(false);
-      setErr((e as { message?: string }).message ?? "Could not clear the existing marks on that day.");
+      setErr(cErr.message ?? "Could not clear the existing marks on that day.");
       return;
     }
     // 1. Mark the day (upsert keyed on employee+date+worked_shift, per the model).
