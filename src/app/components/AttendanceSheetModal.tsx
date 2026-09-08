@@ -213,6 +213,21 @@ export default function AttendanceSheetModal({
   // is treated as resolved for OPS Verify).
   const overriddenKeys = useMemo(() => new Set(overrides.map((o) => `${o.employee_id}|${o.attendance_date}`)), [overrides]);
 
+  // Cells whose LATEST override cleared them (after_value 'cleared') and that carry
+  // no mark now — so a day reset to unmarked shows as cleared, but one cleared then
+  // re-marked does not. `overrides` is ordered created_at desc, so the first row per
+  // key is the latest word on it.
+  const clearedKeys = useMemo(() => {
+    const latest = new Map<string, string | null>();
+    for (const o of overrides) {
+      const k = `${o.employee_id}|${o.attendance_date}`;
+      if (!latest.has(k)) latest.set(k, o.after_value);
+    }
+    const s = new Set<string>();
+    for (const [k, v] of latest) if (v === "cleared") s.add(k);
+    return s;
+  }, [overrides]);
+
   // Un-verify is locked once payroll has moved past Draft for this scope+month.
   const phaseLocked = runPhase !== null;
   const unverifyLockMsg = financeVerified
@@ -537,11 +552,15 @@ export default function AttendanceSheetModal({
                           ? st
                           : (row.empId ? cells.get(row.empId)?.get(`${i + 1}|${cShift}`) ?? "" : "");
                         const clickable = isPrimary ? canOverridePrimary : canAddSecond;
+                        // A day reset to unmarked via Clear (still blank now) gets a
+                        // blue tint so the gap reads as deliberate, not un-entered.
+                        const isCleared = isPrimary && st === "" && !!row.empId && clearedKeys.has(`${row.empId}|${date}`);
                         // Reliever days get a brand tint so the reliever segment is
                         // visible at a glance; the flagged (unconfirmed regular)
                         // red always wins.
                         const cellBg = isPrimary && flagged ? "bg-danger-100 dark:bg-danger-900/30"
                           : isPrimary && isRelieverDay ? "bg-brand-50 dark:bg-brand-900/20"
+                          : isCleared ? `bg-info-100${clickable ? " cursor-pointer hover:bg-info-200" : ""}`
                           : clickable ? "cursor-pointer hover:bg-accent" : "";
                         return (
                           <td
@@ -549,6 +568,7 @@ export default function AttendanceSheetModal({
                             onClick={clickable ? () => setOvTarget({ empId: row.empId!, empName: row.name, date, current: cellStatus, shift: cShift, presentOnly: !isPrimary }) : undefined}
                             title={isPrimary && isRelieverDay ? "Reliever day — covered as a reliever (gaps allowed)"
                               : isPrimary && flagged ? "Not confirmed — confirm this shift on the Attendance board to show it here"
+                              : isCleared ? (clickable ? "Cleared — click to re-mark via override" : "Cleared (this day was reset to unmarked)")
                               : !clickable ? undefined
                               : isPrimary ? (hasMark ? "Confirmed & month ended — click to override" : "Cleared / unmarked — click to mark via override")
                               : cellStatus ? "Double duty — click to edit" : `Click to add a ${cShift} shift (double duty)`}
