@@ -365,6 +365,7 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
     // both (grandfathered). Enforced at the DB by enforce_assignment_field_perms.
     label: "Assignments & Pay",
     items: [
+      { key: "assignments.view", label: "Assignments & Pay — view the page (required to open it; grant Accounts/HR below for editing)" },
       { key: "assignments.accounts", label: "Assignments & Pay — edit pay (base salary / allowance) & joining date, view fired" },
       { key: "assignments.hr", label: "Assignments & Pay — fire, rehire, transfer, posting & everything else" },
     ],

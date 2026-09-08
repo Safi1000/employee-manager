@@ -243,6 +243,11 @@ export default function EmployeeAssignments() {
   // history, not a to-do).
   const missingBase = (e: EmployeeRow) =>
     canAccounts && !isSeparatedState(e.lifecycle_state) && !(Number(e.base_salary) > 0);
+  // Same idea for the joining date — an active posting with no join_date is a
+  // half-finished assignment (attendance and the posting both key off it). Only
+  // where the Joined column is even shown (Accounts, and not the Fired view).
+  const missingJoin = (e: EmployeeRow) =>
+    canAccounts && !isSeparatedState(e.lifecycle_state) && !e.join_date;
 
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -904,7 +909,9 @@ export default function EmployeeAssignments() {
                           value: (e: EmployeeRow) =>
                             showFired
                               ? formatDate(e.termination_date ?? e.last_working_day ?? e.exit_date) || "—"
-                              : e.join_date ? formatDate(e.join_date) : "—",
+                              : missingJoin(e)
+                                ? <span className="inline-flex items-center rounded-sm bg-danger-100 px-1.5 py-0.5 text-[11px] font-medium text-danger-700" title="No joining date set — attendance and the posting both key off it">Not set</span>
+                                : e.join_date ? formatDate(e.join_date) : "—",
                         },
                       ] : []),
                     ]}
@@ -956,7 +963,7 @@ export default function EmployeeAssignments() {
                           </tr>
                         )}
                         {rowsToShow.map((e) => (
-                          <tr key={e.id} className={`group border-b border-border last:border-0 transition-colors hover:bg-accent ${missingBase(e) ? "bg-warning-50" : ""}`}>
+                          <tr key={e.id} className={`group border-b border-border last:border-0 transition-colors hover:bg-accent ${missingBase(e) || missingJoin(e) ? "bg-warning-50" : ""}`}>
                             <td className="px-3 py-2">
                               <input
                                 type="checkbox"
@@ -994,7 +1001,9 @@ export default function EmployeeAssignments() {
                                   LEFT, which is the thing being looked up. */}
                               {showFired
                                 ? formatDate(e.termination_date ?? e.last_working_day ?? e.exit_date) || "—"
-                                : e.join_date ? formatDate(e.join_date) : "—"}
+                                : missingJoin(e)
+                                  ? <span className="inline-flex items-center rounded-sm bg-danger-100 px-1.5 py-0.5 text-[11px] font-medium text-danger-700" title="No joining date set — attendance and the posting both key off it">Not set</span>
+                                  : e.join_date ? formatDate(e.join_date) : "—"}
                             </td>
                             </>)}
                             {/* Sticky column: opaque in every state, or the columns
@@ -1242,6 +1251,19 @@ export default function EmployeeAssignments() {
                         >
                           <AlertTriangle className="w-3 h-3" strokeWidth={2} />
                           {n} {n === 1 ? "base salary" : "base salaries"} not set
+                        </span>
+                      ) : null;
+                    })()}
+                    {(() => {
+                      // Active people posted here with no joining date set.
+                      const n = g.rows.filter(missingJoin).length;
+                      return n > 0 ? (
+                        <span
+                          className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-xs font-medium bg-danger-100 text-danger-700 border-danger-200"
+                          title="Employees posted here with no joining date set — attendance and the posting both key off it"
+                        >
+                          <AlertTriangle className="w-3 h-3" strokeWidth={2} />
+                          {n} joining date{n === 1 ? "" : "s"} not set
                         </span>
                       ) : null;
                     })()}
