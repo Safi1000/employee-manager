@@ -512,7 +512,14 @@ export default function AttendanceSheetModal({
                       // Reliever days are not overridable here — their marks come
                       // from the Relievers section and carry per-day client
                       // attribution an override can't reproduce.
-                      const canOverridePrimary = !!row.empId && !isRelieverDay && monthEnded && !verifiedAt && (st === "P" || st === "A" || st === "L" || st === "DD");
+                      const hasMark = st === "P" || st === "A" || st === "L" || st === "DD";
+                      // A cleared/blank primary cell in an ended month is overridable
+                      // too, so a day cleared here can be re-marked here — the daily
+                      // Attendance board is locked once the shift is confirmed and the
+                      // month has ended. A *flagged* blank (an unconfirmed mark) is
+                      // excluded: that belongs on the Attendance board to be confirmed,
+                      // not overridden.
+                      const canOverridePrimary = !!row.empId && !isRelieverDay && monthEnded && !verifiedAt && (hasMark || (st === "" && !flagged));
                       // A SECOND shift = double duty, which only exists when the
                       // guard is PRESENT that day. If they're absent/leave the other
                       // shift columns stay inert, and adding one is Present-only.
@@ -543,7 +550,7 @@ export default function AttendanceSheetModal({
                             title={isPrimary && isRelieverDay ? "Reliever day — covered as a reliever (gaps allowed)"
                               : isPrimary && flagged ? "Not confirmed — confirm this shift on the Attendance board to show it here"
                               : !clickable ? undefined
-                              : isPrimary ? "Confirmed & month ended — click to override"
+                              : isPrimary ? (hasMark ? "Confirmed & month ended — click to override" : "Cleared / unmarked — click to mark via override")
                               : cellStatus ? "Double duty — click to edit" : `Click to add a ${cShift} shift (double duty)`}
                             className={`border border-border px-1 py-0.5 text-center font-medium ${cellBg} ${statusClass(cellStatus)}`}
                           >
