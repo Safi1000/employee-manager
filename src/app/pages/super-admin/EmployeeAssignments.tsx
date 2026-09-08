@@ -237,6 +237,13 @@ export default function EmployeeAssignments() {
   // May open the Edit / Edit-rules dialog (individual fields are gated inside).
   const canOpen = canAccounts || canHr;
 
+  // An active posting with no base salary set is a half-finished assignment — it
+  // pays nothing. Flag it so it is easy to spot and fix. Only where pay is even
+  // visible (Accounts) and only for the living (a fired guard's blank pay is
+  // history, not a to-do).
+  const missingBase = (e: EmployeeRow) =>
+    canAccounts && !isSeparatedState(e.lifecycle_state) && !(Number(e.base_salary) > 0);
+
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -887,7 +894,9 @@ export default function EmployeeAssignments() {
                       { label: "Shift", value: (e) => <span className="capitalize">{e.shift}</span> },
                       // Pay + joining/left-on are Accounts-only (0343).
                       ...(canAccounts ? [
-                        { label: "Base", value: (e: EmployeeRow) => <span className="tabular-nums">{money(e.base_salary)}</span> },
+                        { label: "Base", value: (e: EmployeeRow) => missingBase(e)
+                            ? <span className="inline-flex items-center rounded-sm bg-danger-100 px-1.5 py-0.5 text-[11px] font-medium text-danger-700" title="No base salary set — this employee will not be paid until it is added">Not set</span>
+                            : <span className="tabular-nums">{money(e.base_salary)}</span> },
                         { label: "Per day", value: (e: EmployeeRow) => <span className="tabular-nums">{money(perDayOf(e.base_salary))}</span> },
                         { label: "Allowance", value: (e: EmployeeRow) => <span className="tabular-nums">{money(e.allowance)}</span> },
                         {
@@ -947,7 +956,7 @@ export default function EmployeeAssignments() {
                           </tr>
                         )}
                         {rowsToShow.map((e) => (
-                          <tr key={e.id} className="group border-b border-border last:border-0 transition-colors hover:bg-accent">
+                          <tr key={e.id} className={`group border-b border-border last:border-0 transition-colors hover:bg-accent ${missingBase(e) ? "bg-warning-50" : ""}`}>
                             <td className="px-3 py-2">
                               <input
                                 type="checkbox"
@@ -973,7 +982,11 @@ export default function EmployeeAssignments() {
                             <td className="px-3 py-2 text-sm text-muted-foreground capitalize whitespace-nowrap">{e.shift}</td>
                             {/* Pay + joining/left-on columns are Accounts-only (0343). */}
                             {canAccounts && (<>
-                            <td className="px-3 py-2 text-sm text-foreground tabular-nums whitespace-nowrap">{money(e.base_salary)}</td>
+                            <td className="px-3 py-2 text-sm tabular-nums whitespace-nowrap">
+                              {missingBase(e)
+                                ? <span className="inline-flex items-center rounded-sm bg-danger-100 px-1.5 py-0.5 text-[11px] font-medium text-danger-700" title="No base salary set — this employee will not be paid until it is added">Not set</span>
+                                : <span className="text-foreground">{money(e.base_salary)}</span>}
+                            </td>
                             <td className="px-3 py-2 text-sm text-muted-foreground tabular-nums whitespace-nowrap">{money(perDayOf(e.base_salary))}</td>
                             <td className="px-3 py-2 text-sm text-muted-foreground tabular-nums whitespace-nowrap">{money(e.allowance)}</td>
                             <td className="px-3 py-2 text-sm text-muted-foreground whitespace-nowrap">
