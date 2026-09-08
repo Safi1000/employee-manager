@@ -2678,6 +2678,18 @@ function AssignEmployeesModal({
   // defaulted to today — it is required, and a pre-filled value gets accepted
   // without being read, which is how people end up joined on the wrong day.
   const [startDate, setStartDate] = useState("");
+  // A backdated new hire already carries a join_date (entered on Add). Prefill the
+  // joining date from it when the picked guards agree on one, so the posting opens
+  // on the join date rather than the day the assignment happens to be made — that
+  // divergence is what set deployments.start_date later than join_date and hid the
+  // guard from the roster for the gap. This is NOT the "default to today" the field
+  // deliberately avoids: it is the real joining date the operator already chose,
+  // shown so it can still be changed. Disagreeing picks (or none) leave it empty.
+  const suggestedJoin = useMemo(() => {
+    const ds = new Set(candidates.filter((e) => picked.has(e.id)).map((e) => e.join_date ?? ""));
+    return ds.size === 1 ? ([...ds][0] || "") : "";
+  }, [picked, candidates]);
+  useEffect(() => { if (suggestedJoin) setStartDate(suggestedJoin); }, [suggestedJoin]);
   const [shift, setShift] = useState("");
   const [baseSalary, setBaseSalary] = useState("");
   const [allowance, setAllowance] = useState("");
