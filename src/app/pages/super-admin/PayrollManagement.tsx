@@ -23,7 +23,7 @@ import {
   type Contract,
 } from "../../lib/supabase";
 import { useRegion, withRegion } from "../../lib/region";
-import { useAuth } from "../../lib/auth";
+import { useAuth, hasPermission } from "../../lib/auth";
 import { loadCustodianOptions, ensureCustodianLocation, type CustodianOption } from "../../lib/custodian";
 import { isSeparatedState, lifecycleStatusLabel } from "../../lib/employmentWindow";
 import { guardDisplayCode } from "../../lib/guardCode";
@@ -179,6 +179,18 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   const [priorLeavesByMonth, setPriorLeavesByMonth] = useState<Map<string, Map<string, number>>>(new Map());
   const [cashBalance, setCashBalance] = useState(0);
   const { profile } = useAuth();
+  // Custodian held cash and bank balances are "View bank accounts & cash custody"
+  // (banks.view) data. Payroll is reachable on payroll.* alone, so without
+  // banks.view those FIGURES stay hidden — the user still picks who pays / which
+  // bank, just never sees the balance. loadCustodianOptions skips fetching held;
+  // these helpers hide bank balances in the option labels.
+  const canViewBanking = hasPermission(profile, "banks.view");
+  const custodianLabel = (c: CustodianOption) =>
+    canViewBanking ? `${c.fullName} — holds PKR ${Math.round(c.held).toLocaleString()}` : c.fullName;
+  const bankLabel = (b: { bank_name: string; account_number: string; balance: number | string }) =>
+    canViewBanking
+      ? `${b.bank_name} · ${b.account_number} (PKR ${Number(b.balance).toLocaleString()})`
+      : `${b.bank_name} · ${b.account_number}`;
   // public.treasury has no fill_company_id trigger and its reads here were
   // unscoped: `.limit(1)` against a policy that shows an unscoped SSA every
   // company's row, then an UPDATE by that row's id. That is a cross-company
@@ -532,7 +544,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   // Load the custodian list once we know the company (for cash payment attribution).
   useEffect(() => {
     if (!companyId) return;
-    loadCustodianOptions(companyId).then(setCustodians).catch(() => { /* attribution optional */ });
+    loadCustodianOptions(companyId, canViewBanking).then(setCustodians).catch(() => { /* attribution optional */ });
   }, [companyId]);
 
   // Item 1: persist the period + selected payslip so navigation resumes here.
@@ -837,6 +849,15 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       return true;
     });
   }, [rows, search, shiftFilter, clientFilter, clientScopeId, categoryScope, siteFilter, siteByGuard, statusFilter, disbursedFilter, empTab, categoryFilter, employeeAddlBranches, relieversOnly, branches]);
+
+  // Undisbursed on top, disbursed sunk to the bottom, so the rows still needing
+  // payment are always in view. A stable sort keys ONLY on disbursed status, so
+  // the existing order (name / employee id) is preserved within each group, and a
+  // row moves down the instant it is marked disbursed — no refresh.
+  const sortedRows = useMemo(
+    () => [...filtered].sort((a, b) => Number(!!a.disbursed) - Number(!!b.disbursed)),
+    [filtered],
+  );
 
   // Payroll Run drives the month from outside — keep the embed in sync.
   useEffect(() => {
@@ -1426,8 +1447,12 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         return;
       }
       if (total > Number(bank.balance)) {
+        // The overdraft guard stays; the balance FIGURE is banks.view data, so a
+        // user without it gets a generic refusal, never the number.
         setError(
-          `Bank balance (PKR ${Number(bank.balance).toLocaleString()}) is insufficient for PKR ${total.toLocaleString()}.`
+          canViewBanking
+            ? `Bank balance (PKR ${Number(bank.balance).toLocaleString()}) is insufficient for PKR ${total.toLocaleString()}.`
+            : `Selected bank account balance is insufficient for this payment (PKR ${total.toLocaleString()}).`
         );
         return;
       }
@@ -1775,7 +1800,15 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            {/* The whole of which Disbursed + Not Disbursed are the parts — full
+                payroll cost for the month regardless of payment status. Built from
+                the same two figures so it can never disagree with them. */}
+            <div className="bg-card p-5 rounded-xl border border-border border-l-4 border-l-brand-500">
+              <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Total Salaries</p>
+              <p className="text-2xl font-semibold tabular-nums text-brand-700 dark:text-brand-500" style={{ fontFamily: "var(--font-display)" }}>PKR {(shellCardTotals.disbursed + shellCardTotals.notDisbursed).toLocaleString()}</p>
+              <p className="text-xs text-muted-foreground mt-1">{shellCardTotals.disbursedCount + shellCardTotals.notDisbursedCount} payslip{shellCardTotals.disbursedCount + shellCardTotals.notDisbursedCount === 1 ? "" : "s"}</p>
+            </div>
             <div className="bg-card p-5 rounded-xl border border-border border-l-4 border-l-success-500">
               <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Total Disbursed</p>
               <p className="text-2xl font-semibold tabular-nums text-success-700 dark:text-success-500" style={{ fontFamily: "var(--font-display)" }}>PKR {shellCardTotals.disbursed.toLocaleString()}</p>
@@ -2110,6 +2143,23 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                 const allSelected = selectable.length > 0 && selectable.every((r) => selectedEmpIds.has(r.employee.id));
                 return (
                   <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border flex-wrap">
+                    {/* Per-client employee search — the standalone toolbar's search
+                        is hidden in the runInline (per-client) embed, so this is how
+                        a big client's list gets filtered. Filters only THIS client's
+                        rows (each embed has its own `search` state) and the Item-3
+                        sort still applies within the matches. */}
+                    {runInline && (
+                      <div className="relative w-[240px] min-w-[160px]">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />
+                        <input
+                          type="text"
+                          value={search}
+                          onChange={(e) => setSearch(e.target.value)}
+                          placeholder="Search by name or employee ID…"
+                          className="w-full pl-9 pr-3 py-1.5 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                        />
+                      </div>
+                    )}
                     <Button size="sm" variant="secondary" disabled={selectable.length === 0}
                       onClick={() => setSelectedEmpIds(allSelected ? new Set() : new Set(selectable.map((r) => r.employee.id)))}>
                       {allSelected ? "Clear all" : "Mark all"}
@@ -2158,7 +2208,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                       </tr>
                     )}
                     {!loading &&
-                      filtered.map((row) => {
+                      sortedRows.map((row) => {
                         const e = row.employee;
                         return (
                           <Fragment key={e.id}>
@@ -2726,13 +2776,14 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                         <label className="block text-xs text-slate-500 mb-1">Paid By (custodian) *</label>
                         <ThemedSelect
                           value={cashCustodianId}
+                          disabled={afterNet && selectedRow.disbursed}
                           onChange={(e) => setCashCustodianId(e.target.value)}
-                          className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                          className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed"
                         >
                           <option value="">Select who is paying this cash…</option>
                           {custodians.map((c) => (
                             <option key={c.employeeId} value={c.employeeId}>
-                              {c.fullName} — holds PKR {Math.round(c.held).toLocaleString()}
+                              {custodianLabel(c)}
                             </option>
                           ))}
                         </ThemedSelect>
@@ -2744,17 +2795,18 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                     {selectedRow.payment_mode === "Bank" && (
                       <ThemedSelect
                         value={selectedRow.bank_account_id ?? ""}
+                        disabled={afterNet && selectedRow.disbursed}
                         onChange={(e) =>
                           updateEdit(selectedRow.employee.id, {
                             bank_account_id: e.target.value || null,
                           })
                         }
-                        className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                        className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed"
                       >
                         <option value="">Select bank account</option>
                         {banks.map((b) => (
                           <option key={b.id} value={b.id}>
-                            {b.bank_name} · {b.account_number} (PKR {Number(b.balance).toLocaleString()})
+                            {bankLabel(b)}
                           </option>
                         ))}
                       </ThemedSelect>
@@ -2763,6 +2815,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                       <>
                         <ThemedSelect
                           value={selectedRow.cheque_id ?? ""}
+                          disabled={afterNet && selectedRow.disbursed}
                           onChange={(e) => {
                             const id = e.target.value || null;
                             const chq = id ? cheques.find((c) => c.id === id) : null;
@@ -2771,7 +2824,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                               bank_account_id: chq?.bank_account_id ?? null,
                             });
                           }}
-                          className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                          className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed"
                         >
                           <option value="">Select a pending cheque</option>
                           {cheques
@@ -3135,7 +3188,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                     <option value="">Select bank account</option>
                     {banks.map((b) => (
                       <option key={b.id} value={b.id}>
-                        {b.bank_name} · {b.account_number} (PKR {Number(b.balance).toLocaleString()})
+                        {bankLabel(b)}
                       </option>
                     ))}
                   </ThemedSelect>
@@ -3153,7 +3206,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                     <option value="">Select who is paying this cash…</option>
                     {custodians.map((c) => (
                       <option key={c.employeeId} value={c.employeeId}>
-                        {c.fullName} — holds PKR {Math.round(c.held).toLocaleString()}
+                        {custodianLabel(c)}
                       </option>
                     ))}
                   </ThemedSelect>

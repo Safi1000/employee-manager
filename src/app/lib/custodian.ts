@@ -23,43 +23,60 @@ export type CustodianOption = {
 };
 
 /**
- * Load every custodian — office-staff members AND partners — each with the cash
- * they currently hold. Used to render the "who received / who paid" dropdowns.
- * A partner holding cash is company custody (activity), not a capital movement.
+ * Load every custodian — office-staff members AND partners — used to render the
+ * "who received / who paid" dropdowns. A partner holding cash is company custody
+ * (activity), not a capital movement.
+ *
+ * `withBalances` gates the CASH-CUSTODY figure (`held`). It is bank/cash-custody
+ * data — "View bank accounts & cash custody" (banks.view). A screen a user can
+ * reach WITHOUT that permission (Expenses, Payroll) must pass `false`: the
+ * balance-source rows are then never fetched and `held` is 0, so the number can
+ * neither be shown nor leaked. Names + locationId (needed to pick and stamp a
+ * custodian) are always loaded — picking who paid is not banking data.
  */
-export async function loadCustodianOptions(companyId: string): Promise<CustodianOption[]> {
-  const [{ data: staff }, { data: partnersList }, { data: locs }, { data: tx }, { data: cashPays }, { data: cashExps }, { data: cashAdvances }, { data: cashCheques }, { data: bankWd }, { data: partnerCash }] =
-    await Promise.all([
-      supabase.from("employees").select("id, full_name").eq("category", "office_staff").order("full_name"),
-      supabase.from("partners").select("id, name").eq("company_id", companyId).eq("is_active", true).order("name"),
-      supabase
-        .from("cash_locations")
-        .select("id, custodian_employee_id, custodian_partner_id, opening_balance, is_active, location_type")
-        .eq("company_id", companyId)
-        .or("custodian_employee_id.not.is.null,custodian_partner_id.not.is.null"),
-      supabase.from("custody_transfers").select("from_location_id, to_location_id, amount").eq("company_id", companyId),
-      supabase.from("invoice_payments").select("amount, custodian_location_id").eq("payment_mode", "Cash").not("custodian_location_id", "is", null),
-      supabase.from("expenses").select("amount, custodian_location_id").not("custodian_location_id", "is", null),
-      // Salary advances paid in cash by a custodian (0203) — cash out of their
-      // hands, exactly like an expense.
-      supabase.from("advances").select("amount, custodian_location_id").eq("payment_mode", "Cash").not("custodian_location_id", "is", null),
-      // Cleared cash cheques handed to a custodian — cash they now physically hold.
-      supabase.from("cheques").select("amount, custodian_location_id").eq("cheque_type", "cash").eq("status", "cleared").not("custodian_location_id", "is", null),
-      // Bank→custodian withdrawals (reference_id = custodian cash_location).
-      supabase.from("bank_transactions").select("cash_delta, reference_id").eq("kind", "withdraw_to_cash").not("reference_id", "is", null),
-      // Partner cash payments/contributions stamped with a custodian location —
-      // a DRAWING is cash the custodian hands out, a CONTRIBUTION is cash received.
-      supabase.from("partner_account_entries").select("amount, type, cash_location_id").eq("payment_method", "CASH").not("cash_location_id", "is", null),
-    ]);
+export async function loadCustodianOptions(companyId: string, withBalances = true): Promise<CustodianOption[]> {
+  const [{ data: staff }, { data: partnersList }, { data: locs }] = await Promise.all([
+    supabase.from("employees").select("id, full_name").eq("category", "office_staff").order("full_name"),
+    supabase.from("partners").select("id, name").eq("company_id", companyId).eq("is_active", true).order("name"),
+    supabase
+      .from("cash_locations")
+      .select("id, custodian_employee_id, custodian_partner_id, opening_balance, is_active, location_type")
+      .eq("company_id", companyId)
+      .or("custodian_employee_id.not.is.null,custodian_partner_id.not.is.null"),
+  ]);
+
+  // The held-cash figure is banks.view data. Without that permission we skip every
+  // balance source entirely — no custody/bank/partner rows reach the client at all.
+  const empty = { data: [] as any[] };
+  const [{ data: tx }, { data: cashPays }, { data: cashExps }, { data: cashAdvances }, { data: cashCheques }, { data: bankWd }, { data: partnerCash }] =
+    withBalances
+      ? await Promise.all([
+          supabase.from("custody_transfers").select("from_location_id, to_location_id, amount").eq("company_id", companyId),
+          supabase.from("invoice_payments").select("amount, custodian_location_id").eq("payment_mode", "Cash").not("custodian_location_id", "is", null),
+          supabase.from("expenses").select("amount, custodian_location_id").not("custodian_location_id", "is", null),
+          // Salary advances paid in cash by a custodian (0203) — cash out of their
+          // hands, exactly like an expense.
+          supabase.from("advances").select("amount, custodian_location_id").eq("payment_mode", "Cash").not("custodian_location_id", "is", null),
+          // Cleared cash cheques handed to a custodian — cash they now physically hold.
+          supabase.from("cheques").select("amount, custodian_location_id").eq("cheque_type", "cash").eq("status", "cleared").not("custodian_location_id", "is", null),
+          // Bank→custodian withdrawals (reference_id = custodian cash_location).
+          supabase.from("bank_transactions").select("cash_delta, reference_id").eq("kind", "withdraw_to_cash").not("reference_id", "is", null),
+          // Partner cash payments/contributions stamped with a custodian location —
+          // a DRAWING is cash the custodian hands out, a CONTRIBUTION is cash received.
+          supabase.from("partner_account_entries").select("amount, type, cash_location_id").eq("payment_method", "CASH").not("cash_location_id", "is", null),
+        ])
+      : [empty, empty, empty, empty, empty, empty, empty];
 
   // Payroll paid in cash by a custodian — cash they physically hand out
   // (reference_id = custodian cash_location, cash_delta negative). Fetched
   // separately so the two bank_transactions reads stay independent.
-  const { data: payrollCash } = await supabase
-    .from("bank_transactions")
-    .select("cash_delta, reference_id")
-    .eq("kind", "payroll")
-    .not("reference_id", "is", null);
+  const { data: payrollCash } = withBalances
+    ? await supabase
+        .from("bank_transactions")
+        .select("cash_delta, reference_id")
+        .eq("kind", "payroll")
+        .not("reference_id", "is", null)
+    : empty;
 
   // Most-recent active custodian location per person (employee or partner).
   const locByPerson = new Map<string, { id: string; opening: number }>();

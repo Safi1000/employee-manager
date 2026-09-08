@@ -340,6 +340,19 @@ export default function Expenses() {
   // a lock nobody can open is not a control. A permission, never a role
   // literal — asking the role instead was the cause of three defects this week.
   const canApproveExpenses = hasPermission(profile, "expenses.approve");
+  // A custodian's held cash and a bank account's balance are "View bank accounts &
+  // cash custody" (banks.view) data. Expenses is reachable on expenses.* alone, so
+  // without banks.view the FIGURES must stay hidden here — the person still picks
+  // who paid / which bank, just never sees the balance (same family as the Cash
+  // Basis leak fixed on Financial Reports). loadCustodianOptions is told to skip
+  // fetching held entirely; these helpers hide bank balances in the labels.
+  const canViewBanking = hasPermission(profile, "banks.view");
+  const custodianLabel = (c: CustodianOption) =>
+    canViewBanking ? `${c.fullName} — holds PKR ${Math.round(c.held).toLocaleString()}` : c.fullName;
+  const bankLabel = (b: { bank_name: string; account_number: string; balance: number | string }) =>
+    canViewBanking
+      ? `${b.bank_name} · ${b.account_number} (PKR ${Number(b.balance).toLocaleString()})`
+      : `${b.bank_name} · ${b.account_number}`;
   // Every treasury write here used to omit company_id, which produced
   //   'null value in column "company_id" of relation "treasury"'
   // when setting cash in hand.
@@ -635,7 +648,7 @@ export default function Expenses() {
       const cid = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
       if (cid) {
         try {
-          setCustodians(await loadCustodianOptions(cid));
+          setCustodians(await loadCustodianOptions(cid, canViewBanking));
         } catch {
           /* ignore — custodian attribution is optional */
         }
@@ -1290,7 +1303,7 @@ export default function Expenses() {
       // Non-blocking warning: let the user proceed even if the amount exceeds the
       // chosen custodian's held cash (they may have cash not yet attributed).
       const staff = custodians.find((c) => c.employeeId === expenseCustodianId);
-      if (staff && amount > staff.held) {
+      if (canViewBanking && staff && amount > staff.held) {
         const ok = window.confirm(
           `This expense (PKR ${amount.toLocaleString()}) exceeds ${staff.fullName}'s held cash (PKR ${Math.round(staff.held).toLocaleString()}). Record it anyway?`,
         );
@@ -3288,7 +3301,7 @@ export default function Expenses() {
                 <option value="">No default — choose at approval</option>
                 {custodians.map((c) => (
                   <option key={c.employeeId} value={c.employeeId}>
-                    {c.fullName} — holds PKR {Math.round(c.held).toLocaleString()}
+                    {custodianLabel(c)}
                   </option>
                 ))}
               </ThemedSelect>
@@ -3540,7 +3553,7 @@ export default function Expenses() {
                   <option value="">Select who paid</option>
                   {custodians.map((c) => (
                     <option key={c.employeeId} value={c.employeeId}>
-                      {c.fullName} — holds PKR {Math.round(c.held).toLocaleString()}
+                      {custodianLabel(c)}
                     </option>
                   ))}
                 </ThemedSelect>
@@ -4020,14 +4033,14 @@ export default function Expenses() {
               <option value="">Select who paid the cash…</option>
               {custodians.map((c) => (
                 <option key={c.employeeId} value={c.employeeId}>
-                  {c.fullName} — holds PKR {Math.round(c.held).toLocaleString()}
+                  {custodianLabel(c)}
                 </option>
               ))}
             </ThemedSelect>
             {(() => {
               const staff = custodians.find((c) => c.employeeId === state.paid_by_employee_id);
               const amt = Number(state.amount);
-              return staff && amt > 0 && amt > staff.held ? (
+              return canViewBanking && staff && amt > 0 && amt > staff.held ? (
                 <p className="text-[11px] text-warning-700 mt-1.5">
                   This exceeds {staff.fullName}'s held cash (PKR {Math.round(staff.held).toLocaleString()}). You can still record it.
                 </p>
@@ -4047,7 +4060,7 @@ export default function Expenses() {
               <option value="">Select bank account</option>
               {banks.map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.bank_name} · {b.account_number} (PKR {Number(b.balance).toLocaleString()})
+                  {bankLabel(b)}
                 </option>
               ))}
             </ThemedSelect>
@@ -4450,14 +4463,14 @@ export default function Expenses() {
                 <option value="">Select who paid the cash…</option>
                 {custodians.map((c) => (
                   <option key={c.employeeId} value={c.employeeId}>
-                    {c.fullName} — holds PKR {Math.round(c.held).toLocaleString()}
+                    {custodianLabel(c)}
                   </option>
                 ))}
               </ThemedSelect>
               {(() => {
                 const staff = custodians.find((c) => c.employeeId === expenseCustodianId);
                 const amt = Number(state.amount);
-                return staff && amt > 0 && amt > staff.held ? (
+                return canViewBanking && staff && amt > 0 && amt > staff.held ? (
                   <p className="text-[11px] text-warning-700 mt-1.5">
                     This exceeds {staff.fullName}'s held cash (PKR {Math.round(staff.held).toLocaleString()}). You can still record it.
                   </p>
@@ -4492,7 +4505,7 @@ export default function Expenses() {
                 <option value="">Select bank account</option>
                 {banks.map((b) => (
                   <option key={b.id} value={b.id}>
-                    {b.bank_name} · {b.account_number} (PKR {Number(b.balance).toLocaleString()})
+                    {bankLabel(b)}
                   </option>
                 ))}
               </ThemedSelect>
