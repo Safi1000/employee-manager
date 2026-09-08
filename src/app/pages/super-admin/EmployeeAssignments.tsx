@@ -1231,6 +1231,20 @@ export default function EmployeeAssignments() {
                     <span className="text-xs text-muted-foreground shrink-0">
                       {g.rows.length} employee{g.rows.length === 1 ? "" : "s"}
                     </span>
+                    {(() => {
+                      // Active people posted here with no base salary — they pay
+                      // nothing until it is set. Only where pay is visible (Accounts).
+                      const n = g.rows.filter(missingBase).length;
+                      return n > 0 ? (
+                        <span
+                          className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-xs font-medium bg-danger-100 text-danger-700 border-danger-200"
+                          title="Employees posted here with no base salary set — they will not be paid until it is added"
+                        >
+                          <AlertTriangle className="w-3 h-3" strokeWidth={2} />
+                          {n} {n === 1 ? "base salary" : "base salaries"} not set
+                        </span>
+                      ) : null;
+                    })()}
                     {g.hint && <span className="text-xs text-muted-foreground truncate hidden md:inline">· {g.hint}</span>}
                     {g.gap && (
                       <span
