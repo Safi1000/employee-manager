@@ -875,16 +875,17 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       return n;
     });
   // A guard stands at ONE site, read off their open posting — the employee row
-  // does not carry it. Anyone whose posting names no site (office staff, a
-  // reliever, a client with no sites at all) lands in the "No site" bucket,
-  // which sorts last so it never hides a real site behind it.
+  // does not carry it. Anyone with no open posting lands in the last bucket,
+  // which sorts after every real site so it never hides one behind it. On a
+  // client-scoped roster that bucket is overwhelmingly people who have LEFT —
+  // separation closes the deployment — so it is labelled for them.
   const siteGroups = useMemo(() => {
     if (!siteGrouped) return null;
     const nameById = new Map(sites.map((s) => [s.id, s.name]));
     const buckets = new Map<string, { id: string; name: string; rows: RowState[] }>();
     for (const row of sortedRows) {
       const sid = siteByGuard.get(row.employee.id) ?? "";
-      const b = buckets.get(sid) ?? { id: sid, name: sid ? nameById.get(sid) ?? "(Unknown site)" : "No site", rows: [] };
+      const b = buckets.get(sid) ?? { id: sid, name: sid ? nameById.get(sid) ?? "(Unknown site)" : "Fired / Resigned / Terminated", rows: [] };
       b.rows.push(row);
       buckets.set(sid, b);
     }
