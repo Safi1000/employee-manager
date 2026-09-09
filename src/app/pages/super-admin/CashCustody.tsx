@@ -61,7 +61,7 @@ type LedgerEntry = {
   date: string;
   locationId: string;          // the custodian location this row belongs to
   employeeId: string | null;   // office-staff holder (for the filter)
-  kind: "cheque_cashed" | "bank_to_cash" | "transfer_in" | "transfer_out" | "cash_received" | "cash_paid";
+  kind: "cheque_cashed" | "bank_to_cash" | "cash_to_bank" | "transfer_in" | "transfer_out" | "cash_received" | "cash_paid";
   detail: string;
   cashIn: number;
   cashOut: number;
@@ -72,6 +72,7 @@ type LedgerEntry = {
 const LEDGER_KIND_LABEL: Record<LedgerEntry["kind"], string> = {
   cheque_cashed: "Cheque cashed",
   bank_to_cash: "Bank → cash",
+  cash_to_bank: "Cash → bank (deposit)",
   transfer_in: "Transfer in",
   transfer_out: "Transfer out",
   cash_received: "Cash received",
@@ -164,7 +165,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
         { data: locs }, { data: tx }, { data: pts }, { data: brs },
         { data: bnks }, { data: treas }, { data: pEntries }, { data: iEntries },
         { data: staff }, { data: cashPays }, { data: cashExps }, { data: cashCheques }, { data: bankWd }, { data: payrollCash },
-        { data: cashAdvances },
+        { data: cashAdvances }, { data: cashDeposits },
       ] = await Promise.all([
         supabase.from("cash_locations").select("*").eq("company_id", companyId).order("name"),
         supabase.from("custody_transfers").select("*").eq("company_id", companyId).order("date", { ascending: false }).limit(100),
@@ -187,6 +188,8 @@ export function CashCustodyPanel({ onReady, onSummary }: {
         // but never left the custodian, so the reconciliation drifted by the
         // amount of every cash advance ever paid.
         supabase.from("advances").select("id, amount, custodian_location_id, advance_date, employees:employee_id(full_name, employee_code)").eq("payment_mode", "Cash").not("custodian_location_id", "is", null),
+        // Cash a custodian deposited into a bank (0411) — cash out of their hands.
+        supabase.from("cash_deposits").select("id, amount, cash_location_id, deposit_date, bank_account_id, slip_number").not("cash_location_id", "is", null),
       ]);
       const partnerList = ((pts ?? []) as Partner[]).filter((p) => p.is_active);
       setLocations((locs ?? []) as CashLocation[]);
@@ -211,6 +214,11 @@ export function CashCustodyPanel({ onReady, onSummary }: {
       for (const a of (cashAdvances ?? []) as any[]) {
         if (!a.custodian_location_id) continue;
         outBy.set(a.custodian_location_id, (outBy.get(a.custodian_location_id) ?? 0) + Number(a.amount ?? 0));
+      }
+      // Cash deposited into a bank is cash the custodian no longer holds (0411).
+      for (const dp of (cashDeposits ?? []) as any[]) {
+        if (!dp.cash_location_id) continue;
+        outBy.set(dp.cash_location_id, (outBy.get(dp.cash_location_id) ?? 0) + Number(dp.amount ?? 0));
       }
       setCashOutByLoc(outBy);
       const chqBy = new Map<string, number>();
@@ -303,6 +311,13 @@ export function CashCustodyPanel({ onReady, onSummary }: {
         raw.push({
           id: `c-${c.id}`, date: c.cheque_date, locationId: c.custodian_location_id, employeeId: empByLoc.get(c.custodian_location_id) ?? null,
           kind: "cheque_cashed", detail: `Cheque #${c.cheque_number}`, cashIn: Number(c.amount), cashOut: 0,
+        });
+      }
+      for (const dp of (cashDeposits ?? []) as any[]) {
+        if (!dp.cash_location_id || !custodianLocIds.has(dp.cash_location_id)) continue;
+        raw.push({
+          id: `d-${dp.id}`, date: dp.deposit_date, locationId: dp.cash_location_id, employeeId: empByLoc.get(dp.cash_location_id) ?? null,
+          kind: "cash_to_bank", detail: `Bank deposit — slip #${dp.slip_number}`, cashIn: 0, cashOut: Number(dp.amount),
         });
       }
       for (const w of (bankWd ?? []) as any[]) {

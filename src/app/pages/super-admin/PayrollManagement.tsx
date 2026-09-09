@@ -25,6 +25,7 @@ import {
 import { useRegion, withRegion } from "../../lib/region";
 import { useAuth, hasPermission } from "../../lib/auth";
 import { loadCustodianOptions, ensureCustodianLocation, type CustodianOption } from "../../lib/custodian";
+import AmountInWords from "../../components/AmountInWords";
 import { isSeparatedState, lifecycleStatusLabel } from "../../lib/employmentWindow";
 import { guardDisplayCode } from "../../lib/guardCode";
 import { useFocusTarget, useFocusRow, FOCUS_ROW_CLASS } from "../../lib/focus";
@@ -2687,6 +2688,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                       <span className="text-base text-slate-900">Net Salary</span>
                       <span className="text-lg text-slate-900">PKR {selectedRow.net_salary.toLocaleString()}</span>
                     </div>
+                    <AmountInWords value={selectedRow.net_salary} className="text-right" />
                   </div>
 
                   {/* Amount Paid (locked, cumulative) + Balance + the Payment
@@ -2737,6 +2739,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                 className={`w-full px-2 py-1 border rounded text-sm text-right ${exceeds ? "border-danger-400 bg-danger-50" : "border-slate-200"}`}
                               />
                             </div>
+                            <AmountInWords value={paymentAmountDraft} className="text-right" />
                             {exceeds && (
                               <p className="text-[11px] text-danger-700 mt-1">
                                 Payment Amount cannot exceed the Balance of PKR {balance.toLocaleString()}.

@@ -5,6 +5,7 @@ import Button from "./Button";
 import Modal from "./Modal";
 import AddendumTable from "./AddendumTable";
 import ClientFilterSelect from "./ClientFilterSelect";
+import AmountInWords from "./AmountInWords";
 import { useAuth, hasPermission } from "../lib/auth";
 import { formatDate } from "../lib/date";
 import { hasInjectionPattern } from "../lib/validation";
@@ -1244,6 +1245,7 @@ export default function ContractEditorModal({
               PKR {totalValue.toLocaleString()}
             </span>
           </div>
+          <AmountInWords value={totalValue} className="px-3" />
           <p className="px-3 py-2 text-[11px] text-slate-500">
             Contract value = Σ (committed count × rate). Only rows with a count or rate are saved.
           </p>

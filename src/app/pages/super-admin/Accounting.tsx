@@ -41,6 +41,7 @@ import { fetchLedgerStart, monthKeysFrom } from "../../lib/monthRange";
 import { CashCustodyPanel } from "./CashCustody";
 import { generateDepositSlipPdf } from "../../lib/depositSlip";
 import { loadCustodianOptions, ensureCustodianLocation, type CustodianOption } from "../../lib/custodian";
+import AmountInWords from "../../components/AmountInWords";
 
 type PayableRow = Expense & {
   vendor?: Vendor | null;
@@ -335,16 +336,20 @@ export default function Accounting() {
   const [depositNotes, setDepositNotes] = useState("");
   // Target bank when Cash Deposit is opened from the toolbar (no pre-selected row).
   const [depositBankId, setDepositBankId] = useState<string>("");
+  // The custodian whose held cash this deposit comes out of (0411). Value is the
+  // custodian's cash_location id — what the RPC stamps and what held-cash reads.
+  const [depositCustodianId, setDepositCustodianId] = useState<string>("");
   const [depositError, setDepositError] = useState<string | null>(null);
   // Set after a successful deposit so the modal shows a "Download Slip" confirmation.
   const [depositSuccess, setDepositSuccess] = useState<null | {
     slip_number: number; bank_name: string; account_number: string;
-    amount: number; deposit_date: string; notes: string | null;
+    amount: number; deposit_date: string; notes: string | null; cash_location_id?: string | null;
   }>(null);
   // Past deposit slips (by cash_deposits.id) for re-download from the history log.
   const [depositsById, setDepositsById] = useState<Map<string, {
     id: string; bank_account_id: string; amount: number; deposit_date: string;
     slip_number: number; notes: string | null; deposited_by: string | null;
+    cash_location_id: string | null;
     drive_view_url?: string | null;
   }>>(new Map());
   const [profileNames, setProfileNames] = useState<Map<string, string>>(new Map());
@@ -630,13 +635,14 @@ export default function Accounting() {
       const [{ data: depData }, { data: profData }] = await Promise.all([
         supabase
           .from("cash_deposits")
-          .select("id, bank_account_id, amount, deposit_date, slip_number, notes, deposited_by, drive_view_url")
+          .select("id, bank_account_id, amount, deposit_date, slip_number, notes, deposited_by, cash_location_id, drive_view_url")
           .order("slip_number", { ascending: false }),
         supabase.from("profiles").select("id, full_name, email"),
       ]);
       const dMap = new Map<string, {
         id: string; bank_account_id: string; amount: number; deposit_date: string;
         slip_number: number; notes: string | null; deposited_by: string | null;
+        cash_location_id: string | null;
       }>();
       for (const d of (depData ?? []) as any[]) dMap.set(d.id, d);
       setDepositsById(dMap);
@@ -1151,6 +1157,7 @@ export default function Accounting() {
     setDepositDate(todayStr());
     setDepositDescription("");
     setDepositNotes("");
+    setDepositCustodianId("");
     setDepositSlipFile(null);
     setDepositError(null);
     setDepositSuccess(null);
@@ -1195,8 +1202,13 @@ export default function Accounting() {
       setDepositError("Select a deposit date.");
       return;
     }
-    if (amount > cashBalance) {
-      setDepositError(`Deposit exceeds available Cash in Hand (PKR ${cashBalance.toLocaleString()}).`);
+    const selCust = custodians.find((c) => c.locationId === depositCustodianId);
+    if (!selCust) {
+      setDepositError("Select who is depositing this cash (custodian).");
+      return;
+    }
+    if (amount > selCust.held) {
+      setDepositError(`Deposit exceeds ${selCust.fullName}'s held cash (PKR ${Math.round(selCust.held).toLocaleString()}).`);
       return;
     }
     const notes = [depositDescription.trim(), depositNotes.trim()].filter(Boolean).join(" · ") || null;
@@ -1207,6 +1219,7 @@ export default function Accounting() {
         p_amount: amount,
         p_date: depositDate,
         p_notes: notes,
+        p_cash_location_id: selCust.locationId,
       });
       if (rpcErr) throw rpcErr;
       const dep = (Array.isArray(data) ? data[0] : data) as { id: string; slip_number: number };
@@ -1234,6 +1247,7 @@ export default function Accounting() {
         amount,
         deposit_date: depositDate,
         notes,
+        cash_location_id: selCust.locationId,
       });
       await loadAll();
     } catch (err: any) {
@@ -1243,13 +1257,20 @@ export default function Accounting() {
     }
   };
 
+  // A deposit is now made BY a custodian (0411); show that person. Old deposits
+  // (no cash_location_id) fall back to the user who recorded them.
+  const custodianNameByLoc = (locId: string | null | undefined): string | null =>
+    locId ? (custodians.find((c) => c.locationId === locId)?.fullName ?? null) : null;
+
   const downloadDepositSlip = (d: {
     slip_number: number; bank_name: string; account_number: string;
     amount: number; deposit_date: string; notes: string | null; deposited_by?: string | null;
+    cash_location_id?: string | null;
   }) => {
-    const by = d.deposited_by
-      ? (profileNames.get(d.deposited_by) ?? "—")
-      : (profile?.full_name || profile?.email || "—");
+    const by = custodianNameByLoc(d.cash_location_id)
+      ?? (d.deposited_by
+        ? (profileNames.get(d.deposited_by) ?? "—")
+        : (profile?.full_name || profile?.email || "—"));
     generateDepositSlipPdf(
       {
         slipNumber: d.slip_number,
@@ -1278,6 +1299,7 @@ export default function Accounting() {
       deposit_date: dep.deposit_date,
       notes: dep.notes,
       deposited_by: dep.deposited_by,
+      cash_location_id: dep.cash_location_id,
     });
   };
 
@@ -2756,7 +2778,7 @@ export default function Accounting() {
                           <td className="px-4 py-2 text-sm text-slate-600">{bank ? `${bank.bank_name} · ${bank.account_number}` : "—"}</td>
                           <td className="px-4 py-2 text-sm text-slate-600">{formatDate(d.deposit_date)}</td>
                           <td className="px-4 py-2 text-sm text-slate-900 text-right font-mono">PKR {Number(d.amount).toLocaleString()}</td>
-                          <td className="px-4 py-2 text-sm text-slate-600">{d.deposited_by ? (profileNames.get(d.deposited_by) ?? "—") : "—"}</td>
+                          <td className="px-4 py-2 text-sm text-slate-600">{custodianNameByLoc(d.cash_location_id) ?? (d.deposited_by ? (profileNames.get(d.deposited_by) ?? "—") : "—")}</td>
                           <td className="px-4 py-2 text-sm text-slate-500">{d.notes ?? "—"}</td>
                           <td className="px-4 py-2 text-right flex gap-2 justify-end">
                             <Button variant="ghost" size="sm" onClick={() => downloadSlipByRef(d.id)}>
@@ -3014,6 +3036,7 @@ export default function Accounting() {
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
                 placeholder="0.00"
               />
+              <AmountInWords value={chequeForm.amount} />
             </div>
             <div className="col-span-full">
               <label className="block text-sm text-slate-700 mb-1">
@@ -3502,13 +3525,34 @@ export default function Accounting() {
         {!depositSuccess && (
           <form className="space-y-4" onSubmit={handleDeposit}>
             <div>
+              <label className="block text-sm text-slate-700 mb-1">Deposited By (custodian) *</label>
+              <ThemedSelect
+                required
+                value={depositCustodianId}
+                onChange={(e) => setDepositCustodianId(e.target.value)}
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
+              >
+                <option value="">Select who is depositing this cash…</option>
+                {custodians.map((c) => (
+                  <option key={c.locationId ?? c.employeeId} value={c.locationId ?? ""}>
+                    {c.fullName} — holds PKR {Math.round(c.held).toLocaleString()}
+                  </option>
+                ))}
+              </ThemedSelect>
+            </div>
+            <div>
               <label className="block text-sm text-slate-700 mb-1">Source</label>
-              <input
-                type="text"
-                value={`Cash in Hand · PKR ${cashBalance.toLocaleString()} available`}
-                disabled
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
-              />
+              {(() => {
+                const sel = custodians.find((c) => c.locationId === depositCustodianId);
+                return (
+                  <input
+                    type="text"
+                    value={sel ? `${sel.fullName}'s cash · PKR ${Math.round(sel.held).toLocaleString()} available` : "Select a custodian above"}
+                    disabled
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
+                  />
+                );
+              })()}
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Bank Account</label>
@@ -3556,6 +3600,7 @@ export default function Accounting() {
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
                   placeholder="0"
                 />
+                <AmountInWords value={depositAmount} />
               </div>
             </div>
             <div>
@@ -3565,7 +3610,7 @@ export default function Accounting() {
                 value={depositNotes}
                 onChange={(e) => setDepositNotes(e.target.value)}
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
-                placeholder="e.g. Deposited by hand, source of funds…"
+                placeholder="Optional note (e.g. source of funds)"
               />
             </div>
             <div>
@@ -3587,8 +3632,8 @@ export default function Accounting() {
               </div>
             )}
             <p className="text-xs text-slate-500">
-              Moves money from Cash in Hand into this bank account — a pure location transfer.
-              It does not create an expense, payroll, or partner entry.
+              Moves money from the selected custodian's held cash into this bank account — a pure
+              location transfer. It does not create an expense, payroll, or partner entry.
             </p>
             <div className="flex items-center gap-3 pt-2">
               <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
@@ -3645,6 +3690,7 @@ export default function Accounting() {
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
                 placeholder="0"
               />
+              <AmountInWords value={withdrawAmount} />
               <p className="text-xs text-slate-500 mt-1">
                 Deducts from Account Balance and adds to Cash Balance.
               </p>
@@ -3894,6 +3940,7 @@ export default function Accounting() {
                 }}
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
               />
+              <AmountInWords value={paymentAmount} />
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Payment Date *</label>
@@ -4284,6 +4331,7 @@ export default function Accounting() {
               className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
               placeholder="0.00"
             />
+            <AmountInWords value={transferAmount} />
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Transfer Date *</label>

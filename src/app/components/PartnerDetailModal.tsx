@@ -7,6 +7,7 @@ import { formatDate } from "../lib/date";
 import { useAuth } from "../lib/auth";
 import { loadCustodianOptions, ensureCustodianLocation, type CustodianOption } from "../lib/custodian";
 import { supabase, type Partner } from "../lib/supabase";
+import AmountInWords from "./AmountInWords";
 
 type BankOption = { id: string; bank_name: string; balance: number };
 
@@ -417,6 +418,7 @@ export default function PartnerDetailModal({
               <label className="block text-xs text-slate-600 mb-1">Amount</label>
               <input type="number" min="0" step="0.01" value={entryAmount} onChange={(e) => setEntryAmount(e.target.value)}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm text-right" />
+              <AmountInWords value={entryAmount} className="text-right" />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">

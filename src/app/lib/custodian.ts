@@ -48,7 +48,7 @@ export async function loadCustodianOptions(companyId: string, withBalances = tru
   // The held-cash figure is banks.view data. Without that permission we skip every
   // balance source entirely — no custody/bank/partner rows reach the client at all.
   const empty = { data: [] as any[] };
-  const [{ data: tx }, { data: cashPays }, { data: cashExps }, { data: cashAdvances }, { data: cashCheques }, { data: bankWd }, { data: partnerCash }] =
+  const [{ data: tx }, { data: cashPays }, { data: cashExps }, { data: cashAdvances }, { data: cashCheques }, { data: bankWd }, { data: partnerCash }, { data: cashDeposits }] =
     withBalances
       ? await Promise.all([
           supabase.from("custody_transfers").select("from_location_id, to_location_id, amount").eq("company_id", companyId),
@@ -64,8 +64,10 @@ export async function loadCustodianOptions(companyId: string, withBalances = tru
           // Partner cash payments/contributions stamped with a custodian location —
           // a DRAWING is cash the custodian hands out, a CONTRIBUTION is cash received.
           supabase.from("partner_account_entries").select("amount, type, cash_location_id").eq("payment_method", "CASH").not("cash_location_id", "is", null),
+          // Cash deposited into a bank by a custodian (0411) — cash out of their hands.
+          supabase.from("cash_deposits").select("amount, cash_location_id").not("cash_location_id", "is", null),
         ])
-      : [empty, empty, empty, empty, empty, empty, empty];
+      : [empty, empty, empty, empty, empty, empty, empty, empty];
 
   // Payroll paid in cash by a custodian — cash they physically hand out
   // (reference_id = custodian cash_location, cash_delta negative). Fetched
@@ -119,6 +121,9 @@ export async function loadCustodianOptions(companyId: string, withBalances = tru
       const sign = pe.type === "CONTRIBUTION" ? 1 : -1; // DRAWING = cash out of the custodian's hands
       heldByLoc.set(pe.cash_location_id, (heldByLoc.get(pe.cash_location_id) ?? 0) + sign * Number(pe.amount ?? 0));
     }
+  }
+  for (const dp of (cashDeposits ?? []) as any[]) {
+    if (dp.cash_location_id && heldByLoc.has(dp.cash_location_id)) heldByLoc.set(dp.cash_location_id, (heldByLoc.get(dp.cash_location_id) ?? 0) - Number(dp.amount ?? 0));
   }
 
   const opt = (id: string, name: string, kind: "employee" | "partner"): CustodianOption => {

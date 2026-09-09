@@ -41,6 +41,7 @@ import { useRegion, withRegion } from "../../lib/region";
 import { useAuth, hasPermission } from "../../lib/auth";
 import { fetchLedgerStart, monthKeysFrom } from "../../lib/monthRange";
 import { loadCustodianOptions, ensureCustodianLocation, type CustodianOption } from "../../lib/custodian";
+import AmountInWords from "../../components/AmountInWords";
 
 const PIE_COLORS = CHART_COLORS;
 
@@ -3266,6 +3267,7 @@ export default function Expenses() {
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
                 required
               />
+              <AmountInWords value={fixedForm.amount} />
               <p className="text-[11px] text-slate-500 mt-1">
                 The default each month. Any month's entry can be edited before it is approved.
               </p>
@@ -3467,6 +3469,7 @@ export default function Expenses() {
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
                 required
               />
+              <AmountInWords value={instanceForm.amount} />
             </div>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Description</label>
@@ -3977,6 +3980,7 @@ export default function Expenses() {
               onChange={(e) => setState({ ...state, amount: e.target.value })}
               className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
             />
+            <AmountInWords value={state.amount} />
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Date *</label>
@@ -4241,6 +4245,7 @@ export default function Expenses() {
               onChange={(e) => setState({ ...state, amount: e.target.value })}
               className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
             />
+            <AmountInWords value={state.amount} />
           </div>
           <div>
             <label className="block text-sm text-slate-700 mb-1">Date *</label>
