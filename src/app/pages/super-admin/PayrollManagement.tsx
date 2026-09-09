@@ -1,7 +1,7 @@
 import ThemedSelect from "../../components/ThemedSelect";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Search, Download, AlertCircle, X, Loader2, SlidersHorizontal, ChevronDown, Lock, Check } from "lucide-react";
+import { Search, Download, AlertCircle, X, Loader2, SlidersHorizontal, ChevronDown, ChevronRight, MapPin, Lock, Check } from "lucide-react";
 import jsPDF from "jspdf";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -117,9 +117,14 @@ type PayrollManagementProps = {
   // Salary Calculation panel rendered inline below the table rather than as a side
   // panel. Same calc/Save/rowEdits — layout only.
   runInline?: boolean;
+  // Group the roster under collapsible SITE rows, the way the Attendance board and
+  // Employee Assignments group a client's people. The site comes from the guard's
+  // open posting (`siteByGuard`), the same source the Site filter uses, so the two
+  // never disagree. Display only — no row is added, removed or recomputed.
+  siteGrouped?: boolean;
 };
 
-export default function PayrollManagement({ relieversOnly = false, clientScopeId = null, categoryScope = null, throughNet = false, afterNet = false, onDataChanged, onTotals, periodOverride, runInline = false }: PayrollManagementProps = {}) {
+export default function PayrollManagement({ relieversOnly = false, clientScopeId = null, categoryScope = null, throughNet = false, afterNet = false, onDataChanged, onTotals, periodOverride, runInline = false, siteGrouped = false }: PayrollManagementProps = {}) {
   // `embedded` = rendered inside the Payroll Run / Payroll Management client list:
   // no page Header, filters, totals cards, or bulk actions — just the scoped
   // roster + the payslip drawer.
@@ -859,6 +864,74 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     () => [...filtered].sort((a, b) => Number(!!a.disbursed) - Number(!!b.disbursed)),
     [filtered],
   );
+
+  // ── Site grouping (siteGrouped embeds only) ──────────────────────────────
+  // Which site rows are open, keyed by site id ("" = the no-posting bucket).
+  const [openSiteRows, setOpenSiteRows] = useState<Set<string>>(new Set());
+  const toggleSiteRow = (k: string) =>
+    setOpenSiteRows((prev) => {
+      const n = new Set(prev);
+      if (n.has(k)) n.delete(k); else n.add(k);
+      return n;
+    });
+  // A guard stands at ONE site, read off their open posting — the employee row
+  // does not carry it. Anyone whose posting names no site (office staff, a
+  // reliever, a client with no sites at all) lands in the "No site" bucket,
+  // which sorts last so it never hides a real site behind it.
+  const siteGroups = useMemo(() => {
+    if (!siteGrouped) return null;
+    const nameById = new Map(sites.map((s) => [s.id, s.name]));
+    const buckets = new Map<string, { id: string; name: string; rows: RowState[] }>();
+    for (const row of sortedRows) {
+      const sid = siteByGuard.get(row.employee.id) ?? "";
+      const b = buckets.get(sid) ?? { id: sid, name: sid ? nameById.get(sid) ?? "(Unknown site)" : "No site", rows: [] };
+      b.rows.push(row);
+      buckets.set(sid, b);
+    }
+    return [...buckets.values()].sort((a, b) =>
+      a.id === "" ? 1 : b.id === "" ? -1 : a.name.localeCompare(b.name),
+    );
+  }, [siteGrouped, sortedRows, sites, siteByGuard]);
+
+  /**
+   * What the table body renders: the plain row list, or — when grouped — site
+   * header rows with their people beneath. A scope with a SINGLE bucket is
+   * rendered flat, exactly as the Attendance board does: the row would only
+   * repeat what the client card above it already says and cost a click.
+   */
+  type BodyItem =
+    | { kind: "site"; key: string; id: string; name: string; count: number; net: number; open: boolean }
+    | { kind: "row"; key: string; row: RowState };
+  const bodyItems = useMemo<BodyItem[]>(() => {
+    if (!siteGroups) return sortedRows.map((row) => ({ kind: "row", key: row.employee.id, row }));
+    const flat = siteGroups.length === 1;
+    const out: BodyItem[] = [];
+    for (const g of siteGroups) {
+      const open = flat || openSiteRows.has(g.id);
+      if (!flat) {
+        out.push({
+          kind: "site",
+          key: `site:${g.id}`,
+          id: g.id,
+          name: g.name,
+          count: g.rows.length,
+          net: g.rows.reduce((n, r) => n + Math.round(r.net_salary || 0), 0),
+          open,
+        });
+      }
+      if (open) for (const row of g.rows) out.push({ kind: "row", key: row.employee.id, row });
+    }
+    return out;
+  }, [siteGroups, sortedRows, openSiteRows]);
+
+  // Columns actually rendered, for the site header's colSpan. Base four are
+  // Employee / Attendance / Base / Net; afterNet adds the select box, and the
+  // full (non-inline) table adds Client, Status and Actions.
+  const bodyColCount = 4 + (afterNet ? 1 : 0) + (runInline ? 0 : 3);
+  // Only indent people under a site header that is actually on screen — a flat
+  // (single-bucket) group has no header, so an indent there would be nesting
+  // under nothing.
+  const siteIndent = !!siteGroups && siteGroups.length > 1;
 
   // Payroll Run drives the month from outside — keep the embed in sync.
   useEffect(() => {
@@ -2209,7 +2282,32 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                       </tr>
                     )}
                     {!loading &&
-                      sortedRows.map((row) => {
+                      bodyItems.map((item) => {
+                        if (item.kind === "site") {
+                          return (
+                            <tr key={item.key} className="bg-secondary/40 border-b border-border">
+                              <td colSpan={bodyColCount} className="p-0">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleSiteRow(item.id)}
+                                  aria-expanded={item.open}
+                                  className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-accent transition-colors"
+                                >
+                                  <ChevronRight
+                                    className={`w-4 h-4 shrink-0 text-muted-foreground transition-transform ${item.open ? "rotate-90" : ""}`}
+                                    strokeWidth={1.75}
+                                  />
+                                  <MapPin className="w-4 h-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
+                                  <span className="text-sm text-foreground truncate flex-1">{item.name}</span>
+                                  <span className="text-xs text-muted-foreground shrink-0 tabular-nums">
+                                    {item.count} employee{item.count === 1 ? "" : "s"} · PKR {item.net.toLocaleString()}
+                                  </span>
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        }
+                        const row = item.row;
                         const e = row.employee;
                         return (
                           <Fragment key={e.id}>
@@ -2245,7 +2343,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                 </td>
                               );
                             })()}
-                            <td className="px-4 py-3">
+                            <td className={`px-4 py-3 ${siteIndent ? "pl-10" : ""}`}>
                               <div className="text-sm text-slate-900 flex items-center gap-2">
                                 {e.full_name}
                                 {/* Says Fired / Terminated / Resigned / Absconded

@@ -380,7 +380,9 @@ export default function PayrollRun() {
                       {open && (
                         <div className="border-t border-border">
                           {/* Existing Payslips page, scoped + through-Net (no payment UI). */}
-                          <PayrollManagement clientScopeId={s.clientId} categoryScope={s.category} throughNet runInline periodOverride={period}
+                          {/* Site-wise rows inside the client, the same shape the
+                              Attendance board and Employee Assignments use. */}
+                          <PayrollManagement clientScopeId={s.clientId} categoryScope={s.category} throughNet runInline siteGrouped periodOverride={period}
                             onTotals={(t) => setLiveTotalsByKey((prev) => { const n = new Map(prev); n.set(s.key, t); return n; })} />
                         </div>
                       )}
