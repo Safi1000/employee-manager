@@ -82,18 +82,27 @@ export default function FireGuardModal({
 
   const confirm = async () => {
     if (!reason.trim()) { setError("A reason is required."); return; }
-    if (!date) { setError("An effective (last working) date is required."); return; }
+    if (!date) { setError("An effective (fire) date is required."); return; }
     setSubmitting(true);
     setError(null);
     // §9: record_separation sets last_working_day + termination_date, records the
     // reason + rehire flag, moves lifecycle_state, and CLOSES the active posting
     // (end_date = last working day). This is what removes the guard from the
     // roster from the day after — the old transition RPC did none of that.
+    //
+    // The picked date is the EFFECTIVE (fire) date — the day the separation takes
+    // effect and the post falls vacant. The last working day is the day BEFORE it:
+    // "fired on the 10th" means the 10th is already empty and a replacement can
+    // start the 10th. Passing the fire date as last_working_day too would keep the
+    // post filled through the 10th and block the replacement from starting then.
+    const lwd = new Date(date + "T00:00:00");
+    lwd.setDate(lwd.getDate() - 1);
+    const lastWorkingDay = lwd.toISOString().slice(0, 10);
     const reasonVal = type === "resignation" ? "resignation" : "termination_misconduct";
     const { error: sErr } = await supabase.rpc("record_separation", {
       p_guard: guard.id,
       p_reason: reasonVal,
-      p_last_working_day: date,
+      p_last_working_day: lastWorkingDay,
       p_termination_date: date,
       p_rehire_eligible: eligible,
       p_note: reason.trim(),
@@ -129,8 +138,9 @@ export default function FireGuardModal({
         <p className="text-sm text-slate-600">
           Separating{" "}
           <span className="text-slate-900 font-medium">{guard.full_name}</span>{" "}
-          ({guard.employee_code}). Removes them from the roster from the day
-          after the last working day; prior attendance stays intact.
+          ({guard.employee_code}). The effective date is the day the separation
+          takes effect — their last working day is the day before it, and the post
+          is free from the effective date on. Prior attendance stays intact.
         </p>
 
         {/* Separation type — both remove from the roster identically; they
@@ -153,7 +163,7 @@ export default function FireGuardModal({
 
         {/* Effective date — Today or a picker. */}
         <div>
-          <label className="block text-sm text-slate-700 mb-1">Effective (last working) date *</label>
+          <label className="block text-sm text-slate-700 mb-1">Effective (fire) date *</label>
           <div className="flex items-center gap-2">
             <button
               type="button"
