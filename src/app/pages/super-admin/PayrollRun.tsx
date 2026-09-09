@@ -94,15 +94,46 @@ export default function PayrollRun() {
   const load = async () => {
     setLoading(true); setErr(null);
     try {
-      const [{ data: cls }, { data: catEmps }, { data: vers }, { data: phs }, { data: ps }] = await Promise.all([
+      const [{ data: cls }, { data: cons }, { data: catEmps }, { data: vers }, { data: phs }, { data: ps }] = await Promise.all([
         supabase.from("clients").select("id, name").order("name"),
+        supabase.from("contracts").select("client_id, contract_type"),
         // Client-less staff → category groups (office_staff, reliever, armed, gunman).
         supabase.from("employees").select("category").is("client_id", null).neq("category", "client").neq("lifecycle_state", "archived"),
         supabase.from("attendance_month_verifications").select("client_id, category, verified_at").eq("period_month", period),
         supabase.from("payroll_run_phases").select("client_id, category, phase, finance_verified_at").eq("period_month", period),
         supabase.from("payslips").select("net_salary, amount_paid, advance, disbursed, employee_id").eq("period_month", period),
       ]);
-      const clientScopes: Scope[] = ((cls ?? []) as any[]).map((c) => ({ key: c.id, name: c.name, clientId: c.id, category: null, verifiable: true }));
+      // Which scope each of this month's payslips belongs to (client_id, else
+      // `cat:<category>`). Resolved BEFORE the scope list is built, because the
+      // services filter below needs to know which clients already have payslips.
+      const rows = (ps ?? []) as any[];
+      const empIds = Array.from(new Set(rows.map((r) => r.employee_id)));
+      const empScope = new Map<string, string>();
+      if (empIds.length) {
+        const { data: emps } = await supabase.from("employees").select("id, client_id, category").in("id", empIds);
+        for (const e of (emps ?? []) as any[]) empScope.set(e.id, e.client_id ?? `cat:${e.category}`);
+      }
+
+      // A "Services" contract bills for hardware (weapons / equipment), not people,
+      // so a client whose contracts are ALL Services has nobody to pay and is noise
+      // on every tab of this page. Same rule, same reasoning as the Employee
+      // Assignments board. A client with no contracts at all stays visible: absence
+      // of evidence isn't evidence that they have no guards.
+      const servicesOnly = new Map<string, boolean>();
+      for (const k of (cons ?? []) as any[]) {
+        servicesOnly.set(k.client_id, (servicesOnly.get(k.client_id) ?? true) && k.contract_type === "services");
+      }
+      // ...except where this month already has work against them. A scope holding
+      // a phase row or a payslip would be stranded mid-workflow by the filter —
+      // neither visible nor finishable, and its money invisible to the totals — so
+      // evidence of a real payroll outranks the contract-type rule.
+      const hasWork = new Set<string>([
+        ...((phs ?? []) as any[]).map((p) => p.client_id as string | null).filter(Boolean) as string[],
+        ...[...empScope.values()].filter((k) => !k.startsWith("cat:")),
+      ]);
+      const clientScopes: Scope[] = ((cls ?? []) as any[])
+        .filter((c) => !servicesOnly.get(c.id) || hasWork.has(c.id))
+        .map((c) => ({ key: c.id, name: c.name, clientId: c.id, category: null, verifiable: true }));
       const cats = Array.from(new Set(((catEmps ?? []) as any[]).map((e) => e.category).filter(Boolean))).sort();
       const catScopes: Scope[] = cats.map((cat) => ({ key: `cat:${cat}`, name: catLabel(cat), clientId: null, category: cat, verifiable: cat !== "reliever" }));
       setScopes([...clientScopes, ...catScopes]);
@@ -112,16 +143,9 @@ export default function PayrollRun() {
       setFinanceVerified(new Set(((phs ?? []) as any[]).filter((p) => p.finance_verified_at).map((p) => (p.client_id ?? `cat:${p.category}`))));
       setFinanceVerifiedAt(new Map(((phs ?? []) as any[]).filter((p) => p.finance_verified_at).map((p) => [(p.client_id ?? `cat:${p.category}`), p.finance_verified_at as string])));
 
-      // Aggregate this month's payslips by scope. Map each payslip's employee to a
-      // scope key (client_id, else `cat:<category>`), then sum the same figures
-      // PayrollManagement shows so the cards agree with the embedded page.
-      const rows = (ps ?? []) as any[];
-      const empIds = Array.from(new Set(rows.map((r) => r.employee_id)));
-      const empScope = new Map<string, string>();
-      if (empIds.length) {
-        const { data: emps } = await supabase.from("employees").select("id, client_id, category").in("id", empIds);
-        for (const e of (emps ?? []) as any[]) empScope.set(e.id, e.client_id ?? `cat:${e.category}`);
-      }
+      // Aggregate this month's payslips by scope, using the mapping resolved
+      // above, and sum the same figures PayrollManagement shows so the cards
+      // agree with the embedded page.
       const totals = new Map<string, Totals>();
       for (const r of rows) {
         const key = empScope.get(r.employee_id);
