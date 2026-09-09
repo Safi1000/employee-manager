@@ -707,42 +707,61 @@ function OverrideModal({
       setErr(cErr.message ?? "Could not clear the existing marks on that day.");
       return;
     }
-    // 1. Mark the day (upsert keyed on employee+date+worked_shift, per the model).
-    const { error: mErr } = await supabase.from("attendance_records").upsert({
+    const nowIso = new Date().toISOString();
+    const base = {
       employee_id: target.empId,
       attendance_date: target.date,
-      // A second (non-primary) shift IS double duty — store it as DD, never a
-      // second Present, so the day reads P on the normal shift + DD on the extra.
-      // "leave" goes in as-is: 0224 folded rotation_leave into leave and dropped
-      // it from attendance_records_status_check, so translating to it here is
-      // what raised "violates check constraint attendance_records_status_check".
-      status: presentOnly ? "double_duty" : status,
-      absent_reason: status === "absent" ? "awol" : null,
-      scheduled_shift: target.shift,
-      worked_shift: target.shift,
-      entry_type: presentOnly ? "double_duty" : "normal",
       source: "manual",
       marked_by_role: currentUserRole ?? "hr",
       marked_by_user_id: currentUserId,
-      marked_at: new Date().toISOString(),
+      marked_at: nowIso,
       supervisor_override: true,
       override_reason: reason.trim(),
-    }, { onConflict: "employee_id,attendance_date,worked_shift" });
-    if (mErr) { setBusy(false); setErr(mErr.message); return; }
-    // 1b. Adding a SECOND shift makes the day a double duty, and a double duty is
-    // two rows that BOTH say double_duty (0395). The row just written says it;
-    // the guard's original shift for that day still says `present`, so it has to
-    // be brought along or the day is half a double duty and the database refuses
-    // the whole thing at commit.
+    };
     if (presentOnly) {
-      const { error: pErr } = await supabase
+      // Adding a SECOND shift makes the day a double duty, and a double duty is
+      // two rows that BOTH say double_duty (0395). Both rows MUST be written in
+      // ONE transaction: PostgREST wraps each call separately, and 0395's
+      // constraint is DEFERRED to commit — so writing the extra shift on its own
+      // commits the day as `present + double_duty` (half a double duty) and is
+      // refused before a follow-up update could fix it. A single array upsert is
+      // one transaction, so the constraint sees the finished day.
+      //
+      // The sibling's real worked_shift is read rather than assumed — the extra
+      // shift is target.shift, but the rostered one could be any other code.
+      const { data: existing } = await supabase
         .from("attendance_records")
-        .update({ status: "double_duty", entry_type: "double_duty" })
+        .select("worked_shift")
         .eq("employee_id", target.empId)
         .eq("attendance_date", target.date)
-        .neq("worked_shift", target.shift)
-        .eq("status", "present");
-      if (pErr) { setBusy(false); setErr(pErr.message); return; }
+        .in("status", ["present", "double_duty"]);
+      const shiftSet = new Set<string>([target.shift, ...((existing ?? []).map((r) => String(r.worked_shift)))]);
+      const rows = [...shiftSet].map((sh) => ({
+        ...base,
+        status: "double_duty",
+        absent_reason: null,
+        scheduled_shift: sh,
+        worked_shift: sh,
+        entry_type: "double_duty",
+      }));
+      const { error: mErr } = await supabase
+        .from("attendance_records")
+        .upsert(rows, { onConflict: "employee_id,attendance_date,worked_shift" });
+      if (mErr) { setBusy(false); setErr(mErr.message); return; }
+    } else {
+      // 1. Mark the day (upsert keyed on employee+date+worked_shift, per the model).
+      // "leave" goes in as-is: 0224 folded rotation_leave into leave and dropped
+      // it from attendance_records_status_check, so translating to it here is
+      // what raised "violates check constraint attendance_records_status_check".
+      const { error: mErr } = await supabase.from("attendance_records").upsert({
+        ...base,
+        status,
+        absent_reason: status === "absent" ? "awol" : null,
+        scheduled_shift: target.shift,
+        worked_shift: target.shift,
+        entry_type: "normal",
+      }, { onConflict: "employee_id,attendance_date,worked_shift" });
+      if (mErr) { setBusy(false); setErr(mErr.message); return; }
     }
     // 2. Permanent audit record (before → after + reason).
     const { error: aErr } = await supabase.from("attendance_overrides").insert({
