@@ -1,9 +1,10 @@
 import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Loader2, AlertCircle, X, Trash2, Pencil, Calendar as CalendarIcon, User as UserIcon } from "lucide-react";
+import { Plus, Loader2, AlertCircle, X, Trash2, Pencil, Calendar as CalendarIcon, User as UserIcon, Mail, Check, Lock } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
+import TaskChecklist from "../../components/TaskChecklist";
 import { formatDate } from "../../lib/date";
 import {
   supabase,
@@ -57,6 +58,15 @@ export default function Tasks() {
 
   const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
 
+  // Where THIS user's task alerts go. 0418 put it on `profiles` rather than on
+  // a task, because the address belongs to the person: one place to set it, one
+  // place to change it, and no way for two tasks to disagree about where the
+  // same person is reachable. Empty means opted out, which is the default.
+  const [alertEmail, setAlertEmail] = useState<string>("");
+  const [alertEmailSaved, setAlertEmailSaved] = useState<string>("");
+  const [alertEmailBusy, setAlertEmailBusy] = useState(false);
+  const [alertEmailDone, setAlertEmailDone] = useState(false);
+
   // Create / edit modal.
   const [editTask, setEditTask] = useState<Task | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -84,7 +94,44 @@ export default function Tasks() {
     if (tRes.error) setError(tRes.error.message);
     setTasks((tRes.data ?? []) as Task[]);
     if (uRes && !uRes.error) setUsers((uRes.data ?? []) as Profile[]);
+
+    // Read back rather than taken from the cached `profile`: the auth context is
+    // populated at sign-in and would show a stale address for the rest of the
+    // session after someone changes it on another device.
+    if (profile?.id) {
+      const { data: me } = await supabase
+        .from("profiles")
+        .select("task_alert_email")
+        .eq("id", profile.id)
+        .maybeSingle();
+      const current = (me?.task_alert_email as string | null) ?? "";
+      setAlertEmail(current);
+      setAlertEmailSaved(current);
+    }
     setLoading(false);
+  };
+
+  const saveAlertEmail = async () => {
+    if (!profile?.id) return;
+    const next = alertEmail.trim();
+    // A rough shape check only. The authority on whether an address works is
+    // whether mail arrives at it, and a regex that rejects valid addresses is
+    // worse than one that accepts a typo — the typo is visible in the box.
+    if (next && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(next)) {
+      setError("That does not look like an email address.");
+      return;
+    }
+    setAlertEmailBusy(true);
+    setError(null);
+    const { error: upErr } = await supabase
+      .from("profiles")
+      .update({ task_alert_email: next || null })
+      .eq("id", profile.id);
+    setAlertEmailBusy(false);
+    if (upErr) { setError(upErr.message); return; }
+    setAlertEmailSaved(next);
+    setAlertEmailDone(true);
+    window.setTimeout(() => setAlertEmailDone(false), 2000);
   };
 
   useEffect(() => {
@@ -184,16 +231,26 @@ export default function Tasks() {
     setSubmitting(true);
     setError(null);
     try {
-      const patch: Partial<Task> = {
-        title: formTitle.trim(),
-        description: formDescription.trim() || null,
-        status: formStatus,
-        priority: formPriority,
-      };
-      if (isAdmin) {
-        patch.assignee_id = formAssignee || null;
-        patch.due_date = formDueDate || null;
-      }
+      // A non-admin sends STATUS AND NOTHING ELSE.
+      //
+      // It used to send title, description and priority for everyone and add
+      // assignee/due_date for admins — which was fine while nothing checked,
+      // and 0418 now checks. `tasks_guard_privileged_fields` compares NEW
+      // against OLD with `is distinct from`, so re-sending an unchanged title
+      // is harmless; but the moment a non-admin's form held a stale value —
+      // reopened after someone else retitled the task, say — the save would be
+      // refused and the status change would go with it. Sending only what this
+      // user is allowed to change removes the whole class.
+      const patch: Partial<Task> = isAdmin
+        ? {
+            title: formTitle.trim(),
+            description: formDescription.trim() || null,
+            status: formStatus,
+            priority: formPriority,
+            assignee_id: formAssignee || null,
+            due_date: formDueDate || null,
+          }
+        : { status: formStatus };
       const { error: upErr } = await supabase.from("tasks").update(patch).eq("id", editTask.id);
       if (upErr) throw upErr;
       setEditTask(null);
@@ -260,6 +317,44 @@ export default function Tasks() {
             </button>
           </div>
         )}
+
+        {/* Alert address — every user, not just admins. This is the one control
+            on the board that is about the viewer rather than about the work. */}
+        <div className="mb-6 border border-slate-200 rounded-lg bg-white p-3">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="flex items-center gap-2 text-sm text-slate-700 flex-shrink-0">
+              <Mail className="w-4 h-4 text-slate-400" strokeWidth={1.5} />
+              Email me about my tasks
+            </div>
+            <input
+              type="email"
+              value={alertEmail}
+              onChange={(e) => setAlertEmail(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void saveAlertEmail(); } }}
+              placeholder="you@example.com"
+              className="flex-1 min-w-0 px-3 py-1.5 border border-slate-200 rounded-md text-sm"
+            />
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={alertEmailBusy || alertEmail.trim() === alertEmailSaved.trim()}
+              onClick={() => void saveAlertEmail()}
+            >
+              {alertEmailBusy ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : alertEmailDone ? (
+                <><Check className="w-3.5 h-3.5 mr-1" strokeWidth={2} />Saved</>
+              ) : (
+                "Save"
+              )}
+            </Button>
+          </div>
+          <p className="text-[11px] text-slate-500 mt-2">
+            You&apos;ll get a message when a task is assigned to you, and reminders as its due
+            date approaches. Leave it empty to receive nothing. This is separate from the
+            address you sign in with.
+          </p>
+        </div>
 
         {isAdmin && (
           <div className="flex items-center gap-3 mb-6">
@@ -452,22 +547,45 @@ export default function Tasks() {
       >
         {editTask && (
           <form className="space-y-4" onSubmit={handleEditSave}>
-            <TaskFields
-              title={formTitle}
-              setTitle={setFormTitle}
-              description={formDescription}
-              setDescription={setFormDescription}
-              assignee={formAssignee}
-              setAssignee={setFormAssignee}
-              dueDate={formDueDate}
-              setDueDate={setFormDueDate}
-              status={formStatus}
-              setStatus={setFormStatus}
-              priority={formPriority}
-              setPriority={setFormPriority}
-              users={users}
-              isAdmin={isAdmin}
+            {isAdmin ? (
+              <TaskFields
+                title={formTitle}
+                setTitle={setFormTitle}
+                description={formDescription}
+                setDescription={setFormDescription}
+                assignee={formAssignee}
+                setAssignee={setFormAssignee}
+                dueDate={formDueDate}
+                setDueDate={setFormDueDate}
+                status={formStatus}
+                setStatus={setFormStatus}
+                priority={formPriority}
+                setPriority={setFormPriority}
+                users={users}
+                isAdmin={isAdmin}
+              />
+            ) : (
+              // A non-admin gets the task as INFORMATION plus the one control
+              // they hold. Disabled inputs were the old answer and they read as
+              // "broken" rather than "not yours" — a greyed-out text box still
+              // invites a click, and the reason it does nothing is nowhere on
+              // screen. Text that cannot be typed into does not raise the
+              // question in the first place.
+              <TaskReadOnlyFields
+                task={editTask}
+                status={formStatus}
+                setStatus={setFormStatus}
+              />
+            )}
+
+            {/* The assignee's own breakdown of the work. Shown to the assignee
+                and to admins; RLS decides, not this condition. */}
+            <TaskChecklist
+              taskId={editTask.id}
+              canEdit={isAdmin || editTask.assignee_id === profile?.id}
+              onError={setError}
             />
+
             <div className="flex items-center gap-3 pt-2">
               <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
                 {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
@@ -600,6 +718,77 @@ function TaskFields({
             Only admins can reassign tasks.
           </p>
         )}
+      </div>
+    </>
+  );
+}
+
+/**
+ * The edit dialog as a non-admin sees it: everything about the task, and the one
+ * field they may change.
+ *
+ * 0418 moved the field-level rule into the database — `tasks_guard_privileged_fields`
+ * refuses any change to title, description, priority, due date or assignee from
+ * a user who is not a super_admin or the SSA. This component is the honest UI
+ * for that rule. It is NOT the enforcement, and it must not be mistaken for it:
+ * the form previously disabled the same inputs and the API accepted the writes
+ * anyway, which is precisely the gap the trigger closes.
+ */
+function TaskReadOnlyFields({
+  task,
+  status,
+  setStatus,
+}: {
+  task: Task;
+  status: TaskStatus;
+  setStatus: (v: TaskStatus) => void;
+}) {
+  return (
+    <>
+      <div className="border border-slate-200 rounded-md divide-y divide-slate-100">
+        <div className="px-3 py-2">
+          <p className="text-xs text-slate-500">Title</p>
+          <p className="text-sm text-slate-900">{task.title}</p>
+        </div>
+        {task.description && (
+          <div className="px-3 py-2">
+            <p className="text-xs text-slate-500">Description</p>
+            <p className="text-sm text-slate-700 whitespace-pre-wrap">{task.description}</p>
+          </div>
+        )}
+        <div className="px-3 py-2 grid grid-cols-2 gap-3">
+          <div>
+            <p className="text-xs text-slate-500">Priority</p>
+            <p className="text-sm text-slate-700">{TASK_PRIORITY_LABEL[task.priority ?? "medium"]}</p>
+          </div>
+          <div>
+            <p className="text-xs text-slate-500">Due date</p>
+            <p className="text-sm text-slate-700">
+              {task.due_date ? formatDate(task.due_date) : "None"}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-start gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+        <Lock className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" strokeWidth={1.5} />
+        <span>
+          Only an admin can change the title, description, priority, due date or assignee.
+          You can move this task between columns and keep your own checklist below.
+        </span>
+      </div>
+
+      <div>
+        <label className="block text-sm text-slate-700 mb-1">Status</label>
+        <ThemedSelect
+          value={status}
+          onChange={(e) => setStatus(e.target.value as TaskStatus)}
+          className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
+        >
+          <option value="todo">To Do</option>
+          <option value="in_progress">In Progress</option>
+          <option value="done">Done</option>
+        </ThemedSelect>
       </div>
     </>
   );

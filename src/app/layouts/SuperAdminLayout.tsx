@@ -185,7 +185,11 @@ export default function SuperAdminLayout() {
   const links: SidebarItem[] = [];
 
   // OVERVIEW
-  const overview = buildGroup("Overview", "/super-admin/overview", [DASHBOARD]);
+  // Tasks sits directly under Dashboard by request. It moved out of Admin, where
+  // it was filed with Access & Governance and the Audit Log — screens you visit
+  // to administer the system. A task board is not administration; it is the
+  // thing you check when you arrive, which is what Overview is for.
+  const overview = buildGroup("Overview", "/super-admin/overview", [DASHBOARD, TASKS]);
   if (overview) links.push(overview);
 
   // CLIENTS & CONTRACTS — Sites & Strength split out (headcount → Operations ▸
@@ -276,7 +280,7 @@ export default function SuperAdminLayout() {
   // ADMIN — Users & Permissions + Governance merged → Access & Governance.
   // Alerts hidden (route kept).
   const admin = buildGroup("Admin", "/super-admin/admin", [
-    TASKS,
+    // TASKS moved to Overview, beneath Dashboard.
     ACCESS_GOVERNANCE,
     AUDIT_LOG,
     SETTINGS,

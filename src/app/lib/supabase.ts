@@ -297,6 +297,25 @@ export type Task = {
   updated_at?: string;
 };
 
+/**
+ * One line of the assignee's personal checklist on a task (0418).
+ *
+ * Keyed on the TASK, not on (task, user): a task has exactly one assignee, so a
+ * second axis would be a column nothing could populate. Admins and the SSA can
+ * read and edit these; nobody else outside the assignee can see them at all.
+ */
+export type TaskChecklistItem = {
+  id: string;
+  task_id: string;
+  company_id: string;
+  label: string;
+  done: boolean;
+  position: number;
+  created_by: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
 export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
   todo: "To Do",
   in_progress: "In Progress",
@@ -332,6 +351,11 @@ export type Profile = {
   user_type?: "office_staff" | "partner" | null;
   partner_scope?: string[] | null;
   must_change_password: boolean;
+  // 0418. Where task-board alerts go: assignment mail and due-date reminders.
+  // Set by the user on their own task board and OPTIONAL — null means they have
+  // opted out, which is the default and a real answer rather than a missing one.
+  // Deliberately not `email`, which is the login identity auth manages.
+  task_alert_email?: string | null;
   created_at?: string;
   updated_at?: string;
 };

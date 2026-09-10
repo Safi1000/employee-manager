@@ -5,6 +5,7 @@ import { Plus, Search, Upload, AlertCircle, X, Loader2, Trash2, Download, Pencil
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
+import ExpenseApprovalModal, { type ApprovableExpense } from "../../components/ExpenseApprovalModal";
 import MobileCardList from "../../components/MobileCardList";
 import ExportButton from "../../components/ExportButton";
 import ClientFilterSelect from "../../components/ClientFilterSelect";
@@ -1433,16 +1434,23 @@ export default function Expenses() {
   // trail survives even if this screen is not the caller). The trigger refuses
   // an unapproval that arrives bundled with an edit, which is why this sends
   // the approval fields ALONE.
-  const toggleApproval = async (expense: ExpenseRow) => {
-    const approving = !expense.approved_at;
-    if (approving) {
-      if (!window.confirm(
-        `Approve this expense of PKR ${Number(expense.amount).toLocaleString()}?\n\n` +
-        `It locks: no further edits, no deletion. A correction after this is a reversal. ` +
-        `You can unapprove it again if you need to.`,
-      )) return;
-    }
-    setError(null);
+  // The dialog is a real modal now (components/ExpenseApprovalModal) rather than
+  // a window.confirm whose whole text was the amount. Approval is the point of
+  // no return — locked against edits and deletion, correctable only by reversal
+  // — so it is the one moment the figures have to be in front of the approver,
+  // and it was the one moment showing them a single number.
+  const [approvalTarget, setApprovalTarget] = useState<ExpenseRow | null>(null);
+  const [approvalSubmitting, setApprovalSubmitting] = useState(false);
+  const [approvalError, setApprovalError] = useState<string | null>(null);
+
+  const openApproval = (expense: ExpenseRow) => {
+    setApprovalError(null);
+    setApprovalTarget(expense);
+  };
+
+  const confirmApproval = async (expense: ApprovableExpense, approving: boolean) => {
+    setApprovalSubmitting(true);
+    setApprovalError(null);
     const { error: apErr } = await supabase
       .from("expenses")
       .update(
@@ -1451,7 +1459,12 @@ export default function Expenses() {
           : { approved_at: null },
       )
       .eq("id", expense.id);
-    if (apErr) { setError(apErr.message); return; }
+    setApprovalSubmitting(false);
+    // The error stays INSIDE the dialog. Sent to the page-level banner it would
+    // render behind the open modal, which is how a refusal becomes a button that
+    // silently does nothing.
+    if (apErr) { setApprovalError(apErr.message); return; }
+    setApprovalTarget(null);
     await loadAll();
   };
 
@@ -1536,6 +1549,19 @@ export default function Expenses() {
     }
     setSubmitting(true);
     setError(null);
+
+    // Declared OUTSIDE the try because the catch reads them. Inside, they would
+    // be out of scope exactly where the rollback needs them, and the compiler
+    // is the only reason that mistake is not shipped.
+    let staleDriveFileIds: string[] = [];
+    let stalePath: string | null = null;
+    let staleReceiptRowIds: string[] = [];
+    // Uploaded in this attempt. If a later step throws these are orphans on
+    // Drive, and cleaning them up is the catch block's job — an orphan costs
+    // storage, whereas the alternative costs the user their receipt.
+    const uploadedDriveFileIds: string[] = [];
+    const insertedReceiptRowIds: string[] = [];
+
     try {
       // The "insufficient after reversal" block is gone for the same reason as
       // the one on the add form: it measured a company-wide cached scalar, and
@@ -1559,34 +1585,78 @@ export default function Expenses() {
       let receiptDriveFileId: string | null = selected.drive_file_id;
       let receiptDriveViewUrl: string | null = selected.drive_view_url;
       let receiptFileName: string | null = selected.receipt_file_name;
+
+      // THE OLD RECEIPT IS DELETED LAST, and that ordering is the whole fix.
+      //
+      // This block used to delete the Drive files and the `expense_receipts`
+      // rows FIRST and upload the replacement afterwards. Every step after the
+      // delete can fail — `uploadReceiptToDrive` throws on a Drive error or a
+      // company that has not finished loading, and `amend_expense` refuses on a
+      // permission or a balance — and the delete is the ONE step with no undo.
+      // So the reported symptom was exact: the previous receipt was gone and
+      // the new one was never attached. Retrying could not recover it, because
+      // by then there was nothing left to recover.
+      //
+      // Drive is not in the transaction and cannot be made to join it. What can
+      // be arranged is the ORDER: put the irreversible step after everything
+      // that can refuse, so a failure anywhere leaves the original receipt
+      // exactly where it was. Nothing below deletes anything; the deletions run
+      // after `amend_expense` has returned, which is the first moment the old
+      // files are genuinely unreferenced.
       if (replaceReceipt) {
-        // Remove old expense_receipts rows and their Drive files.
-        const { data: oldReceipts } = await supabase.from("expense_receipts").select("drive_file_id").eq("expense_id", selected.id);
-        for (const r of oldReceipts ?? []) {
-          if (r.drive_file_id) await supabase.functions.invoke("gdrive-delete", { body: { drive_file_id: r.drive_file_id } }).catch(() => {});
+        // 1. Upload the replacement. First because it is the step most likely to
+        //    fail, and nothing has been destroyed yet when it does.
+        const effectiveCompanyId = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
+        const uploaded: { drive_file_id: string; drive_view_url: string; file_name: string }[] = [];
+        for (const file of editForm.receipts ?? []) {
+          const drive = await uploadReceiptToDrive(file);
+          uploadedDriveFileIds.push(drive.drive_file_id);
+          uploaded.push(drive);
         }
-        await supabase.from("expense_receipts").delete().eq("expense_id", selected.id);
-        await removeReceipt({ drive_file_id: selected.drive_file_id, receipt_path: selected.receipt_path });
+
+        // 2. Note what the replacement supersedes. Read now, deleted later.
+        const { data: oldReceipts } = await supabase
+          .from("expense_receipts")
+          .select("id, drive_file_id")
+          .eq("expense_id", selected.id);
+        staleReceiptRowIds = (oldReceipts ?? []).map((r) => r.id as string);
+        staleDriveFileIds = (oldReceipts ?? [])
+          .map((r) => r.drive_file_id as string | null)
+          .filter((x): x is string => !!x);
+        if (selected.drive_file_id) staleDriveFileIds.push(selected.drive_file_id);
+        // De-duplicated: the row's own drive_file_id is normally also the first
+        // expense_receipts row, and asking Drive to delete the same id twice
+        // turns the second call into a 404 that reads like a real failure.
+        staleDriveFileIds = Array.from(new Set(staleDriveFileIds));
+        stalePath = selected.receipt_path ?? null;
+
+        // 3. File the new child rows alongside the old ones. Both sets exist for
+        //    the width of this call; the old ones go at the end.
+        if (effectiveCompanyId) {
+          for (const drive of uploaded) {
+            const { data: ins } = await supabase
+              .from("expense_receipts")
+              .insert({
+                expense_id: selected.id,
+                company_id: effectiveCompanyId,
+                drive_file_id: drive.drive_file_id,
+                drive_view_url: drive.drive_view_url,
+                file_name: drive.file_name,
+              })
+              .select("id")
+              .single();
+            if (ins?.id) insertedReceiptRowIds.push(ins.id as string);
+          }
+        }
+
+        // 4. Point the expense at the new first receipt — or at nothing, when
+        //    Replace was used with no file chosen, which is how a receipt is
+        //    removed outright.
+        const firstDrive = uploaded[0] ?? null;
         receiptPath = null;
-        receiptDriveFileId = null;
-        receiptDriveViewUrl = null;
-        receiptFileName = null;
-        if (editForm.receipts && editForm.receipts.length > 0) {
-          const effectiveCompanyId = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
-          let firstDrive: { drive_file_id: string; drive_view_url: string; file_name: string } | null = null;
-          for (const file of editForm.receipts) {
-            const drive = await uploadReceiptToDrive(file);
-            if (!firstDrive) firstDrive = drive;
-            if (effectiveCompanyId) {
-              await supabase.from("expense_receipts").insert({ expense_id: selected.id, company_id: effectiveCompanyId, drive_file_id: drive.drive_file_id, drive_view_url: drive.drive_view_url, file_name: drive.file_name });
-            }
-          }
-          if (firstDrive) {
-            receiptDriveFileId = firstDrive.drive_file_id;
-            receiptDriveViewUrl = firstDrive.drive_view_url;
-            receiptFileName = firstDrive.file_name;
-          }
-        }
+        receiptDriveFileId = firstDrive?.drive_file_id ?? null;
+        receiptDriveViewUrl = firstDrive?.drive_view_url ?? null;
+        receiptFileName = firstDrive?.file_name ?? null;
       }
 
       // 0268. The edit form let the mode be changed to Cash but HID the
@@ -1640,9 +1710,41 @@ export default function Expenses() {
       });
       if (amendErr) throw amendErr;
 
+      // The amend has committed, so the expense now points at the NEW receipt
+      // and the old files are unreferenced. Only here is deleting them safe.
+      // Failures below are swallowed: the user's edit is saved and correct, and
+      // a leftover file on Drive must not be reported as a failed save.
+      for (const driveId of staleDriveFileIds) {
+        await supabase.functions
+          .invoke("gdrive-delete", { body: { drive_file_id: driveId } })
+          .catch(() => { /* orphan on Drive; the expense is already correct */ });
+      }
+      if (staleReceiptRowIds.length > 0) {
+        await supabase.from("expense_receipts").delete().in("id", staleReceiptRowIds);
+      }
+      if (stalePath) {
+        await supabase.storage.from(EXPENSE_RECEIPTS_BUCKET).remove([stalePath]);
+      }
+
       setIsEditOpen(false);
       await loadAll();
     } catch (err: any) {
+      // Nothing above this point deleted the original receipt, so it is still
+      // attached and still on Drive. What may exist is a half-landed
+      // replacement — files uploaded, child rows inserted — and leaving those
+      // would show the expense carrying both the old receipt and a new one it
+      // never accepted. Undo the replacement, not the original.
+      if (insertedReceiptRowIds.length > 0) {
+        // No .catch(): a PostgrestBuilder reports failure in `error`, not by
+        // rejecting, so a thrown-away rejection handler would silence nothing
+        // and mislead the next reader about what can fail here.
+        await supabase.from("expense_receipts").delete().in("id", insertedReceiptRowIds);
+      }
+      for (const driveId of uploadedDriveFileIds) {
+        await supabase.functions
+          .invoke("gdrive-delete", { body: { drive_file_id: driveId } })
+          .catch(() => { /* best effort */ });
+      }
       setFormError(err.message ?? String(err));
     } finally {
       setSubmitting(false);
@@ -2372,7 +2474,7 @@ export default function Expenses() {
                   </>
                 )}
                 {canApproveExpenses && (
-                  <Button variant="ghost" size="sm" onClick={() => toggleApproval(exp)}>
+                  <Button variant="ghost" size="sm" onClick={() => openApproval(exp)}>
                     {exp.approved_at ? "Unapprove" : "Approve"}
                   </Button>
                 )}
@@ -2496,7 +2598,7 @@ export default function Expenses() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => toggleApproval(exp)}
+                            onClick={() => openApproval(exp)}
                             title={
                               exp.approved_at
                                 ? "Unapprove — reopens the expense for editing. Recorded."
@@ -3200,6 +3302,15 @@ export default function Expenses() {
             }
           )}
       </Modal>
+
+      <ExpenseApprovalModal
+        expense={approvalTarget}
+        onClose={() => setApprovalTarget(null)}
+        onConfirm={confirmApproval}
+        submitting={approvalSubmitting}
+        error={approvalError}
+        onDismissError={() => setApprovalError(null)}
+      />
 
       {/* ---- Fixed expense template: add / edit ---- */}
       <Modal
