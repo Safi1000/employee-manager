@@ -18,6 +18,14 @@ import MobileCardList from "../../components/MobileCardList";
 import Tabs from "../../components/Tabs";
 import ClientFilterSelect from "../../components/ClientFilterSelect";
 import ExportButton from "../../components/ExportButton";
+import ExportFieldsModal from "../../components/ExportFieldsModal";
+import {
+  EMPLOYEE_EXPORT_FIELDS,
+  EMPLOYEE_EXPORT_GROUPS,
+  EMPLOYEE_EXPORT_DEFAULT_FIELD_IDS,
+  formatCnicInline,
+  type EmployeeExportContext,
+} from "../../lib/employeeExportFields";
 import { exportTable } from "../../lib/excel";
 import { useRegion, withRegion } from "../../lib/region";
 import { isSeparatedState, lifecycleStatusLabel } from "../../lib/employmentWindow";
@@ -66,6 +74,10 @@ import {
   validateBankAccountLength,
 } from "../../lib/validation";
 import { useAuth, hasPermission } from "../../lib/auth";
+
+// Where the export column choice is remembered. Per browser, per person — it is
+// a preference about a download, not shared state, so it never leaves the device.
+const EXPORT_FIELDS_KEY = "employees.exportFields";
 
 export type EmployeeRow = Employee & {
   location_name: string | null;
@@ -1260,36 +1272,69 @@ export default function EmployeeManagement() {
   // beside the actions that create and move them.
 
   // Export exactly what the table is showing — the same `filtered` rows, in the
-  // same visible column order — so filters/search/tab carry into the export.
-  const handleExport = () => {
-    const statusLabel = lifecycleStatusLabel;
-    const categoryOrClient = (e: EmployeeRow) =>
-      (e.category ?? "client") === "client"
-        ? e.client_name ?? ""
-        : (e.category ?? "client").replace("_", " ");
+  // same visible row order — so filters/search/tab carry into the export. Which
+  // COLUMNS go in is now asked rather than assumed: the button opens the picker
+  // and the export runs on what comes back.
+  //
+  // The choice is remembered in localStorage because the answer is a standing
+  // preference, not a per-export decision: whoever exports for the bank wants
+  // the bank columns every month, and re-ticking fourteen boxes each time is how
+  // a picker becomes worse than no picker. Unknown ids are dropped on read, so a
+  // field removed from the catalogue cannot resurrect itself as a blank column.
+  const [exportPickerOpen, setExportPickerOpen] = useState(false);
+  const [exportFieldIds, setExportFieldIds] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(EXPORT_FIELDS_KEY);
+      if (raw) {
+        const known = new Set(EMPLOYEE_EXPORT_FIELDS.map((f) => f.id));
+        const saved = (JSON.parse(raw) as unknown[]).filter(
+          (id): id is string => typeof id === "string" && known.has(id),
+        );
+        if (saved.length > 0) return saved;
+      }
+    } catch {
+      // A private window, cleared site data, or a value some other version
+      // wrote. The defaults are always a correct answer, so say nothing.
+    }
+    return EMPLOYEE_EXPORT_DEFAULT_FIELD_IDS;
+  });
+
+  const exportGroups = useMemo(() => EMPLOYEE_EXPORT_GROUPS(), []);
+
+  const runExport = (fieldIds: string[]) => {
+    const byId = new Map(EMPLOYEE_EXPORT_FIELDS.map((f) => [f.id, f]));
+    const fields = fieldIds.map((id) => byId.get(id)).filter((f) => f != null);
+    if (fields.length === 0) return;
+
+    const ctx: EmployeeExportContext = {
+      displayCode: (e) => displayCodeFor(e as EmployeeRow),
+      clientOrCategory: (e) =>
+        (e.category ?? "client") === "client"
+          ? e.client_name ?? ""
+          : (e.category ?? "client").replace("_", " "),
+      statusLabel: (e) => lifecycleStatusLabel(e as EmployeeRow),
+    };
+
+    // Header, cell and width all come off the SAME field list in the same pass,
+    // so a chosen column cannot land under another column's heading — the defect
+    // three position-matched literal arrays invited.
     exportTable({
       fileName: "Employees.xlsx",
       sheetName: "Employees",
       title: "Employees",
-      headers: ["Employee ID", "Permanent Code", "Name", "CNIC", "Phone", "Location", "Branch", "Client / Category", "Shift", "Status", "Bank", "Account Title", "Account No.", "IBAN"],
-      rows: sorted.map((e) => [
-        displayCodeFor(e),
-        e.guard_code ?? e.employee_code,
-        e.full_name,
-        e.cnic_number ? formatCnicInline(e.cnic_number) : "",
-        e.phone ?? "",
-        e.location_name ?? "",
-        e.branch_name ?? "",
-        categoryOrClient(e),
-        e.shift,
-        statusLabel(e),
-        e.bank_name ?? "",
-        e.account_title ?? "",
-        e.bank_account ?? "",
-        e.iban ?? "",
-      ]),
-      columnWidths: [14, 14, 24, 18, 16, 18, 18, 20, 8, 10, 18, 22, 22, 28],
+      headers: fields.map((f) => f.label),
+      rows: sorted.map((e) => fields.map((f) => f.value(e, ctx))),
+      columnWidths: fields.map((f) => f.width),
     });
+
+    setExportFieldIds(fieldIds);
+    try {
+      localStorage.setItem(EXPORT_FIELDS_KEY, JSON.stringify(fieldIds));
+    } catch {
+      // Storage is a convenience here; a failed write must not lose the export
+      // the user just asked for, which has already been written above.
+    }
+    setExportPickerOpen(false);
   };
 
   const isFired = (emp: EmployeeRow) => isSeparatedState(emp.lifecycle_state);
@@ -2251,7 +2296,7 @@ export default function EmployeeManagement() {
         subtitle="Workforce roster, branches and document uploads"
         actions={
           <div className="flex items-center gap-2">
-            <ExportButton onExport={handleExport} label="Export" />
+            <ExportButton onExport={() => setExportPickerOpen(true)} label="Export" />
             {/* Phase 8 §11.3: bulk-generate documents for the current filtered set. */}
             <Button variant="secondary" size="md" disabled={filtered.length === 0} onClick={() => setBulkOpen(true)}>
               <FileText className="w-4 h-4 mr-2" strokeWidth={1.5} />
@@ -3120,6 +3165,16 @@ export default function EmployeeManagement() {
         />
       )}
 
+      <ExportFieldsModal
+        isOpen={exportPickerOpen}
+        onClose={() => setExportPickerOpen(false)}
+        groups={exportGroups}
+        selectedIds={exportFieldIds}
+        onExport={runExport}
+        rowCount={sorted.length}
+        title="Export employees — choose columns"
+      />
+
       <Modal
         isOpen={isEditModalOpen}
         error={error}
@@ -3571,13 +3626,6 @@ export default function EmployeeManagement() {
       </Modal>
     </>
   );
-}
-
-function formatCnicInline(raw: string): string {
-  const digits = raw.replace(/\D/g, "").slice(0, 13);
-  if (digits.length <= 5) return digits;
-  if (digits.length <= 12) return `${digits.slice(0, 5)}-${digits.slice(5)}`;
-  return `${digits.slice(0, 5)}-${digits.slice(5, 12)}-${digits.slice(12)}`;
 }
 
 // Header for the collapsible HR field groups. Declared at module scope (not nested inside
