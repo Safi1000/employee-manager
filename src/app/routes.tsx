@@ -165,7 +165,12 @@ export const router = createRouter([
       // from the guard's record (History tab), not the daily flow.
       { path: "attendance/timesheet", element: guard(["attendance.view", "attendance.edit"], <AttendanceManagement />) },
       // Payroll Runs page removed — payroll is the per-employee Payslips view only.
-      { path: "payroll", element: guard(["payroll.view", "payroll.edit"], <PayrollManagement />) },
+      // siteGrouped: the roster is grouped into collapsible site rows, the same
+      // shape Payroll Run already uses. Passed here rather than defaulted on the
+      // component, because the OTHER embed (the per-client accordion inside
+      // Payroll Run's Review step) is deliberately flat and flipping the default
+      // would silently group that one too.
+      { path: "payroll", element: guard(["payroll.view", "payroll.edit"], <PayrollManagement siteGrouped />) },
       { path: "payroll-run", element: guard(["payroll.view", "payroll.edit"], <PayrollRun />) },
       { path: "payroll-runs", element: <Navigate to="/super-admin/payroll" replace /> },
       { path: "performance", element: guard(["payroll.view", "performance.approve"], <Performance />) },

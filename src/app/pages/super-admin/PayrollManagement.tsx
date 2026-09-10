@@ -881,18 +881,40 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   // separation closes the deployment — so it is labelled for them.
   const siteGroups = useMemo(() => {
     if (!siteGrouped) return null;
-    const nameById = new Map(sites.map((s) => [s.id, s.name]));
+    // On a CLIENT-SCOPED roster the client is already named on the card above,
+    // so the site name alone is unambiguous. On the whole-company roster it is
+    // not: two clients can each have a "Head Office" or a "Main Gate", and two
+    // identically-titled headers a screen apart is worse than a long label.
+    // Buckets are keyed by site ID either way, so this only changes what is
+    // shown — the grouping was already correct.
+    const clientNameById = new Map(clients.map((c) => [c.id, c.name]));
+    const nameById = new Map(
+      sites.map((s) => {
+        const client = clientScopeId ? null : clientNameById.get(s.client_id);
+        return [s.id, client ? `${client} — ${s.name}` : s.name] as const;
+      }),
+    );
+    // The no-posting bucket, and its label is a measurement of its context.
+    // Client-scoped, everyone in it has had their deployment closed, and closing
+    // a deployment is what separation does — so "Fired / Resigned / Terminated"
+    // is accurate there. Company-wide it is NOT: office staff, head-office
+    // accountants and anyone between postings land here having left nothing.
+    // The same words in the wrong scope would announce that half the back
+    // office had been sacked.
+    const noPostingLabel = clientScopeId
+      ? "Fired / Resigned / Terminated"
+      : "No current posting";
     const buckets = new Map<string, { id: string; name: string; rows: RowState[] }>();
     for (const row of sortedRows) {
       const sid = siteByGuard.get(row.employee.id) ?? "";
-      const b = buckets.get(sid) ?? { id: sid, name: sid ? nameById.get(sid) ?? "(Unknown site)" : "Fired / Resigned / Terminated", rows: [] };
+      const b = buckets.get(sid) ?? { id: sid, name: sid ? nameById.get(sid) ?? "(Unknown site)" : noPostingLabel, rows: [] };
       b.rows.push(row);
       buckets.set(sid, b);
     }
     return [...buckets.values()].sort((a, b) =>
       a.id === "" ? 1 : b.id === "" ? -1 : a.name.localeCompare(b.name),
     );
-  }, [siteGrouped, sortedRows, sites, siteByGuard]);
+  }, [siteGrouped, sortedRows, sites, siteByGuard, clients, clientScopeId]);
 
   /**
    * What the table body renders: the plain row list, or — when grouped — site
