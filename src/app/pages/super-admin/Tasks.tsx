@@ -4,7 +4,7 @@ import { Plus, Loader2, AlertCircle, X, Trash2, Pencil, Calendar as CalendarIcon
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
-import TaskChecklist from "../../components/TaskChecklist";
+import PersonalChecklist from "../../components/PersonalChecklist";
 import { formatDate } from "../../lib/date";
 import {
   supabase,
@@ -485,6 +485,16 @@ export default function Tasks() {
             ))}
           </div>
         )}
+
+        {/* Beneath the board, and outside the loading branch on purpose: the
+            notes are a separate thing from the tasks and should not disappear
+            while the columns are fetching. */}
+        <PersonalChecklist
+          me={profile ?? null}
+          isAdmin={isAdmin}
+          users={users}
+          onError={setError}
+        />
       </div>
 
       <Modal
@@ -578,13 +588,6 @@ export default function Tasks() {
               />
             )}
 
-            {/* The assignee's own breakdown of the work. Shown to the assignee
-                and to admins; RLS decides, not this condition. */}
-            <TaskChecklist
-              taskId={editTask.id}
-              canEdit={isAdmin || editTask.assignee_id === profile?.id}
-              onError={setError}
-            />
 
             <div className="flex items-center gap-3 pt-2">
               <Button variant="primary" size="md" className="flex-1" disabled={submitting}>

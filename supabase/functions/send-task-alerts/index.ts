@@ -5,8 +5,8 @@
 //
 //   1. ASSIGNMENT   — a task now has an assignee who has not yet been told.
 //   2. TASK DUE     — an unfinished task's due date is 7 / 3 / 1 / 0 days out.
-//   3. SUB-TASK DUE — an armed checklist item is 3 days / 1 day / 3 hours from
-//                     its own `due_at` (0420).
+//   3. NOTE DUE     — an armed line on someone's PERSONAL checklist is 3 days /
+//                     1 day / 3 hours from its own `due_at` (0421).
 //
 // Called HOURLY by pg_cron with the service-role key (0420), or with ?test=1
 // from a signed-in session to preview what the caller is owed.
@@ -26,8 +26,9 @@
 // callback.
 //
 // DE-DUPLICATION IS THE DATABASE'S JOB, not this file's. `task_alert_log` has a
-// unique index on (task_id, alert_kind, recipient_email, checklist_item_id
-// collapsed to a sentinel when null) — 0418, widened by 0420 — so a second
+// unique index over (task_id, alert_kind, recipient_email, personal_item_id)
+// with BOTH nullable columns collapsed to a sentinel — 0418, widened by 0420
+// and again by 0421 — so a second
 // send is refused by Postgres, not by this code remembering to check. The
 // insert happens BEFORE the send for exactly that reason: see the note on
 // `claim` below. A daily job that re-sent "due in 3 days" every morning for
@@ -49,9 +50,9 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 // list that stops at 1 quietly treats the deadline as the day after.
 const REMINDER_DAYS = [7, 3, 1, 0];
 
-// Sub-task reminders, in HOURS before the item's own `due_at`. Hours and not
-// days because 3 hours is one of them, and because a checklist deadline is an
-// instant (0420) rather than a date. 72 and 24 are "3 days" and "1 day" as the
+// Personal-checklist reminders, in HOURS before the item's own `due_at`. Hours
+// and not days because 3 hours is one of them, and because a checklist deadline
+// is an instant (0420, carried into 0421) rather than a date. 72 and 24 are "3 days" and "1 day" as the
 // user described them — expressed in the same unit as the tight one so the
 // comparison below is one subtraction rather than two kinds of arithmetic.
 const CHECKLIST_REMINDER_HOURS = [72, 24, 3];
@@ -100,25 +101,20 @@ type TaskRow = {
   assignee_id: string | null;
 };
 
-type ChecklistRow = {
+type PersonalItemRow = {
   id: string;
-  task_id: string;
+  company_id: string;
+  owner_id: string;
   label: string;
   done: boolean;
   due_at: string | null;
   reminders_on: boolean;
-  // PostgREST returns an embedded row as an object, but types it as an array in
-  // some client versions. Both shapes are handled at the call site rather than
-  // asserted away, because getting it wrong yields `undefined` and a silent skip.
-  task: { id: string; title: string; company_id: string; assignee_id: string | null; status: string }
-      | { id: string; title: string; company_id: string; assignee_id: string | null; status: string }[]
-      | null;
 };
 
-// A sub-task deadline is an instant, so it needs the time of day — the whole
-// reason 0420 made the column timestamptz. Rendered in Pakistan time because
-// that is where every recipient is; UTC would be four or five hours off and
-// look like a wrong deadline rather than a different timezone.
+// A checklist deadline is an instant, so it needs the time of day — the whole
+// reason the column is timestamptz (0420, carried into 0421). Rendered in
+// Pakistan time because that is where every recipient is; UTC would be four or
+// five hours off and look like a wrong deadline rather than a different zone.
 const fmtInstant = (iso: string) =>
   new Date(iso).toLocaleString("en-GB", {
     timeZone: "Asia/Karachi",
@@ -196,10 +192,10 @@ async function claim(
   db: SupabaseClient,
   row: {
     company_id: string;
-    task_id: string;
+    task_id: string | null;
     alert_kind: string;
     recipient_email: string;
-    checklist_item_id?: string | null;
+    personal_item_id?: string | null;
   },
 ): Promise<boolean> {
   const { error } = await db.from("task_alert_log").insert(row);
@@ -217,7 +213,7 @@ async function run(
 ) {
   // A test run is asked for by a person and must show them something, so it
   // ignores the hour gate. The scheduled run does not: 23 hours out of 24 it
-  // does the sub-task pass only.
+  // does the personal-checklist pass only.
   const doDayWork = opts.isTest || opts.hourUtc === DAY_ALERT_UTC_HOUR;
   const sent: { kind: string; task: string; to: string }[] = [];
   const skipped: string[] = [];
@@ -347,43 +343,38 @@ async function run(
   }
 
   // ==========================================================================
-  // Sub-task reminders. Every hour, not just the day-work hour.
+  // Personal checklist reminders. Every hour, not just the day-work hour.
   // ==========================================================================
   //
-  // Only items that are ARMED (`reminders_on`), unfinished, and carrying a
-  // deadline. The armed-without-a-deadline row cannot exist — 0420 refuses it
-  // at the table — so `due_at` is non-null here by construction rather than by
-  // hope, and the filter below is belt as well as braces.
+  // These belong to a PERSON, not to a task (0421) — so unlike everything
+  // above, the recipient is the item's own owner and there is no task to read
+  // an assignee from. Only armed, unfinished items with a deadline; the
+  // armed-without-a-deadline row cannot exist, because the table refuses it.
   const { data: items, error: iErr } = await db
-    .from("task_checklist_items")
-    .select(
-      "id, task_id, label, done, due_at, reminders_on, " +
-      "task:task_id(id, title, company_id, assignee_id, status)",
-    )
+    .from("personal_checklist_items")
+    .select("id, company_id, owner_id, label, done, due_at, reminders_on")
+    .in("owner_id", Array.from(byId.keys()))
     .eq("reminders_on", true)
     .eq("done", false)
     .not("due_at", "is", null);
-  if (iErr) throw new Error(`checklist read failed: ${iErr.message}`);
+  if (iErr) throw new Error(`personal checklist read failed: ${iErr.message}`);
 
   const now = Date.now();
 
-  for (const item of (items ?? []) as ChecklistRow[]) {
-    const task = Array.isArray(item.task) ? item.task[0] : item.task;
-    if (!task || task.status === "done") continue;
-    const person = task.assignee_id ? byId.get(task.assignee_id) : null;
-    const to = (person?.task_alert_email as string | null)?.trim();
+  for (const item of (items ?? []) as PersonalItemRow[]) {
+    const to = (byId.get(item.owner_id)?.task_alert_email as string | null)?.trim();
     if (!to) continue;
 
     const hoursLeft = (new Date(item.due_at!).getTime() - now) / 3_600_000;
 
-    // Every threshold this item has now reached, tightest last. An item three
-    // hours out has reached all three; one two days out has reached only 72.
+    // Every threshold this item has now reached. One three hours out has
+    // reached all three; one two days out has reached only 72.
     const reached = CHECKLIST_REMINDER_HOURS.filter((h) => hoursLeft <= h);
     if (reached.length === 0) continue;
     const tightest = Math.min(...reached);
 
     // Claim EVERY reached threshold but send only ONE message, about the
-    // tightest. This is what makes a missed run recover gracefully instead of
+    // tightest. This is what makes a missed run recover quietly rather than
     // noisily: an item that crossed 72, 24 and 3 while the job was down has
     // three unsent thresholds, and the useful thing to say is "due in 3 hours",
     // not that plus two announcements that are already obsolete. The looser
@@ -391,16 +382,18 @@ async function run(
     let anyNew = false;
     for (const threshold of reached) {
       if (opts.isTest) { anyNew = true; continue; }
+      // task_id is NULL here and personal_item_id carries the subject — the
+      // log's check constraint requires exactly one of the two.
       const claimed = await claim(db, {
-        company_id: task.company_id,
-        task_id: task.id,
-        alert_kind: `sub_${threshold}`,
+        company_id: item.company_id,
+        task_id: null,
+        alert_kind: `pers_${threshold}`,
         recipient_email: to,
-        checklist_item_id: item.id,
+        personal_item_id: item.id,
       });
       if (claimed) anyNew = true;
     }
-    if (!anyNew) { skipped.push(`sub-task "${item.label}" (already reminded)`); continue; }
+    if (!anyNew) { skipped.push(`note "${item.label}" (already reminded)`); continue; }
 
     const when =
       hoursLeft < 0
@@ -412,20 +405,19 @@ async function run(
     try {
       await sendViaResend({
         to,
-        from: await resolveSender(task.company_id),
-        subject: `Sub-task ${hoursLeft < 0 ? "overdue" : "due soon"}: ${item.label}`,
+        from: await resolveSender(item.company_id),
+        subject: `${hoursLeft < 0 ? "Overdue" : "Due soon"}: ${item.label}`,
         html: shell(
-          hoursLeft < 0 ? "A sub-task is overdue" : "A sub-task is coming due",
+          hoursLeft < 0 ? "A note of yours is overdue" : "A note of yours is coming due",
           hoursLeft < 0 || tightest <= 3 ? "#dc2626" : tightest <= 24 ? "#d97706" : "#2563eb",
-          `<p style="margin:0 0 14px;">Your checklist item ${esc(when)}.</p>` +
+          `<p style="margin:0 0 14px;">An item on your checklist ${esc(when)}.</p>` +
             `<div style="border:1px solid #e2e8f0;border-radius:8px;padding:14px;">` +
             `<p style="margin:0 0 6px;font-size:16px;">${esc(item.label)}</p>` +
-            `<p style="margin:0;color:#64748b;font-size:12px;">` +
-            `Due ${esc(fmtInstant(item.due_at!))} &middot; on task &ldquo;${esc(task.title)}&rdquo;` +
-            `</p></div>`,
+            `<p style="margin:0;color:#64748b;font-size:12px;">Due ${esc(fmtInstant(item.due_at!))}</p>` +
+            `</div>`,
         ),
       });
-      sent.push({ kind: `sub_${tightest}`, task: item.label, to });
+      sent.push({ kind: `pers_${tightest}`, task: item.label, to });
     } catch (e) {
       failed.push({ task: item.label, reason: e instanceof Error ? e.message : String(e) });
     }

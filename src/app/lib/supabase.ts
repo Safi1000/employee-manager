@@ -298,28 +298,25 @@ export type Task = {
 };
 
 /**
- * One line of the assignee's personal checklist on a task (0418).
+ * One line of a user's own running checklist, shown beneath the task board
+ * (0421, replacing the per-task `task_checklist_items` of 0418/0420).
  *
- * Keyed on the TASK, not on (task, user): a task has exactly one assignee, so a
- * second axis would be a column nothing could populate. Admins and the SSA can
- * read and edit these; nobody else outside the assignee can see them at all.
+ * Scoped by `owner_id` and nothing else — it is not attached to a task. The
+ * owner reads and writes their own; super_admin and the SSA may READ anyone's
+ * in their company and write nobody's but their own.
  */
-export type TaskChecklistItem = {
+export type PersonalChecklistItem = {
   id: string;
-  task_id: string;
   company_id: string;
+  owner_id: string;
   label: string;
   done: boolean;
   position: number;
-  created_by: string | null;
-  // 0420. The sub-task's own deadline, as an INSTANT — timestamptz, not a date,
-  // because the tightest reminder is 3 hours out and a date has no hour in it
-  // to count back from. Distinct from tasks.due_date, which stays a date.
+  /** Optional deadline, as an INSTANT — timestamptz, not a date, because the
+   *  tightest reminder is 3 hours out and a date has no hour to count back from. */
   due_at: string | null;
-  // Armed by the bell on the checklist row. Reminders fire 3 days, 1 day and
-  // 3 hours before due_at. A check constraint refuses this without a due_at,
-  // because an armed item with no deadline would sit silent forever and look
-  // like the feature is broken.
+  /** Armed by the bell on the row. Reminders fire 3 days, 1 day and 3 hours
+   *  before due_at. A check constraint refuses this without a due_at. */
   reminders_on: boolean;
   created_at?: string;
   updated_at?: string;
