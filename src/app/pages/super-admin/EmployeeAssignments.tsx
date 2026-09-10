@@ -2924,7 +2924,34 @@ function AssignEmployeesModal({
           continue;
         }
 
+        // The posting row goes FIRST — it is the step that can be refused (the
+        // slot-free trigger, enforce_deployment_slot_free/0408). If we set the
+        // employee's assignment columns before it and the insert is rejected,
+        // there is no transaction to roll them back, so the guard is left
+        // half-assigned: counted against the slot (activeCountByLine reads
+        // contract_line_id off the employee) yet absent from the roster, which
+        // falsely fills the post and blocks the next hire. Inserting the posting
+        // first means a rejection leaves the employee row untouched.
+        // shift_code MUST be stamped here: it is what makes shift a dated property.
+        // Left null, this segment resolves through to the guard's CURRENT shift, so
+        // a later shift change would repaint every earlier day with the new shift.
+        // ponytail: still two calls, not one transaction — the fully-atomic form
+        // is a single assign RPC. The reverse residual (posting written, employee
+        // update fails) fails SAFE: the DB slot trigger counts the posting, so no
+        // over-hire, and it self-heals on the next edit.
+        const { error: depErr } = await supabase.from("deployments").insert({
+          guard_id: e.id,
+          client_id: target.id,
+          contract_line_id: contractLineId || null,
+          site_id: postSiteId,
+          start_date: startDate,
+          shift_code: shift || e.shift || "day",
+          reason: "new_hire",
+        });
+        if (depErr) throw fail(depErr.message);
+
         // Category and shift are plain columns until the first posting exists.
+        // The posting's sync trigger already mirrored client_id onto the employee.
         const { error: upErr } = await supabase
           .from("employees")
           .update({
@@ -2941,21 +2968,6 @@ function AssignEmployeesModal({
           })
           .eq("id", e.id);
         if (upErr) throw fail(upErr.message);
-
-        // The posting row. Its sync trigger mirrors client_id onto the employee.
-        // shift_code MUST be stamped here: it is what makes shift a dated property.
-        // Left null, this segment resolves through to the guard's CURRENT shift, so
-        // a later shift change would repaint every earlier day with the new shift.
-        const { error: depErr } = await supabase.from("deployments").insert({
-          guard_id: e.id,
-          client_id: target.id,
-          contract_line_id: contractLineId || null,
-          site_id: postSiteId,
-          start_date: startDate,
-          shift_code: shift || e.shift || "day",
-          reason: "new_hire",
-        });
-        if (depErr) throw fail(depErr.message);
 
         // Permanent GGS-NNNNN (once, at hiring) + the client-scoped display number.
         if (!e.guard_code) {
