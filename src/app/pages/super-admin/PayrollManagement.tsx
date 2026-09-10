@@ -1,7 +1,7 @@
 import ThemedSelect from "../../components/ThemedSelect";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Search, Download, AlertCircle, X, Loader2, SlidersHorizontal, ChevronDown, ChevronRight, MapPin, Lock, Check } from "lucide-react";
+import { Search, Download, AlertCircle, X, Loader2, SlidersHorizontal, ChevronDown, ChevronRight, MapPin, Building2, Lock, Check } from "lucide-react";
 import jsPDF from "jspdf";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -865,8 +865,16 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     [filtered],
   );
 
-  // ── Site grouping (siteGrouped embeds only) ──────────────────────────────
-  // Which site rows are open, keyed by site id ("" = the no-posting bucket).
+  // ── Grouping: client → site → people ─────────────────────────────
+  // The shape Assignments & Pay uses, and the one asked for here. A single flat
+  // level of sites was the previous attempt and it does not work on the whole
+  // company: MIU's three sites land alphabetically among twenty-eight others, so
+  // there is no "MIU" to open and the page reads as a list of clients.
+  //
+  // The client-scoped EMBED (Payroll Run's Review step) keeps the flat site
+  // level, because the client is already named on the card the embed sits in —
+  // a client header there would repeat it and cost a click.
+  const [openClientRows, setOpenClientRows] = useState<Set<string>>(new Set());
   const [openSiteRows, setOpenSiteRows] = useState<Set<string>>(new Set());
   const toggleSiteRow = (k: string) =>
     setOpenSiteRows((prev) => {
@@ -874,101 +882,172 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       if (n.has(k)) n.delete(k); else n.add(k);
       return n;
     });
+  const toggleClientRow = (k: string) =>
+    setOpenClientRows((prev) => {
+      const n = new Set(prev);
+      if (n.has(k)) n.delete(k); else n.add(k);
+      return n;
+    });
+
+  type SiteBucket = { id: string; name: string; rows: RowState[] };
+  type ClientBucket = { id: string; name: string; rows: RowState[]; sites: SiteBucket[] };
+
   // A guard stands at ONE site, read off their open posting — the employee row
-  // does not carry it. Anyone with no open posting lands in the last bucket,
-  // which sorts after every real site so it never hides one behind it. On a
-  // client-scoped roster that bucket is overwhelmingly people who have LEFT —
-  // separation closes the deployment — so it is labelled for them.
-  const siteGroups = useMemo(() => {
+  // does not carry it. Anyone with no open posting lands in a last bucket that
+  // sorts after every real site so it never hides one behind it.
+  const groups = useMemo<ClientBucket[] | null>(() => {
     if (!siteGrouped) return null;
-    // The client is prefixed onto a site name ONLY where that name is actually
-    // ambiguous — the same site name under more than one client.
-    //
-    // Prefixing unconditionally was wrong and looked like a different bug. Of
-    // 29 clients here, 24 have exactly one site whose name IS the client's name,
-    // so every header rendered "AWT — AWT" and "HMC Taxila — HMC Taxila" and the
-    // page read as though it had been grouped by client. The grouping was right;
-    // the label was announcing the wrong thing about it.
-    //
-    // Counting the collisions instead adds nothing today (no site name repeats)
-    // and starts disambiguating by itself the day two clients both open a "Main
-    // Gate" — without a list anybody has to maintain.
+    const siteById = new Map(sites.map((x) => [x.id, x]));
     const clientNameById = new Map(clients.map((c) => [c.id, c.name]));
+
+    // The client is prefixed onto a site name ONLY where that name is ambiguous
+    // — the same site name under more than one client. Prefixing every site was
+    // the previous attempt: 24 of 29 clients have one site whose name IS the
+    // client's, so every header read "AWT — AWT" and the page looked grouped by
+    // client. Counting collisions adds nothing today and starts disambiguating
+    // by itself the day two clients both open a "Main Gate".
     const nameUses = new Map<string, number>();
-    for (const s of sites) {
-      const k = s.name.trim().toLowerCase();
+    for (const x of sites) {
+      const k = x.name.trim().toLowerCase();
       nameUses.set(k, (nameUses.get(k) ?? 0) + 1);
     }
-    const nameById = new Map(
-      sites.map((s) => {
-        const ambiguous = (nameUses.get(s.name.trim().toLowerCase()) ?? 0) > 1;
-        // Client-scoped, the client is already named on the card above, so the
-        // prefix would repeat it even when the name collides.
-        const client = clientScopeId || !ambiguous ? null : clientNameById.get(s.client_id);
-        return [s.id, client ? `${client} — ${s.name}` : s.name] as const;
-      }),
-    );
-    // The no-posting bucket, and its label is a measurement of its context.
-    // Client-scoped, everyone in it has had their deployment closed, and closing
-    // a deployment is what separation does — so "Fired / Resigned / Terminated"
-    // is accurate there. Company-wide it is NOT: office staff, head-office
-    // accountants and anyone between postings land here having left nothing.
-    // The same words in the wrong scope would announce that half the back
-    // office had been sacked.
-    const noPostingLabel = clientScopeId
-      ? "Fired / Resigned / Terminated"
-      : "No current posting";
-    const buckets = new Map<string, { id: string; name: string; rows: RowState[] }>();
-    for (const row of sortedRows) {
-      const sid = siteByGuard.get(row.employee.id) ?? "";
-      const b = buckets.get(sid) ?? { id: sid, name: sid ? nameById.get(sid) ?? "(Unknown site)" : noPostingLabel, rows: [] };
-      b.rows.push(row);
-      buckets.set(sid, b);
+    const siteLabel = (id: string) => {
+      const site = siteById.get(id);
+      if (!site) return "(Unknown site)";
+      const ambiguous = (nameUses.get(site.name.trim().toLowerCase()) ?? 0) > 1;
+      const client = ambiguous ? clientNameById.get(site.client_id) : null;
+      return client ? `${client} — ${site.name}` : site.name;
+    };
+
+    const bucketSites = (rows: RowState[], noPostingLabel: string): SiteBucket[] => {
+      const byId = new Map<string, SiteBucket>();
+      for (const row of rows) {
+        const sid = siteByGuard.get(row.employee.id) ?? "";
+        const b = byId.get(sid) ?? { id: sid, name: sid ? siteLabel(sid) : noPostingLabel, rows: [] };
+        b.rows.push(row);
+        byId.set(sid, b);
+      }
+      return [...byId.values()].sort((a, b) =>
+        a.id === "" ? 1 : b.id === "" ? -1 : a.name.localeCompare(b.name));
+    };
+
+    // Client-scoped: no client level at all, one bucket holding the site rows —
+    // the same output the flat version produced, which is what Payroll Run
+    // renders today. Its no-posting bucket can say "Fired / Resigned" because
+    // within one client a closed deployment IS what separation did.
+    if (clientScopeId) {
+      return [{
+        id: clientScopeId,
+        name: "",
+        rows: sortedRows,
+        sites: bucketSites(sortedRows, "Fired / Resigned / Terminated"),
+      }];
     }
-    return [...buckets.values()].sort((a, b) =>
-      a.id === "" ? 1 : b.id === "" ? -1 : a.name.localeCompare(b.name),
-    );
+
+    const byClient = new Map<string, ClientBucket>();
+    for (const row of sortedRows) {
+      const cid = row.employee.client_id ?? "";
+      const c = byClient.get(cid) ?? {
+        id: cid,
+        name: cid ? clientNameById.get(cid) ?? "(Unknown client)" : "Head office / no client",
+        rows: [],
+        sites: [],
+      };
+      c.rows.push(row);
+      byClient.set(cid, c);
+    }
+
+    for (const c of byClient.values()) {
+      // Company-wide the no-posting bucket is office staff and people between
+      // postings, NOT leavers — the same words the client-scoped branch uses
+      // would announce here that the back office had been sacked.
+      const siteList = bucketSites(c.rows, "No current posting");
+      // One bucket means the site level says nothing the client header does not
+      // already say, so it is dropped and the people hang straight off the
+      // client — exactly what Assignments does for a client with no sites.
+      c.sites = siteList.length > 1 ? siteList : [];
+    }
+
+    return [...byClient.values()].sort((a, b) =>
+      a.id === "" ? 1 : b.id === "" ? -1 : a.name.localeCompare(b.name));
   }, [siteGrouped, sortedRows, sites, siteByGuard, clients, clientScopeId]);
 
   /**
-   * What the table body renders: the plain row list, or — when grouped — site
-   * header rows with their people beneath. A scope with a SINGLE bucket is
-   * rendered flat, exactly as the Attendance board does: the row would only
-   * repeat what the client card above it already says and cost a click.
+   * What the table body renders: the plain row list, or the client / site /
+   * person tree flattened into table rows.
    */
   type BodyItem =
+    | { kind: "client"; key: string; id: string; name: string; count: number; net: number; sites: number; open: boolean }
     | { kind: "site"; key: string; id: string; name: string; count: number; net: number; open: boolean }
-    | { kind: "row"; key: string; row: RowState };
+    // depth says how far in the person sits: 0 with no grouping at all, 1 under
+    // a client header, 2 under a client AND a site. Carried on the item rather
+    // than recomputed at render time, because the renderer sees a flat list and
+    // has no way to know which header it last passed.
+    | { kind: "row"; key: string; row: RowState; depth: number };
+
   const bodyItems = useMemo<BodyItem[]>(() => {
-    if (!siteGroups) return sortedRows.map((row) => ({ kind: "row", key: row.employee.id, row }));
-    const flat = siteGroups.length === 1;
+    if (!groups) return sortedRows.map((row) => ({ kind: "row", key: row.employee.id, row, depth: 0 }));
+    const netOf = (rows: RowState[]) => rows.reduce((n, r) => n + Math.round(r.net_salary || 0), 0);
     const out: BodyItem[] = [];
-    for (const g of siteGroups) {
-      const open = flat || openSiteRows.has(g.id);
-      if (!flat) {
+    // Client-scoped embed: no client header, sites at the top level.
+    const scoped = !!clientScopeId;
+
+    for (const c of groups) {
+      const cOpen = scoped || openClientRows.has(c.id);
+      if (!scoped) {
         out.push({
-          kind: "site",
-          key: `site:${g.id}`,
-          id: g.id,
-          name: g.name,
-          count: g.rows.length,
-          net: g.rows.reduce((n, r) => n + Math.round(r.net_salary || 0), 0),
-          open,
+          kind: "client",
+          key: `client:${c.id}`,
+          id: c.id,
+          name: c.name,
+          count: c.rows.length,
+          net: netOf(c.rows),
+          sites: c.sites.length,
+          open: cOpen,
         });
       }
-      if (open) for (const row of g.rows) out.push({ kind: "row", key: row.employee.id, row });
+      if (!cOpen) continue;
+
+      if (c.sites.length === 0) {
+        for (const row of c.rows) out.push({ kind: "row", key: row.employee.id, row, depth: scoped ? 0 : 1 });
+        continue;
+      }
+      for (const site of c.sites) {
+        const sKey = `${c.id}|${site.id}`;
+        // The embed has no client level to collapse, so a lone site bucket there
+        // is rendered flat exactly as it was before.
+        const flat = scoped && c.sites.length === 1;
+        const sOpen = flat || openSiteRows.has(sKey);
+        if (!flat) {
+          out.push({
+            kind: "site",
+            key: `site:${sKey}`,
+            id: sKey,
+            name: site.name,
+            count: site.rows.length,
+            net: netOf(site.rows),
+            open: sOpen,
+          });
+        }
+        if (sOpen) {
+          // flat means no site header was drawn, so the row is one level in from
+          // whatever is above it rather than two.
+          const depth = (scoped ? 0 : 1) + (flat ? 0 : 1);
+          for (const row of site.rows) out.push({ kind: "row", key: row.employee.id, row, depth });
+        }
+      }
     }
     return out;
-  }, [siteGroups, sortedRows, openSiteRows]);
+  }, [groups, sortedRows, openClientRows, openSiteRows, clientScopeId]);
 
-  // Columns actually rendered, for the site header's colSpan. Base four are
-  // Employee / Attendance / Base / Net; afterNet adds the select box, and the
-  // full (non-inline) table adds Client, Status and Actions.
+  // Columns actually rendered, for the header colSpan. Base four are Employee /
+  // Attendance / Base / Net; afterNet adds the select box, and the full
+  // (non-inline) table adds Client, Status and Actions.
   const bodyColCount = 4 + (afterNet ? 1 : 0) + (runInline ? 0 : 3);
-  // Only indent people under a site header that is actually on screen — a flat
-  // (single-bucket) group has no header, so an indent there would be nesting
-  // under nothing.
-  const siteIndent = !!siteGroups && siteGroups.length > 1;
+  // Left padding for a person row, by how deep it sits. Indentation is what
+  // makes the tree readable as a tree; without it a client header and the people
+  // under it are the same shape and the nesting is invisible.
+  const rowIndent = (depth: number) => (depth >= 2 ? "pl-16" : depth === 1 ? "pl-10" : "");
 
   // Payroll Run drives the month from outside — keep the embed in sync.
   useEffect(() => {
@@ -2320,6 +2399,35 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                     )}
                     {!loading &&
                       bodyItems.map((item) => {
+                        if (item.kind === "client") {
+                          return (
+                            <tr key={item.key} className="bg-secondary/70 border-b border-border">
+                              <td colSpan={bodyColCount} className="p-0">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleClientRow(item.id)}
+                                  aria-expanded={item.open}
+                                  className="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-accent transition-colors"
+                                >
+                                  <ChevronRight
+                                    className={`w-4 h-4 shrink-0 text-muted-foreground transition-transform ${item.open ? "rotate-90" : ""}`}
+                                    strokeWidth={1.75}
+                                  />
+                                  <Building2 className="w-4 h-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
+                                  <span className="text-sm text-foreground truncate flex-1">{item.name}</span>
+                                  <span className="text-xs text-muted-foreground shrink-0 tabular-nums">
+                                    {/* The site count is named on the client row so a
+                                        multi-site client is identifiable without opening
+                                        it — that is the whole reason to open this one
+                                        rather than the twenty next to it. */}
+                                    {item.sites > 1 ? `${item.sites} sites · ` : ""}
+                                    {item.count} employee{item.count === 1 ? "" : "s"} · PKR {item.net.toLocaleString()}
+                                  </span>
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        }
                         if (item.kind === "site") {
                           return (
                             <tr key={item.key} className="bg-secondary/40 border-b border-border">
@@ -2328,7 +2436,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                   type="button"
                                   onClick={() => toggleSiteRow(item.id)}
                                   aria-expanded={item.open}
-                                  className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-accent transition-colors"
+                                  className="w-full flex items-center gap-2 pl-9 pr-4 py-2.5 text-left hover:bg-accent transition-colors"
                                 >
                                   <ChevronRight
                                     className={`w-4 h-4 shrink-0 text-muted-foreground transition-transform ${item.open ? "rotate-90" : ""}`}
@@ -2380,7 +2488,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                 </td>
                               );
                             })()}
-                            <td className={`px-4 py-3 ${siteIndent ? "pl-10" : ""}`}>
+                            <td className={`px-4 py-3 ${rowIndent(item.depth)}`}>
                               <div className="text-sm text-slate-900 flex items-center gap-2">
                                 {e.full_name}
                                 {/* Says Fired / Terminated / Resigned / Absconded
