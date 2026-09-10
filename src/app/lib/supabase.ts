@@ -312,6 +312,15 @@ export type TaskChecklistItem = {
   done: boolean;
   position: number;
   created_by: string | null;
+  // 0420. The sub-task's own deadline, as an INSTANT — timestamptz, not a date,
+  // because the tightest reminder is 3 hours out and a date has no hour in it
+  // to count back from. Distinct from tasks.due_date, which stays a date.
+  due_at: string | null;
+  // Armed by the bell on the checklist row. Reminders fire 3 days, 1 day and
+  // 3 hours before due_at. A check constraint refuses this without a due_at,
+  // because an armed item with no deadline would sit silent forever and look
+  // like the feature is broken.
+  reminders_on: boolean;
   created_at?: string;
   updated_at?: string;
 };

@@ -1,13 +1,20 @@
 // Edge function: send-task-alerts
 //
-// Two kinds of mail about the task board, both to the address the user set on
+// Three kinds of mail about the task board, all to the address the user set on
 // the board themselves (`profiles.task_alert_email`):
 //
-//   1. ASSIGNMENT — a task now has an assignee who has not yet been told.
-//   2. REMINDER   — an unfinished task's due date is 7 / 3 / 1 / 0 days out.
+//   1. ASSIGNMENT   — a task now has an assignee who has not yet been told.
+//   2. TASK DUE     — an unfinished task's due date is 7 / 3 / 1 / 0 days out.
+//   3. SUB-TASK DUE — an armed checklist item is 3 days / 1 day / 3 hours from
+//                     its own `due_at` (0420).
 //
-// Called daily by pg_cron with the service-role key, or with ?test=1 from a
-// signed-in session to send the caller one sample of each kind they are owed.
+// Called HOURLY by pg_cron with the service-role key (0420), or with ?test=1
+// from a signed-in session to preview what the caller is owed.
+//
+// The hourly cadence exists for (3) alone: a 3-hour warning cannot be delivered
+// by a job that wakes once a day. (1) and (2) are day-scale and are gated to
+// the DAY_ALERT_UTC_HOUR run, so their cadence is exactly what it was when the
+// schedule was daily — the other 23 runs skip them without reading anything.
 //
 // WHY NOTHING IS SENT FROM THE APP. The obvious place to announce an assignment
 // is the moment the board saves one — and that is the one place it must not be,
@@ -19,7 +26,8 @@
 // callback.
 //
 // DE-DUPLICATION IS THE DATABASE'S JOB, not this file's. `task_alert_log` has a
-// unique index on (task_id, alert_kind, recipient_email) — 0418 — so a second
+// unique index on (task_id, alert_kind, recipient_email, checklist_item_id
+// collapsed to a sentinel when null) — 0418, widened by 0420 — so a second
 // send is refused by Postgres, not by this code remembering to check. The
 // insert happens BEFORE the send for exactly that reason: see the note on
 // `claim` below. A daily job that re-sent "due in 3 days" every morning for
@@ -40,6 +48,19 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 // purpose: the day itself is the one people most want to be told about, and a
 // list that stops at 1 quietly treats the deadline as the day after.
 const REMINDER_DAYS = [7, 3, 1, 0];
+
+// Sub-task reminders, in HOURS before the item's own `due_at`. Hours and not
+// days because 3 hours is one of them, and because a checklist deadline is an
+// instant (0420) rather than a date. 72 and 24 are "3 days" and "1 day" as the
+// user described them — expressed in the same unit as the tight one so the
+// comparison below is one subtraction rather than two kinds of arithmetic.
+const CHECKLIST_REMINDER_HOURS = [72, 24, 3];
+
+// The hour (UTC) at which the day-based work runs. The job wakes every hour for
+// the 3-hour sub-task warning; assignment mail and task-level due reminders are
+// still once-a-day things and would otherwise be evaluated 24 times for no
+// benefit. 07:00 UTC is ~12:00 PKT and is the cadence 0419 established.
+const DAY_ALERT_UTC_HOUR = 7;
 
 const DEFAULT_SENDER = "Task Board <onboarding@resend.dev>";
 
@@ -78,6 +99,35 @@ type TaskRow = {
   due_date: string | null;
   assignee_id: string | null;
 };
+
+type ChecklistRow = {
+  id: string;
+  task_id: string;
+  label: string;
+  done: boolean;
+  due_at: string | null;
+  reminders_on: boolean;
+  // PostgREST returns an embedded row as an object, but types it as an array in
+  // some client versions. Both shapes are handled at the call site rather than
+  // asserted away, because getting it wrong yields `undefined` and a silent skip.
+  task: { id: string; title: string; company_id: string; assignee_id: string | null; status: string }
+      | { id: string; title: string; company_id: string; assignee_id: string | null; status: string }[]
+      | null;
+};
+
+// A sub-task deadline is an instant, so it needs the time of day — the whole
+// reason 0420 made the column timestamptz. Rendered in Pakistan time because
+// that is where every recipient is; UTC would be four or five hours off and
+// look like a wrong deadline rather than a different timezone.
+const fmtInstant = (iso: string) =>
+  new Date(iso).toLocaleString("en-GB", {
+    timeZone: "Asia/Karachi",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 
 function shell(heading: string, accent: string, body: string) {
   return `<!doctype html><html><body style="margin:0;padding:24px;background:#f1f5f9;font-family:system-ui,-apple-system,Segoe UI,sans-serif;">
@@ -144,7 +194,13 @@ async function sendViaResend(args: { to: string; from: string; subject: string; 
  */
 async function claim(
   db: SupabaseClient,
-  row: { company_id: string; task_id: string; alert_kind: string; recipient_email: string },
+  row: {
+    company_id: string;
+    task_id: string;
+    alert_kind: string;
+    recipient_email: string;
+    checklist_item_id?: string | null;
+  },
 ): Promise<boolean> {
   const { error } = await db.from("task_alert_log").insert(row);
   if (!error) return true;
@@ -155,7 +211,14 @@ async function claim(
   throw new Error(`task_alert_log insert failed: ${error.message}`);
 }
 
-async function run(db: SupabaseClient, opts: { today: string; onlyUser?: string; isTest: boolean }) {
+async function run(
+  db: SupabaseClient,
+  opts: { today: string; hourUtc: number; onlyUser?: string; isTest: boolean },
+) {
+  // A test run is asked for by a person and must show them something, so it
+  // ignores the hour gate. The scheduled run does not: 23 hours out of 24 it
+  // does the sub-task pass only.
+  const doDayWork = opts.isTest || opts.hourUtc === DAY_ALERT_UTC_HOUR;
   const sent: { kind: string; task: string; to: string }[] = [];
   const skipped: string[] = [];
   const failed: { task: string; reason: string }[] = [];
@@ -206,7 +269,7 @@ async function run(db: SupabaseClient, opts: { today: string; onlyUser?: string;
     return s;
   };
 
-  for (const task of (tasks ?? []) as TaskRow[]) {
+  for (const task of (doDayWork ? (tasks ?? []) : []) as TaskRow[]) {
     const person = task.assignee_id ? byId.get(task.assignee_id) : null;
     const to = (person?.task_alert_email as string | null)?.trim();
     if (!to) continue;
@@ -283,6 +346,91 @@ async function run(db: SupabaseClient, opts: { today: string; onlyUser?: string;
     }
   }
 
+  // ==========================================================================
+  // Sub-task reminders. Every hour, not just the day-work hour.
+  // ==========================================================================
+  //
+  // Only items that are ARMED (`reminders_on`), unfinished, and carrying a
+  // deadline. The armed-without-a-deadline row cannot exist — 0420 refuses it
+  // at the table — so `due_at` is non-null here by construction rather than by
+  // hope, and the filter below is belt as well as braces.
+  const { data: items, error: iErr } = await db
+    .from("task_checklist_items")
+    .select(
+      "id, task_id, label, done, due_at, reminders_on, " +
+      "task:task_id(id, title, company_id, assignee_id, status)",
+    )
+    .eq("reminders_on", true)
+    .eq("done", false)
+    .not("due_at", "is", null);
+  if (iErr) throw new Error(`checklist read failed: ${iErr.message}`);
+
+  const now = Date.now();
+
+  for (const item of (items ?? []) as ChecklistRow[]) {
+    const task = Array.isArray(item.task) ? item.task[0] : item.task;
+    if (!task || task.status === "done") continue;
+    const person = task.assignee_id ? byId.get(task.assignee_id) : null;
+    const to = (person?.task_alert_email as string | null)?.trim();
+    if (!to) continue;
+
+    const hoursLeft = (new Date(item.due_at!).getTime() - now) / 3_600_000;
+
+    // Every threshold this item has now reached, tightest last. An item three
+    // hours out has reached all three; one two days out has reached only 72.
+    const reached = CHECKLIST_REMINDER_HOURS.filter((h) => hoursLeft <= h);
+    if (reached.length === 0) continue;
+    const tightest = Math.min(...reached);
+
+    // Claim EVERY reached threshold but send only ONE message, about the
+    // tightest. This is what makes a missed run recover gracefully instead of
+    // noisily: an item that crossed 72, 24 and 3 while the job was down has
+    // three unsent thresholds, and the useful thing to say is "due in 3 hours",
+    // not that plus two announcements that are already obsolete. The looser
+    // rows are still written, so they cannot fire later as stale news.
+    let anyNew = false;
+    for (const threshold of reached) {
+      if (opts.isTest) { anyNew = true; continue; }
+      const claimed = await claim(db, {
+        company_id: task.company_id,
+        task_id: task.id,
+        alert_kind: `sub_${threshold}`,
+        recipient_email: to,
+        checklist_item_id: item.id,
+      });
+      if (claimed) anyNew = true;
+    }
+    if (!anyNew) { skipped.push(`sub-task "${item.label}" (already reminded)`); continue; }
+
+    const when =
+      hoursLeft < 0
+        ? "is overdue"
+        : tightest >= 24
+          ? `is due in ${Math.round(tightest / 24)} day${tightest >= 48 ? "s" : ""}`
+          : `is due in about ${tightest} hours`;
+
+    try {
+      await sendViaResend({
+        to,
+        from: await resolveSender(task.company_id),
+        subject: `Sub-task ${hoursLeft < 0 ? "overdue" : "due soon"}: ${item.label}`,
+        html: shell(
+          hoursLeft < 0 ? "A sub-task is overdue" : "A sub-task is coming due",
+          hoursLeft < 0 || tightest <= 3 ? "#dc2626" : tightest <= 24 ? "#d97706" : "#2563eb",
+          `<p style="margin:0 0 14px;">Your checklist item ${esc(when)}.</p>` +
+            `<div style="border:1px solid #e2e8f0;border-radius:8px;padding:14px;">` +
+            `<p style="margin:0 0 6px;font-size:16px;">${esc(item.label)}</p>` +
+            `<p style="margin:0;color:#64748b;font-size:12px;">` +
+            `Due ${esc(fmtInstant(item.due_at!))} &middot; on task &ldquo;${esc(task.title)}&rdquo;` +
+            `</p></div>`,
+        ),
+      });
+      sent.push({ kind: `sub_${tightest}`, task: item.label, to });
+    } catch (e) {
+      failed.push({ task: item.label, reason: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   return { sent, skipped, failed };
 }
 
@@ -304,8 +452,14 @@ Deno.serve(async (req) => {
       onlyUser = userRes.user.id;
     }
 
-    const today = new Date().toISOString().slice(0, 10);
-    const result = await run(db, { today, onlyUser, isTest });
+    const nowUtc = new Date();
+    const today = nowUtc.toISOString().slice(0, 10);
+    const result = await run(db, {
+      today,
+      hourUtc: nowUtc.getUTCHours(),
+      onlyUser,
+      isTest,
+    });
     return json({ ok: true, test: isTest, today, ...result });
   } catch (e) {
     console.error("send-task-alerts failed:", e);
