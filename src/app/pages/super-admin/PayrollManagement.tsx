@@ -881,16 +881,30 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   // separation closes the deployment — so it is labelled for them.
   const siteGroups = useMemo(() => {
     if (!siteGrouped) return null;
-    // On a CLIENT-SCOPED roster the client is already named on the card above,
-    // so the site name alone is unambiguous. On the whole-company roster it is
-    // not: two clients can each have a "Head Office" or a "Main Gate", and two
-    // identically-titled headers a screen apart is worse than a long label.
-    // Buckets are keyed by site ID either way, so this only changes what is
-    // shown — the grouping was already correct.
+    // The client is prefixed onto a site name ONLY where that name is actually
+    // ambiguous — the same site name under more than one client.
+    //
+    // Prefixing unconditionally was wrong and looked like a different bug. Of
+    // 29 clients here, 24 have exactly one site whose name IS the client's name,
+    // so every header rendered "AWT — AWT" and "HMC Taxila — HMC Taxila" and the
+    // page read as though it had been grouped by client. The grouping was right;
+    // the label was announcing the wrong thing about it.
+    //
+    // Counting the collisions instead adds nothing today (no site name repeats)
+    // and starts disambiguating by itself the day two clients both open a "Main
+    // Gate" — without a list anybody has to maintain.
     const clientNameById = new Map(clients.map((c) => [c.id, c.name]));
+    const nameUses = new Map<string, number>();
+    for (const s of sites) {
+      const k = s.name.trim().toLowerCase();
+      nameUses.set(k, (nameUses.get(k) ?? 0) + 1);
+    }
     const nameById = new Map(
       sites.map((s) => {
-        const client = clientScopeId ? null : clientNameById.get(s.client_id);
+        const ambiguous = (nameUses.get(s.name.trim().toLowerCase()) ?? 0) > 1;
+        // Client-scoped, the client is already named on the card above, so the
+        // prefix would repeat it even when the name collides.
+        const client = clientScopeId || !ambiguous ? null : clientNameById.get(s.client_id);
         return [s.id, client ? `${client} — ${s.name}` : s.name] as const;
       }),
     );
