@@ -2048,7 +2048,19 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                     </button>
                     {open && (
                       <div className="border-t border-border">
-                        <PayrollManagement clientScopeId={s.clientId} categoryScope={s.category} afterNet runInline periodOverride={selectedPeriod} onDataChanged={() => setFvReloadKey((k) => k + 1)} />
+                        {/* siteGrouped: inside an open client card the roster
+                            breaks into its sites, the same as Payroll Run's
+                            Review step. Client-scoped, so no client header is
+                            drawn — the card above IS the client — and a client
+                            with one site stays flat.
+
+                            This embed is the surface people actually disburse
+                            from, and it was the one left ungrouped when the
+                            route-level prop was added: that prop reaches the
+                            standalone roster table, not this card. Two entry
+                            points into the same component, and only one of them
+                            was wired. */}
+                        <PayrollManagement clientScopeId={s.clientId} categoryScope={s.category} afterNet runInline siteGrouped periodOverride={selectedPeriod} onDataChanged={() => setFvReloadKey((k) => k + 1)} />
                       </div>
                     )}
                   </div>
