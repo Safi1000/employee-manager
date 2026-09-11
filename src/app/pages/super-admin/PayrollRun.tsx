@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, ShieldAlert, ShieldCheck, Loader2, AlertCircle, ArrowRight, Building2, Users, Lock, Search, X, Download } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
@@ -93,6 +93,12 @@ export default function PayrollRun() {
   // roster the search matched.
   const [rowsByScope, setRowsByScope] = useState<Map<string, PayrollExportRow[]>>(new Map());
   const [searchIndex, setSearchIndex] = useState<Map<string, string>>(new Map());
+  // Rows computed live by an expanded Review embed. Before Finance Verify these
+  // are the ONLY complete figures that exist — see the onRows prop.
+  const [liveRowsByScope, setLiveRowsByScope] = useState<Map<string, PayrollExportRow[]>>(new Map());
+  // An export asked for on a scope whose live rows have not been computed yet.
+  // The card is expanded, and this fires once its embed reports.
+  const [pendingExport, setPendingExport] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportPicked, setExportPicked] = useState<Set<string>>(new Set());
   // Finance Verify is irreversible → confirm first. { scope } = one, { all:true } = bulk.
@@ -353,6 +359,16 @@ export default function PayrollRun() {
     if (!stillVisible) setExpanded(null);
   }, [expanded, scopes, matchesSearch]);
 
+  // The queued export, fired when the scope it was asked for reports its rows.
+  useEffect(() => {
+    if (!pendingExport) return;
+    const rows = liveRowsByScope.get(pendingExport);
+    if (!rows || rows.length === 0) return;
+    runExportRef.current(pendingExport);
+    setPendingExport(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingExport, liveRowsByScope]);
+
   // Review-tab cards: the expanded client's totals, else the sum across every
   // client currently in Review this month. Same source for both, so they agree.
   const reviewCardTotals = useMemo(() => {
@@ -441,16 +457,44 @@ export default function PayrollRun() {
   // be a button that does something other than what is on screen.
   const visibleScopes = tab === "draft" ? draftScopes : tab === "review" ? reviewScopes : financeScopes;
 
+  // Live rows win over the persisted fallback. A scope that has been opened this
+  // session has real figures for everybody; one that has not falls back to the
+  // roster, where anyone without a saved payslip exports with blank salary
+  // columns and "No payslip yet" against their name.
   const buildSheets = (keys: string[]) =>
     keys
       .map((k) => ({
         name: scopes.find((sc) => sc.key === k)?.name ?? "Client",
-        rows: rowsByScope.get(k) ?? [],
+        rows: liveRowsByScope.get(k) ?? rowsByScope.get(k) ?? [],
       }))
       .filter((sheet) => sheet.rows.length > 0);
 
   const runExport = (keys: string[]) => {
     exportPayrollSheets(buildSheets(keys), fmtMonth(month));
+  };
+  // Held in a ref so the queued-export effect above does not have to list
+  // runExport (and therefore every map it closes over) as a dependency.
+  const runExportRef = useRef((k: string) => runExport([k]));
+  runExportRef.current = (k: string) => runExport([k]);
+
+  /**
+   * Export one scope, with real figures.
+   *
+   * If the scope is on the Review tab and has not been opened, its payroll has
+   * not been computed by anything yet — only the embedded roster does that. So
+   * open it and export when the numbers arrive, rather than handing back a sheet
+   * of blanks and letting the user work out why.
+   */
+  const exportScope = (s: Scope) => {
+    const needsCompute =
+      tab === "review" && !liveRowsByScope.has(s.key) &&
+      (rowsByScope.get(s.key) ?? []).some((r) => !r.hasPayslip);
+    if (needsCompute) {
+      setExpanded(s.key);
+      setPendingExport(s.key);
+      return;
+    }
+    runExport([s.key]);
   };
 
   const TABS: { key: typeof tab; label: string; count: number }[] = [
@@ -467,14 +511,16 @@ export default function PayrollRun() {
     return (
       <button
         type="button"
-        onClick={(e) => { e.stopPropagation(); runExport([s.key]); }}
-        disabled={n === 0}
+        onClick={(e) => { e.stopPropagation(); exportScope(s); }}
+        disabled={n === 0 || pendingExport === s.key}
         title={n === 0 ? "Nobody is on this scope to export" : `Export ${s.name} — ${n} employee${n === 1 ? "" : "s"}`}
         aria-label={`Export ${s.name}'s sheet`}
         className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
       >
-        <Download className="w-3.5 h-3.5" strokeWidth={1.5} />
-        Export
+        {pendingExport === s.key
+          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          : <Download className="w-3.5 h-3.5" strokeWidth={1.5} />}
+        {pendingExport === s.key ? "Calculating…" : "Export"}
       </button>
     );
   };
@@ -651,7 +697,8 @@ export default function PayrollRun() {
                           {/* Site-wise rows inside the client, the same shape the
                               Attendance board and Employee Assignments use. */}
                           <PayrollManagement clientScopeId={s.clientId} categoryScope={s.category} throughNet runInline siteGrouped periodOverride={period}
-                            onTotals={(t) => setLiveTotalsByKey((prev) => { const n = new Map(prev); n.set(s.key, t); return n; })} />
+                            onTotals={(t) => setLiveTotalsByKey((prev) => { const n = new Map(prev); n.set(s.key, t); return n; })}
+                            onRows={(rs) => setLiveRowsByScope((prev) => { const n = new Map(prev); n.set(s.key, rs); return n; })} />
                         </div>
                       )}
                     </div>

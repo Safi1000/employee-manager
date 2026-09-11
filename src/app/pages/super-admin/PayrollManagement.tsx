@@ -113,6 +113,18 @@ type PayrollManagementProps = {
   // Report the live computed totals up (for the Payroll Run Review cards, which
   // can't read persisted payslips — none exist before Finance Verify).
   onTotals?: (t: { disbursed: number; notDisbursed: number; advance: number; disbursedCount: number; notDisbursedCount: number }) => void;
+  /**
+   * Report the live computed ROSTER up, for the same reason onTotals exists:
+   * before Finance Verify there are no persisted payslips to read. HMC Taxila
+   * sat in Review with 109 guards, 3,548 attendance marks and ONE payslip row —
+   * every other figure existed only in this component's `filtered` memo.
+   *
+   * A parent that wanted to export those numbers had two choices: re-implement
+   * the payroll arithmetic (attendance aggregation, leave allowance, advance
+   * recovery, EOBI resolution) as a second source of truth, or ask the screen
+   * that already computed it. This is the second.
+   */
+  onRows?: (rows: PayrollExportRow[]) => void;
   periodOverride?: string;
   // Payroll Run "inline" layout: trimmed columns (Name/Attendance/Base/Net) and the
   // Salary Calculation panel rendered inline below the table rather than as a side
@@ -125,7 +137,7 @@ type PayrollManagementProps = {
   siteGrouped?: boolean;
 };
 
-export default function PayrollManagement({ relieversOnly = false, clientScopeId = null, categoryScope = null, throughNet = false, afterNet = false, onDataChanged, onTotals, periodOverride, runInline = false, siteGrouped = false }: PayrollManagementProps = {}) {
+export default function PayrollManagement({ relieversOnly = false, clientScopeId = null, categoryScope = null, throughNet = false, afterNet = false, onDataChanged, onTotals, onRows, periodOverride, runInline = false, siteGrouped = false }: PayrollManagementProps = {}) {
   // `embedded` = rendered inside the Payroll Run / Payroll Management client list:
   // no page Header, filters, totals cards, or bulk actions — just the scoped
   // roster + the payslip drawer.
@@ -1119,6 +1131,40 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     for (const r of filtered) (Math.round(r.amount_paid || 0) > 0 ? disbursedCount++ : notDisbursedCount++);
     onTotalsRef.current({ ...payrollTotals, disbursedCount, notDisbursedCount });
   }, [payrollTotals, filtered]);
+
+  // Same shape as onTotals, and for the same reason — see the prop's comment.
+  // `filtered` is the roster this screen is showing, already through every
+  // calculation, so the exported sheet and the visible table cannot disagree.
+  const onRowsRef = useRef(onRows);
+  onRowsRef.current = onRows;
+  useEffect(() => {
+    if (!onRowsRef.current) return;
+    onRowsRef.current(
+      filtered.map((r) => ({
+        employeeCode: r.employee.employee_code ?? "",
+        name: r.employee.full_name ?? "",
+        // Every row here HAS figures — computed if not yet persisted. That is the
+        // whole point of publishing them: to the exporter they are as real as a
+        // saved payslip, because they are what will be saved.
+        hasPayslip: true,
+        presentDays: Number(r.present_days ?? 0),
+        absentDays: Number(r.absent_days ?? 0),
+        leaveDays: Number(r.leave_days ?? 0),
+        baseSalary: Math.round(Number(r.base_salary ?? 0)),
+        allowance: Math.round(Number(r.allowance ?? 0)),
+        bonus: Math.round(Number(r.bonus ?? 0)),
+        finalSalary: Math.round(Number(r.final_salary ?? 0)),
+        advance: Math.round(Number(r.advance ?? 0)),
+        eobi: Math.round(Number(r.eobi ?? 0)),
+        incomeTax: Math.round(Number(r.income_tax ?? 0)),
+        deductions: Math.round(Number(r.deductions ?? 0)),
+        netSalary: Math.round(Number(r.net_salary ?? 0)),
+        amountPaid: Math.round(Number(r.amount_paid ?? 0)),
+        paymentMode: r.payment_mode ?? "",
+        status: r.disbursed ? "Disbursed" : (r.status ?? "Pending"),
+      })),
+    );
+  }, [filtered]);
 
   // afterNet = the Payroll Management page for a Finance-Verified client. Persist
   // the payable with a default so it's saved before any payment: create a payslip
