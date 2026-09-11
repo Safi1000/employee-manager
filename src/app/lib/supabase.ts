@@ -466,7 +466,18 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
     label: "Inventory",
     items: [
       { key: "inventory.view", label: "View inventory & issuances" },
-      { key: "inventory.edit", label: "Add / edit inventory" },
+      { key: "inventory.edit", label: "Stock, purchases, issue / return / handover" },
+      // 0432. CLEARANCE IS TWO STAGES AND NEITHER DOES THE OTHER'S HALF.
+      //
+      // Both stages write clearance_certificates, so the ordinary rule — ask
+      // what a direct write to the target table would ask — gives one key for
+      // both and lets one person assess the kit AND release the money. That is
+      // the stage-gate exception in CLAUDE.md, and this is its clearest case.
+      //
+      // Ops sees every item, its condition and its fine. Finance sees only the
+      // outcome, and cannot see the guard at all until ops has cleared him.
+      { key: "clearance.ops", label: "Clearance — assess returned kit and set fines (Operations)" },
+      { key: "clearance.finance", label: "Clearance — settle dues and release payment (Finance)" },
     ],
   },
   {

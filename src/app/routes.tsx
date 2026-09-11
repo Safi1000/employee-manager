@@ -23,7 +23,6 @@ import FinancialReports from "./pages/super-admin/FinancialReports";
 import Expenses from "./pages/super-admin/Expenses";
 import Invoices from "./pages/super-admin/Invoices";
 import Cashflow from "./pages/super-admin/CashFlow";
-import Inventory from "./pages/super-admin/Inventory";
 import ComplianceHub from "./pages/super-admin/ComplianceHub";
 import Documents from "./pages/super-admin/Documents";
 import Settings from "./pages/super-admin/Settings";
@@ -208,7 +207,11 @@ export const router = createRouter([
       { path: "daily-reports", element: guard(["roster.view", "roster.edit", "incidents.view", "attendance.view"], <DailyReports />) },
       { path: "field-ops", element: <Navigate to="/super-admin/daily-reports" replace /> },
       { path: "compliance-cases", element: guard(["compliance.view", "compliance.edit"], <ComplianceCases />) },
-      // Inventory + Assets merged → Assets & Issuance (tabs: Register | Issuance).
+      // Assets & Issuance — tabs: Store | Issuance | Clearance | Register.
+      // Inventory.tsx was deleted with this rebuild: it read inventory_items
+      // (one `unit_value`, free-text type) and issuances (issue + return date),
+      // neither of which can carry two costs or a guard-to-guard handover. Both
+      // tables were empty on production, so nothing was migrated.
       { path: "assets-issuance", element: guard(["inventory.view", "inventory.edit", "banks.view"], <AssetsIssuance />) },
       { path: "assets", element: <Navigate to="/super-admin/assets-issuance?tab=register" replace /> },
       { path: "alerts", element: <Alerts /> },
