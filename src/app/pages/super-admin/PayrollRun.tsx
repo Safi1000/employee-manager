@@ -6,7 +6,8 @@ import Modal from "../../components/Modal";
 import PayrollManagement from "./PayrollManagement";
 import { supabase } from "../../lib/supabase";
 import { useAuth, hasPermission } from "../../lib/auth";
-import { useRegion } from "../../lib/region";
+import { useRegion, withRegion } from "../../lib/region";
+import { isSeparatedState } from "../../lib/employmentWindow";
 
 // Payroll Run — a scoped Draft → Review → Finance Verify workflow.
 //   • A "scope" is either a real CLIENT or a client-less CATEGORY group
@@ -39,6 +40,8 @@ const catLabel = (cat: string) => {
   const t = cat.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   return cat === "reliever" ? "Relievers" : t;
 };
+
+const todayIso = () => new Date().toISOString().slice(0, 10);
 
 type Phase = "review" | "finance_verify";
 type Scope = {
@@ -94,11 +97,22 @@ export default function PayrollRun() {
   const load = async () => {
     setLoading(true); setErr(null);
     try {
-      const [{ data: cls }, { data: cons }, { data: catEmps }, { data: vers }, { data: phs }, { data: ps }] = await Promise.all([
-        supabase.from("clients").select("id, name").order("name"),
-        supabase.from("contracts").select("client_id, contract_type"),
+      const [{ data: cls }, { data: cons }, { data: catEmps }, { data: postedEmps }, { data: vers }, { data: phs }, { data: ps }] = await Promise.all([
+        // A client carries a branch, and a branch IS the region — so the region
+        // selector narrows the client list here exactly as it does on Employee
+        // Assignments. A client with no branch belongs to no region and stays
+        // visible everywhere.
+        regionId
+          ? supabase.from("clients").select("id, name").or(`branch_id.eq.${regionId},branch_id.is.null`).order("name")
+          : supabase.from("clients").select("id, name").order("name"),
+        supabase.from("contracts").select("client_id, contract_type, status, start_date, end_date, is_infinite"),
         // Client-less staff → category groups (office_staff, reliever, armed, gunman).
         supabase.from("employees").select("category").is("client_id", null).neq("category", "client").neq("lifecycle_state", "archived"),
+        // Who is actually posted to a client, for the dormancy rule below.
+        withRegion(
+          supabase.from("employees").select("client_id, lifecycle_state").not("client_id", "is", null).range(0, 9999),
+          regionId,
+        ),
         supabase.from("attendance_month_verifications").select("client_id, category, verified_at").eq("period_month", period),
         supabase.from("payroll_run_phases").select("client_id, category, phase, finance_verified_at").eq("period_month", period),
         supabase.from("payslips").select("net_salary, amount_paid, advance, disbursed, employee_id").eq("period_month", period),
@@ -131,8 +145,29 @@ export default function PayrollRun() {
         ...((phs ?? []) as any[]).map((p) => p.client_id as string | null).filter(Boolean) as string[],
         ...[...empScope.values()].filter((k) => !k.startsWith("cat:")),
       ]);
+      // Dormant clients — no contract live TODAY and nobody posted — are dropped,
+      // the same pair of conditions Employee Assignments requires before it will
+      // render a client card. Missing exactly one of the two is a problem to fix,
+      // so that client stays; missing BOTH means there is no obligation and
+      // nobody to pay, which is nothing this page can act on.
+      const today = todayIso();
+      const liveContract = new Set<string>();
+      for (const k of (cons ?? []) as any[]) {
+        if (k.status !== "active") continue;
+        if (k.start_date && k.start_date > today) continue;
+        if (!k.is_infinite && k.end_date && k.end_date < today) continue;
+        liveContract.add(k.client_id);
+      }
+      const staffed = new Set<string>(
+        ((postedEmps ?? []) as any[])
+          .filter((e) => !isSeparatedState(e.lifecycle_state))
+          .map((e) => e.client_id as string),
+      );
       const clientScopes: Scope[] = ((cls ?? []) as any[])
-        .filter((c) => !servicesOnly.get(c.id) || hasWork.has(c.id))
+        .filter((c) =>
+          hasWork.has(c.id) ||
+          (!servicesOnly.get(c.id) && (liveContract.has(c.id) || staffed.has(c.id))),
+        )
         .map((c) => ({ key: c.id, name: c.name, clientId: c.id, category: null, verifiable: true }));
       const cats = Array.from(new Set(((catEmps ?? []) as any[]).map((e) => e.category).filter(Boolean))).sort();
       const catScopes: Scope[] = cats.map((cat) => ({ key: `cat:${cat}`, name: catLabel(cat), clientId: null, category: cat, verifiable: cat !== "reliever" }));
