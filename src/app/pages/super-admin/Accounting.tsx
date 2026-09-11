@@ -762,8 +762,25 @@ export default function Accounting() {
       const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
       return ta - tb;
     });
+    // CASH starts at zero because its opening IS a transaction — the `opening`
+    // row with no bank_account_id, carrying the whole amount as cash_delta. So
+    // it arrives through the loop like any other movement.
+    //
+    // A BANK's opening does not. It was seeded straight onto
+    // bank_accounts.opening_balance with no transaction row behind it (see the
+    // 0308 note in loadAll, which is about the damage that seeding caused). So
+    // starting a bank at zero here understated every Before/After in its
+    // Transaction Log by exactly its opening balance — Askari's log ran up to
+    // 423,151 while the account correctly read 4,042,972, and the two figures
+    // sat on the same screen disagreeing by the 3,619,821 it opened with.
+    //
+    // Seeding from the account is what makes the log's last After equal the
+    // balance shown on the card. The reconciliation holds on real data: for all
+    // four accounts, opening + every account_delta = the stored balance exactly.
     let cashRunning = 0;
-    const bankRunning = new Map<string, number>();
+    const bankRunning = new Map<string, number>(
+      banks.map((b) => [b.id, Number(b.opening_balance) || 0]),
+    );
     for (const t of sortedAsc) {
       const cd = Number(t.cash_delta) || 0;
       const ad = Number(t.account_delta) || 0;
@@ -775,6 +792,9 @@ export default function Accounting() {
         cashRunning = after;
       }
       if (ad !== 0 && t.bank_account_id) {
+        // ?? 0 only reaches a transaction on an account that is not in `banks`
+        // (deleted, or outside this region's scope). Its running total is then
+        // relative rather than absolute, which is the best available answer.
         const before = bankRunning.get(t.bank_account_id) ?? 0;
         const after = before + ad;
         entry.bank = { before, after };
@@ -783,7 +803,7 @@ export default function Accounting() {
       ledger.set(t.id, entry);
     }
     return ledger;
-  }, [transactions]);
+  }, [transactions, banks]);
 
   const payableTotals = useMemo(() => {
     let total = 0;
