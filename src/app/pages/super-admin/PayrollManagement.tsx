@@ -1141,7 +1141,8 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     if (!onRowsRef.current) return;
     onRowsRef.current(
       filtered.map((r) => ({
-        employeeCode: r.employee.employee_code ?? "",
+        employeeCode: empDisplay(r.employee),
+        guardCode: r.employee.guard_code ?? r.employee.employee_code ?? "",
         name: r.employee.full_name ?? "",
         // Every row here HAS figures — computed if not yet persisted. That is the
         // whole point of publishing them: to the exporter they are as real as a
@@ -2005,9 +2006,13 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       const rows = (phs ?? []) as any[];
       const clientIds = rows.filter((r) => r.client_id).map((r) => r.client_id);
       const nameById = new Map<string, string>();
+      const prefixById = new Map<string, string | null>();
       if (clientIds.length) {
-        const { data: cls } = await supabase.from("clients").select("id, name").in("id", clientIds);
-        for (const c of (cls ?? []) as any[]) nameById.set(c.id, c.name);
+        const { data: cls } = await supabase.from("clients").select("id, name, employee_id_prefix").in("id", clientIds);
+        for (const c of (cls ?? []) as any[]) {
+          nameById.set(c.id, c.name);
+          prefixById.set(c.id, c.employee_id_prefix ?? null);
+        }
       }
       const scopes = rows
         .map((r) => ({
@@ -2029,15 +2034,20 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       const psRows = (ps ?? []) as any[];
       const empIds = Array.from(new Set(psRows.map((r) => r.employee_id)));
       const empScope = new Map<string, string>();
-      const empMeta = new Map<string, { code: string; name: string }>();
+      const empMeta = new Map<string, { code: string; guardCode: string; name: string }>();
       if (empIds.length) {
         const { data: emps } = await supabase
           .from("employees")
-          .select("id, client_id, category, employee_code, full_name")
+          .select("id, client_id, category, employee_code, guard_code, display_number, full_name")
           .in("id", empIds);
         for (const e of (emps ?? []) as any[]) {
           empScope.set(e.id, e.client_id ?? `cat:${e.category}`);
-          empMeta.set(e.id, { code: e.employee_code ?? "", name: e.full_name ?? "" });
+          empMeta.set(e.id, {
+            // Same rule as the table on this page, via the same helper.
+            code: guardDisplayCode(e, nameById.has(e.client_id) ? prefixById.get(e.client_id) ?? null : null),
+            guardCode: e.guard_code ?? e.employee_code ?? "",
+            name: e.full_name ?? "",
+          });
         }
       }
       const rowsByScope = new Map<string, PayrollExportRow[]>();
@@ -2048,6 +2058,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         const arr = rowsByScope.get(key) ?? [];
         arr.push({
           employeeCode: meta?.code ?? "",
+          guardCode: meta?.guardCode ?? "",
           name: meta?.name ?? "",
           // This page lists Finance-Verified clients only, and the rows are built
           // FROM payslips, so every row here has one by construction.
@@ -2076,7 +2087,8 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       // search reveals is the card whose sheet contains that person.
       const index = new Map<string, string>();
       for (const [k, arr] of rowsByScope) {
-        index.set(k, arr.map((r) => `${r.name} ${r.employeeCode}`).join(" | ").toLowerCase());
+        // Both codes: people quote whichever is in front of them.
+        index.set(k, arr.map((r) => `${r.name} ${r.employeeCode} ${r.guardCode}`).join(" | ").toLowerCase());
       }
       const totals = new Map<string, ShellTotals>();
       for (const r of psRows) {

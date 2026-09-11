@@ -486,7 +486,21 @@ export function exportClientStatementLedger(opts: {
 // payroll arithmetic of its own — the Net on the sheet is the Net on the page,
 // and the totals row is folded from the rows above it rather than re-derived.
 export type PayrollExportRow = {
+  /**
+   * The CLIENT-PREFIXED display code (MIU-001), which is the identifier people
+   * use — on the roster, on the attendance sheet, and in any conversation with
+   * the client about one of their guards. Built by guardDisplayCode().
+   */
   employeeCode: string;
+  /**
+   * The permanent GGS code. Kept as a second column rather than dropped: the
+   * display code follows the guard between clients (it is derived from the
+   * CURRENT client's prefix and his number under them), so it is not a stable
+   * key across months. Payroll history, journal descriptions and payslip
+   * filenames are all keyed on the permanent code, and a sheet that cannot be
+   * joined back to them is a sheet that cannot be checked.
+   */
+  guardCode: string;
   name: string;
   /**
    * Does a payslip exist for this person this month?
@@ -525,14 +539,14 @@ export function exportPayrollSheets(
   fileName?: string,
 ) {
   const headers = [
-    "Sr #", "Emp Code", "Name",
+    "Sr #", "Emp Code", "Guard Code", "Name",
     "Present", "Absent", "Leave",
     "Base Salary", "Allowance", "Bonus", "Final Salary",
     "Advance", "EOBI", "Income Tax", "Other Deductions",
     "Net Salary", "Amount Paid", "Balance",
     "Mode", "Status",
   ];
-  const widths = [6, 14, 28, 9, 9, 9, 14, 12, 12, 14, 12, 10, 12, 16, 14, 14, 12, 10, 12];
+  const widths = [6, 14, 14, 28, 9, 9, 9, 14, 12, 12, 14, 12, 10, 12, 16, 14, 14, 12, 10, 12];
 
   const wb = XLSX.utils.book_new();
 
@@ -597,7 +611,7 @@ export function exportPayrollSheets(
       t.allow += r.allowance;
       if (!r.hasPayslip) {
         data.push([
-          i + 1, r.employeeCode, r.name,
+          i + 1, r.employeeCode, r.guardCode, r.name,
           "", "", "",
           r.baseSalary, r.allowance, "", "",
           "", "", "", "",
@@ -611,7 +625,7 @@ export function exportPayrollSheets(
       t.eobi += r.eobi; t.tax += r.incomeTax; t.ded += r.deductions;
       t.net += r.netSalary; t.paid += r.amountPaid; t.bal += balance;
       data.push([
-        i + 1, r.employeeCode, r.name,
+        i + 1, r.employeeCode, r.guardCode, r.name,
         r.presentDays, r.absentDays, r.leaveDays,
         r.baseSalary, r.allowance, r.bonus, r.finalSalary,
         r.advance, r.eobi, r.incomeTax, r.deductions,
@@ -628,7 +642,7 @@ export function exportPayrollSheets(
     // where 1 has been processed shows a Net of one guard's salary under a list
     // of 109 names, and reads as the payroll for all of them.
     data.push([
-      "", "",
+      "", "", "",
       processed === sheet.rows.length
         ? `Total — ${sheet.rows.length} employee${sheet.rows.length === 1 ? "" : "s"}`
         : `Total — ${processed} of ${sheet.rows.length} with a payslip`,

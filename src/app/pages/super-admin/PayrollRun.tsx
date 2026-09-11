@@ -8,6 +8,7 @@ import { supabase } from "../../lib/supabase";
 import { useAuth, hasPermission } from "../../lib/auth";
 import { useRegion, withRegion } from "../../lib/region";
 import { exportPayrollSheets, type PayrollExportRow } from "../../lib/excel";
+import { guardDisplayCode } from "../../lib/guardCode";
 import { isSeparatedState } from "../../lib/employmentWindow";
 
 // Payroll Run — a scoped Draft → Review → Finance Verify workflow.
@@ -121,8 +122,8 @@ export default function PayrollRun() {
         // Assignments. A client with no branch belongs to no region and stays
         // visible everywhere.
         regionId
-          ? supabase.from("clients").select("id, name").or(`branch_id.eq.${regionId},branch_id.is.null`).order("name")
-          : supabase.from("clients").select("id, name").order("name"),
+          ? supabase.from("clients").select("id, name, employee_id_prefix").or(`branch_id.eq.${regionId},branch_id.is.null`).order("name")
+          : supabase.from("clients").select("id, name, employee_id_prefix").order("name"),
         supabase.from("contracts").select("client_id, contract_type, status, start_date, end_date, is_infinite"),
         // Client-less staff → category groups (office_staff, reliever, armed, gunman).
         supabase.from("employees").select("category").is("client_id", null).neq("category", "client").neq("lifecycle_state", "archived"),
@@ -146,7 +147,9 @@ export default function PayrollRun() {
         withRegion(
           supabase
             .from("employees")
-            .select("id, full_name, employee_code, client_id, category, lifecycle_state, base_salary, allowance")
+            .select(
+              "id, full_name, employee_code, guard_code, display_number, client_id, category, lifecycle_state, base_salary, allowance",
+            )
             .not("lifecycle_state", "in", "(terminated,fired,left,absconded)")
             .neq("category", "reliever")
             .range(0, 9999),
@@ -256,6 +259,11 @@ export default function PayrollRun() {
       // thing to export at those stages and also shows WHO is missing a payslip.
       const psByEmp = new Map<string, any>();
       for (const r of rows) psByEmp.set(r.employee_id, r);
+      // The display code is {current client's prefix}-{display_number}, so the
+      // prefix has to come from the client list, not the employee row.
+      const prefixByClient = new Map<string, string | null>(
+        ((cls ?? []) as any[]).map((c) => [c.id, c.employee_id_prefix ?? null]),
+      );
 
       const rowsOut = new Map<string, PayrollExportRow[]>();
       const indexOut = new Map<string, string[]>();
@@ -264,7 +272,8 @@ export default function PayrollRun() {
         const r = psByEmp.get(e.id);
         const arr = rowsOut.get(key) ?? [];
         arr.push({
-          employeeCode: e.employee_code ?? "",
+          employeeCode: guardDisplayCode(e, e.client_id ? prefixByClient.get(e.client_id) ?? null : null),
+          guardCode: e.guard_code ?? e.employee_code ?? "",
           name: e.full_name ?? "",
           hasPayslip: !!r,
           presentDays: Number(r?.present_days ?? 0),
@@ -288,7 +297,11 @@ export default function PayrollRun() {
         });
         rowsOut.set(key, arr);
         const idx = indexOut.get(key) ?? [];
-        idx.push(`${e.full_name ?? ""} ${e.employee_code ?? ""}`.toLowerCase());
+        // Findable by either code — people quote whichever is in front of them,
+        // the client-prefixed one on a roster or the GGS one on a payslip.
+        idx.push(
+          `${e.full_name ?? ""} ${e.employee_code ?? ""} ${e.guard_code ?? ""} ${guardDisplayCode(e, e.client_id ? prefixByClient.get(e.client_id) ?? null : null)}`.toLowerCase(),
+        );
         indexOut.set(key, idx);
       }
       for (const arr of rowsOut.values()) arr.sort((a, b) => a.name.localeCompare(b.name));
