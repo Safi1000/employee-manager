@@ -110,7 +110,7 @@ export default function PayrollRun() {
         supabase.from("employees").select("category").is("client_id", null).neq("category", "client").neq("lifecycle_state", "archived"),
         // Who is actually posted to a client, for the dormancy rule below.
         withRegion(
-          supabase.from("employees").select("client_id, lifecycle_state").not("client_id", "is", null).range(0, 9999),
+          supabase.from("employees").select("client_id, lifecycle_state, category").not("client_id", "is", null).range(0, 9999),
           regionId,
         ),
         supabase.from("attendance_month_verifications").select("client_id, category, verified_at").eq("period_month", period),
@@ -158,15 +158,24 @@ export default function PayrollRun() {
         if (!k.is_infinite && k.end_date && k.end_date < today) continue;
         liveContract.add(k.client_id);
       }
+      // Relievers are NOT paid through the run: PayrollManagement's roster drops
+      // them from every non-reliever surface, so they are paid on the Reliever
+      // Payroll screen instead. That makes a RELIEF POOL client — one whose live
+      // staff are all relievers — a scope with an empty roster behind it: it can
+      // be drafted, reviewed and finance-verified while paying nobody. Dropped
+      // here, so the only way it returns is somebody actually posting a payable
+      // employee to it.
+      const livePosted = ((postedEmps ?? []) as any[]).filter((e) => !isSeparatedState(e.lifecycle_state));
       const staffed = new Set<string>(
-        ((postedEmps ?? []) as any[])
-          .filter((e) => !isSeparatedState(e.lifecycle_state))
-          .map((e) => e.client_id as string),
+        livePosted.filter((e) => e.category !== "reliever").map((e) => e.client_id as string),
+      );
+      const reliefPoolOnly = new Set<string>(
+        livePosted.filter((e) => !staffed.has(e.client_id as string)).map((e) => e.client_id as string),
       );
       const clientScopes: Scope[] = ((cls ?? []) as any[])
         .filter((c) =>
           hasWork.has(c.id) ||
-          (!servicesOnly.get(c.id) && (liveContract.has(c.id) || staffed.has(c.id))),
+          (!servicesOnly.get(c.id) && !reliefPoolOnly.has(c.id) && (liveContract.has(c.id) || staffed.has(c.id))),
         )
         .map((c) => ({ key: c.id, name: c.name, clientId: c.id, category: null, verifiable: true }));
       const cats = Array.from(new Set(((catEmps ?? []) as any[]).map((e) => e.category).filter(Boolean))).sort();

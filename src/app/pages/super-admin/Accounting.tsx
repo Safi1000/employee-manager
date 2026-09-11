@@ -272,6 +272,9 @@ export default function Accounting() {
       // reconciling against it has to add them back.
       withholding_amount: number;
       payment_date: string;
+      // Statement-only: how the receipt arrived and what was written on it.
+      payment_mode?: "Cash" | "Bank" | null;
+      notes?: string | null;
     }[]
   >([]);
   const [paymentVia, setPaymentVia] = useState<"Cash" | "Bank" | "Cheque">("Bank");
@@ -536,6 +539,155 @@ export default function Accounting() {
     return { opening, invoiced, withholding, received, outstanding };
   }, [filteredReceivables]);
 
+  /**
+   * The client statement's running ledger — every event that moved this client's
+   * receivable, in date order, with the balance after each one.
+   *
+   * It is built from the SAME three sources the Receivables table sums
+   * (`opening_balance`, invoices, and payment events plus their residuals), in
+   * the same order and with the same scoping, so the closing balance is the
+   * Outstanding figure on the row you clicked rather than a second computation
+   * of it. A statement that disagrees with the row it was opened from is worse
+   * than no statement.
+   *
+   * Scope follows the Month selector: "All Months" is the client's whole life,
+   * and a month opens at the carried-forward balance the table already shows as
+   * Opening and closes at that month's Outstanding.
+   *
+   * A receipt is credited GROSS — cash plus withholding — because that is what
+   * clears the receivable (A1). The withholding column says how much of the
+   * credit the client kept back and paid to the FBR.
+   */
+  const statementLedger = useMemo(() => {
+    if (!selectedClient) return null;
+    const cid = selectedClient.id;
+    const monthly = receivablesMonth !== "all";
+    const monthStart = monthly ? `${receivablesMonth}-01` : null;
+    const monthEnd = (() => {
+      if (!monthly) return null;
+      const [yStr, mStr] = receivablesMonth.split("-");
+      const lastDay = new Date(Number(yStr), Number(mStr), 0).getDate();
+      return `${receivablesMonth}-${String(lastDay).padStart(2, "0")}`;
+    })();
+    const inDateScope = (d: string) => !monthly || (d >= monthStart! && d <= monthEnd!);
+
+    type Entry = {
+      key: string;
+      date: string;
+      rank: number;
+      kind: "invoice" | "receipt" | "residual";
+      label: string;
+      reference: string;
+      debit: number;
+      credit: number;
+      withholding: number;
+      balance: number;
+    };
+    const entries: Entry[] = [];
+
+    const clientOfInvoice = new Map(allInvoicesForRec.map((i) => [i.id, i.client_id]));
+    const invoiceNumber = new Map(allInvoicesForRec.map((i) => [i.id, i.invoice_number]));
+
+    for (const inv of allInvoicesForRec) {
+      if (inv.client_id !== cid) continue;
+      // Invoices are scoped by BILLING month (A4), the same as the table.
+      if (monthly && invoiceMonth(inv) !== receivablesMonth) continue;
+      entries.push({
+        key: `inv:${inv.id}`,
+        date: (inv.invoice_date ?? "").slice(0, 10),
+        rank: 0,
+        kind: "invoice",
+        label: "Invoice",
+        reference: inv.invoice_number ?? "—",
+        debit: Number(inv.invoice_amount ?? 0),
+        credit: 0,
+        withholding: 0,
+        balance: 0,
+      });
+    }
+
+    // Receipts, scoped by PAYMENT date. `tracked` also feeds the residual pass:
+    // it counts every receipt against an invoice regardless of month, because a
+    // residual is the part of amount_received that no receipt row explains at
+    // all — a month window would manufacture one.
+    const tracked = new Map<string, number>();
+    let seq = 0;
+    for (const p of allPaymentEvents) {
+      const rowClient = p.client_id ?? (p.invoice_id ? clientOfInvoice.get(p.invoice_id) ?? null : null);
+      const settled = Number(p.amount ?? 0) + Number(p.withholding_amount ?? 0);
+      if (p.invoice_id) tracked.set(p.invoice_id, (tracked.get(p.invoice_id) ?? 0) + settled);
+      if (rowClient !== cid) continue;
+      const date = (p.payment_date ?? monthStart ?? "").slice(0, 10);
+      if (!inDateScope(date)) continue;
+      const mode = p.payment_mode ? `${p.payment_mode} receipt` : "Receipt";
+      entries.push({
+        key: `pay:${seq++}`,
+        date,
+        rank: 1,
+        kind: "receipt",
+        label: p.invoice_id ? mode : `${mode} (on account)`,
+        reference: (p.invoice_id ? invoiceNumber.get(p.invoice_id) ?? "—" : (p.notes ?? "").trim() || "No invoice"),
+        debit: 0,
+        credit: settled,
+        withholding: Number(p.withholding_amount ?? 0),
+        balance: 0,
+      });
+    }
+
+    // The gap between an invoice's amount_received and the receipts that explain
+    // it — legacy rows written before invoice_payments existed. Dated at the
+    // invoice, which is the only date they have.
+    for (const inv of allInvoicesForRec) {
+      if (inv.client_id !== cid) continue;
+      const residual = Number(inv.amount_received ?? 0) - (tracked.get(inv.id) ?? 0);
+      if (residual <= 0.001) continue;
+      const date = (inv.invoice_date ?? "").slice(0, 10);
+      if (!inDateScope(date)) continue;
+      entries.push({
+        key: `res:${inv.id}`,
+        date,
+        rank: 2,
+        kind: "residual",
+        label: "Receipt (untracked)",
+        reference: inv.invoice_number ?? "—",
+        debit: 0,
+        credit: residual,
+        withholding: 0,
+        balance: 0,
+      });
+    }
+
+    entries.sort((a, b) => (a.date === b.date ? a.rank - b.rank : a.date.localeCompare(b.date)));
+
+    const opening = Number(selectedClient.opening_balance ?? 0);
+    let running = opening;
+    let debits = 0;
+    let credits = 0;
+    let withheld = 0;
+    for (const e of entries) {
+      running += e.debit - e.credit;
+      e.balance = running;
+      debits += e.debit;
+      credits += e.credit;
+      withheld += e.withholding;
+    }
+
+    return {
+      opening,
+      entries,
+      debits,
+      credits,
+      withheld,
+      closing: running,
+      // The row this statement was opened from. Any drift between the two is a
+      // bug in one of them, so it is shown rather than hidden.
+      rowOutstanding: selectedClient.outstanding,
+      scopeLabel: monthly
+        ? (monthOptions.find((m) => m.key === receivablesMonth)?.label ?? receivablesMonth)
+        : "All months",
+    };
+  }, [selectedClient, receivablesMonth, allInvoicesForRec, allPaymentEvents, monthOptions]);
+
   const balanceLedger = useMemo(() => {
     const ledger = new Map<string, { cash?: { before: number; after: number }; bank?: { before: number; after: number } }>();
     const sortedAsc = [...transactions].sort((a, b) => {
@@ -705,10 +857,12 @@ export default function Accounting() {
           amount: number;
           withholding_amount: number;
           payment_date: string;
+          payment_mode: "Cash" | "Bank" | null;
+          notes: string | null;
         }>(() =>
           supabase
             .from("invoice_payments")
-            .select("client_id, invoice_id, amount, withholding_amount, payment_date")
+            .select("client_id, invoice_id, amount, withholding_amount, payment_date, payment_mode, notes")
             .order("payment_date", { ascending: false }) as unknown as {
             range: (from: number, to: number) => Promise<{ data: unknown; error: { message: string } | null }>;
           },
@@ -3738,7 +3892,7 @@ export default function Accounting() {
               <p className="text-xs text-slate-500 font-mono">{selectedClient.client_code}</p>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
               <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-slate-400">
                 <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Opening Balance</p>
                 <p className="text-lg text-slate-900">PKR {Number(selectedClient.opening_balance ?? 0).toLocaleString()}</p>
@@ -3751,11 +3905,115 @@ export default function Accounting() {
                 <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Received</p>
                 <p className="text-lg text-success-700">PKR {selectedClient.total_received.toLocaleString()}</p>
               </div>
+              <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-danger-500">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Withholding</p>
+                <p className="text-lg text-danger-700">PKR {selectedClient.total_withholding.toLocaleString()}</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">deducted by the client</p>
+              </div>
               <div className="bg-white p-3 rounded-lg border border-slate-200 border-l-4 border-l-warning-500">
                 <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Outstanding</p>
                 <p className="text-lg text-warning-700">PKR {selectedClient.outstanding.toLocaleString()}</p>
               </div>
             </div>
+
+            {statementLedger && (
+              <div className="pt-4 border-t border-slate-200">
+                <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+                  <h4 className="text-sm text-slate-900">Ledger</h4>
+                  <span className="text-xs text-slate-500">
+                    {statementLedger.scopeLabel} &middot; {statementLedger.entries.length}{" "}
+                    {statementLedger.entries.length === 1 ? "entry" : "entries"}
+                  </span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-slate-200">
+                        <th className="text-left px-3 py-2 text-xs text-slate-500">Date</th>
+                        <th className="text-left px-3 py-2 text-xs text-slate-500">Entry</th>
+                        <th className="text-left px-3 py-2 text-xs text-slate-500">Reference</th>
+                        <th className="text-right px-3 py-2 text-xs text-slate-500">Invoiced</th>
+                        <th className="text-right px-3 py-2 text-xs text-slate-500">Received</th>
+                        <th className="text-right px-3 py-2 text-xs text-slate-500">Withholding</th>
+                        <th className="text-right px-3 py-2 text-xs text-slate-500">Balance</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      <tr className="bg-slate-50">
+                        <td className="px-3 py-2 text-xs text-slate-600">&mdash;</td>
+                        <td className="px-3 py-2 text-xs text-slate-900" colSpan={2}>
+                          Opening balance
+                          {receivablesMonth !== "all" && (
+                            <span className="text-slate-500"> &middot; carried forward</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-xs text-right text-slate-300">&mdash;</td>
+                        <td className="px-3 py-2 text-xs text-right text-slate-300">&mdash;</td>
+                        <td className="px-3 py-2 text-xs text-right text-slate-300">&mdash;</td>
+                        <td className="px-3 py-2 text-xs text-right tabular-nums text-slate-900">
+                          PKR {Math.round(statementLedger.opening).toLocaleString()}
+                        </td>
+                      </tr>
+                      {statementLedger.entries.map((e) => (
+                        <tr key={e.key}>
+                          <td className="px-3 py-2 text-xs text-slate-600 whitespace-nowrap">
+                            {e.date ? formatDate(e.date) : <span className="text-slate-300">&mdash;</span>}
+                          </td>
+                          <td className="px-3 py-2 text-xs text-slate-900 whitespace-nowrap">{e.label}</td>
+                          <td className="px-3 py-2 text-xs text-slate-500 font-mono max-w-[12rem] truncate" title={e.reference}>
+                            {e.reference}
+                          </td>
+                          <td className="px-3 py-2 text-xs text-right tabular-nums text-brand-600">
+                            {e.debit ? `PKR ${Math.round(e.debit).toLocaleString()}` : <span className="text-slate-300">&mdash;</span>}
+                          </td>
+                          <td className="px-3 py-2 text-xs text-right tabular-nums text-success-600">
+                            {e.credit ? `PKR ${Math.round(e.credit).toLocaleString()}` : <span className="text-slate-300">&mdash;</span>}
+                          </td>
+                          <td className="px-3 py-2 text-xs text-right tabular-nums text-danger-600">
+                            {e.withholding ? `PKR ${Math.round(e.withholding).toLocaleString()}` : <span className="text-slate-300">&mdash;</span>}
+                          </td>
+                          <td className="px-3 py-2 text-xs text-right tabular-nums text-slate-900">
+                            PKR {Math.round(e.balance).toLocaleString()}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    {/* Folded from the rows above, never fetched separately: a
+                        footer that can disagree with its own table is worse than
+                        no footer. */}
+                    <tfoot>
+                      <tr className="border-t-2 border-slate-300 bg-slate-50">
+                        <td className="px-3 py-2 text-xs text-slate-900" colSpan={3}>Closing balance</td>
+                        <td className="px-3 py-2 text-xs text-right tabular-nums text-brand-700">
+                          PKR {Math.round(statementLedger.debits).toLocaleString()}
+                        </td>
+                        <td className="px-3 py-2 text-xs text-right tabular-nums text-success-700">
+                          PKR {Math.round(statementLedger.credits).toLocaleString()}
+                        </td>
+                        <td className="px-3 py-2 text-xs text-right tabular-nums text-danger-700">
+                          PKR {Math.round(statementLedger.withheld).toLocaleString()}
+                        </td>
+                        <td className={`px-3 py-2 text-xs text-right tabular-nums ${statementLedger.closing > 0 ? "text-warning-700" : "text-success-700"}`}>
+                          PKR {Math.round(statementLedger.closing).toLocaleString()}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+                {statementLedger.entries.length === 0 && (
+                  <p className="text-xs text-slate-500 mt-2">
+                    Nothing invoiced or received in this period &mdash; the balance is the carried-forward opening.
+                  </p>
+                )}
+                {Math.abs(statementLedger.closing - statementLedger.rowOutstanding) > 1 && (
+                  <p className="mt-2 text-xs text-warning-700">
+                    This ledger closes at PKR {Math.round(statementLedger.closing).toLocaleString()} but the
+                    Receivables row reads PKR {Math.round(statementLedger.rowOutstanding).toLocaleString()}.
+                    One of the two is wrong &mdash; reconcile before sending this statement out.
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="pt-4 border-t border-slate-200">
               <h4 className="text-sm text-slate-900 mb-3">Invoices</h4>
