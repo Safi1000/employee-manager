@@ -22,6 +22,7 @@ import {
   type Branch,
   type Contract,
 } from "../../lib/supabase";
+import { exportPayrollSheets, type PayrollExportRow } from "../../lib/excel";
 import { useRegion, withRegion } from "../../lib/region";
 import { useAuth, hasPermission } from "../../lib/auth";
 import { loadCustodianOptions, ensureCustodianLocation, type CustodianOption } from "../../lib/custodian";
@@ -1934,6 +1935,13 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   const [fvTotals, setFvTotals] = useState<Map<string, ShellTotals>>(new Map());
   const [fvExpanded, setFvExpanded] = useState<string | null>(null);
   const [fvLoading, setFvLoading] = useState(true);
+  // Full payslip rows per scope, kept only so a sheet can be exported without a
+  // second round trip. The cards themselves need nothing but the totals.
+  const [fvRows, setFvRows] = useState<Map<string, PayrollExportRow[]>>(new Map());
+  const [fvSearch, setFvSearch] = useState("");
+  // Multi-client export: the picker's open state and which scopes are ticked.
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportPicked, setExportPicked] = useState<Set<string>>(new Set());
   // Bumped by a child embed after it disburses, to re-pull the per-client totals.
   const [fvReloadKey, setFvReloadKey] = useState(0);
   const catLabelShell = (cat: string) => {
@@ -1962,14 +1970,57 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
           category: (r.category ?? null) as string | null,
         }))
         .sort((a, b) => a.name.localeCompare(b.name));
-      const { data: ps } = await supabase.from("payslips").select("net_salary, amount_paid, advance, disbursed, employee_id").eq("period_month", selectedPeriod);
+      // The figure columns are pulled here as well as the payment ones: the sheet
+      // export reads them, and fetching them again at click time would be a
+      // second source for numbers already on screen.
+      const { data: ps } = await supabase
+        .from("payslips")
+        .select(
+          "net_salary, amount_paid, advance, disbursed, employee_id, present_days, absent_days, leave_days, base_salary, allowance, bonus, final_salary, eobi, income_tax, deductions, payment_mode, status",
+        )
+        .eq("period_month", selectedPeriod);
       const psRows = (ps ?? []) as any[];
       const empIds = Array.from(new Set(psRows.map((r) => r.employee_id)));
       const empScope = new Map<string, string>();
+      const empMeta = new Map<string, { code: string; name: string }>();
       if (empIds.length) {
-        const { data: emps } = await supabase.from("employees").select("id, client_id, category").in("id", empIds);
-        for (const e of (emps ?? []) as any[]) empScope.set(e.id, e.client_id ?? `cat:${e.category}`);
+        const { data: emps } = await supabase
+          .from("employees")
+          .select("id, client_id, category, employee_code, full_name")
+          .in("id", empIds);
+        for (const e of (emps ?? []) as any[]) {
+          empScope.set(e.id, e.client_id ?? `cat:${e.category}`);
+          empMeta.set(e.id, { code: e.employee_code ?? "", name: e.full_name ?? "" });
+        }
       }
+      const rowsByScope = new Map<string, PayrollExportRow[]>();
+      for (const r of psRows) {
+        const key = empScope.get(r.employee_id);
+        if (!key) continue;
+        const meta = empMeta.get(r.employee_id);
+        const arr = rowsByScope.get(key) ?? [];
+        arr.push({
+          employeeCode: meta?.code ?? "",
+          name: meta?.name ?? "",
+          presentDays: Number(r.present_days ?? 0),
+          absentDays: Number(r.absent_days ?? 0),
+          leaveDays: Number(r.leave_days ?? 0),
+          baseSalary: Math.round(Number(r.base_salary ?? 0)),
+          allowance: Math.round(Number(r.allowance ?? 0)),
+          bonus: Math.round(Number(r.bonus ?? 0)),
+          finalSalary: Math.round(Number(r.final_salary ?? 0)),
+          advance: Math.round(Number(r.advance ?? 0)),
+          eobi: Math.round(Number(r.eobi ?? 0)),
+          incomeTax: Math.round(Number(r.income_tax ?? 0)),
+          deductions: Math.round(Number(r.deductions ?? 0)),
+          netSalary: Math.round(Number(r.net_salary ?? 0)),
+          amountPaid: Math.round(Number(r.amount_paid ?? 0)),
+          paymentMode: r.payment_mode ?? "",
+          status: r.disbursed ? "Disbursed" : (r.status ?? "Pending"),
+        });
+        rowsByScope.set(key, arr);
+      }
+      for (const arr of rowsByScope.values()) arr.sort((a, b) => a.name.localeCompare(b.name));
       const totals = new Map<string, ShellTotals>();
       for (const r of psRows) {
         const key = empScope.get(r.employee_id);
@@ -1985,6 +2036,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       if (cancelled) return;
       setFvScopes(scopes);
       setFvTotals(totals);
+      setFvRows(rowsByScope);
       setFvLoading(false);
     })();
     return () => { cancelled = true; };
@@ -2002,15 +2054,33 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   // still owes money leads. sort() is stable, so each half keeps the name order
   // fvScopes was built in, and a client re-orders as soon as its last payslip is
   // paid (fvTotals is re-pulled by the embed's disburse callback).
-  const shellScopes = useMemo(
-    () => [...fvScopes].sort((a, b) => Number(shellFullyDisbursed(a.key)) - Number(shellFullyDisbursed(b.key))),
+  const shellScopes = useMemo(() => {
+    const q = fvSearch.trim().toLowerCase();
+    return [...fvScopes]
+      .filter((sc) => !q || sc.name.toLowerCase().includes(q))
+      .sort((a, b) => Number(shellFullyDisbursed(a.key)) - Number(shellFullyDisbursed(b.key)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [fvScopes, fvTotals],
-  );
+  }, [fvScopes, fvTotals, fvSearch]);
+
+  // Export one scope, or several. Both routes go through the same builder, so a
+  // single-client file and one tab of a multi-client file cannot differ.
+  const buildSheets = (keys: string[]) =>
+    keys
+      .map((k) => ({
+        name: fvScopes.find((sc) => sc.key === k)?.name ?? "Client",
+        rows: fvRows.get(k) ?? [],
+      }))
+      .filter((sheet) => sheet.rows.length > 0);
+
+  const runExport = (keys: string[]) => {
+    exportPayrollSheets(buildSheets(keys), formatPeriod(selectedPeriod));
+  };
 
   const shellCardTotals = useMemo(() => {
     if (fvExpanded) return fvTotals.get(fvExpanded) ?? ZERO_SHELL;
-    return fvScopes.reduce((acc, s) => {
+    // Sums the VISIBLE scopes: a header figure that disagrees with the list
+    // beneath it is worse than one that moves when you search.
+    return shellScopes.reduce((acc, s) => {
       const t = fvTotals.get(s.key) ?? ZERO_SHELL;
       return {
         disbursed: acc.disbursed + t.disbursed,
@@ -2021,7 +2091,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       };
     }, { ...ZERO_SHELL });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fvExpanded, fvScopes, fvTotals]);
+  }, [fvExpanded, shellScopes, fvTotals]);
 
   if (isPageShell) {
     return (
@@ -2040,13 +2110,45 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
           )}
 
           <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-            <label className="flex items-center gap-2 text-sm text-muted-foreground">
-              Month
-              <ThemedSelect value={selectedPeriod} onChange={(e) => { setSelectedPeriod(e.target.value); setFvExpanded(null); }}
-                className="px-2 py-1.5 border border-border rounded-md text-sm bg-card">
-                {periodOptions.map((p) => <option key={p} value={p}>{formatPeriod(p)}</option>)}
-              </ThemedSelect>
-            </label>
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                Month
+                <ThemedSelect value={selectedPeriod} onChange={(e) => { setSelectedPeriod(e.target.value); setFvExpanded(null); }}
+                  className="px-2 py-1.5 border border-border rounded-md text-sm bg-card">
+                  {periodOptions.map((p) => <option key={p} value={p}>{formatPeriod(p)}</option>)}
+                </ThemedSelect>
+              </label>
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" strokeWidth={1.5} />
+                <input
+                  type="search"
+                  value={fvSearch}
+                  onChange={(e) => setFvSearch(e.target.value)}
+                  placeholder="Search client or group…"
+                  aria-label="Search clients and staff groups"
+                  className="w-56 pl-8 pr-8 py-1.5 border border-border rounded-md text-sm bg-card"
+                />
+                {fvSearch && (
+                  <button type="button" onClick={() => setFvSearch("")} aria-label="Clear search"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                    <X className="w-3.5 h-3.5" strokeWidth={2} />
+                  </button>
+                )}
+              </div>
+            </div>
+            {/* Standalone export: pick any set of clients and get one workbook.
+                Separate from the per-card button because the common job is "send
+                these six clients' sheets", not "open six cards and click six
+                times". */}
+            <Button
+              variant="secondary"
+              size="md"
+              disabled={fvScopes.length === 0}
+              onClick={() => { setExportPicked(new Set(shellScopes.map((sc) => sc.key))); setExportOpen(true); }}
+            >
+              <Download className="w-4 h-4 mr-2" strokeWidth={1.5} />
+              Export payroll sheets
+            </Button>
           </div>
 
           {error && (
@@ -2085,8 +2187,12 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
 
           {fvLoading ? (
             <div className="flex items-center justify-center py-20 text-muted-foreground"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…</div>
-          ) : fvScopes.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-12 text-center">No Finance-Verified clients for {formatPeriod(selectedPeriod)}. Finance-verify a client in Payroll Run to disburse it here.</p>
+          ) : shellScopes.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-12 text-center">
+              {fvSearch.trim() && fvScopes.length > 0
+                ? `No Finance-Verified client matches “${fvSearch.trim()}”.`
+                : `No Finance-Verified clients for ${formatPeriod(selectedPeriod)}. Finance-verify a client in Payroll Run to disburse it here.`}
+            </p>
           ) : (
             <div className="space-y-3">
               {shellScopes.map((s) => {
@@ -2096,8 +2202,8 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                 const fullyDisbursed = shellFullyDisbursed(s.key);
                 const partiallyDisbursed = !!t && t.disbursedCount > 0 && t.notDisbursedCount > 0;
                 return (
-                  <div key={s.key} className={`rounded-xl border overflow-hidden ${fullyDisbursed ? "bg-success-50 dark:bg-success-900/15 border-success-300 dark:border-success-800" : "bg-card border-border"}`}>
-                    <button type="button" onClick={() => setFvExpanded(open ? null : s.key)} className="w-full flex items-center gap-2 p-4 text-left">
+                  <div key={s.key} className={`relative rounded-xl border overflow-hidden ${fullyDisbursed ? "bg-success-50 dark:bg-success-900/15 border-success-300 dark:border-success-800" : "bg-card border-border"}`}>
+                    <button type="button" onClick={() => setFvExpanded(open ? null : s.key)} className="w-full flex items-center gap-2 p-4 pr-24 text-left">
                       <ChevronDown className={`w-4 h-4 shrink-0 text-muted-foreground transition-transform ${open ? "" : "-rotate-90"}`} />
                       <span className={`text-sm font-medium truncate flex-1 ${fullyDisbursed ? "text-success-800 dark:text-success-400" : "text-foreground"}`}>{s.name}</span>
                       {fullyDisbursed && (
@@ -2111,6 +2217,21 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                         </span>
                       )}
                       <span className="text-xs text-muted-foreground tabular-nums">PKR {(t?.disbursed ?? 0).toLocaleString()} paid</span>
+                    </button>
+                    {/* Sits OUTSIDE the expand button: nesting a button inside a
+                        button is invalid HTML and the click would toggle the card
+                        as well as export. Absolutely positioned into the header
+                        row instead. */}
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); runExport([s.key]); }}
+                      disabled={(fvRows.get(s.key)?.length ?? 0) === 0}
+                      title={`Export ${s.name}'s payroll sheet for ${formatPeriod(selectedPeriod)}`}
+                      aria-label={`Export ${s.name}'s payroll sheet`}
+                      className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <Download className="w-3.5 h-3.5" strokeWidth={1.5} />
+                      Export
                     </button>
                     {open && (
                       <div className="border-t border-border">
@@ -2135,6 +2256,75 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
             </div>
           )}
         </div>
+
+        {/* ── Export picker ──
+            Ticked by default to everything currently VISIBLE, so a search then
+            Export means "these". Clients with no payslips this month are listed
+            but cannot be ticked — an empty tab in a workbook reads as a payroll
+            that produced nothing rather than one that was never run. */}
+        <Modal isOpen={exportOpen} onClose={() => setExportOpen(false)} title="Export payroll sheets" size="md">
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              One worksheet per client, in a single workbook, for {formatPeriod(selectedPeriod)}.
+            </p>
+            <div className="flex items-center justify-between gap-2 text-sm">
+              <span className="text-muted-foreground">
+                {exportPicked.size} of {shellScopes.length} selected
+              </span>
+              <div className="flex gap-2">
+                <button type="button" className="text-brand-600 hover:text-brand-700"
+                  onClick={() => setExportPicked(new Set(shellScopes.filter((sc) => (fvRows.get(sc.key)?.length ?? 0) > 0).map((sc) => sc.key)))}>
+                  Select all
+                </button>
+                <span className="text-border">|</span>
+                <button type="button" className="text-brand-600 hover:text-brand-700"
+                  onClick={() => setExportPicked(new Set())}>
+                  Clear
+                </button>
+              </div>
+            </div>
+            <div className="max-h-72 overflow-y-auto rounded-md border border-border divide-y divide-border">
+              {shellScopes.map((sc) => {
+                const count = fvRows.get(sc.key)?.length ?? 0;
+                const disabled = count === 0;
+                return (
+                  <label
+                    key={sc.key}
+                    className={`flex items-center gap-2 px-3 py-2 text-sm ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:bg-accent"}`}
+                  >
+                    <input
+                      type="checkbox"
+                      disabled={disabled}
+                      checked={exportPicked.has(sc.key)}
+                      onChange={() => {
+                        const next = new Set(exportPicked);
+                        if (next.has(sc.key)) next.delete(sc.key); else next.add(sc.key);
+                        setExportPicked(next);
+                      }}
+                    />
+                    <span className="flex-1 truncate">{sc.name}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {count === 0 ? "no payslips" : `${count} payslip${count === 1 ? "" : "s"}`}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+            <div className="flex items-center gap-3 pt-2">
+              <Button
+                variant="primary"
+                size="md"
+                className="flex-1"
+                disabled={exportPicked.size === 0}
+                onClick={() => { runExport([...exportPicked]); setExportOpen(false); }}
+              >
+                <Download className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                Export {exportPicked.size} sheet{exportPicked.size === 1 ? "" : "s"}
+              </Button>
+              <Button variant="secondary" size="md" onClick={() => setExportOpen(false)}>Cancel</Button>
+            </div>
+          </div>
+        </Modal>
       </>
     );
   }

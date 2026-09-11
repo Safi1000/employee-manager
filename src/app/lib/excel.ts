@@ -475,6 +475,140 @@ export function exportClientStatementLedger(opts: {
   downloadWorkbook(wb, opts.fileName ?? `Client Statement - ${opts.clientName}.xlsx`);
 }
 
+// ---------- Payroll Sheets ----------
+// One WORKSHEET PER CLIENT in a single workbook, because that is how these are
+// used: a month's payroll is reviewed and signed client by client, and a single
+// flat sheet of 158 rows has to be re-sorted and re-split by whoever receives
+// it. Exporting several clients therefore produces one file with several tabs,
+// not several files.
+//
+// Every figure is passed in, already computed by the screen. This export does no
+// payroll arithmetic of its own — the Net on the sheet is the Net on the page,
+// and the totals row is folded from the rows above it rather than re-derived.
+export type PayrollExportRow = {
+  employeeCode: string;
+  name: string;
+  presentDays: number;
+  absentDays: number;
+  leaveDays: number;
+  baseSalary: number;
+  allowance: number;
+  bonus: number;
+  finalSalary: number;
+  advance: number;
+  eobi: number;
+  incomeTax: number;
+  deductions: number;
+  netSalary: number;
+  amountPaid: number;
+  paymentMode: string;
+  status: string;
+};
+
+export type PayrollExportSheet = { name: string; rows: PayrollExportRow[] };
+
+export function exportPayrollSheets(
+  sheets: PayrollExportSheet[],
+  periodLabel: string,
+  fileName?: string,
+) {
+  const headers = [
+    "Sr #", "Emp Code", "Name",
+    "Present", "Absent", "Leave",
+    "Base Salary", "Allowance", "Bonus", "Final Salary",
+    "Advance", "EOBI", "Income Tax", "Other Deductions",
+    "Net Salary", "Amount Paid", "Balance",
+    "Mode", "Status",
+  ];
+  const widths = [6, 14, 28, 9, 9, 9, 14, 12, 12, 14, 12, 10, 12, 16, 14, 14, 12, 10, 12];
+
+  const wb = XLSX.utils.book_new();
+
+  // A workbook with no sheets is a corrupt file, not an empty one — Excel
+  // refuses to open it. So an empty selection still produces a readable sheet
+  // that says why it is empty.
+  if (sheets.length === 0) {
+    const ws = XLSX.utils.aoa_to_sheet([
+      [DEFAULT_COMPANY],
+      [`Payroll — ${periodLabel}`],
+      [],
+      ["No clients selected."],
+    ]);
+    mergeCell(ws, 0, 0, 0, headers.length - 1);
+    XLSX.utils.book_append_sheet(wb, ws, "Payroll");
+    downloadWorkbook(wb, fileName ?? `Payroll ${periodLabel}.xlsx`);
+    return;
+  }
+
+  // Excel refuses duplicate sheet names, and two clients CAN share a truncated
+  // 31-character name. Numbering the collisions keeps every client's sheet
+  // rather than silently dropping the second one.
+  const used = new Set<string>();
+  const uniqueSheetName = (name: string) => {
+    const base = safeSheetName(name);
+    if (!used.has(base)) { used.add(base); return base; }
+    for (let i = 2; i < 100; i += 1) {
+      const candidate = safeSheetName(`${base.slice(0, 27)} (${i})`);
+      if (!used.has(candidate)) { used.add(candidate); return candidate; }
+    }
+    return base;
+  };
+
+  for (const sheet of sheets) {
+    const data: any[][] = [];
+    data.push([DEFAULT_COMPANY]);
+    data.push([`Payroll — ${sheet.name} — ${periodLabel}`]);
+    data.push([]);
+    data.push(headers);
+
+    const t = {
+      base: 0, allow: 0, bonus: 0, final: 0, adv: 0,
+      eobi: 0, tax: 0, ded: 0, net: 0, paid: 0, bal: 0,
+    };
+    sheet.rows.forEach((r, i) => {
+      const balance = Math.round(r.netSalary) - Math.round(r.amountPaid);
+      t.base += r.baseSalary; t.allow += r.allowance; t.bonus += r.bonus;
+      t.final += r.finalSalary; t.adv += r.advance; t.eobi += r.eobi;
+      t.tax += r.incomeTax; t.ded += r.deductions; t.net += r.netSalary;
+      t.paid += r.amountPaid; t.bal += balance;
+      data.push([
+        i + 1, r.employeeCode, r.name,
+        r.presentDays, r.absentDays, r.leaveDays,
+        r.baseSalary, r.allowance, r.bonus, r.finalSalary,
+        r.advance, r.eobi, r.incomeTax, r.deductions,
+        r.netSalary, r.amountPaid, balance,
+        r.paymentMode, r.status,
+      ]);
+    });
+
+    data.push([]);
+    // Folded from the rows above, never fetched separately — a total that can
+    // disagree with the column over it is worse than no total.
+    data.push([
+      "", "", `Total — ${sheet.rows.length} employee${sheet.rows.length === 1 ? "" : "s"}`,
+      "", "", "",
+      t.base, t.allow, t.bonus, t.final,
+      t.adv, t.eobi, t.tax, t.ded,
+      t.net, t.paid, t.bal,
+      "", "",
+    ]);
+
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    mergeCell(ws, 0, 0, 0, headers.length - 1);
+    mergeCell(ws, 1, 0, 1, headers.length - 1);
+    setColWidths(ws, widths);
+    XLSX.utils.book_append_sheet(wb, ws, uniqueSheetName(sheet.name));
+  }
+
+  downloadWorkbook(
+    wb,
+    fileName ??
+      (sheets.length === 1
+        ? `Payroll - ${sheets[0].name} - ${periodLabel}.xlsx`
+        : `Payroll - ${sheets.length} clients - ${periodLabel}.xlsx`),
+  );
+}
+
 // ---------- Bank Statement Format ----------
 export type BankStatementRow = {
   date: string;
