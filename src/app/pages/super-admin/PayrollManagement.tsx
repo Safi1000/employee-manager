@@ -1939,6 +1939,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   // second round trip. The cards themselves need nothing but the totals.
   const [fvRows, setFvRows] = useState<Map<string, PayrollExportRow[]>>(new Map());
   const [fvSearch, setFvSearch] = useState("");
+  const [fvIndex, setFvIndex] = useState<Map<string, string>>(new Map());
   // Multi-client export: the picker's open state and which scopes are ticked.
   const [exportOpen, setExportOpen] = useState(false);
   const [exportPicked, setExportPicked] = useState<Set<string>>(new Set());
@@ -2021,6 +2022,13 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         rowsByScope.set(key, arr);
       }
       for (const arr of rowsByScope.values()) arr.sort((a, b) => a.name.localeCompare(b.name));
+      // What each scope can be found by, besides its own name: every employee on
+      // it, by name and by code. Folded from the export rows so the card the
+      // search reveals is the card whose sheet contains that person.
+      const index = new Map<string, string>();
+      for (const [k, arr] of rowsByScope) {
+        index.set(k, arr.map((r) => `${r.name} ${r.employeeCode}`).join(" | ").toLowerCase());
+      }
       const totals = new Map<string, ShellTotals>();
       for (const r of psRows) {
         const key = empScope.get(r.employee_id);
@@ -2037,6 +2045,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       setFvScopes(scopes);
       setFvTotals(totals);
       setFvRows(rowsByScope);
+      setFvIndex(index);
       setFvLoading(false);
     })();
     return () => { cancelled = true; };
@@ -2056,11 +2065,13 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   // paid (fvTotals is re-pulled by the embed's disburse callback).
   const shellScopes = useMemo(() => {
     const q = fvSearch.trim().toLowerCase();
+    // Client name OR any employee on that client, by name or code. One box:
+    // "Emaar" and "GGS-00287" are the same question — which card is this on.
     return [...fvScopes]
-      .filter((sc) => !q || sc.name.toLowerCase().includes(q))
+      .filter((sc) => !q || sc.name.toLowerCase().includes(q) || (fvIndex.get(sc.key) ?? "").includes(q))
       .sort((a, b) => Number(shellFullyDisbursed(a.key)) - Number(shellFullyDisbursed(b.key)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fvScopes, fvTotals, fvSearch]);
+  }, [fvScopes, fvTotals, fvSearch, fvIndex]);
 
   // Export one scope, or several. Both routes go through the same builder, so a
   // single-client file and one tab of a multi-client file cannot differ.
@@ -2124,7 +2135,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                   type="search"
                   value={fvSearch}
                   onChange={(e) => setFvSearch(e.target.value)}
-                  placeholder="Search client or group…"
+                  placeholder="Search client, group or employee…"
                   aria-label="Search clients and staff groups"
                   className="w-56 pl-8 pr-8 py-1.5 border border-border rounded-md text-sm bg-card"
                 />

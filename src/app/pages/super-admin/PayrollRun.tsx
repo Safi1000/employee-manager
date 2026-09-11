@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronRight, ShieldAlert, ShieldCheck, Loader2, AlertCircle, ArrowRight, Building2, Users, Lock, Search, X } from "lucide-react";
+import { ChevronRight, ShieldAlert, ShieldCheck, Loader2, AlertCircle, ArrowRight, Building2, Users, Lock, Search, X, Download } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -7,6 +7,7 @@ import PayrollManagement from "./PayrollManagement";
 import { supabase } from "../../lib/supabase";
 import { useAuth, hasPermission } from "../../lib/auth";
 import { useRegion, withRegion } from "../../lib/region";
+import { exportPayrollSheets, type PayrollExportRow } from "../../lib/excel";
 import { isSeparatedState } from "../../lib/employmentWindow";
 
 // Payroll Run — a scoped Draft → Review → Finance Verify workflow.
@@ -87,6 +88,13 @@ export default function PayrollRun() {
   // you are looking for because it has moved from Draft to Review, and retyping
   // the name per tab is the kind of friction that makes people stop filtering.
   const [search, setSearch] = useState("");
+  // Per-scope export rows, and the text each scope can be found by. Both are
+  // built from the same employee+payslip read, so the sheet you export is the
+  // roster the search matched.
+  const [rowsByScope, setRowsByScope] = useState<Map<string, PayrollExportRow[]>>(new Map());
+  const [searchIndex, setSearchIndex] = useState<Map<string, string>>(new Map());
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportPicked, setExportPicked] = useState<Set<string>>(new Set());
   // Finance Verify is irreversible → confirm first. { scope } = one, { all:true } = bulk.
   const [confirmFV, setConfirmFV] = useState<{ scope?: Scope; all?: boolean } | null>(null);
   // Per-scope payslip totals for the month, keyed like `verified`/`phaseByKey`.
@@ -101,7 +109,7 @@ export default function PayrollRun() {
   const load = async () => {
     setLoading(true); setErr(null);
     try {
-      const [{ data: cls }, { data: cons }, { data: catEmps }, { data: postedEmps }, { data: vers }, { data: phs }, { data: ps }] = await Promise.all([
+      const [{ data: cls }, { data: cons }, { data: catEmps }, { data: postedEmps }, { data: vers }, { data: phs }, { data: ps }, { data: rosterEmps }] = await Promise.all([
         // A client carries a branch, and a branch IS the region — so the region
         // selector narrows the client list here exactly as it does on Employee
         // Assignments. A client with no branch belongs to no region and stays
@@ -119,7 +127,25 @@ export default function PayrollRun() {
         ),
         supabase.from("attendance_month_verifications").select("client_id, category, verified_at").eq("period_month", period),
         supabase.from("payroll_run_phases").select("client_id, category, phase, finance_verified_at").eq("period_month", period),
-        supabase.from("payslips").select("net_salary, amount_paid, advance, disbursed, employee_id").eq("period_month", period),
+        supabase
+          .from("payslips")
+          .select(
+            "net_salary, amount_paid, advance, disbursed, employee_id, present_days, absent_days, leave_days, base_salary, allowance, bonus, final_salary, eobi, income_tax, deductions, payment_mode, status",
+          )
+          .eq("period_month", period),
+        // Everyone who should appear on a sheet this month, whether or not a
+        // payslip exists for them yet. Drives BOTH the employee search and the
+        // export — see buildRows below for why the roster and not the payslips
+        // is the spine.
+        withRegion(
+          supabase
+            .from("employees")
+            .select("id, full_name, employee_code, client_id, category, lifecycle_state")
+            .not("lifecycle_state", "in", "(terminated,fired,left,absconded)")
+            .neq("category", "reliever")
+            .range(0, 9999),
+          regionId,
+        ),
       ]);
       // Which scope each of this month's payslips belongs to (client_id, else
       // `cat:<category>`). Resolved BEFORE the scope list is built, because the
@@ -207,6 +233,57 @@ export default function PayrollRun() {
         totals.set(key, cur);
       }
       setTotalsByKey(totals);
+
+      // ── Export rows, and the search text, per scope ──
+      //
+      // THE ROSTER IS THE SPINE, NOT THE PAYSLIPS, and that is the whole design
+      // decision here. Payslips are only written at Finance Verify: this month
+      // Draft holds 50 live employees and ZERO payslips, Review holds 132 and
+      // one. An export driven off payslips would therefore hand back an empty
+      // workbook on two of the three tabs — and hand it back silently, which is
+      // the failure this codebase exists to remove.
+      //
+      // So every live employee in the scope gets a row. Where a payslip exists
+      // the figures are its figures; where none does the row reads "No payslip
+      // yet" with zeros. On Finance Verify that is an ordinary payroll sheet; on
+      // Draft and Review it is the roster awaiting payroll, which is the useful
+      // thing to export at those stages and also shows WHO is missing a payslip.
+      const psByEmp = new Map<string, any>();
+      for (const r of rows) psByEmp.set(r.employee_id, r);
+
+      const rowsOut = new Map<string, PayrollExportRow[]>();
+      const indexOut = new Map<string, string[]>();
+      for (const e of ((rosterEmps ?? []) as any[])) {
+        const key = e.client_id ?? `cat:${e.category}`;
+        const r = psByEmp.get(e.id);
+        const arr = rowsOut.get(key) ?? [];
+        arr.push({
+          employeeCode: e.employee_code ?? "",
+          name: e.full_name ?? "",
+          presentDays: Number(r?.present_days ?? 0),
+          absentDays: Number(r?.absent_days ?? 0),
+          leaveDays: Number(r?.leave_days ?? 0),
+          baseSalary: Math.round(Number(r?.base_salary ?? 0)),
+          allowance: Math.round(Number(r?.allowance ?? 0)),
+          bonus: Math.round(Number(r?.bonus ?? 0)),
+          finalSalary: Math.round(Number(r?.final_salary ?? 0)),
+          advance: Math.round(Number(r?.advance ?? 0)),
+          eobi: Math.round(Number(r?.eobi ?? 0)),
+          incomeTax: Math.round(Number(r?.income_tax ?? 0)),
+          deductions: Math.round(Number(r?.deductions ?? 0)),
+          netSalary: Math.round(Number(r?.net_salary ?? 0)),
+          amountPaid: Math.round(Number(r?.amount_paid ?? 0)),
+          paymentMode: r?.payment_mode ?? "",
+          status: !r ? "No payslip yet" : r.disbursed ? "Disbursed" : (r.status ?? "Pending"),
+        });
+        rowsOut.set(key, arr);
+        const idx = indexOut.get(key) ?? [];
+        idx.push(`${e.full_name ?? ""} ${e.employee_code ?? ""}`.toLowerCase());
+        indexOut.set(key, idx);
+      }
+      for (const arr of rowsOut.values()) arr.sort((a, b) => a.name.localeCompare(b.name));
+      setRowsByScope(rowsOut);
+      setSearchIndex(new Map([...indexOut].map(([k, v]) => [k, v.join(" | ")])));
     } catch (e: any) { setErr(e.message ?? String(e)); }
     finally { setLoading(false); }
   };
@@ -216,12 +293,18 @@ export default function PayrollRun() {
   // Matches a client or staff-group name. Trimmed and lowercased once here
   // rather than per row, and returning true on an empty query keeps the three
   // memos below free of "is there a search" branching.
+  // Matches the scope's own name OR any employee in it, by name or code. One
+  // box rather than two: "find Emaar" and "find GGS-00287" are the same act —
+  // show me the card this person is on — and a second input would make the user
+  // decide which kind of thing they were about to type before typing it.
   const matchesSearch = useCallback(
     (s: Scope) => {
       const q = search.trim().toLowerCase();
-      return !q || s.name.toLowerCase().includes(q);
+      if (!q) return true;
+      if (s.name.toLowerCase().includes(q)) return true;
+      return (searchIndex.get(s.key) ?? "").includes(q);
     },
-    [search],
+    [search, searchIndex],
   );
 
   // Both tabs sort by what the user can still ACT on, so the work is at the top
@@ -349,11 +432,48 @@ export default function PayrollRun() {
     await load();
   };
 
+  // The scopes the CURRENT tab is showing — what a bulk export acts on, and what
+  // the picker lists. Exporting from Draft while looking at Finance Verify would
+  // be a button that does something other than what is on screen.
+  const visibleScopes = tab === "draft" ? draftScopes : tab === "review" ? reviewScopes : financeScopes;
+
+  const buildSheets = (keys: string[]) =>
+    keys
+      .map((k) => ({
+        name: scopes.find((sc) => sc.key === k)?.name ?? "Client",
+        rows: rowsByScope.get(k) ?? [],
+      }))
+      .filter((sheet) => sheet.rows.length > 0);
+
+  const runExport = (keys: string[]) => {
+    exportPayrollSheets(buildSheets(keys), fmtMonth(month));
+  };
+
   const TABS: { key: typeof tab; label: string; count: number }[] = [
     { key: "draft", label: "Draft", count: draftScopes.length },
     { key: "review", label: "Review", count: reviewScopes.length },
     { key: "finance_verify", label: "Finance Verify", count: financeScopes.length },
   ];
+
+  // The same control on all three tabs. A Draft card and a Finance-Verified card
+  // export the same shape of sheet — the difference is what is IN it, which the
+  // Status column states per row rather than the button implying by absence.
+  const ExportScopeButton = ({ s }: { s: Scope }) => {
+    const n = rowsByScope.get(s.key)?.length ?? 0;
+    return (
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); runExport([s.key]); }}
+        disabled={n === 0}
+        title={n === 0 ? "Nobody is on this scope to export" : `Export ${s.name} — ${n} employee${n === 1 ? "" : "s"}`}
+        aria-label={`Export ${s.name}'s sheet`}
+        className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+      >
+        <Download className="w-3.5 h-3.5" strokeWidth={1.5} />
+        Export
+      </button>
+    );
+  };
 
   const ScopeIcon = ({ s }: { s: Scope }) =>
     s.category ? <Users className="w-5 h-5 text-muted-foreground shrink-0" strokeWidth={1.5} /> : <Building2 className="w-5 h-5 text-muted-foreground shrink-0" strokeWidth={1.5} />;
@@ -378,7 +498,7 @@ export default function PayrollRun() {
                 type="search"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search client or group…"
+                placeholder="Search client, group or employee…"
                 aria-label="Search clients and staff groups"
                 className="w-56 pl-8 pr-8 py-1.5 border border-border rounded-md text-sm bg-card"
               />
@@ -398,6 +518,16 @@ export default function PayrollRun() {
               <input type="month" value={month} onChange={(e) => { setMonth(e.target.value); setExpanded(null); }}
                 className="px-2 py-1.5 border border-border rounded-md text-sm bg-card" />
             </label>
+            {/* Acts on the tab you are looking at — see visibleScopes. */}
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={visibleScopes.length === 0}
+              onClick={() => { setExportPicked(new Set(visibleScopes.map((sc) => sc.key))); setExportOpen(true); }}
+            >
+              <Download className="w-4 h-4 mr-1.5" strokeWidth={1.5} />
+              Export sheets
+            </Button>
           </div>
         </div>
 
@@ -439,6 +569,7 @@ export default function PayrollRun() {
                           <p className="text-xs text-warning-700 dark:text-warning-500 flex items-center gap-1"><ShieldAlert className="w-3.5 h-3.5" /> Verify OPS first — not verified for {fmtMonth(month)}</p>
                         )}
                       </div>
+                      <ExportScopeButton s={s} />
                       {ok ? (
                         <Button size="sm" variant="primary" disabled={busyKey === s.key} onClick={() => moveToReview(s)}>
                           {busyKey === s.key ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Move to Review <ArrowRight className="w-4 h-4 ml-1.5" /></>}
@@ -502,6 +633,7 @@ export default function PayrollRun() {
                             </span>
                           )}
                         </button>
+                        <ExportScopeButton s={s} />
                         <Button size="sm" variant="ghost" disabled={busyKey === s.key} onClick={() => backToDraft(s)}>Back to Draft</Button>
                         {canApprovePayroll && (
                         <Button size="sm" variant="secondary" disabled={busyKey === s.key} onClick={() => setPhase(s, "finance_verify")}>
@@ -557,6 +689,7 @@ export default function PayrollRun() {
                         <ShieldAlert className="w-3 h-3" /> OPS unverified
                       </span>
                     )}
+                    <ExportScopeButton s={s} />
                     {locked ? (
                       <span className="inline-flex items-center gap-1 text-xs font-medium text-success-700 dark:text-success-500">
                         <Lock className="w-3.5 h-3.5" /> Locked — Finance Verified, cannot be reversed
@@ -579,6 +712,74 @@ export default function PayrollRun() {
           </>
         )}
       </div>
+
+      {/* ── Export picker ──
+          Lists the CURRENT tab's scopes, ticked to whatever is visible, so a
+          search then Export means "these". A scope with nobody on it cannot be
+          ticked: an empty worksheet reads as a client with no staff rather than
+          one that was never selected. */}
+      <Modal isOpen={exportOpen} onClose={() => setExportOpen(false)} title="Export payroll sheets" size="md">
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            One worksheet per client, in a single workbook, for {fmtMonth(month)}.
+            {tab !== "finance_verify" && (
+              <>
+                {" "}
+                <span className="text-warning-700 dark:text-warning-500">
+                  Payslips are only written at Finance Verify, so rows on this tab show the
+                  roster with “No payslip yet” against anyone not yet processed.
+                </span>
+              </>
+            )}
+          </p>
+          <div className="flex items-center justify-between gap-2 text-sm">
+            <span className="text-muted-foreground">{exportPicked.size} of {visibleScopes.length} selected</span>
+            <div className="flex gap-2">
+              <button type="button" className="text-brand-600 hover:text-brand-700"
+                onClick={() => setExportPicked(new Set(visibleScopes.filter((sc) => (rowsByScope.get(sc.key)?.length ?? 0) > 0).map((sc) => sc.key)))}>
+                Select all
+              </button>
+              <span className="text-border">|</span>
+              <button type="button" className="text-brand-600 hover:text-brand-700" onClick={() => setExportPicked(new Set())}>
+                Clear
+              </button>
+            </div>
+          </div>
+          <div className="max-h-72 overflow-y-auto rounded-md border border-border divide-y divide-border">
+            {visibleScopes.map((sc) => {
+              const n = rowsByScope.get(sc.key)?.length ?? 0;
+              const disabled = n === 0;
+              return (
+                <label key={sc.key}
+                  className={`flex items-center gap-2 px-3 py-2 text-sm ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:bg-accent"}`}>
+                  <input
+                    type="checkbox"
+                    disabled={disabled}
+                    checked={exportPicked.has(sc.key)}
+                    onChange={() => {
+                      const next = new Set(exportPicked);
+                      if (next.has(sc.key)) next.delete(sc.key); else next.add(sc.key);
+                      setExportPicked(next);
+                    }}
+                  />
+                  <span className="flex-1 truncate">{sc.name}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {n === 0 ? "nobody on scope" : `${n} employee${n === 1 ? "" : "s"}`}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+          <div className="flex items-center gap-3 pt-2">
+            <Button variant="primary" size="md" className="flex-1" disabled={exportPicked.size === 0}
+              onClick={() => { runExport([...exportPicked]); setExportOpen(false); }}>
+              <Download className="w-4 h-4 mr-2" strokeWidth={1.5} />
+              Export {exportPicked.size} sheet{exportPicked.size === 1 ? "" : "s"}
+            </Button>
+            <Button variant="secondary" size="md" onClick={() => setExportOpen(false)}>Cancel</Button>
+          </div>
+        </div>
+      </Modal>
 
       {confirmFV && (() => {
         const pendingCount = financeScopes.filter((s) => !financeVerified.has(s.key)).length;
