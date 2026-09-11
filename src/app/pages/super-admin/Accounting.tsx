@@ -1,5 +1,5 @@
 import ThemedSelect from "../../components/ThemedSelect";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { Plus, Building2, Download, AlertCircle, X, Loader2, ArrowDownUp, History, Trash2, Ban, CheckCircle2, RotateCcw, FileText, Pencil, ArrowLeftRight, Search, Power } from "lucide-react";
 import Header from "../../components/Header";
@@ -264,6 +264,8 @@ export default function Accounting() {
   // carry-forward in the Receivables view.
   const [allPaymentEvents, setAllPaymentEvents] = useState<
     {
+      // Record WHT names the receipt it amends by primary key.
+      id?: string;
       client_id: string | null;
       invoice_id: string | null;
       amount: number;
@@ -273,8 +275,15 @@ export default function Accounting() {
       // reconciling against it has to add them back.
       withholding_amount: number;
       payment_date: string;
-      // Statement-only: how the receipt arrived and what was written on it.
-      payment_mode?: "Cash" | "Bank" | null;
+      // Statement-only: the INSTRUMENT. A ledger has to say which bank account,
+      // which cheque, or whose cash — "Received 1,246,511" with no account
+      // against it cannot be reconciled to a bank statement by anybody.
+      // payment_mode is text in the database and 'Cheque' is a real value in it,
+      // so it is typed wider here than the InvoicePayment type admits.
+      payment_mode?: string | null;
+      bank_account_id?: string | null;
+      custodian_location_id?: string | null;
+      cheque_id?: string | null;
       notes?: string | null;
     }[]
   >([]);
@@ -285,8 +294,13 @@ export default function Accounting() {
   const [custodians, setCustodians] = useState<CustodianOption[]>([]);
   const [paymentCustodianId, setPaymentCustodianId] = useState<string>("");
   const [markPaidCustodianId, setMarkPaidCustodianId] = useState<string>("");
-  const [paymentWithholding, setPaymentWithholding] = useState<string>("0");
-  const [paymentWhtTouched, setPaymentWhtTouched] = useState<boolean>(false);
+  // Record WHT (0423). Withholding used to be a field on the Record Payment
+  // form and nowhere else, so a deduction the client only told you about later
+  // could never be entered — the receipt stood at zero for ever. It is its own
+  // act now, against a receipt that already exists.
+  const [isWhtModalOpen, setIsWhtModalOpen] = useState(false);
+  const [whtPaymentId, setWhtPaymentId] = useState<string>("");
+  const [whtAmount, setWhtAmount] = useState<string>("");
   const [paymentNotes, setPaymentNotes] = useState<string>("");
   const [paymentDate, setPaymentDate] = useState<string>(todayStr());
   const [paymentChequeNumber, setPaymentChequeNumber] = useState<string>("");
@@ -541,6 +555,48 @@ export default function Accounting() {
   }, [filteredReceivables]);
 
   /**
+   * Which bank account, which cheque, or whose cash — the instrument a receipt
+   * actually arrived through.
+   *
+   * A ledger line that says only "Received 1,246,511" cannot be tied to a bank
+   * statement by the person holding one, which is most of what a client ledger
+   * is FOR. A cheque names its number and the bank it was drawn on; a bank
+   * transfer names the account and its last four digits; cash names the
+   * custodian who took it, because that is the person the money is with.
+   */
+  const describeInstrument = useCallback(
+    (p: {
+      payment_mode?: string | null;
+      bank_account_id?: string | null;
+      custodian_location_id?: string | null;
+      cheque_id?: string | null;
+    }): string => {
+      const bankLabel = (id: string | null | undefined) => {
+        const b = id ? banks.find((x) => x.id === id) : null;
+        if (!b) return null;
+        const tail = (b.account_number ?? "").slice(-4);
+        return tail ? `${b.bank_name} ····${tail}` : b.bank_name;
+      };
+      if (p.cheque_id) {
+        const c = cheques.find((x) => x.id === p.cheque_id);
+        const drawnOn = bankLabel(c?.bank_account_id ?? p.bank_account_id);
+        if (c) return `Cheque #${c.cheque_number}${drawnOn ? ` · ${drawnOn}` : ""}`;
+        // The row is gone or out of scope, but the payment still went through a
+        // cheque — say that rather than silently calling it a bank transfer.
+        return `Cheque${drawnOn ? ` · ${drawnOn}` : ""}`;
+      }
+      if (p.custodian_location_id) {
+        const held = custodians.find((c) => c.locationId === p.custodian_location_id);
+        return held ? `Cash · ${held.fullName}` : "Cash";
+      }
+      const bank = bankLabel(p.bank_account_id);
+      if (bank) return bank;
+      return p.payment_mode ?? "—";
+    },
+    [banks, cheques, custodians],
+  );
+
+  /**
    * The client statement's running ledger — every event that moved this client's
    * receivable, in date order, with the balance after each one.
    *
@@ -579,6 +635,7 @@ export default function Accounting() {
       kind: "invoice" | "receipt" | "residual";
       label: string;
       reference: string;
+      account: string;
       debit: number;
       credit: number;
       withholding: number;
@@ -600,6 +657,11 @@ export default function Accounting() {
         kind: "invoice",
         label: "Invoice",
         reference: inv.invoice_number ?? "—",
+        // An invoice settles through no instrument — it is the obligation, not
+        // the money. The period it bills is the useful thing to say instead.
+        account: invoiceMonth(inv)
+          ? new Date(`${invoiceMonth(inv)}-01`).toLocaleDateString("en-GB", { month: "short", year: "numeric" })
+          : "",
         debit: Number(inv.invoice_amount ?? 0),
         credit: 0,
         withholding: 0,
@@ -628,6 +690,7 @@ export default function Accounting() {
         kind: "receipt",
         label: p.invoice_id ? mode : `${mode} (on account)`,
         reference: (p.invoice_id ? invoiceNumber.get(p.invoice_id) ?? "—" : (p.notes ?? "").trim() || "No invoice"),
+        account: describeInstrument(p),
         debit: 0,
         credit: settled,
         withholding: Number(p.withholding_amount ?? 0),
@@ -651,6 +714,9 @@ export default function Accounting() {
         kind: "residual",
         label: "Receipt (untracked)",
         reference: inv.invoice_number ?? "—",
+        // By definition no receipt row explains it, so there is no instrument to
+        // name. Saying so is the point: this is the money nobody recorded how.
+        account: "Not recorded",
         debit: 0,
         credit: residual,
         withholding: 0,
@@ -687,7 +753,7 @@ export default function Accounting() {
         ? (monthOptions.find((m) => m.key === receivablesMonth)?.label ?? receivablesMonth)
         : "All months",
     };
-  }, [selectedClient, receivablesMonth, allInvoicesForRec, allPaymentEvents, monthOptions]);
+  }, [selectedClient, receivablesMonth, allInvoicesForRec, allPaymentEvents, monthOptions, describeInstrument]);
 
   const balanceLedger = useMemo(() => {
     const ledger = new Map<string, { cash?: { before: number; after: number }; bank?: { before: number; after: number } }>();
@@ -853,17 +919,23 @@ export default function Accounting() {
           },
         ),
         fetchAllRows<{
+          id: string;
           client_id: string | null;
           invoice_id: string | null;
           amount: number;
           withholding_amount: number;
           payment_date: string;
-          payment_mode: "Cash" | "Bank" | null;
+          payment_mode: string | null;
+          bank_account_id: string | null;
+          custodian_location_id: string | null;
+          cheque_id: string | null;
           notes: string | null;
         }>(() =>
           supabase
             .from("invoice_payments")
-            .select("client_id, invoice_id, amount, withholding_amount, payment_date, payment_mode, notes")
+            .select(
+              "id, client_id, invoice_id, amount, withholding_amount, payment_date, payment_mode, bank_account_id, custodian_location_id, cheque_id, notes",
+            )
             .order("payment_date", { ascending: false }) as unknown as {
             range: (from: number, to: number) => Promise<{ data: unknown; error: { message: string } | null }>;
           },
@@ -1595,6 +1667,110 @@ export default function Accounting() {
     return { pendingTotal, paidTotal, overdueTotal };
   }, [payables]);
 
+  /**
+   * This client's receipts, newest first — what Record WHT picks from.
+   *
+   * Read from the same `allPaymentEvents` the statement ledger uses, so the
+   * receipt you choose here is the line you saw there. A receipt with no client
+   * of its own belongs to the client on its invoice.
+   */
+  const receiptsForWht = useMemo(() => {
+    if (!selectedClient) return [];
+    const clientOfInvoice = new Map(allInvoicesForRec.map((i) => [i.id, i.client_id]));
+    const invoiceNumber = new Map(allInvoicesForRec.map((i) => [i.id, i.invoice_number]));
+    return allPaymentEvents
+      .filter((p) => {
+        if (!p.id) return false;
+        const owner = p.client_id ?? (p.invoice_id ? clientOfInvoice.get(p.invoice_id) ?? null : null);
+        return owner === selectedClient.id;
+      })
+      .map((p) => ({
+        id: p.id as string,
+        date: (p.payment_date ?? "").slice(0, 10),
+        amount: Number(p.amount ?? 0),
+        withholding: Number(p.withholding_amount ?? 0),
+        instrument: describeInstrument(p),
+        against: p.invoice_id ? invoiceNumber.get(p.invoice_id) ?? "an invoice" : "on account",
+      }))
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }, [selectedClient, allPaymentEvents, allInvoicesForRec, describeInstrument]);
+
+  const selectedWhtReceipt = useMemo(
+    () => receiptsForWht.find((r) => r.id === whtPaymentId) ?? null,
+    [receiptsForWht, whtPaymentId],
+  );
+
+  // Land on the most recent receipt when the modal opens. The receipts come out
+  // of a memo, so this cannot be done in the click handler — the list is not
+  // built yet at that point.
+  useEffect(() => {
+    if (!isWhtModalOpen || whtPaymentId || receiptsForWht.length === 0) return;
+    setWhtPaymentId(receiptsForWht[0].id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isWhtModalOpen, receiptsForWht]);
+
+  // Prefill at the client's agreed rate — the prefill that used to live on the
+  // Record Payment form, moved here with the field it belongs to. Applied to
+  // the CASH of the chosen receipt, and only while the box is untouched, so a
+  // figure the user has typed is never overwritten.
+  useEffect(() => {
+    if (!isWhtModalOpen || !selectedWhtReceipt) return;
+    if (selectedWhtReceipt.withholding > 0) {
+      setWhtAmount(String(selectedWhtReceipt.withholding));
+      return;
+    }
+    const rate = Number(selectedClient?.withholding_tax_rate ?? 0);
+    setWhtAmount(
+      rate > 0 ? String(Math.round(selectedWhtReceipt.amount * rate) / 100) : "",
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isWhtModalOpen, whtPaymentId]);
+
+  /**
+   * Open Record WHT on the client's MOST RECENT receipt, prefilled at their
+   * agreed rate. The most recent one is very nearly always the one being
+   * corrected — the deduction is discovered when the payment is reconciled —
+   * and every other receipt is one selection away.
+   */
+  const recordWithholding = (client: ReceivableRow) => {
+    setSelectedClient(client);
+    setWhtPaymentId("");
+    setWhtAmount("");
+    setError(null);
+    setIsWhtModalOpen(true);
+  };
+
+  const handleRecordWht = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!whtPaymentId) {
+      setError("Choose the receipt the client deducted this tax from.");
+      return;
+    }
+    const amount = Number(whtAmount);
+    if (!Number.isFinite(amount) || amount < 0) {
+      setError("Enter the withholding amount, or 0 to clear it.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      // 0423. The receipt AND the invoice it settles move together — a bare
+      // update of withholding_amount would leave the invoice reading as
+      // under-received by exactly the tax that was withheld.
+      const { error: rpcErr } = await supabase.rpc("record_payment_withholding", {
+        p_payment_id: whtPaymentId,
+        p_withholding: amount,
+      });
+      if (rpcErr) throw rpcErr;
+      setIsWhtModalOpen(false);
+      await loadAll();
+    } catch (err: any) {
+      setError(err.message ?? String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const viewStatement = (client: ReceivableRow) => {
     setSelectedClient(client);
     setIsStatementModalOpen(true);
@@ -1615,8 +1791,6 @@ export default function Accounting() {
     setPaymentBankId(banks[0]?.id ?? "");
     setPaymentCustodianId("");
     setPaymentNotes("");
-    setPaymentWithholding("0");
-    setPaymentWhtTouched(false);
     setPaymentDate(todayStr());
     setPaymentChequeNumber("");
     setPaymentChequeDate(todayStr());
@@ -1770,7 +1944,10 @@ export default function Accounting() {
           p_payment_mode: paymentVia,
           p_bank_account_id: paymentVia === "Bank" ? paymentBankId : null,
           p_notes: paymentNotes.trim() || null,
-          p_withholding: Number(paymentWithholding || 0),
+          // 0423: withholding is recorded by Record WHT, never here. An
+          // explicit 0 (not null) so the client's agreed rate is not applied
+          // behind the user's back on a form that no longer shows it.
+          p_withholding: 0,
           p_custodian_location_id:
             paymentVia === "Cash" ? await resolvePaymentCustodianLoc() : null,
         });
@@ -1820,7 +1997,7 @@ export default function Accounting() {
         p_payment_mode: paymentVia,
         p_bank_account_id: paymentVia === "Bank" ? paymentBankId : null,
         p_notes: paymentNotes.trim() || null,
-        p_withholding: Number(paymentWithholding || 0),
+        p_withholding: 0,
         p_custodian_location_id:
           paymentVia === "Cash" ? await resolvePaymentCustodianLoc() : null,
       });
@@ -2345,6 +2522,17 @@ export default function Accounting() {
                               }
                             >
                               Record Payment
+                            </Button>
+                            {/* Separate act, deliberately: a client often names
+                                what they withheld days after they pay. */}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => recordWithholding(item)}
+                              disabled={!canEditAccounting}
+                              title="Record withholding tax the client deducted from a receipt already entered"
+                            >
+                              Record WHT
                             </Button>
                           </td>
                         </tr>
@@ -3933,6 +4121,7 @@ export default function Accounting() {
                         <th className="text-left px-3 py-2 text-xs text-slate-500">Date</th>
                         <th className="text-left px-3 py-2 text-xs text-slate-500">Entry</th>
                         <th className="text-left px-3 py-2 text-xs text-slate-500">Reference</th>
+                        <th className="text-left px-3 py-2 text-xs text-slate-500">Account / Instrument</th>
                         <th className="text-right px-3 py-2 text-xs text-slate-500">Invoiced</th>
                         <th className="text-right px-3 py-2 text-xs text-slate-500">Received</th>
                         <th className="text-right px-3 py-2 text-xs text-slate-500">Withholding</th>
@@ -3942,7 +4131,7 @@ export default function Accounting() {
                     <tbody className="divide-y divide-slate-100">
                       <tr className="bg-slate-50">
                         <td className="px-3 py-2 text-xs text-slate-600">&mdash;</td>
-                        <td className="px-3 py-2 text-xs text-slate-900" colSpan={2}>
+                        <td className="px-3 py-2 text-xs text-slate-900" colSpan={3}>
                           Opening balance
                           {receivablesMonth !== "all" && (
                             <span className="text-slate-500"> &middot; carried forward</span>
@@ -3964,6 +4153,9 @@ export default function Accounting() {
                           <td className="px-3 py-2 text-xs text-slate-500 font-mono max-w-[12rem] truncate" title={e.reference}>
                             {e.reference}
                           </td>
+                          <td className="px-3 py-2 text-xs text-slate-600 max-w-[14rem] truncate" title={e.account}>
+                            {e.account || <span className="text-slate-300">&mdash;</span>}
+                          </td>
                           <td className="px-3 py-2 text-xs text-right tabular-nums text-brand-600">
                             {e.debit ? `PKR ${Math.round(e.debit).toLocaleString()}` : <span className="text-slate-300">&mdash;</span>}
                           </td>
@@ -3984,7 +4176,7 @@ export default function Accounting() {
                         no footer. */}
                     <tfoot>
                       <tr className="border-t-2 border-slate-300 bg-slate-50">
-                        <td className="px-3 py-2 text-xs text-slate-900" colSpan={3}>Closing balance</td>
+                        <td className="px-3 py-2 text-xs text-slate-900" colSpan={4}>Closing balance</td>
                         <td className="px-3 py-2 text-xs text-right tabular-nums text-brand-700">
                           PKR {Math.round(statementLedger.debits).toLocaleString()}
                         </td>
@@ -4096,6 +4288,7 @@ export default function Accounting() {
                       date: e.date,
                       label: e.label,
                       reference: e.reference,
+                      account: e.account,
                       debit: e.debit,
                       credit: e.credit,
                       withholding: e.withholding,
@@ -4117,6 +4310,106 @@ export default function Accounting() {
               </Button>
             </div>
           </div>
+        )}
+      </Modal>
+
+      {/* ── Record WHT (0423) ──
+          Withholding a client deducted, recorded against a receipt that already
+          exists. It is not a money movement — the cash that arrived already
+          arrived — but it DOES settle the receivable, so the RPC moves the
+          receipt and the invoice it paid in one transaction. */}
+      <Modal isOpen={isWhtModalOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsWhtModalOpen(false)} title="Record Withholding Tax" size="md">
+        {selectedClient && (
+          <form className="space-y-4" onSubmit={handleRecordWht}>
+            <div>
+              <label className="block text-sm text-slate-700 mb-1">Client</label>
+              <input
+                type="text"
+                value={`${selectedClient.name} (${selectedClient.client_code})`}
+                disabled
+                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
+              />
+            </div>
+
+            {receiptsForWht.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                This client has no recorded receipts yet. Withholding is deducted from a
+                payment, so record the payment first — then come back here.
+              </p>
+            ) : (
+              <>
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">Receipt *</label>
+                  <ThemedSelect
+                    value={whtPaymentId}
+                    onChange={(e) => setWhtPaymentId(e.target.value)}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                  >
+                    {receiptsForWht.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {formatDate(r.date)} · PKR {Math.round(r.amount).toLocaleString()} · {r.instrument} · {r.against}
+                        {r.withholding > 0 ? ` · WHT ${Math.round(r.withholding).toLocaleString()}` : ""}
+                      </option>
+                    ))}
+                  </ThemedSelect>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Newest first. The most recent receipt is selected for you — it is
+                    nearly always the one being corrected.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm text-slate-700 mb-1">
+                    Withholding Deducted (PKR) *
+                  </label>
+                  <input
+                    required
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={whtAmount}
+                    onChange={(e) => setWhtAmount(e.target.value)}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  />
+                  <AmountInWords value={whtAmount} />
+                  <p className="text-[11px] text-slate-500 mt-1.5">
+                    {Number(selectedClient.withholding_tax_rate ?? 0) > 0
+                      ? `Prefilled at ${selectedClient.withholding_tax_rate}% of this receipt — edit if the client deducted something else.`
+                      : "This client has no agreed withholding rate."}{" "}
+                    This REPLACES the withholding on the receipt; enter 0 to clear it.
+                  </p>
+                </div>
+
+                {selectedWhtReceipt && (
+                  <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 space-y-0.5">
+                    <p>
+                      Cash received: <strong>PKR {Math.round(selectedWhtReceipt.amount).toLocaleString()}</strong>{" "}
+                      via {selectedWhtReceipt.instrument}
+                    </p>
+                    <p>
+                      This receipt will settle{" "}
+                      <strong>
+                        PKR {Math.round(selectedWhtReceipt.amount + Number(whtAmount || 0)).toLocaleString()}
+                      </strong>{" "}
+                      of what the client owes — cash plus withholding together.
+                    </p>
+                    <p className="text-slate-500">
+                      No bank or cash balance moves: the money that arrived already arrived.
+                    </p>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-3 pt-2">
+                  <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
+                    {submitting ? "Saving…" : "Record Withholding"}
+                  </Button>
+                  <Button variant="secondary" size="md" onClick={() => setIsWhtModalOpen(false)}>
+                    Cancel
+                  </Button>
+                </div>
+              </>
+            )}
+          </form>
         )}
       </Modal>
 
@@ -4216,20 +4509,7 @@ export default function Accounting() {
                 min="0.01"
                 step="0.01"
                 value={paymentAmount}
-                onChange={(e) => {
-                  setPaymentAmount(e.target.value);
-                  // 0281: null would mean "use the client's rate", but this form
-                  // always sends an explicit number, so the rate is applied here
-                  // and stays visible and editable. A rate is what is normally
-                  // deducted, not what always is.
-                  if (!paymentWhtTouched) {
-                    const rate = Number(selectedClient?.withholding_tax_rate ?? 0);
-                    const amt = Number(e.target.value || 0);
-                    setPaymentWithholding(
-                      rate > 0 && amt > 0 ? String(Math.round(amt * rate) / 100) : "0",
-                    );
-                  }
-                }}
+                onChange={(e) => setPaymentAmount(e.target.value)}
                 className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
               />
               <AmountInWords value={paymentAmount} />
@@ -4336,28 +4616,16 @@ export default function Accounting() {
                 </div>
               </div>
             )}
-            <div>
-              <label className="block text-sm text-slate-700 mb-1">
-                Withholding Deducted (PKR)
-              </label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={paymentWithholding}
-                onChange={(e) => {
-                  setPaymentWhtTouched(true);
-                  setPaymentWithholding(e.target.value);
-                }}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-              />
-              <p className="text-[11px] text-slate-500 mt-1.5">
-                {Number(selectedClient?.withholding_tax_rate ?? 0) > 0
-                  ? `Prefilled at ${selectedClient?.withholding_tax_rate}% of the amount — edit if the client deducted something else.`
-                  : "This client has no agreed withholding rate. Enter an amount if any was deducted."}{" "}
-                The receivable is cleared by cash and withholding together.
-              </p>
-            </div>
+            {/* Withholding is NOT entered here any more — it moved to Record
+                WHT (0423). A client frequently names what they deducted days
+                after the money lands, and a field that could only be filled at
+                the moment of the receipt meant those deductions were never
+                recorded at all. */}
+            <p className="text-[11px] text-slate-500 -mt-1">
+              Enter the cash that actually arrived. If the client withheld tax, record it
+              with <strong>Record WHT</strong> on their row — before or after this receipt,
+              it settles the same balance either way.
+            </p>
             <div>
               <label className="block text-sm text-slate-700 mb-1">Notes</label>
               <textarea

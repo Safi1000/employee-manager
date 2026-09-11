@@ -399,6 +399,7 @@ export type StatementLedgerRow = {
   date: string;
   label: string;
   reference: string;
+  account: string;
   debit: number;
   credit: number;
   withholding: number;
@@ -417,7 +418,16 @@ export function exportClientStatementLedger(opts: {
   closing: number;
   fileName?: string;
 }) {
-  const headers = ["Date", "Entry", "Reference", "Invoiced", "Received", "Withholding", "Balance"];
+  const headers = [
+    "Date",
+    "Entry",
+    "Reference",
+    "Account / Instrument",
+    "Invoiced",
+    "Received",
+    "Withholding",
+    "Balance",
+  ];
   const data: any[][] = [];
   data.push([DEFAULT_COMPANY]);
   data.push([
@@ -429,12 +439,13 @@ export function exportClientStatementLedger(opts: {
 
   // The opening balance is an entry in its own right — it is where the closing
   // figure starts from, and a sheet that omitted it would not add up.
-  data.push(["", "Opening balance", "", "", "", "", opts.opening]);
+  data.push(["", "Opening balance", "", "", "", "", "", opts.opening]);
   for (const r of opts.rows) {
     data.push([
       fmtDate(r.date),
       r.label,
       r.reference,
+      r.account,
       r.debit || "",
       r.credit || "",
       r.withholding || "",
@@ -442,13 +453,22 @@ export function exportClientStatementLedger(opts: {
     ]);
   }
   data.push([]);
-  data.push(["", "Closing balance", "", opts.debits, opts.credits, opts.withheld, opts.closing]);
+  data.push([
+    "",
+    "Closing balance",
+    "",
+    "",
+    opts.debits,
+    opts.credits,
+    opts.withheld,
+    opts.closing,
+  ]);
 
   const ws = XLSX.utils.aoa_to_sheet(data);
   mergeCell(ws, 0, 0, 0, headers.length - 1);
   mergeCell(ws, 1, 0, 1, headers.length - 1);
   mergeCell(ws, 2, 0, 2, headers.length - 1);
-  setColWidths(ws, [14, 24, 26, 16, 16, 16, 18]);
+  setColWidths(ws, [14, 24, 22, 28, 16, 16, 16, 18]);
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, safeSheetName(`${opts.clientName} Statement`));
