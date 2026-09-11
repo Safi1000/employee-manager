@@ -2718,37 +2718,41 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
               </div>
               )}
 
-              {afterNet && (() => {
-                const selectable = filtered.filter((r) => Math.round(r.net_salary) - Math.round(r.amount_paid || 0) > 0);
+              {/* Inline (per-client) toolbar. The standalone page's search is
+                  hidden in the runInline embed, so this is the per-client search —
+                  it must show in BOTH inline embeds: Payroll Run's Review
+                  (throughNet) and Payroll Management (afterNet). The disburse
+                  controls are afterNet-only. Filters only THIS client's rows (each
+                  embed has its own `search` state); the sort still applies within
+                  the matches. */}
+              {runInline && (() => {
+                const selectable = afterNet ? filtered.filter((r) => Math.round(r.net_salary) - Math.round(r.amount_paid || 0) > 0) : [];
                 const allSelected = selectable.length > 0 && selectable.every((r) => selectedEmpIds.has(r.employee.id));
                 return (
                   <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border flex-wrap">
-                    {/* Per-client employee search — the standalone toolbar's search
-                        is hidden in the runInline (per-client) embed, so this is how
-                        a big client's list gets filtered. Filters only THIS client's
-                        rows (each embed has its own `search` state) and the Item-3
-                        sort still applies within the matches. */}
-                    {runInline && (
-                      <div className="relative w-[240px] min-w-[160px]">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />
-                        <input
-                          type="text"
-                          value={search}
-                          onChange={(e) => setSearch(e.target.value)}
-                          placeholder="Search by name or employee ID…"
-                          className="w-full pl-9 pr-3 py-1.5 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                        />
-                      </div>
+                    <div className="relative w-[240px] min-w-[160px]">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.5} />
+                      <input
+                        type="text"
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        placeholder="Search by name or employee ID…"
+                        className="w-full pl-9 pr-3 py-1.5 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                      />
+                    </div>
+                    {afterNet && (
+                      <>
+                        <Button size="sm" variant="secondary" disabled={selectable.length === 0}
+                          onClick={() => setSelectedEmpIds(allSelected ? new Set() : new Set(selectable.map((r) => r.employee.id)))}>
+                          {allSelected ? "Clear all" : "Mark all"}
+                        </Button>
+                        <Button size="sm" variant="primary" disabled={selectedEmpIds.size === 0}
+                          onClick={() => { setBulkMode("Cash"); setBulkCashCustodianId(""); setBulkBankId(""); setBulkDisburseDate(todayISO()); setError(null); setIsBulkDisburseOpen(true); }}>
+                          Disburse selected{selectedEmpIds.size > 0 ? ` (${selectedEmpIds.size})` : ""}
+                        </Button>
+                        <span className="text-xs text-muted-foreground ml-auto">{selectable.length} payable</span>
+                      </>
                     )}
-                    <Button size="sm" variant="secondary" disabled={selectable.length === 0}
-                      onClick={() => setSelectedEmpIds(allSelected ? new Set() : new Set(selectable.map((r) => r.employee.id)))}>
-                      {allSelected ? "Clear all" : "Mark all"}
-                    </Button>
-                    <Button size="sm" variant="primary" disabled={selectedEmpIds.size === 0}
-                      onClick={() => { setBulkMode("Cash"); setBulkCashCustodianId(""); setBulkBankId(""); setBulkDisburseDate(todayISO()); setError(null); setIsBulkDisburseOpen(true); }}>
-                      Disburse selected{selectedEmpIds.size > 0 ? ` (${selectedEmpIds.size})` : ""}
-                    </Button>
-                    <span className="text-xs text-muted-foreground ml-auto">{selectable.length} payable</span>
                   </div>
                 );
               })()}
