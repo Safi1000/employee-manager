@@ -1282,6 +1282,24 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   // guard (raised as a Postgres P0001 exception from enforce_period_lock).
   const friendlyError = (err: any): string => {
     const msg = err?.message ?? String(err);
+    // A payslip cannot disburse more than it accrued (0277). The raw message is
+    // a constraint name, which tells the reader nothing about what to do.
+    if (/payslips_paid_not_over_accrued/i.test(msg)) {
+      return (
+        "This payslip has been paid more than it accrued, so it cannot be saved. " +
+        "That usually means attendance was cut after the money went out. Correct the " +
+        "attendance so the Net covers what was paid, or return the difference by setting " +
+        "Amount Paid back down."
+      );
+    }
+    // A disbursed CASH payslip must name the custodian who handed the cash over
+    // (0317), except where the net is zero and no cash moved (0428).
+    if (/payslips_disbursed_cash_names_a_location/i.test(msg)) {
+      return (
+        "A cash salary needs the office-staff custodian who handed the cash over. " +
+        "Pick one in the payment row before disbursing."
+      );
+    }
     if (/period for .* is closed/i.test(msg) || /period .* is closed/i.test(msg)) {
       return msg.includes("Reopen") || msg.includes("reopen")
         ? msg
@@ -1304,6 +1322,24 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   // disburse the same salary more than once (root cause of the triple-pay bug).
   const disburseLockRef = useRef(false);
 
+  /**
+   * Is this payslip settled — is there nothing left owed?
+   *
+   * `paid >= net` and nothing else. The previous rule was
+   * `paid > 0 && paid >= net`, and the extra half was there to stop an
+   * untouched payslip reading as Disbursed — except `paid >= net` already
+   * refuses that on its own (0 >= 5000 is false). The ONLY rows `paid > 0`
+   * excluded were the ones where net <= 0, which is exactly the case that should
+   * be admitted: a salary wholly consumed by an advance HAS been paid, in
+   * advance, and a guard who earned nothing is owed nothing. Both were stuck
+   * Pending for ever, on a list whose whole job is to reach zero.
+   *
+   * The database agrees on both sides of this: post_payslip_disbursement()
+   * returns without posting when net_salary is 0, and 0428 exempts the same
+   * rows from the cash-custodian requirement, because no cash moves.
+   */
+  const isSettled = (paid: number, net: number) => net <= 0 || paid >= net;
+
   const handleSaveRow = async (row: RowState) => {
     setSavingId(row.employee.id);
     setError(null);
@@ -1316,7 +1352,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       // pretending to be fully paid.
       const paid = Math.round(row.amount_paid || 0);
       const net = Math.round(row.net_salary);
-      const disbursed = paid > 0 && paid >= net;
+      const disbursed = isSettled(paid, net);
       await savePayslip({
         ...row,
         disbursed,
@@ -1405,6 +1441,20 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         setRowError("Amount Paid is unchanged — nothing to settle.");
         return;
       }
+      // Refuse an over-payment HERE, where the figures can be named, rather than
+      // letting `payslips_paid_not_over_accrued` refuse it in Postgres and
+      // surface as a constraint name. That constraint is a real control (0277,
+      // added after 88,467 was paid against days that were never accrued) and it
+      // is not being worked around — this says the same thing in a sentence the
+      // person reading it can act on.
+      if (target > net) {
+        setRowError(
+          `Amount Paid cannot exceed Net Salary. This payslip accrued PKR ${net.toLocaleString()}` +
+            ` — paying PKR ${target.toLocaleString()} would disburse money that was never earned.` +
+            ` If more days were worked, correct the attendance first so the Net rises with it.`,
+        );
+        return;
+      }
       const disburseIso = dateOverride
         ? new Date(`${dateOverride}T12:00:00`).toISOString()
         : new Date().toISOString();
@@ -1482,7 +1532,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
           return;
         }
       }
-      const newDisbursed = target > 0 && target >= net;
+      const newDisbursed = isSettled(target, net);
       // Only payment-tracking columns are written here — never the figure columns
       // (net_salary, final_salary, advance, …) that enforce_payroll_run_lock
       // guards. That lets a payment be recorded against an approved/locked run
