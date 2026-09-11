@@ -1,0 +1,62 @@
+/*
+ * Mobile density — the phone view starts 15% zoomed out.
+ *
+ * WHY: on a phone this app was rendering at desktop density, so the first thing
+ * anyone did on arriving at a roster, a payroll table or the attendance board
+ * was pinch-zoom out to see a useful amount of it. Making every user perform the
+ * same gesture on every visit is a default that is simply set wrong.
+ *
+ * HOW, AND WHY NOT THE TWO OBVIOUS ALTERNATIVES:
+ *
+ *   - `zoom: 0.85` on <html> would be a true 15% zoom-out of everything,
+ *     including px values and borders. It also rescales the VIEWPORT UNITS
+ *     against the zoomed layout, so every `100dvh` shell in this app —
+ *     `html.native .app-shell` is `calc(100dvh - safe-top - safe-bottom)` —
+ *     ends up ~17% taller than the screen, and the native app gets a page that
+ *     scrolls when it should not. Rejected for that.
+ *
+ *   - `initial-scale=0.85` in the viewport meta lays the page out at
+ *     device-width and then renders it smaller, which leaves a 15% margin of
+ *     dead space rather than showing more content. It also fights
+ *     `viewport-fit=cover`, which the safe-area system depends on. Rejected.
+ *
+ * So the root FONT SIZE carries it. Tailwind's spacing, text, icon and radius
+ * scales are all rem-based, so one number moves type, padding, gaps and icons
+ * together — which is what "zoomed out" actually means — while `dvh`, `env()`
+ * safe areas and the handful of real px values (hairline borders) stay exactly
+ * as they are. The layout does not move; only its density does.
+ *
+ * A PERCENTAGE, NOT A PX VALUE. 85% is 85% of whatever the reader's browser
+ * font size is. Hard-coding 13.6px would silently override someone who has set
+ * a larger default for readability, which is the one group that can least
+ * afford it.
+ *
+ * Scoped below Tailwind's `md` (768px), so tablets and desktops are untouched.
+ */
+@media (max-width: 767px) {
+  :root {
+    font-size: 85%;
+  }
+}
+
+/*
+ * ...with one exception, and it is not cosmetic.
+ *
+ * iOS Safari zooms the page IN when a text input smaller than 16px is focused,
+ * and does not zoom back out afterwards. Shrinking the root would have made
+ * every form field on a phone trigger that — so the app would zoom out by 15%
+ * on load and then lurch in the moment anybody tapped a field, which is worse
+ * than the problem being fixed.
+ *
+ * 16px here is a hard px value on purpose: it is not a design size, it is the
+ * threshold iOS tests against, and expressing it in rem would make it move with
+ * the root and stop working. Tapping a field is the one moment the user is
+ * looking at one thing, so a slightly larger control costs nothing.
+ */
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}

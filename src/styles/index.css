@@ -1,3 +1,5 @@
 @import './fonts.css';
 @import './tailwind.css';
 @import './theme.css';
+/* Last, so the mobile density override wins over the base scale it narrows. */
+@import './mobile.css';
