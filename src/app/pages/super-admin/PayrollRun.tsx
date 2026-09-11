@@ -581,16 +581,19 @@ export default function PayrollRun() {
               <input type="month" value={month} onChange={(e) => { setMonth(e.target.value); setExpanded(null); }}
                 className="px-2 py-1.5 border border-border rounded-md text-sm bg-card" />
             </label>
-            {/* Acts on the tab you are looking at — see visibleScopes. */}
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={visibleScopes.length === 0}
-              onClick={() => { setExportPicked(new Set(visibleScopes.map((sc) => sc.key))); setExportOpen(true); }}
-            >
-              <Download className="w-4 h-4 mr-1.5" strokeWidth={1.5} />
-              Export sheets
-            </Button>
+            {/* Export is offered on the Review tab only — Draft and Finance
+                Verify no longer expose it. */}
+            {tab === "review" && (
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={visibleScopes.length === 0}
+                onClick={() => { setExportPicked(new Set(visibleScopes.map((sc) => sc.key))); setExportOpen(true); }}
+              >
+                <Download className="w-4 h-4 mr-1.5" strokeWidth={1.5} />
+                Export sheets
+              </Button>
+            )}
           </div>
         </div>
 
@@ -632,7 +635,6 @@ export default function PayrollRun() {
                           <p className="text-xs text-warning-700 dark:text-warning-500 flex items-center gap-1"><ShieldAlert className="w-3.5 h-3.5" /> Verify OPS first — not verified for {fmtMonth(month)}</p>
                         )}
                       </div>
-                      <ExportScopeButton s={s} />
                       {ok ? (
                         <Button size="sm" variant="primary" disabled={busyKey === s.key} onClick={() => moveToReview(s)}>
                           {busyKey === s.key ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Move to Review <ArrowRight className="w-4 h-4 ml-1.5" /></>}
@@ -753,7 +755,6 @@ export default function PayrollRun() {
                         <ShieldAlert className="w-3 h-3" /> OPS unverified
                       </span>
                     )}
-                    <ExportScopeButton s={s} />
                     {locked ? (
                       <span className="inline-flex items-center gap-1 text-xs font-medium text-success-700 dark:text-success-500">
                         <Lock className="w-3.5 h-3.5" /> Locked — Finance Verified, cannot be reversed
