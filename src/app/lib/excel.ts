@@ -386,6 +386,75 @@ export function exportReceivableLedger(
   downloadWorkbook(wb, fileName);
 }
 
+// ---------- Client Statement Ledger Format ----------
+// The running ledger behind Accounting > Receivables > View Statement.
+//
+// Every figure here is passed IN, already folded by the screen that drew it —
+// the opening balance, each row's running balance, and the closing totals. The
+// export must not be a second computation of the statement: a sheet that can
+// disagree with the modal it was downloaded from is the failure this whole
+// screen exists to remove. Amounts are written as numbers, not formatted text,
+// so the recipient can sum them in Excel.
+export type StatementLedgerRow = {
+  date: string;
+  label: string;
+  reference: string;
+  debit: number;
+  credit: number;
+  withholding: number;
+  balance: number;
+};
+
+export function exportClientStatementLedger(opts: {
+  clientName: string;
+  clientCode?: string | null;
+  periodLabel: string;
+  opening: number;
+  rows: StatementLedgerRow[];
+  debits: number;
+  credits: number;
+  withheld: number;
+  closing: number;
+  fileName?: string;
+}) {
+  const headers = ["Date", "Entry", "Reference", "Invoiced", "Received", "Withholding", "Balance"];
+  const data: any[][] = [];
+  data.push([DEFAULT_COMPANY]);
+  data.push([
+    `Client Statement — ${opts.clientName}${opts.clientCode ? ` (${opts.clientCode})` : ""}`,
+  ]);
+  data.push([`Period: ${opts.periodLabel}`]);
+  data.push([]);
+  data.push(headers);
+
+  // The opening balance is an entry in its own right — it is where the closing
+  // figure starts from, and a sheet that omitted it would not add up.
+  data.push(["", "Opening balance", "", "", "", "", opts.opening]);
+  for (const r of opts.rows) {
+    data.push([
+      fmtDate(r.date),
+      r.label,
+      r.reference,
+      r.debit || "",
+      r.credit || "",
+      r.withholding || "",
+      r.balance,
+    ]);
+  }
+  data.push([]);
+  data.push(["", "Closing balance", "", opts.debits, opts.credits, opts.withheld, opts.closing]);
+
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  mergeCell(ws, 0, 0, 0, headers.length - 1);
+  mergeCell(ws, 1, 0, 1, headers.length - 1);
+  mergeCell(ws, 2, 0, 2, headers.length - 1);
+  setColWidths(ws, [14, 24, 26, 16, 16, 16, 18]);
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, safeSheetName(`${opts.clientName} Statement`));
+  downloadWorkbook(wb, opts.fileName ?? `Client Statement - ${opts.clientName}.xlsx`);
+}
+
 // ---------- Bank Statement Format ----------
 export type BankStatementRow = {
   date: string;

@@ -8,6 +8,7 @@ import Modal from "../../components/Modal";
 import ExportButton from "../../components/ExportButton";
 import { formatDate, invoiceMonth } from "../../lib/date";
 import {
+  exportClientStatementLedger,
   exportReceivableLedger,
   exportTable,
   exportBankStatement,
@@ -4073,10 +4074,43 @@ export default function Accounting() {
               )}
             </div>
 
-            <div className="flex items-center gap-3 pt-4 border-t border-slate-200">
+            <div className="flex flex-wrap items-center gap-3 pt-4 border-t border-slate-200">
               <Button variant="primary" size="md" className="flex-1" onClick={() => window.print()}>
                 <Download className="w-4 h-4 mr-2" strokeWidth={1.5} />
                 Print / Save PDF
+              </Button>
+              {/* Fed the ledger the modal is showing, figure for figure, so the
+                  sheet cannot disagree with the screen it came from. */}
+              <Button
+                variant="secondary"
+                size="md"
+                disabled={!statementLedger}
+                onClick={() => {
+                  if (!statementLedger) return;
+                  exportClientStatementLedger({
+                    clientName: selectedClient.name,
+                    clientCode: selectedClient.client_code,
+                    periodLabel: statementLedger.scopeLabel,
+                    opening: statementLedger.opening,
+                    rows: statementLedger.entries.map((e) => ({
+                      date: e.date,
+                      label: e.label,
+                      reference: e.reference,
+                      debit: e.debit,
+                      credit: e.credit,
+                      withholding: e.withholding,
+                      balance: e.balance,
+                    })),
+                    debits: statementLedger.debits,
+                    credits: statementLedger.credits,
+                    withheld: statementLedger.withheld,
+                    closing: statementLedger.closing,
+                    fileName: `Client Statement - ${selectedClient.name} - ${statementLedger.scopeLabel}.xlsx`,
+                  });
+                }}
+              >
+                <Download className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                Export to Excel
               </Button>
               <Button variant="secondary" size="md" onClick={() => setIsStatementModalOpen(false)}>
                 Close
