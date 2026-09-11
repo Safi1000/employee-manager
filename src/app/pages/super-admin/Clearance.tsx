@@ -17,7 +17,7 @@
 // and release the money.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Loader2, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Loader2, Printer, ShieldCheck } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -25,6 +25,8 @@ import ThemedSelect from "../../components/ThemedSelect";
 import { supabase, friendlyDbError } from "../../lib/supabase";
 import { useAuth, hasPermission } from "../../lib/auth";
 import { formatDate } from "../../lib/date";
+import { brandingFromCompany } from "../../lib/pdfBranding";
+import { generateClearanceCertificatePdf } from "../../lib/clearanceCertificatePdf";
 
 const FIELD = "w-full px-3 py-2 border border-border rounded-md text-sm bg-background";
 const money = (n: unknown) => Number(n ?? 0).toLocaleString();
@@ -49,15 +51,17 @@ type KitItem = {
 };
 
 export default function Clearance() {
-  const { profile } = useAuth();
+  const { profile, company } = useAuth();
   const canOps = hasPermission(profile, "clearance.ops");
   const canFin = hasPermission(profile, "clearance.finance");
+  const branding = brandingFromCompany(company);
 
   const [pending, setPending] = useState<Pending[]>([]);
   const [queue, setQueue] = useState<any[]>([]);
   const [types, setTypes] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const [open, setOpen] = useState<{ emp: Pending; certId: string; items: KitItem[] } | null>(null);
@@ -140,6 +144,47 @@ export default function Clearance() {
     load();
   };
 
+  // THE CERTIFICATE HE SIGNS. Printed before the signature is recorded, because
+  // the signature is a signature ON this document — every figure it carries
+  // comes from the row, none of it is worked out here.
+  const printCertificate = (r: any) => {
+    generateClearanceCertificatePdf({
+      branding,
+      full_name: r.full_name,
+      guard_code: r.guard_code ?? "—",
+      display_code: r.display_number ?? null,
+      last_working_day: r.last_working_day ?? r.covers_to ?? null,
+      separation_reason: r.separation_reason ?? null,
+      clearance: {
+        status: r.dues_released ? "cleared" : "cleared",
+        kit_returned: Number(r.kit_fine_total ?? 0) === 0,
+        outstanding_kit_count: 0,
+        advance_settled: Number(r.outstanding_advance ?? 0) <= 0,
+        outstanding_advance: r.outstanding_advance,
+        incidents_reviewed: true,
+        open_incident_count: 0,
+        dues_released: r.dues_released,
+        dues_released_on: r.dues_released_on ?? null,
+        kit_summary: r.kit_summary,
+        kit_fine_total: r.kit_fine_total,
+        fine_written_off: r.fine_written_off,
+        covers_to: r.covers_to,
+        cumulative_paid: r.cumulative_paid,
+      },
+    });
+  };
+
+  // FINANCE'S HALF. The fine comes out of what the final payment covers and the
+  // rest is written off — both in the database, in one transaction, never here.
+  const releaseDues = async (certId: string) => {
+    setBusy(true); setErr(null);
+    const { data, error } = await supabase.rpc("release_final_dues", { p_certificate_id: certId });
+    setBusy(false);
+    if (error) { setErr(friendlyDbError(error)); return; }
+    setNotice(`Dues released — PKR ${money(data)} is payable to him after the kit fine.`);
+    load();
+  };
+
   const recordSignature = async (certId: string) => {
     setBusy(true); setErr(null);
     const { error } = await supabase.from("clearance_certificates")
@@ -157,6 +202,9 @@ export default function Clearance() {
       <div className="flex-1 overflow-y-auto px-4 md:px-8 py-4 space-y-6">
         {err && (
           <div className="p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">{err}</div>
+        )}
+        {notice && (
+          <div className="p-3 bg-success-50 text-success-700 border border-success-200 rounded-md text-sm">{notice}</div>
         )}
         {loading && <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />}
 
@@ -230,14 +278,14 @@ export default function Clearance() {
             <table className="w-full">
               <thead className="bg-muted/40 border-b border-border">
                 <tr>
-                  {["Guard", "Covers to", "Kit outcome", "Fine", "Undisbursed", "Signed", ""].map((h) => (
+                  {["Guard", "Covers to", "Kit outcome", "Fine", "Written off", "Undisbursed", "Signed", ""].map((h) => (
                     <th key={h} className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {queue.length === 0 && !loading && (
-                  <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-muted-foreground">
+                  <tr><td colSpan={8} className="px-4 py-8 text-center text-sm text-muted-foreground">
                     Nothing has been cleared by operations yet.
                   </td></tr>
                 )}
@@ -247,6 +295,11 @@ export default function Clearance() {
                     <td className="px-4 py-2 text-sm">{r.covers_to ? formatDate(r.covers_to) : "—"}</td>
                     <td className="px-4 py-2 text-sm text-muted-foreground">{r.kit_summary ?? "—"}</td>
                     <td className="px-4 py-2 text-sm tabular-nums">{money(r.kit_fine_total)}</td>
+                    <td className="px-4 py-2 text-sm tabular-nums">
+                      {Number(r.fine_written_off ?? 0) > 0
+                        ? <span className="text-danger-700">{money(r.fine_written_off)}</span>
+                        : <span className="text-muted-foreground">—</span>}
+                    </td>
                     <td className="px-4 py-2 text-sm tabular-nums">{money(r.undisbursed_salary)}</td>
                     <td className="px-4 py-2 text-sm">
                       {r.signed_at
@@ -254,12 +307,28 @@ export default function Clearance() {
                         : <span className="text-muted-foreground">Awaiting</span>}
                     </td>
                     <td className="px-4 py-2">
-                      {canFin && !r.signed_at && (
-                        <Button variant="ghost" size="sm" disabled={busy}
-                                onClick={() => recordSignature(r.certificate_id)}>
-                          Record signature
+                      <div className="flex items-center gap-1 justify-end">
+                        <Button variant="ghost" size="sm" onClick={() => printCertificate(r)}>
+                          <Printer className="w-3.5 h-3.5 mr-1" /> Certificate
                         </Button>
-                      )}
+                        {canFin && !r.signed_at && (
+                          <Button variant="ghost" size="sm" disabled={busy}
+                                  onClick={() => recordSignature(r.certificate_id)}>
+                            Record signature
+                          </Button>
+                        )}
+                        {canFin && r.signed_at && !r.dues_released && (
+                          <Button size="sm" disabled={busy}
+                                  onClick={() => releaseDues(r.certificate_id)}>
+                            Release dues
+                          </Button>
+                        )}
+                        {r.dues_released && (
+                          <span className="text-xs text-success-700 px-2">
+                            Released {r.dues_released_on ? formatDate(r.dues_released_on) : ""}
+                          </span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

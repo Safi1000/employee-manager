@@ -309,7 +309,7 @@ scheduled, the check is wired into `ledger_checks()` — and it is never used,
 because nothing can reach it. Nothing goes red. The check watching it is
 green precisely *because* the column is empty.
 
-This has now happened four times:
+This has now happened five times:
 
 - **Partnership Run** — built, behind two closed doors.
 - **ProfitDistribution** — routed, and reading nothing.
@@ -318,6 +318,18 @@ This has now happened four times:
 - **0347 `coverage_start`/`coverage_end` and 0356 `service_start`/
   `service_end`** — both live, both with the release run scheduled, and
   0356's pair had no field on any form at all.
+- **`generateClearanceCertificatePdf`** — written, complete, branded, and
+  with **no caller anywhere in `src/`**. The certificate a guard signs before
+  his dues are released could not be produced by any screen. Found while
+  adding a line to it (0435); wired to the finance queue the same sitting.
+  The fifth instance is the first one that was not a column — a function
+  nothing calls is the same gap in a different type.
+
+The shape generalises past columns: **anything whose only consumer is a
+human — a column, a key, a state, a document generator — is unreachable
+until a screen reaches it, and nothing in the database can tell.** The
+check for a function is `grep -rn <name> src/`; if that returns only the
+definition, it is instance six.
 
 So the rule: **a migration whose value comes from a human typing something is
 not complete at `apply_migration`.** Either land the screen in the same

@@ -61,3 +61,8 @@ begin
   end loop;
 end
 $drop_pa$;
+
+-- TENANT GUARD ASSERTION NOT APPLICABLE: this file creates no function. It
+-- drops partnership_allocation during a fresh replay and no-ops on a migrated
+-- ledger. Recorded on prod on 2026-09-12 so migration_ledger_matches_repo can
+-- read the repo and the ledger as the same history; it did nothing when it ran.

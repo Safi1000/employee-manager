@@ -23,6 +23,14 @@ export function generateClearanceCertificatePdf(opts: {
     dues_released?: boolean | null;
     dues_released_on?: string | null;
     cleared_by_name?: string | null;
+    // 0432/0435 — the kit half. ONE line, written by ops_clear_employee and
+    // never recomputed here: a certificate that worked out its own wording
+    // could print something the clearance did not charge.
+    kit_summary?: string | null;
+    kit_fine_total?: number | null;
+    fine_written_off?: number | null;
+    covers_to?: string | null;
+    cumulative_paid?: number | null;
   };
   doc?: jsPDF;
 }): jsPDF {
@@ -64,13 +72,45 @@ export function generateClearanceCertificatePdf(opts: {
   gate("Incidents reviewed", c.incidents_reviewed, `${c.open_incident_count ?? 0} open`);
   gate("Final dues released", c.dues_released, c.dues_released_on ? formatDate(c.dues_released_on) : "—");
 
-  y += 10;
+  // ---- THE KIT LINE. One sentence, and it is the outcome ops recorded ------
+  y += 6;
+  doc.setFont("helvetica", "bold"); doc.setTextColor(30, 41, 59); doc.setFontSize(9);
+  doc.text("Kit", 14, y);
+  doc.setFont("helvetica", "normal"); doc.setTextColor(15, 23, 42);
+  doc.text(c.kit_summary ?? "Kit has not been assessed.", 70, y);
+  y += 6;
+  // What the final payment could not cover is stated, not buried: a fine of X
+  // beside a payment that covered only part of it is a document he can argue
+  // with, and the write-off is the company's loss whether or not it is printed.
+  if ((c.fine_written_off ?? 0) > 0) {
+    doc.setTextColor(100, 116, 139); doc.setFontSize(8);
+    doc.text(
+      `PKR ${(c.fine_written_off ?? 0).toLocaleString()} of that fine was not recovered from the final payment and has been written off.`,
+      70, y);
+    y += 6;
+  }
+
+  y += 4;
   const [r, g, b] = hexToRgb(opts.branding.brandColor);
   doc.setTextColor(r, g, b);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
   const cleared = c.status === "cleared";
-  doc.text(cleared ? "This guard is CLEARED for exit." : "Clearance PENDING — gates outstanding.", 14, y);
+  // CUMULATIVE WORDING, BY DATE. "All dues to 8 September are cleared" beside a
+  // single payment's figure says everything is settled while the number beside
+  // it says otherwise, so the date and the cumulative total travel together.
+  doc.text(
+    cleared
+      ? `All dues to ${c.covers_to ? formatDate(c.covers_to) : (opts.last_working_day ? formatDate(opts.last_working_day) : "the last working day")} are cleared.`
+      : "Clearance PENDING — gates outstanding.",
+    14, y);
+  if (cleared) {
+    y += 6;
+    doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(71, 85, 105);
+    doc.text(
+      `Total paid to date: PKR ${(c.cumulative_paid ?? 0).toLocaleString()}  ·  cumulative, not this payment alone.`,
+      14, y);
+  }
   y += 20;
 
   doc.setDrawColor(148, 163, 184);
