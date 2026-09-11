@@ -1,5 +1,14 @@
 {
   "rewrites": [
     { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ],
+  "headers": [
+    {
+      "//": "build-id.json is how an open tab learns a new version was deployed. Cached, it would report the OLD build id for as long as the CDN held it, and the staleness check would answer 'up to date' for ever - a control that cannot fire. It must be fetched fresh every time.",
+      "source": "/build-id.json",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store, max-age=0, must-revalidate" }
+      ]
+    }
   ]
 }
