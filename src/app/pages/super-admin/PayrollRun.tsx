@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { ChevronRight, ShieldAlert, ShieldCheck, Loader2, AlertCircle, ArrowRight, Building2, Users, Lock } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ChevronRight, ShieldAlert, ShieldCheck, Loader2, AlertCircle, ArrowRight, Building2, Users, Lock, Search, X } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -83,6 +83,10 @@ export default function PayrollRun() {
   const [financeVerified, setFinanceVerified] = useState<Set<string>>(new Set()); // permanently Finance Verified keys
   const [financeVerifiedAt, setFinanceVerifiedAt] = useState<Map<string, string>>(new Map()); // key → Finance verified timestamp
   const [expanded, setExpanded] = useState<string | null>(null);
+  // One search box across all three tabs. A client does not stop being the thing
+  // you are looking for because it has moved from Draft to Review, and retyping
+  // the name per tab is the kind of friction that makes people stop filtering.
+  const [search, setSearch] = useState("");
   // Finance Verify is irreversible → confirm first. { scope } = one, { all:true } = bulk.
   const [confirmFV, setConfirmFV] = useState<{ scope?: Scope; all?: boolean } | null>(null);
   // Per-scope payslip totals for the month, keyed like `verified`/`phaseByKey`.
@@ -209,6 +213,17 @@ export default function PayrollRun() {
 
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [period, regionId]);
 
+  // Matches a client or staff-group name. Trimmed and lowercased once here
+  // rather than per row, and returning true on an empty query keeps the three
+  // memos below free of "is there a search" branching.
+  const matchesSearch = useCallback(
+    (s: Scope) => {
+      const q = search.trim().toLowerCase();
+      return !q || s.name.toLowerCase().includes(q);
+    },
+    [search],
+  );
+
   // Both tabs sort by what the user can still ACT on, so the work is at the top
   // and the done pile sinks. Array.prototype.sort is stable, so scopes within a
   // half keep the name order `scopes` was built in.
@@ -219,23 +234,37 @@ export default function PayrollRun() {
   const draftScopes = useMemo(
     () =>
       scopes
-        .filter((s) => !phaseByKey.has(s.key))
+        .filter((s) => !phaseByKey.has(s.key) && matchesSearch(s))
         .sort((a, b) => {
           const ready = (s: Scope) => (!s.verifiable || verified.has(s.key) ? 0 : 1);
           return ready(a) - ready(b);
         }),
-    [scopes, phaseByKey, verified],
+    [scopes, phaseByKey, verified, matchesSearch],
   );
-  const reviewScopes = useMemo(() => scopes.filter((s) => phaseByKey.get(s.key) === "review"), [scopes, phaseByKey]);
+  const reviewScopes = useMemo(
+    () => scopes.filter((s) => phaseByKey.get(s.key) === "review" && matchesSearch(s)),
+    [scopes, phaseByKey, matchesSearch],
+  );
   // Finance Verify: signed-off scopes sink. Finance Verify is permanent, so a
   // verified row is frozen — nothing on it can be actioned again.
   const financeScopes = useMemo(
     () =>
       scopes
-        .filter((s) => phaseByKey.get(s.key) === "finance_verify")
+        .filter((s) => phaseByKey.get(s.key) === "finance_verify" && matchesSearch(s))
         .sort((a, b) => Number(financeVerified.has(a.key)) - Number(financeVerified.has(b.key))),
-    [scopes, phaseByKey, financeVerified],
+    [scopes, phaseByKey, financeVerified, matchesSearch],
   );
+
+  // A scope the search has just hidden must not stay expanded — its embedded
+  // roster would keep rendering under a list it is no longer in, and the Review
+  // totals are scoped to `expanded` when it is set, so the cards would report a
+  // client that is not on screen. Only collapses when it genuinely drops out, so
+  // typing while something is open does not keep snapping it shut.
+  useEffect(() => {
+    if (!expanded) return;
+    const stillVisible = scopes.some((s) => s.key === expanded && matchesSearch(s));
+    if (!stillVisible) setExpanded(null);
+  }, [expanded, scopes, matchesSearch]);
 
   // Review-tab cards: the expanded client's totals, else the sum across every
   // client currently in Review this month. Same source for both, so they agree.
@@ -342,11 +371,34 @@ export default function PayrollRun() {
               </button>
             ))}
           </div>
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            Month
-            <input type="month" value={month} onChange={(e) => { setMonth(e.target.value); setExpanded(null); }}
-              className="px-2 py-1.5 border border-border rounded-md text-sm bg-card" />
-          </label>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" strokeWidth={1.5} />
+              <input
+                type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search client or group…"
+                aria-label="Search clients and staff groups"
+                className="w-56 pl-8 pr-8 py-1.5 border border-border rounded-md text-sm bg-card"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch("")}
+                  aria-label="Clear search"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="w-3.5 h-3.5" strokeWidth={2} />
+                </button>
+              )}
+            </div>
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              Month
+              <input type="month" value={month} onChange={(e) => { setMonth(e.target.value); setExpanded(null); }}
+                className="px-2 py-1.5 border border-border rounded-md text-sm bg-card" />
+            </label>
+          </div>
         </div>
 
         {err && (
@@ -364,7 +416,13 @@ export default function PayrollRun() {
             {/* ── DRAFT ── */}
             {tab === "draft" && (
               <div className="space-y-3">
-                {draftScopes.length === 0 && <p className="text-sm text-muted-foreground py-8 text-center">Nothing left in Draft for {fmtMonth(month)}.</p>}
+                {draftScopes.length === 0 && (
+                  <p className="text-sm text-muted-foreground py-8 text-center">
+                    {search.trim()
+                      ? `Nothing in Draft matches “${search.trim()}”.`
+                      : `Nothing left in Draft for ${fmtMonth(month)}.`}
+                  </p>
+                )}
                 {draftScopes.map((s) => {
                   const ok = !s.verifiable || verified.has(s.key);
                   const blocked = s.verifiable && !verified.has(s.key);
@@ -416,7 +474,13 @@ export default function PayrollRun() {
                     <p className="text-xs text-muted-foreground mt-1">for {fmtMonth(month)}{expanded ? "" : " · all Review clients"}</p>
                   </div>
                 </div>
-                {reviewScopes.length === 0 && <p className="text-sm text-muted-foreground py-8 text-center">Nothing in Review. Move a scope from Draft.</p>}
+                {reviewScopes.length === 0 && (
+                  <p className="text-sm text-muted-foreground py-8 text-center">
+                    {search.trim()
+                      ? `Nothing in Review matches “${search.trim()}”.`
+                      : "Nothing in Review. Move a scope from Draft."}
+                  </p>
+                )}
                 {reviewScopes.map((s) => {
                   const open = expanded === s.key;
                   return (
