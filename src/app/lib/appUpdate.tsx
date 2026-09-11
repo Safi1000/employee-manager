@@ -11,10 +11,17 @@ import { isNative } from "./platform";
  * and can ask the server what the current one is. When the two differ, the code
  * in that tab is stale.
  *
- * Vercel serves `/build-id.json` with `no-store` (see vercel.json) — without
- * that header the CDN would hand back the cached copy of the OLD id and the
- * check would answer "you are up to date" for ever, which is the worst kind of
- * failure: a control that cannot fire.
+ * THE `no-store` HEADER ON `/build-id.json` IS LOAD-BEARING. Without it the CDN
+ * hands back the cached copy of the OLD id and this check answers "you are up
+ * to date" for ever — the worst kind of failure, a control that cannot fire.
+ *
+ * That header lives in `vercel.json`, and this paragraph is the only place the
+ * reason for it is written down: Vercel's schema rejects unknown keys, so the
+ * customary `"//"` comment cannot be carried in the file itself (it fails
+ * deployment with `headers[0] should NOT have additional property //`). Anyone
+ * reading vercel.json sees a cache rule with no rationale beside it, so if you
+ * are here because you are about to delete that entry: it is what makes this
+ * file work.
  *
  * WHEN IT RELOADS, AND WHY NOT ALWAYS IMMEDIATELY. Reloading a tab throws away
  * whatever is in it. On this app that can be a half-entered payroll row, an
