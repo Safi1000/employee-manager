@@ -356,6 +356,12 @@ export type Profile = {
   // (all company partners), the default. Mirrors branch_id scoping.
   user_type?: "office_staff" | "partner" | null;
   partner_scope?: string[] | null;
+  // Employee linking (0424): the ONE employee this login belongs to. Null for an
+  // ordinary admin account. It is a FLOOR, not a ceiling — it gives the user a
+  // self-view of that employee (My Profile), and where they hold no governing
+  // permission, RLS narrows them to that employee's rows. Mutually exclusive
+  // with user_type 'partner', enforced by a check constraint.
+  employee_id?: string | null;
   must_change_password: boolean;
   // 0418. Where task-board alerts go: assignment mail and due-date reminders.
   // Set by the user on their own task board and OPTIONAL — null means they have

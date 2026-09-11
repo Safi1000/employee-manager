@@ -90,6 +90,7 @@ export default function UserManagement() {
   // User type + partner scope (0314). 'partner' reveals a partner multi-select;
   // the chosen partner ids scope the Partnership Report for this user.
   const [createUserType, setCreateUserType] = useState<"office_staff" | "partner">("office_staff");
+  const [createEmployeeId, setCreateEmployeeId] = useState<string>("");
   const [createPartnerScope, setCreatePartnerScope] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
 
@@ -101,6 +102,7 @@ export default function UserManagement() {
   const [editRole, setEditRole] = useState<UserRole>("hr");
   const [editPerms, setEditPerms] = useState<Set<string>>(new Set());
   const [editUserType, setEditUserType] = useState<"office_staff" | "partner">("office_staff");
+  const [editEmployeeId, setEditEmployeeId] = useState<string>("");
   const [editPartnerScope, setEditPartnerScope] = useState<Set<string>>(new Set());
   const [editSubmitting, setEditSubmitting] = useState(false);
 
@@ -112,6 +114,13 @@ export default function UserManagement() {
   const [branches, setBranches] = useState<Branch[]>([]);
   // Partners in the company, for the Partner-scope multi-select (0314).
   const [partnersList, setPartnersList] = useState<{ id: string; name: string }[]>([]);
+  // Employees in the company, for the single-employee link (0424).
+  const [employeesList, setEmployeesList] = useState<
+    { id: string; full_name: string; employee_code: string | null }[]
+  >([]);
+  // Which employees already belong to another login. One employee, one account —
+  // offering a taken one would fail on the unique index with a raw Postgres error.
+  const [linkedEmployeeIds, setLinkedEmployeeIds] = useState<Map<string, string>>(new Map());
 
   // Reset password
   const [resetPwUserId, setResetPwUserId] = useState<string | null>(null);
@@ -122,7 +131,7 @@ export default function UserManagement() {
   const loadAll = async () => {
     setLoading(true);
     setError(null);
-    const [usersRes, branchesRes, partnersRes] = await Promise.all([
+    const [usersRes, branchesRes, partnersRes, empRes] = await Promise.all([
       supabase.from("profiles").select("*").order("created_at", { ascending: true }),
       supabase
         .from("branches")
@@ -130,12 +139,27 @@ export default function UserManagement() {
         .order("is_head_office", { ascending: false })
         .order("name"),
       supabase.from("partners").select("id, name").order("name"),
+      // Serving staff only: a login belongs to somebody who still works here.
+      supabase
+        .from("employees")
+        .select("id, full_name, employee_code")
+        .eq("lifecycle_state", "active")
+        .order("full_name")
+        .range(0, 9999),
     ]);
     if (usersRes.error) setError(usersRes.error.message);
     if (branchesRes.error) setError(branchesRes.error.message);
     setUsers((usersRes.data as Profile[]) ?? []);
     setBranches((branchesRes.data ?? []) as Branch[]);
     setPartnersList((partnersRes.data ?? []) as { id: string; name: string }[]);
+    setEmployeesList(
+      (empRes.data ?? []) as { id: string; full_name: string; employee_code: string | null }[],
+    );
+    const taken = new Map<string, string>();
+    for (const u of ((usersRes.data ?? []) as Profile[])) {
+      if (u.employee_id) taken.set(u.employee_id, u.full_name ?? u.email ?? "another user");
+    }
+    setLinkedEmployeeIds(taken);
     setLoading(false);
   };
 
@@ -159,6 +183,11 @@ export default function UserManagement() {
     setUserType: (t: "office_staff" | "partner") => void,
     scope: Set<string>,
     setScope: (s: Set<string>) => void,
+    employeeId: string,
+    setEmployeeId: (id: string) => void,
+    // The user being edited, so their OWN current link is not reported as taken
+    // by somebody else.
+    selfId?: string | null,
   ) => (
     <div className="md:col-span-2">
       <label className="block text-sm text-slate-700 mb-1">User Type</label>
@@ -170,6 +199,38 @@ export default function UserManagement() {
         <option value="office_staff">Office Staff</option>
         <option value="partner">Partner</option>
       </ThemedSelect>
+      {/* Employee link (0424). Offered only for Office Staff: a profile cannot be
+          both employee-linked and partner-scoped — the two are different people
+          and a check constraint refuses the pair. */}
+      {userType !== "partner" && (
+        <div className="mt-3">
+          <label className="block text-sm text-slate-700 mb-1">Linked employee (optional)</label>
+          <ThemedSelect
+            value={employeeId}
+            onChange={(e) => setEmployeeId(e.target.value)}
+            className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+          >
+            <option value="">Not linked — an ordinary admin account</option>
+            {employeesList.map((emp) => {
+              const takenBy = linkedEmployeeIds.get(emp.id);
+              const taken = !!takenBy && emp.id !== (selfId ?? "__none__");
+              return (
+                <option key={emp.id} value={emp.id} disabled={taken}>
+                  {emp.employee_code ? `${emp.employee_code} · ` : ""}{emp.full_name}
+                  {taken ? ` — already linked to ${takenBy}` : ""}
+                </option>
+              );
+            })}
+          </ThemedSelect>
+          <p className="text-xs text-slate-500 mt-1">
+            Gives this login a <strong>My Profile</strong> page showing that employee&rsquo;s own
+            record, attendance, payslips, advances and cash. It <strong>adds</strong> access rather
+            than removing it: where the user holds no governing permission, the database also
+            restricts them to that one employee&rsquo;s rows; where they do hold it, their view is
+            unchanged. One employee, one login.
+          </p>
+        </div>
+      )}
       {userType === "partner" && (
         <div className="mt-3">
           <label className="block text-sm text-slate-700 mb-1">Partners this user represents</label>
@@ -243,6 +304,7 @@ export default function UserManagement() {
         .update({
           user_type: createUserType,
           partner_scope: createUserType === "partner" ? Array.from(createPartnerScope) : null,
+          employee_id: createUserType === "partner" ? null : createEmployeeId || null,
         })
         .eq("id", res.user_id);
       if (scopeErr) { setError(scopeErr.message); return; }
@@ -255,6 +317,7 @@ export default function UserManagement() {
     setCreatePerms(new Set());
     setCreateUserType("office_staff");
     setCreatePartnerScope(new Set());
+    setCreateEmployeeId("");
     setCreateOpen(false);
     await loadAll();
   };
@@ -272,6 +335,7 @@ export default function UserManagement() {
     setEditPerms(new Set(u.permissions ?? []));
     setEditUserType(u.user_type === "partner" ? "partner" : "office_staff");
     setEditPartnerScope(new Set(u.partner_scope ?? []));
+    setEditEmployeeId(u.employee_id ?? "");
   };
 
   const handleSaveEdit = async (e: React.FormEvent) => {
@@ -301,6 +365,10 @@ export default function UserManagement() {
         // Empty array when Partner with none picked = sees no partners (not all);
         // null when Office Staff = unscoped.
         partner_scope: editUserType === "partner" ? Array.from(editPartnerScope) : null,
+        // Switching a user to Partner drops any employee link: the constraint
+        // refuses both, and silently keeping the old value would make the save
+        // fail with a constraint name instead of doing what was asked.
+        employee_id: editUserType === "partner" ? null : editEmployeeId || null,
       })
       .eq("id", editUser.id);
     setEditSubmitting(false);
@@ -620,7 +688,7 @@ export default function UserManagement() {
                 If set, this user can only see and act on data inside the chosen branch. Leave empty for company-wide access.
               </p>
             </div>
-            {renderUserTypeFields(createUserType, setCreateUserType, createPartnerScope, setCreatePartnerScope)}
+            {renderUserTypeFields(createUserType, setCreateUserType, createPartnerScope, setCreatePartnerScope, createEmployeeId, setCreateEmployeeId)}
           </div>
 
           <div className="pt-4 border-t border-slate-200">
@@ -725,7 +793,7 @@ export default function UserManagement() {
                   Empty = company-wide access. Set a branch to scope this user's view to that branch only.
                 </p>
               </div>
-              {renderUserTypeFields(editUserType, setEditUserType, editPartnerScope, setEditPartnerScope)}
+              {renderUserTypeFields(editUserType, setEditUserType, editPartnerScope, setEditPartnerScope, editEmployeeId, setEditEmployeeId, editUser?.id)}
             </div>
 
             {editRole !== "super_admin" && (

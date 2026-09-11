@@ -35,6 +35,7 @@ import {
   Lock,
   History,
   Users2,
+  UserRound,
   Play,
   PieChart,
   Briefcase,
@@ -183,6 +184,20 @@ export default function SuperAdminLayout() {
   };
 
   const links: SidebarItem[] = [];
+
+  // MY PROFILE — only for a login linked to an employee (0424), and first,
+  // because for somebody whose account exists SO THAT they can see their own
+  // pay, it is the whole reason they logged in. Not routed through linkOrNull:
+  // the link is the entitlement, so there is no permission to test.
+  if (profile?.employee_id) {
+    links.push({
+      type: "group",
+      label: "Me",
+      basePath: "/super-admin/my-profile",
+      variant: "section",
+      children: [{ to: "/super-admin/my-profile", label: "My Profile", icon: UserRound }],
+    });
+  }
 
   // OVERVIEW
   // Tasks sits directly under Dashboard by request. It moved out of Admin, where

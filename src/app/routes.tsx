@@ -55,6 +55,7 @@ import ClientRelationships from "./pages/super-admin/ClientRelationships";
 import AssetsIssuance from "./pages/super-admin/AssetsIssuance";
 import AccountingCore from "./pages/super-admin/AccountingCore";
 import AccessGovernance from "./pages/super-admin/AccessGovernance";
+import MyProfile from "./pages/super-admin/MyProfile";
 import DailyReports from "./pages/super-admin/DailyReports";
 import IncidentsHub from "./pages/super-admin/IncidentsHub";
 
@@ -231,6 +232,10 @@ export const router = createRouter([
       // the edge function is what refuses a non-super-admin trying to spend.
       { path: "billing", element: guard(["settings.view", "settings.edit"], <Billing />) },
       { path: "tasks", element: <Tasks /> },
+      // 0424. Deliberately NOT permission-guarded: the employee link IS the
+      // entitlement, and it entitles you to yourself. The page says so plainly
+      // when the login has no link.
+      { path: "my-profile", element: <RequireAuth><MyProfile /></RequireAuth> },
     ],
   },
   // Legacy panel paths redirect to the unified panel.
