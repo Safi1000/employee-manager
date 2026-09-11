@@ -1201,7 +1201,41 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     });
   };
 
-  const buildPayslipPayload = (row: RowState) => ({
+  /**
+   * Every payslip write on this screen funnels through buildPayslipPayload —
+   * savePayslip's upsert, settlePayment's claim-upsert, and the afterNet
+   * auto-save — so it is the one place that can guarantee no write ever leaves
+   * here in a state `payslips_paid_not_over_accrued` will refuse.
+   *
+   * That constraint (0277, added after 88,467 was paid against days that were
+   * never accrued) says amount_paid <= net_salary. It is a real control and is
+   * not being worked around: this refuses the same write EARLIER, in words that
+   * name the figures, instead of letting Postgres return a constraint name the
+   * operator cannot act on.
+   *
+   * It throws rather than clamping. Clamping would silently record a smaller
+   * payment than the one that actually left the bank, which is a worse lie than
+   * the error.
+   *
+   * The case that reaches here is almost always attendance cut AFTER the money
+   * went out: Net drops below what was already paid, and the row can no longer
+   * be saved at all until one side is corrected.
+   */
+  const assertPaidNotOverAccrued = (row: RowState) => {
+    const paid = Math.round(row.amount_paid ?? 0);
+    const net = Math.round(row.net_salary ?? 0);
+    if (paid <= net) return;
+    throw new Error(
+      `${row.employee.full_name ?? "This employee"} has been paid PKR ${paid.toLocaleString()} ` +
+        `against a Net Salary of PKR ${net.toLocaleString()}, so this payslip cannot be saved — ` +
+        `a payslip cannot disburse more than it accrued. ` +
+        `This usually means attendance was reduced after the payment went out. ` +
+        `Either restore the attendance so the Net covers what was paid, or return ` +
+        `PKR ${(paid - net).toLocaleString()} by lowering Amount Paid.`,
+    );
+  };
+
+  const buildPayslipPayload = (row: RowState) => (assertPaidNotOverAccrued(row), {
     employee_id: row.employee.id,
     period_month: row.period_month,
     working_days: row.working_days,
@@ -1563,29 +1597,45 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       // Update only if amount_paid still equals our baseline, so concurrent
       // clicks / tabs can never apply the same delta twice (the triple-pay guard,
       // now delta-aware for partial payments).
-      let payslipId = row.payslip_id;
-      if (!payslipId) {
-        const { data: up, error: upErr } = await supabase
-          .from("payslips")
-          .upsert(buildPayslipPayload({ ...row, amount_paid: already }), {
-            onConflict: "employee_id,period_month",
-          })
-          .select("id, amount_paid")
-          .single();
-        if (upErr) throw upErr;
-        payslipId = (up as { id: string }).id;
-        if (Math.round(Number((up as { amount_paid: number }).amount_paid)) !== already) {
-          setRowError("This payslip changed in another tab — reloading.");
-          await loadAll();
-          return;
-        }
+      // The figures are written FIRST, and for an existing payslip too — not
+      // only when creating one.
+      //
+      // This used to run `if (!payslipId)`, so a payslip that already existed
+      // was paid against whatever figures it was saved with, while the target
+      // came from the LIVE recomputed row. When the two had drifted the payment
+      // exceeded the stored Net and `payslips_paid_not_over_accrued` refused the
+      // whole disbursement with a constraint name.
+      //
+      // It was not hypothetical: Zahid Anwar (EMR-082) sat at Emaar with a
+      // stored payslip of 12 pay-days (Net 20,103) while the screen — correctly
+      // counting his 2 leave days inside a 4-day allowance — showed 14 pay-days
+      // (Net 23,526). Disbursing tried to pay 23,526 against a payslip that said
+      // 20,103 was owed. The constraint was right to refuse; the bug was paying
+      // a figure the payslip did not carry.
+      //
+      // Writing the figures here keeps the payslip and the payment the same
+      // number, and it happens BEFORE any money moves, so the original
+      // invariant — no payslip write after cash leaves — still holds. The
+      // `enforce_payroll_run_lock` concern the old comment raised applies to
+      // payslips carrying a payroll_run_id, which these do not.
+      const { data: up, error: upErr } = await supabase
+        .from("payslips")
+        .upsert(buildPayslipPayload({ ...row, amount_paid: already }), {
+          onConflict: "employee_id,period_month",
+        })
+        .select("id, amount_paid")
+        .single();
+      if (upErr) throw upErr;
+      const payslipId = (up as { id: string }).id;
+      if (Math.round(Number((up as { amount_paid: number }).amount_paid)) !== already) {
+        setRowError("This payslip changed in another tab — reloading.");
+        await loadAll();
+        return;
       }
       const newDisbursed = isSettled(target, net);
-      // Only payment-tracking columns are written here — never the figure columns
-      // (net_salary, final_salary, advance, …) that enforce_payroll_run_lock
-      // guards. That lets a payment be recorded against an approved/locked run
-      // (which is legitimate) AND means no payslip write happens AFTER the money
-      // moves, so a lock rejection can never strand cash outside a payslip.
+      // Only payment-tracking columns are written here — the figures were
+      // settled by the upsert above, before any money moves, so nothing that can
+      // be rejected happens after cash leaves.
       const { data: claimRows, error: claimErr } = await supabase
         .from("payslips")
         .update({
