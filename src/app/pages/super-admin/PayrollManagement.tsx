@@ -2003,6 +2003,9 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         arr.push({
           employeeCode: meta?.code ?? "",
           name: meta?.name ?? "",
+          // This page lists Finance-Verified clients only, and the rows are built
+          // FROM payslips, so every row here has one by construction.
+          hasPayslip: true,
           presentDays: Number(r.present_days ?? 0),
           absentDays: Number(r.absent_days ?? 0),
           leaveDays: Number(r.leave_days ?? 0),

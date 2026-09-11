@@ -140,7 +140,7 @@ export default function PayrollRun() {
         withRegion(
           supabase
             .from("employees")
-            .select("id, full_name, employee_code, client_id, category, lifecycle_state")
+            .select("id, full_name, employee_code, client_id, category, lifecycle_state, base_salary, allowance")
             .not("lifecycle_state", "in", "(terminated,fired,left,absconded)")
             .neq("category", "reliever")
             .range(0, 9999),
@@ -260,11 +260,15 @@ export default function PayrollRun() {
         arr.push({
           employeeCode: e.employee_code ?? "",
           name: e.full_name ?? "",
+          hasPayslip: !!r,
           presentDays: Number(r?.present_days ?? 0),
           absentDays: Number(r?.absent_days ?? 0),
           leaveDays: Number(r?.leave_days ?? 0),
-          baseSalary: Math.round(Number(r?.base_salary ?? 0)),
-          allowance: Math.round(Number(r?.allowance ?? 0)),
+          // From the payslip once one exists, else from the employee record —
+          // these two are contractual and known before payroll runs, which is
+          // what makes a Draft-stage sheet worth having.
+          baseSalary: Math.round(Number(r?.base_salary ?? e.base_salary ?? 0)),
+          allowance: Math.round(Number(r?.allowance ?? e.allowance ?? 0)),
           bonus: Math.round(Number(r?.bonus ?? 0)),
           finalSalary: Math.round(Number(r?.final_salary ?? 0)),
           advance: Math.round(Number(r?.advance ?? 0)),

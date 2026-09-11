@@ -488,6 +488,18 @@ export function exportClientStatementLedger(opts: {
 export type PayrollExportRow = {
   employeeCode: string;
   name: string;
+  /**
+   * Does a payslip exist for this person this month?
+   *
+   * Payslips are only written at Finance Verify, so a Draft or Review sheet is
+   * mostly people who have none yet. Their payroll figures are not ZERO, they
+   * are NOT YET CALCULATED, and writing 0 into Net Salary asserts the first —
+   * a column of 0.00 reads as "this guard is owed nothing". The columns a
+   * payroll run produces are therefore left BLANK when this is false, and only
+   * the figures that are already known independently of payroll (base salary
+   * and allowance, which live on the employee record) are filled in.
+   */
+  hasPayslip: boolean;
   presentDays: number;
   absentDays: number;
   leaveDays: number;
@@ -556,21 +568,48 @@ export function exportPayrollSheets(
 
   for (const sheet of sheets) {
     const data: any[][] = [];
+    const unprocessed = sheet.rows.filter((r) => !r.hasPayslip).length;
     data.push([DEFAULT_COMPANY]);
     data.push([`Payroll — ${sheet.name} — ${periodLabel}`]);
-    data.push([]);
+    // Says so ON THE SHEET, because the file outlives the screen that explained
+    // it: somebody opening this in a week has no other way to know the blanks
+    // are "not run yet" rather than "nothing owed".
+    data.push([
+      unprocessed === 0
+        ? ""
+        : unprocessed === sheet.rows.length
+          ? "Payroll has not been processed for this client yet — salary columns are blank by design, not zero."
+          : `Payroll is part-processed: ${unprocessed} of ${sheet.rows.length} employees have no payslip yet. Their salary columns are blank, not zero.`,
+    ]);
     data.push(headers);
 
     const t = {
       base: 0, allow: 0, bonus: 0, final: 0, adv: 0,
       eobi: 0, tax: 0, ded: 0, net: 0, paid: 0, bal: 0,
     };
+    const processed = sheet.rows.filter((r) => r.hasPayslip).length;
+
     sheet.rows.forEach((r, i) => {
+      // Base and allowance are contractual and known before payroll runs, so
+      // they are filled in for everybody — which is what makes a pre-payroll
+      // sheet worth exporting at all rather than a list of names.
+      t.base += r.baseSalary;
+      t.allow += r.allowance;
+      if (!r.hasPayslip) {
+        data.push([
+          i + 1, r.employeeCode, r.name,
+          "", "", "",
+          r.baseSalary, r.allowance, "", "",
+          "", "", "", "",
+          "", "", "",
+          "", r.status,
+        ]);
+        return;
+      }
       const balance = Math.round(r.netSalary) - Math.round(r.amountPaid);
-      t.base += r.baseSalary; t.allow += r.allowance; t.bonus += r.bonus;
-      t.final += r.finalSalary; t.adv += r.advance; t.eobi += r.eobi;
-      t.tax += r.incomeTax; t.ded += r.deductions; t.net += r.netSalary;
-      t.paid += r.amountPaid; t.bal += balance;
+      t.bonus += r.bonus; t.final += r.finalSalary; t.adv += r.advance;
+      t.eobi += r.eobi; t.tax += r.incomeTax; t.ded += r.deductions;
+      t.net += r.netSalary; t.paid += r.amountPaid; t.bal += balance;
       data.push([
         i + 1, r.employeeCode, r.name,
         r.presentDays, r.absentDays, r.leaveDays,
@@ -584,18 +623,28 @@ export function exportPayrollSheets(
     data.push([]);
     // Folded from the rows above, never fetched separately — a total that can
     // disagree with the column over it is worse than no total.
+    //
+    // The LABEL says what the total covers. Without it, a sheet of 109 people
+    // where 1 has been processed shows a Net of one guard's salary under a list
+    // of 109 names, and reads as the payroll for all of them.
     data.push([
-      "", "", `Total — ${sheet.rows.length} employee${sheet.rows.length === 1 ? "" : "s"}`,
+      "", "",
+      processed === sheet.rows.length
+        ? `Total — ${sheet.rows.length} employee${sheet.rows.length === 1 ? "" : "s"}`
+        : `Total — ${processed} of ${sheet.rows.length} with a payslip`,
       "", "", "",
-      t.base, t.allow, t.bonus, t.final,
-      t.adv, t.eobi, t.tax, t.ded,
-      t.net, t.paid, t.bal,
+      t.base, t.allow,
+      processed ? t.bonus : "", processed ? t.final : "",
+      processed ? t.adv : "", processed ? t.eobi : "",
+      processed ? t.tax : "", processed ? t.ded : "",
+      processed ? t.net : "", processed ? t.paid : "", processed ? t.bal : "",
       "", "",
     ]);
 
     const ws = XLSX.utils.aoa_to_sheet(data);
     mergeCell(ws, 0, 0, 0, headers.length - 1);
     mergeCell(ws, 1, 0, 1, headers.length - 1);
+    mergeCell(ws, 2, 0, 2, headers.length - 1);
     setColWidths(ws, widths);
     XLSX.utils.book_append_sheet(wb, ws, uniqueSheetName(sheet.name));
   }
