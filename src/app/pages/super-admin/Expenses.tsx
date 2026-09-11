@@ -688,9 +688,16 @@ export default function Expenses() {
     for (const e of employees) m.set(e.id, e.branch_id ?? null);
     return m;
   }, [employees]);
-  // All office staff — the "Expense By" options (who the expense was incurred by).
+  // The "Expense By" options (who the expense was incurred by) — serving office
+  // staff only. Someone who has left cannot incur a new expense, and their name
+  // in the picker is an invitation to attribute one to them by mistake. Names on
+  // expenses they DID incur are unaffected: those are read off the row's own
+  // expense_by_name, not from this list.
   const officeStaff = useMemo(
-    () => employees.filter((e) => e.category === "office_staff").sort((a, b) => a.full_name.localeCompare(b.full_name)),
+    () =>
+      employees
+        .filter((e) => e.category === "office_staff" && e.lifecycle_state === "active")
+        .sort((a, b) => a.full_name.localeCompare(b.full_name)),
     [employees],
   );
 
@@ -4602,7 +4609,16 @@ export default function Expenses() {
               className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
             >
               <option value="">Select who the expense is by…</option>
-              {officeStaff.map((s) => (
+              {/* Editing an older expense keeps whoever it already names, even if
+                  they have since left — dropping them would blank the select and
+                  silently re-attribute the expense on save. */}
+              {(() => {
+                const held =
+                  state.expense_by && !officeStaff.some((s) => s.id === state.expense_by)
+                    ? employees.find((e) => e.id === state.expense_by) ?? null
+                    : null;
+                return [...officeStaff, ...(held ? [held] : [])];
+              })().map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.full_name}
                 </option>

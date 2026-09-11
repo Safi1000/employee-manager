@@ -1941,6 +1941,23 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPeriod, regionId, isPageShell, fvReloadKey]);
 
+  // Fully disbursed = at least one payslip and none left unpaid. Same test the
+  // card's "All disbursed" badge uses, hoisted so the ordering and the badge
+  // can never disagree.
+  const shellFullyDisbursed = (key: string) => {
+    const t = fvTotals.get(key);
+    return !!t && t.disbursedCount > 0 && t.notDisbursedCount === 0;
+  };
+  // Finished clients sink to the bottom — this page exists to disburse, so what
+  // still owes money leads. sort() is stable, so each half keeps the name order
+  // fvScopes was built in, and a client re-orders as soon as its last payslip is
+  // paid (fvTotals is re-pulled by the embed's disburse callback).
+  const shellScopes = useMemo(
+    () => [...fvScopes].sort((a, b) => Number(shellFullyDisbursed(a.key)) - Number(shellFullyDisbursed(b.key))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [fvScopes, fvTotals],
+  );
+
   const shellCardTotals = useMemo(() => {
     if (fvExpanded) return fvTotals.get(fvExpanded) ?? ZERO_SHELL;
     return fvScopes.reduce((acc, s) => {
@@ -2022,12 +2039,11 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
             <p className="text-sm text-muted-foreground py-12 text-center">No Finance-Verified clients for {formatPeriod(selectedPeriod)}. Finance-verify a client in Payroll Run to disburse it here.</p>
           ) : (
             <div className="space-y-3">
-              {fvScopes.map((s) => {
+              {shellScopes.map((s) => {
                 const open = fvExpanded === s.key;
                 const t = fvTotals.get(s.key);
                 const done = (t?.disbursedCount ?? 0) + (t?.notDisbursedCount ?? 0);
-                // Fully disbursed = at least one payslip and none left unpaid.
-                const fullyDisbursed = !!t && t.disbursedCount > 0 && t.notDisbursedCount === 0;
+                const fullyDisbursed = shellFullyDisbursed(s.key);
                 const partiallyDisbursed = !!t && t.disbursedCount > 0 && t.notDisbursedCount > 0;
                 return (
                   <div key={s.key} className={`rounded-xl border overflow-hidden ${fullyDisbursed ? "bg-success-50 dark:bg-success-900/15 border-success-300 dark:border-success-800" : "bg-card border-border"}`}>

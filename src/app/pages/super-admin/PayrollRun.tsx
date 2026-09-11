@@ -200,9 +200,33 @@ export default function PayrollRun() {
 
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [period, regionId]);
 
-  const draftScopes = useMemo(() => scopes.filter((s) => !phaseByKey.has(s.key)), [scopes, phaseByKey]);
+  // Both tabs sort by what the user can still ACT on, so the work is at the top
+  // and the done pile sinks. Array.prototype.sort is stable, so scopes within a
+  // half keep the name order `scopes` was built in.
+  //
+  // Draft: OPS-verified first — a blocked scope has no button, so it is not work
+  // that can be done here. Ungated scopes (relievers) sort with the verified,
+  // because they are equally ready to move.
+  const draftScopes = useMemo(
+    () =>
+      scopes
+        .filter((s) => !phaseByKey.has(s.key))
+        .sort((a, b) => {
+          const ready = (s: Scope) => (!s.verifiable || verified.has(s.key) ? 0 : 1);
+          return ready(a) - ready(b);
+        }),
+    [scopes, phaseByKey, verified],
+  );
   const reviewScopes = useMemo(() => scopes.filter((s) => phaseByKey.get(s.key) === "review"), [scopes, phaseByKey]);
-  const financeScopes = useMemo(() => scopes.filter((s) => phaseByKey.get(s.key) === "finance_verify"), [scopes, phaseByKey]);
+  // Finance Verify: signed-off scopes sink. Finance Verify is permanent, so a
+  // verified row is frozen — nothing on it can be actioned again.
+  const financeScopes = useMemo(
+    () =>
+      scopes
+        .filter((s) => phaseByKey.get(s.key) === "finance_verify")
+        .sort((a, b) => Number(financeVerified.has(a.key)) - Number(financeVerified.has(b.key))),
+    [scopes, phaseByKey, financeVerified],
+  );
 
   // Review-tab cards: the expanded client's totals, else the sum across every
   // client currently in Review this month. Same source for both, so they agree.

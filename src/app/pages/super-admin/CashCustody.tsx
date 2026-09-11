@@ -28,7 +28,7 @@ type CashLocation = {
   bank_account_id: string | null;
 };
 
-type OfficeStaff = { id: string; full_name: string };
+type OfficeStaff = { id: string; full_name: string; lifecycle_state: string | null };
 
 type CustodyTransfer = {
   id: string;
@@ -175,7 +175,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
         supabase.from("treasury").select("cash_balance").eq("company_id", companyId).maybeSingle(),
         supabase.from("partner_account_entries").select("partner_id, type, amount").eq("company_id", companyId),
         supabase.from("investor_ledger_entries").select("investor_id, type, amount").eq("company_id", companyId),
-        supabase.from("employees").select("id, full_name").eq("category", "office_staff").order("full_name"),
+        supabase.from("employees").select("id, full_name, lifecycle_state").eq("category", "office_staff").order("full_name"),
         supabase.from("invoice_payments").select("id, amount, custodian_location_id, payment_date, clients:client_id(name)").eq("payment_mode", "Cash").not("custodian_location_id", "is", null),
         supabase.from("expenses").select("id, amount, custodian_location_id, expense_date, description").not("custodian_location_id", "is", null),
         supabase.from("cheques").select("id, amount, custodian_location_id, cheque_date, cheque_number").eq("cheque_type", "cash").eq("status", "cleared").not("custodian_location_id", "is", null),
@@ -448,6 +448,15 @@ export function CashCustodyPanel({ onReady, onSummary }: {
     for (const e of filteredLedger) { cin += e.cashIn; cout += e.cashOut; }
     return { cin, cout, net: cin - cout };
   }, [filteredLedger]);
+  // Only a serving office-staff member can be given a custody. The full list
+  // stays loaded — it resolves the NAME on every historical custodian, including
+  // people who have since left — so the narrowing happens here, at the picker,
+  // and nowhere else.
+  const activeOfficeStaff = useMemo(
+    () => officeStaff.filter((s) => s.lifecycle_state === "active"),
+    [officeStaff],
+  );
+
   // Office staff who actually hold a custodian location (for the filter dropdown).
   const custodianStaff = useMemo(
     () => [
@@ -950,8 +959,16 @@ export function CashCustodyPanel({ onReady, onSummary }: {
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
               <option value="">Select office-staff member…</option>
               {(editLoc
-                ? officeStaff
-                : officeStaff.filter((s) => !locations.some((l) => l.custodian_employee_id === s.id && l.location_type === "CUSTODIAN"))
+                // Editing keeps whoever this custody already names, even if they
+                // have since left — dropping them would blank the select and
+                // silently reassign the custody on save.
+                ? [
+                    ...activeOfficeStaff,
+                    ...officeStaff.filter(
+                      (s) => s.id === locForm.custodian_employee_id && s.lifecycle_state !== "active",
+                    ),
+                  ]
+                : activeOfficeStaff.filter((s) => !locations.some((l) => l.custodian_employee_id === s.id && l.location_type === "CUSTODIAN"))
               ).map((s) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
             </ThemedSelect>
           </div>
