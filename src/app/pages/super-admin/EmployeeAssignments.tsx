@@ -70,7 +70,6 @@ import {
 import {
   ChangeClientModal,
   ChangeCategoryModal,
-  ChangeShiftModal,
   SalaryHistoryPanel,
   ShiftChangeHistory,
   type EmployeeRow,
@@ -298,7 +297,6 @@ export default function EmployeeAssignments() {
   const [warnTarget, setWarnTarget] = useState<EmployeeRow | null>(null);
   const [changeClientTarget, setChangeClientTarget] = useState<EmployeeRow | null>(null);
   const [changeCategoryTarget, setChangeCategoryTarget] = useState<EmployeeRow | null>(null);
-  const [changeShiftTarget, setChangeShiftTarget] = useState<EmployeeRow | null>(null);
 
   // Only a guard who is actually on the books can be separated — an applicant or
   // an already-separated record has no posting to close.
@@ -1620,7 +1618,6 @@ export default function EmployeeAssignments() {
           onSaved={async () => { setRowTarget(null); await loadData(); }}
           onChangeClient={() => { const t = rowTarget; setRowTarget(null); setChangeClientTarget(t); }}
           onChangeCategory={() => { const t = rowTarget; setRowTarget(null); setChangeCategoryTarget(t); }}
-          onChangeShift={() => { const t = rowTarget; setRowTarget(null); setChangeShiftTarget(t); }}
           onError={setError}
         />
       )}
@@ -1761,15 +1758,6 @@ export default function EmployeeAssignments() {
           displayCode={displayCodeFor(changeCategoryTarget)}
           onClose={() => setChangeCategoryTarget(null)}
           onDone={async () => { setChangeCategoryTarget(null); await loadData(); }}
-          onError={setError}
-        />
-      )}
-      {changeShiftTarget && (
-        <ChangeShiftModal
-          guard={changeShiftTarget}
-          displayCode={displayCodeFor(changeShiftTarget)}
-          onClose={() => setChangeShiftTarget(null)}
-          onDone={async () => { setChangeShiftTarget(null); await loadData(); }}
           onError={setError}
         />
       )}
@@ -2399,7 +2387,7 @@ function RuleField({
 // ─────────────────────────────────────────────────────────────────────────────
 function RowEditModal({
   employee, canAccounts, canHr, displayCode, clients,
-  onClose, onSaved, onChangeClient, onChangeCategory, onChangeShift, onError, departmentLabel,
+  onClose, onSaved, onChangeClient, onChangeCategory, onError, departmentLabel,
   lineOptions, slotForLine, siteNoteForLine,
 }: {
   employee: EmployeeRow;
@@ -2420,7 +2408,6 @@ function RowEditModal({
   onSaved: () => Promise<void>;
   onChangeClient: () => void;
   onChangeCategory: () => void;
-  onChangeShift: () => void;
   onError: (m: string) => void;
 }) {
   const [joinDate, setJoinDate] = useState(employee.join_date ?? "");
@@ -2453,11 +2440,35 @@ function RowEditModal({
    * would freeze the field and stop the very corrections that fix them.
    */
   const heldLineId = employee.contract_line_id ?? "";
-  const lineIsFull = (l: ContractLine) => {
-    if (l.id === heldLineId) return false;
-    const s = slotForLine(l, todayIso());
-    return s.filled >= s.committed;
-  };
+
+  // Department is a CATEGORY, not a shift-split post (Change 2). The contract
+  // still carries a line per shift for billing, and the committed pool is ALREADY
+  // shared across a category's lines (activeCountByCategory / 0168) — so the
+  // picker offers ONE option per category, showing the category's combined
+  // committed/filled, and pins to a representative line of that category. Shift
+  // (day/night) no longer appears here; it is a date-based property set only on
+  // the Shift Management tab. `full` respects the held category: the post an
+  // employee already fills is never full to them.
+  const deptOptions = useMemo(() => {
+    const byCat = new Map<ContractLineCategory, { committed: number; filled: number; lines: ContractLine[] }>();
+    for (const l of lineOptions) {
+      const s = slotForLine(l, todayIso());
+      const g = byCat.get(l.category) ?? { committed: 0, filled: 0, lines: [] };
+      g.committed += s.committed;
+      g.filled += s.filled;
+      g.lines.push(l);
+      byCat.set(l.category, g);
+    }
+    return [...byCat.entries()]
+      .map(([category, g]) => {
+        // An existing pin stays exactly where it is (zero billing disturbance);
+        // a fresh pick lands on the category's largest-committed line.
+        const held = g.lines.find((l) => l.id === heldLineId);
+        const rep = held ?? [...g.lines].sort((a, b) => (Number(b.committed_count) || 0) - (Number(a.committed_count) || 0))[0];
+        return { category, label: CONTRACT_LINE_CATEGORY_LABEL[category], committed: g.committed, filled: g.filled, lineId: rep.id, full: !held && g.filled >= g.committed };
+      })
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [lineOptions, slotForLine, heldLineId]);
 
   const save = async () => {
     setSaving(true);
@@ -2466,17 +2477,13 @@ function RowEditModal({
       // Re-check at save: the numbers were read when the modal opened, and
       // somebody else may have taken the last slot since.
       if (canPickLine && lineId && lineId !== heldLineId) {
-        const target = lineOptions.find((l) => l.id === lineId);
-        if (target) {
-          const s = slotForLine(target, todayIso());
-          if (s.filled >= s.committed) {
-            throw new Error(
-              `${lineOptionLabel(target, null, siteNoteForLine(target))} is full — the contract ` +
-                `commits ${s.committed} and ${s.filled} ${s.filled === 1 ? "is" : "are"} already ` +
-                `in it. Raise the headcount on the contract, or add an addendum, before moving ` +
-                `anyone in.`,
-            );
-          }
+        const picked = deptOptions.find((d) => d.lineId === lineId);
+        if (picked && picked.full) {
+          throw new Error(
+            `${picked.label} is full — the contract commits ${picked.committed} and ` +
+              `${picked.filled} ${picked.filled === 1 ? "is" : "are"} already in it. Raise the ` +
+              `headcount on the contract, or add an addendum, before moving anyone in.`,
+          );
         }
       }
 
@@ -2581,10 +2588,12 @@ function RowEditModal({
               ) : (
                 <>
                   <input value={employee.shift} disabled readOnly className={lockedCls + " capitalize"} />
+                  {/* Shift changes happen ONLY on the Shift Management tab now —
+                      shift is a date-based display property, not a posting edit. */}
                   {canHr && canPost && category === "client" && (
-                    <button type="button" onClick={onChangeShift} className="text-xs text-brand-700 dark:text-brand-500 hover:underline mt-1">
-                      Change shift (dated)
-                    </button>
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      Change a posted guard's shift from the Shift Management tab.
+                    </p>
                   )}
                 </>
               )}
@@ -2594,18 +2603,21 @@ function RowEditModal({
               {canPickLine ? (
                 <>
                   <ThemedSelect value={lineId} onChange={(e) => setLineId(e.target.value)} className={inputCls}>
-                    <option value="">— Not set —</option>
-                    {lineOptions.map((l) => (
-                      <option key={l.id} value={l.id} disabled={lineIsFull(l)}>
-                        {lineOptionLabel(l, slotForLine(l, todayIso()), siteNoteForLine(l))}
-                        {lineIsFull(l) ? " · FULL" : ""}
+                    {/* "Not set" is offered ONLY while the employee has no
+                        department yet (Change 3) — once assigned, a real post
+                        cannot be reverted to unset, only changed to another. */}
+                    {!heldLineId && <option value="">— Not set —</option>}
+                    {deptOptions.map((d) => (
+                      <option key={d.category} value={d.lineId} disabled={d.full}>
+                        {d.label} · {d.filled}/{d.committed} filled{d.full ? " · FULL" : ""}
                       </option>
                     ))}
                   </ThemedSelect>
                   <p className="text-[11px] text-muted-foreground mt-1">
-                    The post this employee fills, from their client's contract. Posts the
-                    contract commits no headcount to are not offered, and a post already
-                    holding everyone it commits cannot be moved into.
+                    The post this employee fills, from their client's contract — one total
+                    per category, not split by shift. Posts the contract commits no
+                    headcount to are not offered, and a post already holding everyone it
+                    commits cannot be moved into.
                   </p>
                 </>
               ) : (
