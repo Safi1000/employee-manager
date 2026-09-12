@@ -102,9 +102,15 @@ export async function loadSiteByGuard(clientId: string | null): Promise<Map<stri
 /**
  * THE CONFIRMATION GATE — the single definition of "this mark is real".
  *
- * A mark counts only where the supervisor confirmed that (site, shift, date).
- * A confirmation carrying site_id null is client-wide (or a category group) and
- * matches any of the client's sites.
+ * A mark counts where the supervisor confirmed that (site, date) — SHIFT IS
+ * IGNORED. Attendance is a fact about a DATE, not a shift: shift is a display
+ * label for the column a mark sits in, and it can change under a mark (a guard
+ * moved Day→Night) without invalidating the mark. So a confirmation for ANY
+ * shift on the guard's (site, date) confirms the day; a confirmation carrying
+ * site_id null is client-wide (or a category group) and matches any site.
+ *
+ * (Double duty is still two rows on the date — the count comes from the number
+ * of worked rows, not from which shift each is labelled.)
  *
  * This used to live inline in AttendanceSheetModal while the Daily Board's
  * exporter applied NO gate at all, so the same client and month produced two
@@ -120,21 +126,23 @@ export async function loadConfirmationGate(opts: {
 }): Promise<(empId: string, iso: string, workedShift: string) => boolean> {
   const q = supabase
     .from("attendance_confirmations")
-    .select("site_id, shift_code, attendance_date")
+    .select("site_id, attendance_date")
     .gte("attendance_date", opts.startDate)
     .lte("attendance_date", opts.endDate);
   const { data } = await (opts.category ? q.eq("category", opts.category) : q.eq("client_id", opts.clientId as string));
 
-  const anySite = new Set<string>(); // `${shift}|${date}`
-  const bySite = new Set<string>();  // `${site}|${shift}|${date}`
+  const anySite = new Set<string>(); // `${date}` — client-wide / category confirmation
+  const bySite = new Set<string>();  // `${site}|${date}`
   for (const c of (data ?? []) as any[]) {
-    if (c.site_id) bySite.add(`${c.site_id}|${c.shift_code}|${c.attendance_date}`);
-    else anySite.add(`${c.shift_code}|${c.attendance_date}`);
+    if (c.site_id) bySite.add(`${c.site_id}|${c.attendance_date}`);
+    else anySite.add(`${c.attendance_date}`);
   }
-  return (empId, iso, ws) => {
-    if (anySite.has(`${ws}|${iso}`)) return true;
+  // ws intentionally unused: a mark is confirmed by its (site, date), whatever
+  // shift it is labelled — see the header.
+  return (empId, iso, _ws) => {
+    if (anySite.has(iso)) return true;
     const site = opts.siteByGuard.get(empId) ?? null;
-    return site ? bySite.has(`${site}|${ws}|${iso}`) : false;
+    return site ? bySite.has(`${site}|${iso}`) : false;
   };
 }
 
@@ -256,6 +264,30 @@ export async function buildAttendanceRows(opts: {
     cellsByEmp.set(r.employee_id, m);
   }
 
+  // Shift is a DISPLAY label, not part of the attendance fact. A guard whose
+  // shift changed Day→Night keeps the same record for the date; it simply shows
+  // in the other column. So for a day with a SINGLE worked row, render it under
+  // the guard's CURRENT shift for that date (resolveShift) — moving both the
+  // primary column (via marks[0].ws, which byEmp reads as the base) and its
+  // per-shift cell. A double duty (2+ rows) is left alone: its two columns are
+  // the whole point, and each row keeps the shift it was worked on.
+  const resolveShift = await loadShiftResolver(empIds);
+  for (const [empId, perDay] of marksByDay) {
+    for (const [day, marks] of perDay) {
+      if (marks.length !== 1) continue;
+      const iso = dates[day - 1];
+      const cur = resolveShift(empId, iso) || marks[0].ws;
+      if (!cur || cur === marks[0].ws) continue;
+      const cells = cellsByEmp.get(empId);
+      if (cells) {
+        const oldKey = `${day}|${marks[0].ws}`;
+        const sym = cells.get(oldKey);
+        if (sym !== undefined) { cells.delete(oldKey); cells.set(`${day}|${cur}`, sym); }
+      }
+      marks[0].ws = cur;
+    }
+  }
+
   // ── The day's one symbol, DERIVED ──────────────────────────────────────────
   //
   // This used to be "last row wins": each record overwrote the day as it was
@@ -332,7 +364,6 @@ export async function buildAttendanceRows(opts: {
   // (The single-column view needs no equivalent fold: symbolForDay already gives
   // a leave precedence over everything else on the day.)
 
-  const resolveShift = await loadShiftResolver(empIds);
   const clientById = new Map(clients.map((c) => [c.id, c]));
   const contractById = new Map(contracts.map((c) => [c.id, c]));
 

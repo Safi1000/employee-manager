@@ -501,7 +501,55 @@ export default function AttendanceBoard() {
       }
     }
 
-    setRows([...byKey.values()]);
+    // ── MERGE SHIFTS ─────────────────────────────────────────────────────────
+    // Attendance is date-based; shift is a display label only (Shayan, 2026-09-12).
+    // Collapse every (site/category, shift) row into ONE row per group, so the
+    // board shows a single roster + one report/confirm per site instead of a card
+    // per shift. Each guard keeps its own scheduled_shift for the display tag and
+    // the double-duty default; double duty still writes two rows in the modal.
+    //
+    // Marks/reported are re-attached by GUARD (not guard|shift): a guard whose
+    // shift changed after being marked keeps their mark on the board instead of it
+    // hiding under the old shift's row. One mark per guard per day drives the row
+    // (a double duty surfaces as its double_duty exception).
+    const markByGuardId = new Map<string, { status: Status; absent_reason: AbsentReason | null; marked_by: string | null }>();
+    for (const a of (att ?? []) as any[]) {
+      const st = normalizeStatus(a.status);
+      const prev = markByGuardId.get(a.employee_id);
+      // Prefer a non-present (exception) status when a day carries both.
+      if (!prev || (st !== "present" && prev.status === "present")) {
+        markByGuardId.set(a.employee_id, { status: st, absent_reason: a.absent_reason ?? null, marked_by: a.marked_by_user_id ?? null });
+      }
+    }
+    // A site is confirmed if ANY confirmation exists for it that date — the gate
+    // is date+site now, so one confirmation (any shift, incl. the merged 'all')
+    // covers the whole site.
+    const confByGroup = new Map<string, { supervisor_name: string; confirmed_at: string }>();
+    for (const c of (confs ?? []) as any[]) {
+      if (!confByGroup.has(c.group_key)) confByGroup.set(c.group_key, { supervisor_name: c.supervisor_name, confirmed_at: c.confirmed_at });
+    }
+    const merged = new Map<string, ClientShift>();
+    for (const r of byKey.values()) {
+      let g = merged.get(r.group_key);
+      if (!g) {
+        g = { ...r, key: r.group_key, shift_code: "all", roster: [], marks: new Map(), reported: new Map(),
+              contracted: 0, contract_shifts: [], confirmation: confByGroup.get(r.group_key) ?? null };
+        merged.set(r.group_key, g);
+      }
+      const seen = new Set(g.roster.map((x) => x.guard_id));
+      for (const rg of r.roster) if (!seen.has(rg.guard_id)) { g.roster.push(rg); seen.add(rg.guard_id); }
+      g.contracted += r.contracted;
+      g.contract_shifts = [...new Set([...g.contract_shifts, ...r.contract_shifts])];
+    }
+    for (const g of merged.values()) {
+      for (const rg of g.roster) {
+        const m = markByGuardId.get(rg.guard_id);
+        if (!m) continue;
+        g.reported.set(rg.guard_id, m.marked_by);
+        if (m.status !== "present") g.marks.set(rg.guard_id, { status: m.status, absent_reason: m.absent_reason });
+      }
+    }
+    setRows([...merged.values()]);
     setLoading(false);
   };
 
@@ -664,7 +712,7 @@ export default function AttendanceBoard() {
     <>
       <Header
         title="Attendance"
-        subtitle="Daily board by client-shift — presume present, enter only exceptions, confirm per shift"
+        subtitle="Daily board by client/site — presume present, enter only exceptions, confirm per site"
         actions={
           <input type="date" value={date} onChange={(e) => { if (isIsoDate(e.target.value)) setDate(e.target.value); }}
             className="px-3 py-2 border border-border bg-card rounded-md text-sm text-foreground" />
@@ -774,12 +822,10 @@ export default function AttendanceBoard() {
                       <Building2 className="w-4 h-4 shrink-0 text-brand-600 dark:text-brand-500" strokeWidth={1.5} />
                       <span className="font-medium text-foreground truncate flex-1">{c.clientName}</span>
                       <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">
-                        {/* "1 site" tells nobody anything once the site level is
-                            collapsed away — count the shifts they open onto. */}
-                        {c.sites.length === 1
-                          ? `${allShifts.length} shift${allShifts.length === 1 ? "" : "s"}`
-                          : `${c.sites.length} sites`}{" "}
-                        · {rosterTotal} on roster
+                        {/* Shifts are merged now — one row per site. Show sites
+                            (when there's more than one) and the roster total. */}
+                        {c.sites.length > 1 ? `${c.sites.length} sites · ` : ""}
+                        {rosterTotal} on roster
                       </span>
                       {reportedBadge(reportedTotal, rosterTotal)}
                       {pending > 0 ? (
@@ -834,7 +880,7 @@ export default function AttendanceBoard() {
                                 <MapPin className="w-4 h-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
                                 <span className="text-sm text-foreground truncate flex-1">{st.siteName}</span>
                                 <span className="text-xs text-muted-foreground shrink-0">
-                                  {st.shifts.length} shift{st.shifts.length === 1 ? "" : "s"} · {sRoster} on roster
+                                  {sRoster} on roster
                                 </span>
                                 {reportedBadge(sReported, sRoster)}
                               </button>
@@ -874,9 +920,19 @@ export default function AttendanceBoard() {
                                             onClick={() => setDrill(r)}
                                           >
                                             <td className={`px-4 py-3 ${flat ? "pl-8" : "pl-14"} text-sm`}>
-                                              <span className="capitalize inline-block px-1.5 py-0.5 rounded bg-secondary text-muted-foreground text-xs">
-                                                {r.shift_code}
-                                              </span>
+                                              {/* Shift is display-only now — the row is the whole site's
+                                                  roster. Show the distinct shifts present as subtle tags. */}
+                                              {(() => {
+                                                const shifts = [...new Set(r.roster.map((g) => g.scheduled_shift))].sort();
+                                                if (shifts.length === 0) return <span className="text-xs text-muted-foreground">—</span>;
+                                                return (
+                                                  <span className="flex flex-wrap gap-1">
+                                                    {shifts.map((s) => (
+                                                      <span key={s} className="capitalize inline-block px-1.5 py-0.5 rounded bg-secondary text-muted-foreground text-xs">{s}</span>
+                                                    ))}
+                                                  </span>
+                                                );
+                                              })()}
                                             </td>
                                             <td className="px-4 py-3 text-sm text-right text-muted-foreground">{r.contracted || "—"}</td>
                                             <td className="px-4 py-3 text-sm text-right text-muted-foreground">{r.roster.length}</td>
@@ -998,7 +1054,12 @@ function ShiftDrillModal({
   // list. Absent from the map ⇒ default to the guard's scheduled_shift. For
   // status = double_duty the value holds MULTIPLE shifts (one attendance row
   // each, worked_shift distinct ⇒ no uniqueness conflict).
-  const [siteShifts, setSiteShifts] = useState<string[]>([shift.shift_code]);
+  // The shift options for the double-duty picker. On a merged row shift_code is
+  // "all", so seed from the site/contract's real shifts (filled by the effect
+  // below), never the "all" sentinel.
+  const [siteShifts, setSiteShifts] = useState<string[]>(
+    shift.shift_code === "all" ? (shift.contract_shifts ?? []) : [shift.shift_code],
+  );
   const [worked, setWorked] = useState<Map<string, string[]>>(new Map());
   const [supervisor, setSupervisor] = useState(shift.confirmation?.supervisor_name ?? "");
   const [source, setSource] = useState<"app" | "whatsapp" | "manual">("app");
@@ -1036,7 +1097,8 @@ function ShiftDrillModal({
       // a guard wrongly posted to a shift the contract does not staff would
       // otherwise make that shift selectable for the whole row.
       const fromContract = shift.contract_shifts ?? [];
-      setSiteShifts(fromContract.length ? fromContract : [shift.shift_code]);
+      const fallback = shift.shift_code === "all" ? [] : [shift.shift_code];
+      setSiteShifts(fromContract.length ? fromContract : fallback);
       return;
     }
     supabase
@@ -1047,8 +1109,10 @@ function ShiftDrillModal({
       .then(({ data }) => {
         if (cancelled) return;
         const codes = (data ?? []).map((r: any) => r.shift_code as string);
-        const union = codes.includes(shift.shift_code) ? codes : [...codes, shift.shift_code];
-        setSiteShifts(union.length ? union : [shift.shift_code]);
+        // Never fold in the "all" sentinel of a merged row — only real shifts.
+        const own = shift.shift_code === "all" ? [] : [shift.shift_code];
+        const union = codes.length ? (own[0] && !codes.includes(own[0]) ? [...codes, ...own] : codes) : own;
+        setSiteShifts(union);
       });
     return () => { cancelled = true; };
   }, [shift.site_id, shift.shift_code]);
@@ -1212,7 +1276,7 @@ function ShiftDrillModal({
     <Modal isOpen onClose={onClose} size="lg"
       error={err}
       onDismissError={() => setErr(null)}
-      title={`${shift.client_name} · ${shift.site_name} · ${shift.shift_code} — ${date}`}
+      title={`${shift.client_name} · ${shift.site_name}${shift.shift_code === "all" ? "" : ` · ${shift.shift_code}`} — ${date}`}
       footer={
         <div className="space-y-1.5">
           <div className="flex items-center gap-2">
@@ -1272,7 +1336,12 @@ function ShiftDrillModal({
             return (
               <div key={g.guard_id} className="flex items-center gap-3 px-3 py-2">
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm text-slate-900 truncate">{g.full_name}</p>
+                  <p className="text-sm text-slate-900 truncate">
+                    {g.full_name}
+                    {/* Shift is a display label only — shown for reference; marking
+                        and confirmation ignore it (double duty aside). */}
+                    <span className="ml-1.5 capitalize inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 text-[10px] align-middle">{g.scheduled_shift}</span>
+                  </p>
                   <p className="text-xs text-slate-400 font-mono">{guardDisplayCode(g, shift.client_prefix)}</p>
                   {shift.reported.has(g.guard_id) && (
                     <p className="text-[11px] text-success-700 dark:text-success-500 truncate">
@@ -1398,7 +1467,8 @@ function exportGuardSheet(branding: PdfBranding, date: string, rows: ClientShift
     for (const g of r.roster) {
       gr.push({
         full_name: g.full_name, code: guardDisplayCode(g, r.client_prefix),
-        client_name: r.client_name, site_name: r.site_name, shift_code: r.shift_code,
+        // Per-guard sheet shows each guard's OWN shift (the row is merged/"all").
+        client_name: r.client_name, site_name: r.site_name, shift_code: g.scheduled_shift,
         status: r.marks.get(g.guard_id)?.status ?? "present",
       });
     }
