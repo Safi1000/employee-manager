@@ -735,7 +735,7 @@ export default function AttendanceBoard() {
 
         <Tabs
           value={tab}
-          onChange={setTab}
+          onChange={(v) => setTab(v as typeof tab)}
           items={[
             { value: "board", label: "Daily board" },
             { value: "vacancies", label: "Vacancies", count: vacancies.length },
