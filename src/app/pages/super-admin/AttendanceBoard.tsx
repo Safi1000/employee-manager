@@ -10,6 +10,7 @@ import { supabase } from "../../lib/supabase";
 import { useAuth, hasPermission } from "../../lib/auth";
 import { guardDisplayCode } from "../../lib/guardCode";
 import BulkMarkByEmployeeModal from "../../components/BulkMarkByEmployeeModal";
+import EmployeeAssignments from "./EmployeeAssignments";
 import AttendanceSheetModal from "../../components/AttendanceSheetModal";
 import { brandingFromCompany, type PdfBranding } from "../../lib/pdfBranding";
 import { generateClientAttendancePdf, generateGuardAttendancePdf } from "../../lib/attendanceSheetPdf";
@@ -161,7 +162,13 @@ export default function AttendanceBoard() {
   const { regionId } = useRegion();
   const branding = brandingFromCompany(company);
   const [date, setDate] = useState(today());
-  const [tab, setTab] = useState<"board" | "vacancies">("board");
+  const [tab, setTab] = useState<"board" | "vacancies" | "shifts">("board");
+  // "Shift Management" tab embeds the Assignments & Pay page. It must carry that
+  // page's OWN view gate (assignments.view / employees.edit) — the Attendance
+  // route only checks attendance.* , so without this an attendance-only user
+  // would see assignments data. Edit actions self-gate inside the component and
+  // at the DB (0406/0410), so only the view gate is added here.
+  const canShiftMgmt = hasPermission(profile, "assignments.view") || hasPermission(profile, "employees.edit");
   const [rows, setRows] = useState<ClientShift[]>([]);
   const [vacancies, setVacancies] = useState<Vacancy[]>([]);
   const [clientNames, setClientNames] = useState<Map<string, string>>(new Map());
@@ -732,6 +739,7 @@ export default function AttendanceBoard() {
           items={[
             { value: "board", label: "Daily board" },
             { value: "vacancies", label: "Vacancies", count: vacancies.length },
+            ...(canShiftMgmt ? [{ value: "shifts", label: "Shift Management" }] : []),
           ]}
         />
 
@@ -993,6 +1001,12 @@ export default function AttendanceBoard() {
         {tab === "vacancies" && (
           <VacancyQueue vacancies={vacancies} clientNames={clientNames} onChanged={load} />
         )}
+
+        {/* Shift Management = the Assignments & Pay page, reused verbatim (not a
+            copy) so it never drifts. Its own permission gating (assignments.*
+            fields, DB RLS) travels with it; the tab is only shown to users who
+            pass the same view gate as the standalone route. */}
+        {tab === "shifts" && canShiftMgmt && <EmployeeAssignments />}
       </div>
 
       {drill && (
