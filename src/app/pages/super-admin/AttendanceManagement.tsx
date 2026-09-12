@@ -550,7 +550,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     }));
     // A leave is the whole day and must replace it, not join it (0393).
     try {
-      await clearConflictingDayRows([{ employee_id: employeeId, attendance_date: date, status }]);
+      await clearConflictingDayRows([{ employee_id: employeeId, attendance_date: date, status, worked_shift: shift }]);
     } catch (e) {
       setSaving((s) => { const n = { ...s }; delete n[employeeId]; return n; });
       setError((e as { message?: string }).message ?? "Could not clear the existing marks on that day.");
