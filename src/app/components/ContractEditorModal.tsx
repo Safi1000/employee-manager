@@ -244,6 +244,7 @@ export default function ContractEditorModal({
   clients,
   contract,
   enableDocument = true,
+  linesOnly = false,
   onClose,
   onSaved,
 }: {
@@ -256,6 +257,14 @@ export default function ContractEditorModal({
   contract: Contract | null;
   /** Show the contract-document upload row. Default true. */
   enableDocument?: boolean;
+  /**
+   * "Edit rules" mode (Shift Management): render ONLY the Shift Detail & Contract
+   * Lines block — hide contract type/status/dates, addendums, terms and document.
+   * Edit-only (a contract must exist). Same save path, so the lines still persist
+   * exactly as the Contracts page saves them; the hidden contract fields keep the
+   * values they loaded with.
+   */
+  linesOnly?: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -902,9 +911,11 @@ export default function ContractEditorModal({
   };
 
   const showClientPicker = !clientId && !!clients && !contract;
-  const title = contract
-    ? `Edit ${contract.contract_code}`
-    : `Add Contract${clientName ? ` — ${clientName}` : ""}`;
+  const title = linesOnly
+    ? `Shift structure${clientName ? ` — ${clientName}` : ""}`
+    : contract
+      ? `Edit ${contract.contract_code}`
+      : `Add Contract${clientName ? ` — ${clientName}` : ""}`;
 
   return (
     <Modal
@@ -943,6 +954,7 @@ export default function ContractEditorModal({
         )}
 
         <fieldset disabled={locked} className={LOCK_CLS}>
+        {!linesOnly && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {showClientPicker && (
             <div className="col-span-full">
@@ -1068,6 +1080,7 @@ export default function ContractEditorModal({
             </p>
           </div>
         </div>
+        )}
 
         {/* Shift detail & contract lines.
 
@@ -1253,7 +1266,7 @@ export default function ContractEditorModal({
         </fieldset>
 
         {/* Addendums — only for existing contracts (can't addend what isn't created) */}
-        {contract && (
+        {contract && !linesOnly && (
           <div className="border border-slate-200 rounded-md overflow-hidden">
             <div className="px-3 py-2 bg-slate-50 border-b border-slate-200">
               <span className="text-sm font-medium text-slate-700">Addendums</span>
@@ -1445,6 +1458,7 @@ export default function ContractEditorModal({
           </div>
         )}
 
+        {!linesOnly && (
         <fieldset disabled={locked} className={LOCK_CLS}>
         {/* Contract terms — leave allowance and EOBI are the values payroll and
             attendance read for every employee on this contract. */}
@@ -1552,6 +1566,7 @@ export default function ContractEditorModal({
           </div>
         )}
         </fieldset>
+        )}
 
       </form>
 

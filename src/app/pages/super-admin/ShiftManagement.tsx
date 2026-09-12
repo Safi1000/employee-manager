@@ -261,6 +261,7 @@ export default function ShiftManagement() {
       {rulesClient && activeContractByClient.get(rulesClient.id) && (
         <ContractEditorModal
           isOpen
+          linesOnly
           clientId={rulesClient.id}
           clientName={rulesClient.name}
           contract={activeContractByClient.get(rulesClient.id)!}
