@@ -1366,16 +1366,17 @@ function ShiftDrillModal({
                     <option value="awol">AWOL</option><option value="sick">Sick</option><option value="absconded">Absconded</option>
                   </ThemedSelect>
                 )}
-                {/* §7/§8.4 worked-shift selector — options are THIS site's actual
-                    shift_definitions. Single-select normally; multi-select (any
-                    number of the site's shifts) when status = double duty. */}
-                {(() => {
-                  const multi = (mk?.status ?? "present") === "double_duty";
+                {/* Worked-shift selector. Attendance is a fact about the DATE, not
+                    the shift (shift is display-only), so an ordinary mark needs no
+                    shift choice — the guard's scheduled shift is used. The picker
+                    only appears for DOUBLE DUTY, where two shifts must be named. */}
+                {(mk?.status ?? "present") === "double_duty" && (() => {
+                  const multi = true;
                   const sel = getWorked(g);
                   return (
                     <div
                       className="flex items-center gap-1 shrink-0"
-                      title={multi ? "Double duty — pick one or more shifts" : "Worked shift"}
+                      title="Double duty — pick a second shift"
                     >
                       {siteShifts.map((code) => {
                         const active = sel.includes(code);
