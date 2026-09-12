@@ -10,7 +10,7 @@ import { supabase } from "../../lib/supabase";
 import { useAuth, hasPermission } from "../../lib/auth";
 import { guardDisplayCode } from "../../lib/guardCode";
 import BulkMarkByEmployeeModal from "../../components/BulkMarkByEmployeeModal";
-import EmployeeAssignments from "./EmployeeAssignments";
+import ShiftManagement from "./ShiftManagement";
 import AttendanceSheetModal from "../../components/AttendanceSheetModal";
 import { brandingFromCompany, type PdfBranding } from "../../lib/pdfBranding";
 import { generateClientAttendancePdf, generateGuardAttendancePdf } from "../../lib/attendanceSheetPdf";
@@ -1002,11 +1002,12 @@ export default function AttendanceBoard() {
           <VacancyQueue vacancies={vacancies} clientNames={clientNames} onChanged={load} />
         )}
 
-        {/* Shift Management = the Assignments & Pay page, reused verbatim (not a
-            copy) so it never drifts. Its own permission gating (assignments.*
-            fields, DB RLS) travels with it; the tab is only shown to users who
-            pass the same view gate as the standalone route. */}
-        {tab === "shifts" && canShiftMgmt && <EmployeeAssignments />}
+        {/* Shift Management = a minimal shift-only view (clients → Code/Name/
+            Department/Shift + Shift Change). It reuses the real ChangeShiftModal
+            (change_guard_shift RPC) and the Assignments & Pay data/department
+            derivation, but none of that page's cards/filters/pay columns. Shown
+            only to users who pass the same view gate as the standalone route. */}
+        {tab === "shifts" && canShiftMgmt && <ShiftManagement />}
       </div>
 
       {drill && (
