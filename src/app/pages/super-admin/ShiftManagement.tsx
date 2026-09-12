@@ -23,6 +23,8 @@ import { isSeparatedState } from "../../lib/employmentWindow";
 import { hasPermission, useAuth } from "../../lib/auth";
 import { guardDisplayCode } from "../../lib/guardCode";
 import { ChangeShiftModal, type EmployeeRow } from "./EmployeeManagement";
+import ContractEditorModal from "../../components/ContractEditorModal";
+import { SlidersHorizontal } from "lucide-react";
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
@@ -43,6 +45,11 @@ export default function ShiftManagement() {
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [shiftTarget, setShiftTarget] = useState<EmployeeRow | null>(null);
+  // "Edit rules" opens the real ContractEditorModal (contract_lines is the
+  // authority for committed counts / shift detail, and drives Assignments & Pay's
+  // Contracted/variance). We edit the client's active guard-deployment contract,
+  // the newest if several. No parallel editor — same data the Contracts page edits.
+  const [rulesClient, setRulesClient] = useState<Client | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -79,6 +86,18 @@ export default function ShiftManagement() {
   useEffect(() => { loadData(); }, [loadData]);
 
   const clientById = useMemo(() => new Map(clients.map((c) => [c.id, c])), [clients]);
+
+  // The active guard-deployment contract per client (newest start_date wins) —
+  // the one "Edit rules" opens. A client with none has no shift structure to edit.
+  const activeContractByClient = useMemo(() => {
+    const m = new Map<string, Contract>();
+    for (const k of contracts) {
+      if (k.status !== "active" || k.contract_type !== "guard_deployment") continue;
+      const prev = m.get(k.client_id);
+      if (!prev || (k.start_date ?? "") > (prev.start_date ?? "")) m.set(k.client_id, k);
+    }
+    return m;
+  }, [contracts]);
 
   // Department derivation — identical rule to Assignments & Pay.
   const lineLabelById = useMemo(() => {
@@ -172,16 +191,23 @@ export default function ShiftManagement() {
               const isOpen = open.has(c.id);
               return (
                 <div key={c.id} className="bg-card border border-border rounded-lg overflow-hidden">
-                  <button
-                    type="button"
-                    onClick={() => toggle(c.id)}
-                    className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-accent/50 transition-colors"
-                  >
-                    {isOpen ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
-                    <Building2 className="w-4 h-4 text-muted-foreground" />
-                    <span className="font-medium text-foreground">{c.name}</span>
-                    <span className="text-xs text-muted-foreground ml-auto">{rows.length} on roster</span>
-                  </button>
+                  <div className="flex items-center gap-3 px-4 py-3 hover:bg-accent/50 transition-colors">
+                    <button
+                      type="button"
+                      onClick={() => toggle(c.id)}
+                      className="flex items-center gap-3 text-left flex-1 min-w-0"
+                    >
+                      {isOpen ? <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" /> : <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />}
+                      <Building2 className="w-4 h-4 text-muted-foreground shrink-0" />
+                      <span className="font-medium text-foreground truncate">{c.name}</span>
+                      <span className="text-xs text-muted-foreground">{rows.length} on roster</span>
+                    </button>
+                    {canHr && activeContractByClient.has(c.id) && (
+                      <Button size="sm" variant="secondary" onClick={() => setRulesClient(c)}>
+                        <SlidersHorizontal className="w-3.5 h-3.5 mr-1" /> Edit rules
+                      </Button>
+                    )}
+                  </div>
 
                   {isOpen && (
                     <div className="overflow-x-auto border-t border-border">
@@ -229,6 +255,17 @@ export default function ShiftManagement() {
           onClose={() => setShiftTarget(null)}
           onDone={async () => { setShiftTarget(null); await loadData(); }}
           onError={setError}
+        />
+      )}
+
+      {rulesClient && activeContractByClient.get(rulesClient.id) && (
+        <ContractEditorModal
+          isOpen
+          clientId={rulesClient.id}
+          clientName={rulesClient.name}
+          contract={activeContractByClient.get(rulesClient.id)!}
+          onClose={() => setRulesClient(null)}
+          onSaved={() => { setRulesClient(null); loadData(); }}
         />
       )}
     </>
