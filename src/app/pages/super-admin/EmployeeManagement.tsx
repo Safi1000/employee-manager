@@ -10,6 +10,7 @@ import { generateIdCardPdf } from "../../lib/idCardPdf";
 import { brandingFromCompany, type PdfBranding } from "../../lib/pdfBranding";
 import EmployeeVettingFields from "../../components/EmployeeVettingFields";
 import Header from "../../components/Header";
+import PayrollAdjustmentHistory from "../../components/PayrollAdjustmentHistory";
 import GuardCapBanner from "../../components/GuardCapBanner";
 import { formatDate } from "../../lib/date";
 import Button from "../../components/Button";
@@ -3081,6 +3082,10 @@ export default function EmployeeManagement() {
                 <div className="pt-4 border-t border-slate-200">
                   <h4 className="text-sm text-slate-900 mb-3">Payroll disbursements</h4>
                   <PayrollDisbursementHistory employeeId={selectedEmployee.id} />
+                </div>
+                <div className="pt-4 border-t border-slate-200">
+                  <h4 className="text-sm text-slate-900 mb-3">Payslip corrections</h4>
+                  <PayrollAdjustmentHistory employeeId={selectedEmployee.id} />
                 </div>
               </div>
             )}

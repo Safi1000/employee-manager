@@ -18,6 +18,9 @@ import AttendanceManagement from "./pages/super-admin/AttendanceManagement";
 import AttendanceBoard from "./pages/super-admin/AttendanceBoard";
 import PayrollManagement from "./pages/super-admin/PayrollManagement";
 import PayrollRun from "./pages/super-admin/PayrollRun";
+import PayrollAdjustments from "./pages/super-admin/PayrollAdjustments";
+import LeaveBalances from "./pages/super-admin/LeaveBalances";
+import TabHub from "./pages/super-admin/_TabHub";
 import Accounting from "./pages/super-admin/Accounting";
 import FinancialReports from "./pages/super-admin/FinancialReports";
 import Expenses from "./pages/super-admin/Expenses";
@@ -170,7 +173,17 @@ export const router = createRouter([
       // component, because the OTHER embed (the per-client accordion inside
       // Payroll Run's Review step) is deliberately flat and flipping the default
       // would silently group that one too.
-      { path: "payroll", element: guard(["payroll.view", "payroll.edit"], <PayrollManagement siteGrouped />) },
+      // 0437: Payslips | Adjustments. An adjustment is a correction that sits
+      // beside a payslip; the tab is where open ones are seen before a period
+      // closes.
+      { path: "payroll", element: guard(["payroll.view", "payroll.edit", "payroll.adjust"], (
+        <TabHub tabs={[
+          { key: "payslips", label: "Payslips", render: () => <PayrollManagement siteGrouped /> },
+          { key: "adjustments", label: "Adjustments", render: () => <PayrollAdjustments /> },
+          // 0438: leave earned per period by days present — the ledger and the opening.
+          { key: "leave", label: "Leave", render: () => <LeaveBalances /> },
+        ]} />
+      )) },
       { path: "payroll-run", element: guard(["payroll.view", "payroll.edit"], <PayrollRun />) },
       { path: "payroll-runs", element: <Navigate to="/super-admin/payroll" replace /> },
       { path: "performance", element: guard(["payroll.view", "performance.approve"], <Performance />) },

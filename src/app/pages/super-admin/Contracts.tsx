@@ -11,12 +11,14 @@ import {
   X,
   FileText,
   RotateCcw,
+  CalendarRange,
 } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import ContractEditorModal from "../../components/ContractEditorModal";
 import ContractViewModal from "../../components/ContractViewModal";
 import ContractRenewModal from "../../components/ContractRenewModal";
+import ContractCyclesModal from "../../components/ContractCyclesModal";
 import ContractStatusBadge from "../../components/ContractStatusBadge";
 import ClientFilterSelect from "../../components/ClientFilterSelect";
 import MobileCardList from "../../components/MobileCardList";
@@ -83,6 +85,7 @@ export default function Contracts() {
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [renewingRow, setRenewingRow] = useState<ContractRow | null>(null);
+  const [cyclesRow, setCyclesRow] = useState<ContractRow | null>(null);
 
   const loadAll = async () => {
     setLoading(true);
@@ -656,6 +659,14 @@ export default function Contracts() {
                           >
                             <Eye className="w-4 h-4" />
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => setCyclesRow(row)}
+                            className="p-1.5 rounded text-slate-600 hover:bg-slate-100"
+                            title="Billing and payroll cycles"
+                          >
+                            <CalendarRange className="w-4 h-4" />
+                          </button>
                           {/* Renew is offered once the contract has an end in
                               sight — expired, or inside the notice window. */}
                           {canEdit && (expired || endingSoon) && (
@@ -731,6 +742,16 @@ export default function Contracts() {
           clientName={renewingRow.client_name}
           onClose={() => setRenewingRow(null)}
           onRenewed={() => { setRenewingRow(null); loadAll(); }}
+        />
+      )}
+
+      {/* Cycles — effective-dated billing / payroll cycle events (0436) */}
+      {cyclesRow && (
+        <ContractCyclesModal
+          contractId={cyclesRow.id}
+          contractCode={cyclesRow.contract_code}
+          canEdit={canEdit}
+          onClose={() => setCyclesRow(null)}
         />
       )}
 

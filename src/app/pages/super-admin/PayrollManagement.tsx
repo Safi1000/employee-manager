@@ -10,6 +10,7 @@ import BusyOverlay from "../../components/BusyOverlay";
 import ClientFilterSelect from "../../components/ClientFilterSelect";
 import {
   supabase,
+  friendlyDbError,
   resolveAllowedLeaves,
   resolveEobiAmount,
   type Employee,
@@ -69,6 +70,12 @@ type RowState = {
   double_duty_shifts: number;
   /** How far present+absent+leave ran past the month, before trimming. */
   days_over_month: number;
+  /** 0437: open carry-forward adjustments from earlier periods, settled on this
+   *  payslip. Signed. In net_salary, NOT in final_salary — the expense was
+   *  accrued in the period each adjustment corrects. */
+  adjustment_carried: number;
+  /** The periods and reasons behind adjustment_carried, for the drawer and the slip. */
+  adjustment_detail: string | null;
 };
 
 const firstOfMonth = (d: Date) => {
@@ -188,6 +195,32 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
    * can never leak into another month's payroll.
    */
   const [leaveOverrides, setLeaveOverrides] = useState<Map<string, { allowed: number; reason: string | null }>>(new Map());
+  // 0437: what each employee's payslip for THIS period carries from earlier
+  // corrections (read from carried_adjustments_for, never summed here), and the
+  // corrections raised against THIS period's payslips.
+  const [carriedAdj, setCarriedAdj] = useState<Map<string, { carried: number; detail: string }>>(new Map());
+  // 0438: leave earned per period by days present, derived by the database.
+  // "allowed" is opening + earned from leave_period_summary, which is EMPTY
+  // before September 2026 — the effective date is gated inside the function,
+  // not here — so earlier periods fall through to the contract/carry rule.
+  type LeaveSummary = { present_days: number; tier: number; quota: number; earned: number; lost: number; opening: number; available: number; taken: number; unpaid: number; closing: number };
+  const [leaveSummary, setLeaveSummary] = useState<Map<string, LeaveSummary>>(new Map());
+  const [adjOpen, setAdjOpen] = useState(false);
+  const [adjForm, setAdjForm] = useState({ amount: "", reason: "", settlement: "carry_forward" as "pay_now" | "carry_forward" });
+  const [adjErr, setAdjErr] = useState<string | null>(null);
+  const raiseAdjustment = async (payslipId: string) => {
+    setAdjErr(null);
+    const { error } = await supabase.rpc("raise_payroll_adjustment", {
+      p_payslip_id: payslipId,
+      p_amount: Number(adjForm.amount),
+      p_reason: adjForm.reason.trim(),
+      p_settlement: adjForm.settlement,
+    });
+    if (error) { setAdjErr(friendlyDbError(error)); return; }
+    setAdjOpen(false);
+    await loadPeriodData(selectedPeriod);
+  };
+  const [periodAdj, setPeriodAdj] = useState<Map<string, { id: string; amount: number; reason: string; settlement: string; status: string }[]>>(new Map());
   const [leaveDraft, setLeaveDraft] = useState<string>("");
   const [leaveReason, setLeaveReason] = useState<string>("");
   const [leaveSaving, setLeaveSaving] = useState(false);
@@ -198,6 +231,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   const [priorLeavesByMonth, setPriorLeavesByMonth] = useState<Map<string, Map<string, number>>>(new Map());
   const [cashBalance, setCashBalance] = useState(0);
   const { profile } = useAuth();
+  const canAdjust = hasPermission(profile, "payroll.adjust");
   // Custodian held cash and bank balances are "View bank accounts & cash custody"
   // (banks.view) data. Payroll is reachable on payroll.* alone, so without
   // banks.view those FIGURES stay hidden — the user still picks who pays / which
@@ -361,7 +395,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     // Server-side aggregation RPCs — raw SELECT was hitting PostgREST's
     // ~1000-row response cap once a company crossed ~30 employees with full
     // month coverage, silently dropping attendance for most people.
-    const [attRes, payRes, advRes, attHistRes, apRes, lvRes] = await Promise.all([
+    const [attRes, payRes, advRes, attHistRes, apRes, lvRes, carRes, adjRes, lsRes] = await Promise.all([
       supabase.rpc("attendance_period_counts", { p_start: start, p_end: end }),
       supabase.from("payslips").select("*").eq("period_month", period),
       // Outstanding advance balance (Σ advances − Σ recovered on prior payslips),
@@ -378,7 +412,25 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         .from("employee_leave_overrides")
         .select("employee_id, allowed_leaves, reason")
         .eq("period_month", period),
+      supabase.rpc("carried_adjustments_for", { p_period_month: period }),
+      supabase.from("payroll_adjustments").select("id, employee_id, amount, reason, settlement, status").eq("original_period_month", period),
+      supabase.rpc("leave_period_summary", { p_period_start: period }),
     ]);
+    setLeaveSummary(new Map(((lsRes.data ?? []) as any[]).map((r) => [r.employee_id, {
+      present_days: Number(r.present_days), tier: Number(r.tier), quota: Number(r.quota), earned: Number(r.earned),
+      lost: Number(r.lost), opening: Number(r.opening), available: Number(r.available), taken: Number(r.taken),
+      unpaid: Number(r.unpaid), closing: Number(r.closing),
+    }])));
+    setCarriedAdj(new Map(((carRes.data ?? []) as any[]).map((r) => [r.employee_id, { carried: Number(r.carried) || 0, detail: r.detail ?? "" }])));
+    {
+      const m = new Map<string, { id: string; amount: number; reason: string; settlement: string; status: string }[]>();
+      for (const r of (adjRes.data ?? []) as any[]) {
+        const list = m.get(r.employee_id) ?? [];
+        list.push({ id: r.id, amount: Number(r.amount), reason: r.reason, settlement: r.settlement, status: r.status });
+        m.set(r.employee_id, list);
+      }
+      setPeriodAdj(m);
+    }
     setLeaveOverrides(
       new Map(
         ((lvRes.data ?? []) as { employee_id: string; allowed_leaves: number; reason: string | null }[])
@@ -700,7 +752,10 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       // carry-forward balance are all policy that applies to a group; this is
       // the one place a single person's month can differ.
       const overrideAllowed = leaveOverrides.get(emp.id)?.allowed;
-      const allowed = overrideAllowed ?? carryAllowed ?? baseAllowed;
+      // 0438: from September 2026 the balance is derived — opening + earned
+      // this period — and the month override still beats it.
+      const ls = leaveSummary.get(emp.id);
+      const allowed = overrideAllowed ?? (ls ? ls.available : carryAllowed ?? baseAllowed);
       const defaults: RowState = {
         employee: emp,
         period_month: selectedPeriod,
@@ -734,6 +789,14 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         extra_leave_absent: 0,
         double_duty_shifts: doubleDuty,
         days_over_month: 0,
+        // Once disbursed, the payslip's own stored line is the record — the
+        // adjustments it carried are settled and no longer "open", so reading the
+        // live open set would drop the line and make a correct payment read as
+        // an overpayment.
+        adjustment_carried: existing?.disbursed
+          ? Number((existing as any).adjustment_carried ?? 0)
+          : carriedAdj.get(emp.id)?.carried ?? 0,
+        adjustment_detail: carriedAdj.get(emp.id)?.detail ?? null,
       };
       const edits = rowEdits.get(emp.id) ?? {};
       const merged = { ...defaults, ...edits };
@@ -769,6 +832,9 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         countableLeaves = rawLeaves;
         extraLeaveAbsent = 0;
       } else {
+        // 0438 changes only allowed_leaves (from September: opening + earned by
+        // tier). Leave marks are paid up to it; absences are unpaid and never
+        // consume it (DECIDED).
         countableLeaves = Math.min(rawLeaves, merged.allowed_leaves);
         extraLeaveAbsent = Math.max(0, rawLeaves - merged.allowed_leaves);
       }
@@ -809,10 +875,15 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       // If the advance swallows the whole pay, net is zero.
       const deductible = Math.max(0, merged.final_salary - merged.income_tax - merged.eobi);
       merged.advance = Math.min(computedAdvance, deductible);
-      merged.net_salary = Math.max(0, deductible - merged.advance);
+      // 0437: the carried correction is its own line, named on the slip. It is
+      // added to NET and never to final_salary, because its expense was accrued
+      // in the period it corrects. A negative one deducts; net cannot go below 0
+      // here any more than it can for an advance.
+      merged.adjustment_carried = defaults.adjustment_carried;
+      merged.net_salary = Math.max(0, deductible - merged.advance + merged.adjustment_carried);
       return merged;
     });
-  }, [employees, payslipsMap, attendanceAgg, attPayroll, advancesByEmployee, allowedLeavesByEmployee, eobiByEmployee, carriedAllowance, leaveOverrides, selectedPeriod, rowEdits]);
+  }, [employees, payslipsMap, attendanceAgg, attPayroll, advancesByEmployee, allowedLeavesByEmployee, eobiByEmployee, carriedAllowance, leaveOverrides, selectedPeriod, rowEdits, carriedAdj, leaveSummary]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -1266,6 +1337,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     disbursed_at: row.disbursed_at,
     notes: row.notes,
     override_leaves: row.override_leaves,
+    adjustment_carried: row.adjustment_carried ?? 0,
     updated_at: new Date().toISOString(),
   });
 
@@ -1965,6 +2037,15 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     line("Absent Days", String(row.absent_days));
     line("Leave Days", String(row.leave_days));
     line("Allowed Leaves", String(row.allowed_leaves));
+    // 0438: the tier and days present go on the slip — it is where someone asks
+    // why this period earned less than the last.
+    {
+      const l = leaveSummary.get(row.employee.id);
+      if (l) {
+        line("Leave earned", `${l.earned} (${l.present_days} days present → tier ${l.tier} of ${l.quota})${l.lost > 0 ? ` · ${l.lost} lost at the 15-day cap` : ""}`);
+        line("Leave balance", `${l.opening} opening → ${l.closing} closing`);
+      }
+    }
     if (row.override_leaves) line("Leave Override", "Yes (all leaves paid)");
     if (row.extra_leave_absent > 0)
       line("Absent due to extra leaves", String(row.extra_leave_absent));
@@ -1984,6 +2065,11 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     if (row.income_tax > 0) line("Income Tax (1% over PKR 50,000)", `− PKR ${Math.round(row.income_tax).toLocaleString()}`);
     if (row.eobi > 0) line("EOBI", `− PKR ${Math.round(row.eobi).toLocaleString()}`);
     line("Advance", `− PKR ${row.advance.toLocaleString()}`);
+    // 0437: a carried correction is its own line, naming the period it corrects.
+    if (row.adjustment_carried && row.adjustment_carried !== 0) {
+      line(`Adjustment (${row.adjustment_detail ?? "earlier period"})`,
+        `${row.adjustment_carried > 0 ? "+" : "−"} PKR ${Math.abs(Math.round(row.adjustment_carried)).toLocaleString()}`);
+    }
     y += 6;
     doc.setFontSize(14);
     line("Net Salary", `PKR ${row.net_salary.toLocaleString()}`);
@@ -3186,6 +3272,28 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                         )}
                       </span>
                     </div>
+                    {leaveSummary.get(selectedRow.employee.id) && (() => {
+                      const l = leaveSummary.get(selectedRow.employee.id)!;
+                      return (
+                        <div className="text-[11px] text-slate-500 rounded border border-slate-200 px-2 py-1.5 space-y-0.5">
+                          <div className="flex justify-between"><span>Opening balance</span><span className="tabular-nums">{l.opening}</span></div>
+                          <div className="flex justify-between">
+                            <span>Earned · {l.present_days} days present → tier {l.tier} of quota {l.quota}</span>
+                            <span className="tabular-nums">+{l.earned}</span>
+                          </div>
+                          {l.lost > 0 && (
+                            <div className="flex justify-between text-danger-700">
+                              <span>Lost at the 15-day cap</span><span className="tabular-nums">−{l.lost}</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between"><span>Taken this period (leave marks)</span><span className="tabular-nums">−{l.taken}</span></div>
+                          {l.unpaid > 0 && (
+                            <div className="flex justify-between"><span>Unpaid leave — beyond the balance</span><span className="tabular-nums">{l.unpaid}</span></div>
+                          )}
+                          <div className="flex justify-between font-medium text-slate-700"><span>Closing balance</span><span className="tabular-nums">{l.closing}</span></div>
+                        </div>
+                      );
+                    })()}
                     {/* One employee, one month. Deliberately not a contract or
                         client setting — those apply to everyone on them, and to
                         every month after. */}
@@ -3321,6 +3429,17 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                       <span className="text-danger-700">− PKR {Math.round(selectedRow.advance).toLocaleString()}</span>
                     </div>
                     </>)}
+                    {selectedRow.adjustment_carried !== 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">
+                          Adjustment carried
+                          <span className="block text-[11px] text-slate-400">{selectedRow.adjustment_detail ?? "from an earlier period"}</span>
+                        </span>
+                        <span className={selectedRow.adjustment_carried > 0 ? "text-success-700" : "text-danger-700"}>
+                          {selectedRow.adjustment_carried > 0 ? "+" : "−"} PKR {Math.abs(Math.round(selectedRow.adjustment_carried)).toLocaleString()}
+                        </span>
+                      </div>
+                    )}
                     <div className="flex justify-between pt-1 border-t border-slate-100">
                       <span className="text-base text-slate-900">Net Salary</span>
                       <span className="text-lg text-slate-900">PKR {selectedRow.net_salary.toLocaleString()}</span>
@@ -3387,6 +3506,39 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                       </div>
                     );
                   })()}
+
+                  {/* 0437: corrections sit BESIDE the payslip. The note needs no
+                      amount; the adjustment needs a signed one and a reason. */}
+                  {!throughNet && (
+                    <div className="pt-3 border-t border-slate-200 space-y-2">
+                      <label className="block text-xs text-slate-500">Note</label>
+                      <textarea
+                        value={selectedRow.notes ?? ""}
+                        onChange={(e) => updateEdit(selectedRow.employee.id, { notes: e.target.value || null })}
+                        placeholder="Disputed, awaiting site confirmation…"
+                        className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm h-16"
+                      />
+                      {(periodAdj.get(selectedRow.employee.id) ?? []).length > 0 && (
+                        <ul className="text-xs space-y-1">
+                          {(periodAdj.get(selectedRow.employee.id) ?? []).map((a) => (
+                            <li key={a.id} className="flex justify-between gap-2">
+                              <span className="text-slate-500">
+                                {a.reason} · {a.settlement === "pay_now" ? "pay now" : "next payslip"} · {a.status}
+                              </span>
+                              <span className={`tabular-nums ${a.amount < 0 ? "text-danger-700" : "text-success-700"}`}>
+                                {a.amount > 0 ? "+" : ""}{a.amount.toLocaleString()}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {canAdjust && selectedRow.payslip_id && (
+                        <Button variant="secondary" size="sm" onClick={() => { setAdjForm({ amount: "", reason: "", settlement: "carry_forward" }); setAdjOpen(true); }}>
+                          Raise adjustment
+                        </Button>
+                      )}
+                    </div>
+                  )}
 
                   {!throughNet && (
                   <div className="pt-3 border-t border-slate-200 space-y-2">
@@ -3970,6 +4122,41 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
           );
         })()}
       </Modal>
+      {adjOpen && selectedRow?.payslip_id && (
+        <Modal isOpen onClose={() => setAdjOpen(false)} title={`Raise adjustment — ${selectedRow.employee.full_name}`} size="sm">
+          <div className="space-y-3">
+            <p className="text-xs text-slate-500">
+              Corrects the {formatPeriod(selectedRow.period_month)} payslip without rewriting it. The cost
+              posts today, in the current open period — always, even when {formatPeriod(selectedRow.period_month)} is still
+              open, so the same correction lands in the same month whenever it is raised. The payslip's own period
+              is kept on the record for reference. Positive if he is owed, negative if he owes.
+            </p>
+            {adjErr && <div className="p-2 bg-danger-50 text-danger-700 border border-danger-200 rounded text-sm">{adjErr}</div>}
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">Amount (signed)</label>
+              <input type="number" className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                     value={adjForm.amount} onChange={(e) => setAdjForm({ ...adjForm, amount: e.target.value })} />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">Reason</label>
+              <input className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                     value={adjForm.reason} onChange={(e) => setAdjForm({ ...adjForm, reason: e.target.value })} />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">Settles</label>
+              <ThemedSelect value={adjForm.settlement} onChange={(e) => setAdjForm({ ...adjForm, settlement: e.target.value as any })}>
+                <option value="carry_forward">On the next payslip, as its own line</option>
+                <option value="pay_now">Now — cash or bank, from the Adjustments tab</option>
+              </ThemedSelect>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setAdjOpen(false)}>Back</Button>
+              <Button onClick={() => raiseAdjustment(selectedRow.payslip_id!)}
+                      disabled={!Number(adjForm.amount) || !adjForm.reason.trim()}>Raise</Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </>
   );
 }
