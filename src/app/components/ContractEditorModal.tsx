@@ -745,12 +745,6 @@ export default function ContractEditorModal({
       setError("Pick the date this addendum takes effect.");
       return;
     }
-    // A headcount change has to name the shift it staffs, or the extra people
-    // cannot be turned into postings against the right line.
-    if (addendumNeedsShift && !addForm.shift_code) {
-      setError("Pick the shift this headcount change applies to.");
-      return;
-    }
     setAddSubmitting(true);
     setError(null);
     try {
@@ -1246,12 +1240,6 @@ export default function ContractEditorModal({
 
           <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-t border-slate-200 text-sm">
             <span className="text-slate-600">
-              {!isServices && (
-                <>
-                  Day {shiftTotals.day} · Evening {shiftTotals.evening} · Night {shiftTotals.night}
-                  <span className="text-slate-400"> · </span>
-                </>
-              )}
               {totalCommitted} committed
             </span>
             <span className="font-medium text-slate-800 tabular-nums">
@@ -1397,22 +1385,6 @@ export default function ContractEditorModal({
                   The date the change takes effect — counts before it are unchanged.
                 </p>
               </div>
-              {/* A headcount change has to say WHICH shift it staffs; without it
-                  the extra people can't be posted against the right line. */}
-              {addendumNeedsShift && (
-                <div>
-                  <label className="block text-[11px] text-slate-600 mb-1">Shift</label>
-                  <ThemedSelect
-                    value={addForm.shift_code}
-                    onChange={(e) => setAddForm({ ...addForm, shift_code: e.target.value })}
-                    className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
-                  >
-                    {(["day", "evening", "night"] as const).map((sc) => (
-                      <option key={sc} value={sc}>{SHIFT_LABEL[sc]}</option>
-                    ))}
-                  </ThemedSelect>
-                </div>
-              )}
               <div>
                 <label className="block text-[11px] text-slate-600 mb-1">Source</label>
                 <ThemedSelect
@@ -1628,7 +1600,6 @@ function SiteLinesBlock({
 }) {
   // Row indices are into the FLAT draft list, which is what the mutators expect.
   const indexOf = (l: LineDraft) => allLines.indexOf(l);
-  const showShifts = contractType !== "services";
 
   return (
     <div className="border border-slate-200 rounded-md overflow-hidden">
@@ -1636,12 +1607,6 @@ function SiteLinesBlock({
         <div className="min-w-0">
           <span className="text-sm font-medium text-slate-700">{title}</span>
           {subtitle && <span className="text-[11px] text-slate-500 ml-2">{subtitle}</span>}
-          {showShifts && (
-            <span className="block text-[11px] text-slate-500">
-              Shift detail — Day {shiftDetail.day ?? 0} · Evening {shiftDetail.evening ?? 0} · Night{" "}
-              {shiftDetail.night ?? 0}
-            </span>
-          )}
         </div>
         <Button type="button" variant="secondary" size="sm" onClick={onAddLine}>
           <Plus className="w-3.5 h-3.5 mr-1" /> Add Line
@@ -1656,7 +1621,6 @@ function SiteLinesBlock({
             <thead>
               <tr className="text-xs text-slate-500 uppercase border-b border-slate-200">
                 <th className="text-left px-3 py-2">Category</th>
-                {showShifts && <th className="text-left px-3 py-2 w-32">Shift</th>}
                 <th className="text-left px-3 py-2">Notes</th>
                 <th className="text-right px-3 py-2 w-28">Committed</th>
                 <th className="text-right px-3 py-2 w-36">Rate / month</th>
@@ -1667,7 +1631,6 @@ function SiteLinesBlock({
             <tbody className="divide-y divide-slate-100">
               {lines.map((l) => {
                 const idx = indexOf(l);
-                const personnel = isPersonnelCategory(l.category);
                 return (
                   <tr key={l.id ?? `${siteKey}-${idx}`}>
                     <td className="px-3 py-1.5">
@@ -1692,23 +1655,6 @@ function SiteLinesBlock({
                         ))}
                       </ThemedSelect>
                     </td>
-                    {showShifts && (
-                      <td className="px-3 py-1.5">
-                        {personnel ? (
-                          <ThemedSelect
-                            value={l.shift_code}
-                            onChange={(e) => onUpdateLine(idx, { shift_code: e.target.value })}
-                            className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
-                          >
-                            {SHIFT_CODES.map((c) => (
-                              <option key={c} value={c}>{SHIFT_LABEL[c]}</option>
-                            ))}
-                          </ThemedSelect>
-                        ) : (
-                          <span className="text-xs text-slate-400">—</span>
-                        )}
-                      </td>
-                    )}
                     <td className="px-3 py-1.5">
                       <input
                         type="text"
