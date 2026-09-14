@@ -3,6 +3,11 @@
 # diff it AFTER, and commit the new one with the migration. Names are the
 # signal; the actual figure moves with daily operations.
 #
+# A CHECK LEAVING THIS LIST IS NOT PROOF. migration_ledger_matches_repo reads a
+# manifest fetched nightly; when its entries clear, that confirms the fetch ran,
+# not that the repo matches the ledger. A red check tells you something. A green
+# one says only that nothing was found in what it read.
+#
 # Captured 2026-09-15, AFTER 0439 and 0446. 13 red of 40. Company: GGS.
 #
 # Diff against the capture taken before them: the same 13 names, and nothing
