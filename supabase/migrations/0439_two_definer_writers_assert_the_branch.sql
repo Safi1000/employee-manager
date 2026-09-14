@@ -49,10 +49,11 @@ select pg_temp.surg('set_leave_quota_override',
 select pg_temp.surg('release_final_dues',
   '  perform public.require_perm(''clearance.finance'');',
   '  -- 0439: branch guard [resolved]. The branch is the guard''s, looked up from
-  -- the certificate''s employee, and asserted before the key.
-  perform public.assert_branch_writable((select e.branch_id from public.clearance_certificates c
-                                           join public.employees e on e.id = c.employee_id
-                                          where c.id = p_certificate_id));
+  -- the certificate''s employee, and asserted before the key. Aliased cc, not c:
+  -- this body declares a record variable c, and PL/pgSQL resolves c to it.
+  perform public.assert_branch_writable((select e.branch_id from public.clearance_certificates cc
+                                           join public.employees e on e.id = cc.employee_id
+                                          where cc.id = p_certificate_id));
   perform public.require_perm(''clearance.finance'');', 1);
 
 -- ---------------------------------------------------------------------------
