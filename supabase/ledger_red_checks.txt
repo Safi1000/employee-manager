@@ -1,32 +1,17 @@
-# Named red set of ledger_checks() on PRODUCTION, crm-design (mmkfpnshxjcyijhuydgr).
-# Prod keeps no history of check results. Capture this BEFORE a prod apply,
-# diff it AFTER, and commit the new one with the migration. Names are the
-# signal; the actual figure moves with daily operations.
-#
-# A CHECK LEAVING THIS LIST IS NOT PROOF. migration_ledger_matches_repo reads a
-# manifest fetched nightly; when its entries clear, that confirms the fetch ran,
-# not that the repo matches the ledger. A red check tells you something. A green
-# one says only that nothing was found in what it read.
-#
-# Captured 2026-09-15, AFTER 0439 and 0446. 13 red of 40. Company: GGS.
-#
-# Diff against the capture taken before them: the same 13 names, and nothing
-# turned red or green. One figure moved:
-#   no_definer_function_crosses_a_branch   7 -> 5   (0439 cleared its two writers)
-#   migration_ledger_matches_repo          8 -> 8   (0439 left the list and 0446
-#     joined it: the repo manifest was fetched 2026-09-14 04:45Z, before the push)
-#
-# check_name                                   actual
-ar_control_equals_open_invoices                -9111862.00
-bank_control_equals_bank_accounts              -2760162.00
-bank_per_account_gl_equals_operational         4
-cash_control_equals_cash_locations             170837.00
-cash_forecast_clears_the_floor                 1
-cash_per_location_gl_equals_operational        2
-every_control_is_invoked                       10
-migration_ledger_matches_repo                  8
-no_definer_function_crosses_a_branch           5
-no_negative_custodian_balance                  1
-no_stale_prepaid_balance                       1
-payroll_accrual_matches_attendance             80
-salaries_payable_equals_undisbursed_net_pay    579723.00
+# Prod red set (crm-design mmkfpnshxjcyijhuydgr) captured before applying 0448
+# on 2026-09-15. Distinct failing ledger_checks() names across all companies.
+# Diff this list by NAME after the apply — 0448 must not turn any new check red.
+alert_delivery_is_healthy
+ar_control_equals_open_invoices
+bank_control_equals_bank_accounts
+bank_per_account_gl_equals_operational
+cash_control_equals_cash_locations
+cash_forecast_clears_the_floor
+cash_per_location_gl_equals_operational
+every_control_is_invoked
+migration_ledger_matches_repo
+no_definer_function_crosses_a_branch
+no_negative_custodian_balance
+no_stale_prepaid_balance
+payroll_accrual_matches_attendance
+salaries_payable_equals_undisbursed_net_pay
