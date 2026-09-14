@@ -307,21 +307,25 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   };
 
   const loadRecordsForDate = async (d: string) => {
-    const { data, error: err } = await supabase
-      .from("attendance_records")
-      .select("employee_id, status, worked_for_client_id, worked_shift, marked_by_user_id")
-      .eq("attendance_date", d);
+    // The day's marks and the day's supervisor sign-offs are independent
+    // reads; one round trip instead of two.
+    const [{ data, error: err }, { data: confs }] = await Promise.all([
+      supabase
+        .from("attendance_records")
+        .select("employee_id, status, worked_for_client_id, worked_shift, marked_by_user_id")
+        .eq("attendance_date", d),
+      // Supervisor sign-offs for this date (namespaced group_key so they never
+      // collide with the Attendance board's per-shift confirmation rows).
+      supabase
+        .from("attendance_confirmations")
+        .select("group_key, supervisor_name, confirmed_at")
+        .eq("attendance_date", d)
+        .like("group_key", "daily:%"),
+    ]);
     if (err) {
       setError(err.message);
       return;
     }
-    // Supervisor sign-offs for this date (namespaced group_key so they never
-    // collide with the Attendance board's per-shift confirmation rows).
-    const { data: confs } = await supabase
-      .from("attendance_confirmations")
-      .select("group_key, supervisor_name, confirmed_at")
-      .eq("attendance_date", d)
-      .like("group_key", "daily:%");
     const confMap: Record<string, { by: string; at: string }> = {};
     for (const c of (confs ?? []) as { group_key: string; supervisor_name: string; confirmed_at: string }[]) {
       confMap[c.group_key] = { by: c.supervisor_name, at: c.confirmed_at };

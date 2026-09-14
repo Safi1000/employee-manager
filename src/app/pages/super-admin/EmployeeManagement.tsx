@@ -76,6 +76,9 @@ import {
 } from "../../lib/validation";
 import { useAuth, hasPermission } from "../../lib/auth";
 
+// Rows painted per page of the roster list. See renderEmployeeList.
+const EMPLOYEE_PAGE_SIZE = 50;
+
 // Where the export column choice is remembered. Per browser, per person — it is
 // a preference about a download, not shared state, so it never leaves the device.
 const EXPORT_FIELDS_KEY = "employees.exportFields";
@@ -2021,10 +2024,41 @@ export default function EmployeeManagement() {
   const waitlistRehire = useMemo(() => sorted.filter(isRehireCandidate), [sorted]);
   const waitlistFresh = useMemo(() => sorted.filter((e) => !isRehireCandidate(e)), [sorted]);
 
+  // The list is paged in the browser. Both renderings below (cards and table)
+  // are in the DOM at once, so an unpaged roster of ~570 rendered ~1,140 rows
+  // and re-rendered all of them on every keystroke in the search box. Filtering,
+  // sorting and export still run over the full set; only what is painted is
+  // sliced. The page resets whenever a filter or tab changes so a narrower
+  // result is never shown from a stale offset.
+  const [page, setPage] = useState(0);
+  useEffect(() => {
+    setPage(0);
+  }, [search, clientFilter, categoryFilter, shiftFilter, statusFilter, completenessFilter, lifecycleFilter, expiredCardFilter, dupCnicFilter, missingKeyFilter, empTab, waitlistTab, sortDir, regionId]);
+
   const renderEmployeeList = (
-    rows: EmployeeRow[],
+    allRows: EmployeeRow[],
     emptyText = 'No employees yet. Click "Add Employee" to create one.',
-  ) => (
+  ) => {
+    const pageCount = Math.max(1, Math.ceil(allRows.length / EMPLOYEE_PAGE_SIZE));
+    const safePage = Math.min(page, pageCount - 1);
+    const rows = allRows.slice(safePage * EMPLOYEE_PAGE_SIZE, (safePage + 1) * EMPLOYEE_PAGE_SIZE);
+    const pager = !loading && allRows.length > EMPLOYEE_PAGE_SIZE && (
+      <div className="flex items-center justify-between px-3 md:px-6 py-3 border-t border-border text-xs text-muted-foreground">
+        <span>
+          Showing {safePage * EMPLOYEE_PAGE_SIZE + 1}–{Math.min((safePage + 1) * EMPLOYEE_PAGE_SIZE, allRows.length)} of {allRows.length}
+        </span>
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="sm" disabled={safePage === 0} onClick={() => setPage(safePage - 1)}>
+            Previous
+          </Button>
+          <span className="px-2 tabular-nums">{safePage + 1} / {pageCount}</span>
+          <Button variant="ghost" size="sm" disabled={safePage >= pageCount - 1} onClick={() => setPage(safePage + 1)}>
+            Next
+          </Button>
+        </div>
+      </div>
+    );
+    return (
     <>
             {/* Phone: one card per employee. A six-column table with a sticky
                 action column does not survive 390 logical pixels, and
@@ -2286,8 +2320,10 @@ export default function EmployeeManagement() {
                 </tbody>
               </table>
             </div>
+            {pager}
     </>
-  );
+    );
+  };
 
 
   return (

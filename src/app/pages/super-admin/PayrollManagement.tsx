@@ -522,6 +522,20 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     const cutoff = firstOfMonth(sixAgo);
     await supabase.from("payslips").delete().lt("period_month", cutoff);
 
+    // Every read below is independent of every other, so they are all started
+    // here and awaited where their results are consumed. Before this the load
+    // was five round trips in a row (roster, then employee_branches, then the
+    // four cheque-link sums, then the period RPCs); on a slow link each of
+    // those waits was the whole page. Now it is one.
+    const periodP = loadPeriodData(selectedPeriod);
+    const ebP = supabase.from("employee_branches").select("employee_id, branch_id");
+    const linkedP = Promise.all([
+      supabase.from("payslips").select("cheque_id, net_salary").not("cheque_id", "is", null),
+      supabase.from("expenses").select("cheque_id, amount").not("cheque_id", "is", null),
+      supabase.from("advances").select("cheque_id, amount").not("cheque_id", "is", null),
+      supabase.from("invoice_payments").select("cheque_id, amount").not("cheque_id", "is", null),
+    ]);
+
     const [empRes, siteRes, depRes, cliRes, conRes, bankRes, treaRes, chqRes, brRes] = await Promise.all([
       // Region scopes the payroll roster (each row = an employee). Bank/treasury/
       // cheque reads below stay company-wide — the cash pool isn't region-split.
@@ -567,7 +581,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     setCheques((chqRes.data ?? []) as Cheque[]);
     setBranches((brRes.data ?? []) as Branch[]);
 
-    const { data: ebRows } = await supabase.from("employee_branches").select("employee_id, branch_id");
+    const { data: ebRows } = await ebP;
     const addl = new Map<string, string[]>();
     for (const r of (ebRows ?? []) as { employee_id: string; branch_id: string }[]) {
       const arr = addl.get(r.employee_id) ?? [];
@@ -576,12 +590,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     }
     setEmployeeAddlBranches(addl);
 
-    const [linkedPs, linkedEx, linkedAdv, linkedIp] = await Promise.all([
-      supabase.from("payslips").select("cheque_id, net_salary").not("cheque_id", "is", null),
-      supabase.from("expenses").select("cheque_id, amount").not("cheque_id", "is", null),
-      supabase.from("advances").select("cheque_id, amount").not("cheque_id", "is", null),
-      supabase.from("invoice_payments").select("cheque_id, amount").not("cheque_id", "is", null),
-    ]);
+    const [linkedPs, linkedEx, linkedAdv, linkedIp] = await linkedP;
     const linked = new Map<string, number>();
     for (const r of (linkedPs.data ?? []) as { cheque_id: string; net_salary: number }[]) {
       if (r.cheque_id) linked.set(r.cheque_id, (linked.get(r.cheque_id) ?? 0) + Number(r.net_salary));
@@ -598,7 +607,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     setChequeLinkedSums(linked);
     setCashBalance(Number(treaRes.data?.cash_balance ?? 0));
 
-    await loadPeriodData(selectedPeriod);
+    await periodP;
     setLoading(false);
   };
 
