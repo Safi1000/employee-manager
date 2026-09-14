@@ -180,29 +180,19 @@ export default function PartnerDetailModal({
         const staff = custodians.find((c) => c.employeeId === paidByEmp);
         if (staff) cashLocationId = await ensureCustodianLocation(companyId, staff.employeeId, staff.fullName, staff.kind);
       }
-      const { error: e } = await supabase.from("partner_account_entries").insert({
-        partner_id: partner.id,
-        date: entryDate,
-        type: entryType,
-        description: entryNote.trim(),
-        amount: amt,
-        payment_method: entryMethod,
-        bank_account_id: usesBank ? bankAccountId : null,
-        cash_location_id: cashLocationId,
+      // 0447: the entry and its bank move are ONE transaction in the database.
+      // Nothing here reads or writes a balance.
+      const { error: e } = await supabase.rpc("record_partner_entry", {
+        p_partner_id: partner.id,
+        p_date: entryDate,
+        p_type: entryType,
+        p_description: entryNote.trim(),
+        p_amount: amt,
+        p_method: entryMethod,
+        p_bank_account_id: usesBank ? bankAccountId : null,
+        p_cash_location_id: cashLocationId,
       });
       if (e) throw e;
-      // Bank balance mirror (same as expenses): a DRAWING paid out leaves the
-      // bank; a CONTRIBUTION received adds to it. Cash custody + the GL journal
-      // are handled by the cash_location stamp and the entry's journal trigger.
-      if (usesBank) {
-        const delta = entryType === "DRAWING" ? -amt : amt;
-        const { data: b } = await supabase.from("bank_accounts").select("balance").eq("id", bankAccountId).single();
-        if (b) {
-          await supabase.from("bank_accounts")
-            .update({ balance: Number(b.balance) + delta, updated_at: new Date().toISOString() })
-            .eq("id", bankAccountId);
-        }
-      }
       setIsAddEntryOpen(false);
       setEntryAmount(""); setEntryNote(""); setPaidByEmp(""); setBankAccountId("");
       await loadLedger();
@@ -217,7 +207,8 @@ export default function PartnerDetailModal({
   const deleteEntry = async (row: LedgerRow) => {
     if (!row.entry_id) return;
     if (!window.confirm("Delete this ledger entry?")) return;
-    const { error: e } = await supabase.from("partner_account_entries").delete().eq("id", row.entry_id);
+    // 0447: deleting a bank entry puts the money back in the same transaction.
+    const { error: e } = await supabase.rpc("delete_partner_entry", { p_entry_id: row.entry_id });
     if (e) { setError(e.message); return; }
     await loadLedger();
     onChanged?.();
@@ -367,7 +358,7 @@ export default function PartnerDetailModal({
                   {ledger.map((r, i) => (
                     <tr key={`${r.entry_id ?? "alloc"}-${i}`} className="hover:bg-slate-50">
                       <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{formatDate(r.entry_date)}</td>
-                      <td className="px-3 py-2 text-slate-700">{r.particulars}</td>
+                      <td className={`px-3 py-2 ${r.source === "UNALLOCATED" ? "text-slate-400 italic" : "text-slate-700"}`}>{r.particulars}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-slate-700">
                         {Number(r.cash_paid) === 0 ? "" : acct(Number(r.cash_paid))}
                       </td>
@@ -394,8 +385,9 @@ export default function PartnerDetailModal({
               </table>
             </div>
             <p className="mt-2 text-[11px] text-slate-500">
-              Balance = previous − Cash Paid + Remuneration. A negative balance (in brackets) is what
-              the company owes the partner. Remuneration is their monthly allocation.
+              Balance = previous − Cash Paid + Remuneration. A positive balance is what the company owes
+              the partner; a negative balance (in brackets) is what the partner owes the company.
+              Remuneration is only a posted partnership run — a month without one shows as not allocated.
             </p>
           </div>
         )}

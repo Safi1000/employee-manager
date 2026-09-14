@@ -338,7 +338,7 @@ export default function PartnerFormModal({
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm text-right disabled:bg-slate-50 disabled:text-slate-400"
             />
             <p className="text-[11px] text-slate-500 mt-1">
-              Positive = the partner owes the company.
+              Positive = the company owes the partner.
             </p>
           </div>
           <div>
