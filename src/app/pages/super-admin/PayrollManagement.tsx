@@ -1875,28 +1875,53 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         const net = Math.round(row.net_salary);
         const already = Math.round(row.amount_paid || 0);
         const remaining = net - already; // money moving now for this row
+        // The figures are written FIRST, for an EXISTING payslip as well as a
+        // new one — the same unconditional write the single-row path above
+        // already does, and for the same reason.
+        //
+        // This ran `if (!payslipId)`, so a payslip that already existed kept
+        // whatever figures it was last saved with while the money paid came
+        // from the LIVE recomputed row. The single-row path was fixed after
+        // Zahid Anwar (EMR-082); the bulk path was not, and it fails SILENTLY
+        // where the single one failed loudly. `payslips_paid_not_over_accrued`
+        // (0277) only refuses paid > net, so when the live Net is LOWER than
+        // the stored one the short payment is accepted and the row is left
+        // saying it still owes the difference.
+        //
+        // On production: Danish Ali (GGS-00545, PFM, Aug 2026) was stored at
+        // Net 5,871 — 7 pay-days — then had his August leave allowance set to
+        // 0, correctly dropping the live Net to 5,032. Bulk disburse paid
+        // 5,032, wrote no figures, and left the payslip carrying 5,871. The
+        // client cards read stored net_salary, so PFM showed "Not Disbursed
+        // PKR 839" against a guard who had been paid in full.
+        //
+        // Writing the figures here happens BEFORE any money moves, so the
+        // invariant that nothing rejectable runs after cash leaves still holds.
+        const { data: up, error: upErr } = await supabase
+          .from("payslips")
+          .upsert(
+            buildPayslipPayload({
+              ...row,
+              payment_mode: bulkMode,
+              bank_account_id: bulkMode === "Bank" ? bulkBankId : null,
+              amount_paid: already,
+            }),
+            { onConflict: "employee_id,period_month" },
+          )
+          .select("id, amount_paid")
+          .single();
+        if (upErr) throw upErr;
+        const payslipId = (up as { id: string }).id;
+        // Same staleness check the single-row path makes: if the stored paid
+        // amount is not what this row was built from, another tab moved money
+        // on it and this batch must not pay against figures it no longer has.
+        if (Math.round(Number((up as { amount_paid: number }).amount_paid)) !== already) {
+          throw new Error(
+            `${row.employee.full_name ?? row.employee.employee_code} was paid in another tab while this batch was running — reload and disburse the rest.`,
+          );
+        }
         // Item 3: atomically claim this payslip before moving money; skip if its
         // paid amount changed (e.g. concurrently in another tab).
-        let payslipId = row.payslip_id;
-        if (!payslipId) {
-          const { data: up, error: upErr } = await supabase
-            .from("payslips")
-            .upsert(
-              buildPayslipPayload({
-                ...row,
-                payment_mode: bulkMode,
-                bank_account_id: bulkMode === "Bank" ? bulkBankId : null,
-                amount_paid: already,
-                disbursed: false,
-                disbursed_at: null,
-              }),
-              { onConflict: "employee_id,period_month" },
-            )
-            .select("id")
-            .single();
-          if (upErr) throw upErr;
-          payslipId = (up as { id: string }).id;
-        }
         const { data: claimRows, error: claimErr } = await supabase
           .from("payslips")
           .update({

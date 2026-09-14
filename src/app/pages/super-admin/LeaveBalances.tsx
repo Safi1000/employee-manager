@@ -54,7 +54,13 @@ export default function LeaveBalances() {
   const loadGuards = useCallback(async () => {
     const { data, error } = await supabase.from("employees")
       .select("id, full_name, guard_code, leave_quota_override, leave_quota_override_reason, leave_quota_override_at, leave_quota_override_by")
-      .in("lifecycle_state", ["active", "draft", "ops_verified", "finance_approved"]).order("full_name");
+      // On-staff only, by the project-wide membership test: lifecycle_state in
+      // (active, on_leave) — the same set 0291 settled on. The list this
+      // replaced read ("active","draft","ops_verified","finance_approved"),
+      // which mixed in three RECORD_STATE values; employee_lifecycle_state has
+      // no 'draft', so Postgres rejected the whole query and the page loaded
+      // nothing at all.
+      .in("lifecycle_state", ["active", "on_leave"]).order("full_name");
     if (error) setErr(error.message);
     const gs = (data ?? []) as Guard[];
     setGuards(gs);
