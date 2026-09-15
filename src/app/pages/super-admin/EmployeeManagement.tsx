@@ -79,6 +79,27 @@ import { useAuth, hasPermission } from "../../lib/auth";
 // Rows painted per page of the roster list. See renderEmployeeList.
 const EMPLOYEE_PAGE_SIZE = 50;
 
+// The roster fetches only what the list, its filters, counts and slot checks
+// read. employees has 140 columns; `select *` was 2.1 MB of JSON for 569 rows
+// (3.7 KB each, most of it key names for nulls) on a screen that shows six
+// columns — and on a mobile link that download, not the database, was the
+// wait. Anything that needs the whole record (view, edit, hire, export, bulk
+// PDFs) refetches it by id through EMPLOYEE_FULL_SELECT first; it must never
+// be handed a roster row, because an edit form seeded from a narrow row would
+// save the missing fields as null.
+const EMPLOYEE_ROSTER_SELECT =
+  "id, company_id, employee_code, guard_code, legacy_code, display_number, full_name, phone, " +
+  "cnic_number, cnic_expiry, join_date, date_of_birth, father_or_husband_name, " +
+  "bank_name, account_title, bank_account, bank_branch_code, " +
+  "emergency_contact_name, emergency_contact_phone, emergency_contact2_name, emergency_contact2_phone, " +
+  "lifecycle_state, eligible_for_rehire, status, category, shift, " +
+  "client_id, branch_id, location_id, contract_id, contract_line_id, " +
+  "assignment_effective_from, assignment_effective_to, last_working_day, " +
+  "physical_copy_present, base_salary, allowance, created_at, " +
+  "location:location_id(name), client:client_id(name), branch:branch_id(name)";
+const EMPLOYEE_FULL_SELECT =
+  "*, location:location_id(name), client:client_id(name), branch:branch_id(name)";
+
 // Where the export column choice is remembered. Per browser, per person — it is
 // a preference about a download, not shared state, so it never leaves the device.
 const EXPORT_FIELDS_KEY = "employees.exportFields";
@@ -952,7 +973,7 @@ export default function EmployeeManagement() {
       withRegion(
         supabase
           .from("employees")
-          .select("*, location:location_id(name), client:client_id(name), branch:branch_id(name)")
+          .select(EMPLOYEE_ROSTER_SELECT)
           .order("created_at", { ascending: false }),
         regionId,
       ),
@@ -1000,6 +1021,54 @@ export default function EmployeeManagement() {
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [regionId]);
+
+  // The full record for one roster row. Keeps the roster-derived fields
+  // (names, extra branches, document count) and lays every column over them.
+  const hydrateRow = async (emp: EmployeeRow): Promise<EmployeeRow> => {
+    const { data, error: err } = await supabase
+      .from("employees")
+      .select(EMPLOYEE_FULL_SELECT)
+      .eq("id", emp.id)
+      .maybeSingle();
+    if (err || !data) {
+      setError(err?.message ?? "Employee record not found.");
+      return emp;
+    }
+    const e: any = data;
+    return {
+      ...emp,
+      ...e,
+      location_name: e.location?.name ?? null,
+      client_name: e.client?.name ?? null,
+      branch_name: e.branch?.name ?? null,
+    };
+  };
+
+  // Full records for many roster rows, in the same order. One request per
+  // 150 ids keeps the URL within PostgREST's limit.
+  const hydrateRows = async (rows: EmployeeRow[]): Promise<EmployeeRow[]> => {
+    const byId = new Map<string, any>();
+    for (let i = 0; i < rows.length; i += 150) {
+      const ids = rows.slice(i, i + 150).map((r) => r.id);
+      const { data, error: err } = await supabase.from("employees").select(EMPLOYEE_FULL_SELECT).in("id", ids);
+      if (err) {
+        setError(err.message);
+        return rows;
+      }
+      for (const e of (data ?? []) as any[]) byId.set(e.id, e);
+    }
+    return rows.map((r) => {
+      const e = byId.get(r.id);
+      if (!e) return r;
+      return {
+        ...r,
+        ...e,
+        location_name: e.location?.name ?? null,
+        client_name: e.client?.name ?? null,
+        branch_name: e.branch?.name ?? null,
+      };
+    });
+  };
 
   // Branches first by Head Office then alpha — used in selects with placeholder.
 
@@ -1305,7 +1374,7 @@ export default function EmployeeManagement() {
 
   const exportGroups = useMemo(() => EMPLOYEE_EXPORT_GROUPS(), []);
 
-  const runExport = (fieldIds: string[]) => {
+  const runExport = async (fieldIds: string[]) => {
     const byId = new Map(EMPLOYEE_EXPORT_FIELDS.map((f) => [f.id, f]));
     const fields = fieldIds.map((id) => byId.get(id)).filter((f) => f != null);
     if (fields.length === 0) return;
@@ -1322,12 +1391,13 @@ export default function EmployeeManagement() {
     // Header, cell and width all come off the SAME field list in the same pass,
     // so a chosen column cannot land under another column's heading — the defect
     // three position-matched literal arrays invited.
+    const fullRows = await hydrateRows(sorted);
     exportTable({
       fileName: "Employees.xlsx",
       sheetName: "Employees",
       title: "Employees",
       headers: fields.map((f) => f.label),
-      rows: sorted.map((e) => fields.map((f) => f.value(e, ctx))),
+      rows: fullRows.map((e) => fields.map((f) => f.value(e, ctx))),
       columnWidths: fields.map((f) => f.width),
     });
 
@@ -1665,6 +1735,10 @@ export default function EmployeeManagement() {
     setCodeHistory([]);
     setViewTab("profile");
     setIsViewModalOpen(true);
+    // The roster row is narrow; the modal shows the whole record.
+    hydrateRow(emp).then((full) => {
+      setSelectedEmployee((cur) => (cur && cur.id === full.id ? { ...cur, ...full } : cur));
+    });
     supabase
       .from("employee_code_history")
       .select("*")
@@ -1742,12 +1816,15 @@ export default function EmployeeManagement() {
   const isCandidate = (emp: { lifecycle_state: string }) =>
     emp.lifecycle_state === "applicant" || emp.lifecycle_state === "waitlisted";
 
-  const openHire = (emp: EmployeeRow) => {
-    openEdit(emp);
+  const openHire = async (emp: EmployeeRow) => {
+    await openEdit(emp);
     setHiringMode(true);
   };
 
-  const openEdit = (emp: EmployeeRow) => {
+  const openEdit = async (row: EmployeeRow) => {
+    // Never seed the form from a roster row: it lacks most columns, and a save
+    // would write those as null. Wait for the whole record.
+    const emp = await hydrateRow(row);
     setHiringMode(false);
     editSections.reset();
     setSelectedEmployee(emp);
@@ -4138,7 +4215,10 @@ function BulkGenerateModal({
     const combined = new jsPDF({ unit: "mm", format: "a4" });
     let started = false;
     const fails: string[] = [];
-    for (const emp of employees) {
+    for (const row of employees) {
+      // Roster rows are narrow; the form PDF prints the whole record.
+      const { data: fullRec } = await supabase.from("employees").select("*").eq("id", row.id).maybeSingle();
+      const emp: EmployeeRow = { ...row, ...((fullRec ?? {}) as Partial<EmployeeRow>) } as EmployeeRow;
       try {
         if (docType === "data_form") {
           const [c, r, j, d, approvals] = await Promise.all([

@@ -545,7 +545,17 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         // had genuinely worked, and nothing downstream depended on it.
         supabase
           .from("employees")
-          .select("*, client:client_id(name)")
+          // Only what this screen reads. employees has 140 columns and
+          // `select *` was 2.1 MB for the roster; on a mobile link that
+          // download was the page. The list is the union of every property
+          // this file and the helpers it calls read off an employee row.
+          .select(
+            "id, company_id, employee_code, guard_code, display_number, full_name, phone, " +
+            "client_id, branch_id, contract_id, contract_line_id, category, shift, status, lifecycle_state, " +
+            "base_salary, per_day_salary, allowance, bank_name, join_date, last_working_day, termination_date, exit_date, " +
+            "eligible_for_rehire, assignment_effective_from, assignment_effective_to, opening_leaves, opening_leaves_month, created_at, " +
+            "client:client_id(name)",
+          )
           .order("employee_code"),
         regionId,
       ),
