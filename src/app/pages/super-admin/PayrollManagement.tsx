@@ -149,7 +149,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   // no page Header, filters, totals cards, or bulk actions — just the scoped
   // roster + the payslip drawer.
   const embedded = throughNet || afterNet || !!clientScopeId || !!categoryScope;
-  const { regionId } = useRegion();
+  const { regionId, loading: regionLoading } = useRegion();
   const today = new Date();
   const currentPeriod = firstOfMonth(today);
   // Default the filter to the previous month — payroll is typically processed
@@ -621,11 +621,18 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     setLoading(false);
   };
 
+  // The region provider starts at "All" and restores the saved region a
+  // moment later, so an effect keyed on regionId alone ran the whole load
+  // TWICE on every mount. The edge logs showed four full Payroll loads in 25 s
+  // from one user — ~100 requests — queueing on PostgREST's 10-connection
+  // pool and turning 10 ms queries into 5 s waits for everyone. Wait for the
+  // region to settle and load once.
   useEffect(() => {
+    if (regionLoading) return;
     loadAll();
     // Reload the roster when the global region selector changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [regionId]);
+  }, [regionId, regionLoading]);
 
   useEffect(() => {
     if (!loading) loadPeriodData(selectedPeriod);

@@ -142,7 +142,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   const [detailRecord, setDetailRecord] = useState<HistoryRow | null>(null);
 
   const { profile } = useAuth();
-  const { regionId } = useRegion();
+  const { regionId, loading: regionLoading } = useRegion();
   const canBulk = hasPermission(profile, "attendance.bulk_mark");
 
   // ---- Export dialog: which month to export (defaults to the shown date's) ----
@@ -429,14 +429,21 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     return out;
   };
 
+  // The region provider starts at "All" and restores the saved region a
+  // moment later, so an effect keyed on regionId alone ran the whole load
+  // TWICE on every mount. The edge logs showed four full Payroll loads in 25 s
+  // from one user — ~100 requests — queueing on PostgREST's 10-connection
+  // pool and turning 10 ms queries into 5 s waits for everyone. Wait for the
+  // region to settle and load once.
   useEffect(() => {
+    if (regionLoading) return;
     (async () => {
       setLoading(true);
       await loadStaticData();
       setLoading(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [regionId]);
+  }, [regionId, regionLoading]);
 
   useEffect(() => {
     loadRecordsForDate(date);

@@ -834,7 +834,7 @@ export default function EmployeeManagement() {
   // Add / edit / delete employees is gated on employees.edit (super_admin + SSA
   // implicit). Backend RLS (0310) enforces it; this hides the controls.
   const canEditEmployees = hasPermission(profile, "employees.edit");
-  const { regionId } = useRegion();
+  const { regionId, loading: regionLoading } = useRegion();
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
@@ -1017,10 +1017,17 @@ export default function EmployeeManagement() {
 
   // Reloads when the global region changes: the region selector scopes the
   // whole screen, not just the client-side branch filter below it.
+  // The region provider starts at "All" and restores the saved region a
+  // moment later, so an effect keyed on regionId alone ran the whole load
+  // TWICE on every mount. The edge logs showed four full Payroll loads in 25 s
+  // from one user — ~100 requests — queueing on PostgREST's 10-connection
+  // pool and turning 10 ms queries into 5 s waits for everyone. Wait for the
+  // region to settle and load once.
   useEffect(() => {
+    if (regionLoading) return;
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [regionId]);
+  }, [regionId, regionLoading]);
 
   // The full record for one roster row. Keeps the roster-derived fields
   // (names, extra branches, document count) and lays every column over them.
