@@ -1,7 +1,8 @@
 import { isIsoDate } from "../../lib/date";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, lazy, Suspense } from "react";
 import { AlertCircle, Building2, MapPin, Loader2, X, ChevronRight, ChevronLeft, CheckCircle2, Clock, Download, Briefcase, CalendarRange, Search, ChevronDown, FileText, Users, FileSpreadsheet, Loader } from "lucide-react";
 import Header from "../../components/Header";
+import RouteLoading from "../../components/RouteLoading";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import Tabs from "../../components/Tabs";
@@ -10,11 +11,14 @@ import { supabase } from "../../lib/supabase";
 import { useAuth, hasPermission } from "../../lib/auth";
 import { guardDisplayCode } from "../../lib/guardCode";
 import BulkMarkByEmployeeModal from "../../components/BulkMarkByEmployeeModal";
-import ShiftManagement from "./ShiftManagement";
+// Lazy: ShiftManagement imports a modal out of EmployeeManagement, which
+// dragged that entire 160 KB page into the board's chunk for one tab.
+const ShiftManagement = lazy(() => import("./ShiftManagement"));
 import AttendanceSheetModal from "../../components/AttendanceSheetModal";
 import { brandingFromCompany, type PdfBranding } from "../../lib/pdfBranding";
-import { generateClientAttendancePdf, generateGuardAttendancePdf } from "../../lib/attendanceSheetPdf";
-import { exportAttendance, type AttendanceEmployeeRow } from "../../lib/excel";
+// jsPDF (381 KB) and xlsx (288 KB) are loaded at the click, not with the page:
+// every screen with an Export or PDF button was paying for both on open.
+import type { AttendanceEmployeeRow } from "../../lib/excel";
 import {
   buildAttendanceRows, buildRelieverRows, enumerateDates,
   loadSheetEmployees, loadSiteByGuard, loadConfirmationGate,
@@ -1007,7 +1011,7 @@ export default function AttendanceBoard() {
             (change_guard_shift RPC) and the Assignments & Pay data/department
             derivation, but none of that page's cards/filters/pay columns. Shown
             only to users who pass the same view gate as the standalone route. */}
-        {tab === "shifts" && canShiftMgmt && <ShiftManagement />}
+        {tab === "shifts" && canShiftMgmt && <Suspense fallback={<RouteLoading />}><ShiftManagement /></Suspense>}
       </div>
 
       {drill && (
@@ -1466,7 +1470,8 @@ function downloadCsv(name: string, lines: string[]) {
 type ExportClient = { id: string; name: string; prefix: string | null; synthetic: boolean };
 
 // §8.9 (a) per-client attendance sheet — branded PDF for client submission.
-function exportClientSheet(branding: PdfBranding, date: string, rows: ClientShift[]) {
+async function exportClientSheet(branding: PdfBranding, date: string, rows: ClientShift[]) {
+  const { generateClientAttendancePdf } = await import("../../lib/attendanceSheetPdf");
   generateClientAttendancePdf(branding, date, rows.map((r) => ({
     client_name: r.client_name, site_name: r.site_name, shift_code: r.shift_code,
     contracted: r.contracted, on_roster: r.roster.length,
@@ -1477,7 +1482,8 @@ function exportClientSheet(branding: PdfBranding, date: string, rows: ClientShif
 }
 
 // §8.9 (b) per-guard sheet — branded PDF for payroll (one row per rostered guard).
-function exportGuardSheet(branding: PdfBranding, date: string, rows: ClientShift[]) {
+async function exportGuardSheet(branding: PdfBranding, date: string, rows: ClientShift[]) {
+  const { generateGuardAttendancePdf } = await import("../../lib/attendanceSheetPdf");
   const gr: { full_name: string; code: string; client_name: string; site_name: string; shift_code: string; status: string }[] = [];
   for (const r of rows) {
     for (const g of r.roster) {
@@ -1586,6 +1592,7 @@ async function exportClientRange(client: ExportClient, startDate: string, endDat
   const rows: AttendanceEmployeeRow[] = [...built.rows, ...relieverRows];
   if (rows.length === 0) return 0;
 
+  const { exportAttendance } = await import("../../lib/excel");
   exportAttendance({
     monthLabel: built.monthLabel, daysInMonth: dates.length, clientLabel: client.name, rows,
     dayLabels: dates.map((d) => Number(d.slice(8, 10))),
