@@ -5,6 +5,9 @@
 # 0450 (contract_terms_are_gated_dated_and_the_split_is_operational) applied
 # 2026-09-16: diffed clean — no new check went red. migration_ledger_matches_repo
 # reads red only until the repo-manifest fetch picks up 0449/0450 after push.
+#
+# 0451 (ledger_cash_pay_rpc_fronted_tables_are_permission_gated) applied
+# 2026-09-16: diffed clean — same 14 names, no new check went red.
 alert_delivery_is_healthy
 ar_control_equals_open_invoices
 bank_control_equals_bank_accounts
