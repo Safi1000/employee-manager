@@ -1,6 +1,6 @@
-# Prod red set (crm-design mmkfpnshxjcyijhuydgr) captured before applying 0448
-# on 2026-09-15. Distinct failing ledger_checks() names across all companies.
-# Diff this list by NAME after the apply — 0448 must not turn any new check red.
+# Prod red set (crm-design mmkfpnshxjcyijhuydgr) captured before applying 0449
+# on 2026-09-16. Distinct failing ledger_checks() names across all companies.
+# Diff this list by NAME after the apply — 0449 must not turn any new check red.
 alert_delivery_is_healthy
 ar_control_equals_open_invoices
 bank_control_equals_bank_accounts
@@ -9,7 +9,6 @@ cash_control_equals_cash_locations
 cash_forecast_clears_the_floor
 cash_per_location_gl_equals_operational
 every_control_is_invoked
-migration_ledger_matches_repo
 no_definer_function_crosses_a_branch
 no_negative_custodian_balance
 no_stale_prepaid_balance
