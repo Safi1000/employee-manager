@@ -35,9 +35,9 @@ export default function ShiftManagement() {
   // Accounts). Mirror the existing Assignments & Pay gate exactly: canHr guards
   // the button; the change_guard_shift RPC enforces employees.edit at the DB.
   const canHr = hasPermission(profile, "assignments.hr") || hasPermission(profile, "employees.edit");
-  // The Day/Night split writes contract_lines committed counts — a contracts.edit
-  // action. Mirror the contract editor's own lock rather than the HR gate.
-  const canEditContracts = hasPermission(profile, "contracts.edit");
+  // The Day/Night split is an OPS rebalance, not a commercial change: it goes
+  // through set_shift_split (gated on assignments.hr at the DB, 0450), so it is
+  // gated here like the Shift Change button beside it, not on contracts.edit.
 
   const [clients, setClients] = useState<Client[]>([]);
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
@@ -265,7 +265,7 @@ export default function ShiftManagement() {
         <ShiftSplitModal
           contract={activeContractByClient.get(rulesClient.id)!}
           clientName={rulesClient.name}
-          canEdit={canEditContracts}
+          canEdit={canHr}
           onClose={() => setRulesClient(null)}
           onSaved={() => { setRulesClient(null); loadData(); }}
         />

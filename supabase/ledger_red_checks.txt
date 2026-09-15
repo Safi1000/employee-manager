@@ -1,6 +1,10 @@
 # Prod red set (crm-design mmkfpnshxjcyijhuydgr) captured before applying 0449
 # on 2026-09-16. Distinct failing ledger_checks() names across all companies.
 # Diff this list by NAME after the apply — 0449 must not turn any new check red.
+#
+# 0450 (contract_terms_are_gated_dated_and_the_split_is_operational) applied
+# 2026-09-16: diffed clean — no new check went red. migration_ledger_matches_repo
+# reads red only until the repo-manifest fetch picks up 0449/0450 after push.
 alert_delivery_is_healthy
 ar_control_equals_open_invoices
 bank_control_equals_bank_accounts

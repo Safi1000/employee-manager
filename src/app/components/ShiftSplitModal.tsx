@@ -29,11 +29,12 @@ import {
 type Group = {
   key: string;
   label: string; // category label, with site appended when the contract has sites
+  category: ContractLine["category"]; // passed to set_shift_split as p_category
   siteId: string | null;
   total: number;
   day: string;
   night: string;
-  rows: ContractLine[]; // the raw lines in this group, for the save reconcile
+  rows: ContractLine[]; // the raw lines in this group, for change detection
 };
 
 const num = (s: string) => Math.max(0, Math.floor(Number(s) || 0));
@@ -48,7 +49,8 @@ export default function ShiftSplitModal({
 }: {
   contract: Contract;
   clientName?: string;
-  /** contracts.edit — mirrors the contract editor's own lock. */
+  /** assignments.hr — the split is an ops action, gated like Shift Change. The
+   *  set_shift_split RPC enforces the same key at the DB (0450). */
   canEdit: boolean;
   onClose: () => void;
   onSaved: () => void;
@@ -89,6 +91,7 @@ export default function ShiftSplitModal({
         gs.push({
           key,
           label: hasSites && site ? `${cat} — ${site}` : cat,
+          category: first.category,
           siteId: first.site_id,
           total,
           day: String(rows.find((l) => l.shift_code === "day")?.committed_count ?? 0),
@@ -117,65 +120,24 @@ export default function ShiftSplitModal({
     setError(null);
     try {
       for (const g of groups) {
-        // Nothing to write for a group left as it loaded.
         const dayRow = g.rows.find((l) => l.shift_code === "day");
         const nightRow = g.rows.find((l) => l.shift_code === "night");
         const wantDay = num(g.day);
         const wantNight = num(g.night);
+        // Nothing to write for a group left as it loaded.
         if ((dayRow?.committed_count ?? 0) === wantDay && (nightRow?.committed_count ?? 0) === wantNight) continue;
 
-        // A representative row supplies rate/label/taxable when a shift row has to
-        // be created — never invent a rate, copy the group's own.
-        const rep = [...g.rows].sort((a, b) => (Number(b.committed_count) || 0) - (Number(a.committed_count) || 0))[0];
-        // Rows not used as the day/night row (null-shift or extras) must go to 0,
-        // or the group total would inflate past what the contract commits.
-        const spare = g.rows.filter((l) => l !== dayRow && l !== nightRow);
-
-        const upsertShift = async (
-          shift: "day" | "night",
-          existing: ContractLine | undefined,
-          count: number,
-        ) => {
-          if (existing) {
-            const { error: e } = await supabase
-              .from("contract_lines").update({ committed_count: count }).eq("id", existing.id);
-            if (e) throw e;
-            return;
-          }
-          if (count === 0) return; // no row, nothing wanted — leave it absent
-          // Reuse a spare row if one is free, else insert a fresh line.
-          const reuse = spare.shift();
-          if (reuse) {
-            const { error: e } = await supabase
-              .from("contract_lines")
-              .update({ shift_code: shift, committed_count: count })
-              .eq("id", reuse.id);
-            if (e) throw e;
-          } else {
-            const { error: e } = await supabase.from("contract_lines").insert({
-              contract_id: contract.id,
-              category: rep.category,
-              label: rep.label,
-              location: rep.location,
-              site_id: g.siteId,
-              shift_code: shift,
-              committed_count: count,
-              unit_rate: rep.unit_rate,
-              taxable: rep.taxable,
-            });
-            if (e) throw e;
-          }
-        };
-
-        await upsertShift("day", dayRow, wantDay);
-        await upsertShift("night", nightRow, wantNight);
-        // Zero any leftover spare rows so the sum stays put.
-        for (const l of spare) {
-          if ((Number(l.committed_count) || 0) === 0) continue;
-          const { error: e } = await supabase
-            .from("contract_lines").update({ committed_count: 0 }).eq("id", l.id);
-          if (e) throw e;
-        }
+        // One atomic call per group: set_shift_split rewrites the group's day/night
+        // rows in a single transaction (0450). The deferred sum-invariance trigger
+        // checks the total at commit — a per-row rewrite would trip it mid-sequence.
+        const { error: e } = await supabase.rpc("set_shift_split", {
+          p_contract_id: contract.id,
+          p_category: g.category,
+          p_site_id: g.siteId,
+          p_day_count: wantDay,
+          p_night_count: wantNight,
+        });
+        if (e) throw e;
       }
       onSaved();
       onClose();
@@ -223,7 +185,7 @@ export default function ShiftSplitModal({
 
         {!canEdit && (
           <div className="p-2 bg-slate-50 border border-slate-200 rounded text-[12px] text-slate-500">
-            You can view the split but need the Contracts permission to change it.
+            You can view the split but need the Assignments (HR) permission to change it.
           </div>
         )}
 
