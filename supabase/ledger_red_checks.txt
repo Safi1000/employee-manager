@@ -18,10 +18,22 @@
 #
 # 0457 (headcount_caps_count_per_category_across_shifts) applied 2026-09-17:
 # diffed clean — same 14 names, no new check went red. Both slot triggers now
-# cap per (contract, category, site) across shifts. NB: a recorded row
-# `ggs_cash_in_hand_is_restated_to_the_counted_position` (20260916120447) sits
-# after 0455 with NO repo file — real ledger drift, owed the 0456 slot; not
-# this task. 0457 took 0457 to leave it room.
+# cap per (contract, category, site) across shifts. NB: the recorded row
+# `ggs_cash_in_hand_is_restated_to_the_counted_position` (20260916120447) that
+# sat after 0455 with no repo file arrived via merge as 0456 — drift closed.
+#
+# Money-movement pass Stage C + Stage D (safe half), applied 2026-09-17, each
+# diffed clean (same 14 names, no new red):
+#   0458 disburse_payslip_moves_money_atomically — payslip CAS claim + money in
+#        one SECURITY DEFINER tx (payroll.edit). Rolled-back 4-arm prod probe
+#        passed: cash+bank move payslip+balance+GL together; a stale
+#        p_expected_paid raises and moves nothing.
+#   0459 treasury + payroll_runs perm_write gated (accounting.edit / payroll.edit)
+#        — their only writers are now DEFINER RPCs. The other Stage-D tables
+#        (payslips, cash_locations, cash_deposits, cheques, custody_transfers,
+#        opening_balance_lines, fixed_assets) still have raw-write screens and
+#        need an RPC-routing pass first (0451's recorded position) — REPORTED,
+#        not gated. cash_locations especially: payroll/expenses write it.
 alert_delivery_is_healthy
 ar_control_equals_open_invoices
 bank_control_equals_bank_accounts
