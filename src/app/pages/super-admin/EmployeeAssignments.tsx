@@ -1765,30 +1765,6 @@ export default function EmployeeAssignments() {
   );
 }
 
-/**
- * How a contract line reads in a picker. Shared so the Assign dialog and the
- * Department field on a row offer the identical wording — they are choosing
- * from the same list, and two spellings of one post read as two posts.
- *
- * The shift matters: a site routinely bills the same post twice, once per
- * shift, and without it the options are indistinguishable.
- *
- * `siteNote` names the site when the line belongs to a DIFFERENT one than the
- * list is for. That only happens for a post somebody is already pinned to from
- * elsewhere, which is kept on offer so it can be seen and corrected — and
- * without the name it renders as a second, identical copy of the local post.
- */
-const lineOptionLabel = (
-  l: ContractLine,
-  slot: { filled: number; committed: number } | null,
-  siteNote?: string | null,
-) =>
-  ((l.label ?? "").trim() || CONTRACT_LINE_CATEGORY_LABEL[l.category]) +
-  (l.shift_code ? ` (${l.shift_code})` : "") +
-  (l.location ? ` — ${l.location}` : "") +
-  (siteNote ? ` — at ${siteNote}` : "") +
-  (slot ? ` · ${slot.filled}/${slot.committed} filled` : "");
-
 /** One post at the site, and who is currently filling it. */
 type PostBucket = {
   key: string;
@@ -2733,7 +2709,10 @@ function AssignEmployeesModal({
   const [search, setSearch] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [contractId, setContractId] = useState("");
-  const [contractLineId, setContractLineId] = useState("");
+  // The picker chooses a POST (category/label), not a shift line. 0457 caps the
+  // department across shifts, so day/night is not a separate choice here — the
+  // Shift field below decides which shift line each guard actually lands on.
+  const [groupKey, setGroupKey] = useState("");
   // This date IS the joining date: it opens the posting and is written to
   // join_date for anyone who does not already have one. Deliberately NOT
   // defaulted to today — it is required, and a pre-filled value gets accepted
@@ -2790,32 +2769,50 @@ function AssignEmployeesModal({
         effectiveCommittedForLine(l, adds, slotAsOf) > 0,
     );
   }, [lines, siteId, addendums, contractId, slotAsOf]);
-  // Committed vs already-filled for THIS LINE, as of the posting start date, and
-  // the cap that follows. Per line, not per category: on a multi-site contract
-  // the category pool spans every site, so posting to Nova Charsadda measured
-  // against all four Nova sites' guards at once and capped at a number that had
-  // nothing to do with Charsadda. A line is one post at one site on one shift,
-  // which is exactly what is being filled here.
-  const slotFor = useCallback(
-    (lineId: string) => {
-      const line = lines.find((l) => l.id === lineId);
-      if (!line) return null;
+  // The offered lines merged into one row per POST (label, falling back to the
+  // category name — so "Guard (day)" and "Guard (night)" come back together as
+  // "Guard", while deliberately-named posts stay apart). This is the same
+  // grouping EditRulesModal uses, and it matches 0457: the cap is the department
+  // at the site, summed across its shift lines.
+  const offeredGroups = useMemo(() => {
+    const m = new Map<string, { key: string; label: string; category: ContractLineCategory; lines: ContractLine[] }>();
+    for (const l of offeredLines) {
+      const label = (l.label ?? "").trim() || CONTRACT_LINE_CATEGORY_LABEL[l.category];
+      const key = label.toLowerCase();
+      const g = m.get(key) ?? { key, label, category: l.category, lines: [] };
+      g.lines.push(l);
+      m.set(key, g);
+    }
+    return [...m.values()];
+  }, [offeredLines]);
+
+  // Committed vs already-filled for the whole POST at this site, summed across
+  // its shift lines — the same total 0457's trigger caps against. (The site
+  // narrowing already happened in offeredLines; a post's lines all share it.)
+  const slotForGroup = useCallback(
+    (key: string) => {
+      const g = offeredGroups.find((x) => x.key === key);
+      if (!g) return null;
       const adds = addendums.filter((a) => a.contract_id === contractId);
-      const committed = effectiveCommittedForLine(line, adds, slotAsOf);
-      const filled = activeCountByLine(allEmployees, slotAsOf).get(lineId) ?? 0;
-      return { category: line.category, committed, filled, available: Math.max(0, committed - filled) };
+      const byLine = activeCountByLine(allEmployees, slotAsOf);
+      let committed = 0, filled = 0;
+      for (const l of g.lines) {
+        committed += effectiveCommittedForLine(l, adds, slotAsOf);
+        filled += byLine.get(l.id) ?? 0;
+      }
+      return { category: g.category, committed, filled, available: Math.max(0, committed - filled) };
     },
-    [addendums, contractId, lines, slotAsOf, allEmployees],
+    [offeredGroups, addendums, contractId, slotAsOf, allEmployees],
   );
 
-  const slot = contractLineId ? slotFor(contractLineId) : null;
+  const slot = groupKey ? slotForGroup(groupKey) : null;
   // No line chosen (or a contract with no lines at all) = no committed headcount
   // to measure against, so nothing to cap.
   const cap = slot ? slot.available : Infinity;
   const atCap = picked.size >= cap;
 
-  // Changing contract or line invalidates a selection sized against the old cap.
-  useEffect(() => { setPicked(new Set()); }, [contractId, contractLineId]);
+  // Changing contract or post invalidates a selection sized against the old cap.
+  useEffect(() => { setPicked(new Set()); }, [contractId, groupKey]);
 
   const shown = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -2858,7 +2855,7 @@ function AssignEmployeesModal({
     if (targets.length === 0) { setErr("Pick at least one employee."); return; }
     if (!startDate) { setErr("A joining date is required."); return; }
     if (toClient && clientContracts.length > 0 && !contractId) { setErr("Choose which contract this posting is under."); return; }
-    if (toClient && offeredLines.length > 0 && !contractLineId) { setErr("Choose a contract line — it sets the category and its headcount limit."); return; }
+    if (toClient && offeredGroups.length > 0 && !groupKey) { setErr("Choose a post — it sets the category and its headcount limit."); return; }
     // Re-check against the live figures: the cap also guards the checkboxes, but
     // the committed count can move (an addendum, another operator) between the
     // dialog opening and Assign being pressed.
@@ -2890,6 +2887,17 @@ function AssignEmployeesModal({
           .eq("client_id", target.id).eq("is_default", true).maybeSingle();
         postSiteId = (defSite as { id?: string } | null)?.id ?? null;
       }
+
+      // The chosen post and how to land a guard on the right shift line within it.
+      // The Shift field picks one; left on "keep current" each guard falls to their
+      // own shift, then to day. A single-shift post ignores the shift entirely.
+      const grp = offeredGroups.find((x) => x.key === groupKey) ?? null;
+      const lineForShift = (empShift: string): string | null => {
+        if (!grp) return null;
+        if (grp.lines.length === 1) return grp.lines[0].id;
+        const match = grp.lines.find((l) => (l.shift_code ?? "") === empShift);
+        return (match ?? grp.lines[0]).id;
+      };
 
       // Sequential: each employee needs its own posting row, code and salary seed,
       // and a failure part-way must name the person it stopped on.
@@ -2951,13 +2959,15 @@ function AssignEmployeesModal({
         // is a single assign RPC. The reverse residual (posting written, employee
         // update fails) fails SAFE: the DB slot trigger counts the posting, so no
         // over-hire, and it self-heals on the next edit.
+        const empShift = shift || e.shift || "day";
+        const lineId = lineForShift(empShift);
         const { error: depErr } = await supabase.from("deployments").insert({
           guard_id: e.id,
           client_id: target.id,
-          contract_line_id: contractLineId || null,
+          contract_line_id: lineId,
           site_id: postSiteId,
           start_date: startDate,
-          shift_code: shift || e.shift || "day",
+          shift_code: empShift,
           reason: "new_hire",
         });
         if (depErr) throw fail(depErr.message);
@@ -2973,8 +2983,8 @@ function AssignEmployeesModal({
             // the employee row, so without them the next assignment would see the
             // line as still empty and blow past its committed count.
             contract_id: contractId || null,
-            contract_line_id: contractLineId || null,
-            assignment_effective_from: contractLineId ? startDate : null,
+            contract_line_id: lineId,
+            assignment_effective_from: lineId ? startDate : null,
             assignment_effective_to: null,
             ...(shift ? { shift } : {}),
           })
@@ -3054,7 +3064,7 @@ function AssignEmployeesModal({
               <label className="block text-xs text-muted-foreground mb-1">Contract</label>
               <ThemedSelect
                 value={contractId}
-                onChange={(e) => { setContractId(e.target.value); setContractLineId(""); }}
+                onChange={(e) => { setContractId(e.target.value); setGroupKey(""); }}
                 className={inputCls}
                 disabled={clientContracts.length === 0}
               >
@@ -3067,25 +3077,28 @@ function AssignEmployeesModal({
             <div>
               <label className="block text-xs text-muted-foreground mb-1">Contract line (category)</label>
               <ThemedSelect
-                value={contractLineId}
-                onChange={(e) => setContractLineId(e.target.value)}
+                value={groupKey}
+                onChange={(e) => setGroupKey(e.target.value)}
                 className={inputCls}
-                disabled={!contractId || offeredLines.length === 0}
+                disabled={!contractId || offeredGroups.length === 0}
               >
                 <option value="">
                   {!contractId
                     ? "Pick a contract first"
-                    : offeredLines.length === 0
+                    : offeredGroups.length === 0
                       ? lines.length === 0
                         ? "This contract has no lines"
                         : "No open posts here"
                       : "— Select —"}
                 </option>
-                {offeredLines.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {lineOptionLabel(l, slotFor(l.id))}
-                  </option>
-                ))}
+                {offeredGroups.map((g) => {
+                  const s = slotForGroup(g.key);
+                  return (
+                    <option key={g.key} value={g.key}>
+                      {g.label}{s ? ` · ${s.filled}/${s.committed} filled` : ""}
+                    </option>
+                  );
+                })}
               </ThemedSelect>
             </div>
           </div>

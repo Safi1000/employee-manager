@@ -15,6 +15,13 @@
 #   0453 money_rpcs_definer_part1_apply_money_delta_and_expenses
 #   0454 money_rpcs_definer_part2_invoices_transfer_inventory_partners
 #   0455 apply_money_delta_is_internal_only
+#
+# 0457 (headcount_caps_count_per_category_across_shifts) applied 2026-09-17:
+# diffed clean — same 14 names, no new check went red. Both slot triggers now
+# cap per (contract, category, site) across shifts. NB: a recorded row
+# `ggs_cash_in_hand_is_restated_to_the_counted_position` (20260916120447) sits
+# after 0455 with NO repo file — real ledger drift, owed the 0456 slot; not
+# this task. 0457 took 0457 to leave it room.
 alert_delivery_is_healthy
 ar_control_equals_open_invoices
 bank_control_equals_bank_accounts
