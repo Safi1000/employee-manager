@@ -112,6 +112,9 @@ type RosterGuard = {
   scheduled_shift: string;
   /** The guard's own region, used to scope synthetic category rows. */
   branch_id?: string | null;
+  /** A reliever standing in as cover — deployed strength, not contracted (0449). */
+  is_reliever?: boolean;
+  covering_for_guard_id?: string | null;
 };
 
 type ClientShift = {
@@ -204,7 +207,7 @@ export default function AttendanceBoard() {
     setLoading(true);
     setError(null);
     // Active deployments on the date + guard + site + client + contract line shift.
-    const [{ data: deps, error: depErr }, { data: cls }, { data: siteRows }, { data: confs }, { data: att }, { data: cliRows }, { data: cons }, { data: vac }, { data: staff }, { data: profs }] =
+    const [{ data: deps, error: depErr }, { data: cls }, { data: siteRows }, { data: confs }, { data: att }, { data: cliRows }, { data: cons }, { data: vac }, { data: staff }, { data: profs }, { data: relCover }] =
       await Promise.all([
         supabase
           .from("deployments")
@@ -244,13 +247,21 @@ export default function AttendanceBoard() {
         supabase.from("vacancies").select("*").eq("status", "open").order("opened_at", { ascending: false }),
         // Non-client categories (office staff + any future category) have no
         // client posting; load them directly so they appear on the board too.
-        // Relievers are EXCLUDED — they live on the Relievers tab.
+        // Relievers are EXCLUDED here — they have no deployment; they are attached
+        // below from their own attendance rows, under the SITE they worked (0449).
         supabase
           .from("employees")
           .select("id, full_name, guard_code, display_number, employee_code, shift, category, join_date, last_working_day, termination_date, exit_date, lifecycle_state, branch_id")
           .neq("category", "reliever")
           .neq("category", "client"),
         supabase.from("profiles").select("id, full_name, email"),
+        // Reliever cover for this date: their attendance rows carry the site now.
+        supabase
+          .from("attendance_records")
+          .select("employee_id, status, absent_reason, worked_shift, marked_by_user_id, site_id, covering_for_guard_id, employees:employee_id!inner(full_name, guard_code, display_number, employee_code, category, branch_id)")
+          .eq("attendance_date", date)
+          .eq("employees.category", "reliever")
+          .not("site_id", "is", null),
       ]);
     if (depErr) { setError(depErr.message); setLoading(false); return; }
 
@@ -560,6 +571,46 @@ export default function AttendanceBoard() {
         if (m.status !== "present") g.marks.set(rg.guard_id, { status: m.status, absent_reason: m.absent_reason });
       }
     }
+
+    // Attach relievers as COVER under the site they worked (0449). They carry no
+    // deployment, so they are added from their own attendance rows — visibly not
+    // contracted strength: deployed = roster (guards + cover), contracted stays the
+    // committed count. No cap; deployed may exceed contracted, which is the point.
+    const siteMeta = new Map((siteRows ?? []).map((s: any) => [s.id, s]));
+    for (const a of (relCover ?? []) as any[]) {
+      const siteId = a.site_id as string;
+      let g = merged.get(siteId);
+      if (!g) {
+        // A site with cover but nobody deployed to it yet still gets a card.
+        const s = siteMeta.get(siteId);
+        const c = s ? clientById.get(s.client_id) : null;
+        g = {
+          key: siteId, site_id: siteId, group_key: siteId, shift_code: "all",
+          site_name: s?.name ?? "—", client_id: s?.client_id ?? "", client_name: c?.name ?? "—",
+          client_prefix: c?.employee_id_prefix ?? null, contract_shifts: [], contracted: 0,
+          roster: [], marks: new Map(), reported: new Map(),
+          confirmation: confByGroup.get(siteId) ?? null,
+          branch_id: (c?.branch_id as string | null) ?? null,
+        };
+        merged.set(siteId, g);
+      }
+      if (g.roster.some((x) => x.guard_id === a.employee_id)) continue;
+      g.roster.push({
+        guard_id: a.employee_id,
+        full_name: a.employees?.full_name ?? "—",
+        guard_code: a.employees?.guard_code ?? null,
+        display_number: a.employees?.display_number ?? null,
+        employee_code: a.employees?.employee_code ?? "",
+        client_id: g.client_id,
+        scheduled_shift: a.worked_shift ?? "day",
+        is_reliever: true,
+        covering_for_guard_id: a.covering_for_guard_id ?? null,
+      });
+      const st = normalizeStatus(a.status);
+      g.reported.set(a.employee_id, a.marked_by_user_id ?? null);
+      if (st !== "present") g.marks.set(a.employee_id, { status: st, absent_reason: a.absent_reason ?? null });
+    }
+
     setRows([...merged.values()]);
     setLoading(false);
   };
@@ -915,7 +966,7 @@ export default function AttendanceBoard() {
                                       <tr className="border-b border-border bg-slate-50">
                                         <th className={`text-left px-4 py-2 ${flat ? "pl-8" : "pl-14"} text-xs text-muted-foreground uppercase tracking-wide`}>Shift</th>
                                         <th className="text-right px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">Contracted</th>
-                                        <th className="text-right px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">On roster</th>
+                                        <th className="text-right px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">Deployed</th>
                                         <th className="text-left px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">Reported</th>
                                         <th className="text-left px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">Exceptions</th>
                                         <th className="text-left px-4 py-2 text-xs text-muted-foreground uppercase tracking-wide">Status</th>
@@ -947,7 +998,15 @@ export default function AttendanceBoard() {
                                               })()}
                                             </td>
                                             <td className="px-4 py-3 text-sm text-right text-muted-foreground">{r.contracted || "—"}</td>
-                                            <td className="px-4 py-3 text-sm text-right text-muted-foreground">{r.roster.length}</td>
+                                            <td className="px-4 py-3 text-sm text-right text-muted-foreground">
+                                              {r.roster.length}
+                                              {(() => {
+                                                const cov = r.roster.filter((g) => g.is_reliever).length;
+                                                return cov > 0 ? (
+                                                  <span className="block text-[11px] text-info-600 dark:text-info-500">incl. {cov} cover</span>
+                                                ) : null;
+                                              })()}
+                                            </td>
                                             <td className="px-4 py-3 text-sm">
                                               {(() => {
                                                 const x = r.reported.size, y = r.roster.length;
@@ -1360,6 +1419,9 @@ function ShiftDrillModal({
                     {/* Shift is a display label only — shown for reference; marking
                         and confirmation ignore it (double duty aside). */}
                     <span className="ml-1.5 capitalize inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 text-[10px] align-middle">{g.scheduled_shift}</span>
+                    {g.is_reliever && (
+                      <span className="ml-1.5 inline-block px-1.5 py-0.5 rounded bg-info-50 text-info-700 dark:text-info-500 border border-info-200 text-[10px] align-middle">cover</span>
+                    )}
                   </p>
                   <p className="text-xs text-slate-400 font-mono">{guardDisplayCode(g, shift.client_prefix)}</p>
                   {shift.reported.has(g.guard_id) && (

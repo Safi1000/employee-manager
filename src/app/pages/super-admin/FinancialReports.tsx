@@ -19,6 +19,7 @@ import Button from "../../components/Button";
 import Partners from "./Partners";
 import Cashflow from "./CashFlow";
 import RegionalPerformance from "./RegionalPerformance";
+import ContractedVsDeployed from "./ContractedVsDeployed";
 import {
   supabase,
   INVOICE_ATTACHMENTS_BUCKET,
@@ -102,7 +103,7 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
   const canEditAccounting = hasPermission(profile, "accounting.edit");
   const scopeCompanyId = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
   const scopeCompanyFilter = scopeCompanyId ?? "00000000-0000-0000-0000-000000000000";
-  const [activeTab, setActiveTab] = useState<"pl" | "regional" | "clients" | "partnership" | "rmd">(
+  const [activeTab, setActiveTab] = useState<"pl" | "regional" | "clients" | "partnership" | "rmd" | "cover">(
     partnershipOnly ? "partnership" : "pl",
   );
   // Top-level switch merging the Financial Report and Cash Flow pages under one
@@ -640,7 +641,7 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
           ? "Regional and equity partner allocation, and each partner's running account"
           : "P&L, client statements and cash flow"}
         actions={
-          topTab === "cashflow" || activeTab === "rmd" || activeTab === "clients" ? undefined : (
+          topTab === "cashflow" || activeTab === "rmd" || activeTab === "clients" || activeTab === "cover" ? undefined : (
           <ExportButton
             onExport={() => {
               if (activeTab === "pl") {
@@ -721,6 +722,7 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                 { key: "pl", label: "Profit & Loss" },
                 { key: "regional", label: "Regional Performance" },
                 { key: "clients", label: "Client Statements" },
+                { key: "cover", label: "Contracted vs Deployed" },
               ] as const).map((tab) => (
                 <button
                   key={tab.key}
@@ -918,6 +920,8 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
               <RegionalPerformance />
             </div>
           )}
+
+          {activeTab === "cover" && <ContractedVsDeployed />}
 
           {activeTab === "clients" && (
             <div>

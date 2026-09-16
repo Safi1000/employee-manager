@@ -23,7 +23,7 @@ import { isSeparatedState } from "../../lib/employmentWindow";
 import { hasPermission, useAuth } from "../../lib/auth";
 import { guardDisplayCode } from "../../lib/guardCode";
 import { ChangeShiftModal, type EmployeeRow } from "./EmployeeManagement";
-import ContractEditorModal from "../../components/ContractEditorModal";
+import ShiftSplitModal from "../../components/ShiftSplitModal";
 import { SlidersHorizontal } from "lucide-react";
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -35,6 +35,9 @@ export default function ShiftManagement() {
   // Accounts). Mirror the existing Assignments & Pay gate exactly: canHr guards
   // the button; the change_guard_shift RPC enforces employees.edit at the DB.
   const canHr = hasPermission(profile, "assignments.hr") || hasPermission(profile, "employees.edit");
+  // The Day/Night split is an OPS rebalance, not a commercial change: it goes
+  // through set_shift_split (gated on assignments.hr at the DB, 0450), so it is
+  // gated here like the Shift Change button beside it, not on contracts.edit.
 
   const [clients, setClients] = useState<Client[]>([]);
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
@@ -45,10 +48,10 @@ export default function ShiftManagement() {
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [shiftTarget, setShiftTarget] = useState<EmployeeRow | null>(null);
-  // "Edit rules" opens the real ContractEditorModal (contract_lines is the
-  // authority for committed counts / shift detail, and drives Assignments & Pay's
-  // Contracted/variance). We edit the client's active guard-deployment contract,
-  // the newest if several. No parallel editor — same data the Contracts page edits.
+  // "Edit rules" opens the Day/Night split for the client's active guard-deployment
+  // contract (newest if several). It redistributes each category's committed count
+  // between day and night on contract_lines — never the total, which is the
+  // Contracts page's job. Billing (rate / line value) is not shown here.
   const [rulesClient, setRulesClient] = useState<Client | null>(null);
 
   const loadData = useCallback(async () => {
@@ -259,12 +262,10 @@ export default function ShiftManagement() {
       )}
 
       {rulesClient && activeContractByClient.get(rulesClient.id) && (
-        <ContractEditorModal
-          isOpen
-          linesOnly
-          clientId={rulesClient.id}
-          clientName={rulesClient.name}
+        <ShiftSplitModal
           contract={activeContractByClient.get(rulesClient.id)!}
+          clientName={rulesClient.name}
+          canEdit={canHr}
           onClose={() => setRulesClient(null)}
           onSaved={() => { setRulesClient(null); loadData(); }}
         />

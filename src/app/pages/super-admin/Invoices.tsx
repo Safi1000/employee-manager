@@ -34,7 +34,6 @@ import {
   type InvoiceTax,
   type InvoiceStatus,
   type BankAccount,
-  type BankTransactionKind,
   type InvoicePayment,
   type Branch,
 } from "../../lib/supabase";
@@ -397,57 +396,6 @@ export default function Invoices() {
     a.download = path.split("/").pop() ?? "attachment";
     a.click();
     URL.revokeObjectURL(url);
-  };
-
-  const applyCashDelta = async (delta: number) => {
-    if (!treasuryCompanyId) {
-      throw new Error("No company is selected, so there is no cash balance to adjust. Pick a company with the “Viewing as” selector first.");
-    }
-    const { data } = await supabase
-      .from("treasury")
-      .select("id, cash_balance")
-      .eq("company_id", treasuryCompanyId)
-      .maybeSingle();
-    if (!data) {
-      const { error: insErr } = await supabase
-        .from("treasury")
-        .insert({ company_id: treasuryCompanyId, cash_balance: delta });
-      if (insErr) throw insErr;
-      return;
-    }
-    const { error: upErr } = await supabase
-      .from("treasury")
-      .update({ cash_balance: Number(data.cash_balance) + delta, updated_at: new Date().toISOString() })
-      .eq("id", data.id);
-    if (upErr) throw upErr;
-  };
-
-  const applyBankDelta = async (bankId: string, delta: number) => {
-    const { data: bank, error: selErr } = await supabase
-      .from("bank_accounts")
-      .select("balance")
-      .eq("id", bankId)
-      .maybeSingle();
-    if (selErr) throw selErr;
-    if (!bank) throw new Error("Bank account not found.");
-    const { error: upErr } = await supabase
-      .from("bank_accounts")
-      .update({ balance: Number(bank.balance) + delta, updated_at: new Date().toISOString() })
-      .eq("id", bankId);
-    if (upErr) throw upErr;
-  };
-
-  const logTransaction = async (row: {
-    bank_account_id: string | null;
-    kind: BankTransactionKind;
-    amount: number;
-    cash_delta: number;
-    account_delta: number;
-    description: string | null;
-    reference_id?: string | null;
-  }) => {
-    const { error: logErr } = await supabase.from("bank_transactions").insert(row);
-    if (logErr) throw logErr;
   };
 
   // Build the invoice Ref in the {CompanyPrefix}-{YY}-{ClientPrefix}-{MM} format

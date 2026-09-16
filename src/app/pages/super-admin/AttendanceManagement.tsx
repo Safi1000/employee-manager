@@ -90,6 +90,9 @@ type AttendanceManagementProps = { relieversOnly?: boolean };
 
 export default function AttendanceManagement({ relieversOnly = false }: AttendanceManagementProps = {}) {
   const [clients, setClients] = useState<Client[]>([]);
+  // Sites for the reliever picker — a reliever names the SITE he worked (0449),
+  // and worked_for_client_id is derived from it by the DB trigger.
+  const [sites, setSites] = useState<{ id: string; client_id: string; name: string }[]>([]);
   const [contracts, setContracts] = useState<ContractLeaveRow[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [employees, setEmployees] = useState<EmployeeLite[]>([]);
@@ -98,8 +101,14 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   // never the guard's flat current shift.
   const [shiftResolver, setShiftResolver] = useState<ShiftResolver | null>(null);
   const [todayRecords, setTodayRecords] = useState<Record<string, AttendanceStatus>>({});
-  // For relievers: per-day client attribution. Mirrors todayRecords.
+  // For relievers: per-day SITE worked (0449). Mirrors todayRecords. The value is
+  // a site_id; the DB derives worked_for_client_id from it.
   const [todayWorkedFor, setTodayWorkedFor] = useState<Record<string, string | null>>({});
+  // For relievers: per-day "covering for" guard (optional, nullable — item 4).
+  const [todayCovering, setTodayCovering] = useState<Record<string, string | null>>({});
+  // Guards absent/on-leave per site on the selected date — the covering-for
+  // candidates. Loaded with the day's history.
+  const [coverBySite, setCoverBySite] = useState<Map<string, { id: string; name: string }[]>>(new Map());
   // The worked_shift of the row the daily page is showing for each employee, so a
   // mark/unmark hits that exact row (and doesn't create a duplicate or wipe a
   // sibling shift on a multi-shift day). Absent = mark a fresh row on dayShift.
@@ -244,8 +253,9 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   const toInputRef = useRef<HTMLInputElement>(null);
 
   const loadStaticData = async () => {
-    const [cliRes, brRes, empRes, ebRes, conRes, profRes] = await Promise.all([
+    const [cliRes, siteRes, brRes, empRes, ebRes, conRes, profRes] = await Promise.all([
       supabase.from("clients").select("*").order("name"),
+      supabase.from("sites").select("id, client_id, name").order("name"),
       supabase.from("branches").select("*").order("is_head_office", { ascending: false }).order("name"),
       // The employee roster drives the whole attendance grid, so scoping it to
       // the selected region scopes the screen.
@@ -270,6 +280,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     if (ebRes.error) setError(ebRes.error.message);
     if (conRes.error) setError(conRes.error.message);
     setClients(cliRes.data ?? []);
+    setSites((siteRes.data ?? []) as { id: string; client_id: string; name: string }[]);
     setBranches((brRes.data ?? []) as Branch[]);
     setContracts((conRes.data ?? []) as ContractLeaveRow[]);
     const pmap: Record<string, string> = {};
@@ -311,10 +322,10 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   const loadRecordsForDate = async (d: string) => {
     // The day's marks and the day's supervisor sign-offs are independent
     // reads; one round trip instead of two.
-    const [{ data, error: err }, { data: confs }] = await Promise.all([
+    const [{ data, error: err }, { data: confs }, { data: coverRows }] = await Promise.all([
       supabase
         .from("attendance_records")
-        .select("employee_id, status, worked_for_client_id, worked_shift, marked_by_user_id")
+        .select("employee_id, status, worked_for_client_id, site_id, covering_for_guard_id, worked_shift, marked_by_user_id")
         .eq("attendance_date", d),
       // Supervisor sign-offs for this date (namespaced group_key so they never
       // collide with the Attendance board's per-shift confirmation rows).
@@ -323,6 +334,14 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         .select("group_key, supervisor_name, confirmed_at")
         .eq("attendance_date", d)
         .like("group_key", "daily:%"),
+      // Covering-for candidates (item 4): guards absent / on leave at a site that
+      // day. A reliever's mark defaults its covering_for_guard_id to one of these.
+      supabase
+        .from("attendance_records")
+        .select("employee_id, site_id, status, employees:employee_id(full_name)")
+        .eq("attendance_date", d)
+        .not("site_id", "is", null)
+        .in("status", ["absent", "leave", "rotation_leave", "rest_day"]),
     ]);
     if (err) {
       setError(err.message);
@@ -351,18 +370,31 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       "day";
     const statusMap: Record<string, AttendanceStatus> = {};
     const clientMap: Record<string, string | null> = {};
+    const coveringMap: Record<string, string | null> = {};
     const shiftMap: Record<string, string> = {};
     const markedByMap: Record<string, string | null> = {};
     for (const [empId, rows] of rowsByEmp) {
       const want = shiftForDate(empId);
       const chosen = rows.find((r) => r.worked_shift === want) ?? rows[0];
       statusMap[empId] = chosen.status;
-      clientMap[empId] = chosen.worked_for_client_id ?? null;
+      // The reliever picker now names the SITE (0449); fall back to the legacy
+      // client value for historical rows that predate the site column.
+      clientMap[empId] = chosen.site_id ?? chosen.worked_for_client_id ?? null;
+      coveringMap[empId] = chosen.covering_for_guard_id ?? null;
       shiftMap[empId] = chosen.worked_shift ?? want;
       markedByMap[empId] = chosen.marked_by_user_id ?? null;
     }
+    const coverMap = new Map<string, { id: string; name: string }[]>();
+    for (const r of (coverRows ?? []) as any[]) {
+      if (!r.site_id) continue;
+      const arr = coverMap.get(r.site_id) ?? [];
+      arr.push({ id: r.employee_id, name: r.employees?.full_name ?? "—" });
+      coverMap.set(r.site_id, arr);
+    }
     setTodayRecords(statusMap);
     setTodayWorkedFor(clientMap);
+    setTodayCovering(coveringMap);
+    setCoverBySite(coverMap);
     setTodayShift(shiftMap);
     setTodayMarkedBy(markedByMap);
   };
@@ -525,13 +557,15 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   const markStatus = async (
     employeeId: string,
     status: AttendanceStatus,
-    workedForClientId?: string | null,
+    // For relievers this is the SITE worked (0449); the DB derives the client.
+    relieverSiteId?: string | null,
+    coveringForGuardId?: string | null,
   ) => {
     const employee = employees.find((e) => e.id === employeeId);
     const isReliever = employee?.category === "reliever";
-    // Relievers marked Present must have a client picked.
-    if (isReliever && status === "present" && !workedForClientId) {
-      setError("Pick which client this reliever worked for before marking Present.");
+    // Relievers marked Present must name the site they worked.
+    if (isReliever && status === "present" && !relieverSiteId) {
+      setError("Pick which site this reliever worked before marking Present.");
       return;
     }
     // No future attendance (same rule as the board).
@@ -559,7 +593,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     setTodayMarkedBy((m) => ({ ...m, [employeeId]: profile?.id ?? null }));
     setTodayWorkedFor((m) => ({
       ...m,
-      [employeeId]: status === "present" ? workedForClientId ?? null : null,
+      [employeeId]: status === "present" ? relieverSiteId ?? null : null,
     }));
     // A leave is the whole day and must replace it, not join it (0393).
     try {
@@ -578,7 +612,14 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
           status,
           scheduled_shift: shift,
           worked_shift: shift,
-          worked_for_client_id: status === "present" ? workedForClientId ?? null : null,
+          // worked_for_client_id is derived by the DB: from the posting for a
+          // non-reliever, from site_id for a present reliever (0449).
+          worked_for_client_id: null,
+          // A reliever names the site he worked; non-relievers get it from the
+          // posting (trigger), so it is only sent for relievers.
+          ...(isReliever ? { site_id: status === "present" ? relieverSiteId ?? null : null } : {}),
+          // Optional "covering for" (item 4) — nullable, nothing depends on it.
+          ...(isReliever ? { covering_for_guard_id: status === "present" ? coveringForGuardId ?? null : null } : {}),
           // Record who reported this mark, so the daily list can show it.
           marked_by_user_id: profile?.id ?? null,
           marked_at: new Date().toISOString(),
@@ -729,14 +770,18 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         // Update the row already on screen (if any) rather than spawning a second
         // shift row — same rule as the per-row mark.
         const shift = todayShift[e.id] ?? dayShift(e.id);
+        const isRel = e.category === "reliever";
         return {
           employee_id: e.id,
           attendance_date: date,
           status: "present" as AttendanceStatus,
           scheduled_shift: shift,
           worked_shift: shift,
-          worked_for_client_id:
-            e.category === "reliever" ? todayWorkedFor[e.id] ?? null : null,
+          // Derived by the DB: from the posting (non-reliever) or from site_id
+          // (present reliever). See 0449.
+          worked_for_client_id: null,
+          ...(isRel ? { site_id: todayWorkedFor[e.id] ?? null } : {}),
+          ...(isRel ? { covering_for_guard_id: todayCovering[e.id] ?? null } : {}),
           marked_by_user_id: profile?.id ?? null,
           marked_at: new Date().toISOString(),
         };
@@ -745,7 +790,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
       setError(
         outsideWindow.length > 0
           ? `Nothing marked — all ${outsideWindow.length} visible row${outsideWindow.length === 1 ? " is" : "s are"} outside their employment or contract window for this date.`
-          : "All visible rows are relievers without a picked client. Set their client first.",
+          : "All visible rows are relievers without a picked site. Set their site first.",
       );
       return;
     }
@@ -793,7 +838,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     const notes: string[] = [];
     if (skipped.length > 0) {
       notes.push(
-        `${skipped.length} reliever${skipped.length === 1 ? "" : "s"} without a picked client: ${skipped.slice(0, 3).join(", ")}${skipped.length > 3 ? "…" : ""}`,
+        `${skipped.length} reliever${skipped.length === 1 ? "" : "s"} without a picked site: ${skipped.slice(0, 3).join(", ")}${skipped.length > 3 ? "…" : ""}`,
       );
     }
     if (outsideWindow.length > 0) {
@@ -1102,7 +1147,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         title={relieversOnly ? "Reliever Attendance" : "Attendance Timesheet (corrections)"}
         subtitle={
           relieversOnly
-            ? "Pick the client a reliever covered, then mark present"
+            ? "Pick the site a reliever covered, then mark present"
             : "Daily attendance, bulk marking and historical timesheet"
         }
         actions={
@@ -1438,6 +1483,13 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                                   <Check className="w-3.5 h-3.5" strokeWidth={2} />
                                   Confirmed by {conf.by}
                                 </span>
+                              ) : relieversOnly ? (
+                                // Relievers are confirmed under the SITE they worked,
+                                // on the daily Attendance Board, alongside that site's
+                                // guards (0449) — not company-wide from here.
+                                <span className="ml-auto text-[11px] text-muted-foreground italic">
+                                  Confirmed per site on the Attendance Board
+                                </span>
                               ) : (
                                 canBulk && (
                                   <button
@@ -1501,25 +1553,63 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                           )}
                         </td>
                         <td className="px-6 py-4 text-sm text-slate-600">
-                          {employee.category === "reliever" ? (
-                            <ThemedSelect
-                              value={todayWorkedFor[employee.id] ?? ""}
-                              onChange={(e) => {
-                                const newClient = e.target.value || null;
-                                setTodayWorkedFor((m) => ({ ...m, [employee.id]: newClient }));
-                                // If they're already marked Present, persist the change.
-                                if (current === "present" && newClient) {
-                                  markStatus(employee.id, "present", newClient);
-                                }
-                              }}
-                              className="px-2 py-1 border border-slate-200 rounded text-sm max-w-[12rem]"
-                            >
-                              <option value="">Pick client…</option>
-                              {clients.map((c) => (
-                                <option key={c.id} value={c.id}>{c.name}</option>
-                              ))}
-                            </ThemedSelect>
-                          ) : (
+                          {employee.category === "reliever" ? (() => {
+                            const relSite = todayWorkedFor[employee.id] ?? "";
+                            const cands = relSite ? (coverBySite.get(relSite) ?? []) : [];
+                            // Default the "covering for" to the first absent/leave
+                            // guard at the site until the user says otherwise.
+                            const covVal = (employee.id in todayCovering)
+                              ? (todayCovering[employee.id] ?? "")
+                              : (cands[0]?.id ?? "");
+                            const effCovering = covVal || null;
+                            return (
+                              <div className="space-y-1">
+                                <ThemedSelect
+                                  value={relSite}
+                                  onChange={(e) => {
+                                    const newSite = e.target.value || null;
+                                    setTodayWorkedFor((m) => ({ ...m, [employee.id]: newSite }));
+                                    if (current === "present" && newSite) {
+                                      markStatus(employee.id, "present", newSite, effCovering);
+                                    }
+                                  }}
+                                  className="px-2 py-1 border border-slate-200 rounded text-sm max-w-[12rem]"
+                                >
+                                  <option value="">Pick site…</option>
+                                  {clients.map((c) => {
+                                    const cs = sites.filter((s) => s.client_id === c.id);
+                                    if (cs.length === 0) return null;
+                                    return (
+                                      <optgroup key={c.id} label={c.name}>
+                                        {cs.map((s) => (
+                                          <option key={s.id} value={s.id}>{s.name}</option>
+                                        ))}
+                                      </optgroup>
+                                    );
+                                  })}
+                                </ThemedSelect>
+                                {relSite && (
+                                  <ThemedSelect
+                                    value={covVal}
+                                    onChange={(e) => {
+                                      const cov = e.target.value || null;
+                                      setTodayCovering((m) => ({ ...m, [employee.id]: cov }));
+                                      if (current === "present") {
+                                        markStatus(employee.id, "present", relSite, cov);
+                                      }
+                                    }}
+                                    className="px-2 py-1 border border-slate-200 rounded text-xs max-w-[12rem] text-slate-500"
+                                    title="Covering for (optional)"
+                                  >
+                                    <option value="">Covering for… (none)</option>
+                                    {cands.map((g) => (
+                                      <option key={g.id} value={g.id}>covering {g.name}</option>
+                                    ))}
+                                  </ThemedSelect>
+                                )}
+                              </div>
+                            );
+                          })() : (
                             employee.client_name ?? "—"
                           )}
                         </td>
@@ -1567,15 +1657,19 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
                               return (
                                 <button
                                   key={status}
-                                  onClick={() =>
-                                    markStatus(
-                                      employee.id,
-                                      status,
+                                  onClick={() => {
+                                    const relSite =
                                       employee.category === "reliever"
                                         ? todayWorkedFor[employee.id] ?? null
-                                        : null,
-                                    )
-                                  }
+                                        : null;
+                                    const cov =
+                                      employee.category === "reliever" && relSite
+                                        ? (employee.id in todayCovering
+                                            ? todayCovering[employee.id]
+                                            : (coverBySite.get(relSite)?.[0]?.id ?? null))
+                                        : null;
+                                    markStatus(employee.id, status, relSite, cov);
+                                  }}
                                   disabled={
                                     isSaving ||
                                     beforeEffective ||
