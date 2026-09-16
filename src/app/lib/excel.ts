@@ -1,14 +1,24 @@
-import * as XLSX from "xlsx";
+import type * as XLSXNS from "xlsx";
+
+// xlsx is ~290 KB and every screen with an Export button imports this module,
+// so it is loaded the first time a workbook is actually built, not with the
+// page. Every exported export* function awaits ensureXlsx() before touching
+// it; the helpers below run only after that and can use the module directly.
+let XLSX: typeof XLSXNS;
+async function ensureXlsx() {
+  if (!XLSX) XLSX = await import("xlsx");
+}
+
 import { saveBlob, mimeFor } from "./saveFile";
 
 const DEFAULT_COMPANY = "Guards & Guides Security Services (Pvt.) Limited";
 
-function setColWidths(ws: XLSX.WorkSheet, widths: number[]) {
+function setColWidths(ws: XLSXNS.WorkSheet, widths: number[]) {
   ws["!cols"] = widths.map((w) => ({ wch: w }));
 }
 
 function mergeCell(
-  ws: XLSX.WorkSheet,
+  ws: XLSXNS.WorkSheet,
   startRow: number,
   startCol: number,
   endRow: number,
@@ -23,7 +33,7 @@ function mergeCell(
 // through the bytes instead so the same call yields a download on the web and a
 // share sheet on a phone. Fire-and-forget: every caller is a click handler that
 // has never awaited this, and the failure mode (no file) is self-evident.
-function downloadWorkbook(wb: XLSX.WorkBook, fileName: string) {
+function downloadWorkbook(wb: XLSXNS.WorkBook, fileName: string) {
   const bytes = XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
   void saveBlob(new Blob([bytes], { type: mimeFor(fileName) }), fileName);
 }
@@ -45,7 +55,7 @@ const fmtDate = (iso: string | null | undefined) => {
 };
 
 // ---------- Generic table exporter ----------
-export function exportTable(opts: {
+function exportTableImpl(opts: {
   fileName: string;
   sheetName?: string;
   title?: string;
@@ -85,7 +95,7 @@ export type AdvanceExportRow = {
   remarks: string;
 };
 
-export function exportAdvances(rows: AdvanceExportRow[], fileName = "Advances.xlsx") {
+function exportAdvancesImpl(rows: AdvanceExportRow[], fileName = "Advances.xlsx") {
   const headers = ["Date", "Employee Name", "Client", "Amount", "Mode", "Remarks"];
   const data: any[][] = [];
   data.push(["Advances Format"]);
@@ -121,7 +131,7 @@ export type ExpenseExportRow = {
   mode: string;
 };
 
-export function exportExpenses(rows: ExpenseExportRow[], fileName = "Expenses.xlsx") {
+function exportExpensesImpl(rows: ExpenseExportRow[], fileName = "Expenses.xlsx") {
   const headers = ["Date", "Particulars", "Category", "Client", "Amount", "Mode"];
   const data: any[][] = [];
   data.push(["Expenses Format"]);
@@ -156,7 +166,7 @@ export type ClientStatementExportRow = {
   netIncome: number;
 };
 
-export function exportClientStatements(
+function exportClientStatementsImpl(
   rows: ClientStatementExportRow[],
   periodLabel: string,
   fileName = "Client Statement.xlsx",
@@ -222,7 +232,7 @@ export type PLFigures = {
   netProfit: number;
 };
 
-export function exportProfitLoss(
+function exportProfitLossImpl(
   fig: PLFigures,
   periodLabel: string,
   fileName = "P&L.xlsx",
@@ -291,7 +301,7 @@ export type LedgerClient = {
   entries: LedgerEntry[];
 };
 
-export function exportReceivableLedger(
+function exportReceivableLedgerImpl(
   clients: LedgerClient[],
   fileName = "Receivable Ledger.xlsx",
 ) {
@@ -406,7 +416,7 @@ export type StatementLedgerRow = {
   balance: number;
 };
 
-export function exportClientStatementLedger(opts: {
+function exportClientStatementLedgerImpl(opts: {
   clientName: string;
   clientCode?: string | null;
   periodLabel: string;
@@ -533,7 +543,7 @@ export type PayrollExportRow = {
 
 export type PayrollExportSheet = { name: string; rows: PayrollExportRow[] };
 
-export function exportPayrollSheets(
+function exportPayrollSheetsImpl(
   sheets: PayrollExportSheet[],
   periodLabel: string,
   fileName?: string,
@@ -684,7 +694,7 @@ export type BankStatementRow = {
   cashOut: number;
 };
 
-export function exportBankStatement(
+function exportBankStatementImpl(
   rows: BankStatementRow[],
   opts: { fromDate?: string; toDate?: string; bankLabel: string },
   fileName = "Bank Statement.xlsx",
@@ -813,7 +823,7 @@ export function deriveAttendanceShifts(rows: AttendanceEmployeeRow[], override?:
   return codes.size ? orderShifts(codes) : ["day"];
 }
 
-export function exportAttendance(opts: {
+function exportAttendanceImpl(opts: {
   monthLabel: string; // e.g. "MARCH 2026" or a range label
   daysInMonth: number;
   clientLabel?: string;
@@ -963,4 +973,54 @@ export function exportAttendance(opts: {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, safeSheetName(monthLabel.toUpperCase()));
   downloadWorkbook(wb, opts.fileName ?? `Attendance ${monthLabel}.xlsx`);
+}
+
+export async function exportTable(...args: Parameters<typeof exportTableImpl>): Promise<ReturnType<typeof exportTableImpl>> {
+  await ensureXlsx();
+  return exportTableImpl(...args);
+}
+
+export async function exportAdvances(...args: Parameters<typeof exportAdvancesImpl>): Promise<ReturnType<typeof exportAdvancesImpl>> {
+  await ensureXlsx();
+  return exportAdvancesImpl(...args);
+}
+
+export async function exportExpenses(...args: Parameters<typeof exportExpensesImpl>): Promise<ReturnType<typeof exportExpensesImpl>> {
+  await ensureXlsx();
+  return exportExpensesImpl(...args);
+}
+
+export async function exportClientStatements(...args: Parameters<typeof exportClientStatementsImpl>): Promise<ReturnType<typeof exportClientStatementsImpl>> {
+  await ensureXlsx();
+  return exportClientStatementsImpl(...args);
+}
+
+export async function exportProfitLoss(...args: Parameters<typeof exportProfitLossImpl>): Promise<ReturnType<typeof exportProfitLossImpl>> {
+  await ensureXlsx();
+  return exportProfitLossImpl(...args);
+}
+
+export async function exportReceivableLedger(...args: Parameters<typeof exportReceivableLedgerImpl>): Promise<ReturnType<typeof exportReceivableLedgerImpl>> {
+  await ensureXlsx();
+  return exportReceivableLedgerImpl(...args);
+}
+
+export async function exportClientStatementLedger(...args: Parameters<typeof exportClientStatementLedgerImpl>): Promise<ReturnType<typeof exportClientStatementLedgerImpl>> {
+  await ensureXlsx();
+  return exportClientStatementLedgerImpl(...args);
+}
+
+export async function exportPayrollSheets(...args: Parameters<typeof exportPayrollSheetsImpl>): Promise<ReturnType<typeof exportPayrollSheetsImpl>> {
+  await ensureXlsx();
+  return exportPayrollSheetsImpl(...args);
+}
+
+export async function exportBankStatement(...args: Parameters<typeof exportBankStatementImpl>): Promise<ReturnType<typeof exportBankStatementImpl>> {
+  await ensureXlsx();
+  return exportBankStatementImpl(...args);
+}
+
+export async function exportAttendance(...args: Parameters<typeof exportAttendanceImpl>): Promise<ReturnType<typeof exportAttendanceImpl>> {
+  await ensureXlsx();
+  return exportAttendanceImpl(...args);
 }

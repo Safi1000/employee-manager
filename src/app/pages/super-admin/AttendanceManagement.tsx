@@ -8,7 +8,9 @@ import Modal from "../../components/Modal";
 import ExportButton from "../../components/ExportButton";
 import ClientFilterSelect from "../../components/ClientFilterSelect";
 import BulkMarkByEmployeeModal from "../../components/BulkMarkByEmployeeModal";
-import { exportAttendance, type AttendanceEmployeeRow } from "../../lib/excel";
+// jsPDF (381 KB) and xlsx (288 KB) are loaded at the click, not with the page:
+// every screen with an Export or PDF button was paying for both on open.
+import type { AttendanceEmployeeRow } from "../../lib/excel";
 import { loadShiftResolver, type ShiftResolver } from "../../lib/shiftOnDate";
 import {
   supabase,
@@ -1129,6 +1131,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         ? clients.find((c) => c.id === clientFilter)?.name ?? undefined
         : undefined;
 
+    const { exportAttendance } = await import("../../lib/excel");
     exportAttendance({
       monthLabel,
       daysInMonth: dim,

@@ -4,9 +4,9 @@ import { Link } from "react-router";
 import { Plus, Search, Upload, AlertCircle, Loader2, X, Trash2, ChevronDown, ChevronRight as ChevronRightIcon, FileText, SlidersHorizontal, Image as ImageIcon, ArrowUp, ArrowDown, ArrowUpDown, Camera } from "lucide-react";
 import CameraCapture from "../../components/CameraCapture";
 import DocumentInput from "../../components/DocumentInput";
-import jsPDF from "jspdf";
-import { generateEmployeeFormPdf, type FormApprovals } from "../../lib/employeeFormPdf";
-import { generateIdCardPdf } from "../../lib/idCardPdf";
+// jsPDF (381 KB) and xlsx (288 KB) are loaded at the click, not with the page:
+// every screen with an Export or PDF button was paying for both on open.
+import type { FormApprovals } from "../../lib/employeeFormPdf";
 import { brandingFromCompany, type PdfBranding } from "../../lib/pdfBranding";
 import EmployeeVettingFields from "../../components/EmployeeVettingFields";
 import Header from "../../components/Header";
@@ -27,7 +27,6 @@ import {
   formatCnicInline,
   type EmployeeExportContext,
 } from "../../lib/employeeExportFields";
-import { exportTable } from "../../lib/excel";
 import { useRegion, withRegion } from "../../lib/region";
 import { isSeparatedState, lifecycleStatusLabel } from "../../lib/employmentWindow";
 import {
@@ -1399,6 +1398,7 @@ export default function EmployeeManagement() {
     // so a chosen column cannot land under another column's heading — the defect
     // three position-matched literal arrays invited.
     const fullRows = await hydrateRows(sorted);
+    const { exportTable } = await import("../../lib/excel");
     exportTable({
       fileName: "Employees.xlsx",
       sheetName: "Employees",
@@ -1806,6 +1806,7 @@ export default function EmployeeManagement() {
       supabase.from("employee_document_checklist").select("*").eq("employee_id", emp.id).order("doc_type"),
       buildApprovals(emp.id),
     ]);
+    const { generateEmployeeFormPdf } = await import("../../lib/employeeFormPdf");
     generateEmployeeFormPdf({
       employee: emp,
       branding: brandingFromCompany(company),
@@ -4219,6 +4220,11 @@ function BulkGenerateModal({
 
   const run = async () => {
     setRunning(true); setDone(0); setFailures([]); setFinished(false);
+    const [{ default: jsPDF }, { generateEmployeeFormPdf }, { generateIdCardPdf }] = await Promise.all([
+      import("jspdf"),
+      import("../../lib/employeeFormPdf"),
+      import("../../lib/idCardPdf"),
+    ]);
     const combined = new jsPDF({ unit: "mm", format: "a4" });
     let started = false;
     const fails: string[] = [];

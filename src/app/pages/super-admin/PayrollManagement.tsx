@@ -2,7 +2,8 @@ import ThemedSelect from "../../components/ThemedSelect";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Search, Download, AlertCircle, X, Loader2, SlidersHorizontal, ChevronDown, ChevronRight, MapPin, Building2, Lock, Check } from "lucide-react";
-import jsPDF from "jspdf";
+// jsPDF (381 KB) and xlsx (288 KB) are loaded at the click, not with the page:
+// every screen with an Export or PDF button was paying for both on open.
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -23,7 +24,7 @@ import {
   type Branch,
   type Contract,
 } from "../../lib/supabase";
-import { exportPayrollSheets, type PayrollExportRow } from "../../lib/excel";
+import type { PayrollExportRow } from "../../lib/excel";
 import { useRegion, withRegion } from "../../lib/region";
 import { useAuth, hasPermission } from "../../lib/auth";
 import { loadCustodianOptions, ensureCustodianLocation, type CustodianOption } from "../../lib/custodian";
@@ -2055,7 +2056,8 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     setIsPayslipModalOpen(true);
   };
 
-  const downloadPdf = (row: RowState) => {
+  const downloadPdf = async (row: RowState) => {
+    const { default: jsPDF } = await import("jspdf");
     const doc = new jsPDF({ unit: "pt", format: "a4" });
     let y = 60;
     doc.setFontSize(18);
@@ -2331,7 +2333,8 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       }))
       .filter((sheet) => sheet.rows.length > 0);
 
-  const runExport = (keys: string[]) => {
+  const runExport = async (keys: string[]) => {
+    const { exportPayrollSheets } = await import("../../lib/excel");
     exportPayrollSheets(buildSheets(keys), formatPeriod(selectedPeriod));
   };
 

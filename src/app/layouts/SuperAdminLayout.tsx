@@ -1,3 +1,5 @@
+import { Suspense } from "react";
+import RouteLoading from "../components/RouteLoading";
 import { Outlet, useNavigate } from "react-router";
 import Sidebar, { type SidebarItem } from "../components/Sidebar";
 import AiChatWidget from "../components/AiChatWidget";
@@ -349,7 +351,9 @@ export default function SuperAdminLayout() {
             </>
           )}
         </TopBar>
-        <Outlet />
+        <Suspense fallback={<RouteLoading />}>
+          <Outlet />
+        </Suspense>
       </div>
       <AiChatWidget />
       <InactivityLogout />

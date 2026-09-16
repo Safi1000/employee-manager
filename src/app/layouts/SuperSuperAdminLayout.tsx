@@ -1,3 +1,5 @@
+import { Suspense } from "react";
+import RouteLoading from "../components/RouteLoading";
 import { Outlet } from "react-router";
 import Sidebar from "../components/Sidebar";
 import InactivityLogout from "../components/InactivityLogout";
@@ -13,7 +15,9 @@ export default function SuperSuperAdminLayout() {
       <Sidebar title="Super Super Admin" links={links} />
       <div className="flex-1 flex flex-col overflow-hidden">
         <TopBar />
-        <Outlet />
+        <Suspense fallback={<RouteLoading />}>
+          <Outlet />
+        </Suspense>
       </div>
       <InactivityLogout />
     </div>

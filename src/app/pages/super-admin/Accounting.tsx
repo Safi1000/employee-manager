@@ -2479,8 +2479,18 @@ export default function Accounting() {
                     filteredReceivables.map((item) => {
                       const isMonthView = receivablesMonth !== "all";
                       const canEditOpening = item.outstanding === 0 && !isMonthView;
+                      // Row colour is the client's settlement state at a glance:
+                      // green = nothing owed, red = something still outstanding.
+                      // Same predicate as the Outstanding cell's own colour, so
+                      // the row and the figure inside it cannot disagree.
+                      const owing = item.outstanding > 0;
                       return (
-                        <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                        <tr
+                          key={item.id}
+                          className={`transition-colors ${
+                            owing ? "bg-danger-50 hover:bg-danger-100" : "bg-success-50 hover:bg-success-100"
+                          }`}
+                        >
                           <td className="px-6 py-4 text-sm text-slate-900">
                             <div className="flex items-center gap-2">
                               <Building2 className="w-3.5 h-3.5 text-slate-400" strokeWidth={1.5} />
@@ -2524,7 +2534,7 @@ export default function Accounting() {
                             PKR {item.total_received.toLocaleString()}
                           </td>
                           <td className="px-6 py-4 text-sm text-right">
-                            <span className={item.outstanding > 0 ? "text-warning-600" : "text-success-600"}>
+                            <span className={owing ? "text-danger-700" : "text-success-700"}>
                               PKR {item.outstanding.toLocaleString()}
                             </span>
                           </td>
