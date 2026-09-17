@@ -1835,6 +1835,11 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     setBulkSubmitting(true);
     disburseLockRef.current = true;
     const bulkDisburseIso = new Date(`${bulkDisburseDate}T12:00:00`).toISOString();
+    // Rows actually disbursed so far. Each is its own transaction, so on a
+    // mid-batch failure the operator is TOLD how many landed ("199 of 450
+    // disbursed before this failed") rather than left to infer it from which
+    // rows sank to the bottom after the refresh.
+    let done = 0;
     try {
       for (const row of candidates) {
         const net = Math.round(row.net_salary);
@@ -1908,13 +1913,15 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
           if (/PAYSLIP_STALE/.test(rpcErr.message)) continue;
           throw new Error(`${row.employee.employee_code} ${row.employee.full_name}: ${rpcErr.message}`);
         }
+        done++;
       }
       setIsBulkDisburseOpen(false);
       setSelectedEmpIds(new Set());
       await loadAll();
       onDataChanged?.();
     } catch (err: any) {
-      setError(friendlyError(err));
+      const suffix = done > 0 ? ` — ${done} of ${candidates.length} disbursed before this failed.` : "";
+      setError(friendlyError(err) + suffix);
       await loadAll();
     } finally {
       setBulkSubmitting(false);
