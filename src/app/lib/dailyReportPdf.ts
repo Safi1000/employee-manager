@@ -2,7 +2,7 @@ import jsPDF from "jspdf";
 import { savePdf } from "./saveFile";
 import { formatDate } from "./date";
 import type { Company } from "./supabase";
-import type { AttendanceSummary } from "./attendanceSummary";
+import { describeUnconfirmed, type AttendanceSummary } from "./attendanceSummary";
 import { brandingFromCompany, drawBrandedHeader, drawBrandedFooter, hexToRgb } from "./pdfBranding";
 
 // Daily Operations Report: one line per client for a given day, carrying whatever
@@ -238,7 +238,19 @@ function drawAttendance(
   doc.setFontSize(7.5);
   summary.clients.forEach((c, i) => {
     const nameLines = doc.splitTextToSize(c.client_name, COLS[0].w - 4) as string[];
-    const rowH = nameLines.length * LINE_H + PAD_Y * 2;
+    // A partly confirmed client lists its sites under the status, one per line,
+    // each saying whether it was confirmed — the open ones are the instruction.
+    const attW = COLS[COLS.length - 1].w - 4;
+    const siteLines: { text: string; ok: boolean }[] = c.partial
+      ? c.sites.flatMap((site) =>
+          (doc.splitTextToSize(
+            // Plain ASCII: jsPDF's built-in Helvetica has no tick or cross glyph.
+            `${site.site_name}: ${site.confirmed ? "confirmed" : "NOT confirmed"}`,
+            attW,
+          ) as string[]).map((text) => ({ text, ok: site.confirmed })),
+        )
+      : [];
+    const rowH = Math.max(nameLines.length, 1 + siteLines.length) * LINE_H + PAD_Y * 2;
     if (y + rowH > FOOTER_LIMIT) {
       doc.addPage();
       y = MARGIN;
@@ -269,6 +281,20 @@ function drawAttendance(
     if (c.confirmed) {
       doc.setTextColor(22, 101, 52);
       doc.text(c.confirmed_by ? `Confirmed · ${c.confirmed_by}` : "Confirmed", x + 2, baseline);
+    } else if (c.partial) {
+      doc.setTextColor(180, 83, 9);
+      doc.setFont("helvetica", "bold");
+      doc.text(
+        `PARTLY CONFIRMED ${c.sites.filter((s) => s.confirmed).length}/${c.sites.length}`,
+        x + 2,
+        baseline,
+      );
+      doc.setFont("helvetica", "normal");
+      siteLines.forEach((ln, li) => {
+        if (ln.ok) doc.setTextColor(22, 101, 52);
+        else doc.setTextColor(185, 28, 28);
+        doc.text(ln.text, x + 2, baseline + (li + 1) * LINE_H);
+      });
     } else {
       doc.setTextColor(185, 28, 28);
       doc.setFont("helvetica", "bold");
@@ -293,8 +319,10 @@ function drawAttendance(
     doc.text(String(n), x + COLS[ni + 1].w - 2, y + 4.8, { align: "right" });
     x += COLS[ni + 1].w;
   });
+  const partialCount = summary.unconfirmed.filter((c) => c.partial).length;
   doc.text(
-    `${summary.clients.length - summary.unconfirmed.length}/${summary.clients.length} confirmed`,
+    `${summary.clients.length - summary.unconfirmed.length}/${summary.clients.length} confirmed` +
+      (partialCount > 0 ? ` · ${partialCount} partly` : ""),
     x + 2,
     y + 4.8,
   );
@@ -310,8 +338,15 @@ function drawAttendance(
   // The flag list, spelled out — a reader who skims the table still has to be
   // told, by name, whose attendance nobody confirmed.
   if (summary.unconfirmed.length > 0) {
-    const names = summary.unconfirmed.map((c) => c.client_name).join(", ");
-    const lines = doc.splitTextToSize(names, CONTENT_W - 6) as string[];
+    // Wholly unconfirmed clients share one comma list; each partly confirmed
+    // client gets its own line naming the sites still open.
+    const whole = summary.unconfirmed.filter((c) => !c.partial).map((c) => c.client_name).join(", ");
+    const lines = [
+      ...(whole ? (doc.splitTextToSize(whole, CONTENT_W - 6) as string[]) : []),
+      ...summary.unconfirmed
+        .filter((c) => c.partial)
+        .flatMap((c) => doc.splitTextToSize(describeUnconfirmed(c), CONTENT_W - 6) as string[]),
+    ];
     const boxH = lines.length * LINE_H + 10;
     if (y + boxH + 6 > FOOTER_LIMIT) { doc.addPage(); y = MARGIN; }
     y += 5;

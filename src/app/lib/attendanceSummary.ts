@@ -18,6 +18,16 @@ import { hiddenFromAttendance } from "./employmentWindow";
 // from counting "present" rows — those are only written when somebody clears an
 // earlier exception.
 
+/** One site of a client on the date, with its own confirmation. */
+export type SiteConfirmation = {
+  /** null for guards posted to the client with no site. */
+  site_id: string | null;
+  site_name: string;
+  deployed: number;
+  confirmed: boolean;
+  confirmed_by: string | null;
+};
+
 export type ClientAttendanceSummary = {
   client_id: string;
   client_name: string;
@@ -32,16 +42,21 @@ export type ClientAttendanceSummary = {
   other: number;
   /** Guards with an attendance row of any kind — how much was actually touched. */
   marked: number;
+  /** Every site with guards on the date is confirmed. */
   confirmed: boolean;
+  /** Some sites confirmed, others not — `sites` says which. */
+  partial: boolean;
   confirmed_by: string | null;
   confirmed_at: string | null;
+  /** Per-site confirmation, unconfirmed sites first. */
+  sites: SiteConfirmation[];
 };
 
 export type AttendanceSummary = {
   date: string;
   clients: ClientAttendanceSummary[];
   totals: { deployed: number; present: number; absent: number; leave: number; other: number };
-  /** Clients with guards deployed and no confirmation on the date. */
+  /** Clients not FULLY confirmed on the date — none of their sites, or only some. */
   unconfirmed: ClientAttendanceSummary[];
 };
 
@@ -80,7 +95,7 @@ export async function loadAttendanceSummary(
         .from("attendance_confirmations")
         .select("client_id, site_id, group_key, supervisor_name, confirmed_at")
         .eq("attendance_date", date),
-      supabase.from("sites").select("id, client_id"),
+      supabase.from("sites").select("id, client_id, name"),
       supabase.from("clients").select("id, name, branch_id").eq("company_id", companyId),
     ]);
 
@@ -88,19 +103,29 @@ export async function loadAttendanceSummary(
     ((cliRows ?? []) as any[]).map((c) => [c.id as string, c as { id: string; name: string; branch_id: string | null }]),
   );
   const clientOfSite = new Map(((siteRows ?? []) as any[]).map((s) => [s.id as string, s.client_id as string]));
+  const siteName = new Map(((siteRows ?? []) as any[]).map((s) => [s.id as string, (s.name ?? "—") as string]));
 
-  // A confirmation names its client directly, or names a site (group_key is the
-  // site id on a client-shift card). Both resolve to one client here — the page
-  // reports per client, not per site, and one confirmed site is evidence the
-  // client's day was looked at.
-  const confByClient = new Map<string, { supervisor_name: string | null; confirmed_at: string | null }>();
+  // Confirmation is per SITE: a client with three sites confirmed at two is not
+  // a confirmed client, and saying so by client alone would hide the third.
+  //
+  // A confirmation carrying a site (site_id, or a group_key that is a site id)
+  // covers that site. One carrying a client and NO site is client-wide and covers
+  // every site of that client — the same reading loadConfirmationGate uses for
+  // the attendance sheets, so the two cannot disagree about what is confirmed.
+  type Conf = { supervisor_name: string | null; confirmed_at: string | null };
+  const confBySite = new Map<string, Conf>();
+  const confClientWide = new Map<string, Conf>();
   for (const c of (confs ?? []) as any[]) {
-    const cid =
-      (c.client_id as string | null) ??
-      clientOfSite.get(String(c.site_id ?? c.group_key ?? "")) ??
-      null;
-    if (!cid || confByClient.has(cid)) continue;
-    confByClient.set(cid, { supervisor_name: c.supervisor_name ?? null, confirmed_at: c.confirmed_at ?? null });
+    const entry: Conf = { supervisor_name: c.supervisor_name ?? null, confirmed_at: c.confirmed_at ?? null };
+    const siteId =
+      (c.site_id as string | null) ??
+      (clientOfSite.has(String(c.group_key ?? "")) ? String(c.group_key) : null);
+    if (siteId) {
+      if (!confBySite.has(siteId)) confBySite.set(siteId, entry);
+      continue;
+    }
+    const cid = (c.client_id as string | null) ?? null;
+    if (cid && !confClientWide.has(cid)) confClientWide.set(cid, entry);
   }
 
   // One status per guard per day, the exception winning where a day carries both
@@ -142,7 +167,7 @@ export async function loadAttendanceSummary(
       client_name: c?.name ?? "—",
       branch_id: c?.branch_id ?? null,
       deployed: 0, present: 0, absent: 0, leave: 0, other: 0, marked: 0,
-      confirmed: false, confirmed_by: null, confirmed_at: null,
+      confirmed: false, partial: false, confirmed_by: null, confirmed_at: null, sites: [],
     };
   };
 
@@ -153,6 +178,17 @@ export async function loadAttendanceSummary(
     if (!clientById.has(cid)) continue;
     const row = byClient.get(cid) ?? blank(cid);
     row.deployed += 1;
+    const sid = (d.site_id as string | null) ?? null;
+    let site = row.sites.find((x) => x.site_id === sid);
+    if (!site) {
+      site = {
+        site_id: sid,
+        site_name: sid ? siteName.get(sid) ?? "—" : "No site",
+        deployed: 0, confirmed: false, confirmed_by: null,
+      };
+      row.sites.push(site);
+    }
+    site.deployed += 1;
     const st = statusByGuard.get(d.guard_id);
     if (st) row.marked += 1;
     if (st === "absent") row.absent += 1;
@@ -163,20 +199,33 @@ export async function loadAttendanceSummary(
 
   for (const row of byClient.values()) {
     row.present = row.deployed - row.absent - row.leave - row.other;
-    const conf = confByClient.get(row.client_id);
-    if (conf) {
-      row.confirmed = true;
-      row.confirmed_by = conf.supervisor_name;
-      row.confirmed_at = conf.confirmed_at;
+    const wide = confClientWide.get(row.client_id) ?? null;
+    let firstConf: Conf | null = wide;
+    for (const site of row.sites) {
+      const conf = (site.site_id ? confBySite.get(site.site_id) : null) ?? wide;
+      if (!conf) continue;
+      site.confirmed = true;
+      site.confirmed_by = conf.supervisor_name;
+      firstConf ??= conf;
     }
+    const done = row.sites.filter((x) => x.confirmed).length;
+    row.confirmed = row.sites.length > 0 && done === row.sites.length;
+    row.partial = done > 0 && done < row.sites.length;
+    if (firstConf && done > 0) {
+      row.confirmed_by = firstConf.supervisor_name;
+      row.confirmed_at = firstConf.confirmed_at;
+    }
+    row.sites.sort((a, b) =>
+      a.confirmed === b.confirmed ? a.site_name.localeCompare(b.site_name) : a.confirmed ? 1 : -1,
+    );
   }
 
   let clients = [...byClient.values()];
   if (regionId) clients = clients.filter((c) => c.branch_id === regionId);
-  // Unconfirmed first, then by name — the flagged ones are what the page is for.
-  clients.sort((a, b) =>
-    a.confirmed === b.confirmed ? a.client_name.localeCompare(b.client_name) : a.confirmed ? 1 : -1,
-  );
+  // Not confirmed, then partly confirmed, then confirmed — the flagged ones are
+  // what the page is for.
+  const rank = (c: ClientAttendanceSummary) => (c.confirmed ? 2 : c.partial ? 1 : 0);
+  clients.sort((a, b) => rank(a) - rank(b) || a.client_name.localeCompare(b.client_name));
 
   const totals = clients.reduce(
     (t, c) => ({
@@ -190,4 +239,16 @@ export async function loadAttendanceSummary(
   );
 
   return { date, clients, totals, unconfirmed: clients.filter((c) => !c.confirmed) };
+}
+
+/**
+ * The flag line for a client that is not fully confirmed. A partly confirmed
+ * client names the sites still open, so the reader knows exactly where to go;
+ * a wholly unconfirmed one needs no breakdown — every site is open.
+ * Shared by the screen and the PDF so the two spell the flag the same way.
+ */
+export function describeUnconfirmed(c: ClientAttendanceSummary): string {
+  if (!c.partial) return c.client_name;
+  const open = c.sites.filter((s) => !s.confirmed).map((s) => s.site_name);
+  return `${c.client_name} (not confirmed: ${open.join(", ")})`;
 }

@@ -9,7 +9,7 @@ import { supabase } from "../../lib/supabase";
 import { useRegion } from "../../lib/region";
 import { formatDate } from "../../lib/date";
 import { generateDailyOperationsReportPdf } from "../../lib/dailyReportPdf";
-import { loadAttendanceSummary, type AttendanceSummary } from "../../lib/attendanceSummary";
+import { describeUnconfirmed, loadAttendanceSummary, type AttendanceSummary } from "../../lib/attendanceSummary";
 
 // Operations ▸ Daily Reports. One row per ACTIVE CLIENT for a chosen day, each
 // with a free-text Details box; the branded PDF is built straight from those two
@@ -654,6 +654,7 @@ function AttendanceReport({
 
   const t = summary.totals;
   const confirmed = summary.clients.length - summary.unconfirmed.length;
+  const partial = summary.unconfirmed.filter((c) => c.partial).length;
 
   return (
     <div className="space-y-3">
@@ -661,7 +662,8 @@ function AttendanceReport({
         Attendance for {formatDate(date)} — the day before this report
         {regionLabel ? ` · ${regionLabel}` : ""} · {summary.clients.length} client
         {summary.clients.length === 1 ? "" : "s"} · {confirmed} confirmed,{" "}
-        {summary.unconfirmed.length} not
+        {partial > 0 ? `${partial} partly, ` : ""}
+        {summary.unconfirmed.length - partial} not
       </p>
 
       {summary.unconfirmed.length > 0 && (
@@ -672,8 +674,16 @@ function AttendanceReport({
             {summary.unconfirmed.length === 1 ? "" : "s"}
           </p>
           <p className="text-xs text-danger-700/80 dark:text-danger-500/80 mt-1">
-            {summary.unconfirmed.map((c) => c.client_name).join(", ")}
+            {summary.unconfirmed.filter((c) => !c.partial).map((c) => c.client_name).join(", ")}
           </p>
+          {/* Partly confirmed clients get a line each, naming the open sites —
+              a client-level "not confirmed" would send someone to re-check the
+              sites that are already done. */}
+          {summary.unconfirmed.filter((c) => c.partial).map((c) => (
+            <p key={c.client_id} className="text-xs text-danger-700/80 dark:text-danger-500/80 mt-1">
+              {describeUnconfirmed(c)}
+            </p>
+          ))}
         </div>
       )}
 
@@ -705,6 +715,26 @@ function AttendanceReport({
                       <CheckCircle2 className="w-3.5 h-3.5" />
                       Confirmed{c.confirmed_by ? ` · ${c.confirmed_by}` : ""}
                     </span>
+                  ) : c.partial ? (
+                    <div className="space-y-0.5">
+                      <span className="inline-flex items-center gap-1.5 text-warning-700 dark:text-warning-500 text-xs font-medium">
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        Partly confirmed · {c.sites.filter((x) => x.confirmed).length}/{c.sites.length} sites
+                      </span>
+                      <ul className="text-xs space-y-0.5 pl-5">
+                        {c.sites.map((site) => (
+                          <li
+                            key={site.site_id ?? "none"}
+                            className={site.confirmed ? "text-success-700 dark:text-success-500" : "text-danger-700 dark:text-danger-500 font-medium"}
+                          >
+                            {site.site_name} —{" "}
+                            {site.confirmed
+                              ? `confirmed${site.confirmed_by ? ` · ${site.confirmed_by}` : ""}`
+                              : "not confirmed"}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   ) : (
                     <span className="inline-flex items-center gap-1.5 text-danger-700 dark:text-danger-500 text-xs font-medium">
                       <AlertTriangle className="w-3.5 h-3.5" />
@@ -727,6 +757,7 @@ function AttendanceReport({
               <td className="px-3 py-2 text-right tabular-nums">{t.other}</td>
               <td className="px-3 py-2 text-xs text-muted-foreground">
                 {confirmed}/{summary.clients.length} confirmed
+                {partial > 0 ? ` · ${partial} partly` : ""}
               </td>
             </tr>
           </tfoot>
