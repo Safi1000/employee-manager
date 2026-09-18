@@ -54,3 +54,7 @@ begin
 
   raise notice '0462: % opening balance % -> %', v_name, v_bal, -v_bal;
 end $$;
+
+-- TENANT GUARD ASSERTION NOT APPLICABLE: this migration changes one data value
+-- on one partner row. It creates, alters or drops no function, policy or table,
+-- so it cannot open or close a tenant guard.
