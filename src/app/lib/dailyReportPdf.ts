@@ -12,7 +12,8 @@ import { brandingFromCompany, drawBrandedHeader, drawBrandedFooter, hexToRgb } f
 // Uses the shared branded jsPDF engine — no new library.
 //
 // Three things the page supplies and this file prints:
-//   * the day's Next Day Task, at the head, because it is read before the detail;
+//   * the day's Next Day Tasks (each general or assigned), at the head, because
+//     they are read before the detail;
 //   * the clients WITH a note first and the "No report" ones underneath, so the
 //     reader reaches the substance without scrolling past the silence;
 //   * an attendance summary for the PREVIOUS day, since the day being reported
@@ -40,7 +41,8 @@ export type DailyReportRow = {
 export type DailyReportPdfOptions = {
   /** Region the page was filtered to when the PDF was produced, or null for all. */
   regionLabel?: string | null;
-  nextDayTask?: string | null;
+  /** The day's Next Day Tasks; `assignee` null = a general task. */
+  nextDayTasks?: { title: string; assignee: string | null }[];
   /** Previous day's attendance, already filtered to the same region. */
   attendance?: AttendanceSummary | null;
 };
@@ -81,22 +83,46 @@ export function generateDailyOperationsReportPdf(
   y += 7;
 
   // ── Next Day Task ─────────────────────────────────────────────────────────
-  const task = (options.nextDayTask ?? "").trim();
-  if (task) {
-    const taskLines = doc.splitTextToSize(task, CONTENT_W - 6) as string[];
-    const boxH = taskLines.length * LINE_H + 10;
-    ensure(boxH + 4);
+  const tasks = (options.nextDayTasks ?? []).filter((t) => t.title.trim());
+  if (tasks.length > 0) {
+    // Each task on its own line(s), numbered, with who it is for. Wrapped per
+    // task so a long one indents under its own number instead of the margin.
+    const ASSIGNEE_W = 48;
+    const TITLE_W = CONTENT_W - 6 - 8 - ASSIGNEE_W;
+    doc.setFontSize(9);
+    const laid = tasks.map((t) => ({
+      lines: doc.splitTextToSize(t.title.trim(), TITLE_W) as string[],
+      who: t.assignee ?? "General",
+      general: !t.assignee,
+    }));
+    const bodyH = laid.reduce((h, t) => h + t.lines.length * LINE_H + 1, 0);
+    const boxH = bodyH + 10;
+    ensure(Math.min(boxH, 60) + 4);
     doc.setFillColor(254, 249, 231);
     doc.setDrawColor(r, g, bl);
     doc.rect(MARGIN, y, CONTENT_W, boxH, "FD");
     doc.setFont("helvetica", "bold");
     doc.setFontSize(8);
     doc.setTextColor(r, g, bl);
-    doc.text("NEXT DAY TASK", MARGIN + 3, y + 5);
+    doc.text(`NEXT DAY TASKS (${tasks.length})`, MARGIN + 3, y + 5);
+    doc.text("ASSIGNED TO", MARGIN + CONTENT_W - 3 - ASSIGNEE_W, y + 5);
+    let ty = y + 9.5;
+    laid.forEach((t, i) => {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(15, 23, 42);
+      doc.text(`${i + 1}.`, MARGIN + 3, ty);
+      t.lines.forEach((ln, li) => doc.text(ln, MARGIN + 3 + 8, ty + li * LINE_H));
+      doc.setFont("helvetica", t.general ? "italic" : "bold");
+      if (t.general) doc.setTextColor(100, 116, 139);
+      doc.text(
+        doc.splitTextToSize(t.who, ASSIGNEE_W)[0] as string,
+        MARGIN + CONTENT_W - 3 - ASSIGNEE_W,
+        ty,
+      );
+      ty += t.lines.length * LINE_H + 1;
+    });
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.setTextColor(15, 23, 42);
-    taskLines.forEach((ln, i) => doc.text(ln, MARGIN + 3, y + 9.5 + i * LINE_H));
     y += boxH + 6;
   }
 

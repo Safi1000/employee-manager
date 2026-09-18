@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Loader2, Lock } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Loader2, Lock, Plus, Trash2 } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Tabs from "../../components/Tabs";
@@ -32,7 +32,9 @@ import { describeUnconfirmed, loadAttendanceSummary, type AttendanceSummary } fr
 //   * "No report" per client, which is a claim ("somebody looked and there was
 //     nothing") and not the same as an empty box ("nobody looked"). It greys the
 //     details box and sorts the client to the bottom of the PDF;
-//   * a day-level NEXT DAY TASK, printed at the head of the PDF.
+//   * a day-level NEXT DAY TASK, printed at the head of the PDF. 0461 made it a
+//     LIST: several tasks a day, each general or assigned to one ACTIVE OFFICE
+//     STAFF employee (the database refuses anyone else, not just the picker).
 //
 // The Attendance Report tab reads the PREVIOUS day, deliberately: the day being
 // reported on has not been confirmed yet when the report goes out, so the
@@ -59,6 +61,8 @@ const shiftDay = (iso: string, days: number) => {
 };
 
 type ClientRow = { id: string; name: string; branch_id: string | null };
+type TaskRow = { id: string; title: string; assignee_employee_id: string | null; sort_order: number };
+type StaffRow = { id: string; full_name: string; employee_code: string | null };
 type Tab = "reports" | "attendance";
 
 /**
@@ -124,7 +128,10 @@ export default function FieldOps() {
   const [details, setDetails] = useState<Map<string, string>>(new Map());
   /** client_id -> "no report" flag, for the selected day. */
   const [noReport, setNoReport] = useState<Set<string>>(new Set());
-  const [nextDayTask, setNextDayTask] = useState("");
+  /** The day's Next Day Tasks, in the order they were added. */
+  const [tasks, setTasks] = useState<TaskRow[]>([]);
+  /** Active office staff — the only people a task can be assigned to (0461). */
+  const [staff, setStaff] = useState<StaffRow[]>([]);
   /** Clients whose box is mid-save or just saved, for the inline hint. */
   const [saving, setSaving] = useState<Set<string>>(new Set());
   const [savedAt, setSavedAt] = useState<Map<string, number>>(new Map());
@@ -143,7 +150,7 @@ export default function FieldOps() {
     if (!companyId) return;
     setLoading(true);
     setErr(null);
-    const [cli, rep, dayNote] = await Promise.all([
+    const [cli, rep, taskRes, staffRes] = await Promise.all([
       // Active = has at least one active contract. The inner join is what does
       // the filtering; !inner makes PostgREST drop clients with no match.
       supabase
@@ -158,11 +165,19 @@ export default function FieldOps() {
         .eq("company_id", companyId)
         .eq("report_date", date),
       supabase
-        .from("daily_report_day_notes")
-        .select("next_day_task")
+        .from("daily_report_tasks")
+        .select("id, title, assignee_employee_id, sort_order")
         .eq("company_id", companyId)
         .eq("report_date", date)
-        .maybeSingle(),
+        .order("sort_order")
+        .order("created_at"),
+      supabase
+        .from("employees")
+        .select("id, full_name, employee_code")
+        .eq("company_id", companyId)
+        .eq("category", "office_staff")
+        .eq("lifecycle_state", "active")
+        .order("full_name"),
     ]);
     if (cli.error) { setErr(cli.error.message); setLoading(false); return; }
     if (rep.error) { setErr(rep.error.message); setLoading(false); return; }
@@ -179,7 +194,9 @@ export default function FieldOps() {
     setNoReport(
       new Set(((rep.data ?? []) as any[]).filter((r) => r.no_report).map((r) => r.client_id as string)),
     );
-    setNextDayTask(((dayNote.data as any)?.next_day_task ?? "") as string);
+    if (taskRes.error) setErr(taskRes.error.message);
+    setTasks((taskRes.data ?? []) as TaskRow[]);
+    setStaff((staffRes.data ?? []) as StaffRow[]);
     setLoading(false);
   }, [companyId, date]);
 
@@ -244,28 +261,57 @@ export default function FieldOps() {
     await saveOne(clientId, flag ? "" : details.get(clientId) ?? "", flag);
   };
 
-  const saveNextDayTask = async (value: string) => {
+  const addTask = async (title: string, assignee: string | null) => {
+    if (locked) return false;
+    const text = title.trim();
+    if (!text) return false;
+    setErr(null);
+    const { data: userData } = await supabase.auth.getUser();
+    const { data, error } = await supabase
+      .from("daily_report_tasks")
+      .insert({
+        company_id: companyId,
+        report_date: date,
+        title: text,
+        assignee_employee_id: assignee,
+        sort_order: tasks.length ? Math.max(...tasks.map((t) => t.sort_order)) + 1 : 0,
+        updated_by: userData.user?.id ?? null,
+      })
+      .select("id, title, assignee_employee_id, sort_order")
+      .single();
+    if (error) { setErr(error.message); return false; }
+    setTasks((prev) => [...prev, data as TaskRow]);
+    return true;
+  };
+
+  const updateTask = async (id: string, patch: Partial<Pick<TaskRow, "title" | "assignee_employee_id">>) => {
+    if (locked) return;
+    if (patch.title !== undefined && !patch.title.trim()) return;
+    setErr(null);
+    const before = tasks;
+    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+    const { data: userData } = await supabase.auth.getUser();
+    const { error } = await supabase
+      .from("daily_report_tasks")
+      .update({ ...patch, updated_by: userData.user?.id ?? null })
+      .eq("id", id);
+    // Put the row back as it was: the database refused it, so the screen must
+    // not keep showing a change that did not happen.
+    if (error) { setErr(error.message); setTasks(before); }
+  };
+
+  const deleteTask = async (id: string) => {
     if (locked) return;
     setErr(null);
-    const text = value.trim();
-    const { data: userData } = await supabase.auth.getUser();
-    const { error } = text
-      ? await supabase.from("daily_report_day_notes").upsert(
-          {
-            company_id: companyId,
-            report_date: date,
-            next_day_task: text,
-            updated_by: userData.user?.id ?? null,
-          },
-          { onConflict: "company_id,report_date" },
-        )
-      : await supabase
-          .from("daily_report_day_notes")
-          .delete()
-          .eq("company_id", companyId)
-          .eq("report_date", date);
-    if (error) setErr(error.message);
+    const { error } = await supabase.from("daily_report_tasks").delete().eq("id", id);
+    if (error) { setErr(error.message); return; }
+    setTasks((prev) => prev.filter((t) => t.id !== id));
   };
+
+  const staffName = useCallback(
+    (id: string | null) => (id ? staff.find((x) => x.id === id)?.full_name ?? "Former staff" : null),
+    [staff],
+  );
 
   /** The clients the page — and therefore the PDF — is showing. */
   const visibleClients = useMemo(
@@ -320,7 +366,7 @@ export default function FieldOps() {
   const exportPdf = async () => {
     generateDailyOperationsReportPdf(company, date, rowsForPdf, {
       regionLabel,
-      nextDayTask,
+      nextDayTasks: tasks.map((t) => ({ title: t.title, assignee: staffName(t.assignee_employee_id) })),
       attendance: visibleAttendance,
     });
     setBusy(true);
@@ -426,25 +472,19 @@ export default function FieldOps() {
 
           {tab === "reports" ? (
             <>
-              {/* Next Day Task is a property of the DAY, not of a client, so it
-                  sits above the table and is stored once (0460). */}
-              <div className="border border-border rounded-md p-3 bg-card space-y-1.5">
-                <label className="text-xs uppercase tracking-wide text-muted-foreground font-medium">
-                  Next Day Task
-                </label>
-                {locked ? (
-                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                    {nextDayTask.trim() || "—"}
-                  </p>
-                ) : loading ? null : (
-                  <NextDayTaskField
-                    key={date}
-                    value={nextDayTask}
-                    onChange={setNextDayTask}
-                    onCommit={saveNextDayTask}
-                  />
-                )}
-              </div>
+              {/* Next Day Tasks belong to the DAY, not to a client, so they sit
+                  above the table. Several per day; each general or assigned to
+                  an active office-staff member (0461). */}
+              <NextDayTasks
+                tasks={tasks}
+                staff={staff}
+                locked={locked}
+                loading={loading}
+                staffName={staffName}
+                onAdd={addTask}
+                onUpdate={updateTask}
+                onDelete={deleteTask}
+              />
 
               <p className="text-xs text-muted-foreground">
                 {formatDate(date)} · {visibleClients.length} active client
@@ -519,33 +559,141 @@ export default function FieldOps() {
   );
 }
 
-/** The day's Next Day Task. Enter bullets, blur saves. */
-function NextDayTaskField({
-  value, onChange, onCommit,
+/**
+ * The day's Next Day Tasks: a list, each row a task with its assignee. The
+ * assignee picker lists ACTIVE OFFICE STAFF only — "General" is the absence of
+ * an assignee, not a person. The database enforces the same rule (0461), so a
+ * refusal comes back as an error rather than a silent success.
+ */
+function NextDayTasks({
+  tasks, staff, locked, loading, staffName, onAdd, onUpdate, onDelete,
 }: {
-  value: string;
-  onChange: (v: string) => void;
-  onCommit: (v: string) => void;
+  tasks: TaskRow[];
+  staff: StaffRow[];
+  locked: boolean;
+  loading: boolean;
+  staffName: (id: string | null) => string | null;
+  onAdd: (title: string, assignee: string | null) => Promise<boolean>;
+  onUpdate: (id: string, patch: Partial<Pick<TaskRow, "title" | "assignee_employee_id">>) => void;
+  onDelete: (id: string) => void;
 }) {
-  const committed = useRef(value);
-  // The saved value arrives after the day loads; adopt it so blurring an
-  // untouched field doesn't write back what it just read.
-  useEffect(() => { committed.current = value; /* eslint-disable-next-line */ }, []);
+  const [draft, setDraft] = useState("");
+  const [draftAssignee, setDraftAssignee] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+
+  const submit = async () => {
+    if (!draft.trim() || adding) return;
+    setAdding(true);
+    const ok = await onAdd(draft, draftAssignee);
+    setAdding(false);
+    if (ok) setDraft("");
+  };
+
+  const assigneeSelect = (value: string | null, onChange: (v: string | null) => void) => (
+    <ThemedSelect
+      value={value ?? "general"}
+      onChange={(e) => onChange(e.target.value === "general" ? null : e.target.value)}
+      aria-label="Assign to"
+      className="w-full sm:w-52 shrink-0"
+    >
+      <option value="general">General</option>
+      {/* A task whose assignee has since left keeps showing who it was for. */}
+      {value && !staff.some((x) => x.id === value) && (
+        <option value={value}>{staffName(value)}</option>
+      )}
+      {staff.map((x) => (
+        <option key={x.id} value={x.id}>
+          {x.full_name}{x.employee_code ? ` · ${x.employee_code}` : ""}
+        </option>
+      ))}
+    </ThemedSelect>
+  );
 
   return (
-    <textarea
-      rows={2}
-      value={value}
-      placeholder="What has to happen tomorrow…"
-      onChange={(e) => onChange(e.target.value)}
-      onKeyDown={(e) => bulletOnEnter(e, onChange)}
-      onBlur={(e) => {
-        if (e.target.value === committed.current) return;
-        committed.current = e.target.value;
-        onCommit(e.target.value);
-      }}
-      className="w-full px-3 py-2 border border-border rounded-md text-sm bg-card resize-y min-h-[38px]"
-    />
+    <div className="border border-border rounded-md p-3 bg-card space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs uppercase tracking-wide text-muted-foreground font-medium">
+          Next Day Tasks
+        </span>
+        <span className="text-[11px] text-muted-foreground">
+          {tasks.length} task{tasks.length === 1 ? "" : "s"}
+        </span>
+      </div>
+
+      {loading ? null : tasks.length === 0 && locked ? (
+        <p className="text-sm text-muted-foreground">—</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {tasks.map((t, i) => (
+            <li key={t.id} className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2">
+              <span className="text-xs text-muted-foreground w-5 shrink-0 hidden sm:inline">{i + 1}.</span>
+              {locked ? (
+                <>
+                  <span className="flex-1 min-w-0 text-sm text-foreground">{t.title}</span>
+                  <span className="text-xs text-muted-foreground sm:w-52 shrink-0">
+                    {staffName(t.assignee_employee_id) ?? "General"}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <input
+                    defaultValue={t.title}
+                    onBlur={(e) => {
+                      const v = e.target.value.trim();
+                      if (!v) { e.target.value = t.title; return; }
+                      if (v !== t.title) onUpdate(t.id, { title: v });
+                    }}
+                    onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                    className="flex-1 min-w-0 px-3 py-1.5 border border-border rounded-md text-sm bg-card"
+                  />
+                  <div className="flex items-center gap-2">
+                    {assigneeSelect(t.assignee_employee_id, (v) => onUpdate(t.id, { assignee_employee_id: v }))}
+                    <button
+                      type="button"
+                      onClick={() => onDelete(t.id)}
+                      className="w-8 h-8 grid place-items-center rounded-md border border-border text-muted-foreground hover:bg-accent hover:text-danger-600 shrink-0"
+                      aria-label="Delete task"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {!locked && !loading && (
+        <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 pt-1">
+          <span className="w-5 shrink-0 hidden sm:inline" />
+          <input
+            value={draft}
+            placeholder="Add a task for tomorrow…"
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void submit(); } }}
+            className="flex-1 min-w-0 px-3 py-1.5 border border-border rounded-md text-sm bg-card"
+          />
+          <div className="flex items-center gap-2">
+            {assigneeSelect(draftAssignee, setDraftAssignee)}
+            <button
+              type="button"
+              onClick={() => void submit()}
+              disabled={!draft.trim() || adding}
+              className="w-8 h-8 grid place-items-center rounded-md border border-border text-muted-foreground hover:bg-accent disabled:opacity-40 disabled:pointer-events-none shrink-0"
+              aria-label="Add task"
+            >
+              {adding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-4 h-4" />}
+            </button>
+          </div>
+        </div>
+      )}
+      {!locked && !loading && staff.length === 0 && (
+        <p className="text-[11px] text-muted-foreground">
+          No active office staff found — tasks can only be added as General.
+        </p>
+      )}
+    </div>
   );
 }
 
