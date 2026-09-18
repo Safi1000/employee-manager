@@ -151,11 +151,6 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
   const [contribForm, setContribForm] = useState({ date: today(), amount: "", payment_method: "CASH" as typeof PAYMENT_METHODS[number], description: "" });
   const [contribSaving, setContribSaving] = useState(false);
 
-  // Profit Allocation modal
-  const [isAllocOpen, setIsAllocOpen] = useState(false);
-  const [allocPartnerId, setAllocPartnerId] = useState<string>("");
-  const [allocForm, setAllocForm] = useState({ date: today(), amount: "", period_month: today().slice(0, 7), description: "Profit allocation" });
-  const [allocSaving, setAllocSaving] = useState(false);
 
   const loadData = async () => {
     if (!companyId) return;
@@ -357,29 +352,6 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
       if (tab === "summary") loadSummary();
     } catch (e: any) { setError(e.message); }
     finally { setContribSaving(false); }
-  };
-
-  const saveAlloc = async () => {
-    if (!companyId || !allocPartnerId || !allocForm.amount) return;
-    setAllocSaving(true);
-    setError(null);
-    try {
-      const amt = parseFloat(allocForm.amount);
-      if (isNaN(amt)) throw new Error("Enter a valid amount");
-      const { error: e } = await supabase.from("partner_account_entries").insert({
-        company_id: companyId, partner_id: allocPartnerId,
-        date: allocForm.date, type: "PROFIT_ALLOCATION",
-        description: allocForm.description || "Profit allocation",
-        amount: amt,
-        period_month: allocForm.period_month ? `${allocForm.period_month}-01` : null,
-        created_by: profile?.id,
-      });
-      if (e) throw e;
-      setIsAllocOpen(false);
-      if (stmtPartner === allocPartnerId) loadStatement(allocPartnerId);
-      if (tab === "summary") loadSummary();
-    } catch (e: any) { setError(e.message); }
-    finally { setAllocSaving(false); }
   };
 
   const filteredPartners = useMemo(() => {
@@ -587,9 +559,14 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
               </div>
               {stmtPartner && (
                 <>
-                  <Button variant="secondary" size="md" onClick={() => { setIsAllocOpen(true); setAllocPartnerId(stmtPartner); setAllocForm({ date: today(), amount: "", period_month: today().slice(0, 7), description: "Profit allocation" }); }}>
-                    Profit Allocation
-                  </Button>
+                  {/* Profit allocation is NOT hand-keyed here — that wrote a
+                      PROFIT_ALLOCATION row straight into partner_account_entries,
+                      which the summary counted but partner_ledger() (the real
+                      position, from journal_lines) never saw, so the two disagreed
+                      and it never hit the GL. Allocation goes through the run
+                      (Profit Distribution: draft_profit_allocation →
+                      post_profit_allocation), which posts to the ledger. Drawings
+                      and contributions below stay — those are genuine hand-entry. */}
                   <Button variant="secondary" size="md" onClick={exportStatement} disabled={stmtEntries.length === 0}>
                     <Download className="w-4 h-4 mr-2" strokeWidth={1.5} /> Export CSV
                   </Button>
@@ -953,40 +930,6 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
         </div>
       </Modal>
 
-      {/* ── Profit Allocation Modal ── */}
-      <Modal isOpen={isAllocOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsAllocOpen(false)} title="Record Profit Allocation" size="sm">
-        <div className="space-y-4">
-          <p className="text-sm text-slate-500">Post partner's profit share for a period. Use a negative amount for a loss share.</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm text-slate-700 mb-1">Date *</label>
-              <input type="date" value={allocForm.date} onChange={(e) => setAllocForm({ ...allocForm, date: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
-            </div>
-            <div>
-              <label className="block text-sm text-slate-700 mb-1">Period (Month)</label>
-              <input type="month" value={allocForm.period_month} onChange={(e) => setAllocForm({ ...allocForm, period_month: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Amount (PKR) *</label>
-            <input type="number" placeholder="0 (negative for loss)" value={allocForm.amount} onChange={(e) => setAllocForm({ ...allocForm, amount: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
-          </div>
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Description</label>
-            <input type="text" value={allocForm.description} onChange={(e) => setAllocForm({ ...allocForm, description: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
-          </div>
-          <div className="flex gap-2 pt-2">
-            <Button variant="primary" size="md" className="flex-1" onClick={saveAlloc} disabled={allocSaving}>
-              {allocSaving ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : "Post Allocation"}
-            </Button>
-            <Button variant="secondary" size="md" className="flex-1" onClick={() => setIsAllocOpen(false)}>Cancel</Button>
-          </div>
-        </div>
-      </Modal>
     </>
   );
 }

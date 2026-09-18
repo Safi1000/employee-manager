@@ -1731,100 +1731,38 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         await loadAll();
         return;
       }
-      const newDisbursed = isSettled(target, net);
-      // Only payment-tracking columns are written here — the figures were
-      // settled by the upsert above, before any money moves, so nothing that can
-      // be rejected happens after cash leaves.
-      const { data: claimRows, error: claimErr } = await supabase
-        .from("payslips")
-        .update({
-          amount_paid: target,
-          disbursed: newDisbursed,
-          disbursed_at: newDisbursed ? disburseIso : null,
-          status: newDisbursed ? "Cleared" : row.status,
-          payment_mode: row.payment_mode,
-          bank_account_id:
-            row.payment_mode === "Bank" || row.payment_mode === "Cheque"
-              ? row.bank_account_id
-              : null,
-          cheque_id: row.payment_mode === "Cheque" ? row.cheque_id : null,
-          // 0317. The custodian was already resolved and validated above and
-          // used for the bank_transactions attribution — it was simply never
-          // written to the payslip. post_payslip_disbursement reads
-          // ps.custodian_location_id PER PAYSLIP and has all along, so without
-          // this line every cash payslip posted its credit to the
-          // undifferentiated cash control (8 of them on production).
-          custodian_location_id: row.payment_mode === "Cash" ? custodianLocId : null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", payslipId)
-        .eq("amount_paid", already)
-        .select("id");
-      if (claimErr) throw claimErr;
-      if (!claimRows || claimRows.length === 0) {
-        setRowError("This payslip changed in another tab — reloading.");
-        await loadAll();
-        return;
-      }
-
-      // ---- Phase 3: move `pay`; roll the claim back if anything fails ----
-      try {
-        if (row.payment_mode === "Bank" && bank) {
-          const { error: bErr } = await supabase
-            .from("bank_accounts")
-            .update({ balance: Number(bank.balance) - pay, updated_at: new Date().toISOString() })
-            .eq("id", bank.id);
-          if (bErr) throw bErr;
-          await supabase.from("bank_transactions").insert({
-            bank_account_id: bank.id,
-            kind: "payroll",
-            amount: Math.abs(pay),
-            cash_delta: 0,
-            account_delta: -pay,
-            description: `${pay < 0 ? "Reverse payroll" : "Payroll"} ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
-          });
-        } else if (row.payment_mode === "Cheque") {
-          // Cheque-paid: cheque clearance handles the bank side; nothing here.
-        } else {
-          const { data: trea } = await supabase
-            .from("treasury")
-            .select("id, cash_balance")
-            .eq("company_id", treasuryCompanyId ?? "00000000-0000-0000-0000-000000000000")
-            .maybeSingle();
-          if (trea) {
-            await supabase
-              .from("treasury")
-              .update({ cash_balance: Number(trea.cash_balance) - pay, updated_at: new Date().toISOString() })
-              .eq("id", trea.id);
-          }
-          await supabase.from("bank_transactions").insert({
-            bank_account_id: null,
-            kind: "payroll",
-            amount: Math.abs(pay),
-            cash_delta: -pay,
-            account_delta: 0,
-            // reference_id = custodian cash_location → Cash Custody attributes this
-            // as "Cash paid" against that custodian, decreasing their held cash.
-            reference_id: custodianLocId,
-            description: `${pay < 0 ? "Reverse payroll (cash)" : "Payroll (cash)"} ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
-          });
+      // ---- Phase 2+3: claim the payment AND move the balance in ONE transaction ----
+      // disburse_payslip (0458) runs the SAME CAS update the browser used to — same
+      // columns, same values — so every payslip trigger (GL posting via
+      // journal_on_payslip → post_payslip_disbursement, adjustment settlement,
+      // audit) fires exactly as before, and it moves the balance through
+      // apply_money_delta in the same transaction. A stale baseline matches zero
+      // rows and raises BEFORE money moves; any failure rolls back BOTH. No screen
+      // moves a balance any more — and there is no manual claim-and-rollback dance.
+      const payDesc =
+        row.payment_mode === "Cash"
+          ? `${pay < 0 ? "Reverse payroll (cash)" : "Payroll (cash)"} ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`
+          : `${pay < 0 ? "Reverse payroll" : "Payroll"} ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`;
+      const { error: rpcErr } = await supabase.rpc("disburse_payslip", {
+        p_payslip_id: payslipId,
+        p_expected_paid: already,
+        p_target_paid: target,
+        p_payment_mode: row.payment_mode,
+        p_bank_account_id:
+          row.payment_mode === "Bank" || row.payment_mode === "Cheque" ? row.bank_account_id : null,
+        p_cheque_id: row.payment_mode === "Cheque" ? row.cheque_id : null,
+        p_custodian_location_id: row.payment_mode === "Cash" ? custodianLocId : null,
+        p_disbursed_at: disburseIso,
+        p_description: payDesc,
+      });
+      if (rpcErr) {
+        // A concurrent payment on this row is the soft case — reload, no red error.
+        if (/PAYSLIP_STALE/.test(rpcErr.message)) {
+          setRowError("This payslip changed in another tab — reloading.");
+          await loadAll();
+          return;
         }
-        // The claim above already persisted amount_paid / disbursed / routing.
-        // We deliberately do NOT re-save the full payslip here — that would
-        // rewrite the locked figure columns and be rejected AFTER the cash has
-        // already moved. Drawer figure edits are saved separately via Save.
-      } catch (moneyErr) {
-        // Release the claim so the row can be retried after the issue is fixed.
-        await supabase
-          .from("payslips")
-          .update({
-            amount_paid: already,
-            disbursed: row.disbursed,
-            disbursed_at: row.disbursed_at,
-            status: row.status,
-          })
-          .eq("id", payslipId);
-        throw moneyErr;
+        throw rpcErr;
       }
 
       // Overpaid portion (target − net, when positive) carries to next month.
@@ -1897,11 +1835,15 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     setBulkSubmitting(true);
     disburseLockRef.current = true;
     const bulkDisburseIso = new Date(`${bulkDisburseDate}T12:00:00`).toISOString();
+    // Rows actually disbursed so far. Each is its own transaction, so on a
+    // mid-batch failure the operator is TOLD how many landed ("199 of 450
+    // disbursed before this failed") rather than left to infer it from which
+    // rows sank to the bottom after the refresh.
+    let done = 0;
     try {
       for (const row of candidates) {
         const net = Math.round(row.net_salary);
         const already = Math.round(row.amount_paid || 0);
-        const remaining = net - already; // money moving now for this row
         // The figures are written FIRST, for an EXISTING payslip as well as a
         // new one — the same unconditional write the single-row path above
         // already does, and for the same reason.
@@ -1947,91 +1889,39 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
             `${row.employee.full_name ?? row.employee.employee_code} was paid in another tab while this batch was running — reload and disburse the rest.`,
           );
         }
-        // Item 3: atomically claim this payslip before moving money; skip if its
-        // paid amount changed (e.g. concurrently in another tab).
-        const { data: claimRows, error: claimErr } = await supabase
-          .from("payslips")
-          .update({
-            amount_paid: net,
-            disbursed: true,
-            disbursed_at: bulkDisburseIso,
-            status: "Cleared",
-            payment_mode: bulkMode,
-            bank_account_id: bulkMode === "Bank" ? bulkBankId : null,
-            // 0317: the bulk path resolves ONE custodian for the batch, which is
-            // correct for a batch one person hands out. It is still written per
-            // payslip, because that is where post_payslip_disbursement reads it
-            // and because a run mixing modes and people has no single answer.
-            custodian_location_id: bulkMode === "Cash" ? bulkCustodianLocId : null,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", payslipId)
-          .eq("amount_paid", already)
-          .select("id");
-        if (claimErr) throw claimErr;
-        if (!claimRows || claimRows.length === 0) continue;
-        if (bulkMode === "Bank") {
-          const { data: bankNow } = await supabase
-            .from("bank_accounts")
-            .select("id, balance, bank_name, account_number")
-            .eq("id", bulkBankId)
-            .single();
-          if (!bankNow) throw new Error("Bank account not found mid-bulk.");
-          if (remaining > Number(bankNow.balance)) {
-            throw new Error(`Bank balance exhausted at ${row.employee.employee_code}.`);
-          }
-          await supabase
-            .from("bank_accounts")
-            .update({
-              balance: Number(bankNow.balance) - remaining,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", bulkBankId);
-          await supabase.from("bank_transactions").insert({
-            bank_account_id: bulkBankId,
-            kind: "payroll",
-            amount: remaining,
-            cash_delta: 0,
-            account_delta: -remaining,
-            description: `Payroll ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
-          });
-        } else {
-          const { data: trea } = await supabase
-            .from("treasury")
-            .select("id, cash_balance")
-            .eq("company_id", treasuryCompanyId ?? "00000000-0000-0000-0000-000000000000")
-            .maybeSingle();
-          if (!trea) throw new Error("Treasury row missing.");
-          if (remaining > Number(trea.cash_balance)) {
-            throw new Error(`Cash exhausted at ${row.employee.employee_code}.`);
-          }
-          await supabase
-            .from("treasury")
-            .update({
-              cash_balance: Number(trea.cash_balance) - remaining,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", trea.id);
-          await supabase.from("bank_transactions").insert({
-            bank_account_id: null,
-            kind: "payroll",
-            amount: remaining,
-            cash_delta: -remaining,
-            account_delta: 0,
-            reference_id: bulkCustodianLocId,
-            description: `Payroll (cash) ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
-          });
+        // Claim + money in ONE transaction (0458): the same CAS update the bulk
+        // path used to run, plus the balance move through apply_money_delta, so
+        // every payslip trigger fires as before and money can never half-move. A
+        // row paid under us mid-batch matches zero rows and raises PAYSLIP_STALE —
+        // skip it and carry on, exactly as the old CAS `continue` did. One
+        // custodian for the whole cash batch is still written per payslip.
+        const { error: rpcErr } = await supabase.rpc("disburse_payslip", {
+          p_payslip_id: payslipId,
+          p_expected_paid: already,
+          p_target_paid: net,
+          p_payment_mode: bulkMode,
+          p_bank_account_id: bulkMode === "Bank" ? bulkBankId : null,
+          p_cheque_id: null,
+          p_custodian_location_id: bulkMode === "Cash" ? bulkCustodianLocId : null,
+          p_disbursed_at: bulkDisburseIso,
+          p_description:
+            bulkMode === "Cash"
+              ? `Payroll (cash) ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`
+              : `Payroll ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
+        });
+        if (rpcErr) {
+          if (/PAYSLIP_STALE/.test(rpcErr.message)) continue;
+          throw new Error(`${row.employee.employee_code} ${row.employee.full_name}: ${rpcErr.message}`);
         }
-        // The claim above already persisted amount_paid / disbursed / routing.
-        // Re-saving the full payslip here would rewrite the locked figure columns
-        // and be rejected AFTER cash moved (stranding it) — so we don't.
+        done++;
       }
       setIsBulkDisburseOpen(false);
       setSelectedEmpIds(new Set());
       await loadAll();
       onDataChanged?.();
     } catch (err: any) {
-      setError(friendlyError(err));
+      const suffix = done > 0 ? ` — ${done} of ${candidates.length} disbursed before this failed.` : "";
+      setError(friendlyError(err) + suffix);
       await loadAll();
     } finally {
       setBulkSubmitting(false);
