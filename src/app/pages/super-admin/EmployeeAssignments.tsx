@@ -298,6 +298,10 @@ export default function EmployeeAssignments() {
   // panel. Same two-step shape as Fire: pick the guard, then act on them.
   const [warnPickFrom, setWarnPickFrom] = useState<{ label: string; rows: EmployeeRow[] } | null>(null);
   const [warnTarget, setWarnTarget] = useState<EmployeeRow | null>(null);
+  // Search inside the Warnings / Fire guard pickers. Shared — only one picker is
+  // ever open — and cleared whenever either opens or closes.
+  const [pickSearch, setPickSearch] = useState("");
+  useEffect(() => { setPickSearch(""); }, [warnPickFrom, firePickFrom]);
   const [changeClientTarget, setChangeClientTarget] = useState<EmployeeRow | null>(null);
   const [changeCategoryTarget, setChangeCategoryTarget] = useState<EmployeeRow | null>(null);
 
@@ -876,6 +880,43 @@ export default function EmployeeAssignments() {
    * One employee table, shared by the flat client view and by each site row so
    * the two can never drift apart. `rowsToShow` is the slice being rendered.
    */
+  // The guard list behind the Warnings and Fire / Resign buttons, with a search
+  // box — a big site's list runs well past what fits without scrolling.
+  const renderGuardPicker = (rows: EmployeeRow[], onPick: (e: EmployeeRow) => void) => {
+    const q = pickSearch.trim().toLowerCase();
+    const shown = q ? rows.filter((r) => empMatches(r, q)) : rows;
+    return (
+      <>
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" strokeWidth={1.75} />
+          <input
+            autoFocus
+            value={pickSearch}
+            onChange={(ev) => setPickSearch(ev.target.value)}
+            placeholder="Search name or code…"
+            className="w-full pl-8 pr-3 py-1.5 text-sm bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-brand-500/30"
+          />
+        </div>
+        <div className="max-h-80 overflow-y-auto divide-y divide-border border border-border rounded-md">
+          {shown.length === 0 && (
+            <p className="px-3 py-6 text-sm text-muted-foreground text-center">No one matches “{pickSearch}”.</p>
+          )}
+          {shown.map((e) => (
+            <button
+              key={e.id}
+              type="button"
+              className="w-full text-left px-3 py-2.5 hover:bg-accent transition-colors"
+              onClick={() => onPick(e)}
+            >
+              <span className="text-sm text-foreground">{e.full_name}</span>
+              <span className="block text-xs text-muted-foreground font-mono">{displayCodeFor(e)}</span>
+            </button>
+          ))}
+        </div>
+      </>
+    );
+  };
+
   // "Fired · 09 Sep 2026" — the fire (effective) date rides on the badge so it
   // is visible to everyone who can see the row, not only in the Accounts-only
   // "Left on" column.
@@ -1659,19 +1700,7 @@ export default function EmployeeAssignments() {
         >
           <div className="space-y-2">
             <p className="text-sm text-slate-600">Select the guard.</p>
-            <div className="max-h-80 overflow-y-auto divide-y divide-border border border-border rounded-md">
-              {warnPickFrom.rows.map((e) => (
-                <button
-                  key={e.id}
-                  type="button"
-                  className="w-full text-left px-3 py-2.5 hover:bg-accent transition-colors"
-                  onClick={() => { setWarnTarget(e); setWarnPickFrom(null); }}
-                >
-                  <span className="text-sm text-foreground">{e.full_name}</span>
-                  <span className="block text-xs text-muted-foreground font-mono">{displayCodeFor(e)}</span>
-                </button>
-              ))}
-            </div>
+            {renderGuardPicker(warnPickFrom.rows, (e) => { setWarnTarget(e); setWarnPickFrom(null); })}
           </div>
         </Modal>
       )}
@@ -1698,19 +1727,7 @@ export default function EmployeeAssignments() {
         >
           <div className="space-y-2">
             <p className="text-sm text-slate-600">Select the guard being separated.</p>
-            <div className="max-h-80 overflow-y-auto divide-y divide-border border border-border rounded-md">
-              {firePickFrom.rows.map((e) => (
-                <button
-                  key={e.id}
-                  type="button"
-                  className="w-full text-left px-3 py-2.5 hover:bg-accent transition-colors"
-                  onClick={() => { setFireTarget(e); setFirePickFrom(null); }}
-                >
-                  <span className="text-sm text-foreground">{e.full_name}</span>
-                  <span className="block text-xs text-muted-foreground font-mono">{displayCodeFor(e)}</span>
-                </button>
-              ))}
-            </div>
+            {renderGuardPicker(firePickFrom.rows, (e) => { setFireTarget(e); setFirePickFrom(null); })}
           </div>
         </Modal>
       )}
