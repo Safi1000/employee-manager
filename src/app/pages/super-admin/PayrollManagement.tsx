@@ -566,7 +566,8 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       supabase.from("clients").select("*").order("name"),
       supabase.from("contracts").select("*"),
       supabase.from("bank_accounts").select("*").order("bank_name"),
-      supabase.from("treasury").select("*").eq("company_id", treasuryCompanyId ?? "00000000-0000-0000-0000-000000000000").maybeSingle(),
+      // Cash in Hand = Σ custodian held cash (0466), not treasury.cash_balance.
+      supabase.rpc("cash_in_hand", { p_company_id: treasuryCompanyId }).maybeSingle<{ cash_balance: number }>(),
       supabase.from("cheques").select("*").order("cheque_date", { ascending: false }),
       supabase.from("branches").select("*").order("is_head_office", { ascending: false }).order("name"),
     ]);

@@ -197,9 +197,6 @@ export default function Accounting() {
   }, [focusCheque]);
   const [cashBalance, setCashBalance] = useState<number>(0);
   const [cashOpeningBalance, setCashOpeningBalance] = useState<number>(0);
-  const [cashOpeningLocked, setCashOpeningLocked] = useState<boolean>(false);
-  const [isCashOpeningOpen, setIsCashOpeningOpen] = useState(false);
-  const [cashOpeningInput, setCashOpeningInput] = useState<string>("");
   const [transactions, setTransactions] = useState<BankTransaction[]>([]);
   const [payables, setPayables] = useState<PayableRow[]>([]);
   const [receivables, setReceivables] = useState<ReceivableRow[]>([]);
@@ -848,7 +845,8 @@ export default function Accounting() {
       supabase.from("bank_accounts").select("*").order("created_at", { ascending: false }),
       // Scoped: an unscoped SSA sees every company's treasury row through the
       // ssa_all policy, and .limit(1) would pick an arbitrary one.
-      supabase.from("treasury").select("*").eq("company_id", treasuryCompanyId ?? "00000000-0000-0000-0000-000000000000").maybeSingle(),
+      // Cash in Hand = Σ custodian held cash (0466), not treasury.cash_balance.
+      supabase.rpc("cash_in_hand", { p_company_id: treasuryCompanyId }).maybeSingle<{ cash_balance: number; opening_balance: number }>(),
       supabase
         .from("expenses")
         .select("*, vendor:vendor_id(id,name), category:category_id(id,name), client:client_id(id,name,client_code)")
@@ -989,14 +987,10 @@ export default function Accounting() {
     if (chequesRes.error) setError(chequesRes.error.message);
     setCheques((chequesRes.data ?? []) as Cheque[]);
     setCashBalance(Number(treasuryRes.data?.cash_balance ?? 0));
-    // 0280: treasury.cash_opening_balance / cash_opening_locked are gone. There
-    // is one opening-balance concept for cash and the ledger uses
-    // cash_locations.opening_balance. The "already set" state is derived from
-    // the opening transaction this page itself writes, which is the record that
-    // actually exists rather than a second flag that can disagree with it.
-    const openingTx = txRows.find((t) => t.kind === "opening" && !t.bank_account_id);
-    setCashOpeningBalance(Number(openingTx?.cash_delta ?? 0));
-    setCashOpeningLocked(Boolean(openingTx));
+    // 0466: Cash in Hand's opening IS the sum of every custodian's opening
+    // balance, read from cash_in_hand() alongside the current figure. It is set
+    // per custodian on Cash Custody, so there is no "Set Opening" here any more.
+    setCashOpeningBalance(Number(treasuryRes.data?.opening_balance ?? 0));
     // 0390: the treasury row id is no longer held. Nothing in this screen
     // writes that row any more — set_cash_opening_balance() does, by company —
     // and a balance row id kept in component state is an invitation to.
@@ -1167,53 +1161,6 @@ export default function Accounting() {
         currency_code: "PKR",
       });
       setIsBankModalOpen(false);
-      await loadAll();
-    } catch (err: any) {
-      setError(err.message ?? String(err));
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleSetCashOpening = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (cashOpeningLocked) return;
-    const amt = Number(cashOpeningInput);
-    if (!Number.isFinite(amt) || amt < 0) {
-      setError("Opening cash balance must be a non-negative number.");
-      return;
-    }
-    // The company must be known BEFORE anything is written. Without this the
-    // insert below reached the database with no company_id and failed on the
-    // NOT NULL constraint — an error about a column, for what is really a
-    // missing selection.
-    if (!treasuryCompanyId) {
-      setError("No company is selected. A Super Super Admin must pick a company with the “Viewing as” selector before setting cash in hand.");
-      return;
-    }
-    setSubmitting(true);
-    setError(null);
-    try {
-      // 0390. ONE CALL, and it takes no company: current_company_id() already
-      // resolves coalesce(view_as_company, company_id), which is exactly what
-      // treasuryCompanyId computes above.
-      //
-      // This was the last read-modify-write on a balance in the codebase —
-      // `cash_balance: cashBalance + amt`, where cashBalance is React state
-      // read when the screen last loaded — followed by the ledger line in a
-      // separate round trip. The arithmetic now happens under the row lock.
-      //
-      // The "Opening locked" rule moved with it. It lived only here, so a
-      // second tab could set the opening again, and because the write ADDED
-      // rather than replaced, doing so DOUBLED the cash. The RPC refuses it by
-      // name and a unique partial index refuses it for callers that never
-      // reach the RPC.
-      const { error: openErr } = await supabase.rpc("set_cash_opening_balance", {
-        p_amount: amt,
-      });
-      if (openErr) throw openErr;
-            setIsCashOpeningOpen(false);
-      setCashOpeningInput("");
       await loadAll();
     } catch (err: any) {
       setError(err.message ?? String(err));
@@ -1686,6 +1633,40 @@ export default function Accounting() {
     }
     return { pendingTotal, paidTotal, overdueTotal };
   }, [payables]);
+
+  // One row per vendor: every filtered payable to the same vendor folds into a
+  // single line, and View opens that vendor's transactions. Totals are the sum
+  // of the rows the breakdown shows, so the two cannot disagree.
+  const [payableVendorKey, setPayableVendorKey] = useState<string | null>(null);
+  const payableGroups = useMemo(() => {
+    const groups = new Map<string, {
+      key: string; name: string; items: PayableRow[];
+      outstanding: number; paid: number; overdue: boolean; pending: boolean; nextDue: string | null;
+    }>();
+    for (const p of filteredPayables) {
+      const key = p.vendor_id ?? "no-vendor";
+      let g = groups.get(key);
+      if (!g) {
+        g = { key, name: p.vendor?.name ?? "—", items: [], outstanding: 0, paid: 0, overdue: false, pending: false, nextDue: null };
+        groups.set(key, g);
+      }
+      g.items.push(p);
+      const status = payableDisplayStatus(p);
+      const amt = Number(p.amount);
+      if (status === "Paid") {
+        g.paid += amt;
+      } else {
+        g.outstanding += amt;
+        if (status === "Overdue") g.overdue = true; else g.pending = true;
+        if (p.due_date && (!g.nextDue || p.due_date < g.nextDue)) g.nextDue = p.due_date;
+      }
+    }
+    for (const g of groups.values()) {
+      g.items.sort((a, b) => (b.expense_date ?? "").localeCompare(a.expense_date ?? ""));
+    }
+    return Array.from(groups.values()).sort((a, b) => b.outstanding - a.outstanding || a.name.localeCompare(b.name));
+  }, [filteredPayables]);
+  const payableVendorGroup = payableVendorKey ? payableGroups.find((g) => g.key === payableVendorKey) ?? null : null;
 
   /**
    * This client's receipts, newest first — what Record WHT picks from.
@@ -2240,29 +2221,14 @@ export default function Accounting() {
             <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-success-500">
               <div className="flex items-center justify-between">
                 <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Cash in Hand</p>
-                {!cashOpeningLocked ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCashOpeningInput("");
-                      setIsCashOpeningOpen(true);
-                    }}
-                    className="text-[11px] px-2 py-0.5 rounded border border-success-300 text-success-800 hover:bg-success-100"
-                  >
-                    Set Opening
-                  </button>
-                ) : (
-                  <span className="text-[10px] text-success-700/70" title={`Opening balance set to PKR ${cashOpeningBalance.toLocaleString()}`}>
-                    Opening locked
-                  </span>
-                )}
+                <span className="text-[10px] text-success-700/70" title="Cash in Hand is the sum of every custodian's held cash">
+                  Σ custodians
+                </span>
               </div>
               <p className="text-2xl text-success-900">PKR {cashBalance.toLocaleString()}</p>
-              {cashOpeningLocked && (
-                <p className="text-[11px] text-success-700/80 mt-1">
-                  Opening: PKR {cashOpeningBalance.toLocaleString()}
-                </p>
-              )}
+              <p className="text-[11px] text-success-700/80 mt-1">
+                Opening: PKR {cashOpeningBalance.toLocaleString()}
+              </p>
             </div>
             <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-brand-500">
               <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Bank Balance</p>
@@ -2609,11 +2575,10 @@ export default function Accounting() {
                   <thead>
                     <tr className="border-b border-slate-200">
                       <th className="text-left px-6 py-3 text-sm text-slate-500">Vendor</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Category</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Client</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Amount Due</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Expense Date</th>
-                      <th className="text-left px-6 py-3 text-sm text-slate-500">Due Date</th>
+                      <th className="text-left px-6 py-3 text-sm text-slate-500">Transactions</th>
+                      <th className="text-left px-6 py-3 text-sm text-slate-500">Outstanding</th>
+                      <th className="text-left px-6 py-3 text-sm text-slate-500">Paid</th>
+                      <th className="text-left px-6 py-3 text-sm text-slate-500">Next Due</th>
                       <th className="text-left px-6 py-3 text-sm text-slate-500">Status</th>
                       <th className="text-left px-6 py-3 text-sm text-slate-500">Actions</th>
                     </tr>
@@ -2621,7 +2586,7 @@ export default function Accounting() {
                   <tbody className="divide-y divide-slate-200">
                     {loading && (
                       <tr>
-                        <td colSpan={8} className="px-6 py-10 text-center text-slate-500">
+                        <td colSpan={7} className="px-6 py-10 text-center text-slate-500">
                           <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
                           Loading…
                         </td>
@@ -2629,7 +2594,7 @@ export default function Accounting() {
                     )}
                     {!loading && filteredPayables.length === 0 && (
                       <tr>
-                        <td colSpan={8} className="px-6 py-10 text-center text-slate-500 text-sm">
+                        <td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">
                           {payables.length === 0
                             ? "No payables yet. Create an expense with payment mode 'Payable' to see it here."
                             : "No payables match the selected filter."}
@@ -2637,8 +2602,8 @@ export default function Accounting() {
                       </tr>
                     )}
                     {!loading &&
-                      filteredPayables.map((item) => {
-                        const status = payableDisplayStatus(item);
+                      payableGroups.map((g) => {
+                        const status = g.overdue ? "Overdue" : g.pending ? "Pending" : "Paid";
                         const statusClass =
                           status === "Paid"
                             ? "bg-success-50 text-success-700"
@@ -2646,40 +2611,22 @@ export default function Accounting() {
                             ? "bg-danger-50 text-danger-700"
                             : "bg-warning-50 text-warning-700";
                         return (
-                          <tr key={item.id} className="hover:bg-slate-50 transition-colors">
-                            <td className="px-6 py-4 text-sm text-slate-900">{item.vendor?.name ?? "—"}</td>
-                            <td className="px-6 py-4 text-sm text-slate-600">{item.category?.name ?? "—"}</td>
-                            <td className="px-6 py-4 text-sm text-slate-600">
-                              {item.client?.name ?? <span className="text-slate-400">Office</span>}
-                            </td>
-                            <td className="px-6 py-4 text-sm text-danger-600">
-                              PKR {Number(item.amount).toLocaleString()}
-                            </td>
-                            <td className="px-6 py-4 text-sm text-slate-600">{formatDate(item.expense_date)}</td>
-                            <td className="px-6 py-4 text-sm text-slate-600">{item.due_date ? formatDate(item.due_date) : "—"}</td>
+                          <tr key={g.key} className="hover:bg-slate-50 transition-colors">
+                            <td className="px-6 py-4 text-sm text-slate-900">{g.name}</td>
+                            <td className="px-6 py-4 text-sm text-slate-600">{g.items.length}</td>
+                            <td className="px-6 py-4 text-sm text-danger-600">PKR {g.outstanding.toLocaleString()}</td>
+                            <td className="px-6 py-4 text-sm text-success-700">PKR {g.paid.toLocaleString()}</td>
+                            <td className="px-6 py-4 text-sm text-slate-600">{g.nextDue ? formatDate(g.nextDue) : "—"}</td>
                             <td className="px-6 py-4">
                               <span className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${statusClass}`}>
                                 {status}
                               </span>
-                              {status === "Paid" && item.paid_via && (
-                                <div className="text-[10px] text-slate-500 mt-1">
-                                  via {item.paid_via}
-                                  {item.paid_at ? ` · ${formatDate(item.paid_at)}` : ""}
-                                </div>
-                              )}
                             </td>
                             <td className="px-6 py-4">
-                              {item.payable_status === "Paid" ? (
-                                <Button variant="ghost" size="sm" onClick={() => handleRevertToPending(item)}>
-                                  <RotateCcw className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
-                                  Revert
-                                </Button>
-                              ) : (
-                                <Button variant="ghost" size="sm" onClick={() => openMarkPaid(item)}>
-                                  <CheckCircle2 className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
-                                  Mark Paid
-                                </Button>
-                              )}
+                              <Button variant="ghost" size="sm" onClick={() => setPayableVendorKey(g.key)}>
+                                <FileText className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
+                                View
+                              </Button>
                             </td>
                           </tr>
                         );
@@ -4827,44 +4774,6 @@ export default function Accounting() {
         )}
       </Modal>
 
-      <Modal
-        isOpen={isCashOpeningOpen}
-        error={error}
-        onDismissError={() => setError(null)}
-        onClose={() => setIsCashOpeningOpen(false)}
-        title="Set Opening Cash Balance"
-        size="sm"
-      >
-        <form className="space-y-4" onSubmit={handleSetCashOpening}>
-          <div>
-            <p className="text-sm text-slate-600 mb-3">
-              Enter the cash on hand at the start of operations. This locks once saved —
-              you won&apos;t be able to change it later.
-            </p>
-            <label className="block text-sm text-slate-700 mb-1">Opening Cash (PKR) *</label>
-            <input
-              required
-              autoFocus
-              type="number"
-              step="0.01"
-              min="0"
-              value={cashOpeningInput}
-              onChange={(e) => setCashOpeningInput(e.target.value)}
-              className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
-              placeholder="0.00"
-            />
-          </div>
-          <div className="flex items-center gap-3 pt-2">
-            <Button type="submit" variant="primary" size="md" className="flex-1" disabled={submitting}>
-              {submitting ? "Saving…" : "Set & Lock"}
-            </Button>
-            <Button type="button" variant="secondary" size="md" onClick={() => setIsCashOpeningOpen(false)}>
-              Cancel
-            </Button>
-          </div>
-        </form>
-      </Modal>
-
       <Modal isOpen={isTransferModalOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsTransferModalOpen(false)} title="Wire Transfer" size="md">
         <form className="space-y-4" onSubmit={handleTransfer}>
           <div>
@@ -4952,6 +4861,86 @@ export default function Accounting() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        isOpen={!!payableVendorGroup}
+        onClose={() => setPayableVendorKey(null)}
+        title={payableVendorGroup ? `Payables — ${payableVendorGroup.name}` : "Payables"}
+        size="lg"
+      >
+        {payableVendorGroup && (
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-3 text-xs">
+              <span className="px-2.5 py-1 rounded bg-slate-100 text-slate-700">{payableVendorGroup.items.length} transaction(s)</span>
+              <span className="px-2.5 py-1 rounded bg-danger-50 text-danger-700">Outstanding: PKR {payableVendorGroup.outstanding.toLocaleString()}</span>
+              <span className="px-2.5 py-1 rounded bg-success-50 text-success-700">Paid: PKR {payableVendorGroup.paid.toLocaleString()}</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-slate-200">
+                    <th className="text-left px-6 py-3 text-sm text-slate-500">Category</th>
+                    <th className="text-left px-6 py-3 text-sm text-slate-500">Client</th>
+                    <th className="text-left px-6 py-3 text-sm text-slate-500">Amount Due</th>
+                    <th className="text-left px-6 py-3 text-sm text-slate-500">Expense Date</th>
+                    <th className="text-left px-6 py-3 text-sm text-slate-500">Due Date</th>
+                    <th className="text-left px-6 py-3 text-sm text-slate-500">Status</th>
+                    <th className="text-left px-6 py-3 text-sm text-slate-500">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {payableVendorGroup.items.map((item) => {
+                        const status = payableDisplayStatus(item);
+                        const statusClass =
+                          status === "Paid"
+                            ? "bg-success-50 text-success-700"
+                            : status === "Overdue"
+                            ? "bg-danger-50 text-danger-700"
+                            : "bg-warning-50 text-warning-700";
+                        return (
+                          <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                            <td className="px-6 py-4 text-sm text-slate-600">{item.category?.name ?? "—"}</td>
+                            <td className="px-6 py-4 text-sm text-slate-600">
+                              {item.client?.name ?? <span className="text-slate-400">Office</span>}
+                            </td>
+                            <td className="px-6 py-4 text-sm text-danger-600">
+                              PKR {Number(item.amount).toLocaleString()}
+                            </td>
+                            <td className="px-6 py-4 text-sm text-slate-600">{formatDate(item.expense_date)}</td>
+                            <td className="px-6 py-4 text-sm text-slate-600">{item.due_date ? formatDate(item.due_date) : "—"}</td>
+                            <td className="px-6 py-4">
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${statusClass}`}>
+                                {status}
+                              </span>
+                              {status === "Paid" && item.paid_via && (
+                                <div className="text-[10px] text-slate-500 mt-1">
+                                  via {item.paid_via}
+                                  {item.paid_at ? ` · ${formatDate(item.paid_at)}` : ""}
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-6 py-4">
+                              {item.payable_status === "Paid" ? (
+                                <Button variant="ghost" size="sm" onClick={() => handleRevertToPending(item)}>
+                                  <RotateCcw className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
+                                  Revert
+                                </Button>
+                              ) : (
+                                <Button variant="ghost" size="sm" onClick={() => openMarkPaid(item)}>
+                                  <CheckCircle2 className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
+                                  Mark Paid
+                                </Button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </Modal>
 
       <Modal isOpen={isMarkPaidModalOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsMarkPaidModalOpen(false)} title="Mark Payable as Paid" size="md">

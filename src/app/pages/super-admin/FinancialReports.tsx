@@ -219,7 +219,8 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
           .lte("expense_date", end),
         supabase.from("expense_categories").select("*"),
         supabase.from("bank_accounts").select("id, balance"),
-        supabase.from("treasury").select("cash_balance").eq("company_id", scopeCompanyFilter).maybeSingle(),
+        // Cash in Hand = Σ custodian held cash (0466), not treasury.cash_balance.
+        supabase.rpc("cash_in_hand", { p_company_id: scopeCompanyId ?? null }).maybeSingle<{ cash_balance: number }>(),
       ]);
       setChartInvoices((invRes.data ?? []) as Invoice[]);
       setChartExpenses((expRes.data ?? []) as Expense[]);

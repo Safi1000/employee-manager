@@ -172,7 +172,8 @@ export function CashCustodyPanel({ onReady, onSummary }: {
         supabase.from("partners").select("id, name, scope, branch_id, opening_balance, is_active").eq("company_id", companyId).order("name"),
         supabase.from("branches").select("id, name").eq("company_id", companyId).order("name"),
         supabase.from("bank_accounts").select("id, bank_name, account_number, balance, active").eq("company_id", companyId),
-        supabase.from("treasury").select("cash_balance").eq("company_id", companyId).maybeSingle(),
+        // Cash in Hand = Σ custodian held cash (0466), not treasury.cash_balance.
+        supabase.rpc("cash_in_hand", { p_company_id: companyId }).maybeSingle<{ cash_balance: number }>(),
         supabase.from("partner_account_entries").select("partner_id, type, amount").eq("company_id", companyId),
         supabase.from("investor_ledger_entries").select("investor_id, type, amount").eq("company_id", companyId),
         supabase.from("employees").select("id, full_name, lifecycle_state").eq("category", "office_staff").order("full_name"),
@@ -468,8 +469,10 @@ export function CashCustodyPanel({ onReady, onSummary }: {
     [officeStaff, partners, locations],
   );
 
-  // Cash-in-hand custodian reconciliation (Change 1): every custodian's held cash,
-  // summed, must equal Total Cash in Hand (treasury). The gap is unattributed cash.
+  // Cash-in-hand custodian reconciliation (Change 1). Since 0466 Cash in Hand IS
+  // the database's Σ custodian held cash, so a non-zero gap here means this
+  // screen's per-custodian fold disagrees with cash_in_hand(). Every custodian's held cash,
+  // summed, is Total Cash in Hand.
   const custodyRecon = useMemo(() => {
     const custodians = locationsWithBalance
       .filter((l) => l.is_active && l.location_type !== "BANK")
@@ -481,7 +484,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationsWithBalance, cashInByLoc, cashOutByLoc, chequeInByLoc, withdrawInByLoc, payrollCashByLoc, cashInHand]);
 
-  // Total Cash = Cash in Hand (treasury) ONLY. This page deals with cash; bank
+  // Total Cash = Cash in Hand (Σ custodians, 0466) ONLY. This page deals with cash; bank
   // balances live on the Bank Accounts tab and are deliberately not added in here.
   // Custodian/petty locations are a BREAKDOWN of Cash in Hand (Σ custodian held
   // already equals it), so they are not added either.
@@ -784,7 +787,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
                     <td colSpan={2} />
                   </tr>
                   <tr className="bg-slate-50">
-                    <td className="px-6 py-2 text-sm text-slate-500" colSpan={4}>Total Cash in Hand (treasury)</td>
+                    <td className="px-6 py-2 text-sm text-slate-500" colSpan={4}>Total Cash in Hand</td>
                     <td className="px-6 py-2 text-right text-sm font-mono text-slate-700">{fmt(cashInHand)}</td>
                     <td colSpan={2} />
                   </tr>
