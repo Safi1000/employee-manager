@@ -259,6 +259,9 @@ export default function EmployeeAssignments() {
   const [sites, setSites] = useState<{ id: string; client_id: string; name: string }[]>([]);
   /** guard_id -> site_id of their open posting. The employee row does not know. */
   const [siteByGuard, setSiteByGuard] = useState<Map<string, string>>(new Map());
+  // The site of each guard's latest posting, open or closed — where a separated
+  // guard is placed in the Fired view (their open-posting site is gone).
+  const [lastSiteByGuard, setLastSiteByGuard] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -335,10 +338,11 @@ export default function EmployeeAssignments() {
       supabase.from("contract_addendums").select("*"),
       supabase.from("v_client_strength_reconciliation").select("*").order("client_name"),
       supabase.from("sites").select("id, client_id, name").order("name"),
+      // Closed postings too: a separated guard's posting is closed by the
+      // separation, and the Fired view places them under the site they LEFT.
       supabase
         .from("deployments")
-        .select("guard_id, site_id")
-        .is("end_date", null)
+        .select("guard_id, site_id, start_date, end_date")
         .range(0, 9999),
     ]);
     const firstErr = [locRes, cliRes, brRes, empRes].find((r) => r.error)?.error;
@@ -351,11 +355,20 @@ export default function EmployeeAssignments() {
     setAddendums((adRes.data ?? []) as ContractAddendum[]);
     setRecon((recRes.data ?? []) as ReconRow[]);
     setSites((siteRes.data ?? []) as { id: string; client_id: string; name: string }[]);
+    type DepRow = { guard_id: string; site_id: string | null; start_date: string | null; end_date: string | null };
     const guardSite = new Map<string, string>();
-    for (const d of (depRes.data ?? []) as { guard_id: string; site_id: string | null }[]) {
-      if (d.site_id) guardSite.set(d.guard_id, d.site_id);
+    // guard → the site of their most recent posting (open wins, else the latest
+    // end date). Only the Fired view reads it.
+    const lastSite = new Map<string, { site: string; end: string }>();
+    for (const d of (depRes.data ?? []) as DepRow[]) {
+      if (!d.site_id) continue;
+      if (d.end_date === null) guardSite.set(d.guard_id, d.site_id);
+      const end = d.end_date ?? "9999-12-31";
+      const prev = lastSite.get(d.guard_id);
+      if (!prev || end > prev.end) lastSite.set(d.guard_id, { site: d.site_id, end });
     }
     setSiteByGuard(guardSite);
+    setLastSiteByGuard(new Map([...lastSite].map(([g, v]) => [g, v.site])));
     const addl = new Map<string, string[]>();
     for (const r of (ebRes.data ?? []) as { employee_id: string; branch_id: string }[]) {
       const arr = addl.get(r.employee_id) ?? [];
@@ -691,7 +704,7 @@ export default function EmployeeAssignments() {
       if (clientSites.length > 0) {
         const bySite = new Map<string, EmployeeRow[]>();
         for (const e of rows) {
-          const sid = siteByGuard.get(e.id) ?? "";
+          const sid = (showFired ? lastSiteByGuard : siteByGuard).get(e.id) ?? "";
           const arr = bySite.get(sid) ?? [];
           arr.push(e);
           bySite.set(sid, arr);
@@ -704,6 +717,9 @@ export default function EmployeeAssignments() {
         // Anyone whose posting names no site would otherwise vanish from the card.
         const orphans = bySite.get("") ?? [];
         if (orphans.length) siteBuckets.push({ id: "", name: "No site recorded", rows: orphans });
+        // The Fired view is a lookup of who left, not an assignment target, so a
+        // site nobody left from is noise.
+        if (showFired) siteBuckets = siteBuckets.filter((b) => b.rows.length > 0);
       }
       // A client is worth a card when it has a live contract, people on it, or
       // both. Missing exactly one of the two is a problem to fix, so the card
@@ -768,10 +784,12 @@ export default function EmployeeAssignments() {
     visibleGroups = visibleGroups.filter(
       (g) => !g.clientId || !(g.gap === "contract" && g.rows.length === 0),
     );
+    // Fired view: only the cards that actually hold someone who left.
+    if (showFired) visibleGroups = visibleGroups.filter((g) => g.rows.length > 0);
     if (q) visibleGroups = visibleGroups.filter((g) => g.label.toLowerCase().includes(q));
     if (onlyMismatch) return visibleGroups.filter((g) => g.recon != null && g.recon.variance !== 0);
     return visibleGroups;
-  }, [employees, clients, sites, branches, siteByGuard, search, recon, onlyMismatch, servicesOnlyClientIds, showServicesClients, committedPersonnelByClient, clientsWithLiveContract]);
+  }, [employees, clients, sites, branches, siteByGuard, lastSiteByGuard, showFired, search, recon, onlyMismatch, servicesOnlyClientIds, showServicesClients, committedPersonnelByClient, clientsWithLiveContract]);
 
   // Hiding a client must never make its guards unreachable — this page is the only
   // place their posting and pay can be edited. If a Services-only client somehow
@@ -858,6 +876,14 @@ export default function EmployeeAssignments() {
    * One employee table, shared by the flat client view and by each site row so
    * the two can never drift apart. `rowsToShow` is the slice being rendered.
    */
+  // "Fired · 09 Sep 2026" — the fire (effective) date rides on the badge so it
+  // is visible to everyone who can see the row, not only in the Accounts-only
+  // "Left on" column.
+  const separationBadge = (e: EmployeeRow) => {
+    const on = formatDate(e.termination_date ?? e.last_working_day ?? e.exit_date);
+    return on ? `${lifecycleStatusLabel(e)} · ${on}` : lifecycleStatusLabel(e);
+  };
+
   const renderEmployeeTable = (g: Group, rowsToShow: EmployeeRow[]) => {
     const sel = selectionFor(g.key);
     return (
@@ -888,7 +914,7 @@ export default function EmployeeAssignments() {
                     badge={(e) =>
                       isSeparatedState(e.lifecycle_state) ? (
                         <span className="text-[10px] uppercase tracking-wide text-danger-700 dark:text-danger-500">
-                          {lifecycleStatusLabel(e)}
+                          {separationBadge(e)}
                         </span>
                       ) : null
                     }
@@ -903,7 +929,7 @@ export default function EmployeeAssignments() {
                         { label: "Per day", value: (e: EmployeeRow) => <span className="tabular-nums">{money(perDayOf(e.base_salary))}</span> },
                         { label: "Allowance", value: (e: EmployeeRow) => <span className="tabular-nums">{money(e.allowance)}</span> },
                         {
-                          label: showFired ? "Left on" : "Joined",
+                          label: showFired ? "Fired / left on" : "Joined",
                           value: (e: EmployeeRow) =>
                             showFired
                               ? formatDate(e.termination_date ?? e.last_working_day ?? e.exit_date) || "—"
@@ -942,7 +968,7 @@ export default function EmployeeAssignments() {
                               aria-label={`Select all in ${g.label}`}
                             />
                           </th>
-                          {["Code", "Name", "Department", "Shift", ...(canAccounts ? ["Base", "Per day", "Allowance", showFired ? "Left on" : "Joined"] : [])].map((h) => (
+                          {["Code", "Name", "Department", "Shift", ...(canAccounts ? ["Base", "Per day", "Allowance", showFired ? "Fired / left on" : "Joined"] : [])].map((h) => (
                             <th key={h} className="text-left px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground whitespace-nowrap">
                               {h}
                             </th>
@@ -975,7 +1001,7 @@ export default function EmployeeAssignments() {
                               {e.full_name}
                               {isSeparatedState(e.lifecycle_state) && (
                                 <span className="ml-2 text-[10px] uppercase tracking-wide text-danger-700 dark:text-danger-500">
-                                  {lifecycleStatusLabel(e)}
+                                  {separationBadge(e)}
                                 </span>
                               )}
                             </td>
@@ -1462,7 +1488,9 @@ export default function EmployeeAssignments() {
                                   title={b.id ? "Assigned / required (committed strength) for this site" : undefined}
                                 >
                                   {(() => {
-                                    if (!b.id) return `${b.rows.length} employee${b.rows.length === 1 ? "" : "s"}`;
+                                    // Assigned/required is about the living roster; in the Fired
+                                    // view the site just counts who left from it.
+                                    if (!b.id || showFired) return `${b.rows.length} employee${b.rows.length === 1 ? "" : "s"}`;
                                     // A single-site client keeps its strength on a contract-wide line
                                     // (no site_id), so per-site lines read 0 — fall back to the client's
                                     // own contracted total. Multi-site clients carry per-site strength.

@@ -95,8 +95,13 @@ export default function FireGuardModal({
     // "fired on the 10th" means the 10th is already empty and a replacement can
     // start the 10th. Passing the fire date as last_working_day too would keep the
     // post filled through the 10th and block the replacement from starting then.
-    const lwd = new Date(date + "T00:00:00");
-    lwd.setDate(lwd.getDate() - 1);
+    //
+    // Pure UTC arithmetic. Building the date at LOCAL midnight and reading it back
+    // with toISOString() shifted it a second day in Pakistan (UTC+5): local
+    // midnight on the 8th is 19:00 UTC on the 7th, so "fired on the 9th" stored a
+    // last working day of the 7th.
+    const lwd = new Date(date + "T00:00:00Z");
+    lwd.setUTCDate(lwd.getUTCDate() - 1);
     const lastWorkingDay = lwd.toISOString().slice(0, 10);
     const reasonVal = type === "resignation" ? "resignation" : "termination_misconduct";
     const { error: sErr } = await supabase.rpc("record_separation", {
