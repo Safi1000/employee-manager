@@ -6,7 +6,8 @@ import { describeUnconfirmed, type AttendanceSummary } from "./attendanceSummary
 import { brandingFromCompany, drawBrandedHeader, drawBrandedFooter, hexToRgb } from "./pdfBranding";
 
 // Daily Operations Report: one line per client for a given day, carrying whatever
-// was written in that client's Details box. The per-post version (required vs
+// was written in that client's Details box and, beside it, its Other Updates
+// box (0473). The per-post version (required vs
 // present strength, silent-post alerting, exception notes) was dropped — the
 // report is now a client-by-client written note, not a headcount reconciliation.
 // Uses the shared branded jsPDF engine — no new library.
@@ -25,8 +26,10 @@ const MARGIN = 14;
 const PAGE_W = 210;
 const PAGE_H = 297;
 const CONTENT_W = PAGE_W - MARGIN * 2;
-const CLIENT_W = 58;
-const DETAILS_W = CONTENT_W - CLIENT_W;
+const CLIENT_W = 46;
+// Details and Other Updates share what the client column leaves, equally.
+const DETAILS_W = (CONTENT_W - CLIENT_W) / 2;
+const OTHER_W = CONTENT_W - CLIENT_W - DETAILS_W;
 const LINE_H = 4.2;
 const PAD_Y = 1.6;
 const FOOTER_LIMIT = PAGE_H - 20;
@@ -36,6 +39,8 @@ export type DailyReportRow = {
   details: string | null;
   /** Explicitly marked "nothing to report" — sorted to the bottom, labelled. */
   no_report?: boolean;
+  /** "Other Updates" (0473). Independent of no_report. */
+  other_updates?: string | null;
 };
 
 export type DailyReportPdfOptions = {
@@ -48,6 +53,7 @@ export type DailyReportPdfOptions = {
 };
 
 const hasNote = (r: DailyReportRow) => !r.no_report && (r.details ?? "").trim().length > 0;
+const hasOther = (r: DailyReportRow) => (r.other_updates ?? "").trim().length > 0;
 
 export function generateDailyOperationsReportPdf(
   company: Company | null | undefined,
@@ -127,10 +133,11 @@ export function generateDailyOperationsReportPdf(
   }
 
   // ── Client notes ──────────────────────────────────────────────────────────
-  // Written notes first, "No report" underneath. Within each group the page's
-  // own order (client name) is preserved — a stable sort, so the report reads
-  // the same way twice.
-  const ordered = [...rows].sort((a, c) => Number(hasNote(c)) - Number(hasNote(a)));
+  // Anything written — Details or Other Updates — first, the silent ones
+  // underneath. Within each group the page's own order (client name) is
+  // preserved — a stable sort, so the report reads the same way twice.
+  const said = (x: DailyReportRow) => hasNote(x) || hasOther(x);
+  const ordered = [...rows].sort((a, c) => Number(said(c)) - Number(said(a)));
 
   const drawHead = () => {
     doc.setFillColor(r, g, bl);
@@ -140,6 +147,7 @@ export function generateDailyOperationsReportPdf(
     doc.setTextColor(255, 255, 255);
     doc.text("Client", MARGIN + 2, y + 4);
     doc.text("Details", MARGIN + CLIENT_W + 2, y + 4);
+    doc.text("Other Updates", MARGIN + CLIENT_W + DETAILS_W + 2, y + 4);
     y += 6;
   };
   drawHead();
@@ -157,8 +165,13 @@ export function generateDailyOperationsReportPdf(
         ? "No report"
         : "—";
     const detailLines = doc.splitTextToSize(detailText, DETAILS_W - 4) as string[];
+    const otherWritten = hasOther(row);
+    const otherLines = doc.splitTextToSize(
+      otherWritten ? (row.other_updates ?? "").trim() : "—",
+      OTHER_W - 4,
+    ) as string[];
     const nameLines = doc.splitTextToSize(row.client_name, CLIENT_W - 4) as string[];
-    const rowH = Math.max(detailLines.length, nameLines.length) * LINE_H + PAD_Y * 2;
+    const rowH = Math.max(detailLines.length, otherLines.length, nameLines.length) * LINE_H + PAD_Y * 2;
 
     // A row taller than the page would loop forever if we tried to keep it whole,
     // so only break when there is a page left to break onto.
@@ -182,6 +195,11 @@ export function generateDailyOperationsReportPdf(
     else doc.setTextColor(148, 163, 184);
     detailLines.forEach((ln, li) =>
       doc.text(ln, MARGIN + CLIENT_W + 2, y + PAD_Y + 3 + li * LINE_H),
+    );
+    if (otherWritten) doc.setTextColor(15, 23, 42);
+    else doc.setTextColor(148, 163, 184);
+    otherLines.forEach((ln, li) =>
+      doc.text(ln, MARGIN + CLIENT_W + DETAILS_W + 2, y + PAD_Y + 3 + li * LINE_H),
     );
     y += rowH;
   });
