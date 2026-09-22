@@ -77,6 +77,18 @@ const todayStr = () => new Date().toISOString().slice(0, 10);
 
 type PayableDisplayStatus = "Pending" | "Paid" | "Overdue";
 
+/** A payment to a vendor (0470), applied to its bills oldest first. */
+type VendorPaymentRow = {
+  id: string;
+  vendor_id: string;
+  amount: number;
+  paid_via: "Cash" | "Bank";
+  paid_bank_account_id: string | null;
+  custodian_location_id: string | null;
+  paid_on: string;
+  notes: string | null;
+};
+
 const payableDisplayStatus = (row: PayableRow): PayableDisplayStatus => {
   if (row.payable_status === "Paid") return "Paid";
   if (row.due_date && row.due_date < todayStr()) return "Overdue";
@@ -291,6 +303,19 @@ export default function Accounting() {
   const [custodians, setCustodians] = useState<CustodianOption[]>([]);
   const [paymentCustodianId, setPaymentCustodianId] = useState<string>("");
   const [markPaidCustodianId, setMarkPaidCustodianId] = useState<string>("");
+  // 0470: what each bill has been paid through vendor payments, read from the
+  // payable_outstanding view, and the vendor payments themselves.
+  const [paidByExpense, setPaidByExpense] = useState<Map<string, number>>(new Map());
+  const [vendorPayments, setVendorPayments] = useState<VendorPaymentRow[]>([]);
+  // Pay modal. expenseId set = pay only that bill's balance; null = the vendor's
+  // bills, oldest first.
+  const [payTarget, setPayTarget] = useState<
+    { vendorId: string; vendorName: string; expenseId: string | null; owed: number } | null
+  >(null);
+  const [payAmount, setPayAmount] = useState("");
+  const [payVia, setPayVia] = useState<"Cash" | "Bank">("Cash");
+  const [payBankId, setPayBankId] = useState("");
+  const [payCustodianId, setPayCustodianId] = useState("");
   // Record WHT (0423). Withholding used to be a field on the Record Payment
   // form and nowhere else, so a deduction the client only told you about later
   // could never be entered — the receipt stood at zero for ever. It is its own
@@ -802,21 +827,28 @@ export default function Accounting() {
     return ledger;
   }, [transactions, banks]);
 
+  // A bill's paid part: all of it once Paid, otherwise what vendor payments
+  // have applied to it (0470). What is still owed is the rest.
+  const paidOf = useCallback(
+    (p: PayableRow) => (p.payable_status === "Paid" ? Number(p.amount) : paidByExpense.get(p.id) ?? 0),
+    [paidByExpense],
+  );
+  const owedOf = useCallback((p: PayableRow) => Number(p.amount) - paidOf(p), [paidOf]);
+
   const payableTotals = useMemo(() => {
     let total = 0;
     let pending = 0;
     let paid = 0;
     let overdue = 0;
     for (const p of payables) {
-      const amt = Number(p.amount);
-      total += amt;
+      total += Number(p.amount);
+      paid += paidOf(p);
       const st = payableDisplayStatus(p);
-      if (st === "Pending") pending += amt;
-      else if (st === "Paid") paid += amt;
-      else if (st === "Overdue") overdue += amt;
+      if (st === "Pending") pending += owedOf(p);
+      else if (st === "Overdue") overdue += owedOf(p);
     }
     return { total, pending, paid, overdue };
-  }, [payables]);
+  }, [payables, paidOf, owedOf]);
 
   const loadAll = async () => {
     setLoading(true);
@@ -996,6 +1028,16 @@ export default function Accounting() {
     // and a balance row id kept in component state is an invitation to.
     setTransactions(txRows);
     setPayables((payablesRes.data ?? []) as PayableRow[]);
+    const [paidRes, vpRes] = await Promise.all([
+      supabase.from("payable_outstanding").select("expense_id, paid_amount").gt("paid_amount", 0),
+      supabase.from("vendor_payments").select("*").order("paid_on", { ascending: false }).order("created_at", { ascending: false }),
+    ]);
+    if (paidRes.error) setError(paidRes.error.message);
+    if (vpRes.error) setError(vpRes.error.message);
+    setPaidByExpense(
+      new Map(((paidRes.data ?? []) as { expense_id: string; paid_amount: number }[]).map((r) => [r.expense_id, Number(r.paid_amount)])),
+    );
+    setVendorPayments((vpRes.data ?? []) as VendorPaymentRow[]);
 
     const allClients = (clientsRes.data ?? []) as Client[];
     const allInvoices = invRows;
@@ -1497,77 +1539,94 @@ export default function Accounting() {
     });
   };
 
-  const openMarkPaid = (row: PayableRow) => {
-    setSelectedPayable(row);
-    setMarkPaidVia("Cash");
-    setMarkPaidBankId(banks[0]?.id ?? "");
-    setMarkPaidCustodianId("");
-    setIsMarkPaidModalOpen(true);
+  const openPay = (vendorId: string, vendorName: string, owed: number, expenseId: string | null = null) => {
+    setPayTarget({ vendorId, vendorName, expenseId, owed });
+    setPayAmount(expenseId ? String(owed) : "");
+    setPayVia("Cash");
+    setPayBankId(banks[0]?.id ?? "");
+    setPayCustodianId("");
+    setError(null);
   };
 
-  const handleMarkPaid = async (e: React.FormEvent) => {
+  /**
+   * How the entered amount would clear the vendor's open bills, oldest first.
+   * A PREVIEW of what pay_vendor_payables does — the RPC decides, in the same
+   * order (expense_date, then created_at).
+   */
+  const payPreview = useMemo(() => {
+    if (!payTarget) return [];
+    let left = Math.max(0, Number(payAmount) || 0);
+    const open = payables
+      .filter((p) => (payTarget.expenseId ? p.id === payTarget.expenseId : p.vendor_id === payTarget.vendorId))
+      .filter((p) => p.payable_status !== "Paid" && owedOf(p) > 0)
+      .sort((a, b) => a.expense_date.localeCompare(b.expense_date) || (a.created_at ?? "").localeCompare(b.created_at ?? ""));
+    return open.map((p) => {
+      const owed = owedOf(p);
+      const take = Math.min(left, owed);
+      left -= take;
+      return { bill: p, owed, take, remaining: owed - take };
+    });
+  }, [payTarget, payAmount, payables, owedOf]);
+
+  const handlePay = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedPayable) return;
-    const amount = Number(selectedPayable.amount);
-    if (!amount || amount <= 0) {
-      setError("Invalid payable amount.");
+    if (!payTarget) return;
+    const amount = Math.round((Number(payAmount) || 0) * 100) / 100;
+    if (amount <= 0) {
+      setError("Enter the amount paid.");
       return;
     }
-    if (markPaidVia === "Cash" && amount > cashBalance) {
-      setError("Insufficient cash balance.");
+    if (amount > payTarget.owed + 0.005) {
+      setError(`That is more than is owed (PKR ${payTarget.owed.toLocaleString()}).`);
       return;
     }
-    if (markPaidVia === "Cash" && !markPaidCustodianId) {
+    if (payVia === "Cash" && !payCustodianId) {
       setError("Select the office-staff member who paid the cash.");
       return;
     }
-    if (markPaidVia === "Bank") {
-      if (!markPaidBankId) {
-        setError("Select a bank account.");
-        return;
-      }
-      const bank = banks.find((b) => b.id === markPaidBankId);
-      if (!bank) {
-        setError("Bank account not found.");
-        return;
-      }
-      if (amount > Number(bank.balance)) {
-        setError("Insufficient bank balance.");
-        return;
-      }
+    if (payVia === "Bank" && !payBankId) {
+      setError("Select a bank account.");
+      return;
     }
     setSubmitting(true);
     setError(null);
     try {
-      // 0381. ONE CALL, and the ORDER inside it is the fix.
-      //
-      // This flow used to move the money FIRST and update the expense last, in
-      // separate round trips. A user with accounting.edit and without
-      // expenses.edit therefore paid the vendor and left the payable sitting at
-      // Pending — the cash gone, the obligation still open, and the error
-      // message arriving after the fact. settle_payable_expense writes the row
-      // first and moves the money second, inside one transaction, and refuses
-      // a payable that is already settled rather than paying it twice.
       let custodianLocId: string | null = null;
-      if (markPaidVia === "Cash") {
+      if (payVia === "Cash") {
         const cid = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
-        const staff = custodians.find((c) => c.employeeId === markPaidCustodianId);
+        const staff = custodians.find((c) => c.employeeId === payCustodianId);
         if (cid && staff) custodianLocId = await ensureCustodianLocation(cid, staff.employeeId, staff.fullName);
       }
-      const { error: settleErr } = await supabase.rpc("settle_payable_expense", {
-        p_expense_id: selectedPayable.id,
-        p_paid_via: markPaidVia,
-        p_paid_bank_account_id: markPaidVia === "Bank" ? markPaidBankId : null,
+      // 0470. One call: the payment, its application to the bills oldest first,
+      // each bill's posting, and the money — together or not at all.
+      const { error: payErr } = await supabase.rpc("pay_vendor_payables", {
+        p_vendor_id: payTarget.vendorId,
+        p_amount: amount,
+        p_paid_via: payVia,
+        p_paid_bank_account_id: payVia === "Bank" ? payBankId : null,
         p_custodian_location_id: custodianLocId,
+        p_expense_id: payTarget.expenseId,
       });
-      if (settleErr) throw settleErr;
-            setIsMarkPaidModalOpen(false);
-      setSelectedPayable(null);
+      if (payErr) throw payErr;
+      setPayTarget(null);
       await loadAll();
     } catch (err: any) {
       setError(err.message ?? String(err));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleRevertVendorPayment = async (vp: VendorPaymentRow) => {
+    if (!window.confirm(`Revert this vendor payment of PKR ${Number(vp.amount).toLocaleString()}? The bills it cleared go back to what they owed, and the money is returned.`))
+      return;
+    setError(null);
+    try {
+      const { error: revErr } = await supabase.rpc("revert_vendor_payment", { p_vendor_payment_id: vp.id });
+      if (revErr) throw revErr;
+      await loadAll();
+    } catch (err: any) {
+      setError(err.message ?? String(err));
     }
   };
 
@@ -1626,13 +1685,12 @@ export default function Accounting() {
     let overdueTotal = 0;
     for (const p of payables) {
       const status = payableDisplayStatus(p);
-      const amt = Number(p.amount);
-      if (status === "Pending") pendingTotal += amt;
-      else if (status === "Paid") paidTotal += amt;
-      else if (status === "Overdue") overdueTotal += amt;
+      paidTotal += paidOf(p);
+      if (status === "Pending") pendingTotal += owedOf(p);
+      else if (status === "Overdue") overdueTotal += owedOf(p);
     }
     return { pendingTotal, paidTotal, overdueTotal };
-  }, [payables]);
+  }, [payables, paidOf, owedOf]);
 
   // One row per vendor: every filtered payable to the same vendor folds into a
   // single line, and View opens that vendor's transactions. Totals are the sum
@@ -1652,11 +1710,9 @@ export default function Accounting() {
       }
       g.items.push(p);
       const status = payableDisplayStatus(p);
-      const amt = Number(p.amount);
-      if (status === "Paid") {
-        g.paid += amt;
-      } else {
-        g.outstanding += amt;
+      g.paid += paidOf(p);
+      if (status !== "Paid") {
+        g.outstanding += owedOf(p);
         if (status === "Overdue") g.overdue = true; else g.pending = true;
         if (p.due_date && (!g.nextDue || p.due_date < g.nextDue)) g.nextDue = p.due_date;
       }
@@ -1665,7 +1721,7 @@ export default function Accounting() {
       g.items.sort((a, b) => (b.expense_date ?? "").localeCompare(a.expense_date ?? ""));
     }
     return Array.from(groups.values()).sort((a, b) => b.outstanding - a.outstanding || a.name.localeCompare(b.name));
-  }, [filteredPayables]);
+  }, [filteredPayables, paidOf, owedOf]);
   const payableVendorGroup = payableVendorKey ? payableGroups.find((g) => g.key === payableVendorKey) ?? null : null;
 
   /**
@@ -2623,10 +2679,18 @@ export default function Accounting() {
                               </span>
                             </td>
                             <td className="px-6 py-4">
-                              <Button variant="ghost" size="sm" onClick={() => setPayableVendorKey(g.key)}>
-                                <FileText className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
-                                View
-                              </Button>
+                              <div className="flex items-center gap-1">
+                                <Button variant="ghost" size="sm" onClick={() => setPayableVendorKey(g.key)}>
+                                  <FileText className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
+                                  View
+                                </Button>
+                                {g.key !== "no-vendor" && g.outstanding > 0 && (
+                                  <Button variant="ghost" size="sm" onClick={() => openPay(g.key, g.name, g.outstanding)}>
+                                    <CheckCircle2 className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
+                                    Pay
+                                  </Button>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         );
@@ -4875,6 +4939,16 @@ export default function Accounting() {
               <span className="px-2.5 py-1 rounded bg-slate-100 text-slate-700">{payableVendorGroup.items.length} transaction(s)</span>
               <span className="px-2.5 py-1 rounded bg-danger-50 text-danger-700">Outstanding: PKR {payableVendorGroup.outstanding.toLocaleString()}</span>
               <span className="px-2.5 py-1 rounded bg-success-50 text-success-700">Paid: PKR {payableVendorGroup.paid.toLocaleString()}</span>
+              {payableVendorGroup.key !== "no-vendor" && payableVendorGroup.outstanding > 0 && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  className="ml-auto"
+                  onClick={() => openPay(payableVendorGroup.key, payableVendorGroup.name, payableVendorGroup.outstanding)}
+                >
+                  Pay
+                </Button>
+              )}
             </div>
             <div className="overflow-x-auto">
               <table className="w-full">
@@ -4906,12 +4980,17 @@ export default function Accounting() {
                             </td>
                             <td className="px-6 py-4 text-sm text-danger-600">
                               PKR {Number(item.amount).toLocaleString()}
+                              {status !== "Paid" && paidOf(item) > 0 && (
+                                <div className="text-[10px] text-slate-500 mt-1">
+                                  Paid PKR {paidOf(item).toLocaleString()} · Remaining PKR {owedOf(item).toLocaleString()}
+                                </div>
+                              )}
                             </td>
                             <td className="px-6 py-4 text-sm text-slate-600">{formatDate(item.expense_date)}</td>
                             <td className="px-6 py-4 text-sm text-slate-600">{item.due_date ? formatDate(item.due_date) : "—"}</td>
                             <td className="px-6 py-4">
                               <span className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs ${statusClass}`}>
-                                {status}
+                                {status !== "Paid" && paidOf(item) > 0 ? "Partially paid" : status}
                               </span>
                               {status === "Paid" && item.paid_via && (
                                 <div className="text-[10px] text-slate-500 mt-1">
@@ -4921,17 +5000,28 @@ export default function Accounting() {
                               )}
                             </td>
                             <td className="px-6 py-4">
-                              {item.payable_status === "Paid" ? (
+                              {paidByExpense.has(item.id) ? (
+                                item.payable_status === "Paid" ? (
+                                  // Cleared by vendor payments: undone by reverting the
+                                  // payment below, not the bill.
+                                  <span className="text-[11px] text-slate-500">Vendor payment</span>
+                                ) : (
+                                  <Button variant="ghost" size="sm" onClick={() => openPay(payableVendorGroup.key, payableVendorGroup.name, owedOf(item), item.id)}>
+                                    <CheckCircle2 className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
+                                    Pay Rest
+                                  </Button>
+                                )
+                              ) : item.payable_status === "Paid" ? (
                                 <Button variant="ghost" size="sm" onClick={() => handleRevertToPending(item)}>
                                   <RotateCcw className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
                                   Revert
                                 </Button>
-                              ) : (
-                                <Button variant="ghost" size="sm" onClick={() => openMarkPaid(item)}>
+                              ) : item.vendor_id ? (
+                                <Button variant="ghost" size="sm" onClick={() => openPay(payableVendorGroup.key, payableVendorGroup.name, owedOf(item), item.id)}>
                                   <CheckCircle2 className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
                                   Mark Paid
                                 </Button>
-                              )}
+                              ) : null}
                             </td>
                           </tr>
                         );
@@ -4939,33 +5029,115 @@ export default function Accounting() {
                 </tbody>
               </table>
             </div>
+            {(() => {
+              const vps = vendorPayments.filter((v) => v.vendor_id === payableVendorGroup.key);
+              if (vps.length === 0) return null;
+              return (
+                <div className="border-t border-slate-200 pt-3">
+                  <div className="text-sm font-medium text-slate-700 mb-2">Vendor payments</div>
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-slate-200">
+                        <th className="text-left px-6 py-2 text-sm text-slate-500">Date</th>
+                        <th className="text-left px-6 py-2 text-sm text-slate-500">Amount</th>
+                        <th className="text-left px-6 py-2 text-sm text-slate-500">Paid via</th>
+                        <th className="text-left px-6 py-2 text-sm text-slate-500">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {vps.map((v) => (
+                        <tr key={v.id}>
+                          <td className="px-6 py-2 text-sm text-slate-600">{formatDate(v.paid_on)}</td>
+                          <td className="px-6 py-2 text-sm text-success-700">PKR {Number(v.amount).toLocaleString()}</td>
+                          <td className="px-6 py-2 text-sm text-slate-600">
+                            {v.paid_via === "Bank"
+                              ? `Bank · ${banks.find((b) => b.id === v.paid_bank_account_id)?.bank_name ?? "—"}`
+                              : `Cash · ${custodians.find((c) => c.locationId === v.custodian_location_id)?.fullName ?? "custodian"}`}
+                          </td>
+                          <td className="px-6 py-2">
+                            <Button variant="ghost" size="sm" onClick={() => handleRevertVendorPayment(v)}>
+                              <RotateCcw className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
+                              Revert
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
           </div>
         )}
       </Modal>
 
-      <Modal isOpen={isMarkPaidModalOpen} error={error} onDismissError={() => setError(null)} onClose={() => setIsMarkPaidModalOpen(false)} title="Mark Payable as Paid" size="md">
-        {selectedPayable && (
-          <form className="space-y-4" onSubmit={handleMarkPaid}>
+      <Modal
+        isOpen={!!payTarget}
+        error={error}
+        onDismissError={() => setError(null)}
+        onClose={() => setPayTarget(null)}
+        title={payTarget ? `Pay ${payTarget.vendorName}` : "Pay vendor"}
+        size="md"
+      >
+        {payTarget && (
+          <form className="space-y-4" onSubmit={handlePay}>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Vendor</label>
+                <label className="block text-sm text-slate-700 mb-1">Outstanding</label>
                 <input
                   type="text"
-                  value={selectedPayable.vendor?.name ?? "—"}
+                  value={`PKR ${payTarget.owed.toLocaleString()}`}
                   disabled
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
                 />
               </div>
               <div>
-                <label className="block text-sm text-slate-700 mb-1">Amount Due</label>
+                <label className="block text-sm text-slate-700 mb-1">Amount Paid *</label>
                 <input
-                  type="text"
-                  value={`PKR ${Number(selectedPayable.amount).toLocaleString()}`}
-                  disabled
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  max={payTarget.owed}
+                  required
+                  autoFocus
+                  value={payAmount}
+                  onChange={(e) => setPayAmount(e.target.value)}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                  placeholder="e.g. 1500"
                 />
               </div>
             </div>
+
+            {payPreview.length > 0 && Number(payAmount) > 0 && (
+              <div className="border border-slate-200 rounded-md overflow-hidden">
+                <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 text-xs text-slate-600">
+                  Clears bills oldest first
+                </div>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-xs text-slate-500 border-b border-slate-200">
+                      <th className="text-left px-3 py-1.5">Bill date</th>
+                      <th className="text-right px-3 py-1.5">Owed</th>
+                      <th className="text-right px-3 py-1.5">Paid now</th>
+                      <th className="text-right px-3 py-1.5">Remaining</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {payPreview.map((r) => (
+                      <tr key={r.bill.id} className={r.take === 0 ? "text-slate-400" : ""}>
+                        <td className="px-3 py-1.5">{formatDate(r.bill.expense_date)}</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums">{r.owed.toLocaleString()}</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums">{r.take.toLocaleString()}</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums">
+                          {r.remaining === 0 ? <span className="text-success-700">Paid</span> : r.remaining.toLocaleString()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
             <div>
               <label className="block text-sm text-slate-700 mb-2">Pay Via *</label>
               <div className="grid grid-cols-2 gap-2">
@@ -4973,40 +5145,22 @@ export default function Accounting() {
                   <label
                     key={v}
                     className={`flex items-center justify-center gap-2 px-3 py-2 border rounded-md cursor-pointer text-sm ${
-                      markPaidVia === v
-                        ? "border-slate-900 bg-slate-50"
-                        : "border-slate-200 hover:border-slate-300"
+                      payVia === v ? "border-slate-900 bg-slate-50" : "border-slate-200 hover:border-slate-300"
                     }`}
                   >
-                    <input
-                      type="radio"
-                      name="mark-paid-via"
-                      checked={markPaidVia === v}
-                      onChange={() => setMarkPaidVia(v)}
-                    />
+                    <input type="radio" name="pay-via" checked={payVia === v} onChange={() => setPayVia(v)} />
                     <span>{v}</span>
                   </label>
                 ))}
               </div>
             </div>
-            {markPaidVia === "Cash" && (
-              <div>
-                <label className="block text-sm text-slate-700 mb-1">Cash Balance</label>
-                <input
-                  type="text"
-                  value={`PKR ${cashBalance.toLocaleString()}`}
-                  disabled
-                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
-                />
-              </div>
-            )}
-            {markPaidVia === "Cash" && (
+            {payVia === "Cash" && (
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Paid By (Office Staff) *</label>
                 <ThemedSelect
                   required
-                  value={markPaidCustodianId}
-                  onChange={(e) => setMarkPaidCustodianId(e.target.value)}
+                  value={payCustodianId}
+                  onChange={(e) => setPayCustodianId(e.target.value)}
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
                 >
                   <option value="">Select who paid the cash…</option>
@@ -5017,8 +5171,8 @@ export default function Accounting() {
                   ))}
                 </ThemedSelect>
                 {(() => {
-                  const staff = custodians.find((c) => c.employeeId === markPaidCustodianId);
-                  return staff && Number(selectedPayable.amount) > staff.held ? (
+                  const staff = custodians.find((c) => c.employeeId === payCustodianId);
+                  return staff && Number(payAmount) > staff.held ? (
                     <p className="text-[11px] text-warning-700 mt-1.5">
                       This exceeds {staff.fullName}'s held cash (PKR {Math.round(staff.held).toLocaleString()}). You can still proceed.
                     </p>
@@ -5026,13 +5180,13 @@ export default function Accounting() {
                 })()}
               </div>
             )}
-            {markPaidVia === "Bank" && (
+            {payVia === "Bank" && (
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Bank Account *</label>
                 <ThemedSelect
                   required
-                  value={markPaidBankId}
-                  onChange={(e) => setMarkPaidBankId(e.target.value)}
+                  value={payBankId}
+                  onChange={(e) => setPayBankId(e.target.value)}
                   className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
                 >
                   <option value="">Select bank account…</option>
@@ -5048,7 +5202,7 @@ export default function Accounting() {
               <Button variant="primary" size="md" className="flex-1" disabled={submitting}>
                 {submitting ? "Processing…" : "Confirm Payment"}
               </Button>
-              <Button variant="secondary" size="md" onClick={() => setIsMarkPaidModalOpen(false)}>
+              <Button type="button" variant="secondary" size="md" onClick={() => setPayTarget(null)}>
                 Cancel
               </Button>
             </div>

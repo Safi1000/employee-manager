@@ -139,6 +139,8 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
   const [chartPeriod, setChartPeriod] = useState<string>(previousMonthKey());
   const [chartInvoices, setChartInvoices] = useState<Invoice[]>([]);
   const [chartExpenses, setChartExpenses] = useState<Expense[]>([]);
+  // 0470: what each open bill still owes once vendor payments are applied.
+  const [chartOwedByExpense, setChartOwedByExpense] = useState<Map<string, number>>(new Map());
   const [chartCategories, setChartCategories] = useState<ExpenseCategory[]>([]);
   const [chartBanks, setChartBanks] = useState<BankAccount[]>([]);
   const [chartCashBalance, setChartCashBalance] = useState<number>(0);
@@ -207,7 +209,7 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
       setLoadingChart(true);
       const start = firstOfMonth(chartPeriod);
       const end = lastOfMonth(chartPeriod);
-      const [invRes, expRes, catRes, bankRes, treaRes] = await Promise.all([
+      const [invRes, expRes, catRes, bankRes, treaRes, owedRes] = await Promise.all([
         supabase
           .from("invoices")
           .select("id, invoice_amount, invoice_date, period_start")
@@ -221,7 +223,12 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
         supabase.from("bank_accounts").select("id, balance"),
         // Cash in Hand = Σ custodian held cash (0466), not treasury.cash_balance.
         supabase.rpc("cash_in_hand", { p_company_id: scopeCompanyId ?? null }).maybeSingle<{ cash_balance: number }>(),
+        // A partly paid bill owes only its remainder (0470).
+        supabase.from("payable_outstanding").select("expense_id, outstanding").gt("paid_amount", 0),
       ]);
+      setChartOwedByExpense(
+        new Map(((owedRes.data ?? []) as { expense_id: string; outstanding: number }[]).map((r) => [r.expense_id, Number(r.outstanding)])),
+      );
       setChartInvoices((invRes.data ?? []) as Invoice[]);
       setChartExpenses((expRes.data ?? []) as Expense[]);
       setChartCategories((catRes.data ?? []) as ExpenseCategory[]);
@@ -246,7 +253,7 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
       if (ex.category_id && ex.category_id === weaponsCatId) weaponsTotal += amt;
       if (ex.category_id && ex.category_id === uniformCatId) uniformTotal += amt;
       if (ex.payment_mode === "Payable" && ex.payable_status === "Pending") {
-        currentLiabilities += amt;
+        currentLiabilities += chartOwedByExpense.get(ex.id) ?? amt;
       }
     }
 
@@ -264,7 +271,7 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
       revenue,
       expenses: expensesTotal,
     };
-  }, [chartExpenses, chartCategories, chartBanks, chartCashBalance, chartInvoices]);
+  }, [chartExpenses, chartCategories, chartBanks, chartCashBalance, chartInvoices, chartOwedByExpense]);
 
   useEffect(() => {
     const loadPl = async () => {

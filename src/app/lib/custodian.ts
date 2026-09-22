@@ -80,6 +80,16 @@ export async function loadCustodianOptions(companyId: string, withBalances = tru
         .not("reference_id", "is", null)
     : empty;
 
+  // A vendor paid in cash by a custodian (0470) — cash out of their hands, the
+  // same as a cash expense; custodian_held_operational subtracts it too.
+  const { data: vendorCash } = withBalances
+    ? await supabase
+        .from("vendor_payments")
+        .select("amount, custodian_location_id")
+        .eq("paid_via", "Cash")
+        .not("custodian_location_id", "is", null)
+    : empty;
+
   // Most-recent active custodian location per person (employee or partner).
   const locByPerson = new Map<string, { id: string; opening: number }>();
   for (const l of (locs ?? []) as any[]) {
@@ -100,7 +110,7 @@ export async function loadCustodianOptions(companyId: string, withBalances = tru
   for (const p of (cashPays ?? []) as any[]) {
     if (p.custodian_location_id && heldByLoc.has(p.custodian_location_id)) heldByLoc.set(p.custodian_location_id, (heldByLoc.get(p.custodian_location_id) ?? 0) + Number(p.amount ?? 0));
   }
-  for (const e of (cashExps ?? []) as any[]) {
+  for (const e of [...((cashExps ?? []) as any[]), ...((vendorCash ?? []) as any[])]) {
     if (e.custodian_location_id && heldByLoc.has(e.custodian_location_id)) heldByLoc.set(e.custodian_location_id, (heldByLoc.get(e.custodian_location_id) ?? 0) - Number(e.amount ?? 0));
   }
   for (const a of (cashAdvances ?? []) as any[]) {

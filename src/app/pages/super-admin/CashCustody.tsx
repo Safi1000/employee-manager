@@ -165,7 +165,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
         { data: locs }, { data: tx }, { data: pts }, { data: brs },
         { data: bnks }, { data: treas }, { data: pEntries }, { data: iEntries },
         { data: staff }, { data: cashPays }, { data: cashExps }, { data: cashCheques }, { data: bankWd }, { data: payrollCash },
-        { data: cashAdvances }, { data: cashDeposits },
+        { data: cashAdvances }, { data: cashDeposits }, { data: vendorCash },
       ] = await Promise.all([
         supabase.from("cash_locations").select("*").eq("company_id", companyId).order("name"),
         supabase.from("custody_transfers").select("*").eq("company_id", companyId).order("date", { ascending: false }).limit(100),
@@ -191,7 +191,18 @@ export function CashCustodyPanel({ onReady, onSummary }: {
         supabase.from("advances").select("id, amount, custodian_location_id, advance_date, employees:employee_id(full_name, employee_code)").eq("payment_mode", "Cash").not("custodian_location_id", "is", null),
         // Cash a custodian deposited into a bank (0411) — cash out of their hands.
         supabase.from("cash_deposits").select("id, amount, cash_location_id, deposit_date, bank_account_id, slip_number").not("cash_location_id", "is", null),
+        // A vendor paid in cash by a custodian (0470) — cash out of their hands,
+        // exactly like a cash expense (custodian_held_operational subtracts both).
+        supabase.from("vendor_payments").select("id, amount, custodian_location_id, paid_on, vendor:vendor_id(name)").eq("paid_via", "Cash").not("custodian_location_id", "is", null),
       ]);
+      // Cash expenses and cash vendor payments leave a custodian the same way.
+      const cashOuts = [
+        ...((cashExps ?? []) as any[]),
+        ...((vendorCash ?? []) as any[]).map((v) => ({
+          id: v.id, amount: v.amount, custodian_location_id: v.custodian_location_id,
+          expense_date: v.paid_on, description: `Vendor payment · ${v.vendor?.name ?? "vendor"}`,
+        })),
+      ];
       const partnerList = ((pts ?? []) as Partner[]).filter((p) => p.is_active);
       setLocations((locs ?? []) as CashLocation[]);
       setOfficeStaff((staff ?? []) as OfficeStaff[]);
@@ -208,7 +219,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
       }
       setCashInByLoc(inBy);
       const outBy = new Map<string, number>();
-      for (const e of (cashExps ?? []) as any[]) {
+      for (const e of cashOuts) {
         if (!e.custodian_location_id) continue;
         outBy.set(e.custodian_location_id, (outBy.get(e.custodian_location_id) ?? 0) + Number(e.amount ?? 0));
       }
@@ -292,7 +303,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
           kind: "cash_received", detail: p.clients?.name ? `Client: ${p.clients.name}` : "Client cash", cashIn: Number(p.amount), cashOut: 0,
         });
       }
-      for (const ex of (cashExps ?? []) as any[]) {
+      for (const ex of cashOuts) {
         if (!ex.custodian_location_id) continue;
         raw.push({
           id: `e-${ex.id}`, date: ex.expense_date, locationId: ex.custodian_location_id, employeeId: empByLoc.get(ex.custodian_location_id) ?? null,
