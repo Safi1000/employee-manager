@@ -126,8 +126,10 @@ export default function FieldOps() {
   const [clients, setClients] = useState<ClientRow[]>([]);
   /** client_id -> details, for the selected day. */
   const [details, setDetails] = useState<Map<string, string>>(new Map());
-  /** client_id -> "Other Updates", for the selected day (0473). */
-  const [otherUpdates, setOtherUpdates] = useState<Map<string, string>>(new Map());
+  /** The day's "Other Updates" — one note for the whole report (0475). */
+  const [otherUpdates, setOtherUpdates] = useState("");
+  const [otherSaving, setOtherSaving] = useState(false);
+  const [otherSavedAt, setOtherSavedAt] = useState<number | undefined>(undefined);
   /** client_id -> "no report" flag, for the selected day. */
   const [noReport, setNoReport] = useState<Set<string>>(new Set());
   /** The day's Next Day Tasks, in the order they were added. */
@@ -152,7 +154,7 @@ export default function FieldOps() {
     if (!companyId) return;
     setLoading(true);
     setErr(null);
-    const [cli, rep, taskRes, staffRes] = await Promise.all([
+    const [cli, rep, taskRes, staffRes, dayRes] = await Promise.all([
       // Active = has at least one active contract. The inner join is what does
       // the filtering; !inner makes PostgREST drop clients with no match.
       supabase
@@ -163,7 +165,7 @@ export default function FieldOps() {
         .order("name"),
       supabase
         .from("daily_client_reports")
-        .select("client_id, details, no_report, other_updates")
+        .select("client_id, details, no_report")
         .eq("company_id", companyId)
         .eq("report_date", date),
       supabase
@@ -180,6 +182,12 @@ export default function FieldOps() {
         .eq("category", "office_staff")
         .eq("lifecycle_state", "active")
         .order("full_name"),
+      supabase
+        .from("daily_report_day_notes")
+        .select("other_updates")
+        .eq("company_id", companyId)
+        .eq("report_date", date)
+        .maybeSingle(),
     ]);
     if (cli.error) { setErr(cli.error.message); setLoading(false); return; }
     if (rep.error) { setErr(rep.error.message); setLoading(false); return; }
@@ -196,9 +204,9 @@ export default function FieldOps() {
     setNoReport(
       new Set(((rep.data ?? []) as any[]).filter((r) => r.no_report).map((r) => r.client_id as string)),
     );
-    setOtherUpdates(
-      new Map(((rep.data ?? []) as any[]).map((r) => [r.client_id as string, (r.other_updates ?? "") as string])),
-    );
+    if (dayRes.error) setErr(dayRes.error.message);
+    setOtherUpdates(((dayRes.data as { other_updates: string | null } | null)?.other_updates ?? "") as string);
+    setOtherSavedAt(undefined);
     if (taskRes.error) setErr(taskRes.error.message);
     setTasks((taskRes.data ?? []) as TaskRow[]);
     setStaff((staffRes.data ?? []) as StaffRow[]);
@@ -226,17 +234,14 @@ export default function FieldOps() {
    * deleted, so an accidental entry can be taken back and the day is not
    * littered with blanks.
    */
-  const saveOne = async (clientId: string, value: string, flag: boolean, other: string) => {
+  const saveOne = async (clientId: string, value: string, flag: boolean) => {
     if (locked) return;
     setSaving((prev) => new Set(prev).add(clientId));
     setErr(null);
     // "No report" is the claim; its text is cleared so the two cannot disagree.
     const text = flag ? "" : value.trim();
-    // Other Updates is independent of the flag (0473): "No report" speaks for
-    // Details only, so it neither clears nor hides this.
-    const otherText = other.trim();
     const { data: userData } = await supabase.auth.getUser();
-    const { error } = text || flag || otherText
+    const { error } = text || flag
       ? await supabase.from("daily_client_reports").upsert(
           {
             company_id: companyId,
@@ -244,7 +249,6 @@ export default function FieldOps() {
             report_date: date,
             details: text || null,
             no_report: flag,
-            other_updates: otherText || null,
             updated_by: userData.user?.id ?? null,
           },
           { onConflict: "company_id,client_id,report_date" },
@@ -267,7 +271,30 @@ export default function FieldOps() {
       return n;
     });
     if (flag) setDetails((prev) => new Map(prev).set(clientId, ""));
-    await saveOne(clientId, flag ? "" : details.get(clientId) ?? "", flag, otherUpdates.get(clientId) ?? "");
+    await saveOne(clientId, flag ? "" : details.get(clientId) ?? "", flag);
+  };
+
+  /**
+   * Save the day's Other Updates (0475) — one row per (company, day) in
+   * daily_report_day_notes, written on blur like the client boxes.
+   */
+  const saveOtherUpdates = async (value: string) => {
+    if (locked) return;
+    setOtherSaving(true);
+    setErr(null);
+    const { data: userData } = await supabase.auth.getUser();
+    const { error } = await supabase.from("daily_report_day_notes").upsert(
+      {
+        company_id: companyId,
+        report_date: date,
+        other_updates: value.trim() || null,
+        updated_by: userData.user?.id ?? null,
+      },
+      { onConflict: "company_id,report_date" },
+    );
+    setOtherSaving(false);
+    if (error) { setErr(error.message); return; }
+    setOtherSavedAt(Date.now());
   };
 
   const addTask = async (title: string, assignee: string | null) => {
@@ -362,9 +389,8 @@ export default function FieldOps() {
         client_name: c.name,
         details: details.get(c.id) ?? null,
         no_report: noReport.has(c.id),
-        other_updates: otherUpdates.get(c.id) ?? null,
       })),
-    [visibleClients, details, noReport, otherUpdates],
+    [visibleClients, details, noReport],
   );
   const filledCount = useMemo(
     () =>
@@ -377,6 +403,7 @@ export default function FieldOps() {
     generateDailyOperationsReportPdf(company, date, rowsForPdf, {
       regionLabel,
       nextDayTasks: tasks.map((t) => ({ title: t.title, assignee: staffName(t.assignee_employee_id) })),
+      otherUpdates,
       attendance: visibleAttendance,
     });
     setBusy(true);
@@ -496,6 +523,16 @@ export default function FieldOps() {
                 onDelete={deleteTask}
               />
 
+              <OtherUpdates
+                value={otherUpdates}
+                locked={locked}
+                loading={loading}
+                saving={otherSaving}
+                savedAt={otherSavedAt}
+                onChange={setOtherUpdates}
+                onCommit={saveOtherUpdates}
+              />
+
               <p className="text-xs text-muted-foreground">
                 {formatDate(date)} · {visibleClients.length} active client
                 {visibleClients.length === 1 ? "" : "s"}
@@ -521,10 +558,9 @@ export default function FieldOps() {
                   name sits above its textarea on mobile and beside it on desktop,
                   and the textarea is always full width. */}
               <div className="border border-border rounded-md">
-                <div className="hidden md:grid md:grid-cols-[16rem_1fr_1fr] bg-slate-50 dark:bg-card text-xs text-muted-foreground uppercase">
+                <div className="hidden md:grid md:grid-cols-[16rem_1fr] bg-slate-50 dark:bg-card text-xs text-muted-foreground uppercase">
                   <div className="px-3 py-2">Client</div>
                   <div className="px-3 py-2">Details</div>
-                  <div className="px-3 py-2">Other Updates</div>
                 </div>
                 <div className="divide-y divide-border">
                   {visibleClients.map((c) => (
@@ -532,15 +568,12 @@ export default function FieldOps() {
                       key={c.id}
                       client={c}
                       value={details.get(c.id) ?? ""}
-                      other={otherUpdates.get(c.id) ?? ""}
                       noReport={noReport.has(c.id)}
                       locked={locked}
                       saving={saving.has(c.id)}
                       savedAt={savedAt.get(c.id)}
                       onChange={(v) => setDetails((prev) => new Map(prev).set(c.id, v))}
-                      onCommit={(v) => saveOne(c.id, v, noReport.has(c.id), otherUpdates.get(c.id) ?? "")}
-                      onOtherChange={(v) => setOtherUpdates((prev) => new Map(prev).set(c.id, v))}
-                      onOtherCommit={(v) => saveOne(c.id, details.get(c.id) ?? "", noReport.has(c.id), v)}
+                      onCommit={(v) => saveOne(c.id, v, noReport.has(c.id))}
                       onToggleNoReport={(f) => toggleNoReport(c.id, f)}
                     />
                   ))}
@@ -717,13 +750,10 @@ function NextDayTasks({
  * writes on blur.
  */
 function DetailsRow({
-  client, value, other, noReport, locked, saving, savedAt, onChange, onCommit, onToggleNoReport,
-  onOtherChange, onOtherCommit,
+  client, value, noReport, locked, saving, savedAt, onChange, onCommit, onToggleNoReport,
 }: {
   client: ClientRow;
   value: string;
-  /** "Other Updates" (0473) — independent of the No Report flag. */
-  other: string;
   noReport: boolean;
   locked: boolean;
   saving: boolean;
@@ -731,15 +761,12 @@ function DetailsRow({
   onChange: (v: string) => void;
   onCommit: (v: string) => void;
   onToggleNoReport: (flag: boolean) => void;
-  onOtherChange: (v: string) => void;
-  onOtherCommit: (v: string) => void;
 }) {
   const committed = useRef(value);
-  const committedOther = useRef(other);
-  useEffect(() => { committed.current = value; committedOther.current = other; }, [client.id]);
+  useEffect(() => { committed.current = value; }, [client.id]);
 
   return (
-    <div className="md:grid md:grid-cols-[16rem_1fr_1fr] md:items-start">
+    <div className="md:grid md:grid-cols-[16rem_1fr] md:items-start">
       <div className="px-3 pt-2 md:py-2 text-foreground font-medium text-sm md:whitespace-nowrap md:truncate">
         {client.name}
       </div>
@@ -787,28 +814,57 @@ function DetailsRow({
           </div>
         )}
       </div>
-      <div className="px-3 pb-2 pt-1 md:py-2">
-        <span className="md:hidden block text-[11px] uppercase tracking-wide text-muted-foreground mb-1">
+    </div>
+  );
+}
+
+/**
+ * The day's Other Updates (0475): one box for the whole report, like the Next
+ * Day Tasks — not one per client. Keeps its own "last saved" value so a blur
+ * with nothing changed writes nothing.
+ */
+function OtherUpdates({
+  value, locked, loading, saving, savedAt, onChange, onCommit,
+}: {
+  value: string;
+  locked: boolean;
+  loading: boolean;
+  saving: boolean;
+  savedAt: number | undefined;
+  onChange: (v: string) => void;
+  onCommit: (v: string) => void;
+}) {
+  const committed = useRef(value);
+  // A reload (another day, or the same day refetched) resets what "unchanged" means.
+  useEffect(() => { if (!loading) committed.current = value; }, [loading]);
+
+  return (
+    <div className="border border-border rounded-md p-3 bg-card space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs uppercase tracking-wide text-muted-foreground font-medium">
           Other Updates
         </span>
-        {locked ? (
-          <p className="text-sm text-muted-foreground whitespace-pre-wrap">{other.trim() || "—"}</p>
-        ) : (
-          <textarea
-            rows={2}
-            value={other}
-            placeholder="Other updates for this client today…"
-            onChange={(e) => onOtherChange(e.target.value)}
-            onKeyDown={(e) => bulletOnEnter(e, onOtherChange)}
-            onBlur={(e) => {
-              if (e.target.value === committedOther.current) return;
-              committedOther.current = e.target.value;
-              onOtherCommit(e.target.value);
-            }}
-            className="w-full px-3 py-2 border border-border rounded-md text-sm bg-card resize-y min-h-[38px]"
-          />
-        )}
+        <span className="text-[11px] text-muted-foreground">
+          {saving ? "saving…" : savedAt ? "saved" : ""}
+        </span>
       </div>
+      {loading ? null : locked ? (
+        <p className="text-sm text-foreground whitespace-pre-wrap">{value.trim() || "—"}</p>
+      ) : (
+        <textarea
+          rows={3}
+          value={value}
+          placeholder="Anything else for today's report…"
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => bulletOnEnter(e, onChange)}
+          onBlur={(e) => {
+            if (e.target.value === committed.current) return;
+            committed.current = e.target.value;
+            onCommit(e.target.value);
+          }}
+          className="w-full px-3 py-2 border border-border rounded-md text-sm bg-card resize-y min-h-[60px]"
+        />
+      )}
     </div>
   );
 }
