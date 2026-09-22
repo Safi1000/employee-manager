@@ -171,22 +171,6 @@ const seedLines = (
   }));
 };
 
-/**
- * The shift window stamped on a shift_definition created from a contract line.
- * start_time, end_time, duration_hours and crosses_midnight are all NOT NULL on
- * the table, so every one of them has to be supplied. These match the standard
- * 12-hour day/night pattern seeded in migration 0116; the times can be edited
- * per site afterwards.
- */
-const DEFAULT_SHIFT_WINDOW: Record<
-  string,
-  { start_time: string; end_time: string; duration_hours: number; crosses_midnight: boolean }
-> = {
-  day: { start_time: "08:00", end_time: "20:00", duration_hours: 12, crosses_midnight: false },
-  evening: { start_time: "16:00", end_time: "00:00", duration_hours: 8, crosses_midnight: true },
-  night: { start_time: "20:00", end_time: "08:00", duration_hours: 12, crosses_midnight: true },
-};
-
 const num = (s: string) => Number(s) || 0;
 const isMeaningful = (l: LineDraft) => num(l.committed_count) > 0 || num(l.unit_rate) > 0;
 
@@ -287,12 +271,22 @@ export default function ContractEditorModal({
   const [addFile, setAddFile] = useState<File | null>(null);
   const [addSubmitting, setAddSubmitting] = useState(false);
 
-  // §23 contract lock: existing contracts were originally read-only (changes via
-  // addendums only). Per owner request, holders of contracts.edit (super_admin/SSA
-  // implicitly) may now edit an existing contract's terms & lines directly; everyone
-  // else still sees it locked. Creating a new contract is always fully editable.
+  // §23 contract lock: without contracts.edit an existing contract is read-only.
+  // With it, a Draft is fully editable; an Active one is editable EXCEPT its
+  // commercial terms (termsLocked below) — 0450 dropped the super_admin
+  // exemption, so those move by addendum for everyone. A new contract is always
+  // fully editable.
   const canEditContracts = hasPermission(profile, "contracts.edit");
   const locked = !!contract && !canEditContracts;
+  // An Active contract's commercial terms — its lines' committed counts and
+  // rates, and the header fields enforce_contract_lock guards — move only by a
+  // dated addendum (0450). The form says so instead of offering edits the
+  // database refuses. Judged on the STORED status: a Draft being switched to
+  // Active in this save is still original terms (save_contract, 0469).
+  const termsLocked = !!contract && contract.status === "active";
+  // Set once save_contract has created the contract, so a retry after a later
+  // step fails (the document upload) updates it instead of creating another.
+  const [savedContractId, setSavedContractId] = useState<string | null>(null);
 
   const loadAddendums = (contractId: string) =>
     supabase
@@ -312,6 +306,7 @@ export default function ContractEditorModal({
     setAddFile(null);
     setAddendums([]);
     setDuplicateCount(null);
+    setSavedContractId(null);
     // Sites belong to the CLIENT, not the contract, so they load for both add and
     // edit as soon as a client is known — a second contract for the same client
     // edits the same sites.
@@ -546,139 +541,48 @@ export default function ContractEditorModal({
   });
 
   /**
-   * Save the client's sites, returning draft-key -> saved-site-id so the lines
-   * that follow can point at them. Runs before persistLines for that reason.
+   * What save_contract (0469) receives. The contract, its sites, its lines and
+   * the sites' shift definitions are written by that one RPC in ONE transaction:
+   * saved here as a chain of round trips, a refused line left the sites and the
+   * contract committed behind it, and every retry inserted the sites again.
    *
    * A site with no name is skipped rather than saved blank: it is an empty row
-   * the user added and never filled in.
+   * the user added and never filled in. Not a site-based contract: the client's
+   * sites are left completely alone — another contract may well be using them.
    */
-  const persistSites = async (effClientId: string): Promise<Map<string, string>> => {
-    // Not a site-based contract: leave the client's sites completely alone. They
-    // belong to the client, and another contract may well be using them.
-    if (!hasSites) return new Map();
-    const named = sites.filter((x) => x.name.trim());
-    const keyToId = new Map<string, string>();
+  const buildSavePayload = () => {
+    const namedSites = hasSites
+      ? sites
+          .filter((x) => x.name.trim())
+          .map((x) => ({
+            key: x.key,
+            id: x.id ?? null,
+            name: x.name.trim(),
+            location: x.location.trim(),
+            is_default: x.is_default,
+          }))
+      : [];
+    const namedKeys = new Set(namedSites.map((x) => x.key));
+    // Sites the user removed. The RPC refuses, rather than cascades, one that
+    // guards, attendance or another contract still use.
+    const keptSiteIds = new Set(namedSites.map((x) => x.id).filter(Boolean) as string[]);
+    const removedSiteIds = hasSites ? loadedSiteIds.filter((id) => !keptSiteIds.has(id)) : [];
 
-    for (const x of named) {
-      const payload = {
-        client_id: effClientId,
-        name: x.name.trim(),
-        location: x.location.trim() || null,
-        is_default: x.is_default,
-      };
-      if (x.id) {
-        const { error: upErr } = await supabase.from("sites").update(payload).eq("id", x.id);
-        if (upErr) throw upErr;
-        keyToId.set(x.key, x.id);
-      } else {
-        const { data, error: insErr } = await supabase
-          .from("sites").insert(payload).select("id").single();
-        if (insErr) throw insErr;
-        keyToId.set(x.key, (data as { id: string }).id);
-      }
-    }
-
-    // Sites the user removed. Postings and attendance reference a site, so the
-    // delete is allowed to fail loudly rather than cascade someone's history away.
-    const keptIds = new Set([...keyToId.values()]);
-    const goneIds = loadedSiteIds.filter((id) => !keptIds.has(id));
-    if (goneIds.length) {
-      const { error: delErr } = await supabase.from("sites").delete().in("id", goneIds);
-      if (delErr) {
-        throw new Error(
-          `A site could not be removed because guards are still posted to it. ` +
-            `Move them to another site first. (${delErr.message})`,
-        );
-      }
-    }
-    return keyToId;
-  };
-
-  /**
-   * Which shifts each site runs, derived from that site's personnel lines. The
-   * attendance board reads shift_definitions to know what a site can be marked
-   * for, so a shift that has lines must have a definition and one that lost its
-   * lines must lose the definition.
-   */
-  const persistShiftDefinitions = async (keyToId: Map<string, string>) => {
-    if (!hasSites) return;
-    for (const [key, siteId] of keyToId) {
-      const wanted = new Set(
-        lines
-          .filter((l) => l.site_key === key && isPersonnelCategory(l.category) && l.shift_code)
-          .filter(isMeaningful)
-          .map((l) => l.shift_code),
-      );
-      const { data: existing, error: exErr } = await supabase
-        .from("shift_definitions").select("id, shift_code").eq("site_id", siteId);
-      if (exErr) throw exErr;
-      const have = new Map(
-        ((existing ?? []) as { id: string; shift_code: string }[]).map((r) => [r.shift_code, r.id]),
-      );
-
-      const toAdd = [...wanted].filter((c) => !have.has(c));
-      if (toAdd.length) {
-        const { error: insErr } = await supabase.from("shift_definitions").insert(
-          toAdd.map((shift_code) => ({
-            site_id: siteId,
-            shift_code,
-            ...(DEFAULT_SHIFT_WINDOW[shift_code] ?? DEFAULT_SHIFT_WINDOW.day),
-          })),
-        );
-        if (insErr) throw insErr;
-      }
-      const toDrop = [...have].filter(([code]) => !wanted.has(code)).map(([, id]) => id);
-      if (toDrop.length) {
-        const { error: delErr } = await supabase.from("shift_definitions").delete().in("id", toDrop);
-        if (delErr) throw delErr;
-      }
-    }
-  };
-
-  // Reconcile the draft lines against what's stored: insert new meaningful
-  // rows, update changed ones, delete rows that became empty.
-  const persistLines = async (
-    contractId: string,
-    existingIds: string[],
-    keyToId: Map<string, string>,
-  ) => {
     // A line whose site was added but left unnamed has nowhere to live.
-    const meaningful = lines.filter(
-      (l) => isMeaningful(l) && (l.site_key === NO_SITE || keyToId.has(l.site_key)),
-    );
-    const keptIds = new Set(meaningful.map((l) => l.id).filter(Boolean) as string[]);
-    const rowFor = (l: LineDraft) => ({
-      site_id: l.site_key === NO_SITE ? null : keyToId.get(l.site_key) ?? null,
-      shift_code: isPersonnelCategory(l.category) ? l.shift_code || null : null,
-      category: l.category,
-      label: l.label.trim() || CONTRACT_LINE_CATEGORY_LABEL[l.category],
-      location: l.location.trim() || null,
-      committed_count: Math.max(0, Math.floor(num(l.committed_count))),
-      unit_rate: Math.max(0, num(l.unit_rate)),
-      taxable: l.taxable,
-    });
-
-    const toInsert = meaningful
-      .filter((l) => !l.id)
-      .map((l) => ({ contract_id: contractId, ...rowFor(l) }));
-    if (toInsert.length) {
-      const { error: insErr } = await supabase.from("contract_lines").insert(toInsert);
-      if (insErr) throw insErr;
-    }
-
-    for (const l of meaningful.filter((x) => x.id)) {
-      const { error: upErr } = await supabase
-        .from("contract_lines")
-        .update(rowFor(l))
-        .eq("id", l.id!);
-      if (upErr) throw upErr;
-    }
-
-    const toDelete = existingIds.filter((id) => !keptIds.has(id));
-    if (toDelete.length) {
-      const { error: delErr } = await supabase.from("contract_lines").delete().in("id", toDelete);
-      if (delErr) throw delErr;
-    }
+    const payloadLines = lines
+      .filter((l) => isMeaningful(l) && (!hasSites || namedKeys.has(l.site_key)))
+      .map((l) => ({
+        id: l.id ?? null,
+        site_key: hasSites ? l.site_key : NO_SITE,
+        shift_code: isPersonnelCategory(l.category) ? l.shift_code || "" : "",
+        category: l.category,
+        label: l.label.trim() || CONTRACT_LINE_CATEGORY_LABEL[l.category],
+        location: l.location.trim(),
+        committed_count: Math.max(0, Math.floor(num(l.committed_count))),
+        unit_rate: Math.max(0, num(l.unit_rate)),
+        taxable: l.taxable,
+      }));
+    return { namedSites, removedSiteIds, payloadLines };
   };
 
   // Upload a file under the contract's Drive folder; returns Drive metadata.
@@ -844,7 +748,7 @@ export default function ContractEditorModal({
     }
     // 2f: adding a second contract for a client is legitimate but rarely intended,
     // so make it explicit. Only ask once — a confirmed submit comes straight here.
-    if (!contract && duplicateCount === null) {
+    if (!contract && !savedContractId && duplicateCount === null) {
       const { count, error: cntErr } = await supabase
         .from("contracts")
         .select("id", { count: "exact", head: true })
@@ -864,32 +768,43 @@ export default function ContractEditorModal({
   const persistContract = async (effClientId: string) => {
     setSubmitting(true);
     setError(null);
+    let saved: { contract_id: string; contract_code: string; site_ids: Record<string, string> } | null = null;
     try {
-      // Sites first: the lines that follow point at them.
-      const keyToId = await persistSites(effClientId);
-      if (contract) {
-        const { error: upErr } = await supabase.from("contracts").update(buildContractPayload(effClientId)).eq("id", contract.id);
-        if (upErr) throw upErr;
-        const { data: existing } = await supabase.from("contract_lines").select("id").eq("contract_id", contract.id);
-        await persistLines(contract.id, ((existing ?? []) as { id: string }[]).map((r) => r.id), keyToId);
-        await persistShiftDefinitions(keyToId);
-        if (pendingFile) await uploadDocument(contract.id, contract.contract_code, pendingFile, contract.drive_file_id);
-      } else {
-        const { data, error: insErr } = await supabase
-          .from("contracts")
-          .insert(buildContractPayload(effClientId))
-          .select()
-          .single();
-        if (insErr) throw insErr;
-        const inserted = data as Contract;
-        await persistLines(inserted.id, [], keyToId);
-        await persistShiftDefinitions(keyToId);
-        if (pendingFile) await uploadDocument(inserted.id, inserted.contract_code, pendingFile, null);
+      // One RPC, one transaction: either everything below is saved or nothing is.
+      const { namedSites, removedSiteIds, payloadLines } = buildSavePayload();
+      const { data, error: rpcErr } = await supabase.rpc("save_contract", {
+        p_contract_id: contract?.id ?? savedContractId,
+        p_client_id: effClientId,
+        p_contract: buildContractPayload(effClientId),
+        p_use_sites: hasSites,
+        p_sites: namedSites,
+        p_removed_site_ids: removedSiteIds,
+        p_lines: payloadLines,
+      });
+      if (rpcErr) throw rpcErr;
+      saved = data as { contract_id: string; contract_code: string; site_ids: Record<string, string> };
+      setSavedContractId(saved.contract_id);
+      // Adopt the saved ids, so anything that re-submits this form updates the
+      // same rows instead of inserting them again.
+      const ids = saved.site_ids ?? {};
+      setSites((prev) => prev.map((x) => (ids[x.key] ? { ...x, id: ids[x.key] } : x)));
+      setLoadedSiteIds(Object.values(ids));
+
+      if (pendingFile) {
+        await uploadDocument(saved.contract_id, saved.contract_code, pendingFile, contract?.drive_file_id ?? null);
       }
       onSaved();
       onClose();
     } catch (err: any) {
-      setError(err.message ?? String(err));
+      const msg = err.message ?? String(err);
+      if (saved) {
+        // The contract is saved; only the document failed. Refresh the list so
+        // it shows, and say exactly what is missing.
+        onSaved();
+        setError(`${saved.contract_code} was saved, but the document upload failed: ${msg}`);
+      } else {
+        setError(msg);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -959,6 +874,7 @@ export default function ContractEditorModal({
             <label className="block text-sm text-slate-700 mb-1">Contract Type *</label>
             <ThemedSelect
               required
+              disabled={termsLocked}
               value={form.contract_type}
               onChange={(e) => onContractTypeChange(e.target.value as ContractType)}
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -1001,6 +917,7 @@ export default function ContractEditorModal({
             <input
               required
               type="date"
+              disabled={termsLocked}
               value={form.start_date}
               onChange={(e) => setForm({ ...form, start_date: e.target.value })}
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -1099,6 +1016,7 @@ export default function ContractEditorModal({
                 <span>Split by site?</span>
                 <ThemedSelect
                   value={hasSites ? "yes" : "no"}
+                  disabled={termsLocked}
                   onChange={(e) => setUsesSites(e.target.value === "yes")}
                   className="px-2 py-1.5 border border-slate-200 rounded text-sm"
                 >
@@ -1122,6 +1040,13 @@ export default function ContractEditorModal({
             </div>
           </div>
 
+          {termsLocked && (
+            <p className="px-3 py-2 text-xs text-slate-600 bg-amber-50 border-b border-amber-200">
+              This contract is Active. Committed counts and rates change through a dated
+              addendum below; names, notes and sites can still be edited here.
+            </p>
+          )}
+
           {hasSites && !effectiveClientId && (
             <p className="px-3 py-4 text-sm text-slate-500">
               Select a client above to add sites.
@@ -1140,6 +1065,7 @@ export default function ContractEditorModal({
                 <SiteLinesBlock
                   title={isServices ? "Lines" : "Shift detail & contract lines"}
                   subtitle=""
+                  termsLocked={termsLocked}
                   siteKey={NO_SITE}
                   lines={linesForSite(NO_SITE)}
                   allLines={lines}
@@ -1194,8 +1120,15 @@ export default function ContractEditorModal({
                     <button
                       type="button"
                       onClick={() => removeSite(site.key)}
-                      className="p-2 rounded text-danger-600 hover:bg-danger-50 mb-1"
-                      title="Remove site and its lines"
+                      // Removing a site takes its lines, which on an Active
+                      // contract is a change to the committed total.
+                      disabled={termsLocked && linesForSite(site.key).length > 0}
+                      className="p-2 rounded text-danger-600 hover:bg-danger-50 mb-1 disabled:opacity-40 disabled:cursor-not-allowed"
+                      title={
+                        termsLocked && linesForSite(site.key).length > 0
+                          ? "Active contract: reduce this site's headcount by addendum"
+                          : "Remove site and its lines"
+                      }
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -1204,6 +1137,7 @@ export default function ContractEditorModal({
                   <SiteLinesBlock
                     title={site.name.trim() || "Unnamed site"}
                     subtitle=""
+                    termsLocked={termsLocked}
                     siteKey={site.key}
                     lines={linesForSite(site.key)}
                     allLines={lines}
@@ -1440,6 +1374,7 @@ export default function ContractEditorModal({
                 type="number"
                 min="0"
                 step="0.01"
+                disabled={termsLocked}
                 value={form.annual_escalation_pct}
                 onChange={(e) => setForm({ ...form, annual_escalation_pct: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -1450,6 +1385,7 @@ export default function ContractEditorModal({
               <label className="flex items-center gap-2 text-sm text-slate-700 mb-1">
                 <input
                   type="checkbox"
+                  disabled={termsLocked}
                   checked={form.eobi_deduction}
                   onChange={(e) => setForm({ ...form, eobi_deduction: e.target.checked })}
                 />
@@ -1459,6 +1395,7 @@ export default function ContractEditorModal({
                 <input
                   type="number"
                   min="0"
+                  disabled={termsLocked}
                   value={form.eobi_amount}
                   onChange={(e) => setForm({ ...form, eobi_amount: e.target.value })}
                   className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
@@ -1568,11 +1505,13 @@ export default function ContractEditorModal({
  * the lines lived separately.
  */
 function SiteLinesBlock({
-  title, subtitle, siteKey, lines, allLines, allowedCategories, contractType,
+  title, subtitle, termsLocked, siteKey, lines, allLines, allowedCategories, contractType,
   shiftDetail, onAddLine, onUpdateLine, onRemoveLine,
 }: {
   title: string;
   subtitle: string;
+  /** Active contract: category, count and rate move by addendum only. */
+  termsLocked: boolean;
   siteKey: string;
   lines: LineDraft[];
   allLines: LineDraft[];
@@ -1593,9 +1532,11 @@ function SiteLinesBlock({
           <span className="text-sm font-medium text-slate-700">{title}</span>
           {subtitle && <span className="text-[11px] text-slate-500 ml-2">{subtitle}</span>}
         </div>
-        <Button type="button" variant="secondary" size="sm" onClick={onAddLine}>
-          <Plus className="w-3.5 h-3.5 mr-1" /> Add Line
-        </Button>
+        {!termsLocked && (
+          <Button type="button" variant="secondary" size="sm" onClick={onAddLine}>
+            <Plus className="w-3.5 h-3.5 mr-1" /> Add Line
+          </Button>
+        )}
       </div>
 
       {lines.length === 0 ? (
@@ -1621,6 +1562,7 @@ function SiteLinesBlock({
                     <td className="px-3 py-1.5">
                       <ThemedSelect
                         value={l.category}
+                        disabled={termsLocked}
                         onChange={(e) => {
                           const cat = e.target.value as ContractLineCategory;
                           onUpdateLine(idx, {
@@ -1652,6 +1594,7 @@ function SiteLinesBlock({
                       <input
                         type="number"
                         min="0"
+                        disabled={termsLocked}
                         value={l.committed_count}
                         onChange={(e) => onUpdateLine(idx, { committed_count: e.target.value })}
                         className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm text-right"
@@ -1662,6 +1605,7 @@ function SiteLinesBlock({
                         type="number"
                         min="0"
                         step="0.01"
+                        disabled={termsLocked}
                         value={l.unit_rate}
                         onChange={(e) => onUpdateLine(idx, { unit_rate: e.target.value })}
                         className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm text-right"
@@ -1671,14 +1615,16 @@ function SiteLinesBlock({
                       {(num(l.committed_count) * num(l.unit_rate)).toLocaleString()}
                     </td>
                     <td className="px-2 py-1.5 text-right">
-                      <button
-                        type="button"
-                        onClick={() => onRemoveLine(idx)}
-                        className="p-1 rounded text-danger-600 hover:bg-danger-50"
-                        title="Remove line"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {!termsLocked && (
+                        <button
+                          type="button"
+                          onClick={() => onRemoveLine(idx)}
+                          className="p-1 rounded text-danger-600 hover:bg-danger-50"
+                          title="Remove line"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );
