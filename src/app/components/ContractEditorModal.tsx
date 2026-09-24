@@ -175,24 +175,29 @@ const num = (s: string) => Number(s) || 0;
 const isMeaningful = (l: LineDraft) => num(l.committed_count) > 0 || num(l.unit_rate) > 0;
 
 // New-addendum form (Edit Contract only).
+// The line an addendum lands on is picked the way a contract line is written:
+// site → category → shift. An existing line with that site/category/shift is
+// the target; none means a new line, which only an ADD_HEADCOUNT can create.
 type AddendumForm = {
-  target: string; // a contract_lines.id, or "__new__" for a brand-new line
-  category: ContractLineCategory; // used when target = "__new__"
+  site_key: string; // a SiteDraft key; NO_SITE when the contract is not split by site
+  category: ContractLineCategory;
   change_type: AddendumChangeType;
   count_delta: string;
   new_rate: string;
   new_end_date: string; // EXTEND_END_DATE: the new contract end date
   new_is_infinite: boolean; // EXTEND_END_DATE: renew to open-ended
   effective_from: string;
-  // Which shift a headcount change staffs. "" for hardware / rate / renewal,
-  // where the question does not apply.
+  // Which shift the line runs. "" for hardware, which nobody works.
   shift_code: string;
+  // New line only: its monthly rate and tax treatment, as on any contract line.
+  line_rate: string;
+  line_taxable: boolean;
   source: AddendumSource;
   reference: string;
 };
 
 const blankAddendum = (): AddendumForm => ({
-  target: "__new__",
+  site_key: NO_SITE,
   category: "GUARD",
   change_type: "ADD_HEADCOUNT",
   count_delta: "0",
@@ -201,6 +206,8 @@ const blankAddendum = (): AddendumForm => ({
   new_is_infinite: false,
   effective_from: new Date().toISOString().slice(0, 10),
   shift_code: "day",
+  line_rate: "",
+  line_taxable: true,
   source: "SIGNED_CONTRACT",
   reference: "",
 });
@@ -367,16 +374,38 @@ export default function ContractEditorModal({
     lines.filter((l) => l.id).map((l) => [l.id!, l.category] as const),
   );
 
-  // The category an in-flight addendum lands on: its own for a brand-new line,
-  // otherwise the target line's. Drives whether the shift question is asked —
-  // hardware categories staff nobody, and rate/renewal changes are not per-shift.
-  const addendumCategory =
-    addForm.target === "__new__"
-      ? addForm.category
-      : categoryByLineId.get(addForm.target) ?? addForm.category;
+  const siteByLineId = hasSites
+    ? new Map(
+        lines
+          .filter((l) => l.id)
+          .map((l) => [l.id!, sites.find((x) => x.key === l.site_key)?.name.trim() || "—"] as const),
+      )
+    : undefined;
+
+  // Addendum target, resolved like a contract line: site → category → shift.
+  // Only saved sites can be picked — an unsaved one has no id to hang a line on.
+  const addendumSites = hasSites ? sites.filter((x) => x.id) : [];
+  const addendumSiteKey = hasSites
+    ? addendumSites.some((x) => x.key === addForm.site_key)
+      ? addForm.site_key
+      : addendumSites[0]?.key ?? NO_SITE
+    : NO_SITE;
+  const addendumCategory = allowedCategories.includes(addForm.category)
+    ? addForm.category
+    : allowedCategories[0];
+  const addendumIsPersonnel = isPersonnelCategory(addendumCategory);
+  const addendumShift = addendumIsPersonnel ? addForm.shift_code || "day" : "";
+  const addendumLine = lines.find(
+    (l) =>
+      !!l.id &&
+      l.site_key === addendumSiteKey &&
+      l.category === addendumCategory &&
+      (!addendumIsPersonnel || (l.shift_code || "day") === addendumShift),
+  );
+  const addendumNewLine = addForm.change_type !== "EXTEND_END_DATE" && !addendumLine;
   const addendumNeedsShift =
     (addForm.change_type === "ADD_HEADCOUNT" || addForm.change_type === "REDUCE_HEADCOUNT") &&
-    isPersonnelCategory(addendumCategory);
+    addendumIsPersonnel;
 
   // Switching contract type invalidates any line whose category belongs to the other
   // type, so move those lines onto the new type's default category rather than leaving
@@ -569,8 +598,16 @@ export default function ContractEditorModal({
     const removedSiteIds = hasSites ? loadedSiteIds.filter((id) => !keptSiteIds.has(id)) : [];
 
     // A line whose site was added but left unnamed has nowhere to live.
+    // A line an addendum points at is kept even at 0 count / 0 rate — an
+    // addendum-created line starts at 0 committed, and dropping it would take
+    // its headcount with it.
+    const addendumLineIds = new Set(addendums.map((a) => a.contract_line_id).filter(Boolean));
     const payloadLines = lines
-      .filter((l) => isMeaningful(l) && (!hasSites || namedKeys.has(l.site_key)))
+      .filter(
+        (l) =>
+          (isMeaningful(l) || (!!l.id && addendumLineIds.has(l.id))) &&
+          (!hasSites || namedKeys.has(l.site_key)),
+      )
       .map((l) => ({
         id: l.id ?? null,
         site_key: hasSites ? l.site_key : NO_SITE,
@@ -651,18 +688,73 @@ export default function ContractEditorModal({
         setAddSubmitting(false);
         return;
       }
-      const isNewLine = !isRenewal && addForm.target === "__new__";
+      if (hasSites && !isRenewal && addendumSiteKey === NO_SITE) {
+        setError("Pick the site this addendum applies to (save a new site first).");
+        setAddSubmitting(false);
+        return;
+      }
+      // No line at this site/category/shift yet. Only more headcount can bring
+      // one into being — there is nothing to reduce or re-rate.
+      let lineId = isRenewal ? null : addendumLine?.id ?? null;
+      let createdLine: LineDraft | null = null;
+      if (addendumNewLine) {
+        if (addForm.change_type !== "ADD_HEADCOUNT") {
+          setError(
+            `This contract has no ${CONTRACT_LINE_CATEGORY_LABEL[addendumCategory]}` +
+              (addendumIsPersonnel ? ` ${SHIFT_LABEL[addendumShift].toLowerCase()}-shift` : "") +
+              " line there to change. Use “Add headcount” to add one.",
+          );
+          setAddSubmitting(false);
+          return;
+        }
+        if (!(num(addForm.line_rate) > 0)) {
+          setError("Set the rate / month for the new line.");
+          setAddSubmitting(false);
+          return;
+        }
+        // The line starts at 0 committed — the addendum carries the headcount
+        // from its effective date, so the base (a locked total on an Active
+        // contract) does not move.
+        const siteId = addendumSites.find((x) => x.key === addendumSiteKey)?.id ?? null;
+        const { data: lineRow, error: lineErr } = await supabase
+          .from("contract_lines")
+          .insert({
+            contract_id: contract.id,
+            site_id: siteId,
+            shift_code: addendumShift || null,
+            category: addendumCategory,
+            label: CONTRACT_LINE_CATEGORY_LABEL[addendumCategory],
+            committed_count: 0,
+            unit_rate: num(addForm.line_rate),
+            taxable: addForm.line_taxable,
+          })
+          .select()
+          .single();
+        if (lineErr) throw lineErr;
+        lineId = (lineRow as ContractLine).id;
+        createdLine = {
+          id: lineId,
+          site_key: addendumSiteKey,
+          shift_code: addendumShift,
+          category: addendumCategory,
+          label: CONTRACT_LINE_CATEGORY_LABEL[addendumCategory],
+          location: "",
+          committed_count: "0",
+          unit_rate: String(num(addForm.line_rate)),
+          taxable: addForm.line_taxable,
+        };
+      }
       const payload: Record<string, unknown> = {
         contract_id: contract.id,
-        contract_line_id: isRenewal || isNewLine ? null : addForm.target,
-        category: isNewLine ? addForm.category : null,
+        contract_line_id: lineId,
+        category: null,
         change_type: addForm.change_type,
         count_delta: isRate || isRenewal ? 0 : Math.abs(Math.floor(num(addForm.count_delta))),
         new_rate: isRate && addForm.new_rate !== "" ? num(addForm.new_rate) : null,
         new_end_date: isRenewal && !addForm.new_is_infinite ? addForm.new_end_date : null,
         new_is_infinite: isRenewal ? addForm.new_is_infinite : false,
         effective_from: addForm.effective_from,
-        shift_code: addendumNeedsShift ? addForm.shift_code : null,
+        shift_code: addendumNeedsShift ? addendumShift : null,
         source: addForm.source,
         reference: addForm.reference.trim() || null,
       };
@@ -671,7 +763,13 @@ export default function ContractEditorModal({
         .insert(payload)
         .select()
         .single();
-      if (insErr) throw insErr;
+      if (insErr) {
+        // Don't leave behind an empty line the addendum never reached.
+        if (createdLine) await supabase.from("contract_lines").delete().eq("id", lineId!);
+        throw insErr;
+      }
+      // Keep the draft list in step, or the next Save would drop the new line.
+      if (createdLine) setLines((prev) => [...prev, createdLine!]);
       if (addFile) {
         const json = await uploadToDrive(contract.id, contract.contract_code, addFile);
         await supabase
@@ -1185,59 +1283,97 @@ export default function ContractEditorModal({
             </div>
 
             {addendums.length > 0 && (
-              <AddendumTable addendums={addendums} categoryByLineId={categoryByLineId} />
+              <AddendumTable addendums={addendums} categoryByLineId={categoryByLineId} siteByLineId={siteByLineId} />
             )}
 
             {/* Add-addendum form */}
             <div className="p-3 border-t border-slate-200 bg-slate-50/50 grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-[11px] text-slate-600 mb-1">Applies to</label>
-                <ThemedSelect
-                  value={addForm.change_type === "EXTEND_END_DATE" ? "__contract__" : addForm.target}
-                  disabled={addForm.change_type === "EXTEND_END_DATE"}
-                  onChange={(e) => {
-                    const target = e.target.value;
-                    // Adopt the target line's own shift — an addendum against an
-                    // existing line almost always staffs the shift that line runs.
-                    const line = lines.find((l) => l.id === target);
-                    setAddForm({
-                      ...addForm,
-                      target,
-                      shift_code: line?.shift_code || addForm.shift_code || "day",
-                    });
-                  }}
-                  className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm disabled:bg-slate-100 disabled:text-slate-500"
-                >
-                  {addForm.change_type === "EXTEND_END_DATE" ? (
-                    <option value="__contract__">Whole contract</option>
-                  ) : (
-                    <>
-                      <option value="__new__">New line…</option>
-                      {lines
-                        .filter((l) => l.id)
-                        .map((l) => (
-                          <option key={l.id} value={l.id!}>
-                            {CONTRACT_LINE_CATEGORY_LABEL[l.category]}
-                            {l.location ? ` — ${l.location}` : ""}
-                          </option>
-                        ))}
-                    </>
-                  )}
-                </ThemedSelect>
-              </div>
-              {addForm.change_type !== "EXTEND_END_DATE" && addForm.target === "__new__" && (
+              {addForm.change_type === "EXTEND_END_DATE" ? (
                 <div>
-                  <label className="block text-[11px] text-slate-600 mb-1">New line category</label>
+                  <label className="block text-[11px] text-slate-600 mb-1">Applies to</label>
                   <ThemedSelect
-                    value={addForm.category}
-                    onChange={(e) => setAddForm({ ...addForm, category: e.target.value as ContractLineCategory })}
-                    className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                    value="__contract__"
+                    disabled
+                    onChange={() => {}}
+                    className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm disabled:bg-slate-100 disabled:text-slate-500"
                   >
-                    {allowedCategories.map((cat) => (
-                      <option key={cat} value={cat}>{CONTRACT_LINE_CATEGORY_LABEL[cat]}</option>
-                    ))}
+                    <option value="__contract__">Whole contract</option>
                   </ThemedSelect>
                 </div>
+              ) : (
+                <>
+                  {hasSites && (
+                    <div>
+                      <label className="block text-[11px] text-slate-600 mb-1">Site *</label>
+                      <ThemedSelect
+                        value={addendumSiteKey}
+                        onChange={(e) => setAddForm({ ...addForm, site_key: e.target.value })}
+                        className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                      >
+                        {addendumSites.length === 0 && <option value={NO_SITE}>Save a site first</option>}
+                        {addendumSites.map((x) => (
+                          <option key={x.key} value={x.key}>{x.name.trim() || "Unnamed site"}</option>
+                        ))}
+                      </ThemedSelect>
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-[11px] text-slate-600 mb-1">Category *</label>
+                    <ThemedSelect
+                      value={addendumCategory}
+                      onChange={(e) => setAddForm({ ...addForm, category: e.target.value as ContractLineCategory })}
+                      className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                    >
+                      {allowedCategories.map((cat) => (
+                        <option key={cat} value={cat}>{CONTRACT_LINE_CATEGORY_LABEL[cat]}</option>
+                      ))}
+                    </ThemedSelect>
+                  </div>
+                  {addendumIsPersonnel && (
+                    <div>
+                      <label className="block text-[11px] text-slate-600 mb-1">Shift *</label>
+                      <ThemedSelect
+                        value={addendumShift}
+                        onChange={(e) => setAddForm({ ...addForm, shift_code: e.target.value })}
+                        className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                      >
+                        {SHIFT_CODES.map((c) => (
+                          <option key={c} value={c}>{SHIFT_LABEL[c]}</option>
+                        ))}
+                      </ThemedSelect>
+                    </div>
+                  )}
+                  {addendumNewLine && addForm.change_type === "ADD_HEADCOUNT" && (
+                    <div>
+                      <label className="block text-[11px] text-slate-600 mb-1">Rate / month (new line) *</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={addForm.line_rate}
+                        onChange={(e) => setAddForm({ ...addForm, line_rate: e.target.value })}
+                        className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm text-right"
+                      />
+                      <label className="mt-1 inline-flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={addForm.line_taxable}
+                          onChange={(e) => setAddForm({ ...addForm, line_taxable: e.target.checked })}
+                        />
+                        Taxable
+                      </label>
+                    </div>
+                  )}
+                  <p className="col-span-2 text-[10px] text-slate-500 -mt-1">
+                    {addendumLine
+                      ? `Applies to the existing ${CONTRACT_LINE_CATEGORY_LABEL[addendumCategory]} line` +
+                        (addendumIsPersonnel ? ` (${SHIFT_LABEL[addendumShift]} shift)` : "") +
+                        (hasSites ? " at this site." : ".")
+                      : addForm.change_type === "ADD_HEADCOUNT"
+                        ? "No such line yet — a new line is added at this site and shift."
+                        : "No such line on this contract — only “Add headcount” can create one."}
+                  </p>
+                </>
               )}
               <div>
                 <label className="block text-[11px] text-slate-600 mb-1">Change type</label>
