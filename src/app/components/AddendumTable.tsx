@@ -21,12 +21,12 @@ import {
 export default function AddendumTable({
   addendums,
   categoryByLineId,
-  siteByLineId,
+  siteNameOf,
 }: {
   addendums: ContractAddendum[];
   categoryByLineId: Map<string, ContractLineCategory>;
-  /** Site name per line. Omit where sites aren't loaded and the column is hidden. */
-  siteByLineId?: Map<string, string>;
+  /** Site name for an addendum. Omit where sites aren't loaded and the column is hidden. */
+  siteNameOf?: (a: ContractAddendum) => string;
 }) {
   if (addendums.length === 0) {
     return <p className="px-3 py-3 text-sm text-slate-500">No addendums on this contract.</p>;
@@ -38,7 +38,7 @@ export default function AddendumTable({
           <tr className="text-xs text-slate-500 uppercase border-b border-slate-200">
             <th className="text-left px-3 py-2">Effective</th>
             <th className="text-left px-3 py-2">Change</th>
-            {siteByLineId && <th className="text-left px-3 py-2">Site</th>}
+            {siteNameOf && <th className="text-left px-3 py-2">Site</th>}
             <th className="text-left px-3 py-2">Category / Line</th>
             <th className="text-left px-3 py-2">Shift</th>
             <th className="text-left px-3 py-2">Source</th>
@@ -59,16 +59,13 @@ export default function AddendumTable({
                     ? a.new_rate != null && ` → PKR ${Number(a.new_rate).toLocaleString()}`
                     : a.change_type === "EXTEND_END_DATE"
                       ? ` → ${a.new_is_infinite ? "no end date" : a.new_end_date ? formatDate(a.new_end_date) : "—"}`
-                      : ` (${a.change_type === "REDUCE_HEADCOUNT" ? "−" : "+"}${a.count_delta})`}
+                      : ` (${a.change_type === "REDUCE_HEADCOUNT" ? "−" : "+"}${a.count_delta})` +
+                        (a.unit_rate != null ? ` @ PKR ${Number(a.unit_rate).toLocaleString()}` : "")}
                 </td>
-                {siteByLineId && (
-                  <td className="px-3 py-1.5 text-slate-600">
-                    {(a.contract_line_id && siteByLineId.get(a.contract_line_id)) || "—"}
-                  </td>
-                )}
+                {siteNameOf && <td className="px-3 py-1.5 text-slate-600">{siteNameOf(a)}</td>}
                 <td className="px-3 py-1.5 text-slate-600">
                   {cat ? CONTRACT_LINE_CATEGORY_LABEL[cat] : "—"}
-                  {!a.contract_line_id && <span className="text-[10px] text-slate-400 ml-1">(new line)</span>}
+                  {a.notes && <span className="text-[10px] text-slate-400 ml-1">{a.notes}</span>}
                 </td>
                 <td className="px-3 py-1.5 text-slate-600">
                   {a.shift_code ? CONTRACT_SHIFT_LABEL[a.shift_code] : "—"}

@@ -884,6 +884,12 @@ export type ContractAddendum = {
   // Which shift a headcount change staffs. Null on hardware lines, rate changes
   // and renewals, and on every addendum written before the column existed.
   shift_code?: ContractShift | null;
+  // ADD_HEADCOUNT with no contract_line_id carries a line's own fields (0477):
+  // the site it staffs, rate / month per head, tax treatment and notes.
+  site_id?: string | null;
+  unit_rate?: number | null;
+  taxable?: boolean | null;
+  notes?: string | null;
   source: AddendumSource;
   reference: string | null;
   drive_file_id: string | null;

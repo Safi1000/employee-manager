@@ -175,9 +175,11 @@ const num = (s: string) => Number(s) || 0;
 const isMeaningful = (l: LineDraft) => num(l.committed_count) > 0 || num(l.unit_rate) > 0;
 
 // New-addendum form (Edit Contract only).
-// The line an addendum lands on is picked the way a contract line is written:
-// site → category → shift. An existing line with that site/category/shift is
-// the target; none means a new line, which only an ADD_HEADCOUNT can create.
+// An addendum is picked the way a contract line is written: site → category →
+// shift. "Add headcount" is its own record carrying a line's fields (site,
+// category, shift, rate, notes, taxable) and never touches contract_lines
+// (0477). A reduction or rate change targets the existing line at that
+// site/category/shift.
 type AddendumForm = {
   site_key: string; // a SiteDraft key; NO_SITE when the contract is not split by site
   category: ContractLineCategory;
@@ -189,9 +191,7 @@ type AddendumForm = {
   effective_from: string;
   // Which shift the line runs. "" for hardware, which nobody works.
   shift_code: string;
-  // Add headcount: the line's rate / month, notes and tax treatment, exactly as
-  // on a contract line. The rate is always asked — it decides which line the
-  // headcount lands on (same site/category/shift/rate) or whether a new one opens.
+  // Add headcount: rate / month, notes and tax treatment, as on a contract line.
   line_rate: string;
   line_notes: string;
   line_taxable: boolean;
@@ -382,12 +382,14 @@ export default function ContractEditorModal({
     lines.filter((l) => l.id).map((l) => [l.id!, l.category] as const),
   );
 
-  const siteByLineId = hasSites
-    ? new Map(
-        lines
-          .filter((l) => l.id)
-          .map((l) => [l.id!, sites.find((x) => x.key === l.site_key)?.name.trim() || "—"] as const),
-      )
+  // Site names for the addendum list: a line-targeted addendum shows its
+  // line's site, added headcount its own.
+  const siteNameOf = hasSites
+    ? (a: ContractAddendum) => {
+        if (a.site_id) return sites.find((x) => x.id === a.site_id)?.name.trim() || "—";
+        const line = lines.find((l) => l.id && l.id === a.contract_line_id);
+        return (line && sites.find((x) => x.key === line.site_key)?.name.trim()) || "—";
+      }
     : undefined;
 
   // Addendum target, resolved like a contract line: site → category → shift.
@@ -411,14 +413,12 @@ export default function ContractEditorModal({
       l.category === addendumCategory &&
       (!addendumIsPersonnel || (l.shift_code || "day") === addendumShift),
   );
-  // More headcount joins a line only at the SAME rate; a different rate is a
-  // different line, as it would be on the contract itself. A reduction or a
-  // rate change needs a line that already exists.
   const addendumIsAdd = addForm.change_type === "ADD_HEADCOUNT";
-  const addendumLine = addendumIsAdd
-    ? addendumMatches.find((l) => num(l.unit_rate) === num(addForm.line_rate))
-    : addendumMatches[0];
-  const addendumNewLine = addForm.change_type !== "EXTEND_END_DATE" && !addendumLine;
+  // Only a reduction or a rate change targets a line; added headcount stands alone.
+  const addendumLine =
+    addForm.change_type === "REDUCE_HEADCOUNT" || addForm.change_type === "RATE_CHANGE"
+      ? addendumMatches[0]
+      : undefined;
   const addendumNeedsShift =
     (addForm.change_type === "ADD_HEADCOUNT" || addForm.change_type === "REDUCE_HEADCOUNT") &&
     addendumIsPersonnel;
@@ -614,16 +614,8 @@ export default function ContractEditorModal({
     const removedSiteIds = hasSites ? loadedSiteIds.filter((id) => !keptSiteIds.has(id)) : [];
 
     // A line whose site was added but left unnamed has nowhere to live.
-    // A line an addendum points at is kept even at 0 count / 0 rate — an
-    // addendum-created line starts at 0 committed, and dropping it would take
-    // its headcount with it.
-    const addendumLineIds = new Set(addendums.map((a) => a.contract_line_id).filter(Boolean));
     const payloadLines = lines
-      .filter(
-        (l) =>
-          (isMeaningful(l) || (!!l.id && addendumLineIds.has(l.id))) &&
-          (!hasSites || namedKeys.has(l.site_key)),
-      )
+      .filter((l) => isMeaningful(l) && (!hasSites || namedKeys.has(l.site_key)))
       .map((l) => ({
         id: l.id ?? null,
         site_key: hasSites ? l.site_key : NO_SITE,
@@ -710,8 +702,8 @@ export default function ContractEditorModal({
     const lineName =
       CONTRACT_LINE_CATEGORY_LABEL[addendumCategory] +
       (addendumIsPersonnel ? ` (${SHIFT_LABEL[addendumShift]} shift)` : "");
-    if (addendumNewLine && !isAdd) {
-      return fail(`This contract has no ${lineName} line there to change. Use “Add headcount” to add one.`);
+    if ((isRate || addForm.change_type === "REDUCE_HEADCOUNT") && !addendumLine) {
+      return fail(`This contract has no ${lineName} line there to change.`);
     }
     if (addForm.change_type === "REDUCE_HEADCOUNT" && addendumMatches.length > 1) {
       return fail(`There is more than one ${lineName} line there, at different rates — reduce it from the lines table instead.`);
@@ -719,48 +711,17 @@ export default function ContractEditorModal({
 
     setAddSubmitting(true);
     setAddError(null);
-    let lineId: string | null = isRenewal ? null : addendumLine?.id ?? null;
-    let createdLine: LineDraft | null = null;
     try {
-      if (addendumNewLine) {
-        // No line at this site/category/shift/rate yet: open one, exactly as the
-        // lines table would, at 0 committed — the addendum carries the headcount
-        // from its effective date, so the base (a locked total on an Active
-        // contract) does not move.
-        const siteId = addendumSites.find((x) => x.key === addendumSiteKey)?.id ?? null;
-        const { data: lineRow, error: lineErr } = await supabase
-          .from("contract_lines")
-          .insert({
-            contract_id: contract.id,
-            site_id: siteId,
-            shift_code: addendumShift || null,
-            category: addendumCategory,
-            label: CONTRACT_LINE_CATEGORY_LABEL[addendumCategory],
-            location: addForm.line_notes.trim() || null,
-            committed_count: 0,
-            unit_rate: num(addForm.line_rate),
-            taxable: addForm.line_taxable,
-          })
-          .select()
-          .single();
-        if (lineErr) throw lineErr;
-        lineId = (lineRow as ContractLine).id;
-        createdLine = {
-          id: lineId,
-          site_key: addendumSiteKey,
-          shift_code: addendumShift,
-          category: addendumCategory,
-          label: CONTRACT_LINE_CATEGORY_LABEL[addendumCategory],
-          location: addForm.line_notes.trim(),
-          committed_count: "0",
-          unit_rate: String(num(addForm.line_rate)),
-          taxable: addForm.line_taxable,
-        };
-      }
+      const siteId = addendumSites.find((x) => x.key === addendumSiteKey)?.id ?? null;
       const payload: Record<string, unknown> = {
         contract_id: contract.id,
-        contract_line_id: lineId,
-        category: null,
+        contract_line_id: addendumLine?.id ?? null,
+        // Added headcount carries its own line fields; nothing else does.
+        category: isAdd ? addendumCategory : null,
+        site_id: isAdd ? siteId : null,
+        unit_rate: isAdd ? num(addForm.line_rate) : null,
+        taxable: isAdd ? addForm.line_taxable : null,
+        notes: isAdd ? addForm.line_notes.trim() || null : null,
         change_type: addForm.change_type,
         count_delta: isRate || isRenewal ? 0 : count,
         new_rate: isRate ? num(addForm.new_rate) : null,
@@ -776,13 +737,7 @@ export default function ContractEditorModal({
         .insert(payload)
         .select()
         .single();
-      if (insErr) {
-        // Don't leave behind an empty line the addendum never reached.
-        if (createdLine) await supabase.from("contract_lines").delete().eq("id", lineId!);
-        throw insErr;
-      }
-      // Keep the draft list in step, or the next Save would drop the new line.
-      if (createdLine) setLines((prev) => [...prev, createdLine!]);
+      if (insErr) throw insErr;
       if (addFile) {
         const json = await uploadToDrive(contract.id, contract.contract_code, addFile);
         await supabase
@@ -1296,7 +1251,7 @@ export default function ContractEditorModal({
             </div>
 
             {addendums.length > 0 && (
-              <AddendumTable addendums={addendums} categoryByLineId={categoryByLineId} siteByLineId={siteByLineId} />
+              <AddendumTable addendums={addendums} categoryByLineId={categoryByLineId} siteNameOf={siteNameOf} />
             )}
 
             {/* Add-addendum form — the line fields mirror the contract lines table. */}
@@ -1401,7 +1356,6 @@ export default function ContractEditorModal({
                         min="0"
                         step="0.01"
                         value={addForm.line_rate}
-                        placeholder={addendumMatches[0] ? `Current: ${num(addendumMatches[0].unit_rate).toLocaleString()}` : ""}
                         onChange={(e) => setAddForm({ ...addForm, line_rate: e.target.value })}
                         className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm text-right"
                       />
@@ -1447,16 +1401,16 @@ export default function ContractEditorModal({
                       </div>
                     </>
                   )}
-                  <p className="col-span-2 text-[10px] text-slate-500 -mt-1">
-                    {addendumLine
-                      ? `Applies to the existing ${CONTRACT_LINE_CATEGORY_LABEL[addendumCategory]} line` +
-                        (addendumIsPersonnel ? ` (${SHIFT_LABEL[addendumShift]} shift)` : "") +
-                        (hasSites ? " at this site" : "") +
-                        ` — PKR ${num(addendumLine.unit_rate).toLocaleString()} / month.`
-                      : addendumIsAdd
-                        ? "No line at this site, shift and rate yet — a new contract line is added."
-                        : "No such line on this contract — only “Add headcount” can create one."}
-                  </p>
+                  {!addendumIsAdd && (
+                    <p className="col-span-2 text-[10px] text-slate-500 -mt-1">
+                      {addendumLine
+                        ? `Changes the ${CONTRACT_LINE_CATEGORY_LABEL[addendumCategory]} line` +
+                          (addendumIsPersonnel ? ` (${SHIFT_LABEL[addendumShift]} shift)` : "") +
+                          (hasSites ? " at this site" : "") +
+                          ` — PKR ${num(addendumLine.unit_rate).toLocaleString()} / month.`
+                        : "No such line on this contract to change."}
+                    </p>
+                  )}
                 </>
               )}
               <div>
