@@ -106,10 +106,13 @@ export default function Assets() {
             <div className="mt-2">
               <Button variant="primary" size="sm" disabled={busy || !na.name || !na.cost}
                 onClick={async () => {
-                  if (await run(supabase.from("fixed_assets").insert({
-                    name: na.name, category: na.category, acquisition_date: na.acquisition_date,
-                    cost: Number(na.cost), salvage_value: Number(na.salvage_value || 0),
-                    useful_life_months: Number(na.useful_life_months || 1),
+                  // Routed through capitalise_fixed_asset (0483, accounting.edit):
+                  // capitalising posts a GL entry, so it's an accounting act, not a
+                  // raw inventory write.
+                  if (await run(supabase.rpc("capitalise_fixed_asset", {
+                    p_name: na.name, p_category: na.category, p_acquisition_date: na.acquisition_date,
+                    p_cost: Number(na.cost), p_salvage_value: Number(na.salvage_value || 0),
+                    p_useful_life_months: Number(na.useful_life_months || 1),
                   }))) setNa({ name: "", category: "equipment", cost: "", salvage_value: "0", useful_life_months: "60", acquisition_date: new Date().toISOString().slice(0, 10) });
                 }}>
                 Capitalise asset

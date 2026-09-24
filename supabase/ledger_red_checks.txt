@@ -39,6 +39,24 @@
 # same 14 names, no new check went red. Adds three nullable attachment columns to
 # advances (drive_file_id, drive_view_url, attachment_file_name); no function or
 # money-path change. md5 8bb0c2e37fb0c96642611c8f5a9ac8e9.
+#
+# RPC-routing pass (raw-write tables → RPC, then gate), applied 2026-09-25, each
+# diffed clean (same 14 names, no new red). Digests reconciled:
+#   0483 fixed_assets_capitalisation_routes_through_an_rpc_and_the_table_is_gated
+#        f2010a33753380ec1c740cd8361136d9  (capitalise_fixed_asset + dispose key + gate, accounting.edit)
+#   0484 custody_transfers_route_through_an_rpc_and_the_table_is_gated
+#        fa7fd984f72a3b98ac1a675d2c9fb742  (record_custody_transfer + gate, accounting.edit)
+#   0485 ensure_custodian_location_rpc
+#        be89b4b7413de2994dab11f7035fc87e  (RPC only; company+person asserts, NO edit key)
+#   0486 cheques_route_through_rpcs_and_the_table_is_gated
+#        bdd383158e91a8ecbebcfd3d8ad921e9  (record_cheque + set_cheque_status + gate, accounting.edit)
+#   0487 cash_deposits_and_opening_balance_lines_are_gated
+#        01f0448900b9a05561ebb8f15104c8ca  (cash_deposits→accounting.edit; opening_balance_lines→coa.view)
+#
+# DEFERRED: the cash_locations table gate is NOT applied yet — it must land AFTER
+# the frontend (custodian.ts → ensure_custodian_location) is deployed, or first-use
+# custodian create breaks for a payroll/expenses user who lacks accounting.edit.
+# payslips figure-write routing is a separate pass (its own migration).
 alert_delivery_is_healthy
 ar_control_equals_open_invoices
 bank_control_equals_bank_accounts

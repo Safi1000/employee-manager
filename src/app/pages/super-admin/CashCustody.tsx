@@ -648,14 +648,14 @@ export function CashCustodyPanel({ onReady, onSummary }: {
         if (e) throw e;
       } else {
         // Office staff → office staff: pure custody move; Cash in Hand unchanged.
-        const { error: e } = await supabase.from("custody_transfers").insert({
-          company_id: companyId,
-          date: transferForm.date,
-          from_location_id: transferForm.from_location_id,
-          to_location_id: transferForm.to_location_id,
-          amount: amt,
-          notes: transferForm.notes || null,
-          created_by: profile?.id,
+        // Routed through record_custody_transfer (0484, accounting.edit) so the row
+        // and its GL posting are one gated write — no raw insert on the table.
+        const { error: e } = await supabase.rpc("record_custody_transfer", {
+          p_from_location_id: transferForm.from_location_id,
+          p_to_location_id: transferForm.to_location_id,
+          p_amount: amt,
+          p_date: transferForm.date,
+          p_notes: transferForm.notes || null,
         });
         if (e) throw e;
       }

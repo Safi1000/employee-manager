@@ -159,42 +159,21 @@ export async function loadCustodianOptions(companyId: string, withBalances = tru
 export async function ensureCustodianLocation(
   companyId: string,
   personId: string,
-  fullName: string,
+  _fullName: string,
   kind?: "employee" | "partner",
 ): Promise<string> {
-  // When the caller didn't say, detect it: a partner id must NOT land in
-  // custodian_employee_id (FK → employees) and vice-versa. Cheap and covers
-  // every call site without each having to thread `kind`.
-  let resolved = kind;
-  if (!resolved) {
-    const { data: p } = await supabase.from("partners").select("id").eq("id", personId).maybeSingle();
-    resolved = p ? "partner" : "employee";
-  }
-  const col = resolved === "partner" ? "custodian_partner_id" : "custodian_employee_id";
-  // One custodian location per person — reuse it whether active or not.
-  const { data: existing, error: selErr } = await supabase
-    .from("cash_locations")
-    .select("id")
-    .eq("company_id", companyId)
-    .eq(col, personId)
-    .eq("location_type", "CUSTODIAN")
-    .limit(1)
-    .maybeSingle();
-  if (selErr) throw selErr;
-  if (existing?.id) return existing.id as string;
-
-  const { data: inserted, error: insErr } = await supabase
-    .from("cash_locations")
-    .insert({
-      company_id: companyId,
-      name: fullName,
-      location_type: "CUSTODIAN",
-      [col]: personId,
-      opening_balance: 0,
-      is_active: true,
-    })
-    .select("id")
-    .single();
-  if (insErr) throw insErr;
-  return (inserted as any).id as string;
+  // Routed through the ensure_custodian_location RPC (0485). Creating an empty
+  // custodian container is not a money movement, so the RPC asserts only company
+  // membership and person validity — no accounting.edit — which is what lets the
+  // cash payroll / cash expenses flows (neither on accounting.edit) keep
+  // auto-creating even once cash_locations is gated. Detection, find-or-create and
+  // the name all happen server-side; _fullName is kept for call-site compatibility
+  // but the RPC reads the person's current name from the DB.
+  const { data, error } = await supabase.rpc("ensure_custodian_location", {
+    p_company_id: companyId,
+    p_person_id: personId,
+    p_kind: kind ?? null,
+  });
+  if (error) throw error;
+  return data as string;
 }

@@ -1940,18 +1940,17 @@ export default function Accounting() {
           setSubmitting(false);
           return;
         }
-        const { error: insErr } = await supabase.from("cheques").insert({
-          bank_account_id: paymentBankId,
-          cheque_number: paymentChequeNumber.trim(),
-          amount,
-          cheque_date: paymentChequeDate,
-          cheque_type: "payment",
-          direction: "incoming",
-          status: "pending",
-          recipient: selectedClient.name,
-          invoice_id: invoiceId,
-          client_id: selectedClient.id,
-          notes: paymentNotes.trim() || null,
+        const { error: insErr } = await supabase.rpc("record_cheque", {
+          p_bank_account_id: paymentBankId,
+          p_cheque_number: paymentChequeNumber.trim(),
+          p_amount: amount,
+          p_cheque_date: paymentChequeDate,
+          p_cheque_type: "payment",
+          p_direction: "incoming",
+          p_recipient: selectedClient.name,
+          p_notes: paymentNotes.trim() || null,
+          p_invoice_id: invoiceId,
+          p_client_id: selectedClient.id,
         });
         if (insErr) throw insErr;
         setIsPaymentModalOpen(false);
@@ -3080,10 +3079,10 @@ export default function Accounting() {
                                           ? "Mark this payment cheque as cleared? Bank stays deducted; cashflow recognises linked expenses/salaries/advances now."
                                           : "Mark this cash cheque as cleared? Bank stays deducted; PKR " + Number(c.amount).toLocaleString() + " will be added to the Cash (Treasury) balance.";
                                     if (!window.confirm(msg)) return;
-                                    const { error: e } = await supabase
-                                      .from("cheques")
-                                      .update({ status: "cleared" })
-                                      .eq("id", c.id);
+                                    const { error: e } = await supabase.rpc("set_cheque_status", {
+                                      p_cheque_id: c.id,
+                                      p_status: "cleared",
+                                    });
                                     if (e) { setError(e.message); return; }
                                     await loadAll();
                                   }}
@@ -3237,24 +3236,19 @@ export default function Accounting() {
               const custodianLocId = isCashCheque && cashStaff && cid
                 ? await ensureCustodianLocation(cid, cashStaff.employeeId, cashStaff.fullName)
                 : null;
-              const { data: inserted, error: insErr } = await supabase
-                .from("cheques")
-                .insert({
-                  bank_account_id: chequeForm.bank_account_id,
-                  cheque_number: chequeForm.cheque_number.trim(),
-                  amount,
-                  cheque_date: chequeForm.cheque_date,
-                  cheque_type: chequeForm.direction === "incoming" ? "cash" : chequeForm.cheque_type,
-                  direction: chequeForm.direction,
-                  recipient: isCashCheque ? cashStaff!.fullName : (chequeForm.recipient.trim() || null),
-                  custodian_location_id: custodianLocId,
-                  notes: chequeForm.notes.trim() || null,
-                  status: "pending",
-                })
-                .select()
-                .single();
+              const { data: newChequeId, error: insErr } = await supabase.rpc("record_cheque", {
+                p_bank_account_id: chequeForm.bank_account_id,
+                p_cheque_number: chequeForm.cheque_number.trim(),
+                p_amount: amount,
+                p_cheque_date: chequeForm.cheque_date,
+                p_cheque_type: chequeForm.direction === "incoming" ? "cash" : chequeForm.cheque_type,
+                p_direction: chequeForm.direction,
+                p_recipient: isCashCheque ? cashStaff!.fullName : (chequeForm.recipient.trim() || null),
+                p_notes: chequeForm.notes.trim() || null,
+                p_custodian_location_id: custodianLocId,
+              });
               if (insErr) throw insErr;
-              const chequeId = (inserted as Cheque).id;
+              const chequeId = newChequeId as string;
               // A cash cheque stays PENDING until someone marks it cleared, exactly
               // like a payment cheque. It used to clear the instant it was written,
               // which recorded the cash as in the custodian's hands before the bank
@@ -3520,10 +3514,11 @@ export default function Accounting() {
                 ev.preventDefault();
                 setBounceSubmitting(true);
                 setBounceError(null);
-                const { error: e } = await supabase
-                  .from("cheques")
-                  .update({ status: "bounced", bounce_reason: bounceReason.trim() || null })
-                  .eq("id", bounceTarget.id);
+                const { error: e } = await supabase.rpc("set_cheque_status", {
+                  p_cheque_id: bounceTarget.id,
+                  p_status: "bounced",
+                  p_bounce_reason: bounceReason.trim() || null,
+                });
                 setBounceSubmitting(false);
                 if (e) { setBounceError(e.message); return; }
                 setBounceTarget(null);
