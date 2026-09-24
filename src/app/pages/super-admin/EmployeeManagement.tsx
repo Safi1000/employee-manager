@@ -38,7 +38,6 @@ import {
   isPersonnelCategory,
   effectiveCommittedForLine,
   standaloneAddendumHeadcount,
-  addendumHeadcountDelta,
   activeCountByLine,
   type Employee,
   type EmployeeDocument,
@@ -4946,13 +4945,6 @@ export function ChangeShiftModal({
               l, adds.filter((a) => a.contract_id === l.contract_id), today,
             );
             committedByShift.set(l.shift_code, (committedByShift.get(l.shift_code) ?? 0) + n);
-          }
-          // A shift staffed only by addendum (a site opened by addendum has no line).
-          for (const a of adds) {
-            if (a.contract_line_id || !a.shift_code || !a.category || !isPersonnelCategory(a.category)) continue;
-            if (a.site_id != null && a.site_id !== siteId) continue;
-            if (a.effective_from > today) continue;
-            committedByShift.set(a.shift_code, (committedByShift.get(a.shift_code) ?? 0) + addendumHeadcountDelta(a));
           }
         }
       }
