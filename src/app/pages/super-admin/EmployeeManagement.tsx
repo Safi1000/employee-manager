@@ -37,6 +37,8 @@ import {
   CONTRACT_LINE_CATEGORY_LABEL,
   isPersonnelCategory,
   effectiveCommittedForLine,
+  standaloneAddendumHeadcount,
+  addendumHeadcountDelta,
   activeCountByLine,
   type Employee,
   type EmployeeDocument,
@@ -1101,7 +1103,13 @@ export default function EmployeeManagement() {
     const line = linesForContract(contractId).find((l) => l.id === lineId);
     if (!line) return null;
     const adds = addendums.filter((a) => a.contract_id === contractId);
-    const committed = effectiveCommittedForLine(line, adds, today());
+    // The line, plus headcount an addendum added on this category / site / shift
+    // without a line of its own (0477).
+    const committed = Math.max(
+      0,
+      effectiveCommittedForLine(line, adds, today()) +
+        standaloneAddendumHeadcount(adds, line.category, line.site_id ?? null, today(), line.shift_code),
+    );
     const contractEmployees = employees.filter(
       (e) => e.contract_id === contractId && e.id !== excludeEmployeeId,
     );
@@ -4938,6 +4946,13 @@ export function ChangeShiftModal({
               l, adds.filter((a) => a.contract_id === l.contract_id), today,
             );
             committedByShift.set(l.shift_code, (committedByShift.get(l.shift_code) ?? 0) + n);
+          }
+          // A shift staffed only by addendum (a site opened by addendum has no line).
+          for (const a of adds) {
+            if (a.contract_line_id || !a.shift_code || !a.category || !isPersonnelCategory(a.category)) continue;
+            if (a.site_id != null && a.site_id !== siteId) continue;
+            if (a.effective_from > today) continue;
+            committedByShift.set(a.shift_code, (committedByShift.get(a.shift_code) ?? 0) + addendumHeadcountDelta(a));
           }
         }
       }

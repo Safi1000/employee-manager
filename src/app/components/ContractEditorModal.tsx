@@ -91,6 +91,8 @@ const SHIFT_LABEL: Record<string, string> = {
 
 /** Lines with no site of their own — kept so older contracts keep working. */
 const NO_SITE = "";
+/** Addendum site picker: open a new client site instead of picking one. */
+const NEW_SITE = "__new_site__";
 
 let siteKeySeq = 0;
 const nextSiteKey = () => `site-${++siteKeySeq}`;
@@ -195,6 +197,12 @@ type AddendumForm = {
   line_rate: string;
   line_notes: string;
   line_taxable: boolean;
+  // Add headcount at a site the client does not have yet (site_key = NEW_SITE).
+  // The site is created under the client with no contract lines; the addendum
+  // carries its headcount. Being a client site, it is then offered to the
+  // contract lines like any other.
+  new_site_name: string;
+  new_site_location: string;
   source: AddendumSource;
   reference: string;
 };
@@ -212,6 +220,8 @@ const blankAddendum = (): AddendumForm => ({
   line_rate: "",
   line_notes: "",
   line_taxable: true,
+  new_site_name: "",
+  new_site_location: "",
   source: "SIGNED_CONTRACT",
   reference: "",
 });
@@ -384,7 +394,7 @@ export default function ContractEditorModal({
 
   // Site names for the addendum list: a line-targeted addendum shows its
   // line's site, added headcount its own.
-  const siteNameOf = hasSites
+  const siteNameOf = hasSites || addendums.some((a) => a.site_id)
     ? (a: ContractAddendum) => {
         if (a.site_id) return sites.find((x) => x.id === a.site_id)?.name.trim() || "—";
         const line = lines.find((l) => l.id && l.id === a.contract_line_id);
@@ -394,12 +404,19 @@ export default function ContractEditorModal({
 
   // Addendum target, resolved like a contract line: site → category → shift.
   // Only saved sites can be picked — an unsaved one has no id to hang a line on.
-  const addendumSites = hasSites ? sites.filter((x) => x.id) : [];
-  const addendumSiteKey = hasSites
-    ? addendumSites.some((x) => x.key === addForm.site_key)
-      ? addForm.site_key
-      : addendumSites[0]?.key ?? NO_SITE
-    : NO_SITE;
+  // Added headcount may go to any client site, or to a new one; a reduction or
+  // rate change picks a site only on a split contract, where lines have one.
+  const addendumPicksSite = hasSites || addForm.change_type === "ADD_HEADCOUNT";
+  const addendumSites = addendumPicksSite ? sites.filter((x) => x.id) : [];
+  const addendumSiteKey = !addendumPicksSite
+    ? NO_SITE
+    : addForm.site_key === NEW_SITE && addForm.change_type === "ADD_HEADCOUNT"
+      ? NEW_SITE
+      : addendumSites.some((x) => x.key === addForm.site_key)
+        ? addForm.site_key
+        : hasSites
+          ? addendumSites[0]?.key ?? NO_SITE
+          : NO_SITE;
   const addendumCategory = allowedCategories.includes(addForm.category)
     ? addForm.category
     : allowedCategories[0];
@@ -694,7 +711,17 @@ export default function ContractEditorModal({
       return fail("Set a new end date for the renewal, or tick “no end date”.");
     }
     if (!isRenewal && hasSites && addendumSiteKey === NO_SITE) {
-      return fail("Pick the site this addendum applies to (save a new site first).");
+      return fail("Pick the site this addendum applies to.");
+    }
+    const newSiteName = addForm.new_site_name.trim();
+    if (addendumSiteKey === NEW_SITE) {
+      if (!newSiteName) return fail("Name the new site.");
+      if (hasInjectionPattern(newSiteName) || hasInjectionPattern(addForm.new_site_location)) {
+        return fail("Special characters are not allowed in a site name or location.");
+      }
+      if (sites.some((x) => x.name.trim().toLowerCase() === newSiteName.toLowerCase())) {
+        return fail(`This client already has a site called “${newSiteName}” — pick it from the list.`);
+      }
     }
     if (!isRenewal && !isRate && !(count > 0)) return fail("Enter the headcount — at least 1.");
     if (isAdd && !(num(addForm.line_rate) > 0)) return fail("Enter the rate / month.");
@@ -711,8 +738,26 @@ export default function ContractEditorModal({
 
     setAddSubmitting(true);
     setAddError(null);
+    let createdSite: SiteDraft | null = null;
     try {
-      const siteId = addendumSites.find((x) => x.key === addendumSiteKey)?.id ?? null;
+      if (addendumSiteKey === NEW_SITE) {
+        // A client site, not a contract line: nothing is added to the lines.
+        const { data: siteRow, error: siteErr } = await supabase
+          .from("sites")
+          .insert({
+            client_id: contract.client_id,
+            name: newSiteName,
+            location: addForm.new_site_location.trim() || null,
+            is_default: false,
+          })
+          .select()
+          .single();
+        if (siteErr) throw siteErr;
+        const row = siteRow as Site;
+        createdSite = { key: nextSiteKey(), id: row.id, name: row.name, location: row.location ?? "", is_default: false };
+      }
+      const siteId =
+        createdSite?.id ?? addendumSites.find((x) => x.key === addendumSiteKey)?.id ?? null;
       const payload: Record<string, unknown> = {
         contract_id: contract.id,
         contract_line_id: addendumLine?.id ?? null,
@@ -737,7 +782,17 @@ export default function ContractEditorModal({
         .insert(payload)
         .select()
         .single();
-      if (insErr) throw insErr;
+      if (insErr) {
+        // Don't leave behind a site the addendum never reached.
+        if (createdSite) await supabase.from("sites").delete().eq("id", createdSite.id!);
+        throw insErr;
+      }
+      if (createdSite) {
+        // Now a client site like any other — offered to the contract lines, and
+        // counted as loaded so the next Save keeps it rather than removing it.
+        setSites((prev) => [...prev, createdSite!]);
+        setLoadedSiteIds((prev) => [...prev, createdSite!.id!]);
+      }
       if (addFile) {
         const json = await uploadToDrive(contract.id, contract.contract_code, addFile);
         await supabase
@@ -1187,13 +1242,21 @@ export default function ContractEditorModal({
                       type="button"
                       onClick={() => removeSite(site.key)}
                       // Removing a site takes its lines, which on an Active
-                      // contract is a change to the committed total.
-                      disabled={termsLocked && linesForSite(site.key).length > 0}
+                      // contract is a change to the committed total. A site an
+                      // addendum staffs stays too — save_contract's removal
+                      // check does not read addendums, and the FK would
+                      // silently null the addendum's site.
+                      disabled={
+                        (termsLocked && linesForSite(site.key).length > 0) ||
+                        (!!site.id && addendums.some((a) => a.site_id === site.id))
+                      }
                       className="p-2 rounded text-danger-600 hover:bg-danger-50 mb-1 disabled:opacity-40 disabled:cursor-not-allowed"
                       title={
-                        termsLocked && linesForSite(site.key).length > 0
-                          ? "Active contract: reduce this site's headcount by addendum"
-                          : "Remove site and its lines"
+                        !!site.id && addendums.some((a) => a.site_id === site.id)
+                          ? "An addendum staffs this site"
+                          : termsLocked && linesForSite(site.key).length > 0
+                            ? "Active contract: reduce this site's headcount by addendum"
+                            : "Remove site and its lines"
                       }
                     >
                       <Trash2 className="w-4 h-4" />
@@ -1289,7 +1352,7 @@ export default function ContractEditorModal({
                 </div>
               ) : (
                 <>
-                  {hasSites ? (
+                  {addendumPicksSite ? (
                     <div>
                       <label className="block text-[11px] text-slate-600 mb-1">Site *</label>
                       <ThemedSelect
@@ -1297,14 +1360,44 @@ export default function ContractEditorModal({
                         onChange={(e) => setAddForm({ ...addForm, site_key: e.target.value })}
                         className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
                       >
-                        {addendumSites.length === 0 && <option value={NO_SITE}>Save a site first</option>}
+                        {!hasSites && <option value={NO_SITE}>No site (contract-wide)</option>}
+                        {hasSites && addendumSites.length === 0 && <option value={NO_SITE}>Pick a site</option>}
                         {addendumSites.map((x) => (
                           <option key={x.key} value={x.key}>{x.name.trim() || "Unnamed site"}</option>
                         ))}
+                        {addendumIsAdd && <option value={NEW_SITE}>+ New site…</option>}
                       </ThemedSelect>
                     </div>
                   ) : (
                     <div />
+                  )}
+                  {addendumSiteKey === NEW_SITE && (
+                    <>
+                      <div>
+                        <label className="block text-[11px] text-slate-600 mb-1">New site name *</label>
+                        <input
+                          type="text"
+                          value={addForm.new_site_name}
+                          onChange={(e) => setAddForm({ ...addForm, new_site_name: e.target.value })}
+                          placeholder="e.g. Main Gate"
+                          className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-slate-600 mb-1">Location</label>
+                        <input
+                          type="text"
+                          value={addForm.new_site_location}
+                          onChange={(e) => setAddForm({ ...addForm, new_site_location: e.target.value })}
+                          placeholder="Optional"
+                          className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                        />
+                      </div>
+                      <p className="col-span-2 text-[10px] text-slate-500 -mt-1">
+                        The site is added to this client with no contract lines — the addendum carries
+                        its headcount. It is then available to the contract lines like any other site.
+                      </p>
+                    </>
                   )}
                   <div>
                     <label className="block text-[11px] text-slate-600 mb-1">Category *</label>

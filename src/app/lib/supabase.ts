@@ -971,6 +971,34 @@ export function effectiveCommittedForLine(
 }
 
 /**
+ * Headcount carried by addendums with NO line of their own (0477) for one
+ * contract's category at a site, in force on a date. `addendums` must already be
+ * that contract's. Pass `shiftCode` to narrow to one shift (an addendum with no
+ * shift counts for any). `siteId` null is the contract-wide group.
+ *
+ * A post's committed headcount is its lines (effectiveCommittedForLine) plus
+ * this — the same sum 0478's triggers cap against. May be negative (a legacy
+ * line-less REDUCE); callers clamp the total, not this part.
+ */
+export function standaloneAddendumHeadcount(
+  addendums: ContractAddendum[],
+  category: ContractLineCategory,
+  siteId: string | null,
+  onDate: string,
+  shiftCode?: string | null,
+): number {
+  let n = 0;
+  for (const a of addendums) {
+    if (a.contract_line_id || a.category !== category) continue;
+    if ((a.site_id ?? null) !== siteId) continue;
+    if (a.effective_from > onDate) continue;
+    if (shiftCode != null && a.shift_code && a.shift_code !== shiftCode) continue;
+    n += addendumHeadcountDelta(a);
+  }
+  return n;
+}
+
+/**
  * Effective per-line unit rate on a given date. A RATE_CHANGE addendum replaces the
  * rate for its line (or, when it carries a category instead of a line, every line of
  * that category); the latest one effective on/before the date wins. Lines with no

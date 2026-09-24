@@ -64,6 +64,8 @@ import {
   PERSONNEL_LINE_CATEGORIES,
   effectiveCommittedByCategory,
   effectiveCommittedForLine,
+  standaloneAddendumHeadcount,
+  addendumHeadcountDelta,
   activeCountByLine,
   isPersonnelCategory,
 } from "../../lib/supabase";
@@ -633,6 +635,12 @@ export default function EmployeeAssignments() {
       if (!l.site_id || !activeIds.has(l.contract_id) || !isPersonnelCategory(l.category)) continue;
       const adds = addendums.filter((a) => a.contract_id === l.contract_id);
       bySite.set(l.site_id, (bySite.get(l.site_id) ?? 0) + effectiveCommittedForLine(l, adds, todayIso()));
+    }
+    // Headcount an addendum adds at a site with no line of its own (0477).
+    for (const a of addendums) {
+      if (a.contract_line_id || !a.site_id || !a.category || !activeIds.has(a.contract_id)) continue;
+      if (!isPersonnelCategory(a.category) || a.effective_from > todayIso()) continue;
+      bySite.set(a.site_id, Math.max(0, (bySite.get(a.site_id) ?? 0) + addendumHeadcountDelta(a)));
     }
     return bySite;
   }, [contracts, contractLines, addendums]);
@@ -2820,7 +2828,15 @@ function AssignEmployeesModal({
   // grouping EditRulesModal uses, and it matches 0457: the cap is the department
   // at the site, summed across its shift lines.
   const offeredGroups = useMemo(() => {
-    const m = new Map<string, { key: string; label: string; category: ContractLineCategory; lines: ContractLine[] }>();
+    type Group = {
+      key: string;
+      label: string;
+      category: ContractLineCategory;
+      lines: ContractLine[];
+      /** Addendum post only (no line of its own): the ADD_HEADCOUNT addendums that make it. */
+      addendumIds?: string[];
+    };
+    const m = new Map<string, Group>();
     for (const l of offeredLines) {
       const label = (l.label ?? "").trim() || CONTRACT_LINE_CATEGORY_LABEL[l.category];
       const key = label.toLowerCase();
@@ -2828,8 +2844,54 @@ function AssignEmployeesModal({
       g.lines.push(l);
       m.set(key, g);
     }
+    // Posts an addendum opened at this site with no line of its own (0477) — a
+    // site opened by addendum, or a department the site's lines never had. The
+    // posting names the addendum it fills, and 0479 caps it at the headcount.
+    if (siteId) {
+      const lineCats = new Set(offeredLines.map((l) => l.category));
+      const byCat = new Map<ContractLineCategory, string[]>();
+      for (const a of addendums) {
+        if (a.contract_id !== contractId || a.contract_line_id || a.change_type !== "ADD_HEADCOUNT") continue;
+        if (a.site_id !== siteId || !a.category || !isPersonnelCategory(a.category) || lineCats.has(a.category)) continue;
+        byCat.set(a.category, [...(byCat.get(a.category) ?? []), a.id]);
+      }
+      for (const [category, addendumIds] of byCat) {
+        const adds = addendums.filter((a) => a.contract_id === contractId);
+        if (standaloneAddendumHeadcount(adds, category, siteId, slotAsOf) <= 0) continue;
+        const key = `addendum:${category}`;
+        m.set(key, { key, label: `${CONTRACT_LINE_CATEGORY_LABEL[category]} (addendum)`, category, lines: [], addendumIds });
+      }
+    }
     return [...m.values()];
-  }, [offeredLines]);
+  }, [offeredLines, addendums, contractId, siteId, slotAsOf]);
+
+  // Guards already filling each addendum post on the joining date. Postings,
+  // not employee rows, are what name an addendum post, so they are counted
+  // from deployments — the same thing 0479's trigger counts.
+  const [addendumFilled, setAddendumFilled] = useState<Map<string, number>>(new Map());
+  useEffect(() => {
+    const groups = offeredGroups.filter((g) => g.addendumIds?.length);
+    if (groups.length === 0) { setAddendumFilled(new Map()); return; }
+    let cancelled = false;
+    (async () => {
+      const ids = groups.flatMap((g) => g.addendumIds!);
+      const { data } = await supabase
+        .from("deployments")
+        .select("guard_id, contract_addendum_id")
+        .in("contract_addendum_id", ids)
+        .lte("start_date", slotAsOf)
+        .or(`end_date.is.null,end_date.gte.${slotAsOf}`);
+      if (cancelled) return;
+      const rows = (data ?? []) as { guard_id: string; contract_addendum_id: string }[];
+      const next = new Map<string, number>();
+      for (const g of groups) {
+        const set = new Set(g.addendumIds!);
+        next.set(g.key, new Set(rows.filter((r) => set.has(r.contract_addendum_id)).map((r) => r.guard_id)).size);
+      }
+      setAddendumFilled(next);
+    })();
+    return () => { cancelled = true; };
+  }, [offeredGroups, slotAsOf]);
 
   // Committed vs already-filled for the whole POST at this site, summed across
   // its shift lines — the same total 0457's trigger caps against. (The site
@@ -2839,15 +2901,22 @@ function AssignEmployeesModal({
       const g = offeredGroups.find((x) => x.key === key);
       if (!g) return null;
       const adds = addendums.filter((a) => a.contract_id === contractId);
+      if (g.addendumIds) {
+        const committed = Math.max(0, standaloneAddendumHeadcount(adds, g.category, siteId ?? null, slotAsOf));
+        const filled = addendumFilled.get(g.key) ?? 0;
+        return { category: g.category, committed, filled, available: Math.max(0, committed - filled) };
+      }
       const byLine = activeCountByLine(allEmployees, slotAsOf);
       let committed = 0, filled = 0;
       for (const l of g.lines) {
         committed += effectiveCommittedForLine(l, adds, slotAsOf);
         filled += byLine.get(l.id) ?? 0;
       }
+      // Plus headcount added by addendum for this category at this site (0478's cap).
+      committed = Math.max(0, committed + standaloneAddendumHeadcount(adds, g.category, siteId ?? null, slotAsOf));
       return { category: g.category, committed, filled, available: Math.max(0, committed - filled) };
     },
-    [offeredGroups, addendums, contractId, slotAsOf, allEmployees],
+    [offeredGroups, addendums, contractId, slotAsOf, allEmployees, addendumFilled, siteId],
   );
 
   const slot = groupKey ? slotForGroup(groupKey) : null;
@@ -2938,7 +3007,7 @@ function AssignEmployeesModal({
       // own shift, then to day. A single-shift post ignores the shift entirely.
       const grp = offeredGroups.find((x) => x.key === groupKey) ?? null;
       const lineForShift = (empShift: string): string | null => {
-        if (!grp) return null;
+        if (!grp || grp.lines.length === 0) return null;
         if (grp.lines.length === 1) return grp.lines[0].id;
         const match = grp.lines.find((l) => (l.shift_code ?? "") === empShift);
         return (match ?? grp.lines[0]).id;
@@ -3010,6 +3079,9 @@ function AssignEmployeesModal({
           guard_id: e.id,
           client_id: target.id,
           contract_line_id: lineId,
+          // An addendum post has no line: the posting names the addendum it
+          // fills, which is what 0479 caps it by.
+          contract_addendum_id: lineId ? null : grp?.addendumIds?.[0] ?? null,
           site_id: postSiteId,
           start_date: startDate,
           shift_code: empShift,
@@ -3147,13 +3219,13 @@ function AssignEmployeesModal({
               </ThemedSelect>
             </div>
           </div>
-          {contractId && lines.length === 0 && (
+          {contractId && lines.length === 0 && offeredGroups.length === 0 && (
             <p className="text-xs text-warning-700 dark:text-warning-500 mt-2">
               This contract has no category lines, so there is no committed headcount to check against.
               Add lines on the Contracts page to cap postings by category.
             </p>
           )}
-          {contractId && lines.length > 0 && offeredLines.length === 0 && (
+          {contractId && lines.length > 0 && offeredGroups.length === 0 && (
             <p className="text-xs text-warning-700 dark:text-warning-500 mt-2">
               This contract has no open post
               {target.kind === "client" && target.siteName ? ` at ${target.siteName}` : ""} — its
