@@ -1350,6 +1350,13 @@ function ShiftDrillModal({
     }
   };
 
+  // Live tally of what's been marked — marks holds ONLY non-present exceptions
+  // (setMark deletes a guard when set back to Present), so each entry is one.
+  const exceptionCounts = EXCEPTION_STATUSES
+    .map((s) => ({ label: STATUS_LABEL[s], n: [...marks.values()].filter((m) => m.status === s).length }))
+    .filter((x) => x.n > 0);
+  const presumedPresent = shift.roster.length - marks.size;
+
   return (
     <Modal isOpen onClose={onClose} size="lg"
       error={err}
@@ -1388,6 +1395,17 @@ function ShiftDrillModal({
         <p className="text-xs text-slate-500">
           {shift.roster.length} on roster — all presumed <strong>present</strong>. Mark only the exceptions, then confirm.
         </p>
+        {exceptionCounts.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 rounded-md bg-slate-50 border border-slate-200 px-3 py-2 text-xs">
+            <span className="font-medium text-slate-600">Marked exceptions:</span>
+            {exceptionCounts.map((x) => (
+              <span key={x.label} className="inline-flex items-center rounded-full bg-white border border-slate-200 px-2 py-0.5 font-medium text-slate-700">
+                {x.label}: {x.n}
+              </span>
+            ))}
+            <span className="text-slate-400">· {presumedPresent} presumed present</span>
+          </div>
+        )}
         <input
           type="text"
           value={rosterSearch}
