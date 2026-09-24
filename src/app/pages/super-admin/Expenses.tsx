@@ -1,7 +1,7 @@
 import ThemedSelect from "../../components/ThemedSelect";
 import CategoryPicker from "../../components/CategoryPicker";
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Search, Upload, AlertCircle, X, Loader2, Trash2, Download, Pencil } from "lucide-react";
+import { Plus, Search, Upload, AlertCircle, X, Loader2, Trash2, Download, Pencil, Paperclip } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -61,6 +61,10 @@ type AdvanceRow = Advance & {
   employee_code: string;
   client_name: string | null;
   bank_name: string | null;
+  // Receipt/screenshot attachment (0482), same Drive triple as expenses/cheques.
+  drive_file_id?: string | null;
+  drive_view_url?: string | null;
+  attachment_file_name?: string | null;
 };
 
 /**
@@ -421,11 +425,13 @@ export default function Expenses() {
   const [advForm, setAdvForm] = useState<AdvanceForm>(emptyAdvanceForm);
   const [advEmpSearch, setAdvEmpSearch] = useState("");
   const [advSubmitting, setAdvSubmitting] = useState(false);
+  const [advFile, setAdvFile] = useState<File | null>(null);
 
   const [isAdvEditOpen, setIsAdvEditOpen] = useState(false);
   const [advEditing, setAdvEditing] = useState<AdvanceRow | null>(null);
   const [advEditForm, setAdvEditForm] = useState<AdvanceForm>(emptyAdvanceForm);
   const [advEditEmpSearch, setAdvEditEmpSearch] = useState("");
+  const [advEditFile, setAdvEditFile] = useState<File | null>(null);
 
   const [advSearch, setAdvSearch] = useState("");
   const [advClientFilter, setAdvClientFilter] = useState<string>("all");
@@ -1190,6 +1196,7 @@ export default function Expenses() {
   // back to that whenever drive_file_id is null.
   const uploadReceiptToDrive = async (
     file: File,
+    category: string = "expenses",
   ): Promise<{ drive_file_id: string; drive_view_url: string; file_name: string }> => {
     const effectiveCompanyId =
       profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
@@ -1198,7 +1205,7 @@ export default function Expenses() {
     }
     const fd = new FormData();
     fd.append("file", file);
-    fd.append("category", "expenses");
+    fd.append("category", category);
     fd.append("company_id", effectiveCompanyId);
     fd.append("company_name", company.name);
     const { data, error: fnErr } = await supabase.functions.invoke("gdrive-upload", { body: fd });
@@ -1825,6 +1832,7 @@ export default function Expenses() {
   const resetAdvAddModal = () => {
     setAdvForm(emptyAdvanceForm);
     setAdvEmpSearch("");
+    setAdvFile(null);
     setIsAdvAddOpen(false);
     setFormError(null);
   };
@@ -1861,7 +1869,7 @@ export default function Expenses() {
       // balance — which is exactly when a transaction boundary starts to
       // matter. Cheque mode still moves nothing here: the cheque trigger
       // reserves the balance and the money leaves when it clears.
-      const { error: advErr } = await supabase.rpc("record_advance", {
+      const { data: newAdvId, error: advErr } = await supabase.rpc("record_advance", {
         p_employee_id: advForm.employee_id,
         p_amount: amount,
         p_advance_date: advForm.advance_date,
@@ -1874,6 +1882,17 @@ export default function Expenses() {
       });
       if (advErr) throw advErr;
             // Cheque mode: balance already deducted by cheque trigger; no cashflow until cleared.
+      // The receipt is a plain attachment written after the row exists — no money
+      // path, same post-create raw-update the cheque/deposit screens use (0482).
+      if (advFile && newAdvId) {
+        const up = await uploadReceiptToDrive(advFile, "advances");
+        const { error: attErr } = await supabase.from("advances").update({
+          drive_file_id: up.drive_file_id,
+          drive_view_url: up.drive_view_url,
+          attachment_file_name: up.file_name,
+        }).eq("id", newAdvId as string);
+        if (attErr) throw attErr;
+      }
       resetAdvAddModal();
       await loadAll();
     } catch (err: any) {
@@ -1885,6 +1904,7 @@ export default function Expenses() {
 
   const openAdvEdit = (adv: AdvanceRow) => {
     setAdvEditing(adv);
+    setAdvEditFile(null);
     setAdvEditForm({
       client_id: adv.client_id ?? "",
       employee_id: adv.employee_id,
@@ -1948,6 +1968,17 @@ export default function Expenses() {
       if (advEditErr) throw advEditErr;
 
             // Cheque: balance reserved by cheque trigger, no immediate cashflow.
+      // Attach or replace the receipt on the (unchanged-id) row — plain metadata.
+      if (advEditFile) {
+        const up = await uploadReceiptToDrive(advEditFile, "advances");
+        const { error: attErr } = await supabase.from("advances").update({
+          drive_file_id: up.drive_file_id,
+          drive_view_url: up.drive_view_url,
+          attachment_file_name: up.file_name,
+        }).eq("id", advEditing.id);
+        if (attErr) throw attErr;
+      }
+      setAdvEditFile(null);
       setIsAdvEditOpen(false);
       setAdvEditing(null);
       await loadAll();
@@ -3112,6 +3143,16 @@ export default function Expenses() {
               ]}
               actions={(adv) => (
                 <>
+                  {adv.drive_view_url && (
+                    <a
+                      href={adv.drive_view_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-brand-600"
+                    >
+                      <Paperclip className="w-4 h-4" strokeWidth={1.5} /> Receipt
+                    </a>
+                  )}
                   <Button variant="ghost" size="sm" onClick={() => openAdvEdit(adv)}>
                     <Pencil className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} /> Edit
                   </Button>
@@ -3197,6 +3238,17 @@ export default function Expenses() {
                           {adv.notes ?? "—"}
                         </td>
                         <td className="px-4 py-3 flex gap-1">
+                          {adv.drive_view_url && (
+                            <a
+                              href={adv.drive_view_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-md text-brand-600 hover:bg-brand-50"
+                              title={`Receipt: ${adv.attachment_file_name ?? "attachment"}`}
+                            >
+                              <Paperclip className="w-4 h-4" strokeWidth={1.5} />
+                            </a>
+                          )}
                           <Button variant="ghost" size="sm" onClick={() => openAdvEdit(adv)}>
                             <Pencil className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
                             Edit
@@ -3227,6 +3279,15 @@ export default function Expenses() {
       >
         <form className="space-y-4" onSubmit={handleAddAdvance}>
           {renderAdvanceFields(advForm, setAdvForm, advEmpSearch, setAdvEmpSearch, addAdvEmployeeOptions)}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Screenshot / receipt (optional)</label>
+            <input
+              type="file"
+              accept="image/*,application/pdf"
+              onChange={(e) => setAdvFile(e.target.files?.[0] ?? null)}
+              className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:text-slate-700 hover:file:bg-slate-200"
+            />
+          </div>
           <div className="flex items-center gap-3 pt-4">
             <Button variant="primary" size="md" className="flex-1" disabled={advSubmitting}>
               {advSubmitting ? "Saving…" : "Add Advance"}
@@ -3250,6 +3311,27 @@ export default function Expenses() {
         {advEditing && (
           <form className="space-y-4" onSubmit={handleEditAdvance}>
             {renderAdvanceFields(advEditForm, setAdvEditForm, advEditEmpSearch, setAdvEditEmpSearch, editAdvEmployeeOptions)}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Screenshot / receipt {advEditing.drive_view_url ? "(replace)" : "(optional)"}
+              </label>
+              {advEditing.drive_view_url && (
+                <a
+                  href={advEditing.drive_view_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mb-1 block text-sm text-brand-600 underline"
+                >
+                  View current: {advEditing.attachment_file_name ?? "receipt"}
+                </a>
+              )}
+              <input
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={(e) => setAdvEditFile(e.target.files?.[0] ?? null)}
+                className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:text-slate-700 hover:file:bg-slate-200"
+              />
+            </div>
             <div className="flex items-center gap-3 pt-4">
               <Button variant="primary" size="md" className="flex-1" disabled={advSubmitting}>
                 {advSubmitting ? "Saving…" : "Update Advance"}

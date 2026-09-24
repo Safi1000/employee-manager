@@ -34,6 +34,11 @@
 #        opening_balance_lines, fixed_assets) still have raw-write screens and
 #        need an RPC-routing pass first (0451's recorded position) — REPORTED,
 #        not gated. cash_locations especially: payroll/expenses write it.
+#
+# 0482 (advances_carry_a_receipt_attachment) applied 2026-09-25: diffed clean —
+# same 14 names, no new check went red. Adds three nullable attachment columns to
+# advances (drive_file_id, drive_view_url, attachment_file_name); no function or
+# money-path change. md5 8bb0c2e37fb0c96642611c8f5a9ac8e9.
 alert_delivery_is_healthy
 ar_control_equals_open_invoices
 bank_control_equals_bank_accounts
