@@ -1,6 +1,5 @@
 import { lazy } from "react";
-import { createBrowserRouter, createHashRouter, Navigate } from "react-router";
-import { isNative, canSellInApp } from "./lib/platform";
+import { createBrowserRouter, Navigate } from "react-router";
 // Every screen is its own chunk, fetched the first time it is visited. Before
 // this the whole app — ~60 pages, jsPDF, xlsx, the landing site — was one
 // 3.6 MB file (950 KB gzipped) that had to download and parse before even the
@@ -78,35 +77,17 @@ const guard = (perms: string[], el: React.ReactNode) => (
   <RequirePermission any={perms}>{el}</RequirePermission>
 );
 
-// History-API routing needs a server that serves index.html for every path —
-// on the web that is the vercel.json rewrite. The native shell serves the
-// bundle off the local filesystem with no such rewrite, so a deep path or a
-// reload lands on a blank screen. Hash routing needs no server at all.
-const createRouter = isNative ? createHashRouter : createBrowserRouter;
+const publicRoutes = [
+  { path: "/", Component: RoleSelection },
+  { path: "/login", Component: Login },
+  // Self-serve signup. Two steps with Stripe in the middle: /signup takes the
+  // plan and opens Checkout, /signup/complete is where Stripe returns and the
+  // company is actually created — but only if the payment is confirmed.
+  { path: "/signup", Component: Signup },
+  { path: "/signup/complete", Component: SignupComplete },
+];
 
-// The public marketing surface — landing page, signup, Stripe return — is not
-// part of the phone app. It exists to SELL the product, which is the one thing
-// the app store rules do not allow an app to do outside their billing, and it
-// is desktop marketing copy that has no business on a phone. Native builds send
-// all four straight to the login screen. See lib/platform.ts.
-const publicRoutes = canSellInApp
-  ? [
-      { path: "/", Component: RoleSelection },
-      { path: "/login", Component: Login },
-      // Self-serve signup. Two steps with Stripe in the middle: /signup takes the
-      // plan and opens Checkout, /signup/complete is where Stripe returns and the
-      // company is actually created — but only if the payment is confirmed.
-      { path: "/signup", Component: Signup },
-      { path: "/signup/complete", Component: SignupComplete },
-    ]
-  : [
-      { path: "/", element: <Navigate to="/login" replace /> },
-      { path: "/login", Component: Login },
-      { path: "/signup", element: <Navigate to="/login" replace /> },
-      { path: "/signup/complete", element: <Navigate to="/login" replace /> },
-    ];
-
-export const router = createRouter([
+export const router = createBrowserRouter([
   // Everything public sits under one pathless layout route whose only job is to
   // switch Google Analytics on. The panels below are deliberately OUTSIDE it:
   // that boundary is what keeps authenticated URLs — and anything identifying a

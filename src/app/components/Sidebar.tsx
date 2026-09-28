@@ -93,7 +93,7 @@ export default function Sidebar({ title, links }: SidebarProps) {
   // alongside the other app-level controls rather than floating over the page.
   // A window event keeps the two decoupled: they are siblings in the layout
   // tree, so lifting `open` would mean threading state through all four
-  // layouts for one button. Same idiom as the `native:back` handler below.
+  // layouts for one button.
   useEffect(() => {
     const onOpen = () => setOpen(true);
     window.addEventListener("sidebar:open", onOpen);
@@ -108,20 +108,6 @@ export default function Sidebar({ title, links }: SidebarProps) {
         document.body.style.overflow = "";
       };
     }
-  }, [open]);
-
-  // Android hardware/gesture back closes the drawer instead of leaving the
-  // screen behind it — the behaviour every Android user expects from a nav
-  // drawer. Claiming the event (preventDefault) is what stops nativeShell from
-  // running history.back() or exiting the app. See lib/nativeShell.ts.
-  useEffect(() => {
-    if (!open) return;
-    const onBack = (e: Event) => {
-      e.preventDefault();
-      setOpen(false);
-    };
-    window.addEventListener("native:back", onBack);
-    return () => window.removeEventListener("native:back", onBack);
   }, [open]);
 
   const toggleGroup = (basePath: string, isAnyChildActive: boolean) => {

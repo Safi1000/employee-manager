@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "GGS Field",
+    "slug": "ggs-field",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "pk.ggs.field"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0e100b",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "pk.ggs.field"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": [
+      "expo-font",
+      "expo-router",
+      "expo-sharing",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Attach receipts, slips and photos from your gallery.",
+          "cameraPermission": "Take a photo of a receipt, slip or document to attach."
+        }
+      ],
+      "expo-document-picker"
+    ],
+    "scheme": "ggsfield",
+    "splash": {
+      "backgroundColor": "#0e100b"
+    }
+  }
+}
