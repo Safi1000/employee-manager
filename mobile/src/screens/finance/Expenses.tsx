@@ -11,7 +11,7 @@ import { useDB } from "../../data/store";
 import {
   addAdvance, addExpense, advanceError, AdvanceForm, amendAdvance, amendExpense, blankExpense, decideInstance, deleteAdvance, deleteCategory, deleteExpense,
   deleteFixed, deleteVendor, expenseError, ExpenseForm, expenseFormFrom, ExpensesData, FixedForm, isAmortising, loadExpensesData, loadReceipts, PREPAID_THRESHOLD,
-  reopenInstance, saveCategory, saveFixed, saveInstance, saveVendor, setExpenseApproval, toggleFixed,
+  reopenInstance, saveCategory, saveFixed, saveInstance, saveVendor, setExpenseApproval, toggleFixed, blankVendor, vendorFormFrom, type VendorForm,
 } from "../../data/api/expenses";
 import type { PickedFile } from "../../data/api/core";
 import { useAuth } from "../../lib/auth";
@@ -417,14 +417,25 @@ function Deferred({ data }: { data: ExpensesData }) {
 function VendorsSheet({ data, onClose }: { data: ExpensesData; onClose: () => void }) {
   const { act } = useDB();
   const { confirm } = useOverlay();
-  const [edit, setEdit] = useState<{ id: string | null; name: string; account: string }>({ id: null, name: "", account: "" });
+  const [edit, setEdit] = useState<VendorForm>(blankVendor);
   return (
-    <Sheet open onClose={onClose} title="Manage vendors" full footer={<Button label={edit.id ? "Save vendor" : "Add vendor"} full onPress={async () => { if (await act(() => saveVendor(edit.id, edit.name, edit.account), "Vendor saved")) setEdit({ id: null, name: "", account: "" }); }} />}>
-      <Input label={edit.id ? "Vendor name" : "New vendor name"} value={edit.name} onChangeText={(v) => setEdit({ ...edit, name: v })} />
-      <Input label="Account number" value={edit.account} onChangeText={(v) => setEdit({ ...edit, account: v })} />
+    <Sheet open onClose={onClose} title="Manage vendors" full footer={
+      <View style={{ gap: 8 }}>
+        <Button label={edit.id ? "Save vendor" : "Add vendor"} full onPress={async () => { if (await act(() => saveVendor(edit), "Vendor saved")) setEdit(blankVendor()); }} />
+        {edit.id && <Button label="Cancel edit" variant="secondary" full onPress={() => setEdit(blankVendor())} />}
+      </View>
+    }>
+      <Input label={edit.id ? "Vendor name" : "New vendor name"} required value={edit.name} onChangeText={(v) => setEdit({ ...edit, name: v })} />
+      <Input label="Bank name" value={edit.bank} onChangeText={(v) => setEdit({ ...edit, bank: v })} placeholder="e.g. Meezan Bank" />
+      <Input label="Account title" value={edit.title} onChangeText={(v) => setEdit({ ...edit, title: v })} placeholder="Name on the account" />
+      <Input label="Account number" value={edit.account} autoCapitalize="characters" onChangeText={(v) => setEdit({ ...edit, account: v })} placeholder="Account number / IBAN" />
+      <Input label="Branch code" value={edit.branch} onChangeText={(v) => setEdit({ ...edit, branch: v })} placeholder="e.g. 0214" />
+      <T v="small" muted style={{ marginBottom: 10 }}>Shown on Accounts Payable when you pay this vendor.</T>
       <ListCard>
         {data.vendors.map((v, i) => (
-          <Row key={v.id} last={i === data.vendors.length - 1} title={v.name} subtitle={v.account_number ?? undefined} onPress={() => setEdit({ id: v.id, name: v.name, account: v.account_number ?? "" })}
+          <Row key={v.id} last={i === data.vendors.length - 1} title={v.name}
+            subtitle={[v.bank_name, v.account_title, v.account_number, v.branch_code && `Branch ${v.branch_code}`].filter(Boolean).join(" · ") || undefined}
+            onPress={() => setEdit(vendorFormFrom(v))}
             right={<IconBtn icon={Trash2} label="Delete" onPress={async () => {
               const used = data.expenses.filter((x) => x.vendor_id === v.id).length;
               if (await confirm({ title: `Delete vendor "${v.name}"?`, message: used ? `${used} expense(s) using it will have the vendor cleared.` : undefined, confirmLabel: "Delete", tone: "danger" })) await act(() => deleteVendor(v.id), "Vendor deleted");

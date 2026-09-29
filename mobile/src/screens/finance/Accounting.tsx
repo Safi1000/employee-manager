@@ -343,11 +343,26 @@ function PayVendorSheet({ target, data, onClose }: { target: { vendorId: string;
   const [via, setVia] = useState<"Cash" | "Bank">("Cash");
   const [bankId, setBankId] = useState(data.banks[0]?.id ?? "");
   const [cust, setCust] = useState("");
+  // The vendor's bank details (0488), to pay them from a banking app. Long-press copies.
+  const v = data.payables.find((p) => p.vendor_id === target.vendorId)?.vendor;
+  const details = ([["Bank", v?.bank_name], ["Account title", v?.account_title], ["Account number", v?.account_number], ["Branch code", v?.branch_code]] as [string, string | null | undefined][])
+    .filter(([, val]) => !!val) as [string, string][];
   return (
     <Sheet open onClose={onClose} title={`Pay ${target.vendorName}`} subtitle={`Owed ${pkr(target.owed)} · applied oldest bill first`}
       footer={<Button label="Pay" full onPress={async () => {
         if (await act(() => payVendor({ vendorId: target.vendorId, amount: Number(amount), owed: target.owed, via, bankId, custodian: data.custodians.find((c) => c.locationId === cust), expenseId: target.expenseId }), "Payment recorded")) onClose();
       }} />}>
+      <Card style={{ marginBottom: 12 }}>
+        <T v="eyebrow" muted style={{ marginBottom: 6 }}>Vendor bank details</T>
+        {details.length === 0
+          ? <T v="small" muted>None recorded. Add them in Expenses ▸ Manage vendors.</T>
+          : details.map(([label, val]) => (
+            <View key={label} style={{ flexDirection: "row", justifyContent: "space-between", gap: 12, paddingVertical: 3 }}>
+              <T v="small" muted>{label}</T>
+              <T v={label === "Account number" || label === "Branch code" ? "mono" : "smallStrong"} selectable style={{ flexShrink: 1, textAlign: "right" }}>{val}</T>
+            </View>
+          ))}
+      </Card>
       <Input label="Amount" amount value={amount} onChangeText={setAmount} />
       <Chips value={via} onChange={setVia} items={[{ key: "Cash", label: "Cash" }, { key: "Bank", label: "Bank" }]} />
       <View style={{ height: 10 }} />

@@ -13,7 +13,7 @@ export async function loadAccounting(companyId: string, withBalances: boolean) {
   const [banks, cash, payables, clients, partners, cheques, deposits, linkedPs, linkedEx, linkedAdv, paid, vendorPayments, locations] = await Promise.all([
     q<any[]>(s.from("bank_accounts").select("*").order("created_at", { ascending: false })),
     s.rpc("cash_in_hand" as never, { p_company_id: companyId } as never).maybeSingle(),
-    q<any[]>(s.from("expenses").select("*, vendor:vendor_id(id,name), category:category_id(id,name), client:client_id(id,name,client_code)").eq("payment_mode", "Payable").order("due_date", { ascending: true, nullsFirst: false })),
+    q<any[]>(s.from("expenses").select("*, vendor:vendor_id(id,name,bank_name,account_title,account_number,branch_code), category:category_id(id,name), client:client_id(id,name,client_code)").eq("payment_mode", "Payable").order("due_date", { ascending: true, nullsFirst: false })),
     q<any[]>(s.from("clients").select("*").order("name")),
     q<any[]>(s.from("partners").select("*").order("name")),
     q<any[]>(s.from("cheques").select("*").order("cheque_date", { ascending: false })),

@@ -165,7 +165,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
         { data: locs }, { data: tx }, { data: pts }, { data: brs },
         { data: bnks }, { data: treas }, { data: pEntries }, { data: iEntries },
         { data: staff }, { data: cashPays }, { data: cashExps }, { data: cashCheques }, { data: bankWd }, { data: payrollCash },
-        { data: cashAdvances }, { data: cashDeposits }, { data: vendorCash },
+        { data: cashAdvances }, { data: cashDeposits }, { data: vendorCash }, { data: partnerCash },
       ] = await Promise.all([
         supabase.from("cash_locations").select("*").eq("company_id", companyId).order("name"),
         supabase.from("custody_transfers").select("*").eq("company_id", companyId).order("date", { ascending: false }).limit(100),
@@ -194,6 +194,10 @@ export function CashCustodyPanel({ onReady, onSummary }: {
         // A vendor paid in cash by a custodian (0470) — cash out of their hands,
         // exactly like a cash expense (custodian_held_operational subtracts both).
         supabase.from("vendor_payments").select("id, amount, custodian_location_id, paid_on, vendor:vendor_id(name)").eq("paid_via", "Cash").not("custodian_location_id", "is", null),
+        // Partner drawings/contributions settled in cash through a custodian. The
+        // posting credits (drawing) or debits (contribution) that custodian's cash
+        // sub-account, so the held figure moves by the same amount (custodian.ts).
+        supabase.from("partner_account_entries").select("id, amount, type, date, description, cash_location_id, partner_id").eq("company_id", companyId).eq("payment_method", "CASH").in("type", ["DRAWING", "CONTRIBUTION"]).not("cash_location_id", "is", null),
       ]);
       // Cash expenses and cash vendor payments leave a custodian the same way.
       const cashOuts = [
@@ -231,6 +235,12 @@ export function CashCustodyPanel({ onReady, onSummary }: {
       for (const dp of (cashDeposits ?? []) as any[]) {
         if (!dp.cash_location_id) continue;
         outBy.set(dp.cash_location_id, (outBy.get(dp.cash_location_id) ?? 0) + Number(dp.amount ?? 0));
+      }
+      // A cash partner drawing leaves the custodian's hands; a contribution arrives in them.
+      for (const pe of (partnerCash ?? []) as any[]) {
+        const amt = Number(pe.amount ?? 0);
+        if (pe.type === "DRAWING") outBy.set(pe.cash_location_id, (outBy.get(pe.cash_location_id) ?? 0) + amt);
+        else inBy.set(pe.cash_location_id, (inBy.get(pe.cash_location_id) ?? 0) + amt);
       }
       setCashOutByLoc(outBy);
       const chqBy = new Map<string, number>();
@@ -346,6 +356,18 @@ export function CashCustodyPanel({ onReady, onSummary }: {
         raw.push({
           id: `pr-${pr.id}`, date: String(pr.created_at ?? "").slice(0, 10), locationId: pr.reference_id, employeeId: empByLoc.get(pr.reference_id) ?? null,
           kind: cd < 0 ? "cash_paid" : "cash_received", detail: pr.description || "Payroll (cash)", cashIn: cd > 0 ? cd : 0, cashOut: cd < 0 ? -cd : 0,
+        });
+      }
+      for (const pe of (partnerCash ?? []) as any[]) {
+        if (!custodianLocIds.has(pe.cash_location_id)) continue;
+        const amt = Number(pe.amount ?? 0);
+        const drawing = pe.type === "DRAWING";
+        const who = partnerNameById.get(pe.partner_id) ?? "partner";
+        raw.push({
+          id: `pe-${pe.id}`, date: pe.date, locationId: pe.cash_location_id, employeeId: empByLoc.get(pe.cash_location_id) ?? null,
+          kind: drawing ? "cash_paid" : "cash_received",
+          detail: `${drawing ? "Partner drawing" : "Partner contribution"} · ${who}${pe.description ? ` — ${pe.description}` : ""}`,
+          cashIn: drawing ? 0 : amt, cashOut: drawing ? amt : 0,
         });
       }
       // Running held-cash per custodian (seed with each custodian's opening

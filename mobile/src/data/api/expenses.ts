@@ -281,10 +281,23 @@ export async function deleteCategory(c: { id: string; name: string }) {
   if (isHardcodedCategory(c.name)) throw new Error(`"${c.name}" is a system category and cannot be deleted.`);
   await q(sb().from("expense_categories").delete().eq("id", c.id));
 }
-export async function saveVendor(id: string | null, name: string, account: string) {
-  const n = name.trim();
+export type VendorForm = { id: string | null; name: string; account: string; bank: string; title: string; branch: string };
+export const blankVendor = (): VendorForm => ({ id: null, name: "", account: "", bank: "", title: "", branch: "" });
+export const vendorFormFrom = (v: any): VendorForm => ({
+  id: v.id, name: v.name, account: v.account_number ?? "", bank: v.bank_name ?? "", title: v.account_title ?? "", branch: v.branch_code ?? "",
+});
+/** handleSaveVendor(): name plus the bank details shown when paying the vendor (0488). */
+export async function saveVendor(f: VendorForm) {
+  const n = f.name.trim();
   if (!n) throw new Error("Vendor name is required.");
-  if (id) await q(sb().from("vendors").update({ name: n, account_number: account.trim() || null } as never).eq("id", id));
-  else await q(sb().from("vendors").insert({ name: n, account_number: account.trim() || null } as never));
+  const row = {
+    name: n,
+    account_number: f.account.trim() || null,
+    bank_name: f.bank.trim() || null,
+    account_title: f.title.trim() || null,
+    branch_code: f.branch.trim() || null,
+  };
+  if (f.id) await q(sb().from("vendors").update(row as never).eq("id", f.id));
+  else await q(sb().from("vendors").insert(row as never));
 }
 export const deleteVendor = (id: string) => q(sb().from("vendors").delete().eq("id", id));

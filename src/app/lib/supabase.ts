@@ -2209,6 +2209,10 @@ export type Vendor = {
   id: string;
   name: string;
   account_number: string | null;
+  // Bank details shown when paying the vendor (0488).
+  bank_name?: string | null;
+  account_title?: string | null;
+  branch_code?: string | null;
   created_at?: string;
 };
 
