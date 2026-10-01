@@ -39,8 +39,33 @@ export type InvoiceDocInput = {
   invoiceLines?: InvoiceLine[];
   taxes?: InvoiceTax[];
   attendanceByCategory?: Partial<Record<ContractLineCategory, number>>;
+  // Distinct site names for this contract, appended to the Period cell as
+  // "(HO, BP-2, BP-3)". Omitted → no locations suffix.
+  locations?: string;
   save?: boolean; // default true
 };
+
+// Draw text shrunk just enough to fit maxW on one line (down to minSize), so a
+// long period-with-locations or particular never bleeds past its cell border.
+function fitText(
+  doc: jsPDF,
+  text: string,
+  cx: number,
+  cy: number,
+  maxW: number,
+  baseSize: number,
+  align: "center" | "left" = "center",
+  minSize = 6,
+): void {
+  let fs = baseSize;
+  doc.setFontSize(fs);
+  while (doc.getTextWidth(text) > maxW && fs > minSize) {
+    fs -= 0.5;
+    doc.setFontSize(fs);
+  }
+  doc.text(text, cx, cy, align === "center" ? { align: "center" } : undefined);
+  doc.setFontSize(baseSize);
+}
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -80,10 +105,16 @@ function titleMonthYear(inv: Invoice): string {
   if (!y) return "";
   return `${MONTHS[m - 1].toUpperCase()} ${y}`;
 }
+// "1st Sep 2026" — short month, full year (matches the company's invoice format).
+function medDate(iso: string | null | undefined): string {
+  const [y, m, d] = parts(iso);
+  if (!y) return "";
+  return `${d}${ordSuffix(d)} ${MON_SHORT[m - 1]} ${y}`;
+}
 function periodRange(inv: Invoice): string {
   const s = inv.period_start ?? inv.invoice_date;
   const e = inv.period_end ?? inv.period_start ?? inv.invoice_date;
-  return `${ordinalDate(s)} to ${ordinalDate(e)}`;
+  return `${medDate(s)} to ${medDate(e)}`;
 }
 // Parse a #rrggbb (or #rgb) brand colour into an [r,g,b] tuple; null if unset/invalid.
 function hexToRgb(hex: string | null | undefined): [number, number, number] | null {
@@ -392,7 +423,8 @@ function drawSignatureAndFooter(ctx: Ctx, _yStart: number): void {
 
   // Signature block anchored to the bottom-right, with a little margin above the
   // footer rule (footer rule sits at pageH - 62), like a hand-signed invoice.
-  const rightX = pageW - margin;
+  // Inset from the page margin so the label doesn't sit hard against the edge.
+  const rightX = pageW - margin - 24;
   const labelY = pageH - 100;  // "Authorised Signatory"
   const nameY = labelY + 12;   // company name beneath it
 
@@ -439,6 +471,15 @@ function drawSignatureAndFooter(ctx: Ctx, _yStart: number): void {
   if (company?.contact_email) line3.push({ t: "Email: ", b: true }, { t: company.contact_email + "   ", b: false });
   if (company?.website) line3.push({ t: "Website: ", b: true }, { t: company.website, b: false });
   if (line3.length) drawCenteredSegments(ctx, line3, pageH - 24);
+
+  // Free-text footer note from Invoice Structure, centered at the very bottom.
+  const note = (settings.footer_note ?? "").trim();
+  if (note) {
+    doc.setFont("helvetica", "italic");
+    doc.setTextColor(90);
+    fitText(doc, note, pageW / 2, pageH - 11, pageW - margin * 2, 8, "center");
+    doc.setFont("helvetica", "normal");
+  }
 }
 
 // ── FIXED / VARIABLE items table ──
@@ -464,13 +505,15 @@ function drawFixedTable(
   ctx: Ctx,
   yStart: number,
   rows: { label: string; category: ContractLineCategory | null; qty: number; rate: number; amount: number }[],
-  qtyHeader: string,
+  locations: string,
   showPrevBalance: boolean,
 ): number {
   const { doc, pageW, margin, invoice } = ctx;
   let y = yStart;
   const usable = pageW - margin * 2;
-  const w = [28, 48, usable - 28 - 48 - 158 - 96 - 84, 158, 96, 84]; // Sr Qty Particular Period Rate Amount
+  // Sr | No. of Guards | Period/Locations | Monthly Rate | Net Amount
+  const w = [26, usable - 26 - 150 - 92 - 84, 150, 92, 84];
+  const AMT = w.length - 1; // index of the money column (Total/Prev-Balance anchor)
   const xs: number[] = [];
   let acc = margin;
   for (const c of w) { xs.push(acc); acc += c; }
@@ -487,17 +530,17 @@ function drawFixedTable(
   doc.setTextColor(0);
   const hc = (i: number, t: string, dy: number) => doc.text(t, xs[i] + w[i] / 2, y + dy, { align: "center" });
   hc(0, "Sr.", 16);
-  hc(1, "Qty", 16);
-  hc(2, "Particular", 16);
-  hc(3, "Period", 16);
-  hc(4, "Monthly Rate", 12);
-  hc(4, `(${unitWord(rows)})`, 22);
-  hc(5, "Amount", 16);
+  hc(1, "No. of Guards", 16);
+  hc(2, "Period/Locations", 16);
+  hc(3, "Monthly Rate", 12);
+  hc(3, `(${unitWord(rows)})`, 22);
+  hc(AMT, "Net Amount", 16);
   y += headH;
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
   const period = periodRange(invoice);
+  const periodCell = locations ? `${period} (${locations})` : period;
   let subtotal = 0;
   const rowH = 18;
   rows.forEach((r, i) => {
@@ -505,13 +548,11 @@ function drawFixedTable(
     doc.rect(margin, y, usable, rowH);
     for (let k = 1; k < xs.length; k++) doc.line(xs[k], y, xs[k], y + rowH);
     doc.text(String(i + 1), xs[0] + w[0] / 2, y + 12, { align: "center" });
-    doc.text(`${intFmt(r.qty)}x`, xs[1] + w[1] / 2, y + 12, { align: "center" });
-    doc.text(doc.splitTextToSize(r.label || "—", w[2] - 10)[0] ?? "—", xs[2] + 5, y + 12);
-    doc.setFontSize(8.5);
-    doc.text(period, xs[3] + w[3] / 2, y + 12, { align: "center" });
-    doc.setFontSize(9);
-    doc.text(fixedMoney(r.rate), xs[4] + w[4] - 6, y + 12, { align: "right" });
-    doc.text(fixedMoney(r.amount), xs[5] + w[5] - 6, y + 12, { align: "right" });
+    // Merged qty + particular, e.g. "6 x Security Guards".
+    fitText(doc, `${intFmt(r.qty)} x ${r.label || "—"}`, xs[1] + 6, y + 12, w[1] - 12, 9, "left");
+    fitText(doc, periodCell, xs[2] + w[2] / 2, y + 12, w[2] - 8, 8.5, "center");
+    doc.text(fixedMoney(r.rate), xs[3] + w[3] - 6, y + 12, { align: "right" });
+    doc.text(fixedMoney(r.amount), xs[AMT] + w[AMT] - 6, y + 12, { align: "right" });
     y += rowH;
   });
 
@@ -519,22 +560,22 @@ function drawFixedTable(
   if (showPrevBalance && prev !== 0) {
     // "Previous Balance" right-aligned in the left span, value in Amount col.
     doc.rect(margin, y, usable, rowH);
-    doc.line(xs[5], y, xs[5], y + rowH);
+    doc.line(xs[AMT], y, xs[AMT], y + rowH);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9.5);
-    doc.text("Previous Balance", xs[5] - 8 - doc.getTextWidth("Previous Balance"), y + 12);
+    doc.text("Previous Balance", xs[AMT] - 8 - doc.getTextWidth("Previous Balance"), y + 12);
     doc.setFont("helvetica", "normal");
-    doc.text(fixedMoney(prev), xs[5] + w[5] - 6, y + 12, { align: "right" });
+    doc.text(fixedMoney(prev), xs[AMT] + w[AMT] - 6, y + 12, { align: "right" });
     y += rowH;
   }
 
   const grand = Number(invoice.total_due ?? subtotal + prev);
   doc.rect(margin, y, usable, rowH);
-  doc.line(xs[5], y, xs[5], y + rowH);
+  doc.line(xs[AMT], y, xs[AMT], y + rowH);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
-  doc.text("Total", (margin + xs[5]) / 2, y + 12, { align: "center" });
-  doc.text(fixedMoney(grand), xs[5] + w[5] - 6, y + 12, { align: "right" });
+  doc.text("Total", (margin + xs[AMT]) / 2, y + 12, { align: "center" });
+  doc.text(fixedMoney(grand), xs[AMT] + w[AMT] - 6, y + 12, { align: "right" });
   doc.setLineWidth(0.2);
   return y + rowH + 6;
 }
@@ -566,7 +607,7 @@ function renderFixedFamily(input: InvoiceDocInput, useAttendance: boolean): jsPD
     rows = [{ label: input.invoice.notes?.trim() || "Services rendered", category: null, qty: 1, rate: amt, amount: amt }];
   }
   const showPB = useAttendance ? !!ctx.settings.variable_show_previous_balance : !!ctx.settings.fixed_show_previous_balance;
-  y = drawFixedTable(ctx, y, rows, useAttendance ? "Days" : "Qty", showPB);
+  y = drawFixedTable(ctx, y, rows, input.locations ?? "", showPB);
   y = drawWordsLine(ctx, y, "Amount in words is");
   y = drawNotes(ctx, y);
   y = drawPaymentMethod(ctx, y);

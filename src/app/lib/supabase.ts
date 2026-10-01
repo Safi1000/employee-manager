@@ -158,6 +158,8 @@ export type InvoiceStructureSettings = {
   company_prefix?: string;
   // Brand accent colour (hex) for header/footer rules on the PDF.
   brand_color?: string;
+  // Free-text footer line printed centered beneath the contact lines.
+  footer_note?: string;
   // Watermark: a separate faded mark (base64 data URL), a toggle, and opacity.
   watermark_url?: string;
   show_watermark?: boolean;
@@ -172,6 +174,7 @@ export const DEFAULT_INVOICE_SETTINGS: InvoiceStructureSettings = {
   sla_tax_columns: [],
   company_prefix: "",
   brand_color: "",
+  footer_note: "",
   watermark_url: "",
   show_watermark: false,
   watermark_opacity: 0.1,

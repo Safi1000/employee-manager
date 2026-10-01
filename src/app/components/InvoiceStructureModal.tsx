@@ -217,6 +217,16 @@ export default function InvoiceStructureModal({ isOpen, onClose }: Props) {
             <label className={label}>Head Office Address</label>
             <textarea className={input} rows={2} value={headOffice} onChange={(e) => setHeadOffice(e.target.value)} />
           </div>
+          <div>
+            <label className={label}>Footer Note (optional)</label>
+            <textarea
+              className={input}
+              rows={2}
+              value={settings.footer_note ?? ""}
+              onChange={(e) => setSettings((s) => ({ ...s, footer_note: e.target.value }))}
+              placeholder="A free-text line printed at the very bottom of every invoice (e.g. terms, a tagline)."
+            />
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className={label}>Email</label>

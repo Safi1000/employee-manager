@@ -27,6 +27,7 @@ import {
   type InvoiceTax,
   type ClientInvoiceGroup,
   type RemitAccount,
+  type Site,
 } from "../lib/supabase";
 
 type DraftLine = { category: InvoiceLine["category"]; label: string; quantity: string; unit_rate: string; taxable: boolean };
@@ -38,6 +39,9 @@ type Draft = {
   contractCode: string;
   client: Client;
   invoiceNumber: string;
+  // The document issue date printed top-right on the PDF (defaults to today,
+  // editable per draft — previously hardcoded to the generation date).
+  invoiceDate: string;
   periodStart: string;
   periodEnd: string;
   lines: DraftLine[];
@@ -141,12 +145,13 @@ const monthBounds = (ym: string) => {
 // data while keeping exactly what the user typed.
 type DraftBlob = Partial<Pick<
   Draft,
-  | "invoiceNumber" | "periodStart" | "periodEnd" | "notes" | "remitIndex"
+  | "invoiceNumber" | "invoiceDate" | "periodStart" | "periodEnd" | "notes" | "remitIndex"
   | "overrideTotal" | "overrideReason" | "includePreviousBalance"
   | "lines" | "variableColumns" | "variableRows"
 >>;
 const serializeDraft = (d: Draft): DraftBlob => ({
   invoiceNumber: d.invoiceNumber,
+  invoiceDate: d.invoiceDate,
   periodStart: d.periodStart,
   periodEnd: d.periodEnd,
   notes: d.notes,
@@ -168,6 +173,7 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
   const [clients, setClients] = useState<Client[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [lines, setLines] = useState<ContractLine[]>([]);
+  const [sites, setSites] = useState<Site[]>([]);
   const [addendums, setAddendums] = useState<ContractAddendum[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -196,10 +202,11 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
 
   const loadData = async () => {
     setLoading(true);
-    const [cliRes, conRes, lineRes, addRes, invRes, drfRes] = await Promise.all([
+    const [cliRes, conRes, lineRes, siteRes, addRes, invRes, drfRes] = await Promise.all([
       supabase.from("clients").select("*").order("name"),
       supabase.from("contracts").select("*"),
       supabase.from("contract_lines").select("*"),
+      supabase.from("sites").select("*"),
       supabase.from("contract_addendums").select("*"),
       supabase.from("invoices").select("*"),
       supabase.from("invoice_generation_drafts").select("contract_id, period, data, cleared"),
@@ -207,6 +214,7 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
     setClients((cliRes.data ?? []) as Client[]);
     setContracts((conRes.data ?? []) as Contract[]);
     setLines((lineRes.data ?? []) as ContractLine[]);
+    setSites((siteRes.data ?? []) as Site[]);
     setAddendums((addRes.data ?? []) as ContractAddendum[]);
     setInvoices((invRes.data ?? []) as Invoice[]);
     const drfRows = (drfRes.data ?? []) as { contract_id: string; period: string; data: DraftBlob | null; cleared: boolean }[];
@@ -338,6 +346,7 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
           contractCode: con.contract_code,
           client,
           invoiceNumber: number,
+          invoiceDate: today(),
           periodStart: start,
           periodEnd: end,
           lines: [],
@@ -399,6 +408,7 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
         contractCode: con.contract_code,
         client,
         invoiceNumber: number,
+        invoiceDate: today(),
         periodStart: start,
         periodEnd: end,
         lines: draftLines,
@@ -685,7 +695,7 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
       client_id: d.client.id,
       contract_id: d.contractId,
       invoice_number: d.invoiceNumber.trim(),
-      invoice_date: today(),
+      invoice_date: d.invoiceDate || today(),
       invoice_amount: invoiceAmount,
       // 0316: withholding_tax is NOT written. It was a duplicate of
       // tax_withheld_total on the same row, and it was the copy that reduced
@@ -757,12 +767,23 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
     // Template is auto-selected by the client's invoice_group inside
     // generateInvoiceDocument. Pass the contract + its lines so SLA can read the
     // cost build-up and the Fixed/Variable tables render per-contract.
+    // Distinct site names across this contract's lines → "(HO, BP-2, BP-3)".
+    const conLines = lines.filter((l) => l.contract_id === d.contractId);
+    const siteName = new Map(sites.map((s) => [s.id, s.name]));
+    const locations = [
+      ...new Set(
+        conLines
+          .map((l) => (l.site_id ? siteName.get(l.site_id) : null))
+          .filter((n): n is string => !!n),
+      ),
+    ].join(", ");
     generateInvoiceDocument({
       invoice,
       client: d.client,
       company: company ?? null,
       contract: contracts.find((c) => c.id === d.contractId) ?? null,
-      contractLines: lines.filter((l) => l.contract_id === d.contractId),
+      locations,
+      contractLines: conLines,
       invoiceLines: lineRows.map((l) => ({ ...l }) as InvoiceLine),
       taxes: taxRows.map((t) => ({ ...t }) as InvoiceTax),
     });
@@ -1022,7 +1043,7 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
               <div>
                 <label className="block text-xs text-slate-500 mb-1">Invoice #</label>
                 <input
@@ -1030,6 +1051,10 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
                   onChange={(e) => patchDraft(d.contractId, { invoiceNumber: e.target.value })}
                   className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm font-mono"
                 />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">Invoice date</label>
+                <input type="date" value={d.invoiceDate} onChange={(e) => patchDraft(d.contractId, { invoiceDate: e.target.value })} className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm" />
               </div>
               <div>
                 <label className="block text-xs text-slate-500 mb-1">Period start</label>
