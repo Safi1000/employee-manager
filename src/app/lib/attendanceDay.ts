@@ -37,14 +37,12 @@ type PendingRow = { employee_id: string; attendance_date: string; status: string
  *     makes two same-day presents — which migration 0395 refuses (a two-shift
  *     day must be a double duty, both rows `double_duty`). A single worked mark
  *     means "this is the one shift worked that day", so the stale one goes.
- *   - writing a DOUBLE DUTY → remove only the leave rows. The two `double_duty`
- *     rows are written on purpose and must survive untouched; deleting one leg
- *     would strand the other (0395 refuses a lone double_duty), so a genuine
- *     double duty is never touched here.
+ *   - writing a DOUBLE DUTY → remove every existing row for that day. The batch
+ *     carries both legs, so it is the whole day; an old `absent` left on either
+ *     leg would make trg_double_duty_owns_the_day refuse the upsert.
  *
- * Only `present` is cleared from the other shift — `double_duty` is left alone
- * (see above) and `absent`/`relief_cover` do not count toward the double-duty
- * rule, so they raise no conflict.
+ * For a single worked mark only `present` is cleared from the other shift —
+ * `absent`/`relief_cover` do not count toward the double-duty rule.
  *
  * Throws on failure. A silent failure here would leave the contradiction in
  * place and let the upsert be refused by the trigger with a message about a
@@ -87,6 +85,20 @@ export async function clearConflictingDayRows(rows: PendingRow[]): Promise<void>
         .eq("attendance_date", a.date)
         .in("status", [...LEAVE_TOKENS]);
       if (error) throw error;
+    }
+    // A double duty describes the WHOLE day — both of its legs are in this
+    // batch — so whatever the day held before goes. Without this a leftover
+    // `absent` on one leg is still there when the upsert writes the other leg
+    // as `double_duty`, and trg_double_duty_owns_the_day (a per-row BEFORE
+    // trigger) refuses the day mid-statement ("Found: night=absent").
+    if (a.double) {
+      const { error } = await supabase
+        .from("attendance_records")
+        .delete()
+        .eq("employee_id", a.empId)
+        .eq("attendance_date", a.date);
+      if (error) throw error;
+      continue;
     }
     // A single worked mark supersedes a stale `present` on any OTHER shift (the
     // shift-change case). Skipped for a double duty (its two legs are the point)

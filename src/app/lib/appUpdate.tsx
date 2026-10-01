@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
-import { isNative } from "./platform";
 
 /**
  * "When I push, everyone's open tab gets the new version."
@@ -45,11 +44,7 @@ import { isNative } from "./platform";
  * The net effect is the one that was asked for — after a push, open sessions
  * end up on the new build without anybody being told to hard-refresh — without
  * a deploy ever being able to eat someone's unsaved work.
- *
- * NATIVE IS EXCLUDED. Under Capacitor the bundle is read from the device, not
- * the network: `/build-id.json` is the file that shipped inside the app, so it
- * can never disagree with `__BUILD_ID__`. Polling it would be a request that is
- * guaranteed to find nothing. A native build updates through the store.
+
  */
 
 // Injected by vite.config.ts at build time. Falls back in dev, where the dev
@@ -86,7 +81,7 @@ export function useAppUpdate(): { stale: boolean; reload: () => void } {
   useEffect(() => {
     // The dev server has no dist/build-id.json to serve and hot-reloads on its
     // own, so every poll there would be a guaranteed 404.
-    if (isNative || import.meta.env.DEV || CURRENT_BUILD === "dev") return;
+    if (import.meta.env.DEV || CURRENT_BUILD === "dev") return;
     let cancelled = false;
     const ac = new AbortController();
 

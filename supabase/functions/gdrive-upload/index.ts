@@ -1,6 +1,6 @@
 // Edge function: gdrive-upload
 // Generic Drive uploader. One function handles every artifact category in the
-// CRM: employees, contracts, invoices, cheques, expenses.
+// CRM: employees, contracts, invoices, cheques, expenses, advances.
 //
 // Folder layout (matches the structure confirmed with the user):
 //   EmployeeManager/                            <- root, tag: employee_manager_root
@@ -13,7 +13,9 @@
 //       │   └── 2026/                           <- tag: { type: "year", year: "2026" }
 //       ├── Cheques/
 //       │   └── 2026/
-//       └── Expenses/
+//       ├── Expenses/
+//       │   └── 2026/
+//       └── Advances/
 //           └── 2026/
 //
 // All lookups happen via `appProperties` (hidden tags), so users can rename any
@@ -32,13 +34,14 @@ const REFRESH_TOKEN = Deno.env.get("GOOGLE_OAUTH_REFRESH_TOKEN");
 const ROOT_FOLDER_NAME = "EmployeeManager";
 const ROOT_FOLDER_TAG = "employee_manager_root";
 
-type Category = "employees" | "contracts" | "invoices" | "cheques" | "expenses";
+type Category = "employees" | "contracts" | "invoices" | "cheques" | "expenses" | "advances";
 const VALID_CATEGORIES: Category[] = [
   "employees",
   "contracts",
   "invoices",
   "cheques",
   "expenses",
+  "advances",
 ];
 const CATEGORY_DISPLAY: Record<Category, string> = {
   employees: "Employees",
@@ -46,9 +49,10 @@ const CATEGORY_DISPLAY: Record<Category, string> = {
   invoices: "Invoices",
   cheques: "Cheques",
   expenses: "Expenses",
+  advances: "Advances",
 };
 // Categories that bucket files under a year subfolder rather than per-entity.
-const YEAR_PARTITIONED: Category[] = ["invoices", "cheques", "expenses"];
+const YEAR_PARTITIONED: Category[] = ["invoices", "cheques", "expenses", "advances"];
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",

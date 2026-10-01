@@ -20,26 +20,17 @@ interface ModalProps {
 }
 
 export default function Modal({ isOpen, onClose, title, children, size = "md", footer, error, onDismissError }: ModalProps) {
-  // Android back closes the modal rather than navigating away from the page
-  // underneath it — otherwise a user filling in an employee form would lose the
-  // whole form on a back gesture. Claiming the event stops nativeShell from
-  // running history.back(). Escape does the same on desktop.
+  // Escape closes the modal.
   //
   // Declared before the isOpen early-return would be a hook-order violation, so
   // the guard lives inside the effect instead.
   useEffect(() => {
     if (!isOpen) return;
-    const onBack = (e: Event) => {
-      e.preventDefault();
-      onClose();
-    };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
-    window.addEventListener("native:back", onBack);
     window.addEventListener("keydown", onKey);
     return () => {
-      window.removeEventListener("native:back", onBack);
       window.removeEventListener("keydown", onKey);
     };
   }, [isOpen, onClose]);

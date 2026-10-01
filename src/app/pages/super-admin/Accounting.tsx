@@ -1,7 +1,7 @@
 import ThemedSelect from "../../components/ThemedSelect";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
-import { Plus, Building2, Download, AlertCircle, X, Loader2, ArrowDownUp, History, Trash2, Ban, CheckCircle2, RotateCcw, FileText, Pencil, ArrowLeftRight, Search, Power } from "lucide-react";
+import { Plus, Building2, Download, AlertCircle, X, Loader2, ArrowDownUp, History, Trash2, Ban, CheckCircle2, RotateCcw, FileText, Pencil, ArrowLeftRight, Search, Power, Copy } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -881,7 +881,7 @@ export default function Accounting() {
       supabase.rpc("cash_in_hand", { p_company_id: treasuryCompanyId }).maybeSingle<{ cash_balance: number; opening_balance: number }>(),
       supabase
         .from("expenses")
-        .select("*, vendor:vendor_id(id,name), category:category_id(id,name), client:client_id(id,name,client_code)")
+        .select("*, vendor:vendor_id(id,name,bank_name,account_title,account_number,branch_code), category:category_id(id,name), client:client_id(id,name,client_code)")
         .eq("payment_mode", "Payable")
         .order("due_date", { ascending: true, nullsFirst: false }),
       supabase.from("clients").select("*").order("name"),
@@ -5076,6 +5076,43 @@ export default function Accounting() {
       >
         {payTarget && (
           <form className="space-y-4" onSubmit={handlePay}>
+            {(() => {
+              // The vendor's bank details (0488), to pay them from a banking app.
+              const v = payables.find((p) => p.vendor_id === payTarget.vendorId)?.vendor;
+              const rows = ([
+                ["Bank", v?.bank_name],
+                ["Account title", v?.account_title],
+                ["Account number", v?.account_number],
+                ["Branch code", v?.branch_code],
+              ] as [string, string | null | undefined][]).filter(([, val]) => !!val) as [string, string][];
+              return (
+                <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
+                  <div className="text-xs text-slate-500 mb-2">Vendor bank details</div>
+                  {rows.length === 0 ? (
+                    <p className="text-sm text-slate-500">None recorded. Add them in Expenses ▸ Manage Vendors.</p>
+                  ) : (
+                    <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                      {rows.map(([label, val]) => (
+                        <div key={label} className="min-w-0">
+                          <dt className="text-xs text-slate-500">{label}</dt>
+                          <dd className="flex items-center gap-1.5 text-slate-900">
+                            <span className={`truncate ${label === "Account number" || label === "Branch code" ? "font-mono" : ""}`}>{val}</span>
+                            <button
+                              type="button"
+                              title={`Copy ${label.toLowerCase()}`}
+                              onClick={() => { void navigator.clipboard?.writeText(val); }}
+                              className="flex-shrink-0 p-0.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-200"
+                            >
+                              <Copy className="w-3.5 h-3.5" strokeWidth={1.5} />
+                            </button>
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
+                </div>
+              );
+            })()}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm text-slate-700 mb-1">Outstanding</label>

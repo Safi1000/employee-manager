@@ -547,6 +547,9 @@ export default function Expenses() {
   const [vendorMode, setVendorMode] = useState<"add" | "edit">("add");
   const [vendorName, setVendorName] = useState("");
   const [vendorAccountNumber, setVendorAccountNumber] = useState("");
+  const [vendorBankName, setVendorBankName] = useState("");
+  const [vendorAccountTitle, setVendorAccountTitle] = useState("");
+  const [vendorBranchCode, setVendorBranchCode] = useState("");
   const [vendorEditingId, setVendorEditingId] = useState<string | null>(null);
 
   const loadAll = async () => {
@@ -2085,14 +2088,26 @@ export default function Expenses() {
     setVendorMode("add");
     setVendorName("");
     setVendorAccountNumber("");
+    setVendorBankName("");
+    setVendorAccountTitle("");
+    setVendorBranchCode("");
     setVendorEditingId(null);
   };
   const openVendorEdit = (v: Vendor) => {
     setVendorMode("edit");
     setVendorName(v.name);
     setVendorAccountNumber(v.account_number ?? "");
+    setVendorBankName(v.bank_name ?? "");
+    setVendorAccountTitle(v.account_title ?? "");
+    setVendorBranchCode(v.branch_code ?? "");
     setVendorEditingId(v.id);
   };
+  const vendorBankFields = () => ({
+    account_number: vendorAccountNumber.trim() || null,
+    bank_name: vendorBankName.trim() || null,
+    account_title: vendorAccountTitle.trim() || null,
+    branch_code: vendorBranchCode.trim() || null,
+  });
   const handleSaveVendor = async () => {
     const n = vendorName.trim();
     if (!n) {
@@ -2104,12 +2119,12 @@ export default function Expenses() {
       if (vendorMode === "add") {
         const { error: insErr } = await supabase
           .from("vendors")
-          .insert({ name: n, account_number: vendorAccountNumber.trim() || null });
+          .insert({ name: n, ...vendorBankFields() });
         if (insErr) throw insErr;
       } else if (vendorEditingId) {
         const { error: upErr } = await supabase
           .from("vendors")
-          .update({ name: n, account_number: vendorAccountNumber.trim() || null })
+          .update({ name: n, ...vendorBankFields() })
           .eq("id", vendorEditingId);
         if (upErr) throw upErr;
       }
@@ -3970,19 +3985,51 @@ export default function Expenses() {
                 placeholder="e.g., Acme Supplies"
               />
             </div>
-            <div>
-              <label className="block text-sm text-slate-700 mb-1">Account Number</label>
-              <input
-                type="text"
-                value={vendorAccountNumber}
-                onChange={(e) => setVendorAccountNumber(e.target.value)}
-                className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
-                placeholder="Vendor's bank account number"
-              />
-              <p className="text-xs text-slate-500 mt-1">
-                Stored here so you can copy-paste it when paying the vendor from your banking app.
-              </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Bank Name</label>
+                <input
+                  type="text"
+                  value={vendorBankName}
+                  onChange={(e) => setVendorBankName(e.target.value)}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                  placeholder="e.g., Meezan Bank"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Branch Code</label>
+                <input
+                  type="text"
+                  value={vendorBranchCode}
+                  onChange={(e) => setVendorBranchCode(e.target.value)}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                  placeholder="e.g., 0214"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Account Title</label>
+                <input
+                  type="text"
+                  value={vendorAccountTitle}
+                  onChange={(e) => setVendorAccountTitle(e.target.value)}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                  placeholder="Name on the account"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-700 mb-1">Account Number</label>
+                <input
+                  type="text"
+                  value={vendorAccountNumber}
+                  onChange={(e) => setVendorAccountNumber(e.target.value)}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-md text-sm"
+                  placeholder="Account number / IBAN"
+                />
+              </div>
             </div>
+            <p className="text-xs text-slate-500 -mt-1">
+              Shown on Accounts Payable when you pay this vendor.
+            </p>
             <div className="flex gap-2">
               <Button variant="primary" size="sm" onClick={handleSaveVendor}>
                 {vendorMode === "add" ? "Add Vendor" : "Save Changes"}
@@ -4008,8 +4055,12 @@ export default function Expenses() {
                   >
                     <div className="min-w-0">
                       <p className="text-sm text-slate-900 truncate">{v.name}</p>
-                      {v.account_number && (
-                        <p className="text-xs text-slate-500 font-mono truncate">{v.account_number}</p>
+                      {(v.bank_name || v.account_title || v.account_number || v.branch_code) && (
+                        <p className="text-xs text-slate-500 truncate">
+                          {[v.bank_name, v.account_title, v.account_number, v.branch_code && `Branch ${v.branch_code}`]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </p>
                       )}
                     </div>
                     <div className="flex gap-1 flex-shrink-0">

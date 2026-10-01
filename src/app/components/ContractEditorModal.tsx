@@ -1362,12 +1362,12 @@ export default function ContractEditorModal({
                         onChange={(e) => setAddForm({ ...addForm, site_key: e.target.value })}
                         className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
                       >
+                        {addendumIsAdd && <option value={NEW_SITE}>+ New site…</option>}
                         {!hasSites && <option value={NO_SITE}>No site (contract-wide)</option>}
                         {hasSites && addendumSites.length === 0 && <option value={NO_SITE}>Pick a site</option>}
                         {addendumSites.map((x) => (
                           <option key={x.key} value={x.key}>{x.name.trim() || "Unnamed site"}</option>
                         ))}
-                        {addendumIsAdd && <option value={NEW_SITE}>+ New site…</option>}
                       </ThemedSelect>
                     </div>
                   ) : (

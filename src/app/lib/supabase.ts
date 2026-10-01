@@ -1,6 +1,4 @@
 import { createClient } from "@supabase/supabase-js";
-import { authStorage } from "./authStorage";
-import { isNative } from "./platform";
 
 const url = import.meta.env.VITE_SUPABASE_URL as string;
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -65,17 +63,9 @@ const permissionAwareFetch: typeof fetch = async (input, init) => {
 export const supabase = createClient(url, anonKey, {
   global: { fetch: permissionAwareFetch },
   auth: {
-    // Native: Capacitor Preferences (real persisted storage). Web: undefined,
-    // which leaves supabase-js on its localStorage default. See ./authStorage
-    // for why WebView localStorage is not good enough.
-    storage: authStorage,
     persistSession: true,
     autoRefreshToken: true,
-    // There is no URL to read a session out of in the native shell — auth
-    // callbacks arrive as deep links and are handled explicitly in
-    // ./nativeShell. Leaving detection on makes supabase-js parse whatever
-    // happens to be in the WebView's address bar at boot.
-    detectSessionInUrl: !isNative,
+    detectSessionInUrl: true,
   },
 });
 
@@ -2222,6 +2212,10 @@ export type Vendor = {
   id: string;
   name: string;
   account_number: string | null;
+  // Bank details shown when paying the vendor (0488).
+  bank_name?: string | null;
+  account_title?: string | null;
+  branch_code?: string | null;
   created_at?: string;
 };
 

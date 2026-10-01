@@ -29,30 +29,13 @@ pnpm-debug.log*
 *.sln
 *.sw?
 
-# ── native (Capacitor) ───────────────────────────────────────────────────────
-# The android/ and ios/ project folders ARE committed: they hold real
-# configuration (signing setup, manifest permissions, icons, deep-link
-# verification) that must not be regenerated from scratch on a build machine.
-# What is ignored is per-machine and build output only.
-android/.gradle/
-android/build/
-android/app/build/
-android/local.properties
-android/app/src/main/assets/public/
-android/app/src/main/assets/capacitor.config.json
-android/app/release/
+# ── mobile app (Expo, mobile/) ──────────────────────────────────────────────
+mobile/.expo/
+mobile/android/
+mobile/ios/
+mobile/dist/
 *.keystore
 *.jks
-keystore.properties
-
-ios/App/Pods/
-ios/App/build/
-ios/App/App/public/
-ios/App/App/capacitor.config.json
-ios/App/output/
-*.mobileprovision
-*.p12
-*.p8
 
 # Claude Code: session ledger of migrations applied but not yet written to a file.
 # See scripts/migration-ledger.mjs.
