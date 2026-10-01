@@ -1138,7 +1138,6 @@ function ShiftDrillModal({
   const [siteShifts, setSiteShifts] = useState<string[]>(
     shift.shift_code === "all" ? (shift.contract_shifts ?? []) : [shift.shift_code],
   );
-  const [worked, setWorked] = useState<Map<string, string[]>>(new Map());
   const [supervisor, setSupervisor] = useState(shift.confirmation?.supervisor_name ?? "");
   const [source, setSource] = useState<"app" | "whatsapp" | "manual">("app");
   const [saving, setSaving] = useState(false);
@@ -1202,42 +1201,28 @@ function ShiftDrillModal({
       else next.set(id, { status, absent_reason: status === "absent" ? reason : null });
       return next;
     });
-    // Leaving double_duty collapses any multi-shift selection back to one.
-    if (status !== "double_duty") {
-      setWorked((prev) => {
-        const cur = prev.get(id);
-        if (!cur || cur.length <= 1) return prev;
-        const next = new Map(prev);
-        next.set(id, [cur[0]]);
-        return next;
-      });
-    }
   };
 
-  // Selected worked shift(s) for a guard; default = their scheduled shift.
-  const getWorked = (g: RosterGuard): string[] => worked.get(g.guard_id) ?? [g.scheduled_shift];
-
-  const setWorkedShift = (g: RosterGuard, code: string, multi: boolean) => {
-    setWorked((prev) => {
-      const next = new Map(prev);
-      const cur = next.get(g.guard_id) ?? [g.scheduled_shift];
-      if (!multi) {
-        next.set(g.guard_id, [code]); // single-select
-        return next;
-      }
-      // Double duty = EXACTLY two shifts: the scheduled (normal) shift, always
-      // kept, plus ONE extra. Never one, never three. Tapping the scheduled shift
-      // is a no-op; tapping the current extra clears it; tapping another swaps it.
-      const sched = g.scheduled_shift;
-      if (code === sched) return next;
-      const curExtra = cur.find((c) => c !== sched) ?? null;
-      const nextExtra = curExtra === code ? null : code;
-      const sel = nextExtra ? [sched, nextExtra] : [sched];
-      const ordered = siteShifts.filter((c) => sel.includes(c));
-      next.set(g.guard_id, ordered.length ? ordered : [sched]);
-      return next;
-    });
+  // Double duty pairs the guard's own shift with ONE other, chosen here rather
+  // than asked for — the operator does not care which, and both rows say
+  // `double_duty` anyway (0395). Same rule as BulkMarkByEmployeeModal: the shift
+  // before it in the daily cycle if the site runs it, else any other the site
+  // runs. Deterministic, so a re-confirm lands on the same two rows.
+  const secondShiftFor = (sched: string): string => {
+    const CYCLE = ["day", "evening", "night"];
+    const others = siteShifts.filter((c) => c !== sched);
+    const i = CYCLE.indexOf(sched);
+    const previous = i >= 0 ? CYCLE[(i + CYCLE.length - 1) % CYCLE.length] : null;
+    if (previous && others.includes(previous)) return previous;
+    if (others.length > 0) return others[0];
+    return previous ?? (sched === "day" ? "night" : "day");
   };
+
+  // Worked shift(s) for a guard: their scheduled shift, plus a second for DD.
+  const getWorked = (g: RosterGuard, status: Status | "present"): string[] =>
+    status === "double_duty"
+      ? [g.scheduled_shift, secondShiftFor(g.scheduled_shift)]
+      : [g.scheduled_shift];
 
   const blocked = gate?.mode === "blocked";
   const needsOverride = gate?.mode === "override_required";
@@ -1252,14 +1237,6 @@ function ShiftDrillModal({
     // constraints and will surface a clear error via fail() if ever hit.
     if (!supervisor.trim()) { setSupError("Supervisor name is required to confirm."); return; }
     setSupError(null);
-    // Double duty = two shifts in one day, so it must have two shifts selected.
-    const ddShort = shift.roster.filter(
-      (g) => marks.get(g.guard_id)?.status === "double_duty" && new Set(getWorked(g)).size < 2,
-    );
-    if (ddShort.length > 0) {
-      fail(`Double duty needs two shifts — pick a second shift for ${ddShort.length} guard${ddShort.length === 1 ? "" : "s"} marked double duty.`);
-      return;
-    }
     setSaving(true);
     setErr(null);
     try {
@@ -1270,11 +1247,7 @@ function ShiftDrillModal({
       const rows = shift.roster.flatMap((g) => {
         const mk = marks.get(g.guard_id);
         const status = mk?.status ?? "present";
-        const sel = getWorked(g);
-        const workedShifts = status === "double_duty"
-          ? [...new Set(sel)]                        // one row per chosen shift
-          : [sel[0] ?? g.scheduled_shift];           // single worked shift
-        return workedShifts.map((ws) => {
+        return getWorked(g, status).map((ws) => {
           // Double duty = TWO shifts, and BOTH rows say double_duty (0395).
           // It used to write the rostered shift as Present and only the extra as
           // DD, which made a double duty unreadable without joining each row to
@@ -1465,35 +1438,13 @@ function ShiftDrillModal({
                     <option value="awol">AWOL</option><option value="sick">Sick</option><option value="absconded">Absconded</option>
                   </ThemedSelect>
                 )}
-                {/* Worked-shift selector. Attendance is a fact about the DATE, not
-                    the shift (shift is display-only), so an ordinary mark needs no
-                    shift choice — the guard's scheduled shift is used. The picker
-                    only appears for DOUBLE DUTY, where two shifts must be named. */}
-                {(mk?.status ?? "present") === "double_duty" && (() => {
-                  const multi = true;
-                  const sel = getWorked(g);
-                  return (
-                    <div
-                      className="flex items-center gap-1 shrink-0"
-                      title="Double duty — pick a second shift"
-                    >
-                      {siteShifts.map((code) => {
-                        const active = sel.includes(code);
-                        return (
-                          <button
-                            key={code}
-                            type="button"
-                            aria-pressed={active}
-                            onClick={() => setWorkedShift(g, code, multi)}
-                            className={`text-xs px-2 py-1 rounded border capitalize ${active ? "bg-brand-50 border-brand-300 text-brand-700" : "border-slate-200 text-slate-400 hover:text-slate-700"}`}
-                          >
-                            {code}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  );
-                })()}
+                {/* Double duty's two shifts are chosen automatically (see
+                    secondShiftFor) — shown for reference, not a choice. */}
+                {mk?.status === "double_duty" && (
+                  <span className="text-xs text-slate-500 capitalize shrink-0">
+                    {getWorked(g, "double_duty").join(" + ")}
+                  </span>
+                )}
               </div>
             );
           })}
