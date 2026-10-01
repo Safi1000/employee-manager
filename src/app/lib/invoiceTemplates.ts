@@ -511,7 +511,7 @@ function drawFixedTable(
   const { doc, pageW, margin, invoice } = ctx;
   let y = yStart;
   const usable = pageW - margin * 2;
-  // Sr | No. of Guards | Period/Locations | Monthly Rate | Net Amount
+  // Sr | Particulars (qty × category) | Period/Locations | Monthly Rate | Net Amount
   const w = [26, usable - 26 - 150 - 92 - 84, 150, 92, 84];
   const AMT = w.length - 1; // index of the money column (Total/Prev-Balance anchor)
   const xs: number[] = [];
@@ -530,7 +530,7 @@ function drawFixedTable(
   doc.setTextColor(0);
   const hc = (i: number, t: string, dy: number) => doc.text(t, xs[i] + w[i] / 2, y + dy, { align: "center" });
   hc(0, "Sr.", 16);
-  hc(1, "No. of Guards", 16);
+  hc(1, "Particulars", 16);
   hc(2, "Period/Locations", 16);
   hc(3, "Monthly Rate", 12);
   hc(3, `(${unitWord(rows)})`, 22);
