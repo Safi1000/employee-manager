@@ -489,7 +489,12 @@ function fixedLineRows(input: InvoiceDocInput, useAttendance: boolean) {
     if (useAttendance && l.category && input.attendanceByCategory?.[l.category] != null) {
       qty = input.attendanceByCategory[l.category]!;
     }
-    return { label: l.label, category: l.category, qty, rate: Number(l.unit_rate ?? 0), amount: qty * Number(l.unit_rate ?? 0) };
+    const rate = Number(l.unit_rate ?? 0);
+    // Use the stored line amount (which carries any part-month proration) rather
+    // than recomputing qty × rate; the attendance path overrides qty so it must
+    // recompute instead.
+    const amount = useAttendance ? qty * rate : Number(l.amount ?? qty * rate);
+    return { label: l.label, category: l.category, qty, rate, amount };
   });
 }
 
