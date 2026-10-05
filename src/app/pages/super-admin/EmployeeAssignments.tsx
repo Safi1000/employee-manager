@@ -35,10 +35,12 @@ import {
   SlidersHorizontal,
   UserMinus,
   ShieldAlert,
+  Pencil,
 } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
+import BaseSalaryEditModal from "../../components/BaseSalaryEditModal";
 import MobileCardList from "../../components/MobileCardList";
 import FireGuardModal from "../../components/FireGuardModal";
 import DisciplinaryWarningsModal from "../../components/DisciplinaryWarningsModal";
@@ -290,6 +292,9 @@ export default function EmployeeAssignments() {
 
   const [rulesTarget, setRulesTarget] = useState<RulesTarget | null>(null);
   const [rowTarget, setRowTarget] = useState<EmployeeRow | null>(null);
+  // Base salary edited straight from the list (2026-10-05). Same dated write
+  // as payroll Review, so the two always agree.
+  const [salaryTarget, setSalaryTarget] = useState<EmployeeRow | null>(null);
   const [assignTo, setAssignTo] = useState<AssignTarget | null>(null);
   const [transferTarget, setTransferTarget] = useState<EmployeeRow | null>(null);
   // Fire / Resign, moved here from Employee Management. Two steps: pick which of
@@ -972,9 +977,22 @@ export default function EmployeeAssignments() {
                       { label: "Shift", value: (e) => <span className="capitalize">{e.shift}</span> },
                       // Pay + joining/left-on are Accounts-only (0343).
                       ...(canAccounts ? [
-                        { label: "Base", value: (e: EmployeeRow) => missingBase(e)
-                            ? <span className="inline-flex items-center rounded-sm bg-danger-100 px-1.5 py-0.5 text-[11px] font-medium text-danger-700" title="No base salary set — this employee will not be paid until it is added">Not set</span>
-                            : <span className="tabular-nums">{money(e.base_salary)}</span> },
+                        { label: "Base", value: (e: EmployeeRow) => (
+                            <span className="inline-flex items-center gap-1">
+                              {missingBase(e)
+                                ? <span className="inline-flex items-center rounded-sm bg-danger-100 px-1.5 py-0.5 text-[11px] font-medium text-danger-700" title="No base salary set — this employee will not be paid until it is added">Not set</span>
+                                : <span className="tabular-nums">{money(e.base_salary)}</span>}
+                              <button
+                                type="button"
+                                onClick={(ev) => { ev.stopPropagation(); setSalaryTarget(e); }}
+                                className="inline-flex items-center gap-1 rounded px-1 py-0.5 text-muted-foreground hover:text-foreground hover:bg-accent"
+                                title="Change base salary"
+                                aria-label={`Change base salary for ${e.full_name}`}
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                            </span>
+                          ) },
                         { label: "Per day", value: (e: EmployeeRow) => <span className="tabular-nums">{money(perDayOf(e.base_salary))}</span> },
                         { label: "Allowance", value: (e: EmployeeRow) => <span className="tabular-nums">{money(e.allowance)}</span> },
                         {
@@ -1063,9 +1081,20 @@ export default function EmployeeAssignments() {
                             {/* Pay + joining/left-on columns are Accounts-only (0343). */}
                             {canAccounts && (<>
                             <td className="px-3 py-2 text-sm tabular-nums whitespace-nowrap">
+                              <span className="inline-flex items-center gap-1">
                               {missingBase(e)
                                 ? <span className="inline-flex items-center rounded-sm bg-danger-100 px-1.5 py-0.5 text-[11px] font-medium text-danger-700" title="No base salary set — this employee will not be paid until it is added">Not set</span>
                                 : <span className="text-foreground">{money(e.base_salary)}</span>}
+                              <button
+                                type="button"
+                                onClick={(ev) => { ev.stopPropagation(); setSalaryTarget(e); }}
+                                className="opacity-60 group-hover:opacity-100 inline-flex items-center gap-1 rounded px-1 py-0.5 text-muted-foreground hover:text-foreground hover:bg-accent"
+                                title="Change base salary"
+                                aria-label={`Change base salary for ${e.full_name}`}
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              </span>
                             </td>
                             <td className="px-3 py-2 text-sm text-muted-foreground tabular-nums whitespace-nowrap">{money(perDayOf(e.base_salary))}</td>
                             <td className="px-3 py-2 text-sm text-muted-foreground tabular-nums whitespace-nowrap">{money(e.allowance)}</td>
@@ -1645,6 +1674,14 @@ export default function EmployeeAssignments() {
             setNotice(msg);
             await loadData();
           }}
+        />
+      )}
+
+      {salaryTarget && (
+        <BaseSalaryEditModal
+          employee={salaryTarget}
+          onClose={() => setSalaryTarget(null)}
+          onSaved={async () => { setSalaryTarget(null); await loadData(); }}
         />
       )}
 

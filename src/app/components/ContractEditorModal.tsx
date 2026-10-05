@@ -527,7 +527,9 @@ const blankAddendum = (): AddendumForm => ({
   new_rate: "",
   new_end_date: "",
   new_is_infinite: false,
-  effective_from: new Date().toISOString().slice(0, 10),
+  // Blank by default: the date a change takes effect is a fact from the
+  // signed document, not "today". Save refuses until one is picked.
+  effective_from: "",
   line_id: "",
   line_rate: "",
   line_notes: "",
@@ -1842,7 +1844,7 @@ export default function ContractEditorModal({
                 </>
               )}
               <div>
-                <label className="block text-[11px] text-slate-600 mb-1">Effective from</label>
+                <label className="block text-[11px] text-slate-600 mb-1">Effective from *</label>
                 <input
                   type="date"
                   value={addForm.effective_from}

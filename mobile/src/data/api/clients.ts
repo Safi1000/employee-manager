@@ -232,7 +232,7 @@ export type AddendumForm = {
 };
 export const blankAddendum = (): AddendumForm => ({
   site_key: NO_SITE, category: "GUARD", change_type: "ADD_HEADCOUNT", count_delta: "1", new_rate: "", new_end_date: "", new_is_infinite: false,
-  effective_from: new Date().toISOString().slice(0, 10), line_id: "", line_rate: "", line_notes: "", line_taxable: true, source: "SIGNED_CONTRACT", reference: "",
+  effective_from: "", line_id: "", line_rate: "", line_notes: "", line_taxable: true, source: "SIGNED_CONTRACT", reference: "",
 });
 
 /** handleAddAddendum(): every addendum is a dated change; add-headcount carries its own line fields. */

@@ -239,6 +239,11 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   // bank, just never sees the balance. loadCustodianOptions skips fetching held;
   // these helpers hide bank balances in the option labels.
   const canViewBanking = hasPermission(profile, "banks.view");
+  // Base salary is editable on the payroll Review tab (asked 2026-10-05). It is
+  // the same write Assignments & Pay makes — set_employee_salary, a dated
+  // salary record — so the two screens can never hold different figures. Same
+  // keys that function asks for.
+  const canEditSalary = hasPermission(profile, "employees.edit") || hasPermission(profile, "assignments.accounts");
   const custodianLabel = (c: CustodianOption) =>
     canViewBanking ? `${c.fullName} — holds PKR ${Math.round(c.held).toLocaleString()}` : c.fullName;
   const bankLabel = (b: { bank_name: string; account_number: string; balance: number | string }) =>
@@ -320,6 +325,11 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   const [selectedPeriod, setSelectedPeriod] = useState(() => readSel().period ?? previousPeriod);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [salaryDraft, setSalaryDraft] = useState("");
+  const [salarySaving, setSalarySaving] = useState(false);
+  const [salaryMsg, setSalaryMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  // A fresh row starts with an empty box (its current salary is the placeholder).
+  useEffect(() => { setSalaryDraft(""); setSalaryMsg(null); }, [selectedId, selectedPeriod]);
 
   // --- Drill-down from the Journal ----------------------------------------
   //
@@ -513,6 +523,51 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     // Selection is intentionally preserved here (item 1) so switching away and
     // back keeps the chosen payslip. It's cleared explicitly when the user picks
     // a different period.
+  };
+
+  /**
+   * Change a guard's base salary from the Review tab. Effective from the 1st of
+   * the payroll month, so the whole month is paid at it. Writes the dated salary
+   * record (which also moves the guard's current salary when this is the latest
+   * one), then carries the figure onto this month's payslip if one exists and
+   * has not been paid out.
+   */
+  const saveBaseSalary = async (row: RowState) => {
+    const base = Math.round(Number(salaryDraft));
+    if (!Number.isFinite(base) || base <= 0) { setSalaryMsg({ kind: "err", text: "Enter a base salary above zero." }); return; }
+    if (base === Math.round(row.base_salary)) { setSalaryMsg({ kind: "err", text: "That is already the base salary." }); return; }
+    setSalarySaving(true);
+    setSalaryMsg(null);
+    const dim = daysInMonth(selectedPeriod);
+    const { error: salErr } = await supabase.rpc("set_employee_salary", {
+      p_employee_id: row.employee.id,
+      p_effective_date: selectedPeriod,
+      p_base_salary: base,
+      p_allowance: Number(row.employee.allowance ?? row.allowance ?? 0),
+      p_per_day_salary: dim > 0 ? base / dim : null,
+      p_reason: `Changed on payroll Review for ${formatPeriod(selectedPeriod)}`,
+    });
+    if (salErr) { setSalarySaving(false); setSalaryMsg({ kind: "err", text: salErr.message }); return; }
+    if (!row.disbursed) {
+      const { error: psErr } = await supabase
+        .from("payslips")
+        .update({ base_salary: base })
+        .eq("employee_id", row.employee.id)
+        .eq("period_month", selectedPeriod)
+        .eq("disbursed", false);
+      if (psErr) {
+        setSalarySaving(false);
+        setSalaryMsg({ kind: "err", text: `Salary record saved, but this month's payslip could not be updated: ${psErr.message}` });
+        return;
+      }
+    }
+    // The roster row reads employees.base_salary when there is no payslip;
+    // reflect the change without a full reload.
+    setEmployees((prev) => prev.map((e) => (e.id === row.employee.id ? { ...e, base_salary: base } : e)));
+    await loadPeriodData(selectedPeriod);
+    setSalarySaving(false);
+    setSalaryMsg({ kind: "ok", text: `Base salary set to PKR ${base.toLocaleString()} from ${formatPeriod(selectedPeriod)}. Assignments & Pay shows the same figure.` });
+    onDataChanged?.();
   };
 
   const loadAll = async () => {
@@ -3147,19 +3202,52 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                   )}
 
                   <div className="pt-3 border-t border-slate-200 grid grid-cols-2 gap-2">
-                    <div>
+                    <div className={throughNet && canEditSalary && !selectedRow.disbursed ? "col-span-2" : undefined}>
                       <label className="block text-xs text-slate-500 mb-1">Base Salary</label>
-                      <input
-                        type="number"
-                        value={selectedRow.base_salary}
-                        disabled
-                        readOnly
-                        className="w-full px-2 py-1 border border-slate-200 rounded text-sm bg-slate-50 text-slate-500 cursor-not-allowed"
-                      />
-                      <p className="text-[11px] text-slate-500 mt-1">
-                        Set on Assignments &amp; Pay — salary is effective-dated, so changing it here
-                        would price this payslip off a figure no salary record contains.
-                      </p>
+                      {throughNet && canEditSalary && !selectedRow.disbursed ? (
+                        <>
+                          <div className="flex gap-2">
+                            <input
+                              type="number"
+                              min={0}
+                              value={salaryDraft}
+                              onChange={(e) => { setSalaryDraft(e.target.value); setSalaryMsg(null); }}
+                              onFocus={() => { if (salaryDraft === "") setSalaryDraft(String(Math.round(selectedRow.base_salary))); }}
+                              placeholder={String(Math.round(selectedRow.base_salary))}
+                              className="flex-1 min-w-0 px-2 py-1 border border-slate-200 rounded text-sm"
+                            />
+                            <Button
+                              size="sm"
+                              variant="primary"
+                              disabled={salarySaving || salaryDraft === "" || Math.round(Number(salaryDraft)) === Math.round(selectedRow.base_salary)}
+                              onClick={() => saveBaseSalary(selectedRow)}
+                            >
+                              {salarySaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Update"}
+                            </Button>
+                          </div>
+                          <p className="text-[11px] text-slate-500 mt-1">
+                            Applies from 1 {formatPeriod(selectedPeriod)} and updates Assignments &amp; Pay too.
+                          </p>
+                          {salaryMsg && (
+                            <p className={`text-[11px] mt-1 ${salaryMsg.kind === "ok" ? "text-success-700" : "text-danger-700"}`}>{salaryMsg.text}</p>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <input
+                            type="number"
+                            value={selectedRow.base_salary}
+                            disabled
+                            readOnly
+                            className="w-full px-2 py-1 border border-slate-200 rounded text-sm bg-slate-50 text-slate-500 cursor-not-allowed"
+                          />
+                          <p className="text-[11px] text-slate-500 mt-1">
+                            {selectedRow.disbursed
+                              ? "Paid out — the payslip keeps the salary it was paid at."
+                              : "Change it on Assignments & Pay or the payroll Review tab."}
+                          </p>
+                        </>
+                      )}
                     </div>
                     <div>
                       <label className="block text-xs text-slate-500 mb-1">Per Day (display)</label>

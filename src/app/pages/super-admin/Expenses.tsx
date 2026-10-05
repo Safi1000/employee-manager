@@ -806,7 +806,7 @@ export default function Expenses() {
   // Pending / Approved split of the list. The category totals above it stay on
   // `filtered` (both states) — the tabs change what you work through, not what
   // was spent.
-  const [approvalView, setApprovalView] = useState<"pending" | "approved">("pending");
+  const [approvalView, setApprovalView] = useState<"pending" | "approved">("approved");
   const pendingRows = useMemo(() => filtered.filter((e) => !e.approved_at), [filtered]);
   const approvedRows = useMemo(() => filtered.filter((e) => !!e.approved_at), [filtered]);
   const shown = approvalView === "pending" ? pendingRows : approvedRows;
@@ -2551,12 +2551,12 @@ export default function Expenses() {
             </div>
           </div>
 
-          {/* Pending / Approved. Pending is where the work is, so it opens first. */}
+          {/* Approved / Pending. Approved opens first, on the left (asked 2026-10-05). */}
           <div className="px-6 pt-4 flex flex-wrap items-center justify-between gap-3">
             <div className="inline-flex rounded-md border border-slate-200 p-0.5 bg-slate-50">
               {([
-                { key: "pending", label: "Pending", rows: pendingRows },
                 { key: "approved", label: "Approved", rows: approvedRows },
+                { key: "pending", label: "Pending", rows: pendingRows },
               ] as const).map((t) => (
                 <button
                   key={t.key}
