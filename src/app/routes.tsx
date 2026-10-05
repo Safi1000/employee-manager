@@ -31,7 +31,7 @@ const LeaveBalances = lazy(() => import("./pages/super-admin/LeaveBalances"));
 import TabHub from "./pages/super-admin/_TabHub";
 const Accounting = lazy(() => import("./pages/super-admin/Accounting"));
 const FinancialReports = lazy(() => import("./pages/super-admin/FinancialReports"));
-const Expenses = lazy(() => import("./pages/super-admin/Expenses"));
+const ExpensesEntry = lazy(() => import("./pages/super-admin/ExpensesEntry"));
 const Invoices = lazy(() => import("./pages/super-admin/Invoices"));
 const Cashflow = lazy(() => import("./pages/super-admin/CashFlow"));
 const ComplianceHub = lazy(() => import("./pages/super-admin/ComplianceHub"));
@@ -196,7 +196,7 @@ export const router = createBrowserRouter([
       // Partnership Run — draft / review / post. The database has been able to
       // do this since 0361; nothing could reach it until now.
       { path: "partnership-run", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit"], <PartnershipRun />) },
-      { path: "expenses", element: guard(["expenses.view", "expenses.edit"], <Expenses />) },
+      { path: "expenses", element: guard(["expenses.view", "expenses.edit", "expenses.request"], <ExpensesEntry />) },
       { path: "invoices", element: guard(["invoices.view", "invoices.edit"], <Invoices />) },
       { path: "cashflow", element: guard(["cashflow.view"], <Cashflow />) },
       { path: "treasury", element: guard(["banks.view", "reports.view", "cashflow.view"], <Treasury />) },

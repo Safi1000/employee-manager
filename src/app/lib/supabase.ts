@@ -450,7 +450,8 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
       // permission is what lifts the lock again. A permission and not a role
       // literal: asking the role instead of the permission was the cause of
       // three separate defects in the week this was built.
-      { key: "expenses.approve", label: "Approve / unapprove expenses (locks them)" },
+      { key: "expenses.approve", label: "Sign off expenses (locks them) and approve / reject expense requests" },
+      { key: "expenses.request", label: "Request an expense (for approval)" },
     ],
   },
   {

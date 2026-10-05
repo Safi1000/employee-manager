@@ -6,6 +6,7 @@ import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import ExpenseApprovalModal, { type ApprovableExpense } from "../../components/ExpenseApprovalModal";
+import { ExpenseRequestModal, ExpenseRequestsList, loadExpenseRequests, type ExpenseRequest } from "../../components/ExpenseRequests";
 import MobileCardList from "../../components/MobileCardList";
 import ExportButton from "../../components/ExportButton";
 import ClientFilterSelect from "../../components/ClientFilterSelect";
@@ -349,6 +350,19 @@ export default function Expenses() {
   // a lock nobody can open is not a control. A permission, never a role
   // literal — asking the role instead was the cause of three defects this week.
   const canApproveExpenses = hasPermission(profile, "expenses.approve");
+  // 0495: ask for an expense; approvers approve or reject it with a note.
+  const canRequestExpenses = hasPermission(profile, "expenses.request");
+  const [requests, setRequests] = useState<ExpenseRequest[]>([]);
+  const [requestsLoading, setRequestsLoading] = useState(true);
+  const [requestOpen, setRequestOpen] = useState(false);
+  // The approved request the Add Expense form was prefilled from, so the saved
+  // expense can be linked back to it.
+  const [fromRequest, setFromRequest] = useState<ExpenseRequest | null>(null);
+  const loadRequests = async () => {
+    try { setRequests(await loadExpenseRequests()); } catch { setRequests([]); }
+    setRequestsLoading(false);
+  };
+  useEffect(() => { void loadRequests(); }, []);
   // A custodian's held cash and a bank account's balance are "View bank accounts &
   // cash custody" (banks.view) data. Expenses is reachable on expenses.* alone, so
   // without banks.view the FIGURES must stay hidden here — the person still picks
@@ -806,7 +820,7 @@ export default function Expenses() {
   // Pending / Approved split of the list. The category totals above it stay on
   // `filtered` (both states) — the tabs change what you work through, not what
   // was spent.
-  const [approvalView, setApprovalView] = useState<"pending" | "approved">("approved");
+  const [approvalView, setApprovalView] = useState<"pending" | "approved" | "requests">("approved");
   const pendingRows = useMemo(() => filtered.filter((e) => !e.approved_at), [filtered]);
   const approvedRows = useMemo(() => filtered.filter((e) => !!e.approved_at), [filtered]);
   const shown = approvalView === "pending" ? pendingRows : approvedRows;
@@ -1450,6 +1464,13 @@ export default function Expenses() {
         }
       }
 
+      // 0495: an expense recorded from an approved request is linked back to it.
+      if (fromRequest) {
+        const { error: linkErr } = await supabase.rpc("link_expense_request", { p_request_id: fromRequest.id, p_expense_id: expId });
+        setFromRequest(null);
+        await loadRequests();
+        if (linkErr) throw new Error(`Expense recorded, but the request could not be marked recorded: ${linkErr.message}`);
+      }
       setForm(emptyForm);
       setExpenseCustodianId("");
       setIsAddOpen(false);
@@ -1548,7 +1569,7 @@ export default function Expenses() {
     if (missed.length > 0) {
       setSelectedIds(new Set(missed.map((e) => e.id)));
       setBulkError(
-        `${done.size} of ${ids.length} approved. ${missed.length} could not be approved — already approved by someone else, or outside what your account may approve: ` +
+        `${done.size} of ${ids.length} signed off. ${missed.length} could not be signed off — already signed off by someone else, or outside what your account may sign off: ` +
           missed.map((e) => `${formatDate(e.expense_date)} ${e.category_name ?? ""} PKR ${Number(e.amount).toLocaleString()}`).join("; "),
       );
       return;
@@ -2319,8 +2340,13 @@ export default function Expenses() {
                 Manage Vendors
               </Button>
             )}
+            {activeTab === "expenses" && canRequestExpenses && (
+              <Button variant="secondary" size="md" onClick={() => setRequestOpen(true)}>
+                Request Expense
+              </Button>
+            )}
             {activeTab === "expenses" && canEditExpenses && (
-              <Button variant="primary" size="md" onClick={() => { setExpenseCustodianId(""); setIsAddOpen(true); }}>
+              <Button variant="primary" size="md" onClick={() => { setFromRequest(null); setForm(emptyForm); setExpenseCustodianId(""); setIsAddOpen(true); }}>
                 <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
                 Add Expense
               </Button>
@@ -2551,12 +2577,14 @@ export default function Expenses() {
             </div>
           </div>
 
-          {/* Approved / Pending. Approved opens first, on the left (asked 2026-10-05). */}
+          {/* Signed Off / Pending / Requests. Signed Off opens first, on the left (asked 2026-10-05). */}
           <div className="px-6 pt-4 flex flex-wrap items-center justify-between gap-3">
             <div className="inline-flex rounded-md border border-slate-200 p-0.5 bg-slate-50">
               {([
-                { key: "approved", label: "Approved", rows: approvedRows },
+                { key: "approved", label: "Signed Off", rows: approvedRows },
                 { key: "pending", label: "Pending", rows: pendingRows },
+                // Count what still needs someone: waiting for approval, or approved and not yet recorded.
+                { key: "requests", label: "Requests", rows: requests.filter((r) => r.status === "pending" || r.status === "approved") },
               ] as const).map((t) => (
                 <button
                   key={t.key}
@@ -2568,16 +2596,24 @@ export default function Expenses() {
                 >
                   {t.label}
                   <span className={`ml-2 inline-flex items-center justify-center min-w-[1.5rem] px-1.5 rounded-full text-[11px] ${
-                    t.key === "pending" ? "bg-warning-100 text-warning-800" : "bg-success-100 text-success-800"
+                    t.key === "pending" ? "bg-warning-100 text-warning-800" : t.key === "requests" ? "bg-brand-100 text-brand-800" : "bg-success-100 text-success-800"
                   }`}>
                     {t.rows.length}
                   </span>
                 </button>
               ))}
             </div>
-            <span className="text-xs text-slate-500 tabular-nums">
-              PKR {shown.reduce((sum, e) => sum + Number(e.amount), 0).toLocaleString()} in this view
-            </span>
+            {approvalView === "requests" ? (
+              canRequestExpenses && (
+                <Button variant="secondary" size="sm" onClick={() => setRequestOpen(true)}>
+                  <Plus className="w-4 h-4 mr-1.5" strokeWidth={1.5} /> Request Expense
+                </Button>
+              )
+            ) : (
+              <span className="text-xs text-slate-500 tabular-nums">
+                PKR {shown.reduce((sum, e) => sum + Number(e.amount), 0).toLocaleString()} in this view
+              </span>
+            )}
           </div>
 
           {approvalView === "pending" && canApproveExpenses && selectedRows.length > 0 && (
@@ -2590,7 +2626,7 @@ export default function Expenses() {
                 <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>Clear</Button>
                 <Button variant="primary" size="sm" onClick={() => { setBulkError(null); setBulkOpen(true); }}>
                   <CheckCheck className="w-4 h-4 mr-1.5" strokeWidth={1.75} />
-                  Approve {selectedRows.length}
+                  Sign off {selectedRows.length}
                 </Button>
               </div>
             </div>
@@ -2598,11 +2634,40 @@ export default function Expenses() {
 
           {/* Phone: one card per expense. Recording and checking spend is the
               most common thing anyone does on this page away from a desk. */}
+          {approvalView === "requests" && (
+            <div className="mt-3 border-t border-border">
+              <ExpenseRequestsList
+                requests={requests}
+                loading={requestsLoading}
+                canApprove={canApproveExpenses}
+                canRecord={canEditExpenses}
+                onChanged={loadRequests}
+                onRecord={(r) => {
+                  // Prefill the normal Add Expense form; payment details are
+                  // chosen there, and saving moves the money as usual.
+                  setForm({
+                    ...emptyForm,
+                    category_id: r.category_id ?? "",
+                    client_id: r.client_id ?? "",
+                    amount: String(r.amount),
+                    description: r.description,
+                    notes: [`Requested by ${r.requested_by_name ?? "unknown"}`, r.note, r.decision_note ? `Approver: ${r.decision_note}` : null].filter(Boolean).join(" — "),
+                  });
+                  setFromRequest(r);
+                  setExpenseCustodianId("");
+                  setIsAddOpen(true);
+                }}
+                emptyText={canRequestExpenses ? 'No expense requests yet. Use "Request Expense" to ask for one.' : "No expense requests yet."}
+              />
+            </div>
+          )}
+
+          {approvalView !== "requests" && (<>
           <div className="h-3 md:hidden" />
           <MobileCardList
             rows={loading ? [] : shown}
             loading={loading}
-            empty={approvalView === "pending" ? "Nothing waiting for approval." : "No approved expenses match the filters."}
+            empty={approvalView === "pending" ? "Nothing waiting for sign-off." : "No signed-off expenses match the filters."}
             rowKey={(exp) => exp.id}
             title={(exp) => (
               <span className="flex items-center gap-2">
@@ -2643,7 +2708,7 @@ export default function Expenses() {
               { label: "Description", full: true, value: (exp) => exp.description ?? "—" },
               ...(approvalView === "approved"
                 ? [{
-                    label: "Approved by",
+                    label: "Signed off by",
                     full: true,
                     value: (exp: ExpenseRow) =>
                       `${exp.approved_by_name ?? "Unknown"}${exp.approved_at ? ` · ${formatDateTime(exp.approved_at)}` : ""}`,
@@ -2668,7 +2733,7 @@ export default function Expenses() {
                 )}
                 {canApproveExpenses && (
                   <Button variant="ghost" size="sm" onClick={() => openApproval(exp)}>
-                    {exp.approved_at ? "Unapprove" : "Approve"}
+                    {exp.approved_at ? "Undo sign-off" : "Sign off"}
                   </Button>
                 )}
               </>
@@ -2702,7 +2767,7 @@ export default function Expenses() {
                   <th className="text-left px-4 py-3 text-xs text-slate-500">Mode</th>
                   <th className="text-left px-4 py-3 text-xs text-slate-500">Expense By</th>
                   {approvalView === "approved" && (
-                    <th className="text-left px-4 py-3 text-xs text-slate-500">Approved By</th>
+                    <th className="text-left px-4 py-3 text-xs text-slate-500">Signed Off By</th>
                   )}
                   <th className="text-left px-4 py-3 text-xs text-slate-500">Actions</th>
                 </tr>
@@ -2720,8 +2785,8 @@ export default function Expenses() {
                   <tr>
                     <td colSpan={9} className="px-6 py-10 text-center text-slate-500 text-sm">
                       {approvalView === "pending"
-                        ? "Nothing waiting for approval."
-                        : "No approved expenses match the filters."}
+                        ? "Nothing waiting for sign-off."
+                        : "No signed-off expenses match the filters."}
                     </td>
                   </tr>
                 )}
@@ -2772,8 +2837,8 @@ export default function Expenses() {
                         {/* Approval is a REVIEW state, separate from payable_status,
                             which answers payment. Both can show at once. */}
                         {exp.approved_at && (
-                          <span className="ml-1 inline-flex items-center px-2 py-0.5 rounded text-xs bg-success-50 text-success-700" title={`Approved by ${exp.approved_by_name ?? "unknown"} on ${formatDateTime(exp.approved_at)} — locked against edits`}>
-                            Approved
+                          <span className="ml-1 inline-flex items-center px-2 py-0.5 rounded text-xs bg-success-50 text-success-700" title={`Signed off by ${exp.approved_by_name ?? "unknown"} on ${formatDateTime(exp.approved_at)} — locked against edits`}>
+                            Signed Off
                           </span>
                         )}
                         {exp.service_start && exp.service_end && (
@@ -2833,11 +2898,11 @@ export default function Expenses() {
                             onClick={() => openApproval(exp)}
                             title={
                               exp.approved_at
-                                ? "Unapprove — reopens the expense for editing. Recorded."
-                                : "Approve — locks the expense against edits and deletion."
+                                ? "Undo sign-off — reopens the expense for editing. Recorded."
+                                : "Sign off — locks the expense against edits and deletion."
                             }
                           >
-                            {exp.approved_at ? "Unapprove" : "Approve"}
+                            {exp.approved_at ? "Undo sign-off" : "Sign off"}
                           </Button>
                         )}
                       </td>
@@ -2846,6 +2911,7 @@ export default function Expenses() {
               </tbody>
             </table>
           </div>
+          </>)}
         </div>
         )}
 
@@ -3549,13 +3615,15 @@ export default function Expenses() {
         onClose={() => {
           setIsAddOpen(false);
           setForm(emptyForm);
+          setFromRequest(null);
         }}
-        title="Add Expense"
+        title={fromRequest ? "Record requested expense" : "Add Expense"}
         size="lg"
       >
-        {renderExpenseForm(form, setForm, handleAdd, submitting, "Add Expense", () => {
+        {renderExpenseForm(form, setForm, handleAdd, submitting, fromRequest ? "Record Expense" : "Add Expense", () => {
           setIsAddOpen(false);
           setForm(emptyForm);
+          setFromRequest(null);
         })}
       </Modal>
 
@@ -3586,6 +3654,15 @@ export default function Expenses() {
           )}
       </Modal>
 
+      {requestOpen && (
+        <ExpenseRequestModal
+          categories={categories.map((c) => ({ id: c.id, name: c.name }))}
+          clients={clients.map((c) => ({ id: c.id, name: c.name }))}
+          onClose={() => setRequestOpen(false)}
+          onSaved={async () => { setRequestOpen(false); setApprovalView("requests"); await loadRequests(); }}
+        />
+      )}
+
       <ExpenseApprovalModal
         expense={approvalTarget}
         onClose={() => setApprovalTarget(null)}
@@ -3600,7 +3677,7 @@ export default function Expenses() {
       <Modal
         isOpen={bulkOpen}
         onClose={() => { if (!bulkSubmitting) setBulkOpen(false); }}
-        title={`Approve ${selectedRows.length} expense${selectedRows.length === 1 ? "" : "s"}`}
+        title={`Sign off ${selectedRows.length} expense${selectedRows.length === 1 ? "" : "s"}`}
         size="lg"
         error={bulkError}
         onDismissError={() => setBulkError(null)}
@@ -3616,7 +3693,7 @@ export default function Expenses() {
               {bulkSubmitting ? (
                 <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Approving…</>
               ) : (
-                <>Approve {selectedRows.length} · PKR {selectedRows.reduce((sum, e) => sum + Number(e.amount), 0).toLocaleString()}</>
+                <>Sign off {selectedRows.length} · PKR {selectedRows.reduce((sum, e) => sum + Number(e.amount), 0).toLocaleString()}</>
               )}
             </Button>
             <Button variant="secondary" size="md" disabled={bulkSubmitting} onClick={() => setBulkOpen(false)}>
@@ -3627,7 +3704,7 @@ export default function Expenses() {
       >
         <div className="space-y-3">
           <p className="text-sm text-slate-600">
-            Approved expenses are locked against editing and deletion. They will be recorded as approved by{" "}
+            Signed-off expenses are locked against editing and deletion. They will be recorded as signed off by{" "}
             <span className="text-slate-900">{profile?.full_name || profile?.email || "your account"}</span>.
           </p>
           {(() => {
@@ -4090,11 +4167,11 @@ export default function Expenses() {
                 <p className="text-slate-500 mb-1">Approval</p>
                 {selected.approved_at ? (
                   <p className="text-success-700">
-                    Approved by {selected.approved_by_name ?? "unknown"}
+                    Signed off by {selected.approved_by_name ?? "unknown"}
                     <span className="block text-xs text-slate-500">{formatDateTime(selected.approved_at)}</span>
                   </p>
                 ) : (
-                  <p className="text-warning-700">Pending approval</p>
+                  <p className="text-warning-700">Pending sign-off</p>
                 )}
               </div>
               {/* 0401. Somebody looking at one expense should not have to leave

@@ -73,7 +73,7 @@ export default function ExpenseApprovalModal({
     <Modal
       isOpen={!!expense}
       onClose={onClose}
-      title={approving ? "Approve expense" : "Unapprove expense"}
+      title={approving ? "Sign off expense" : "Undo sign-off"}
       size="md"
       error={error}
       onDismissError={onDismissError}
@@ -89,8 +89,8 @@ export default function ExpenseApprovalModal({
             {submitting
               ? "Saving…"
               : approving
-                ? `Approve ${money(expense?.amount ?? 0)}`
-                : "Unapprove"}
+                ? `Sign off ${money(expense?.amount ?? 0)}`
+                : "Undo sign-off"}
           </Button>
           <Button variant="secondary" size="md" onClick={onClose} disabled={submitting}>
             Cancel
@@ -138,7 +138,7 @@ export default function ExpenseApprovalModal({
               <Lock className="w-4 h-4 mt-0.5 flex-shrink-0" strokeWidth={1.5} />
               <span>
                 Approving locks this expense: no further edits and no deletion. A correction
-                after this has to be a reversal. You can unapprove it again if you need to.
+                after this has to be a reversal. You can undo the sign-off if you need to.
               </span>
             </div>
           ) : (
@@ -155,7 +155,7 @@ export default function ExpenseApprovalModal({
             <div className="flex items-start gap-2 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
               <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" strokeWidth={1.5} />
               <span>
-                There is no receipt on this expense. Once approved it cannot be edited, so the
+                There is no receipt on this expense. Once signed off it cannot be edited, so the
                 receipt cannot be added afterwards.
               </span>
             </div>
