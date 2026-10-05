@@ -9,6 +9,8 @@ import Button from "./Button";
 import { supabase } from "../lib/supabase";
 import { guardDisplayCode } from "../lib/guardCode";
 import BoardVerificationBar, { type HalfInfo, type HalfVerification } from "./BoardVerificationBar";
+import ThemedSelect from "./ThemedSelect";
+import { useRegion } from "../lib/region";
 import { buildAttendanceRows, buildRelieverRows, loadSheetEmployees, loadSiteByGuard, loadConfirmationGate } from "../lib/attendanceSheet";
 import { exportAttendance, deriveAttendanceShifts, shiftAbbr, type AttendanceEmployeeRow } from "../lib/excel";
 
@@ -66,7 +68,7 @@ type OverrideRow = {
 
 export default function AttendanceSheetModal({
   clientId, clientName, siteId, siteName, companyId, canHrVerify = false,
-  currentUserId = null, currentUserRole = null, onClose, inline = false, initialMonth, onMonthChange,
+  currentUserId = null, currentUserRole = null, onClose, inline = false, initialMonth, onMonthChange, initialBranchId,
 }: {
   clientId: string;
   clientName: string;
@@ -85,6 +87,8 @@ export default function AttendanceSheetModal({
   initialMonth?: string;
   /** Told whenever the board's month changes (the Monthly tab labels its client list by it). */
   onMonthChange?: (month: string) => void;
+  /** Staff-group boards: the region to open on (the Attendance Run passes its row's). */
+  initialBranchId?: string | null;
 }) {
   // Opens on the PREVIOUS month — the one being closed and verified (asked 2026-10-05).
   const [month, setMonth] = useState(initialMonth ?? previousMonth());
@@ -121,6 +125,19 @@ export default function AttendanceSheetModal({
   const synthetic = clientId.startsWith("cat:");
   const category = synthetic ? clientId.slice(4) : null;
   const realClientId = synthetic ? null : clientId;
+  // 0498: a staff group (office staff etc.) is verified PER REGION. Its board
+  // shows one region's staff and verifies that region only. A regional user is
+  // pinned to their own region; head office picks one.
+  const { regions, regionId: globalRegion, locked: regionLocked } = useRegion();
+  const [branch, setBranch] = useState<string | null>(() =>
+    initialBranchId !== undefined ? initialBranchId : globalRegion ?? null);
+  useEffect(() => {
+    if (!synthetic || branch) return;
+    if (globalRegion) setBranch(globalRegion);
+    else if (regions[0]) setBranch(regions[0].id);
+  }, [synthetic, branch, globalRegion, regions]);
+  const branchId = synthetic ? branch : null;
+  const branchName = regions.find((r) => r.id === branchId)?.name ?? null;
   const monthStartDate = `${month}-01`;
   // Month has ended when its last calendar day is strictly before today.
   const monthEnded = useMemo(() => {
@@ -157,6 +174,7 @@ export default function AttendanceSheetModal({
         const siteByGuard = await loadSiteByGuard(realClientId);
         const employees = await loadSheetEmployees({
           clientId: realClientId, category, siteId, siteByGuard, clientPrefix: prefix,
+          ...(synthetic ? { branchId } : {}),
         });
 
         // Monthly Board shows ONLY supervisor-confirmed attendance: an
@@ -201,7 +219,7 @@ export default function AttendanceSheetModal({
     return () => { cancelled = true; };
     // reloadKey: re-fetch the grid after a cell is marked via override.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clientId, siteId, month, reloadKey]);
+  }, [clientId, siteId, month, reloadKey, branchId]);
 
   // Load OPS-Verify state (verification stamp + override log) for this client+month.
   useEffect(() => {
@@ -220,7 +238,9 @@ export default function AttendanceSheetModal({
         (synthetic ? verBase.eq("category", category as string) : verBase.eq("client_id", clientId)).maybeSingle(),
         synthetic ? ovBase.eq("category", category as string) : ovBase.eq("client_id", clientId),
         (synthetic ? phBase.eq("category", category as string) : phBase.eq("client_id", clientId)).maybeSingle(),
-        synthetic ? hvBase.eq("category", category as string) : hvBase.eq("client_id", clientId),
+        synthetic
+          ? (branchId ? hvBase.eq("category", category as string).eq("branch_id", branchId) : hvBase.eq("category", category as string).is("branch_id", null))
+          : hvBase.eq("client_id", clientId),
       ]);
       if (cancelled) return;
       const byHalf: Record<1 | 2, HalfVerification | null> = { 1: null, 2: null };
@@ -231,7 +251,7 @@ export default function AttendanceSheetModal({
       setRunPhase((ph as any)?.phase ?? null);
     })();
     return () => { cancelled = true; };
-  }, [clientId, month, monthStartDate, reloadKey]);
+  }, [clientId, month, monthStartDate, reloadKey, branchId]);
 
   // Half ranges, by the same exact-halves rule as attendance_half_of() in the
   // database (0493): half 1 is days 1..floor(dim/2).
@@ -435,8 +455,21 @@ export default function AttendanceSheetModal({
                   </span>
                 )}
               </h2>
-              <p className="text-xs text-muted-foreground">{monthLabel || month}</p>
+              <p className="text-xs text-muted-foreground">
+                {monthLabel || month}
+                {synthetic && branchName && <span> · {branchName}</span>}
+              </p>
             </div>
+            {synthetic && !regionLocked && regions.length > 1 && (
+              <ThemedSelect
+                value={branch ?? ""}
+                onChange={(e) => setBranch(e.target.value || null)}
+                className="px-2 py-1 border border-border rounded-md text-sm bg-card shrink-0"
+                title="Staff groups are verified per region"
+              >
+                {regions.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </ThemedSelect>
+            )}
             <div className="hidden sm:flex items-center gap-1 shrink-0">
               <button onClick={() => shiftMonth(-1)} className="p-1.5 rounded hover:bg-accent" title="Previous month"><ChevronLeft className="w-4 h-4" /></button>
               <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="px-2 py-1 border border-border rounded-md text-sm bg-card" />
@@ -494,6 +527,7 @@ export default function AttendanceSheetModal({
           <BoardVerificationBar
             clientId={realClientId}
             category={category}
+            branchId={branchId}
             month={month}
             view={view}
             halves={halvesInfo}

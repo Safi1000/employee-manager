@@ -41,6 +41,8 @@ type Scope = {
   name: string;
   clientId: string | null;
   category: string | null;
+  /** Staff groups are verified per region (0498); null for clients. */
+  branchId: string | null;
   halves: Record<Half, HalfRow | null>;
   legacyAt: string | null;
   frozen: boolean;
@@ -100,7 +102,7 @@ export default function AttendanceRun() {
     const [hv, legacy, phases] = await Promise.all([
       supabase
         .from("attendance_half_verifications")
-        .select("client_id, category, half, hr_verified_at, hr_verified_by_name, ops_verified_at, ops_verified_by_name, client:client_id(name)")
+        .select("client_id, category, branch_id, half, hr_verified_at, hr_verified_by_name, ops_verified_at, ops_verified_by_name, client:client_id(name), branch:branch_id(name)")
         .eq("period_month", period),
       supabase
         .from("attendance_month_verifications")
@@ -114,17 +116,23 @@ export default function AttendanceRun() {
     const frozenKeys = new Set(((phases.data ?? []) as any[]).filter((p) => p.phase).map((p) => p.client_id ?? `cat:${p.category}`));
     const byKey = new Map<string, Scope>();
     const scopeFor = (r: any): Scope => {
-      const key = r.client_id ?? `cat:${r.category}`;
+      // A staff group is one row per region (0498). A legacy monthly row has no
+      // region and covers the group in every region.
+      const branchId: string | null = r.client_id ? null : (r.branch_id ?? null);
+      const key = r.client_id ?? `cat:${r.category}@${branchId ?? ""}`;
       let sc = byKey.get(key);
       if (!sc) {
+        const group = CATEGORY_LABEL[r.category] ?? String(r.category ?? "—");
         sc = {
           key,
-          name: r.client?.name ?? CATEGORY_LABEL[r.category] ?? String(r.category ?? "—"),
+          name: r.client?.name
+            ?? (r.branch?.name ? `${group} — ${r.branch.name}` : r.half === undefined ? `${group} (all regions)` : group),
           clientId: r.client_id ?? null,
           category: r.client_id ? null : r.category,
+          branchId,
           halves: { 1: null, 2: null },
           legacyAt: null,
-          frozen: frozenKeys.has(key),
+          frozen: frozenKeys.has(r.client_id ?? `cat:${r.category}`),
         };
         byKey.set(key, sc);
       }
@@ -154,6 +162,7 @@ export default function AttendanceRun() {
       p_halves: halves,
       p_action: action,
       p_note: note ?? null,
+      p_branch_id: s.branchId,
     });
     setBusyKey(null);
     if (e) { setNotice({ kind: "err", text: `${s.name}: ${e.message}` }); return; }
@@ -347,7 +356,7 @@ export default function AttendanceRun() {
 
                           {remarksFor?.key === s.key && remarksFor.half === h && (
                             <div className="basis-full rounded-md border border-border bg-secondary/30 p-3 max-h-[40dvh] overflow-auto">
-                              <BoardRemarks clientId={s.clientId} category={s.category} month={month} half={h} halfLabel={halfLabels[h]} />
+                              <BoardRemarks clientId={s.clientId} category={s.category} branchId={s.branchId} month={month} half={h} halfLabel={halfLabels[h]} />
                             </div>
                           )}
                         </div>
@@ -366,6 +375,7 @@ export default function AttendanceRun() {
           clientId={boardFor.clientId ?? `cat:${boardFor.category}`}
           clientName={boardFor.name}
           initialMonth={month}
+          initialBranchId={boardFor.clientId ? undefined : boardFor.branchId}
           companyId={company?.id ?? null}
           canHrVerify={canHr}
           currentUserId={profile?.id ?? null}

@@ -155,13 +155,18 @@ export async function loadSheetEmployees(opts: {
   siteId?: string | null;
   siteByGuard?: Map<string, string | null>;
   clientPrefix?: string | null;
+  /** Staff groups are per region (0498). undefined = every region; null = staff with no region. */
+  branchId?: string | null;
 }): Promise<SheetEmployee[]> {
   const q = supabase
     .from("employees")
     .select("id, full_name, display_number, guard_code, employee_code, contract_id, client_id, join_date, last_working_day, termination_date, lifecycle_state, shift")
     .neq("lifecycle_state", "archived")
     .neq("category", "reliever");
-  const { data } = await (opts.category ? q.eq("category", opts.category) : q.eq("client_id", opts.clientId as string));
+  const scoped = opts.category ? q.eq("category", opts.category) : q.eq("client_id", opts.clientId as string);
+  const { data } = await (opts.category && opts.branchId !== undefined
+    ? (opts.branchId === null ? scoped.is("branch_id", null) : scoped.eq("branch_id", opts.branchId))
+    : scoped);
 
   let list = (data ?? []) as any[];
   if (opts.siteId && opts.siteByGuard) list = list.filter((e) => opts.siteByGuard!.get(e.id) === opts.siteId);

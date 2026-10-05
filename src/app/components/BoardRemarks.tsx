@@ -21,23 +21,27 @@ export const remarkWhen = (iso: string) =>
   new Date(iso).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "numeric", minute: "2-digit", hour12: true });
 
 /** Load the remarks for a board. Exposed so callers can show a count. */
-export async function loadBoardRemarks(clientId: string | null, category: string | null, month: string, half: 1 | 2) {
+export async function loadBoardRemarks(clientId: string | null, category: string | null, month: string, half: 1 | 2, branchId: string | null = null) {
   let q = supabase
     .from("attendance_board_remarks")
     .select("id, parent_id, kind, body, author_name, created_at")
     .eq("period_month", `${month}-01`)
     .eq("half", half);
-  q = clientId ? q.eq("client_id", clientId) : q.eq("category", category as string);
+  // A staff group's board is per region (0498).
+  q = clientId ? q.eq("client_id", clientId)
+    : branchId ? q.eq("category", category as string).eq("branch_id", branchId)
+    : q.eq("category", category as string).is("branch_id", null);
   const { data, error } = await q.order("created_at", { ascending: true });
   if (error) throw new Error(error.message);
   return (data ?? []) as BoardRemark[];
 }
 
 export default function BoardRemarks({
-  clientId, category, month, half, halfLabel, reloadKey = 0, onCount,
+  clientId, category, branchId = null, month, half, halfLabel, reloadKey = 0, onCount,
 }: {
   clientId: string | null;
   category: string | null;
+  branchId?: string | null;
   /** YYYY-MM */
   month: string;
   half: 1 | 2;
@@ -56,7 +60,7 @@ export default function BoardRemarks({
 
   const load = async () => {
     try {
-      const r = await loadBoardRemarks(clientId, category, month, half);
+      const r = await loadBoardRemarks(clientId, category, month, half, clientId ? null : branchId);
       setRemarks(r);
       onCount?.(r.length);
     } catch (e) {
@@ -71,7 +75,7 @@ export default function BoardRemarks({
     setReplyTo(null);
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clientId, category, month, half, reloadKey]);
+  }, [clientId, category, branchId, month, half, reloadKey]);
 
   const threads = useMemo(() => {
     const replies = new Map<string, BoardRemark[]>();
@@ -90,6 +94,7 @@ export default function BoardRemarks({
       p_half: half,
       p_body: body.trim(),
       p_parent_id: parentId,
+      p_branch_id: clientId ? null : branchId,
     });
     setPosting(false);
     if (error) { setErr(error.message); return; }

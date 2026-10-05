@@ -51,10 +51,12 @@ const TONE = {
 };
 
 export default function BoardVerificationBar({
-  clientId, category, month, view, halves, legacyVerifiedAt, payrollPhase, canHr, onChanged,
+  clientId, category, branchId = null, month, view, halves, legacyVerifiedAt, payrollPhase, canHr, onChanged,
 }: {
   clientId: string | null;
   category: string | null;
+  /** Staff groups are verified per region (0498). Ignored for clients. */
+  branchId?: string | null;
   month: string;
   /** What the grid is showing; HR's actions apply to it. */
   view: "month" | 1 | 2;
@@ -90,6 +92,7 @@ export default function BoardVerificationBar({
       p_halves: hs,
       p_action: action,
       p_note: null,
+      p_branch_id: clientId ? null : branchId,
     });
     setBusy(false);
     if (error) { setMsg({ kind: "err", text: error.message }); return; }
@@ -176,6 +179,7 @@ export default function BoardVerificationBar({
           <BoardRemarks
             clientId={clientId}
             category={category}
+            branchId={branchId}
             month={month}
             half={remarksHalf}
             halfLabel={halves[remarksHalf].label}

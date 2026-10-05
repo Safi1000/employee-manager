@@ -267,12 +267,27 @@ export default function PayrollRun() {
       for (const v of (vers ?? []) as any[]) if (v.verified_at) clearedAt.set(v.client_id ?? `cat:${v.category}`, v.verified_at);
       const halvesByKey = new Map<string, string[]>();
       for (const h of (halfVers ?? []) as any[]) {
-        if (!h.ops_verified_at) continue;
+        // Clients only: a staff group is per region (0498), so two halves can
+        // come from two regions — that is asked of the database below.
+        if (!h.ops_verified_at || !h.client_id) continue;
         const k = h.client_id ?? `cat:${h.category}`;
         halvesByKey.set(k, [...(halvesByKey.get(k) ?? []), h.ops_verified_at]);
       }
       for (const [k, ats] of halvesByKey) {
         if (ats.length === 2 && !clearedAt.has(k)) clearedAt.set(k, ats.sort()[1]);
+      }
+      // Staff groups: cleared only when EVERY region with its staff has both
+      // halves Ops-verified — attendance_month_cleared() is that rule.
+      for (const sc of catScopes.filter((c) => c.verifiable && !clearedAt.has(c.key))) {
+        const { data: ok } = await supabase.rpc("attendance_month_cleared", {
+          p_client_id: null, p_category: sc.category, p_period_month: period,
+        });
+        if (ok === true) {
+          const latest = ((halfVers ?? []) as any[])
+            .filter((h) => !h.client_id && h.category === sc.category && h.ops_verified_at)
+            .map((h) => h.ops_verified_at as string).sort().pop();
+          clearedAt.set(sc.key, latest ?? "");
+        }
       }
       setVerified(new Set(clearedAt.keys()));
       setVerifiedAt(clearedAt);

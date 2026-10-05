@@ -824,7 +824,8 @@ export async function loadRun(period: string, regionId: string | null) {
   for (const v of vers) if (v.verified_at) clearedAt.set(v.client_id ?? `cat:${v.category}`, v.verified_at);
   const halvesByKey = new Map<string, string[]>();
   for (const h of halfVers) {
-    if (!h.ops_verified_at) continue;
+    // Clients only: staff groups are per region (0498), asked of the database below.
+    if (!h.ops_verified_at || !h.client_id) continue;
     const k = h.client_id ?? `cat:${h.category}`;
     halvesByKey.set(k, [...(halvesByKey.get(k) ?? []), h.ops_verified_at]);
   }
@@ -856,6 +857,15 @@ export async function loadRun(period: string, regionId: string | null) {
     .map((c) => ({ key: c.id, name: c.name, clientId: c.id, category: null, verifiable: true }));
   const cats = Array.from(new Set(catEmps.map((e) => e.category).filter(Boolean))).sort() as string[];
   const catScopes: Scope[] = cats.map((cat) => ({ key: `cat:${cat}`, name: catLabel(cat), clientId: null, category: cat, verifiable: cat !== "reliever" }));
+  // A staff group is cleared only when every region with its staff has both
+  // halves Ops-verified (0498) — attendance_month_cleared() is that rule.
+  for (const sc of catScopes.filter((c) => c.verifiable && !clearedAt.has(c.key))) {
+    const ok = await q<boolean>(sb().rpc("attendance_month_cleared", { p_client_id: null, p_category: sc.category, p_period_month: period } as never));
+    if (ok === true) {
+      const latest = halfVers.filter((h) => !h.client_id && h.category === sc.category && h.ops_verified_at).map((h) => h.ops_verified_at as string).sort().pop();
+      clearedAt.set(sc.key, latest ?? "");
+    }
+  }
   const keyOf = (v: any) => v.client_id ?? `cat:${v.category}`;
 
   const totals = new Map<string, ShellTotals>();

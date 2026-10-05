@@ -1120,14 +1120,18 @@ export default function AttendanceBoard() {
             the per-client "Monthly Board" buttons open as a pop-up. */}
         {tab === "monthly" && (() => {
           const q = monthlySearch.trim().toLowerCase();
-          const visibleScopes = q ? monthlyScopes.filter((c) => c.name.toLowerCase().includes(q)) : monthlyScopes;
+          const visibleScopes = (q ? monthlyScopes.filter((c) => c.name.toLowerCase().includes(q)) : monthlyScopes)
+            .slice()
+            .sort((a, b) => (monthlyStatus.get(a.id) ?? 0) - (monthlyStatus.get(b.id) ?? 0) || a.name.localeCompare(b.name));
           // A remembered choice that is no longer listed falls back to the first one.
           const chosen = (monthlyScopes.some((c) => c.id === monthlyClient) ? monthlyClient : "") || visibleScopes[0]?.id || monthlyScopes[0]?.id || "";
           const name = monthlyScopes.find((c) => c.id === chosen)?.name ?? "";
           const STATUS = [
-            { label: "Nothing Verified", cls: "bg-warning-50 text-warning-800 border-warning-200" },
-            { label: "Half Month Verified", cls: "bg-brand-50 text-brand-800 border-brand-200" },
-            { label: "Full Month Verified", cls: "bg-success-50 text-success-700 border-success-200" },
+            // Red → amber → green, and listed in that order (asked 2026-10-05):
+            // what still needs HR is at the top.
+            { label: "Nothing Verified", cls: "bg-danger-50 text-danger-700 border-danger-200 dark:bg-danger-900/30 dark:text-danger-400" },
+            { label: "Half Month Verified", cls: "bg-warning-50 text-warning-800 border-warning-200 dark:bg-warning-900/30 dark:text-warning-400" },
+            { label: "Full Month Verified", cls: "bg-success-50 text-success-700 border-success-200 dark:bg-success-900/30 dark:text-success-400" },
           ] as const;
           const badge = (id: string) => {
             const st = STATUS[monthlyStatus.get(id) ?? 0];
@@ -1145,12 +1149,15 @@ export default function AttendanceBoard() {
                   className="px-3 py-2 border border-border bg-card rounded-md text-sm md:w-80"
                 >
                   {[
+                    ...visibleScopes,
                     // Keep the current client listed even when the search does not match it.
                     ...(visibleScopes.some((c) => c.id === chosen) ? [] : monthlyScopes.filter((c) => c.id === chosen)),
-                    ...visibleScopes,
                   ].map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.name} · {STATUS[monthlyStatus.get(c.id) ?? 0].label}
+                      <span className="inline-flex items-center gap-2">
+                        <span>{c.name}</span>
+                        {badge(c.id)}
+                      </span>
                     </option>
                   ))}
                 </ThemedSelect>

@@ -288,7 +288,7 @@ export default function Compliance() {
     if (companyId) {
       const { data: att } = await supabase.rpc("attendance_unverified_halves", { p_company_id: companyId });
       setAttendanceAlerts(((att ?? []) as any[]).map((r) => ({
-        key: `att-${r.period_month}-${r.half}-${r.client_id ?? r.category}`,
+        key: `att-${r.period_month}-${r.half}-${r.client_id ?? `${r.category}@${r.branch_id ?? ""}`}`,
         scope_name: r.scope_name,
         stage: r.stage,
         reason: r.reason,
