@@ -45,7 +45,7 @@ export default function MonthlyBoard() {
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [half, setHalf] = useState<"1" | "2">("1");
-  const [returning, setReturning] = useState<null | "return_to_hr" | "return_to_ops">(null);
+  const [returning, setReturning] = useState<null | "return_to_hr">(null);
   const [returnNote, setReturnNote] = useState("");
   const [remarks, setRemarks] = useState<BoardRemark[]>([]);
   const [remarksOpen, setRemarksOpen] = useState(false);
@@ -54,7 +54,6 @@ export default function MonthlyBoard() {
   const client = db.clients.find((c) => c.id === clientId);
   const canHr = can("attendance.hr_verify");
   const canOps = can("attendance.ops_verify");
-  const canFin = can("attendance.finance_verify");
   // Who may correct a day by override: the same people as before, plus HR, who
   // now owns the first sign-off.
   const canOverride = canOps || canHr;
@@ -91,7 +90,6 @@ export default function MonthlyBoard() {
   const stages = [
     { key: "hr", label: "HR", at: legacy ?? v?.hr_verified_at ?? null, by: legacy ? null : v?.hr_verified_by_name ?? null },
     { key: "ops", label: "Ops", at: legacy ?? v?.ops_verified_at ?? null, by: legacy ? null : v?.ops_verified_by_name ?? null },
-    { key: "finance", label: "Finance", at: legacy ?? v?.finance_verified_at ?? null, by: legacy ? null : v?.finance_verified_by_name ?? null },
   ] as const;
   const current = stages.find((st) => !st.at)?.key ?? "done";
   const frozen = !!board?.runPhase;
@@ -105,16 +103,12 @@ export default function MonthlyBoard() {
       if (await confirm({ title: `HR verify ${board.halfLabel}?`, message: "Locks this half's attendance and passes it to Ops.", confirmLabel: "Verify" })) doAction("hr_verify", "HR verified — locked and with Ops");
     } });
     if (current === "ops" && canOps) {
-      actions.push({ key: "ops", label: "Ops verify", icon: BadgeCheck, variant: "primary", run: () => doAction("ops_verify", "Ops verified — now with Finance") });
+      actions.push({ key: "ops", label: "Ops verify", icon: BadgeCheck, variant: "primary", run: () => doAction("ops_verify", "Ops verified — this half is complete") });
       actions.push({ key: "ret_hr", label: "Send back to HR", icon: RotateCcw, variant: "secondary", run: () => { setReturnNote(""); setReturning("return_to_hr"); } });
     }
     if (current === "ops" && canHr && !canOps) actions.push({ key: "undo_hr", label: "Withdraw HR", icon: Undo2, variant: "secondary", run: () => doAction("undo_hr", "HR verification withdrawn") });
-    if (current === "finance" && canFin) {
-      actions.push({ key: "fin", label: "Finance verify", icon: BadgeCheck, variant: "primary", run: () => doAction("finance_verify", "Finance verified — this half is complete") });
-      actions.push({ key: "ret_ops", label: "Send back to Ops", icon: RotateCcw, variant: "secondary", run: () => { setReturnNote(""); setReturning("return_to_ops"); } });
-    }
-    if (current === "finance" && canOps && !canFin) actions.push({ key: "undo_ops", label: "Withdraw Ops", icon: Undo2, variant: "secondary", run: () => doAction("undo_ops", "Ops verification withdrawn") });
-    if (current === "done" && canFin) actions.push({ key: "undo_fin", label: "Withdraw Finance", icon: Undo2, variant: "secondary", run: () => doAction("undo_finance", "Finance verification withdrawn") });
+    // 0494: the chain is HR -> Ops; Finance acts only in the payroll run.
+    if (current === "done" && canOps) actions.push({ key: "undo_ops", label: "Back to Review", icon: Undo2, variant: "secondary", run: () => doAction("undo_ops", "Moved back to Review") });
   }
   const threads = remarks.filter((r) => !r.parent_id).map((r) => ({ remark: r, replies: remarks.filter((x) => x.parent_id === r.id) }));
   const fmtWhen = (iso: string) => new Date(iso).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "numeric", minute: "2-digit", hour12: true });

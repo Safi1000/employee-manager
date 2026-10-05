@@ -25,6 +25,7 @@ const AttendanceManagement = lazy(() => import("./pages/super-admin/AttendanceMa
 const AttendanceBoard = lazy(() => import("./pages/super-admin/AttendanceBoard"));
 const PayrollManagement = lazy(() => import("./pages/super-admin/PayrollManagement"));
 const PayrollRun = lazy(() => import("./pages/super-admin/PayrollRun"));
+const AttendanceRun = lazy(() => import("./pages/super-admin/AttendanceRun"));
 const PayrollAdjustments = lazy(() => import("./pages/super-admin/PayrollAdjustments"));
 const LeaveBalances = lazy(() => import("./pages/super-admin/LeaveBalances"));
 import TabHub from "./pages/super-admin/_TabHub";
@@ -153,6 +154,7 @@ export const router = createBrowserRouter([
       // superset (super_admin/SSA pass implicitly).
       { path: "assignments", element: guard(["assignments.view", "employees.edit"], <EmployeeAssignments />) },
       { path: "attendance", element: guard(["attendance.view", "attendance.edit"], <AttendanceBoard />) },
+      { path: "attendance-run", element: guard(["attendance.view", "attendance.ops_verify", "attendance.hr_verify"], <AttendanceRun />) },
       // Month calendar retained as a CORRECTION-only Timesheet (§8.8), reached
       // from the guard's record (History tab), not the daily flow.
       { path: "attendance/timesheet", element: guard(["attendance.view", "attendance.edit"], <AttendanceManagement />) },

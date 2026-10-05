@@ -39,7 +39,6 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
     { key: "attendance.backdate", label: "Backdate past the cutoff" },
     { key: "attendance.hr_verify", label: "HR-verify a half-month (first stage)" },
     { key: "attendance.ops_verify", label: "OPS-verify a half-month (after HR)" },
-    { key: "attendance.finance_verify", label: "Finance-verify a half-month (after Ops)" },
   ] },
   { label: "Payroll", items: [
     { key: "payroll.view", label: "View payroll" },

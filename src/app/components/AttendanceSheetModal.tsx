@@ -8,7 +8,7 @@ import { X, Download, Loader2, ChevronLeft, ChevronRight, ShieldCheck, AlertTria
 import Button from "./Button";
 import { supabase } from "../lib/supabase";
 import { guardDisplayCode } from "../lib/guardCode";
-import HalfMonthReview, { type HalfVerification } from "./HalfMonthReview";
+import BoardVerificationBar, { type HalfInfo, type HalfVerification } from "./BoardVerificationBar";
 import { buildAttendanceRows, buildRelieverRows, loadSheetEmployees, loadSiteByGuard, loadConfirmationGate } from "../lib/attendanceSheet";
 import { exportAttendance, deriveAttendanceShifts, shiftAbbr, type AttendanceEmployeeRow } from "../lib/excel";
 
@@ -61,30 +61,32 @@ type OverrideRow = {
 };
 
 export default function AttendanceSheetModal({
-  clientId, clientName, siteId, siteName, companyId, canOpsVerify = false, canHrVerify = false, canFinanceVerify = false,
-  currentUserId = null, currentUserRole = null, onClose,
+  clientId, clientName, siteId, siteName, companyId, canHrVerify = false,
+  currentUserId = null, currentUserRole = null, onClose, inline = false, initialMonth,
 }: {
   clientId: string;
   clientName: string;
   siteId?: string | null;
   siteName?: string | null;
   companyId?: string | null;
+  /** Kept for callers; Ops now verifies on the Attendance Run, not here. */
   canOpsVerify?: boolean;
   canHrVerify?: boolean;
-  canFinanceVerify?: boolean;
   currentUserId?: string | null;
   currentUserRole?: string | null;
-  onClose: () => void;
+  onClose?: () => void;
+  /** Render inside a page (the Attendance page's Monthly tab) instead of as a pop-up. */
+  inline?: boolean;
+  /** YYYY-MM to open on (the Attendance Run passes its month). Defaults to this month. */
+  initialMonth?: string;
 }) {
-  const [month, setMonth] = useState(todayMonth());
-  // 0493: the board is two boards, one per half-month. It opens on the first
-  // half: of the current month's two, it is the only one that can be ready.
-  const [half, setHalf] = useState<1 | 2>(1);
-  // Both halves' verification rows (0493). The grid shows the whole month, so
-  // the edit lock is decided per day by that day's half; the half switch only
-  // chooses which half's chain and remarks are shown.
+  const [month, setMonth] = useState(initialMonth ?? todayMonth());
+  // What the grid shows: the whole month (default), or one half (0493). HR's
+  // verify button acts on what is shown — a half, or both halves in one go.
+  const [view, setView] = useState<"month" | 1 | 2>("month");
+  // Both halves' verification rows. The edit lock is decided per day by the
+  // half that day falls in.
   const [halfVers, setHalfVers] = useState<Record<1 | 2, HalfVerification | null>>({ 1: null, 2: null });
-  const halfVer = halfVers[half];
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [rows, setRows] = useState<AttendanceEmployeeRow[]>([]);
@@ -204,7 +206,7 @@ export default function AttendanceSheetModal({
         .order("created_at", { ascending: false });
       const phBase = supabase.from("payroll_run_phases").select("phase, finance_verified_at").eq("period_month", monthStartDate);
       const hvBase = supabase.from("attendance_half_verifications")
-        .select("id, half, hr_verified_at, hr_verified_by_name, ops_verified_at, ops_verified_by_name, finance_verified_at, finance_verified_by_name")
+        .select("id, half, hr_verified_at, hr_verified_by_name, ops_verified_at, ops_verified_by_name")
         .eq("period_month", monthStartDate);
       const [{ data: ver }, { data: ovs }, { data: ph }, { data: hv }] = await Promise.all([
         (synthetic ? verBase.eq("category", category as string) : verBase.eq("client_id", clientId)).maybeSingle(),
@@ -223,26 +225,23 @@ export default function AttendanceSheetModal({
     return () => { cancelled = true; };
   }, [clientId, month, monthStartDate, reloadKey]);
 
-  // The half's day range, by the same exact-halves rule as attendance_half_of()
-  // in the database (0493): half 1 is days 1..floor(dim/2).
+  // Half ranges, by the same exact-halves rule as attendance_half_of() in the
+  // database (0493): half 1 is days 1..floor(dim/2).
   const halfCut = Math.floor(daysInMonth / 2);
-  const halfFirstIdx = half === 1 ? 0 : halfCut;
-  const halfLastIdx = half === 1 ? halfCut - 1 : daysInMonth - 1;
-  const halfEnded = useMemo(() => {
-    const [y, m] = month.split("-").map(Number);
-    const last = new Date(y, m - 1, halfLastIdx + 1);
-    const today = new Date();
-    last.setHours(0, 0, 0, 0); today.setHours(0, 0, 0, 0);
-    return last < today;
-  }, [month, halfLastIdx]);
-  const halfLabel = useMemo(() => {
+  const rangeOf = (h: 1 | 2) => (h === 1 ? { first: 0, last: halfCut - 1 } : { first: halfCut, last: daysInMonth - 1 });
+  const viewFirstIdx = view === "month" ? 0 : rangeOf(view).first;
+  const viewLastIdx = view === "month" ? daysInMonth - 1 : rangeOf(view).last;
+  const halfMeta = useMemo(() => {
     const [y, m] = month.split("-").map(Number);
     const mon = new Date(y, m - 1, 1).toLocaleDateString("en-GB", { month: "short" });
-    return `${halfFirstIdx + 1}–${halfLastIdx + 1} ${mon}`;
-  }, [month, halfFirstIdx, halfLastIdx]);
-  // Locked for edits: HR has verified the SELECTED half, or the month carries a
-  // pre-0493 monthly verification. The database refuses the write either way.
-  const halfLocked = !!verifiedAt || !!halfVer?.hr_verified_at;
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const meta = (h: 1 | 2) => {
+      const r = h === 1 ? { first: 0, last: halfCut - 1 } : { first: halfCut, last: daysInMonth - 1 };
+      const lastDay = new Date(y, m - 1, r.last + 1); lastDay.setHours(0, 0, 0, 0);
+      return { label: `${r.first + 1}–${r.last + 1} ${mon}`, ended: lastDay < today };
+    };
+    return { 1: meta(1), 2: meta(2) };
+  }, [month, halfCut, daysInMonth]);
   // Per-day lock for the whole-month grid: is the half this day falls in locked?
   const dayLocked = (i: number) =>
     !!verifiedAt || !!halfVers[i < halfCut ? 1 : 2]?.hr_verified_at;
@@ -271,9 +270,9 @@ export default function AttendanceSheetModal({
 
   // Unmarked days = empty status cells (X / P / A / L are all fine). Flagged =
   // unmarked AND not yet overridden. Keyed per row+day for grid highlighting.
-  const { flaggedKeys, outstanding } = useMemo(() => {
+  const { flaggedKeys, outstandingByHalf } = useMemo(() => {
     const flagged = new Set<string>();
-    const list: { empId: string; empName: string; date: string }[] = [];
+    const byHalf: Record<1 | 2, { empId: string; empName: string; date: string }[]> = { 1: [], 2: [] };
     for (const row of rows) {
       if (!row.empId) continue;
       // Reliever coverage rows are allowed gaps (a reliever may cover 1 day of
@@ -286,13 +285,40 @@ export default function AttendanceSheetModal({
         const date = dayDate(i);
         if (overriddenKeys.has(`${row.empId}|${date}`)) continue;  // resolved via override
         flagged.add(`${row.empId}|${i}`);
-        // Only the half being verified blocks HR Verify.
-        if (i >= halfFirstIdx && i <= halfLastIdx) list.push({ empId: row.empId, empName: row.name, date });
+        // Each half's own gaps block that half's HR Verify.
+        byHalf[i < halfCut ? 1 : 2].push({ empId: row.empId, empName: row.name, date });
       }
     }
-    return { flaggedKeys: flagged, outstanding: list };
+    return { flaggedKeys: flagged, outstandingByHalf: byHalf };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, daysInMonth, overriddenKeys, month, halfFirstIdx, halfLastIdx]);
+  }, [rows, daysInMonth, overriddenKeys, month, halfCut]);
+
+  const halvesInfo: Record<1 | 2, HalfInfo> = {
+    1: { ...halfMeta[1], ver: halfVers[1], outstanding: outstandingByHalf[1] },
+    2: { ...halfMeta[2], ver: halfVers[2], outstanding: outstandingByHalf[2] },
+  };
+  const viewOutstanding = view === "month" ? [...outstandingByHalf[1], ...outstandingByHalf[2]] : outstandingByHalf[view];
+  const viewLocked = view === "month" ? dayLocked(0) && dayLocked(daysInMonth - 1) : dayLocked(rangeOf(view).first);
+  const viewEnded = view === "month" ? halfMeta[2].ended : halfMeta[view].ended;
+
+  // Per-row counts for what the grid shows. In the whole-month view these are
+  // the builder's own month totals; in a half view, that half's days.
+  const viewCounts = useMemo(() => {
+    const m = new Map<AttendanceEmployeeRow, { p: number; a: number; l: number; dd: number }>();
+    for (const row of rows) {
+      if (view === "month") { m.set(row, { p: row.presents, a: row.absents, l: row.leaves, dd: row.doubleDuties }); continue; }
+      let p = 0, a = 0, l = 0, dd = 0;
+      for (let i = viewFirstIdx; i <= viewLastIdx; i += 1) {
+        const st = row.statusByDay[i] ?? "";
+        if (st === "P") p += 1;
+        else if (st === "DD") { p += 1; dd += 1; }
+        else if (st === "A") a += 1;
+        else if (st === "L") l += 1;
+      }
+      m.set(row, { p, a, l, dd });
+    }
+    return m;
+  }, [rows, view, viewFirstIdx, viewLastIdx]);
 
   const shifts = useMemo(() => deriveAttendanceShifts(rows), [rows]);
   const S = shifts.length;
@@ -335,13 +361,13 @@ export default function AttendanceSheetModal({
     const grand = P.map((per, i) => per.map((v, s) => v + L[i][s] + A[i][s]));
     return {
       P, L, A, grand,
-      sumP: assigned.reduce((s, r) => s + r.presents, 0),
-      sumA: assigned.reduce((s, r) => s + r.absents, 0),
-      sumL: assigned.reduce((s, r) => s + r.leaves, 0),
-      sumDD: assigned.reduce((s, r) => s + r.doubleDuties, 0),
+      sumP: assigned.reduce((s, r) => s + (viewCounts.get(r)?.p ?? 0), 0),
+      sumA: assigned.reduce((s, r) => s + (viewCounts.get(r)?.a ?? 0), 0),
+      sumL: assigned.reduce((s, r) => s + (viewCounts.get(r)?.l ?? 0), 0),
+      sumDD: assigned.reduce((s, r) => s + (viewCounts.get(r)?.dd ?? 0), 0),
       sumPD: assigned.reduce((s, r) => s + r.payDays, 0),
     };
-  }, [rows, daysInMonth, S, shiftIndex]);
+  }, [rows, daysInMonth, S, shiftIndex, viewCounts]);
 
   const shiftMonth = (delta: number) => {
     const [y, m] = month.split("-").map(Number);
@@ -355,7 +381,7 @@ export default function AttendanceSheetModal({
       fileName: `Attendance ${label} ${monthLabel}.xlsx`,
     });
 
-  const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+  const days = Array.from({ length: viewLastIdx - viewFirstIdx + 1 }, (_, k) => viewFirstIdx + k + 1);
   const totalRowCells = (src: number[][], final?: string[]) => (
     <>
       {days.map((d) => d - 1).map((i) =>
@@ -372,14 +398,19 @@ export default function AttendanceSheetModal({
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 md:p-4" onClick={onClose}>
+    <div
+      className={inline ? "" : "fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 md:p-4"}
+      onClick={inline ? undefined : onClose}
+    >
       {/* dvh, not vh: `vh` on a mobile WebView is the viewport with the URL bar
           hidden, so a 92vh sheet is taller than the screen and its bottom row
           is unreachable. The safe-area margins keep it clear of the notch and
           the home indicator, which `fixed` positioning ignores. */}
       <div
-        style={{ marginTop: "var(--safe-top, 0px)", marginBottom: "var(--safe-bottom, 0px)" }}
-        className="bg-card rounded-xl shadow-xl w-full max-w-[95vw] max-h-[92dvh] flex flex-col overflow-hidden"
+        style={inline ? undefined : { marginTop: "var(--safe-top, 0px)", marginBottom: "var(--safe-bottom, 0px)" }}
+        className={inline
+          ? "bg-card rounded-lg border border-border w-full max-h-[calc(100dvh-14rem)] min-h-[24rem] flex flex-col overflow-hidden"
+          : "bg-card rounded-xl shadow-xl w-full max-w-[95vw] max-h-[92dvh] flex flex-col overflow-hidden"}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Two stacked rows on a phone (title+close, then the month controls),
@@ -403,21 +434,19 @@ export default function AttendanceSheetModal({
               <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="px-2 py-1 border border-border rounded-md text-sm bg-card" />
               <button onClick={() => shiftMonth(1)} className="p-1.5 rounded hover:bg-accent" title="Next month"><ChevronRight className="w-4 h-4" /></button>
             </div>
-            <div className="hidden sm:block">            <div className="inline-flex items-center rounded-md border border-border p-0.5 bg-secondary shrink-0" role="tablist" aria-label="Half being verified" title="Which half's verification and remarks to show. The grid always shows the whole month.">
-              <span className="px-1.5 text-[11px] text-muted-foreground">Verifying</span>
-              {([1, 2] as const).map((h) => {
-                const cut = Math.floor(daysInMonth / 2);
-                const range = h === 1 ? `1–${cut}` : `${cut + 1}–${daysInMonth}`;
+            <div className="hidden sm:block">            <div className="inline-flex items-center rounded-md border border-border p-0.5 bg-secondary shrink-0" role="tablist" aria-label="What the board shows">
+              {([["month", "Whole month"], [1, "1st half"], [2, "2nd half"]] as const).map(([v, text]) => {
+                const range = v === "month" ? "" : v === 1 ? `1–${halfCut}` : `${halfCut + 1}–${daysInMonth}`;
                 return (
                   <button
-                    key={h}
+                    key={String(v)}
                     type="button"
                     role="tab"
-                    aria-selected={half === h}
-                    onClick={() => setHalf(h)}
-                    className={`px-2.5 py-1 rounded text-xs transition-colors ${half === h ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                    aria-selected={view === v}
+                    onClick={() => setView(v)}
+                    className={`px-2.5 py-1 rounded text-xs transition-colors ${view === v ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
                   >
-                    {h === 1 ? "1st half" : "2nd half"} <span className="text-muted-foreground tabular-nums">{range}</span>
+                    {text}{range && <span className="text-muted-foreground tabular-nums"> {range}</span>}
                   </button>
                 );
               })}
@@ -425,7 +454,9 @@ export default function AttendanceSheetModal({
             <Button size="sm" variant="secondary" className="hidden sm:inline-flex shrink-0" onClick={download} disabled={loading || rows.length === 0}>
               <Download className="w-4 h-4 mr-1.5" /> Download Excel
             </Button>
-            <button onClick={onClose} className="p-1.5 rounded hover:bg-accent shrink-0" title="Close"><X className="w-4 h-4" /></button>
+            {!inline && onClose && (
+              <button onClick={onClose} className="p-1.5 rounded hover:bg-accent shrink-0" title="Close"><X className="w-4 h-4" /></button>
+            )}
           </div>
           <div className="mt-2 flex items-center gap-1 sm:hidden">
             <button onClick={() => shiftMonth(-1)} className="p-1.5 rounded hover:bg-accent shrink-0" title="Previous month"><ChevronLeft className="w-4 h-4" /></button>
@@ -435,46 +466,39 @@ export default function AttendanceSheetModal({
               <Download className="w-4 h-4" />
             </Button>
           </div>
-          <div className="mt-2 sm:hidden">            <div className="inline-flex items-center rounded-md border border-border p-0.5 bg-secondary shrink-0" role="tablist" aria-label="Half being verified" title="Which half's verification and remarks to show. The grid always shows the whole month.">
-              <span className="px-1.5 text-[11px] text-muted-foreground">Verifying</span>
-              {([1, 2] as const).map((h) => {
-                const cut = Math.floor(daysInMonth / 2);
-                const range = h === 1 ? `1–${cut}` : `${cut + 1}–${daysInMonth}`;
+          <div className="mt-2 sm:hidden">            <div className="inline-flex items-center rounded-md border border-border p-0.5 bg-secondary shrink-0" role="tablist" aria-label="What the board shows">
+              {([["month", "Whole month"], [1, "1st half"], [2, "2nd half"]] as const).map(([v, text]) => {
+                const range = v === "month" ? "" : v === 1 ? `1–${halfCut}` : `${halfCut + 1}–${daysInMonth}`;
                 return (
                   <button
-                    key={h}
+                    key={String(v)}
                     type="button"
                     role="tab"
-                    aria-selected={half === h}
-                    onClick={() => setHalf(h)}
-                    className={`px-2.5 py-1 rounded text-xs transition-colors ${half === h ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                    aria-selected={view === v}
+                    onClick={() => setView(v)}
+                    className={`px-2.5 py-1 rounded text-xs transition-colors ${view === v ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
                   >
-                    {h === 1 ? "1st half" : "2nd half"} <span className="text-muted-foreground tabular-nums">{range}</span>
+                    {text}{range && <span className="text-muted-foreground tabular-nums"> {range}</span>}
                   </button>
                 );
               })}
             </div></div>
-          <HalfMonthReview
+          <BoardVerificationBar
             clientId={realClientId}
             category={category}
             month={month}
-            half={half}
-            halfLabel={halfLabel}
-            halfEnded={halfEnded}
-            verification={halfVer}
+            view={view}
+            halves={halvesInfo}
             legacyVerifiedAt={verifiedAt}
             payrollPhase={runPhase}
-            outstanding={outstanding}
             canHr={canHrVerify}
-            canOps={canOpsVerify}
-            canFinance={canFinanceVerify}
             onChanged={() => setReloadKey((k) => k + 1)}
           />
-          {!halfLocked && canHrVerify && !loading && rows.length > 0 && (
+          {!viewLocked && canHrVerify && !loading && rows.length > 0 && (
             <p className="mt-1.5 text-[11px] text-muted-foreground">
-              {outstanding.length === 0
-                ? halfEnded ? "All days in this half are confirmed. Ready for HR to verify." : "All days so far are confirmed — HR can verify once this half has ended."
-                : `${outstanding.length} unconfirmed day(s) in this half are highlighted below. Confirm those shifts on the Attendance board first.`}
+              {viewOutstanding.length === 0
+                ? viewEnded ? "Every day shown is confirmed. Ready for HR to verify." : "Every day so far is confirmed — HR can verify a half once it has ended."
+                : `${viewOutstanding.length} unconfirmed day(s) are highlighted below. Confirm those shifts on the Daily board first.`}
             </p>
           )}
         </div>
@@ -508,7 +532,7 @@ export default function AttendanceSheetModal({
                   {days.map((d) => (
                     <th key={d} colSpan={S} style={stickyHead(0)} className="sticky z-30 border border-border px-1 py-1 text-center tabular-nums bg-secondary">{d}</th>
                   ))}
-                  {["Presents", "Absents", "Leaves", "Double Duty", "Pay Days"].map((h) => (
+                  {["Presents", "Absents", "Leaves", "Double Duty", view === "month" ? "Pay Days" : "Month Pay Days"].map((h) => (
                     <th key={h} rowSpan={2} style={stickyHead(0)} className="sticky z-30 border border-border px-1.5 py-1 text-center whitespace-nowrap bg-secondary">{h}</th>
                   ))}
                 </tr>
@@ -609,10 +633,10 @@ export default function AttendanceSheetModal({
                         );
                       });
                     })}
-                    <td className="border border-border px-1.5 py-0.5 text-center tabular-nums">{row.presents}</td>
-                    <td className="border border-border px-1.5 py-0.5 text-center tabular-nums">{row.absents}</td>
-                    <td className="border border-border px-1.5 py-0.5 text-center tabular-nums">{row.leaves}</td>
-                    <td className="border border-border px-1.5 py-0.5 text-center tabular-nums">{row.doubleDuties || ""}</td>
+                    <td className="border border-border px-1.5 py-0.5 text-center tabular-nums">{viewCounts.get(row)?.p ?? 0}</td>
+                    <td className="border border-border px-1.5 py-0.5 text-center tabular-nums">{viewCounts.get(row)?.a ?? 0}</td>
+                    <td className="border border-border px-1.5 py-0.5 text-center tabular-nums">{viewCounts.get(row)?.l ?? 0}</td>
+                    <td className="border border-border px-1.5 py-0.5 text-center tabular-nums">{viewCounts.get(row)?.dd || ""}</td>
                     <td className="border border-border px-1.5 py-0.5 text-center tabular-nums font-medium">{row.payDays}</td>
                   </tr>
                 ))}
@@ -650,8 +674,8 @@ export default function AttendanceSheetModal({
                   ? " The month has ended — a confirmed day is now locked everywhere else and can be changed only by clicking it here to override."
                   : " Until the month ends, this view is read-only — edit on the Attendance board."}
               </div>
-              <div>The grid shows the whole month. Verification runs per half: the 1st/2nd half switch picks which half's verification and remarks are shown above, and a verified half's days are locked.</div>
-              {canHrVerify && <div><span className="inline-block w-3 h-3 align-middle rounded-sm bg-danger-100 dark:bg-danger-900/30 mr-1" /> not yet confirmed (blocks HR Verify)</div>}
+              <div>Whole month / 1st half / 2nd half changes what the grid shows; HR's verify button acts on it. In a half view the counts are that half's, and pay days stay the month's. A half HR has verified is locked and waits in Review on the Attendance Run for Ops.</div>
+              {canHrVerify && <div><span className="inline-block w-3 h-3 align-middle rounded-sm bg-danger-100 dark:bg-danger-900/30 mr-1" /> not yet confirmed (blocks HR Verify of its half)</div>}
             </div>
           )}
         </div>

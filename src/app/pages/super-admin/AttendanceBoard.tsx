@@ -169,7 +169,9 @@ export default function AttendanceBoard() {
   const { regionId } = useRegion();
   const branding = brandingFromCompany(company);
   const [date, setDate] = useState(today());
-  const [tab, setTab] = useState<"board" | "vacancies" | "shifts">("board");
+  const [tab, setTab] = useState<"board" | "monthly" | "vacancies" | "shifts">("board");
+  // Monthly tab: the client/group whose Monthly board is shown on the page.
+  const [monthlyClient, setMonthlyClient] = useState<string>("");
   // "Shift Management" tab embeds the Assignments & Pay page. It must carry that
   // page's OWN view gate (assignments.view / employees.edit) — the Attendance
   // route only checks attendance.* , so without this an attendance-only user
@@ -202,7 +204,6 @@ export default function AttendanceBoard() {
   const canBulk = hasPermission(profile, "attendance.bulk_mark");
   const canOpsVerify = hasPermission(profile, "attendance.ops_verify");
   const canHrVerify = hasPermission(profile, "attendance.hr_verify");
-  const canFinanceVerify = hasPermission(profile, "attendance.finance_verify");
   const [bulkOpen, setBulkOpen] = useState(false);
 
   const load = async () => {
@@ -795,6 +796,7 @@ export default function AttendanceBoard() {
           onChange={(v) => setTab(v as typeof tab)}
           items={[
             { value: "board", label: "Daily board" },
+            { value: "monthly", label: "Monthly board" },
             { value: "vacancies", label: "Vacancies", count: vacancies.length },
             ...(canShiftMgmt ? [{ value: "shifts", label: "Shift Management" }] : []),
           ]}
@@ -1063,6 +1065,51 @@ export default function AttendanceBoard() {
           </>
         )}
 
+        {/* Monthly board — the whole month for one client or staff group, with
+            1st/2nd-half views and HR verification (0493/0494). The same board
+            the per-client "Monthly Board" buttons open as a pop-up. */}
+        {tab === "monthly" && (() => {
+          const chosen = monthlyClient || clientOptions[0]?.[0] || "";
+          const name = clientOptions.find(([id]) => id === chosen)?.[1] ?? "";
+          return (
+            <div className="space-y-3">
+              <div className="bg-card border border-border rounded-lg p-3 flex flex-col sm:flex-row gap-2 sm:items-center">
+                <span className="text-sm text-muted-foreground">Client / group</span>
+                <ThemedSelect
+                  value={chosen}
+                  onChange={(e) => setMonthlyClient(e.target.value)}
+                  className="px-3 py-2 border border-border bg-card rounded-md text-sm sm:w-72"
+                >
+                  {clientOptions.map(([id, n]) => <option key={id} value={id}>{n}</option>)}
+                </ThemedSelect>
+                <span className="text-xs text-muted-foreground sm:ml-auto">
+                  HR verifies here. Ops verifies on the Attendance Run.
+                </span>
+              </div>
+              {loading ? (
+                <div className="bg-card border border-border rounded-lg px-4 py-10 text-center text-muted-foreground">
+                  <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
+                </div>
+              ) : !chosen ? (
+                <div className="bg-card border border-border rounded-lg px-4 py-10 text-center text-sm text-muted-foreground">
+                  No clients with attendance on the selected day.
+                </div>
+              ) : (
+                <AttendanceSheetModal
+                  key={chosen}
+                  inline
+                  clientId={chosen}
+                  clientName={name}
+                  companyId={company?.id ?? null}
+                  canHrVerify={canHrVerify}
+                  currentUserId={profile?.id ?? null}
+                  currentUserRole={profile?.role ?? null}
+                />
+              )}
+            </div>
+          );
+        })()}
+
         {tab === "vacancies" && (
           <VacancyQueue vacancies={vacancies} clientNames={clientNames} onChanged={load} />
         )}
@@ -1104,7 +1151,6 @@ export default function AttendanceBoard() {
           companyId={company?.id ?? null}
           canOpsVerify={canOpsVerify}
           canHrVerify={canHrVerify}
-          canFinanceVerify={canFinanceVerify}
           currentUserId={profile?.id ?? null}
           currentUserRole={profile?.role ?? null}
           onClose={() => setSheetView(null)}

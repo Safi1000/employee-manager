@@ -816,7 +816,7 @@ export async function loadRun(period: string, regionId: string | null) {
     q<any[]>(s.from("payslips").select("net_salary, amount_paid, advance, disbursed, employee_id, present_days, absent_days, leave_days, base_salary, allowance, bonus, final_salary, eobi, income_tax, deductions, payment_mode, status").eq("period_month", period)),
     q<any[]>(rosterQ),
     // 0493: attendance is verified per half-month, HR -> Ops -> Finance.
-    q<any[]>(s.from("attendance_half_verifications").select("client_id, category, half, finance_verified_at").eq("period_month", period)),
+    q<any[]>(s.from("attendance_half_verifications").select("client_id, category, half, ops_verified_at").eq("period_month", period)),
   ]);
   // A scope's month is cleared for payroll when BOTH halves are Finance-verified,
   // or it carries a pre-0493 monthly verification — attendance_month_cleared().
@@ -824,9 +824,9 @@ export async function loadRun(period: string, regionId: string | null) {
   for (const v of vers) if (v.verified_at) clearedAt.set(v.client_id ?? `cat:${v.category}`, v.verified_at);
   const halvesByKey = new Map<string, string[]>();
   for (const h of halfVers) {
-    if (!h.finance_verified_at) continue;
+    if (!h.ops_verified_at) continue;
     const k = h.client_id ?? `cat:${h.category}`;
-    halvesByKey.set(k, [...(halvesByKey.get(k) ?? []), h.finance_verified_at]);
+    halvesByKey.set(k, [...(halvesByKey.get(k) ?? []), h.ops_verified_at]);
   }
   for (const [k, ats] of halvesByKey) if (ats.length === 2 && !clearedAt.has(k)) clearedAt.set(k, ats.sort()[1]!);
   const empIds = Array.from(new Set(ps.map((r) => r.employee_id)));
@@ -917,7 +917,7 @@ export async function moveToReview(sc: Scope, period: string, profileId: string 
     const cleared = await q<boolean>(sb().rpc("attendance_month_cleared", {
       p_client_id: sc.clientId, p_category: sc.clientId ? null : sc.category, p_period_month: period,
     } as never));
-    if (!cleared) throw new Error(`${sc.name}'s attendance for ${formatPeriod(period)} isn't verified yet — both halves need HR, Ops and Finance verification on the Monthly Board.`);
+    if (!cleared) throw new Error(`${sc.name}'s attendance for ${formatPeriod(period)} isn't verified yet — both halves need HR verification and then Ops verification.`);
   }
   await q(sb().from("payroll_run_phases").insert({ client_id: sc.clientId, category: sc.category, period_month: period, phase: "review", moved_by: profileId } as never));
 }

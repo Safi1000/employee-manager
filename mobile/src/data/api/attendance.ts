@@ -246,9 +246,9 @@ export async function loadMonthlyBoard(clientId: string, siteId: string | null, 
 }
 
 export type HalfAction =
-  | "hr_verify" | "ops_verify" | "finance_verify"
-  | "undo_hr" | "undo_ops" | "undo_finance"
-  | "return_to_hr" | "return_to_ops";
+  | "hr_verify" | "ops_verify"
+  | "undo_hr" | "undo_ops"
+  | "return_to_hr";
 
 /**
  * One step of the HR -> Ops -> Finance chain on a half-month board (0493). The
@@ -263,7 +263,7 @@ export async function halfAction(clientId: string, month: string, board: Monthly
       throw new Error(`${board.outstanding.length} unconfirmed day(s) in this half: ${preview}${board.outstanding.length > 6 ? "…" : ""}. Confirm or override them first.`);
     }
   }
-  if ((action === "return_to_hr" || action === "return_to_ops") && !note?.trim()) throw new Error("Say why it is being sent back.");
+  if (action === "return_to_hr" && !note?.trim()) throw new Error("Say why it is being sent back.");
   await q(sb().rpc("attendance_half_action", {
     p_client_id: clientId, p_category: null, p_period_month: `${month}-01`, p_half: board.half, p_action: action, p_note: note?.trim() || null,
   } as never));

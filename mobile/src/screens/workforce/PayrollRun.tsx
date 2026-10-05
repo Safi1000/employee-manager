@@ -142,7 +142,7 @@ export default function PayrollRun() {
             return (
               <Card key={s.key} style={{ marginBottom: 10, ...(ok ? {} : { borderColor: t.tone("warning").line, backgroundColor: t.tone("warning").tint }) }}>
                 <T v="bodyStrong">{s.name}</T>
-                <T v="small" muted>{!s.verifiable ? "No attendance verification needed" : ok ? opsLine(s) ?? "Attendance verified" : "Waiting on HR, Ops and Finance to verify both halves"}</T>
+                <T v="small" muted>{!s.verifiable ? "No attendance verification needed" : ok ? opsLine(s) ?? "Attendance verified" : "Waiting on HR and Ops to verify both halves"}</T>
                 {ok && can("payroll.edit") && <Button size="sm" style={{ marginTop: 10, alignSelf: "flex-start" }} icon={ArrowRight} label="Move to Review" loading={busyKey === s.key}
                   onPress={() => run(s.key, async () => { await moveToReview(s, period, profile?.id ?? null); setTab("review"); setExpanded(s.key); })} />}
               </Card>
