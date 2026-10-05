@@ -7,7 +7,6 @@ import RouteLoading from "../../components/RouteLoading";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import Tabs from "../../components/Tabs";
-import ClientFilterSelect from "../../components/ClientFilterSelect";
 import ThemedSelect from "../../components/ThemedSelect";
 import { supabase } from "../../lib/supabase";
 import { useAuth, hasPermission } from "../../lib/auth";
@@ -180,6 +179,7 @@ export default function AttendanceBoard() {
   const [monthlyClient, setMonthlyClient] = usePageState<string>("AttendanceBoard.monthlyClient", "");
   const [monthlyMonth, setMonthlyMonth] = usePageState<string>("AttendanceBoard.monthlyMonth", "");
   const [monthlyScopes, setMonthlyScopes] = useState<{ id: string; name: string }[]>([]);
+  const [monthlySearch, setMonthlySearch] = usePageState("AttendanceBoard.monthlySearch", "");
   const [monthlyStatus, setMonthlyStatus] = useState<Map<string, 0 | 1 | 2>>(new Map());
   // "Shift Management" tab embeds the Assignments & Pay page. It must carry that
   // page's OWN view gate (assignments.view / employees.edit) — the Attendance
@@ -646,16 +646,15 @@ export default function AttendanceBoard() {
   useEffect(() => {
     if (tab !== "monthly" || monthlyScopes.length > 0) return;
     void (async () => {
-      const [{ data: cls }, { data: groups }] = await Promise.all([
+      // Guard-deployment clients only (asked 2026-10-05): a services-only
+      // client has no guards to mark. Staff groups (office staff etc.) are not
+      // listed here; their Monthly board still opens from the Daily board.
+      const [{ data: cls }, { data: cons }] = await Promise.all([
         supabase.from("clients").select("id, name").order("name"),
-        supabase.from("employees").select("category").is("client_id", null)
-          .not("category", "in", "(client,reliever)").neq("lifecycle_state", "archived"),
+        supabase.from("contracts").select("client_id").eq("contract_type", "guard_deployment").neq("status", "draft"),
       ]);
-      const cats = Array.from(new Set(((groups ?? []) as { category: string }[]).map((g) => g.category))).sort();
-      setMonthlyScopes([
-        ...((cls ?? []) as { id: string; name: string }[]),
-        ...cats.map((c) => ({ id: `cat:${c}`, name: c.replace(/_/g, " ").replace(/^./, (x) => x.toUpperCase()) })),
-      ]);
+      const guardClients = new Set(((cons ?? []) as { client_id: string }[]).map((c) => c.client_id));
+      setMonthlyScopes(((cls ?? []) as { id: string; name: string }[]).filter((c) => guardClients.has(c.id)));
     })();
   }, [tab, monthlyScopes.length]);
 
@@ -1120,7 +1119,10 @@ export default function AttendanceBoard() {
             1st/2nd-half views and HR verification (0493/0494). The same board
             the per-client "Monthly Board" buttons open as a pop-up. */}
         {tab === "monthly" && (() => {
-          const chosen = monthlyClient || monthlyScopes[0]?.id || "";
+          const q = monthlySearch.trim().toLowerCase();
+          const visibleScopes = q ? monthlyScopes.filter((c) => c.name.toLowerCase().includes(q)) : monthlyScopes;
+          // A remembered choice that is no longer listed falls back to the first one.
+          const chosen = (monthlyScopes.some((c) => c.id === monthlyClient) ? monthlyClient : "") || visibleScopes[0]?.id || monthlyScopes[0]?.id || "";
           const name = monthlyScopes.find((c) => c.id === chosen)?.name ?? "";
           const STATUS = [
             { label: "Nothing Verified", cls: "bg-warning-50 text-warning-800 border-warning-200" },
@@ -1133,21 +1135,40 @@ export default function AttendanceBoard() {
           };
           return (
             <div className="space-y-3">
-              <div className="bg-card border border-border rounded-lg p-3 flex flex-col sm:flex-row gap-2 sm:items-center">
-                <span className="text-sm text-muted-foreground">Client / group</span>
-                <ClientFilterSelect
-                  clients={monthlyScopes}
+              {/* Same shape as the Daily board's filter bar: a themed dropdown
+                  (it opens above the page, so the board below cannot cover it)
+                  and a search box that narrows the dropdown. */}
+              <div className="bg-card border border-border rounded-lg p-3 flex flex-col md:flex-row gap-2 md:items-center">
+                <ThemedSelect
                   value={chosen}
-                  onChange={(v) => { if (v) setMonthlyClient(v); }}
-                  hideAll
-                  renderBadge={(c) => badge(c.id)}
-                  buttonClassName="sm:w-80"
-                />
+                  onChange={(e) => setMonthlyClient(e.target.value)}
+                  className="px-3 py-2 border border-border bg-card rounded-md text-sm md:w-80"
+                >
+                  {[
+                    // Keep the current client listed even when the search does not match it.
+                    ...(visibleScopes.some((c) => c.id === chosen) ? [] : monthlyScopes.filter((c) => c.id === chosen)),
+                    ...visibleScopes,
+                  ].map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} · {STATUS[monthlyStatus.get(c.id) ?? 0].label}
+                    </option>
+                  ))}
+                </ThemedSelect>
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" strokeWidth={1.5} />
+                  <input
+                    type="text"
+                    value={monthlySearch}
+                    onChange={(e) => setMonthlySearch(e.target.value)}
+                    placeholder="Search clients…"
+                    className="w-full pl-10 pr-3 py-2 border border-border bg-card rounded-md text-sm text-foreground"
+                  />
+                </div>
                 {chosen && badge(chosen)}
-                <span className="text-xs text-muted-foreground sm:ml-auto">
-                  Status is HR verification for the month shown. Ops verifies on the Attendance Run.
-                </span>
               </div>
+              <p className="text-xs text-muted-foreground -mt-1">
+                Guard-deployment clients. The status is HR verification for the month shown; Ops verifies on the Attendance Run.
+              </p>
               {monthlyScopes.length === 0 ? (
                 <div className="bg-card border border-border rounded-lg px-4 py-10 text-center text-muted-foreground">
                   <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…

@@ -614,9 +614,9 @@ export default function PayrollRun() {
       >
         {/* Tabs, filters and (on Review) the KPI cards stay pinned while the
             client list scrolls under them (asked 2026-10-05). */}
-        <div className="sticky top-0 z-20 -mx-4 md:-mx-8 px-4 md:px-8 pt-6 pb-4 mb-2 bg-background border-b border-border/60">
+        <div className="sticky top-0 z-20 -mx-4 md:-mx-8 px-4 md:px-8 pt-6 pb-4 mb-2 bg-slate-50">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="inline-flex items-center rounded-lg bg-slate-100 dark:bg-slate-800 p-0.5">
+          <div className="inline-flex items-center rounded-lg bg-slate-100 p-0.5">
             {TABS.map((t) => (
               <button key={t.key} type="button" onClick={() => setTab(t.key)}
                 className={`px-3.5 py-1.5 text-sm font-medium rounded-md transition-colors ${tab === t.key ? "bg-card text-brand-700 dark:text-brand-400 shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
