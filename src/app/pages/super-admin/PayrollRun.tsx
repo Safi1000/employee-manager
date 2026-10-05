@@ -116,7 +116,7 @@ export default function PayrollRun() {
   const load = async () => {
     setLoading(true); setErr(null);
     try {
-      const [{ data: cls }, { data: cons }, { data: catEmps }, { data: postedEmps }, { data: vers }, { data: phs }, { data: ps }, { data: rosterEmps }] = await Promise.all([
+      const [{ data: cls }, { data: cons }, { data: catEmps }, { data: postedEmps }, { data: vers }, { data: phs }, { data: ps }, { data: rosterEmps }, { data: halfVers }] = await Promise.all([
         // A client carries a branch, and a branch IS the region — so the region
         // selector narrows the client list here exactly as it does on Employee
         // Assignments. A client with no branch belongs to no region and stays
@@ -155,6 +155,8 @@ export default function PayrollRun() {
             .range(0, 9999),
           regionId,
         ),
+        // 0493: attendance is verified per half-month, HR -> Ops -> Finance.
+        supabase.from("attendance_half_verifications").select("client_id, category, half, finance_verified_at").eq("period_month", period),
       ]);
       // Which scope each of this month's payslips belongs to (client_id, else
       // `cat:<category>`). Resolved BEFORE the scope list is built, because the
@@ -220,8 +222,22 @@ export default function PayrollRun() {
       const cats = Array.from(new Set(((catEmps ?? []) as any[]).map((e) => e.category).filter(Boolean))).sort();
       const catScopes: Scope[] = cats.map((cat) => ({ key: `cat:${cat}`, name: catLabel(cat), clientId: null, category: cat, verifiable: cat !== "reliever" }));
       setScopes([...clientScopes, ...catScopes]);
-      setVerified(new Set(((vers ?? []) as any[]).map((v) => (v.client_id ?? `cat:${v.category}`))));
-      setVerifiedAt(new Map(((vers ?? []) as any[]).filter((v) => v.verified_at).map((v) => [(v.client_id ?? `cat:${v.category}`), v.verified_at as string])));
+      // A scope's month is cleared for payroll when BOTH halves are
+      // Finance-verified (0493), or it carries a pre-0493 monthly OPS
+      // verification. Same rule as attendance_month_cleared() in the database.
+      const clearedAt = new Map<string, string>();
+      for (const v of (vers ?? []) as any[]) if (v.verified_at) clearedAt.set(v.client_id ?? `cat:${v.category}`, v.verified_at);
+      const halvesByKey = new Map<string, string[]>();
+      for (const h of (halfVers ?? []) as any[]) {
+        if (!h.finance_verified_at) continue;
+        const k = h.client_id ?? `cat:${h.category}`;
+        halvesByKey.set(k, [...(halvesByKey.get(k) ?? []), h.finance_verified_at]);
+      }
+      for (const [k, ats] of halvesByKey) {
+        if (ats.length === 2 && !clearedAt.has(k)) clearedAt.set(k, ats.sort()[1]);
+      }
+      setVerified(new Set(clearedAt.keys()));
+      setVerifiedAt(clearedAt);
       setPhaseByKey(new Map(((phs ?? []) as any[]).map((p) => [(p.client_id ?? `cat:${p.category}`), p.phase as Phase])));
       setFinanceVerified(new Set(((phs ?? []) as any[]).filter((p) => p.finance_verified_at).map((p) => (p.client_id ?? `cat:${p.category}`))));
       setFinanceVerifiedAt(new Map(((phs ?? []) as any[]).filter((p) => p.finance_verified_at).map((p) => [(p.client_id ?? `cat:${p.category}`), p.finance_verified_at as string])));
@@ -393,9 +409,13 @@ export default function PayrollRun() {
   // Live OPS-verified check for one scope+month (re-queried at every transition).
   const isVerifiedNow = async (s: Scope): Promise<boolean> => {
     if (!s.verifiable) return true;
-    const q = supabase.from("attendance_month_verifications").select("id").eq("period_month", period);
-    const { data } = await (s.clientId ? q.eq("client_id", s.clientId) : q.eq("category", s.category as string)).maybeSingle();
-    return !!data;
+    const { data, error } = await supabase.rpc("attendance_month_cleared", {
+      p_client_id: s.clientId,
+      p_category: s.clientId ? null : s.category,
+      p_period_month: period,
+    });
+    if (error) throw new Error(error.message);
+    return data === true;
   };
 
   const moveToReview = async (s: Scope) => {
@@ -403,7 +423,7 @@ export default function PayrollRun() {
     // Rule 8: re-check OPS-verified status LIVE at every Draft → Review move.
     if (!(await isVerifiedNow(s))) {
       setBusyKey(null);
-      setErr(`${s.name} isn't OPS-verified for ${fmtMonth(month)} — verify OPS first.`);
+      setErr(`${s.name}'s attendance for ${fmtMonth(month)} isn't verified yet — both halves need HR, Ops and Finance verification on the Monthly Board.`);
       await load();
       return;
     }
@@ -628,11 +648,11 @@ export default function PayrollRun() {
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium text-foreground truncate">{s.name}</p>
                         {!s.verifiable ? (
-                          <p className="text-xs text-muted-foreground">Not OPS-gated (no attendance verification for this group)</p>
+                          <p className="text-xs text-muted-foreground">Not gated (no attendance verification for this group)</p>
                         ) : ok ? (
-                          <p className="text-xs text-success-700 dark:text-success-500 flex items-center gap-1"><ShieldCheck className="w-3.5 h-3.5" /> OPS-verified for {fmtMonth(month)}{verifiedAt.get(s.key) ? ` · ${fmtStamp(verifiedAt.get(s.key))}` : ""}</p>
+                          <p className="text-xs text-success-700 dark:text-success-500 flex items-center gap-1"><ShieldCheck className="w-3.5 h-3.5" /> Attendance verified for {fmtMonth(month)}{verifiedAt.get(s.key) ? ` · ${fmtStamp(verifiedAt.get(s.key))}` : ""}</p>
                         ) : (
-                          <p className="text-xs text-warning-700 dark:text-warning-500 flex items-center gap-1"><ShieldAlert className="w-3.5 h-3.5" /> Verify OPS first — not verified for {fmtMonth(month)}</p>
+                          <p className="text-xs text-warning-700 dark:text-warning-500 flex items-center gap-1"><ShieldAlert className="w-3.5 h-3.5" /> Attendance not verified for {fmtMonth(month)} — both halves need HR, Ops and Finance</p>
                         )}
                       </div>
                       {ok ? (
@@ -688,7 +708,7 @@ export default function PayrollRun() {
                           <span className="min-w-0">
                             <span className="text-sm font-medium text-foreground truncate block">{s.name}</span>
                             {verifiedAt.get(s.key) && (
-                              <span className="text-[11px] text-muted-foreground block">OPS verified: {fmtStamp(verifiedAt.get(s.key))}</span>
+                              <span className="text-[11px] text-muted-foreground block">Attendance verified: {fmtStamp(verifiedAt.get(s.key))}</span>
                             )}
                           </span>
                           {/* Rule 10: OPS verification revoked while past Draft — warn, don't auto-revert. */}
@@ -744,7 +764,7 @@ export default function PayrollRun() {
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-foreground truncate">{s.name}</p>
                       {verifiedAt.get(s.key) && (
-                        <p className="text-[11px] text-muted-foreground">OPS verified: {fmtStamp(verifiedAt.get(s.key))}</p>
+                        <p className="text-[11px] text-muted-foreground">Attendance verified: {fmtStamp(verifiedAt.get(s.key))}</p>
                       )}
                       {locked && financeVerifiedAt.get(s.key) && (
                         <p className="text-[11px] text-success-700 dark:text-success-500">Finance verified: {fmtStamp(financeVerifiedAt.get(s.key))}</p>

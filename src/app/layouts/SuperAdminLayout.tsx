@@ -222,10 +222,14 @@ export default function SuperAdminLayout() {
   // WORKFORCE — Payroll now hosts Runs as a tab; Relievers is one thin panel
   // (per-day cost nets against the client, separate from salaried Payroll).
   // Recruitment removed; Performance hidden (route kept, just not in the nav).
+  // HR — attendance belongs to HR (2026-10-05): HR verifies each half-month
+  // board first, then Ops, then Finance (0493).
+  const hr = buildGroup("HR", "/super-admin/hr", [ATTENDANCE]);
+  if (hr) links.push(hr);
+
   const workforce = buildGroup("Workforce", "/super-admin/workforce", [
     EMPLOYEES,
     ASSIGNMENTS,
-    ATTENDANCE,
     PAYROLL,
     PAYROLL_RUN,
     RELIEVERS,

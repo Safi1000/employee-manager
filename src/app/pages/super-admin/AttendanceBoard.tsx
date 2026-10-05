@@ -201,6 +201,8 @@ export default function AttendanceBoard() {
   // Bulk Mark by Employee (calendar) — same permission gate as the Relievers tab.
   const canBulk = hasPermission(profile, "attendance.bulk_mark");
   const canOpsVerify = hasPermission(profile, "attendance.ops_verify");
+  const canHrVerify = hasPermission(profile, "attendance.hr_verify");
+  const canFinanceVerify = hasPermission(profile, "attendance.finance_verify");
   const [bulkOpen, setBulkOpen] = useState(false);
 
   const load = async () => {
@@ -1101,6 +1103,8 @@ export default function AttendanceBoard() {
           siteName={sheetView.siteName}
           companyId={company?.id ?? null}
           canOpsVerify={canOpsVerify}
+          canHrVerify={canHrVerify}
+          canFinanceVerify={canFinanceVerify}
           currentUserId={profile?.id ?? null}
           currentUserRole={profile?.role ?? null}
           onClose={() => setSheetView(null)}
