@@ -19,6 +19,7 @@ import Button from "../../components/Button";
 import { supabase, friendlyDbError } from "../../lib/supabase";
 import { useAuth, hasPermission } from "../../lib/auth";
 import { formatDate } from "../../lib/date";
+import { usePageState } from "../../lib/pageState";
 
 const FIELD = "w-full px-3 py-2 border border-border rounded-md text-sm bg-background";
 const monthLabel = (d: string) => new Date(d + "T00:00:00").toLocaleString("en", { month: "long", year: "numeric" });
@@ -42,7 +43,7 @@ export default function LeaveBalances() {
   const [selected, setSelected] = useState("");
   const [ledger, setLedger] = useState<LedgerRow[]>([]);
   const [lost, setLost] = useState<Lost[]>([]);
-  const [lostPeriod, setLostPeriod] = useState(new Date().toISOString().slice(0, 7));
+  const [lostPeriod, setLostPeriod] = usePageState("LeaveBalances.lostPeriod", new Date().toISOString().slice(0, 7));
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);

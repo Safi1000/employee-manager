@@ -10,6 +10,7 @@ import { useRegion } from "../../lib/region";
 import { formatDate } from "../../lib/date";
 import { generateDailyOperationsReportPdf } from "../../lib/dailyReportPdf";
 import { describeUnconfirmed, loadAttendanceSummary, type AttendanceSummary } from "../../lib/attendanceSummary";
+import { usePageState } from "../../lib/pageState";
 
 // Operations ▸ Daily Reports. One row per ACTIVE CLIENT for a chosen day, each
 // with a free-text Details box; the branded PDF is built straight from those two
@@ -115,12 +116,12 @@ export default function FieldOps() {
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState<Tab>("reports");
+  const [tab, setTab] = usePageState<Tab>("FieldOps.tab", "reports");
 
-  const [date, setDate] = useState(todayIso());
+  const [date, setDate] = usePageState("FieldOps.date", todayIso());
   // Page-level region filter, seeded from the app-wide selector. A user pinned
   // to one region cannot widen it — the page filter narrows, it never grants.
-  const [regionFilter, setRegionFilter] = useState<string | null>(globalRegionId);
+  const [regionFilter, setRegionFilter] = usePageState<string | null>("FieldOps.regionFilter", globalRegionId);
   useEffect(() => { setRegionFilter(globalRegionId); }, [globalRegionId]);
 
   const [clients, setClients] = useState<ClientRow[]>([]);

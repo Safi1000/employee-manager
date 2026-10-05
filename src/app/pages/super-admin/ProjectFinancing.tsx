@@ -6,6 +6,7 @@ import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
+import { usePageState } from "../../lib/pageState";
 
 const fmt = (n: number) => `PKR ${Math.round(n).toLocaleString()}`;
 const today = () => new Date().toISOString().slice(0, 10);
@@ -73,7 +74,7 @@ export default function ProjectFinancing() {
   const { profile } = useAuth();
   const companyId = profile?.view_as_company ?? profile?.company_id ?? null;
 
-  const [tab, setTab] = useState<"projects" | "investors" | "ledger">("projects");
+  const [tab, setTab] = usePageState<"projects" | "investors" | "ledger">("ProjectFinancing.tab", "projects");
   const [clients, setClients] = useState<Client[]>([]);
   const [partners, setPartners] = useState<Partner[]>([]);
   const [cashLocs, setCashLocs] = useState<CashLocation[]>([]);
@@ -83,7 +84,7 @@ export default function ProjectFinancing() {
   const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [expandedProject, setExpandedProject] = useState<string | null>(null);
+  const [expandedProject, setExpandedProject] = usePageState<string | null>("ProjectFinancing.expandedProject", null);
 
   // Ledger tab filters
   const [ledgerProjectId, setLedgerProjectId] = useState<string>("");

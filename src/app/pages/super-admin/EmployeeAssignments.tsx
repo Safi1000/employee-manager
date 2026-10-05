@@ -78,6 +78,7 @@ import {
   ShiftChangeHistory,
   type EmployeeRow,
 } from "./EmployeeManagement";
+import { usePageState } from "../../lib/pageState";
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 const daysInCurrentMonth = () => {
@@ -270,16 +271,16 @@ export default function EmployeeAssignments() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePageState("EmployeeAssignments.search", "");
   /** Per-client search (keyed by group key) — filters that client's sites + people. */
-  const [groupSearch, setGroupSearch] = useState<Record<string, string>>({});
+  const [groupSearch, setGroupSearch] = usePageState<Record<string, string>>("EmployeeAssignments.groupSearch", {});
   // Show separated staff instead of active ones. Off by default.
   const [showFired, setShowFired] = useState(false);
   const [onlyMismatch, setOnlyMismatch] = useState(false);
   const [showServicesClients, setShowServicesClients] = useState(false);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [expanded, setExpanded] = usePageState<Set<string>>("EmployeeAssignments.expanded", new Set());
   /** Expanded site rows inside a client card, keyed `${groupKey}|${siteId}`. */
-  const [openSites, setOpenSites] = useState<Set<string>>(new Set());
+  const [openSites, setOpenSites] = usePageState<Set<string>>("EmployeeAssignments.openSites", new Set());
   const toggleSite = (k: string) =>
     setOpenSites((prev) => {
       const next = new Set(prev);

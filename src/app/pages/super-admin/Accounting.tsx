@@ -43,6 +43,7 @@ import { CashCustodyPanel } from "./CashCustody";
 import { generateDepositSlipPdf } from "../../lib/depositSlip";
 import { loadCustodianOptions, ensureCustodianLocation, type CustodianOption } from "../../lib/custodian";
 import AmountInWords from "../../components/AmountInWords";
+import { usePageState } from "../../lib/pageState";
 
 type PayableRow = Expense & {
   vendor?: Vendor | null;
@@ -186,11 +187,11 @@ export default function Accounting() {
   }[]>([]);
   const [chequeViewAttachmentUrl, setChequeViewAttachmentUrl] = useState<string | null>(null);
   const [chequeSubmitting, setChequeSubmitting] = useState(false);
-  const [chequeFilter, setChequeFilter] = useState<"all" | "pending" | "cleared" | "bounced">("all");
+  const [chequeFilter, setChequeFilter] = usePageState<"all" | "pending" | "cleared" | "bounced">("Accounting.chequeFilter", "all");
   // Which record type the Cheques section shows: cheques or cash deposits.
   const [chequeSectionView, setChequeSectionView] = useState<"cheques" | "deposits">("cheques");
-  const [chequeBankFilter, setChequeBankFilter] = useState<string>("all");
-  const [chequeMonthFilter, setChequeMonthFilter] = useState<string>("all");
+  const [chequeBankFilter, setChequeBankFilter] = usePageState<string>("Accounting.chequeBankFilter", "all");
+  const [chequeMonthFilter, setChequeMonthFilter] = usePageState<string>("Accounting.chequeMonthFilter", "all");
 
   // --- Drill-down from the Journal ----------------------------------------
   //
@@ -214,18 +215,18 @@ export default function Accounting() {
   const [receivables, setReceivables] = useState<ReceivableRow[]>([]);
   const [allClientsForRec, setAllClientsForRec] = useState<Client[]>([]);
   const [allInvoicesForRec, setAllInvoicesForRec] = useState<Invoice[]>([]);
-  const [payableStatusFilter, setPayableStatusFilter] = useState<"all" | "pending" | "paid" | "overdue">("all");
+  const [payableStatusFilter, setPayableStatusFilter] = usePageState<"all" | "pending" | "paid" | "overdue">("Accounting.payableStatusFilter", "all");
   const currentMonthKey = () => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   };
-  const [receivablesMonth, setReceivablesMonth] = useState<string>(currentMonthKey());
-  const [receivablesBranchFilter, setReceivablesBranchFilter] = useState<string>("all");
-  const [receivablesClientFilter, setReceivablesClientFilter] = useState<string>("all");
-  const [receivablesSearch, setReceivablesSearch] = useState<string>("");
+  const [receivablesMonth, setReceivablesMonth] = usePageState<string>("Accounting.receivablesMonth", currentMonthKey());
+  const [receivablesBranchFilter, setReceivablesBranchFilter] = usePageState<string>("Accounting.receivablesBranchFilter", "all");
+  const [receivablesClientFilter, setReceivablesClientFilter] = usePageState<string>("Accounting.receivablesClientFilter", "all");
+  const [receivablesSearch, setReceivablesSearch] = usePageState<string>("Accounting.receivablesSearch", "");
   const [branchesList, setBranchesList] = useState<{ id: string; name: string }[]>([]);
-  const [payablesMonth, setPayablesMonth] = useState<string>(currentMonthKey());
-  const [txLogMonth, setTxLogMonth] = useState<string>("all");
+  const [payablesMonth, setPayablesMonth] = usePageState<string>("Accounting.payablesMonth", currentMonthKey());
+  const [txLogMonth, setTxLogMonth] = usePageState<string>("Accounting.txLogMonth", "all");
   // Bounded by the ledger's own start, not by a fixed count of months back
   // from today. See src/app/lib/monthRange.ts.
   const [ledgerStart, setLedgerStart] = useState<string | null>(null);
@@ -250,7 +251,7 @@ export default function Accounting() {
   const [isLogModalOpen, setIsLogModalOpen] = useState(false);
   const [isReceivablesLogOpen, setIsReceivablesLogOpen] = useState(false);
   const [isPayablesLogOpen, setIsPayablesLogOpen] = useState(false);
-  const [logBankFilter, setLogBankFilter] = useState<string>("all");
+  const [logBankFilter, setLogBankFilter] = usePageState<string>("Accounting.logBankFilter", "all");
   const [logScope, setLogScope] = useState<"all" | "cash" | "account">("all");
   // Bank statement export modal
   const [isBankExportOpen, setIsBankExportOpen] = useState(false);

@@ -59,6 +59,7 @@ import {
 } from "../../lib/validation";
 import { useAuth, hasPermission } from "../../lib/auth";
 import { useRegion, withRegion } from "../../lib/region";
+import { usePageState } from "../../lib/pageState";
 
 type ClientRow = Client & {
   employees_count: number;
@@ -209,14 +210,14 @@ export default function Clients() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("active");
-  const [industryFilter, setIndustryFilter] = useState("all");
+  const [search, setSearch] = usePageState("Clients.search", "");
+  const [statusFilter, setStatusFilter] = usePageState<"all" | "active" | "inactive">("Clients.statusFilter", "active");
+  const [industryFilter, setIndustryFilter] = usePageState("Clients.industryFilter", "all");
 
   const [addOpen, setAddOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [detailRow, setDetailRow] = useState<ClientRow | null>(null);
-  const [detailTab, setDetailTab] = useState<"overview" | "contracts" | "invoices" | "documents">("overview");
+  const [detailTab, setDetailTab] = usePageState<"overview" | "contracts" | "invoices" | "documents">("Clients.detailTab", "overview");
 
   const [form, setForm] = useState<ClientForm>(emptyForm);
   const [submitting, setSubmitting] = useState(false);

@@ -9,6 +9,7 @@ import {
   LIFECYCLE_STATE_LABEL,
   type Branch,
 } from "../../lib/supabase";
+import { usePageState } from "../../lib/pageState";
 
 // Part IV — Performance & Rewards (§14 KPI, §15 Appraisal, §16 Bonus Pools) plus
 // §17 Guard Bonuses, on one tabbed page. Every gated action is enforced by its
@@ -42,7 +43,7 @@ export default function Performance() {
   // is a pending follow-up (see 0313 recommendation) — this is FE-only for now.
   const canApprovePerf = hasPermission(profile, "performance.approve");
   const companyId = company?.id ?? "";
-  const [tab, setTab] = useState<Tab>("kpis");
+  const [tab, setTab] = usePageState<Tab>("Performance.tab", "kpis");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -54,7 +55,7 @@ export default function Performance() {
   const [allocations, setAllocations] = useState<any[]>([]);
   const [guardBonuses, setGuardBonuses] = useState<any[]>([]);
 
-  const [year, setYear] = useState(new Date().getFullYear());
+  const [year, setYear] = usePageState("Performance.year", new Date().getFullYear());
 
   const load = useCallback(async () => {
     const [emp, br, kpi, app, pl, al, gb] = await Promise.all([
@@ -458,7 +459,7 @@ function GuardBonusTab({
 }) {
   const { profile } = useAuth();
   const canApprovePerf = hasPermission(profile, "performance.approve");
-  const [attMonth, setAttMonth] = useState(thisMonthStart());
+  const [attMonth, setAttMonth] = usePageState("Performance.attMonth", thisMonthStart());
   const [attAmount, setAttAmount] = useState("");
   const [eidDate, setEidDate] = useState(new Date().toISOString().slice(0, 10));
   const [eidAmount, setEidAmount] = useState("");

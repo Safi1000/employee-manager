@@ -1,5 +1,6 @@
-import { type ReactNode } from "react";
-import { useSearchParams } from "react-router";
+import { type ReactNode, useEffect } from "react";
+import { useLocation, useSearchParams } from "react-router";
+import { pageMemory } from "../../lib/pageState";
 
 // Lightweight tabbed container used by the consolidation restructure to present
 // several previously-separate panels as one home (UI-level merge; underlying
@@ -16,11 +17,17 @@ export default function TabHub({
   defaultTab?: string;
 }) {
   const [params, setParams] = useSearchParams();
-  const requested = params.get("tab");
+  const { pathname } = useLocation();
+  // The URL names the tab when it can (?tab=…, deep links). A plain link to the
+  // page — the sidebar — carries none, so fall back to the tab last used here
+  // this session (2026-10-05, app-wide persistent state).
+  const remembered = pageMemory.get<string>(`tabhub:${pathname}`);
+  const requested = params.get("tab") ?? remembered;
   const active =
     tabs.find((t) => t.key === requested)?.key ??
     defaultTab ??
     tabs[0]?.key;
+  useEffect(() => { if (active) pageMemory.set(`tabhub:${pathname}`, active); }, [pathname, active]);
 
   // The layout shell is a `flex flex-col overflow-hidden` column, and each child
   // page scrolls itself via `flex-1 overflow-y-auto`. This container has to keep

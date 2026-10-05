@@ -44,6 +44,7 @@ import { useAuth, hasPermission } from "../../lib/auth";
 import { fetchLedgerStart, monthKeysFrom } from "../../lib/monthRange";
 import { loadCustodianOptions, ensureCustodianLocation, type CustodianOption } from "../../lib/custodian";
 import AmountInWords from "../../components/AmountInWords";
+import { usePageState } from "../../lib/pageState";
 
 const PIE_COLORS = CHART_COLORS;
 
@@ -395,7 +396,7 @@ export default function Expenses() {
   const treasuryCompanyId = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
 
   const { regionId } = useRegion();
-  const [activeTab, setActiveTab] = useState<"expenses" | "fixed" | "advances" | "deferred">("expenses");
+  const [activeTab, setActiveTab] = usePageState<"expenses" | "fixed" | "advances" | "deferred">("Expenses.activeTab", "expenses");
   // 0401. "What is sitting in prepaid and when does it clear" is a LIST
   // question, not a fact about one expense, so it gets a tab rather than a
   // section on a detail screen. The 1160 balance belongs in the financial
@@ -421,7 +422,7 @@ export default function Expenses() {
     return Number(c.amount) - used + excludeOwnAmount;
   };
   const [branches, setBranches] = useState<Branch[]>([]);
-  const [advBranchFilter, setAdvBranchFilter] = useState("all");
+  const [advBranchFilter, setAdvBranchFilter] = usePageState("Expenses.advBranchFilter", "all");
   const [cashBalance, setCashBalance] = useState(0);
   // Office-staff custodians + their held cash — for attributing cash expenses (0135).
   const [custodians, setCustodians] = useState<CustodianOption[]>([]);
@@ -451,27 +452,27 @@ export default function Expenses() {
   const [advEditEmpSearch, setAdvEditEmpSearch] = useState("");
   const [advEditFile, setAdvEditFile] = useState<File | null>(null);
 
-  const [advSearch, setAdvSearch] = useState("");
-  const [advClientFilter, setAdvClientFilter] = useState<string>("all");
-  const [advModeFilter, setAdvModeFilter] = useState<"all" | "Cash" | "Bank" | "Cheque">("all");
+  const [advSearch, setAdvSearch] = usePageState("Expenses.advSearch", "");
+  const [advClientFilter, setAdvClientFilter] = usePageState<string>("Expenses.advClientFilter", "all");
+  const [advModeFilter, setAdvModeFilter] = usePageState<"all" | "Cash" | "Bank" | "Cheque">("Expenses.advModeFilter", "all");
   // "Paid By" filters — which office-staff custodian's cash the money came from.
-  const [advPaidByFilter, setAdvPaidByFilter] = useState<"all" | "none" | string>("all");
-  const [fixedPaidByFilter, setFixedPaidByFilter] = useState<"all" | "none" | string>("all");
+  const [advPaidByFilter, setAdvPaidByFilter] = usePageState<"all" | "none" | string>("Expenses.advPaidByFilter", "all");
+  const [fixedPaidByFilter, setFixedPaidByFilter] = usePageState<"all" | "none" | string>("Expenses.fixedPaidByFilter", "all");
 
   const currentMonthKey = () => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   };
 
-  const [search, setSearch] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("all");
-  const [clientFilter, setClientFilter] = useState<"all" | "office" | string>("all");
-  const [modeFilter, setModeFilter] = useState<"all" | ExpensePaymentMode>("all");
+  const [search, setSearch] = usePageState("Expenses.search", "");
+  const [categoryFilter, setCategoryFilter] = usePageState("Expenses.categoryFilter", "all");
+  const [clientFilter, setClientFilter] = usePageState<"all" | "office" | string>("Expenses.clientFilter", "all");
+  const [modeFilter, setModeFilter] = usePageState<"all" | ExpensePaymentMode>("Expenses.modeFilter", "all");
   // "Expense By" — narrows the list (and the category totals / pie above it) to
   // one office-staff member, so spend can be read person by person.
-  const [expenseByFilter, setExpenseByFilter] = useState<"all" | "none" | string>("all");
-  const [monthFilter, setMonthFilter] = useState<string>(currentMonthKey());
-  const [advMonthFilter, setAdvMonthFilter] = useState<string>(currentMonthKey());
+  const [expenseByFilter, setExpenseByFilter] = usePageState<"all" | "none" | string>("Expenses.expenseByFilter", "all");
+  const [monthFilter, setMonthFilter] = usePageState<string>("Expenses.monthFilter", currentMonthKey());
+  const [advMonthFilter, setAdvMonthFilter] = usePageState<string>("Expenses.advMonthFilter", currentMonthKey());
 
   // --- Drill-down from the Journal ----------------------------------------
   //
@@ -532,7 +533,7 @@ export default function Expenses() {
   // ----- Fixed (recurring monthly) expenses -----
   const [fixedExpenses, setFixedExpenses] = useState<FixedExpense[]>([]);
   const [fixedInstances, setFixedInstances] = useState<FixedInstance[]>([]);
-  const [fixedMonth, setFixedMonth] = useState<string>(thisMonthKey());
+  const [fixedMonth, setFixedMonth] = usePageState<string>("Expenses.fixedMonth", thisMonthKey());
   const [isFixedFormOpen, setIsFixedFormOpen] = useState(false);
   const [fixedEditingId, setFixedEditingId] = useState<string | null>(null);
   const [fixedForm, setFixedForm] = useState<FixedForm>(emptyFixedForm);
@@ -821,7 +822,7 @@ export default function Expenses() {
   // Pending / Approved split of the list. The category totals above it stay on
   // `filtered` (both states) — the tabs change what you work through, not what
   // was spent.
-  const [approvalView, setApprovalView] = useState<"pending" | "approved" | "requests">("approved");
+  const [approvalView, setApprovalView] = usePageState<"pending" | "approved" | "requests">("Expenses.approvalView", "approved");
   const pendingRows = useMemo(() => filtered.filter((e) => !e.approved_at), [filtered]);
   const approvedRows = useMemo(() => filtered.filter((e) => !!e.approved_at), [filtered]);
   const shown = approvalView === "pending" ? pendingRows : approvedRows;

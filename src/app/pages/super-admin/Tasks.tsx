@@ -17,6 +17,7 @@ import {
   type Profile,
 } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
+import { usePageState } from "../../lib/pageState";
 
 const STATUSES: TaskStatus[] = ["todo", "in_progress", "done"];
 
@@ -56,7 +57,7 @@ export default function Tasks() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
+  const [assigneeFilter, setAssigneeFilter] = usePageState<string>("Tasks.assigneeFilter", "all");
 
   // Where THIS user's task alerts go. 0418 put it on `profiles` rather than on
   // a task, because the address belongs to the person: one place to set it, one

@@ -24,6 +24,7 @@ import BoardRemarks from "../../components/BoardRemarks";
 import AttendanceSheetModal from "../../components/AttendanceSheetModal";
 import { supabase } from "../../lib/supabase";
 import { useAuth, hasPermission } from "../../lib/auth";
+import { usePageState } from "../../lib/pageState";
 
 type Half = 1 | 2;
 
@@ -70,12 +71,12 @@ export default function AttendanceRun() {
   const canHr = hasPermission(profile, "attendance.hr_verify");
 
   // Opens on the previous month — the one being verified (asked 2026-10-05).
-  const [month, setMonth] = useState(previousMonth());
-  const [tab, setTab] = useState<"review" | "verified">("review");
+  const [month, setMonth] = usePageState("AttendanceRun.month", previousMonth());
+  const [tab, setTab] = usePageState<"review" | "verified">("AttendanceRun.tab", "review");
   const [scopes, setScopes] = useState<Scope[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePageState("AttendanceRun.search", "");
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   // Send-back form: which scope, which halves, and the remark.

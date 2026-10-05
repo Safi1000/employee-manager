@@ -45,6 +45,7 @@ import {
   ClipboardList,
   ClipboardCheck,
 } from "lucide-react";
+import { ScrollMemory } from "../lib/pageState";
 
 type LinkDef = {
   to: string;
@@ -356,9 +357,12 @@ export default function SuperAdminLayout() {
             </>
           )}
         </TopBar>
-        <Suspense fallback={<RouteLoading />}>
-          <Outlet />
-        </Suspense>
+        {/* Remembers each page's scroll position for the session (pageState.tsx). */}
+        <ScrollMemory>
+          <Suspense fallback={<RouteLoading />}>
+            <Outlet />
+          </Suspense>
+        </ScrollMemory>
       </div>
       <AiChatWidget />
       <InactivityLogout />

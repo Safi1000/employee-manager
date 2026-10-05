@@ -33,6 +33,7 @@ import {
 } from "../../lib/supabase";
 import { guardDisplayCode } from "../../lib/guardCode";
 import { useAuth } from "../../lib/auth";
+import { usePageState } from "../../lib/pageState";
 
 type IncidentRow = Incident & {
   client_name: string | null;
@@ -93,10 +94,10 @@ export default function Incidents() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [search, setSearch] = useState("");
-  const [severityFilter, setSeverityFilter] = useState<"all" | IncidentSeverity>("all");
-  const [statusFilter, setStatusFilter] = useState<"all" | IncidentStatus>("all");
-  const [clientFilter, setClientFilter] = useState<string>("all");
+  const [search, setSearch] = usePageState("Incidents.search", "");
+  const [severityFilter, setSeverityFilter] = usePageState<"all" | IncidentSeverity>("Incidents.severityFilter", "all");
+  const [statusFilter, setStatusFilter] = usePageState<"all" | IncidentStatus>("Incidents.statusFilter", "all");
+  const [clientFilter, setClientFilter] = usePageState<string>("Incidents.clientFilter", "all");
 
   const [addOpen, setAddOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<IncidentRow | null>(null);

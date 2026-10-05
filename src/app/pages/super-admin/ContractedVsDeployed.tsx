@@ -15,6 +15,7 @@ import { Loader2 } from "lucide-react";
 import ExportButton from "../../components/ExportButton";
 import { exportTable } from "../../lib/excel";
 import { supabase, fetchAllRows, isPersonnelCategory, type ContractLineCategory } from "../../lib/supabase";
+import { usePageState } from "../../lib/pageState";
 
 const monthKeyFromDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 const prevMonth = () => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return monthKeyFromDate(d); };
@@ -22,7 +23,7 @@ const prevMonth = () => { const d = new Date(); d.setDate(1); d.setMonth(d.getMo
 type Row = { client_id: string; client_name: string; contracted: number; deployed: number; cost: number };
 
 export default function ContractedVsDeployed() {
-  const [month, setMonth] = useState(prevMonth());
+  const [month, setMonth] = usePageState("ContractedVsDeployed.month", prevMonth());
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

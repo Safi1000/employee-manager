@@ -6,6 +6,7 @@ import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
+import { usePageState } from "../../lib/pageState";
 
 const fmt = (n: number) => `PKR ${Math.round(n).toLocaleString()}`;
 const today = () => new Date().toISOString().slice(0, 10);
@@ -44,7 +45,7 @@ export default function ProfitDistribution() {
   const { profile } = useAuth();
   const companyId = profile?.view_as_company ?? profile?.company_id ?? null;
 
-  const [tab, setTab] = useState<"rules" | "referrals">("rules");
+  const [tab, setTab] = usePageState<"rules" | "referrals">("ProfitDistribution.tab", "rules");
   const [partners, setPartners] = useState<Partner[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -53,7 +54,7 @@ export default function ProfitDistribution() {
   const [referrals, setReferrals] = useState<ReferralArrangement[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [expandedRule, setExpandedRule] = useState<string | null>(null);
+  const [expandedRule, setExpandedRule] = usePageState<string | null>("ProfitDistribution.expandedRule", null);
 
   // Add/Edit Rule modal
   const [isRuleOpen, setIsRuleOpen] = useState(false);

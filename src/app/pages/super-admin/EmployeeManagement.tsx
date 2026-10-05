@@ -75,6 +75,7 @@ import {
   validateBankAccountLength,
 } from "../../lib/validation";
 import { useAuth, hasPermission } from "../../lib/auth";
+import { usePageState } from "../../lib/pageState";
 
 // Rows painted per page of the roster list. See renderEmployeeList.
 const EMPLOYEE_PAGE_SIZE = 50;
@@ -855,36 +856,36 @@ export default function EmployeeManagement() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [search, setSearch] = useState("");
-  const [clientFilter, setClientFilter] = useState("all");
-  const [categoryFilter, setCategoryFilter] = useState<"all" | EmployeeCategory>("all");
-  const [shiftFilter, setShiftFilter] = useState<"all" | "day" | "night" | "evening">("all");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [search, setSearch] = usePageState("EmployeeManagement.search", "");
+  const [clientFilter, setClientFilter] = usePageState("EmployeeManagement.clientFilter", "all");
+  const [categoryFilter, setCategoryFilter] = usePageState<"all" | EmployeeCategory>("EmployeeManagement.categoryFilter", "all");
+  const [shiftFilter, setShiftFilter] = usePageState<"all" | "day" | "night" | "evening">("EmployeeManagement.shiftFilter", "all");
+  const [statusFilter, setStatusFilter] = usePageState("EmployeeManagement.statusFilter", "all");
   // Profile completeness (all required fields filled) filter.
-  const [completenessFilter, setCompletenessFilter] = useState<"all" | "complete" | "incomplete">("all");
+  const [completenessFilter, setCompletenessFilter] = usePageState<"all" | "complete" | "incomplete">("EmployeeManagement.completenessFilter", "all");
   // §12 recruitment pipeline / lifecycle-state filter.
-  const [lifecycleFilter, setLifecycleFilter] = useState<"all" | EmployeeLifecycleState>("all");
+  const [lifecycleFilter, setLifecycleFilter] = usePageState<"all" | EmployeeLifecycleState>("EmployeeManagement.lifecycleFilter", "all");
   // Show only employees whose CNIC card has expired.
-  const [expiredCardFilter, setExpiredCardFilter] = useState<"all" | "expired">("all");
-  const [dupCnicFilter, setDupCnicFilter] = useState<"all" | "duplicate">("all");
+  const [expiredCardFilter, setExpiredCardFilter] = usePageState<"all" | "expired">("EmployeeManagement.expiredCardFilter", "all");
+  const [dupCnicFilter, setDupCnicFilter] = usePageState<"all" | "duplicate">("EmployeeManagement.dupCnicFilter", "all");
   // Records missing a mandatory identity field (CNIC and/or Join Date). Driven
   // by the headline tile, which doubles as the toggle.
-  const [missingKeyFilter, setMissingKeyFilter] = useState<"all" | "missing">("all");
+  const [missingKeyFilter, setMissingKeyFilter] = usePageState<"all" | "missing">("EmployeeManagement.missingKeyFilter", "all");
   // Quick Active / Inactive tab split (Inactive = anything not currently Active).
   // Roster tabs. These are lifecycle buckets, not status filters: Active is who
   // is on the books now, Waiting List is everyone who COULD be put on a posting
   // (past leavers still eligible for rehire, plus never-hired candidates), and
   // Terminated is the hard exits — separated and explicitly not rehireable, plus
   // archived records, which are a dead end by definition.
-  const [empTab, setEmpTab] = useState<"active" | "waitlist" | "terminated">("active");
+  const [empTab, setEmpTab] = usePageState<"active" | "waitlist" | "terminated">("EmployeeManagement.empTab", "active");
   // Which half of the Waiting List is showing. Two sub-tabs rather than two
   // stacked lists: the rehire list is usually the longer of the two, and
   // stacking buried the fresh candidates below it.
-  const [waitlistTab, setWaitlistTab] = useState<"rehire" | "fresh">("rehire");
+  const [waitlistTab, setWaitlistTab] = usePageState<"rehire" | "fresh">("EmployeeManagement.waitlistTab", "rehire");
   const [filtersOpen, setFiltersOpen] = useState(false);
   // Sort by the NUMERIC part of the client-prefixed display code (= display_number
   // integer column). null = default load order (newest-first); asc = 001 first.
-  const [sortDir, setSortDir] = useState<null | "asc" | "desc">(null);
+  const [sortDir, setSortDir] = usePageState<null | "asc" | "desc">("EmployeeManagement.sortDir", null);
   const activeFilterCount =
     (clientFilter !== "all" ? 1 : 0) +
     (categoryFilter !== "all" ? 1 : 0) +

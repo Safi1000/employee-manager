@@ -15,6 +15,7 @@ import { useAuth } from "../../lib/auth";
 import { loadCustodianOptions } from "../../lib/custodian";
 import { formatDate } from "../../lib/date";
 import { lifecycleStatusLabel } from "../../lib/employmentWindow";
+import { usePageState } from "../../lib/pageState";
 
 /**
  * My Profile — the self-view a user gets by being LINKED to one employee
@@ -161,7 +162,7 @@ export default function MyProfile() {
 
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
-  const [month, setMonth] = useState(monthNow());
+  const [month, setMonth] = usePageState("MyProfile.month", monthNow());
 
   const [emp, setEmp] = useState<EmployeeRow | null>(null);
   const [payslips, setPayslips] = useState<PayslipRow[]>([]);

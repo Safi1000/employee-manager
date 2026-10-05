@@ -5,6 +5,7 @@ import Header from "../../components/Header";
 import Button from "../../components/Button";
 import { useAuth } from "../../lib/auth";
 import { supabase, type Branch } from "../../lib/supabase";
+import { usePageState } from "../../lib/pageState";
 
 // Treasury & Regional Finance — the read/act surface over the finance backend:
 // §9 cash cockpit / reserves / danger / forecast, §6 regional P&L + HO cost
@@ -43,7 +44,7 @@ export default function Treasury() {
   const [forecast, setForecast] = useState<any[]>([]);
   const [capital, setCapital] = useState<any[]>([]);
   const [custody, setCustody] = useState<any[]>([]);
-  const [period, setPeriod] = useState(thisMonthStart());
+  const [period, setPeriod] = usePageState("Treasury.period", thisMonthStart());
 
   const load = useCallback(async () => {
     if (!companyId) return;

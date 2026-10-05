@@ -4,6 +4,7 @@ import Header from "../../components/Header";
 import Button from "../../components/Button";
 import { useAuth } from "../../lib/auth";
 import { supabase } from "../../lib/supabase";
+import { usePageState } from "../../lib/pageState";
 
 // §2 governance surface: the approval-workflow engine (pending requests +
 // decisions, all logged) and department assignment for salaried staff.
@@ -16,7 +17,7 @@ const DEPARTMENTS = ["operations", "compliance", "hr", "finance", "client_manage
 export default function Governance() {
   const { company } = useAuth();
   const companyId = company?.id ?? "";
-  const [tab, setTab] = useState<Tab>("approvals");
+  const [tab, setTab] = usePageState<Tab>("Governance.tab", "approvals");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 

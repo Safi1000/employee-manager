@@ -13,6 +13,7 @@ import {
 } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
 import { useRegion } from "../../lib/region";
+import { usePageState } from "../../lib/pageState";
 
 // TRIAL BALANCE
 //
@@ -63,7 +64,7 @@ export default function TrialBalance() {
   const [periods, setPeriods] = useState<string[]>([]);
   // "" means every period — the cumulative balance, which is what the check
   // suite compares. A specific period narrows to that month's movement.
-  const [period, setPeriod] = useState<string>("");
+  const [period, setPeriod] = usePageState<string>("TrialBalance.period", "");
   const [closedPeriods, setClosedPeriods] = useState<Set<string>>(new Set());
   const [hideZero, setHideZero] = useState(true);
   const [loading, setLoading] = useState(true);

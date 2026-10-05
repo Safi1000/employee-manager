@@ -16,6 +16,7 @@ import { guardDisplayCode } from "../../lib/guardCode";
 import { useAuth, hasPermission } from "../../lib/auth";
 import { saveBlob } from "../../lib/saveFile";
 import { openExternal } from "../../lib/openExternal";
+import { usePageState } from "../../lib/pageState";
 
 type EmployeeRow = Employee & {
   location_name: string | null;
@@ -51,9 +52,9 @@ export default function Documents() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [search, setSearch] = useState("");
-  const [clientFilter, setClientFilter] = useState("all");
-  const [shiftFilter, setShiftFilter] = useState<"all" | "day" | "night">("all");
+  const [search, setSearch] = usePageState("Documents.search", "");
+  const [clientFilter, setClientFilter] = usePageState("Documents.clientFilter", "all");
+  const [shiftFilter, setShiftFilter] = usePageState<"all" | "day" | "night">("Documents.shiftFilter", "all");
 
   const [viewing, setViewing] = useState<EmployeeRow | null>(null);
   const [viewDocs, setViewDocs] = useState<DocumentWithUrl[]>([]);

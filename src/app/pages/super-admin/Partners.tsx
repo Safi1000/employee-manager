@@ -7,6 +7,7 @@ import Modal from "../../components/Modal";
 import { supabase, fetchAllRows } from "../../lib/supabase";
 import { useFocusTarget, useFocusRow, FOCUS_ROW_CLASS } from "../../lib/focus";
 import { useAuth } from "../../lib/auth";
+import { usePageState } from "../../lib/pageState";
 
 const fmt = (n: number) => `PKR ${Math.round(n).toLocaleString()}`;
 const today = () => new Date().toISOString().slice(0, 10);
@@ -67,12 +68,12 @@ export default function Partners({ embedded = false }: { embedded?: boolean } = 
   const { profile } = useAuth();
   const companyId = profile?.view_as_company ?? profile?.company_id ?? null;
 
-  const [tab, setTab] = useState<"partners" | "statement" | "summary">("partners");
+  const [tab, setTab] = usePageState<"partners" | "statement" | "summary">("Partners.tab", "partners");
   const [partners, setPartners] = useState<Partner[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePageState("Partners.search", "");
 
   // Statement tab
   const [stmtPartner, setStmtPartner] = useState<string>("");

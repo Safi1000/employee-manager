@@ -45,6 +45,7 @@ import InvoiceStructureModal from "../../components/InvoiceStructureModal";
 import { validateInvoiceNumber, validateAmount, validateFreeText } from "../../lib/validation";
 import { formatDate, invoiceMonth } from "../../lib/date";
 import { useFocusTarget, useFocusRow, FOCUS_ROW_CLASS } from "../../lib/focus";
+import { usePageState } from "../../lib/pageState";
 
 type InvoiceRow = Invoice & { client?: { name: string; client_code: string } | null };
 
@@ -168,9 +169,9 @@ export default function Invoices() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [tab, setTab] = useState<"ledger" | "generate">("ledger");
-  const [clientFilter, setClientFilter] = useState<string>("");
-  const [monthFilter, setMonthFilter] = useState<string>("all");
+  const [tab, setTab] = usePageState<"ledger" | "generate">("Invoices.tab", "ledger");
+  const [clientFilter, setClientFilter] = usePageState<string>("Invoices.clientFilter", "");
+  const [monthFilter, setMonthFilter] = usePageState<string>("Invoices.monthFilter", "all");
 
   // --- Drill-down from the Journal ----------------------------------------
   //

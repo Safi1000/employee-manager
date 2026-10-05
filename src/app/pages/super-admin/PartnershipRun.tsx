@@ -7,6 +7,7 @@ import Button from "../../components/Button";
 import ThemedSelect from "../../components/ThemedSelect";
 import { supabase } from "../../lib/supabase";
 import { useAuth, hasPermission } from "../../lib/auth";
+import { usePageState } from "../../lib/pageState";
 
 /**
  * Partnership Run — draft a month, review it, then post it.
@@ -132,7 +133,7 @@ export default function PartnershipRun() {
   // button is offered — the refusal that matters is the one in the database.
   const canPost = hasPermission(profile, "partnership.post");
 
-  const [period, setPeriod] = useState(previousMonthKey());
+  const [period, setPeriod] = usePageState("PartnershipRun.period", previousMonthKey());
   const [run, setRun] = useState<Run | null>(null);
   /** Each partner's standing position from partner_ledger: the ledger nets
    *  cash_paid (agency) against remuneration (profit) into one running balance,

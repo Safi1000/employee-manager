@@ -10,6 +10,7 @@ import { useRegion, withRegion } from "../../lib/region";
 import { exportPayrollSheets, type PayrollExportRow } from "../../lib/excel";
 import { guardDisplayCode } from "../../lib/guardCode";
 import { isSeparatedState } from "../../lib/employmentWindow";
+import { PageStateScope } from "../../lib/pageState";
 
 // Payroll Run — a scoped Draft → Review → Finance Verify workflow.
 //   • A "scope" is either a real CLIENT or a client-less CATEGORY group
@@ -783,9 +784,12 @@ export default function PayrollRun() {
                           {/* Existing Payslips page, scoped + through-Net (no payment UI). */}
                           {/* Site-wise rows inside the client, the same shape the
                               Attendance board and Employee Assignments use. */}
+                          {/* Each client's embedded payroll remembers its own filters. */}
+                          <PageStateScope name={`run-${s.key}`}>
                           <PayrollManagement clientScopeId={s.clientId} categoryScope={s.category} throughNet runInline siteGrouped periodOverride={period}
                             onTotals={(t) => setLiveTotalsByKey((prev) => { const n = new Map(prev); n.set(s.key, t); return n; })}
                             onRows={(rs) => setLiveRowsByScope((prev) => { const n = new Map(prev); n.set(s.key, rs); return n; })} />
+                          </PageStateScope>
                         </div>
                       )}
                     </div>

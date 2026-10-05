@@ -4,6 +4,7 @@ import Header from "../../components/Header";
 import Button from "../../components/Button";
 import { useAuth } from "../../lib/auth";
 import { supabase } from "../../lib/supabase";
+import { usePageState } from "../../lib/pageState";
 
 // §4.1 fixed-asset register & depreciation + §20 vehicles/fuel and ammunition
 // accounting. Capital purchases capitalise (not expensed); depreciation posts
@@ -19,7 +20,7 @@ const monthStart = () => new Date().toISOString().slice(0, 8) + "01";
 export default function Assets() {
   const { company } = useAuth();
   const companyId = company?.id ?? "";
-  const [tab, setTab] = useState<Tab>("assets");
+  const [tab, setTab] = usePageState<Tab>("Assets.tab", "assets");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -32,7 +33,7 @@ export default function Assets() {
 
   const [na, setNa] = useState({ name: "", category: "equipment", cost: "", salvage_value: "0", useful_life_months: "60", acquisition_date: new Date().toISOString().slice(0, 10) });
   const [nv, setNv] = useState({ registration_no: "", make: "", model: "" });
-  const [depPeriod, setDepPeriod] = useState(monthStart());
+  const [depPeriod, setDepPeriod] = usePageState("Assets.depPeriod", monthStart());
 
   const load = useCallback(async () => {
     if (!companyId) return;

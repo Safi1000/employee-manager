@@ -25,6 +25,7 @@ import {
 } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
 import { useRegion, withRegion } from "../../lib/region";
+import { usePageState } from "../../lib/pageState";
 
 // JOURNAL
 //
@@ -153,11 +154,11 @@ export default function JournalView() {
   const [partners, setPartners] = useState<{ id: string; name: string }[]>([]);
   const [periods, setPeriods] = useState<string[]>([]);
 
-  const [period, setPeriod] = useState("");
+  const [period, setPeriod] = usePageState("JournalView.period", "");
   const [accountId, setAccountId] = useState("");
   const [clientId, setClientId] = useState("");
   const [partnerId, setPartnerId] = useState("");
-  const [page, setPage] = useState(0);
+  const [page, setPage] = usePageState("JournalView.page", 0);
   const [hasMore, setHasMore] = useState(false);
   // Bumped after a manual post so the list re-reads through the SAME filtered
   // query rather than a second ad-hoc one that would ignore the filters.

@@ -29,6 +29,7 @@ import {
 } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
 import { useRegion } from "../../lib/region";
+import { usePageState } from "../../lib/pageState";
 
 // CHART OF ACCOUNTS
 //
@@ -73,7 +74,7 @@ export default function ChartOfAccounts() {
     active: true,
   });
   const [submitting, setSubmitting] = useState(false);
-  const [coaSearch, setCoaSearch] = useState("");
+  const [coaSearch, setCoaSearch] = usePageState("ChartOfAccounts.coaSearch", "");
 
   // What 0342 will refuse, computed once for the edit dialog. See the note in
   // the dialog for why this keys on system_key rather than system_account.

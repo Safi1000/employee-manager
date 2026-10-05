@@ -6,6 +6,7 @@ import Header from "../../components/Header";
 import MobileCardList from "../../components/MobileCardList";
 import { formatDate } from "../../lib/date";
 import { supabase } from "../../lib/supabase";
+import { usePageState } from "../../lib/pageState";
 
 // This page reads compliance_upcoming and nothing else.
 //
@@ -102,10 +103,10 @@ export default function Licences() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [items, setItems] = useState<ComplianceRow[]>([]);
-  const [kindFilter, setKindFilter] = useState<"all" | RowKind>("all");
-  const [bandFilter, setBandFilter] = useState<"all" | "expired" | "30" | "90" | "future">("all");
-  const [search, setSearch] = useState("");
-  const [sortDesc, setSortDesc] = useState(false);
+  const [kindFilter, setKindFilter] = usePageState<"all" | RowKind>("Licences.kindFilter", "all");
+  const [bandFilter, setBandFilter] = usePageState<"all" | "expired" | "30" | "90" | "future">("Licences.bandFilter", "all");
+  const [search, setSearch] = usePageState("Licences.search", "");
+  const [sortDesc, setSortDesc] = usePageState("Licences.sortDesc", false);
 
   const loadAll = async () => {
     setLoading(true);

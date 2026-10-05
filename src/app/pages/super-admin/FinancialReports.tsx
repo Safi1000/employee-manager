@@ -34,6 +34,7 @@ import {
   type Partner,
   type Branch,
 } from "../../lib/supabase";
+import { usePageState } from "../../lib/pageState";
 
 type ClientStatementRow = Client & {
   total_invoiced: number;
@@ -108,7 +109,7 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
   );
   // Top-level switch merging the Financial Report and Cash Flow pages under one
   // roof — Cash Flow is rendered from its own (embedded) component.
-  const [topTab, setTopTab] = useState<"financial" | "cashflow">("financial");
+  const [topTab, setTopTab] = usePageState<"financial" | "cashflow">("FinancialReports.topTab", "financial");
   // Once Cash Basis has been opened, keep <Cashflow> mounted and just hide it on
   // other tabs — so it fetches once instead of re-loading on every visit.
   const [cashflowOpened, setCashflowOpened] = useState(false);
@@ -136,7 +137,7 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
   const [loadedStatements, setLoadedStatements] = useState<LoadedStatement[]>([]);
   const [loadingClients, setLoadingClients] = useState(true);
 
-  const [chartPeriod, setChartPeriod] = useState<string>(previousMonthKey());
+  const [chartPeriod, setChartPeriod] = usePageState<string>("FinancialReports.chartPeriod", previousMonthKey());
   const [chartInvoices, setChartInvoices] = useState<Invoice[]>([]);
   const [chartExpenses, setChartExpenses] = useState<Expense[]>([]);
   // 0470: what each open bill still owes once vendor payments are applied.
@@ -158,20 +159,20 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
     final_salary: number;
     employee?: { branch_id: string | null; category: "client" | "office_staff" | "reliever" } | null;
   };
-  const [plPeriod, setPlPeriod] = useState<string>(previousMonthKey());
+  const [plPeriod, setPlPeriod] = usePageState<string>("FinancialReports.plPeriod", previousMonthKey());
   const [plInvoices, setPlInvoices] = useState<PlInvoiceRow[]>([]);
   const [plPayslips, setPlPayslips] = useState<PlPayslipRow[]>([]);
   const [plExpenses, setPlExpenses] = useState<PlExpenseRow[]>([]);
   const [loadingPl, setLoadingPl] = useState(false);
 
-  const [statementPeriod, setStatementPeriod] = useState<string>(previousMonthKey());
+  const [statementPeriod, setStatementPeriod] = usePageState<string>("FinancialReports.statementPeriod", previousMonthKey());
 
   // ----- Partnership tab state -----
   const [partners, setPartners] = useState<Partner[]>([]);
   // Company remuneration basis — 0232 dropped partners.basis, so the label
   // below is one company-wide setting rather than a per-partner field.
   const [companyBasis, setCompanyBasis] = useState<"cash" | "revenue" | null>(null);
-  const [partnershipPeriod, setPartnershipPeriod] = useState<string>(previousMonthKey());
+  const [partnershipPeriod, setPartnershipPeriod] = usePageState<string>("FinancialReports.partnershipPeriod", previousMonthKey());
   const [loadingPartnership, setLoadingPartnership] = useState(false);
   const [partnerError, setPartnerError] = useState<string | null>(null);
 

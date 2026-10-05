@@ -8,6 +8,7 @@ import { formatDate } from "../../lib/date";
 import { useAuth } from "../../lib/auth";
 import { useRegion } from "../../lib/region";
 import { supabase } from "../../lib/supabase";
+import { usePageState } from "../../lib/pageState";
 
 // Regional financials. Three views of one month:
 //
@@ -137,8 +138,8 @@ export default function RegionalScorecard() {
   const [tab] = useState<TabKey>("opex");
   // Region filter for the operating-expenses view, in place of the old metric
   // tabs. "all" stacks every region; a branch key narrows to that one.
-  const [regionTab, setRegionTab] = useState<string>("all");
-  const [period, setPeriod] = useState<string>(monthKeyOf(new Date()));
+  const [regionTab, setRegionTab] = usePageState<string>("RegionalScorecard.regionTab", "all");
+  const [period, setPeriod] = usePageState<string>("RegionalScorecard.period", monthKeyOf(new Date()));
   const [pl, setPl] = useState<RegionalPl[]>([]);
   const [opex, setOpex] = useState<OpexRow[]>([]);
   const [scorecard, setScorecard] = useState<ScorecardRow[]>([]);
@@ -669,7 +670,7 @@ function OperatingExpensesTab({
   };
   showHoBreakdown: boolean;
 }) {
-  const [openCats, setOpenCats] = useState<Set<string>>(new Set());
+  const [openCats, setOpenCats] = usePageState<Set<string>>("RegionalScorecard.openCats", new Set());
   const toggle = (key: string) =>
     setOpenCats((prev) => {
       const next = new Set(prev);

@@ -29,6 +29,7 @@ import { clearConflictingDayRows } from "../../lib/attendanceDay";
 import { hiddenFromAttendance } from "../../lib/employmentWindow";
 import { saveText } from "../../lib/saveFile";
 import { useRegion } from "../../lib/region";
+import { usePageState } from "../../lib/pageState";
 
 // ── Phase 6: Attendance board by client-shift (§8.1-8.10) ─────────────────────
 // Unit of work = client-shift-day. Presume present; operator enters only
@@ -170,14 +171,14 @@ export default function AttendanceBoard() {
   const { profile, company } = useAuth();
   const { regionId } = useRegion();
   const branding = brandingFromCompany(company);
-  const [date, setDate] = useState(today());
-  const [tab, setTab] = useState<"board" | "monthly" | "vacancies" | "shifts">("board");
+  const [date, setDate] = usePageState("AttendanceBoard.date", today());
+  const [tab, setTab] = usePageState<"board" | "monthly" | "vacancies" | "shifts">("AttendanceBoard.tab", "board");
   // Monthly tab: the client/group whose Monthly board is shown on the page, the
   // board's month, every client/group that can be picked (not just those with
   // attendance on the day the Daily board is showing), and each one's HR status
   // for that month.
-  const [monthlyClient, setMonthlyClient] = useState<string>("");
-  const [monthlyMonth, setMonthlyMonth] = useState<string>("");
+  const [monthlyClient, setMonthlyClient] = usePageState<string>("AttendanceBoard.monthlyClient", "");
+  const [monthlyMonth, setMonthlyMonth] = usePageState<string>("AttendanceBoard.monthlyMonth", "");
   const [monthlyScopes, setMonthlyScopes] = useState<{ id: string; name: string }[]>([]);
   const [monthlyStatus, setMonthlyStatus] = useState<Map<string, 0 | 1 | 2>>(new Map());
   // "Shift Management" tab embeds the Assignments & Pay page. It must carry that
@@ -194,8 +195,8 @@ export default function AttendanceBoard() {
   const [error, setError] = useState<string | null>(null);
   const [drill, setDrill] = useState<ClientShift | null>(null);
   /** Expanded client cards, then expanded sites within them. */
-  const [openClients, setOpenClients] = useState<Set<string>>(new Set());
-  const [openSites, setOpenSites] = useState<Set<string>>(new Set());
+  const [openClients, setOpenClients] = usePageState<Set<string>>("AttendanceBoard.openClients", new Set());
+  const [openSites, setOpenSites] = usePageState<Set<string>>("AttendanceBoard.openSites", new Set());
   // Which client/site's monthly attendance sheet is open in the viewer.
   const [sheetView, setSheetView] = useState<{ clientId: string; clientName: string; siteId?: string; siteName?: string } | null>(null);
   const toggleIn = (k: string, set: (fn: (p: Set<string>) => Set<string>) => void) =>
@@ -206,8 +207,8 @@ export default function AttendanceBoard() {
       return next;
     });
   // Controls added onto the board (alongside the Phase 6 model, not replacing it).
-  const [clientFilter, setClientFilter] = useState<string>("all");
-  const [search, setSearch] = useState("");
+  const [clientFilter, setClientFilter] = usePageState<string>("AttendanceBoard.clientFilter", "all");
+  const [search, setSearch] = usePageState("AttendanceBoard.search", "");
   // Bulk Mark by Employee (calendar) — same permission gate as the Relievers tab.
   const canBulk = hasPermission(profile, "attendance.bulk_mark");
   const canOpsVerify = hasPermission(profile, "attendance.ops_verify");

@@ -29,6 +29,7 @@ import { guardDisplayCode } from "../../lib/guardCode";
 import { attendanceWindowError, isSeparatedState, hiddenFromAttendance, buildClientCoverage, effectiveWindowContract, SEPARATION_MARK } from "../../lib/employmentWindow";
 import { formatDate } from "../../lib/date";
 import { clearConflictingDayRows } from "../../lib/attendanceDay";
+import { usePageState } from "../../lib/pageState";
 
 type EmployeeLite = {
   id: string;
@@ -135,13 +136,13 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
   } | null>(null);
   const [undoing, setUndoing] = useState(false);
 
-  const [date, setDate] = useState<string>(today());
-  const [clientFilter, setClientFilter] = useState("all");
-  const [shiftFilter, setShiftFilter] = useState<"all" | "day" | "night">("all");
+  const [date, setDate] = usePageState<string>("AttendanceManagement.date", today());
+  const [clientFilter, setClientFilter] = usePageState("AttendanceManagement.clientFilter", "all");
+  const [shiftFilter, setShiftFilter] = usePageState<"all" | "day" | "night">("AttendanceManagement.shiftFilter", "all");
   // Employee category filter (same set as the Employees tab) — e.g. Office Staff only.
-  const [categoryFilter, setCategoryFilter] = useState<"all" | "client" | "office_staff" | "reliever">("all");
+  const [categoryFilter, setCategoryFilter] = usePageState<"all" | "client" | "office_staff" | "reliever">("AttendanceManagement.categoryFilter", "all");
   const [unmarkedOnly, setUnmarkedOnly] = useState<boolean>(false);
-  const [empSearch, setEmpSearch] = useState("");
+  const [empSearch, setEmpSearch] = usePageState("AttendanceManagement.empSearch", "");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const activeFilterCount =
     (clientFilter !== "all" ? 1 : 0) +
@@ -158,7 +159,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
 
   // ---- Export dialog: which month to export (defaults to the shown date's) ----
   const [exportOpen, setExportOpen] = useState(false);
-  const [exportMonth, setExportMonth] = useState<string>(today().slice(0, 7));
+  const [exportMonth, setExportMonth] = usePageState<string>("AttendanceManagement.exportMonth", today().slice(0, 7));
   const [exporting, setExporting] = useState(false);
 
   // ---- Bulk-mark calendar modal (shared BulkMarkByEmployeeModal) ----
@@ -185,7 +186,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     overtime_hours: string;
   }>({ half_day: false, late_arrival: false, hours_worked: "", overtime_hours: "0" });
   const [detailsSaving, setDetailsSaving] = useState(false);
-  const [viewMonth, setViewMonth] = useState<string>(today().slice(0, 7));
+  const [viewMonth, setViewMonth] = usePageState<string>("AttendanceManagement.viewMonth", today().slice(0, 7));
   const [viewRecords, setViewRecords] = useState<Map<string, AttendanceStatus>>(new Map());
   const [viewLoading, setViewLoading] = useState(false);
 

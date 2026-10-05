@@ -27,6 +27,7 @@ import {
 } from "../../lib/supabase";
 import { describeAlert, alertCategoryLabel, alertTierLabel } from "../../lib/alertText";
 import { useAuth } from "../../lib/auth";
+import { usePageState } from "../../lib/pageState";
 
 type RaisedAlert = {
   id: string;
@@ -189,7 +190,7 @@ export default function Compliance() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState<"dates" | "alerts" | "recurring">("dates");
+  const [activeTab, setActiveTab] = usePageState<"dates" | "alerts" | "recurring">("Compliance.activeTab", "dates");
 
   const [isDateAddOpen, setIsDateAddOpen] = useState(false);
   const [dateForm, setDateForm] = useState<DateForm>(emptyDateForm());

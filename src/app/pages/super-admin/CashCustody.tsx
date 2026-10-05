@@ -6,6 +6,7 @@ import Modal from "../../components/Modal";
 import { supabase } from "../../lib/supabase";
 import { useFocusTarget, useFocusRow, FOCUS_ROW_CLASS } from "../../lib/focus";
 import { useAuth } from "../../lib/auth";
+import { usePageState } from "../../lib/pageState";
 
 // Rendered as the "Cash Custody" tab inside Banks & Ledgers (Accounting.tsx).
 // Self-contained: no page Header — the action buttons live in an inline toolbar.
@@ -96,8 +97,8 @@ export function CashCustodyPanel({ onReady, onSummary }: {
   // Transactions is a header-button modal (mirrors the Bank Accounts "Transaction Log"), not a sub-tab.
   const [isTxOpen, setIsTxOpen] = useState(false);
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);
-  const [ledgerStaffFilter, setLedgerStaffFilter] = useState<string>("all");
-  const [ledgerMonth, setLedgerMonth] = useState<string>("all");
+  const [ledgerStaffFilter, setLedgerStaffFilter] = usePageState<string>("CashCustody.ledgerStaffFilter", "all");
+  const [ledgerMonth, setLedgerMonth] = usePageState<string>("CashCustody.ledgerMonth", "all");
 
   // --- Drill-down from the Journal ----------------------------------------
   //

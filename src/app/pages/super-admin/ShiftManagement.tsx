@@ -25,6 +25,7 @@ import { guardDisplayCode } from "../../lib/guardCode";
 import { ChangeShiftModal, type EmployeeRow } from "./EmployeeManagement";
 import ShiftSplitModal from "../../components/ShiftSplitModal";
 import { SlidersHorizontal } from "lucide-react";
+import { usePageState } from "../../lib/pageState";
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
@@ -45,7 +46,7 @@ export default function ShiftManagement() {
   const [contractLines, setContractLines] = useState<ContractLine[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePageState("ShiftManagement.search", "");
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [shiftTarget, setShiftTarget] = useState<EmployeeRow | null>(null);
   // "Edit rules" opens the Day/Night split for the client's active guard-deployment

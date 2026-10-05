@@ -26,6 +26,7 @@ import {
   type AuditedTable,
   type AuditChanges,
 } from "../../lib/supabase";
+import { usePageState } from "../../lib/pageState";
 
 const PAGE_SIZE = 50;
 
@@ -209,17 +210,17 @@ export default function AuditLog() {
   const [error, setError] = useState<string | null>(null);
 
   // Filters
-  const [from, setFrom] = useState<string>(daysAgoISO(30));
-  const [to, setTo] = useState<string>(todayISO());
-  const [tableFilter, setTableFilter] = useState<"all" | AuditedTable>("all");
-  const [actionFilter, setActionFilter] = useState<"all" | AuditAction>("all");
-  const [userFilter, setUserFilter] = useState<string>("all");
-  const [recordIdSearch, setRecordIdSearch] = useState("");
-  const [fieldSearch, setFieldSearch] = useState("");
-  const [page, setPage] = useState(0);
+  const [from, setFrom] = usePageState<string>("AuditLog.from", daysAgoISO(30));
+  const [to, setTo] = usePageState<string>("AuditLog.to", todayISO());
+  const [tableFilter, setTableFilter] = usePageState<"all" | AuditedTable>("AuditLog.tableFilter", "all");
+  const [actionFilter, setActionFilter] = usePageState<"all" | AuditAction>("AuditLog.actionFilter", "all");
+  const [userFilter, setUserFilter] = usePageState<string>("AuditLog.userFilter", "all");
+  const [recordIdSearch, setRecordIdSearch] = usePageState("AuditLog.recordIdSearch", "");
+  const [fieldSearch, setFieldSearch] = usePageState("AuditLog.fieldSearch", "");
+  const [page, setPage] = usePageState("AuditLog.page", 0);
   const [hasMore, setHasMore] = useState(false);
 
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [expanded, setExpanded] = usePageState<Set<string>>("AuditLog.expanded", new Set());
 
   const loadProfiles = async () => {
     const { data } = await supabase.from("profiles").select("id, full_name, email");

@@ -4,6 +4,7 @@ import Header from "../../components/Header";
 import Button from "../../components/Button";
 import { useAuth } from "../../lib/auth";
 import { supabase } from "../../lib/supabase";
+import { usePageState } from "../../lib/pageState";
 
 // Receivables — §5 regional receivables ownership (aging/DSO, legacy carve-out,
 // bad-debt bearer) and §10 invoicing upgrades (reminder cadence engine,
@@ -18,7 +19,7 @@ const money = (n: any) => Number(n ?? 0).toLocaleString(undefined, { maximumFrac
 export default function Receivables() {
   const { company } = useAuth();
   const companyId = company?.id ?? "";
-  const [tab, setTab] = useState<Tab>("aging");
+  const [tab, setTab] = usePageState<Tab>("Receivables.tab", "aging");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 

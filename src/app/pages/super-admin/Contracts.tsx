@@ -46,6 +46,7 @@ import {
 } from "../../lib/supabase";
 import { useAuth, hasPermission } from "../../lib/auth";
 import { useRegion } from "../../lib/region";
+import { usePageState } from "../../lib/pageState";
 
 type ContractRow = Contract & { client_name: string; client_code: string };
 type EmployeeAssignment = Pick<
@@ -73,11 +74,11 @@ export default function Contracts() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePageState("Contracts.search", "");
   // "needs_renewal" = a pseudo-status filtering on the EFFECTIVE end date (renewal
   // addendums applied), distinct from the stored contract.status enum.
-  const [statusFilter, setStatusFilter] = useState<"all" | "needs_renewal" | ContractStatus>("all");
-  const [clientFilter, setClientFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = usePageState<"all" | "needs_renewal" | ContractStatus>("Contracts.statusFilter", "all");
+  const [clientFilter, setClientFilter] = usePageState("Contracts.clientFilter", "all");
 
   const [addOpen, setAddOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<ContractRow | null>(null);

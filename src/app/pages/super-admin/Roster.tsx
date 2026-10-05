@@ -33,6 +33,7 @@ import {
   type ContractShift,
 } from "../../lib/supabase";
 import { guardDisplayCode } from "../../lib/guardCode";
+import { usePageState } from "../../lib/pageState";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const addDaysISO = (iso: string, days: number): string => {
@@ -73,8 +74,8 @@ export default function Roster() {
   const [startDate, setStartDate] = useState<string>(todayISO());
   const [dayCount, setDayCount] = useState<DayCount>(7);
   const [shift, setShift] = useState<RosterShift>("day");
-  const [search, setSearch] = useState("");
-  const [clientFilter, setClientFilter] = useState<string>("all");
+  const [search, setSearch] = usePageState("Roster.search", "");
+  const [clientFilter, setClientFilter] = usePageState<string>("Roster.clientFilter", "all");
 
   // Cell edit modal
   const [editCell, setEditCell] = useState<{ employee: Employee; date: string } | null>(null);

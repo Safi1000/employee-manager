@@ -32,6 +32,7 @@ import AmountInWords from "../../components/AmountInWords";
 import { isSeparatedState, lifecycleStatusLabel } from "../../lib/employmentWindow";
 import { guardDisplayCode } from "../../lib/guardCode";
 import { useFocusTarget, useFocusRow, FOCUS_ROW_CLASS } from "../../lib/focus";
+import { usePageState, PageStateScope } from "../../lib/pageState";
 
 type EmployeeRow = Employee & { client_name: string | null };
 
@@ -296,19 +297,19 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [search, setSearch] = useState("");
-  const [shiftFilter, setShiftFilter] = useState<"all" | "day" | "night">("all");
-  const [clientFilter, setClientFilter] = useState("all");
+  const [search, setSearch] = usePageState("PayrollManagement.search", "");
+  const [shiftFilter, setShiftFilter] = usePageState<"all" | "day" | "night">("PayrollManagement.shiftFilter", "all");
+  const [clientFilter, setClientFilter] = usePageState("PayrollManagement.clientFilter", "all");
   /** Site within the selected client. Only offered once a client is chosen. */
-  const [siteFilter, setSiteFilter] = useState("all");
+  const [siteFilter, setSiteFilter] = usePageState("PayrollManagement.siteFilter", "all");
   const [sites, setSites] = useState<{ id: string; client_id: string; name: string }[]>([]);
   /** guard_id -> site_id of their open posting. The employee row does not carry it. */
   const [siteByGuard, setSiteByGuard] = useState<Map<string, string>>(new Map());
   const [employeeAddlBranches, setEmployeeAddlBranches] = useState<Map<string, string[]>>(new Map());
-  const [statusFilter, setStatusFilter] = useState<"all" | "Cleared" | "Pending">("all");
-  const [disbursedFilter, setDisbursedFilter] = useState<"all" | "yes" | "no">("all");
+  const [statusFilter, setStatusFilter] = usePageState<"all" | "Cleared" | "Pending">("PayrollManagement.statusFilter", "all");
+  const [disbursedFilter, setDisbursedFilter] = usePageState<"all" | "yes" | "no">("PayrollManagement.disbursedFilter", "all");
   // Active / Inactive employee tab split (Inactive = anything not currently Active).
-  const [empTab, setEmpTab] = useState<"all" | "active" | "inactive">("all");
+  const [empTab, setEmpTab] = usePageState<"all" | "active" | "inactive">("PayrollManagement.empTab", "all");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [warningDismissed, setWarningDismissed] = useState(false);
   // The sticky salary drawer must fit the visible scroll area exactly (the
@@ -323,7 +324,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   // avoiding a setState render loop.
   const hostRefCb = useCallback((el: HTMLElement | null) => setAccordionHost(el), []);
   // Employee category filter (same set as the Employees tab) — e.g. Office Staff only.
-  const [categoryFilter, setCategoryFilter] = useState<"all" | "client" | "office_staff" | "reliever">("all");
+  const [categoryFilter, setCategoryFilter] = usePageState<"all" | "client" | "office_staff" | "reliever">("PayrollManagement.categoryFilter", "all");
   const [branches, setBranches] = useState<Branch[]>([]);
 
   const [periodOptions, setPeriodOptions] = useState<string[]>([currentPeriod, previousPeriod]);
@@ -1048,8 +1049,8 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   // The client-scoped EMBED (Payroll Run's Review step) keeps the flat site
   // level, because the client is already named on the card the embed sits in —
   // a client header there would repeat it and cost a click.
-  const [openClientRows, setOpenClientRows] = useState<Set<string>>(new Set());
-  const [openSiteRows, setOpenSiteRows] = useState<Set<string>>(new Set());
+  const [openClientRows, setOpenClientRows] = usePageState<Set<string>>("PayrollManagement.openClientRows", new Set());
+  const [openSiteRows, setOpenSiteRows] = usePageState<Set<string>>("PayrollManagement.openSiteRows", new Set());
   const toggleSiteRow = (k: string) =>
     setOpenSiteRows((prev) => {
       const n = new Set(prev);
@@ -2127,7 +2128,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   // Full payslip rows per scope, kept only so a sheet can be exported without a
   // second round trip. The cards themselves need nothing but the totals.
   const [fvRows, setFvRows] = useState<Map<string, PayrollExportRow[]>>(new Map());
-  const [fvSearch, setFvSearch] = useState("");
+  const [fvSearch, setFvSearch] = usePageState("PayrollManagement.fvSearch", "");
   const [fvIndex, setFvIndex] = useState<Map<string, string>>(new Map());
   // Multi-client export: the picker's open state and which scopes are ticked.
   const [exportOpen, setExportOpen] = useState(false);
@@ -2462,7 +2463,9 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                             standalone roster table, not this card. Two entry
                             points into the same component, and only one of them
                             was wired. */}
-                        <PayrollManagement clientScopeId={s.clientId} categoryScope={s.category} afterNet runInline siteGrouped periodOverride={selectedPeriod} onDataChanged={() => setFvReloadKey((k) => k + 1)} />
+                        <PageStateScope name={`fv-${s.key}`}>
+                          <PayrollManagement clientScopeId={s.clientId} categoryScope={s.category} afterNet runInline siteGrouped periodOverride={selectedPeriod} onDataChanged={() => setFvReloadKey((k) => k + 1)} />
+                        </PageStateScope>
                       </div>
                     )}
                   </div>

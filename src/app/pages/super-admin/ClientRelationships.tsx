@@ -5,6 +5,7 @@ import Button from "../../components/Button";
 import { useAuth } from "../../lib/auth";
 import { supabase } from "../../lib/supabase";
 import { generateClientServiceReportPdf } from "../../lib/clientReportPdf";
+import { usePageState } from "../../lib/pageState";
 
 // §22 Client relationship layer — service reviews, complaints and the renewal
 // pipeline, plus a printable client service report.
@@ -20,7 +21,7 @@ const COMPLAINT_STATUS = ["open", "in_progress", "resolved", "closed"];
 export default function ClientRelationships() {
   const { company } = useAuth();
   const companyId = company?.id ?? "";
-  const [tab, setTab] = useState<Tab>("reviews");
+  const [tab, setTab] = usePageState<Tab>("ClientRelationships.tab", "reviews");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 

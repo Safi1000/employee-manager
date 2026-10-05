@@ -20,6 +20,7 @@ import Modal from "../../components/Modal";
 import Tabs from "../../components/Tabs";
 import ThemedSelect from "../../components/ThemedSelect";
 import { supabase } from "../../lib/supabase";
+import { usePageState } from "../../lib/pageState";
 
 // ── Types (Phase 1: sites / shift_definitions / strength contract_lines) ──────
 type ShiftCode = "day" | "evening" | "night";
@@ -136,11 +137,11 @@ export default function SitesStrength() {
   const [contracts, setContracts] = useState<ContractLite[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePageState("SitesStrength.search", "");
   const [onlyMismatch, setOnlyMismatch] = useState(false);
   // Which reconciliation view is shown — kept as tabs so the two heavy tables
   // don't stack and the page reads like the rest of the system.
-  const [view, setView] = useState<"strength" | "billing">("strength");
+  const [view, setView] = usePageState<"strength" | "billing">("SitesStrength.view", "strength");
 
   // Drill-in state
   const [openClient, setOpenClient] = useState<ReconRow | null>(null);

@@ -4,6 +4,7 @@ import Header from "../../components/Header";
 import Button from "../../components/Button";
 import { useAuth } from "../../lib/auth";
 import { supabase } from "../../lib/supabase";
+import { usePageState } from "../../lib/pageState";
 
 // §19 Compliance Process Engine: every licence/renewal/NOC as a staged case
 // with a government-visit log, dual-jurisdiction register, and the statutory
@@ -20,7 +21,7 @@ const FILING_TYPES = ["eobi", "social_security", "withholding_tax", "income_tax"
 export default function ComplianceCases() {
   const { company } = useAuth();
   const companyId = company?.id ?? "";
-  const [tab, setTab] = useState<Tab>("cases");
+  const [tab, setTab] = usePageState<Tab>("ComplianceCases.tab", "cases");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 

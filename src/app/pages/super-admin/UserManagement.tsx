@@ -13,6 +13,7 @@ import {
   PERMISSION_GROUPS,
 } from "../../lib/supabase";
 import { callCreateUser, callChangePassword, useAuth } from "../../lib/auth";
+import { usePageState } from "../../lib/pageState";
 
 const ROLE_LABEL: Record<UserRole, string> = {
   super_super_admin: "Super Super Admin",
@@ -77,7 +78,7 @@ export default function UserManagement() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePageState("UserManagement.search", "");
 
   // Create
   const [createOpen, setCreateOpen] = useState(false);

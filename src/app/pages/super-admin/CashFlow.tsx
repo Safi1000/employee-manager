@@ -10,6 +10,7 @@ import ThemedSelect from "../../components/ThemedSelect";
 import ExportButton from "../../components/ExportButton";
 import { exportClientStatements } from "../../lib/excel";
 import { formatDate } from "../../lib/date";
+import { usePageState } from "../../lib/pageState";
 
 // One cash event, already resolved to a cash-basis effective date.
 type CashItem = { date: string; amount: number; group: string; detail: string; branchId: string | null };
@@ -102,7 +103,7 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
   const [cheques, setCheques] = useState<Cheque[]>([]);
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
-  const [branchFilter, setBranchFilter] = useState<string>("all");
+  const [branchFilter, setBranchFilter] = usePageState<string>("CashFlow.branchFilter", "all");
   // employee_id → branch, so advances (which carry only employee_id) can be
   // scoped by the branch dropdown. Payroll branch rides on the payslip join.
   const [employeeBranch, setEmployeeBranch] = useState<Map<string, string | null>>(new Map());
@@ -116,18 +117,18 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
 
   // Period filter (item 1).
   const [mode] = useState<PeriodMode>("month");
-  const [selMonth, setSelMonth] = useState<string>(todayMonthKey());
-  const [fromDate, setFromDate] = useState<string>("");
-  const [toDate, setToDate] = useState<string>("");
+  const [selMonth, setSelMonth] = usePageState<string>("CashFlow.selMonth", todayMonthKey());
+  const [fromDate, setFromDate] = usePageState<string>("CashFlow.fromDate", "");
+  const [toDate, setToDate] = usePageState<string>("CashFlow.toDate", "");
 
   // Which card's breakdown is expanded (item 2).
   const [openMetric, setOpenMetric] = useState<MetricKey | null>(null);
-  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+  const [openGroups, setOpenGroups] = usePageState<Set<string>>("CashFlow.openGroups", new Set());
 
   // ----- Client Statements (cash basis) tab -----
-  const [activeTab, setActiveTab] = useState<"cashflow" | "clients">("cashflow");
+  const [activeTab, setActiveTab] = usePageState<"cashflow" | "clients">("CashFlow.activeTab", "cashflow");
   const [clients, setClients] = useState<Client[]>([]);
-  const [statementPeriod, setStatementPeriod] = useState<string>(todayMonthKey());
+  const [statementPeriod, setStatementPeriod] = usePageState<string>("CashFlow.statementPeriod", todayMonthKey());
   // client_id → payroll CASH paid in the statement month, split by days worked
   // (payroll_cash_by_client, migration 0176).
   const [payrollCashByClient, setPayrollCashByClient] = useState<Map<string, number>>(new Map());

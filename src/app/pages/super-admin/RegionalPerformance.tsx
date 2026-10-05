@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronRight, ChevronDown, Loader2 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
+import { usePageState } from "../../lib/pageState";
 
 /**
  * REGIONAL PERFORMANCE — item 2.
@@ -69,7 +70,7 @@ export default function RegionalPerformance() {
   const companyId = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
 
   const [basis, setBasis] = useState<"revenue" | "cash">("revenue");
-  const [period, setPeriod] = useState<string>(thisMonth());
+  const [period, setPeriod] = usePageState<string>("RegionalPerformance.period", thisMonth());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
