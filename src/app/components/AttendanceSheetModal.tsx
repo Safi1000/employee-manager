@@ -80,7 +80,11 @@ export default function AttendanceSheetModal({
   // 0493: the board is two boards, one per half-month. It opens on the first
   // half: of the current month's two, it is the only one that can be ready.
   const [half, setHalf] = useState<1 | 2>(1);
-  const [halfVer, setHalfVer] = useState<HalfVerification | null>(null);
+  // Both halves' verification rows (0493). The grid shows the whole month, so
+  // the edit lock is decided per day by that day's half; the half switch only
+  // chooses which half's chain and remarks are shown.
+  const [halfVers, setHalfVers] = useState<Record<1 | 2, HalfVerification | null>>({ 1: null, 2: null });
+  const halfVer = halfVers[half];
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [rows, setRows] = useState<AttendanceEmployeeRow[]>([]);
@@ -200,29 +204,30 @@ export default function AttendanceSheetModal({
         .order("created_at", { ascending: false });
       const phBase = supabase.from("payroll_run_phases").select("phase, finance_verified_at").eq("period_month", monthStartDate);
       const hvBase = supabase.from("attendance_half_verifications")
-        .select("id, hr_verified_at, hr_verified_by_name, ops_verified_at, ops_verified_by_name, finance_verified_at, finance_verified_by_name")
-        .eq("period_month", monthStartDate).eq("half", half);
+        .select("id, half, hr_verified_at, hr_verified_by_name, ops_verified_at, ops_verified_by_name, finance_verified_at, finance_verified_by_name")
+        .eq("period_month", monthStartDate);
       const [{ data: ver }, { data: ovs }, { data: ph }, { data: hv }] = await Promise.all([
         (synthetic ? verBase.eq("category", category as string) : verBase.eq("client_id", clientId)).maybeSingle(),
         synthetic ? ovBase.eq("category", category as string) : ovBase.eq("client_id", clientId),
         (synthetic ? phBase.eq("category", category as string) : phBase.eq("client_id", clientId)).maybeSingle(),
-        (synthetic ? hvBase.eq("category", category as string) : hvBase.eq("client_id", clientId)).maybeSingle(),
+        synthetic ? hvBase.eq("category", category as string) : hvBase.eq("client_id", clientId),
       ]);
       if (cancelled) return;
-      setHalfVer((hv as HalfVerification | null) ?? null);
+      const byHalf: Record<1 | 2, HalfVerification | null> = { 1: null, 2: null };
+      for (const r of (hv ?? []) as (HalfVerification & { half: 1 | 2 })[]) byHalf[r.half] = r;
+      setHalfVers(byHalf);
       setVerifiedAt((ver as any)?.verified_at ?? null);
       setOverrides((ovs ?? []) as OverrideRow[]);
       setRunPhase((ph as any)?.phase ?? null);
     })();
     return () => { cancelled = true; };
-  }, [clientId, month, monthStartDate, half, reloadKey]);
+  }, [clientId, month, monthStartDate, reloadKey]);
 
   // The half's day range, by the same exact-halves rule as attendance_half_of()
   // in the database (0493): half 1 is days 1..floor(dim/2).
   const halfCut = Math.floor(daysInMonth / 2);
   const halfFirstIdx = half === 1 ? 0 : halfCut;
   const halfLastIdx = half === 1 ? halfCut - 1 : daysInMonth - 1;
-  const inHalf = (i: number) => i >= halfFirstIdx && i <= halfLastIdx;
   const halfEnded = useMemo(() => {
     const [y, m] = month.split("-").map(Number);
     const last = new Date(y, m - 1, halfLastIdx + 1);
@@ -235,9 +240,13 @@ export default function AttendanceSheetModal({
     const mon = new Date(y, m - 1, 1).toLocaleDateString("en-GB", { month: "short" });
     return `${halfFirstIdx + 1}–${halfLastIdx + 1} ${mon}`;
   }, [month, halfFirstIdx, halfLastIdx]);
-  // Locked for edits: HR has verified this half, or the month carries a
+  // Locked for edits: HR has verified the SELECTED half, or the month carries a
   // pre-0493 monthly verification. The database refuses the write either way.
   const halfLocked = !!verifiedAt || !!halfVer?.hr_verified_at;
+  // Per-day lock for the whole-month grid: is the half this day falls in locked?
+  const dayLocked = (i: number) =>
+    !!verifiedAt || !!halfVers[i < halfCut ? 1 : 2]?.hr_verified_at;
+  const dateLocked = (iso: string) => dayLocked(Number(iso.slice(8, 10)) - 1);
 
   // Set of "empId|date" that has at least one override (an unmarked day so covered
   // is treated as resolved for OPS Verify).
@@ -270,38 +279,20 @@ export default function AttendanceSheetModal({
       // Reliever coverage rows are allowed gaps (a reliever may cover 1 day of
       // 31) — they never flag or block OPS Verify, and need no per-gap override.
       if (row.isReliever) continue;
-      for (let i = halfFirstIdx; i <= halfLastIdx; i += 1) {
+      for (let i = 0; i < daysInMonth; i += 1) {
         // Belt-and-braces per-day exemption (also covers any future mixed row).
         if (row.relieverByDay?.[i]) continue;
         if ((row.statusByDay[i] ?? "") !== "") continue;          // marked or X (not applicable)
         const date = dayDate(i);
         if (overriddenKeys.has(`${row.empId}|${date}`)) continue;  // resolved via override
         flagged.add(`${row.empId}|${i}`);
-        list.push({ empId: row.empId, empName: row.name, date });
+        // Only the half being verified blocks HR Verify.
+        if (i >= halfFirstIdx && i <= halfLastIdx) list.push({ empId: row.empId, empName: row.name, date });
       }
     }
     return { flaggedKeys: flagged, outstanding: list };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, daysInMonth, overriddenKeys, month, halfFirstIdx, halfLastIdx]);
-
-  // Per-row counts for THIS half. Pay days stay the month's figure (payroll is
-  // monthly and leave allowance is a monthly number), so that column is
-  // labelled as the month's.
-  const halfCounts = useMemo(() => {
-    const m = new Map<AttendanceEmployeeRow, { p: number; a: number; l: number; dd: number }>();
-    for (const row of rows) {
-      let p = 0, a = 0, l = 0, dd = 0;
-      for (let i = halfFirstIdx; i <= halfLastIdx; i += 1) {
-        const st = row.statusByDay[i] ?? "";
-        if (st === "P") p += 1;
-        else if (st === "DD") { p += 1; dd += 1; }
-        else if (st === "A") a += 1;
-        else if (st === "L") l += 1;
-      }
-      m.set(row, { p, a, l, dd });
-    }
-    return m;
-  }, [rows, halfFirstIdx, halfLastIdx]);
 
   const shifts = useMemo(() => deriveAttendanceShifts(rows), [rows]);
   const S = shifts.length;
@@ -344,13 +335,13 @@ export default function AttendanceSheetModal({
     const grand = P.map((per, i) => per.map((v, s) => v + L[i][s] + A[i][s]));
     return {
       P, L, A, grand,
-      sumP: assigned.reduce((s, r) => s + (halfCounts.get(r)?.p ?? 0), 0),
-      sumA: assigned.reduce((s, r) => s + (halfCounts.get(r)?.a ?? 0), 0),
-      sumL: assigned.reduce((s, r) => s + (halfCounts.get(r)?.l ?? 0), 0),
-      sumDD: assigned.reduce((s, r) => s + (halfCounts.get(r)?.dd ?? 0), 0),
+      sumP: assigned.reduce((s, r) => s + r.presents, 0),
+      sumA: assigned.reduce((s, r) => s + r.absents, 0),
+      sumL: assigned.reduce((s, r) => s + r.leaves, 0),
+      sumDD: assigned.reduce((s, r) => s + r.doubleDuties, 0),
       sumPD: assigned.reduce((s, r) => s + r.payDays, 0),
     };
-  }, [rows, daysInMonth, S, shiftIndex, halfCounts]);
+  }, [rows, daysInMonth, S, shiftIndex]);
 
   const shiftMonth = (delta: number) => {
     const [y, m] = month.split("-").map(Number);
@@ -364,7 +355,7 @@ export default function AttendanceSheetModal({
       fileName: `Attendance ${label} ${monthLabel}.xlsx`,
     });
 
-  const days = Array.from({ length: halfLastIdx - halfFirstIdx + 1 }, (_, k) => halfFirstIdx + k + 1);
+  const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
   const totalRowCells = (src: number[][], final?: string[]) => (
     <>
       {days.map((d) => d - 1).map((i) =>
@@ -399,8 +390,8 @@ export default function AttendanceSheetModal({
             <div className="min-w-0 flex-1">
               <h2 className="font-semibold text-foreground truncate flex items-center gap-2">
                 Monthly Board — {label}
-                {halfLocked && (
-                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-success-700 dark:text-success-500 bg-success-50 dark:bg-success-900/20 px-1.5 py-0.5 rounded" title="Verified — attendance in this half is locked">
+                {dayLocked(0) && dayLocked(daysInMonth - 1) && (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-success-700 dark:text-success-500 bg-success-50 dark:bg-success-900/20 px-1.5 py-0.5 rounded" title="Both halves verified — the month's attendance is locked">
                     <ShieldCheck className="w-3 h-3" /> Verified <Lock className="w-3 h-3" />
                   </span>
                 )}
@@ -412,7 +403,8 @@ export default function AttendanceSheetModal({
               <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="px-2 py-1 border border-border rounded-md text-sm bg-card" />
               <button onClick={() => shiftMonth(1)} className="p-1.5 rounded hover:bg-accent" title="Next month"><ChevronRight className="w-4 h-4" /></button>
             </div>
-            <div className="hidden sm:block">            <div className="inline-flex rounded-md border border-border p-0.5 bg-secondary shrink-0" role="tablist" aria-label="Half of the month">
+            <div className="hidden sm:block">            <div className="inline-flex items-center rounded-md border border-border p-0.5 bg-secondary shrink-0" role="tablist" aria-label="Half being verified" title="Which half's verification and remarks to show. The grid always shows the whole month.">
+              <span className="px-1.5 text-[11px] text-muted-foreground">Verifying</span>
               {([1, 2] as const).map((h) => {
                 const cut = Math.floor(daysInMonth / 2);
                 const range = h === 1 ? `1–${cut}` : `${cut + 1}–${daysInMonth}`;
@@ -443,7 +435,8 @@ export default function AttendanceSheetModal({
               <Download className="w-4 h-4" />
             </Button>
           </div>
-          <div className="mt-2 sm:hidden">            <div className="inline-flex rounded-md border border-border p-0.5 bg-secondary shrink-0" role="tablist" aria-label="Half of the month">
+          <div className="mt-2 sm:hidden">            <div className="inline-flex items-center rounded-md border border-border p-0.5 bg-secondary shrink-0" role="tablist" aria-label="Half being verified" title="Which half's verification and remarks to show. The grid always shows the whole month.">
+              <span className="px-1.5 text-[11px] text-muted-foreground">Verifying</span>
               {([1, 2] as const).map((h) => {
                 const cut = Math.floor(daysInMonth / 2);
                 const range = h === 1 ? `1–${cut}` : `${cut + 1}–${daysInMonth}`;
@@ -515,7 +508,7 @@ export default function AttendanceSheetModal({
                   {days.map((d) => (
                     <th key={d} colSpan={S} style={stickyHead(0)} className="sticky z-30 border border-border px-1 py-1 text-center tabular-nums bg-secondary">{d}</th>
                   ))}
-                  {["Presents", "Absents", "Leaves", "Double Duty", "Month Pay Days"].map((h) => (
+                  {["Presents", "Absents", "Leaves", "Double Duty", "Pay Days"].map((h) => (
                     <th key={h} rowSpan={2} style={stickyHead(0)} className="sticky z-30 border border-border px-1.5 py-1 text-center whitespace-nowrap bg-secondary">{h}</th>
                   ))}
                 </tr>
@@ -568,7 +561,7 @@ export default function AttendanceSheetModal({
                       // month has ended. A *flagged* blank (an unconfirmed mark) is
                       // excluded: that belongs on the Attendance board to be confirmed,
                       // not overridden.
-                      const canOverridePrimary = !!row.empId && !isRelieverDay && monthEnded && !halfLocked && (hasMark || (st === "" && !flagged));
+                      const canOverridePrimary = !!row.empId && !isRelieverDay && monthEnded && !dayLocked(i) && (hasMark || (st === "" && !flagged));
                       // A SECOND shift = double duty, which only exists when the
                       // guard is PRESENT that day. If they're absent/leave the other
                       // shift columns stay inert, and adding one is Present-only.
@@ -577,7 +570,7 @@ export default function AttendanceSheetModal({
                       // shifts, and two is the maximum a guard can cover (0395).
                       // Offering a third here would only produce a refusal at
                       // save time, which is a worse way to learn the rule.
-                      const canAddSecond = !!row.empId && !isRelieverDay && monthEnded && !halfLocked && st === "P";
+                      const canAddSecond = !!row.empId && !isRelieverDay && monthEnded && !dayLocked(i) && st === "P";
                       return shifts.map((cShift, s) => {
                         const isPrimary = s === si;
                         // Primary column = the guard's own status; other columns =
@@ -616,10 +609,10 @@ export default function AttendanceSheetModal({
                         );
                       });
                     })}
-                    <td className="border border-border px-1.5 py-0.5 text-center tabular-nums">{halfCounts.get(row)?.p ?? 0}</td>
-                    <td className="border border-border px-1.5 py-0.5 text-center tabular-nums">{halfCounts.get(row)?.a ?? 0}</td>
-                    <td className="border border-border px-1.5 py-0.5 text-center tabular-nums">{halfCounts.get(row)?.l ?? 0}</td>
-                    <td className="border border-border px-1.5 py-0.5 text-center tabular-nums">{halfCounts.get(row)?.dd || ""}</td>
+                    <td className="border border-border px-1.5 py-0.5 text-center tabular-nums">{row.presents}</td>
+                    <td className="border border-border px-1.5 py-0.5 text-center tabular-nums">{row.absents}</td>
+                    <td className="border border-border px-1.5 py-0.5 text-center tabular-nums">{row.leaves}</td>
+                    <td className="border border-border px-1.5 py-0.5 text-center tabular-nums">{row.doubleDuties || ""}</td>
                     <td className="border border-border px-1.5 py-0.5 text-center tabular-nums font-medium">{row.payDays}</td>
                   </tr>
                 ))}
@@ -657,7 +650,7 @@ export default function AttendanceSheetModal({
                   ? " The month has ended — a confirmed day is now locked everywhere else and can be changed only by clicking it here to override."
                   : " Until the month ends, this view is read-only — edit on the Attendance board."}
               </div>
-              <div>Presents, absents, leaves and double duty count this half only. Month pay days are for the whole month, as payroll pays it.</div>
+              <div>The grid shows the whole month. Verification runs per half: the 1st/2nd half switch picks which half's verification and remarks are shown above, and a verified half's days are locked.</div>
               {canHrVerify && <div><span className="inline-block w-3 h-3 align-middle rounded-sm bg-danger-100 dark:bg-danger-900/30 mr-1" /> not yet confirmed (blocks HR Verify)</div>}
             </div>
           )}
@@ -671,7 +664,7 @@ export default function AttendanceSheetModal({
           category={category}
           currentUserId={currentUserId}
           currentUserRole={currentUserRole}
-          locked={halfLocked}
+          locked={dateLocked(ovTarget.date)}
           presentOnly={!!ovTarget.presentOnly}
           history={overrides.filter((o) => o.employee_id === ovTarget.empId && o.attendance_date === ovTarget.date)}
           onClose={() => setOvTarget(null)}

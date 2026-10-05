@@ -141,14 +141,46 @@ export async function markReliever(e: Employee, ctx: CalendarContext, date: stri
 }
 
 // ---------------------------------------------------------------- Monthly Board (AttendanceSheetModal)
+export type HalfVerification = {
+  hr_verified_at: string | null; hr_verified_by_name: string | null;
+  ops_verified_at: string | null; ops_verified_by_name: string | null;
+  finance_verified_at: string | null; finance_verified_by_name: string | null;
+};
+
+export type BoardRemark = {
+  id: string; parent_id: string | null; kind: "remark" | "reply" | "returned";
+  body: string; author_name: string | null; created_at: string;
+};
+
 export type MonthlyBoard = {
   rows: AttendanceEmployeeRow[]; cells: Map<string, Map<string, string>>; daysInMonth: number; monthLabel: string; shifts: string[];
+  /** A pre-0493 whole-month OPS verification — counts as fully verified. */
   verifiedAt: string | null; runPhase: string | null; financeVerified: boolean;
+  /** 0493: the half shown, its day-index range (0-based, inclusive) and its chain. */
+  half: 1 | 2; halfFirstIdx: number; halfLastIdx: number; halfLabel: string; halfEnded: boolean;
+  halfVer: HalfVerification | null;
+  /** Whole-month grid: is each half HR-verified (locked)? A legacy month verification locks both. */
+  lockedHalves: { 1: boolean; 2: boolean };
+  /** First day index of half 2 (0-based). */
+  halfCut: number;
+  /** Edits refused: HR verified this half, or a legacy month verification exists. */
+  locked: boolean;
   overrides: { employee_id: string; attendance_date: string; after_value: string | null; reason: string; created_at: string }[];
   monthEnded: boolean; outstanding: { empId: string; empName: string; date: string }[]; flagged: Set<string>;
 };
 
-export async function loadMonthlyBoard(clientId: string, siteId: string | null, month: string): Promise<MonthlyBoard> {
+/** Same exact-halves rule as attendance_half_of() in the database (0493). */
+export function halfRange(month: string, half: 1 | 2) {
+  const [y, m] = month.split("-").map(Number);
+  const dim = new Date(y!, m!, 0).getDate();
+  const cut = Math.floor(dim / 2);
+  const first = half === 1 ? 0 : cut;
+  const last = half === 1 ? cut - 1 : dim - 1;
+  const mon = new Date(y!, m! - 1, 1).toLocaleDateString("en-GB", { month: "short" });
+  return { first, last, label: `${first + 1}–${last + 1} ${mon}`, cut, dim };
+}
+
+export async function loadMonthlyBoard(clientId: string, siteId: string | null, month: string, half: 1 | 2 = 1): Promise<MonthlyBoard> {
   const monthStart = `${month}-01`;
   const [cy, cm] = month.split("-").map(Number);
   const monthEnd = `${month}-${String(new Date(cy!, cm!, 0).getDate()).padStart(2, "0")}`;
@@ -165,17 +197,25 @@ export async function loadMonthlyBoard(clientId: string, siteId: string | null, 
   relieverRows.forEach((r, i) => (r.serial = built.rows.length + i + 1));
   const rows = [...built.rows, ...relieverRows];
 
-  const [ver, ovs, ph] = await Promise.all([
+  const [ver, ovs, ph, hv] = await Promise.all([
     sb().from("attendance_month_verifications").select("verified_at").eq("period_month", monthStart).eq("client_id", clientId).maybeSingle(),
     sb().from("attendance_overrides").select("employee_id, attendance_date, reason, after_value, created_at").gte("attendance_date", monthStart).lte("attendance_date", `${month}-31`).eq("client_id", clientId).order("created_at", { ascending: false }),
     sb().from("payroll_run_phases").select("phase, finance_verified_at").eq("period_month", monthStart).eq("client_id", clientId).maybeSingle(),
+    sb().from("attendance_half_verifications")
+      .select("half, hr_verified_at, hr_verified_by_name, ops_verified_at, ops_verified_by_name, finance_verified_at, finance_verified_by_name")
+      .eq("period_month", monthStart).eq("client_id", clientId),
   ]);
+  const hr = halfRange(month, half);
+  const halfRows = ((hv.data ?? []) as (HalfVerification & { half: number })[]);
+  const legacyLocked = !!(ver.data as any)?.verified_at;
+  const halfLast = new Date(cy!, cm! - 1, hr.last + 1);
   const overrides = ((ovs.data ?? []) as any[]);
   const overridden = new Set(overrides.map((o) => `${o.employee_id}|${o.attendance_date}`));
   const lastDay = new Date(cy!, cm!, 0); const now = new Date();
-  lastDay.setHours(0, 0, 0, 0); now.setHours(0, 0, 0, 0);
+  lastDay.setHours(0, 0, 0, 0); now.setHours(0, 0, 0, 0); halfLast.setHours(0, 0, 0, 0);
 
-  // Unmarked AND not overridden = outstanding; reliever rows/days never block.
+  // Unmarked AND not overridden = flagged (whole month, for the grid); outstanding
+  // = flagged within the half being verified. Reliever rows/days never block.
   const flagged = new Set<string>();
   const outstanding: MonthlyBoard["outstanding"] = [];
   for (const row of rows) {
@@ -186,32 +226,62 @@ export async function loadMonthlyBoard(clientId: string, siteId: string | null, 
       const date = `${month}-${String(i + 1).padStart(2, "0")}`;
       if (overridden.has(`${row.empId}|${date}`)) continue;
       flagged.add(`${row.empId}|${i}`);
-      outstanding.push({ empId: row.empId, empName: row.name, date });
+      // Only the half being verified blocks HR Verify.
+      if (i >= hr.first && i <= hr.last) outstanding.push({ empId: row.empId, empName: row.name, date });
     }
   }
   return {
     rows, cells: built.cellsByEmp, daysInMonth: built.daysInMonth, monthLabel: built.monthLabel, shifts: deriveAttendanceShifts(rows),
     verifiedAt: (ver.data as any)?.verified_at ?? null, runPhase: (ph.data as any)?.phase ?? null, financeVerified: !!(ph.data as any)?.finance_verified_at,
+    half, halfFirstIdx: hr.first, halfLastIdx: hr.last, halfLabel: hr.label, halfEnded: halfLast < now,
+    halfVer: halfRows.find((r) => r.half === half) ?? null,
+    lockedHalves: {
+      1: legacyLocked || !!halfRows.find((r) => r.half === 1)?.hr_verified_at,
+      2: legacyLocked || !!halfRows.find((r) => r.half === 2)?.hr_verified_at,
+    },
+    halfCut: hr.cut,
+    locked: legacyLocked || !!halfRows.find((r) => r.half === half)?.hr_verified_at,
     overrides, monthEnded: lastDay < now, outstanding, flagged,
   };
 }
 
-/** runOpsVerify(). */
-export async function opsVerify(clientId: string, month: string, board: MonthlyBoard) {
-  if (!board.monthEnded) throw new Error("This month hasn't ended yet — OPS Verify is available once the last day has passed.");
-  if (board.outstanding.length > 0) {
-    const preview = board.outstanding.slice(0, 8).map((o) => `${o.empName} (${o.date})`).join(", ");
-    throw new Error(`${board.outstanding.length} unmarked day(s) still outstanding: ${preview}${board.outstanding.length > 8 ? "…" : ""}. Mark or override them, then verify again.`);
+export type HalfAction =
+  | "hr_verify" | "ops_verify" | "finance_verify"
+  | "undo_hr" | "undo_ops" | "undo_finance"
+  | "return_to_hr" | "return_to_ops";
+
+/**
+ * One step of the HR -> Ops -> Finance chain on a half-month board (0493). The
+ * database checks the stage key, the order, the half having ended and payroll
+ * still being in Draft, and stamps who did it.
+ */
+export async function halfAction(clientId: string, month: string, board: MonthlyBoard, action: HalfAction, note?: string) {
+  if (action === "hr_verify") {
+    if (!board.halfEnded) throw new Error(`This half (${board.halfLabel}) hasn't ended yet. It can be verified from the day after.`);
+    if (board.outstanding.length > 0) {
+      const preview = board.outstanding.slice(0, 6).map((o) => `${o.empName} (${o.date})`).join(", ");
+      throw new Error(`${board.outstanding.length} unconfirmed day(s) in this half: ${preview}${board.outstanding.length > 6 ? "…" : ""}. Confirm or override them first.`);
+    }
   }
-  await q(sb().from("attendance_month_verifications").insert({ client_id: clientId, category: null, period_month: `${month}-01`, verified_by: await uid() } as never));
+  if ((action === "return_to_hr" || action === "return_to_ops") && !note?.trim()) throw new Error("Say why it is being sent back.");
+  await q(sb().rpc("attendance_half_action", {
+    p_client_id: clientId, p_category: null, p_period_month: `${month}-01`, p_half: board.half, p_action: action, p_note: note?.trim() || null,
+  } as never));
 }
 
-/** unVerify(): locked once payroll has moved past Draft. */
-export async function opsUnverify(clientId: string, month: string, board: MonthlyBoard) {
-  if (board.runPhase !== null) {
-    throw new Error(board.financeVerified ? "Locked — this month is Finance Verified and can no longer be reversed." : `Locked — payroll is in ${board.runPhase === "finance_verify" ? "Finance Verify" : "Review"} for this month. Move it back to Draft to un-verify.`);
-  }
-  await q(sb().from("attendance_month_verifications").delete().eq("period_month", `${month}-01`).eq("client_id", clientId));
+export async function loadBoardRemarks(clientId: string, month: string, half: 1 | 2): Promise<BoardRemark[]> {
+  return q<BoardRemark[]>(sb().from("attendance_board_remarks")
+    .select("id, parent_id, kind, body, author_name, created_at")
+    .eq("client_id", clientId).eq("period_month", `${month}-01`).eq("half", half)
+    .order("created_at", { ascending: true }));
+}
+
+/** A remark on the board, or a reply to one. The author is stamped by the database. */
+export async function postBoardRemark(clientId: string, month: string, half: 1 | 2, body: string, parentId: string | null) {
+  if (!body.trim()) throw new Error("Write something first.");
+  await q(sb().rpc("attendance_board_remark", {
+    p_client_id: clientId, p_category: null, p_period_month: `${month}-01`, p_half: half, p_body: body.trim(), p_parent_id: parentId,
+  } as never));
 }
 
 const LETTER: Record<string, string> = { present: "P", absent: "A", leave: "L" };
@@ -221,7 +291,7 @@ export async function overrideCell(args: {
   clientId: string; empId: string; date: string; shift: string; current: string; status: "present" | "absent" | "leave";
   presentOnly: boolean; reason: string; locked: boolean; profile: { id: string; role: string };
 }) {
-  if (args.locked) throw new Error("This month is OPS-verified and locked. Un-verify it to change attendance.");
+  if (args.locked) throw new Error("This half is verified and locked. Ops must send it back to HR before it can be changed.");
   if (!args.reason.trim()) throw new Error("A reason is required to override.");
   const reason = args.reason.trim();
   await rpc("clear_attendance_conflicts", { p_employee: args.empId, p_date: args.date, p_leave_only: args.presentOnly ? true : args.status !== "leave", p_reason: reason });
@@ -248,12 +318,12 @@ export async function overrideCell(args: {
 
 /** clearDay() / clearMonth(): server-side, audited, stops at the OPS-verified lock. */
 export async function clearAttendanceDay(empId: string, date: string, reason: string, locked: boolean) {
-  if (locked) throw new Error("This month is OPS-verified and locked. Un-verify it to change attendance.");
+  if (locked) throw new Error("This half is verified and locked. Ops must send it back to HR before it can be changed.");
   if (!reason.trim()) throw new Error("A reason is required to clear this day.");
   await rpc("clear_attendance_day", { p_employee: empId, p_date: date, p_reason: reason.trim() });
 }
 export async function clearAttendanceMonth(empId: string, month: string, reason: string, locked: boolean) {
-  if (locked) throw new Error("This month is OPS-verified and locked. Un-verify it to change attendance.");
+  if (locked) throw new Error("This half is verified and locked. Ops must send it back to HR before it can be changed.");
   if (!reason.trim()) throw new Error("A reason is required to clear the month.");
   await rpc("clear_attendance_month", { p_employee: empId, p_month: month, p_reason: reason.trim() });
 }

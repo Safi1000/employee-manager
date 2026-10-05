@@ -114,7 +114,7 @@ export default function PayrollRun() {
     await load();
   };
 
-  const opsLine = (s: Scope) => data?.verifiedAt.get(s.key) ? `OPS verified: ${fmtStamp(data.verifiedAt.get(s.key))}` : undefined;
+  const opsLine = (s: Scope) => data?.verifiedAt.get(s.key) ? `Attendance verified: ${fmtStamp(data.verifiedAt.get(s.key))}` : undefined;
   const unverified = (s: Scope) => s.verifiable && !data?.verified.has(s.key);
 
   return (
@@ -142,7 +142,7 @@ export default function PayrollRun() {
             return (
               <Card key={s.key} style={{ marginBottom: 10, ...(ok ? {} : { borderColor: t.tone("warning").line, backgroundColor: t.tone("warning").tint }) }}>
                 <T v="bodyStrong">{s.name}</T>
-                <T v="small" muted>{!s.verifiable ? "No OPS verification needed" : ok ? opsLine(s) ?? "OPS verified" : "Waiting on OPS verification for this month"}</T>
+                <T v="small" muted>{!s.verifiable ? "No attendance verification needed" : ok ? opsLine(s) ?? "Attendance verified" : "Waiting on HR, Ops and Finance to verify both halves"}</T>
                 {ok && can("payroll.edit") && <Button size="sm" style={{ marginTop: 10, alignSelf: "flex-start" }} icon={ArrowRight} label="Move to Review" loading={busyKey === s.key}
                   onPress={() => run(s.key, async () => { await moveToReview(s, period, profile?.id ?? null); setTab("review"); setExpanded(s.key); })} />}
               </Card>
