@@ -435,11 +435,15 @@ export default function PayrollRun() {
   // totals are scoped to `expanded` when it is set, so the cards would report a
   // client that is not on screen. Only collapses when it genuinely drops out, so
   // typing while something is open does not keep snapping it shut.
+  //
+  // Not while loading: on returning to the page the list is still empty for a
+  // moment, and judging the remembered open client against an empty list
+  // closed it every time — which is why the Review tab never kept its state.
   useEffect(() => {
-    if (!expanded) return;
+    if (!expanded || loading || scopes.length === 0) return;
     const stillVisible = scopes.some((s) => s.key === expanded && matchesSearch(s));
     if (!stillVisible) setExpanded(null);
-  }, [expanded, scopes, matchesSearch]);
+  }, [expanded, scopes, matchesSearch, loading]);
 
   // The queued export, fired when the scope it was asked for reports its rows.
   useEffect(() => {
