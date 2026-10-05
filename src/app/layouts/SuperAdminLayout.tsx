@@ -91,7 +91,7 @@ export default function SuperAdminLayout() {
   const EMPLOYEES: LinkDef = { to: "/super-admin/employees", label: "Employees", icon: UserCircle, perms: ["employees.view", "employees.edit"] };
   const ASSIGNMENTS: LinkDef = { to: "/super-admin/assignments", label: "Assignments & Pay", icon: ClipboardList, perms: ["assignments.view", "employees.edit"] };
   const ATTENDANCE: LinkDef = { to: "/super-admin/attendance", label: "Attendance", icon: Calendar, perms: ["attendance.view", "attendance.edit"] };
-  const ATTENDANCE_RUN: LinkDef = { to: "/super-admin/attendance-run", label: "Attendance Run", icon: ClipboardCheck, perms: ["attendance.view", "attendance.ops_verify", "attendance.hr_verify"] };
+  const ATTENDANCE_RUN: LinkDef = { to: "/super-admin/attendance-run", label: "Attendance Run", icon: ClipboardCheck, perms: ["attendance.run_view", "attendance.ops_verify"] };
   const PAYROLL: LinkDef = { to: "/super-admin/payroll", label: "Payroll", icon: DollarSign, perms: ["payroll.view", "payroll.edit"] };
   const PAYROLL_RUN: LinkDef = { to: "/super-admin/payroll-run", label: "Payroll Run", icon: DollarSign, perms: ["payroll.view", "payroll.edit"] };
   const PERFORMANCE: LinkDef = { to: "/super-admin/performance", label: "Performance", icon: TrendingUp, perms: ["payroll.view", "performance.approve"] };

@@ -1,4 +1,5 @@
-import { Suspense, lazy } from "react";
+import { Suspense } from "react";
+import { lazyPage } from "../lib/lazyPage";
 import { Navigate } from "react-router";
 import { ROLE_HOMES, useAuth } from "../lib/auth";
 
@@ -7,7 +8,7 @@ import { ROLE_HOMES, useAuth } from "../lib/auth";
 // actually renders it at "/". Logged-in users redirect before it renders, so
 // they never download the landing chunk. A full-screen obsidian placeholder
 // matches the landing's background to avoid a white flash while it loads.
-const BastionLanding = lazy(() => import("../landing/BastionLanding"));
+const BastionLanding = lazyPage(() => import("../landing/BastionLanding"));
 const LandingFallback = <div style={{ minHeight: "100dvh", background: "#12140f" }} />;
 
 export default function RoleSelection() {

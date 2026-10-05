@@ -1,11 +1,13 @@
 import { isIsoDate } from "../../lib/date";
-import { useEffect, useMemo, useState, lazy, Suspense } from "react";
+import { useEffect, useMemo, useState, Suspense } from "react";
+import { lazyPage } from "../../lib/lazyPage";
 import { AlertCircle, Building2, MapPin, Loader2, X, ChevronRight, ChevronLeft, CheckCircle2, Clock, Download, Briefcase, CalendarRange, Search, ChevronDown, FileText, Users, FileSpreadsheet, Loader } from "lucide-react";
 import Header from "../../components/Header";
 import RouteLoading from "../../components/RouteLoading";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import Tabs from "../../components/Tabs";
+import ClientFilterSelect from "../../components/ClientFilterSelect";
 import ThemedSelect from "../../components/ThemedSelect";
 import { supabase } from "../../lib/supabase";
 import { useAuth, hasPermission } from "../../lib/auth";
@@ -13,7 +15,7 @@ import { guardDisplayCode } from "../../lib/guardCode";
 import BulkMarkByEmployeeModal from "../../components/BulkMarkByEmployeeModal";
 // Lazy: ShiftManagement imports a modal out of EmployeeManagement, which
 // dragged that entire 160 KB page into the board's chunk for one tab.
-const ShiftManagement = lazy(() => import("./ShiftManagement"));
+const ShiftManagement = lazyPage(() => import("./ShiftManagement"));
 import AttendanceSheetModal from "../../components/AttendanceSheetModal";
 import { brandingFromCompany, type PdfBranding } from "../../lib/pdfBranding";
 // jsPDF (381 KB) and xlsx (288 KB) are loaded at the click, not with the page:
@@ -170,8 +172,14 @@ export default function AttendanceBoard() {
   const branding = brandingFromCompany(company);
   const [date, setDate] = useState(today());
   const [tab, setTab] = useState<"board" | "monthly" | "vacancies" | "shifts">("board");
-  // Monthly tab: the client/group whose Monthly board is shown on the page.
+  // Monthly tab: the client/group whose Monthly board is shown on the page, the
+  // board's month, every client/group that can be picked (not just those with
+  // attendance on the day the Daily board is showing), and each one's HR status
+  // for that month.
   const [monthlyClient, setMonthlyClient] = useState<string>("");
+  const [monthlyMonth, setMonthlyMonth] = useState<string>("");
+  const [monthlyScopes, setMonthlyScopes] = useState<{ id: string; name: string }[]>([]);
+  const [monthlyStatus, setMonthlyStatus] = useState<Map<string, 0 | 1 | 2>>(new Map());
   // "Shift Management" tab embeds the Assignments & Pay page. It must carry that
   // page's OWN view gate (assignments.view / employees.edit) — the Attendance
   // route only checks attendance.* , so without this an attendance-only user
@@ -634,6 +642,45 @@ export default function AttendanceBoard() {
   }, [rows]);
 
   // Distinct clients present on the board, for the filter dropdown.
+  useEffect(() => {
+    if (tab !== "monthly" || monthlyScopes.length > 0) return;
+    void (async () => {
+      const [{ data: cls }, { data: groups }] = await Promise.all([
+        supabase.from("clients").select("id, name").order("name"),
+        supabase.from("employees").select("category").is("client_id", null)
+          .not("category", "in", "(client,reliever)").neq("lifecycle_state", "archived"),
+      ]);
+      const cats = Array.from(new Set(((groups ?? []) as { category: string }[]).map((g) => g.category))).sort();
+      setMonthlyScopes([
+        ...((cls ?? []) as { id: string; name: string }[]),
+        ...cats.map((c) => ({ id: `cat:${c}`, name: c.replace(/_/g, " ").replace(/^./, (x) => x.toUpperCase()) })),
+      ]);
+    })();
+  }, [tab, monthlyScopes.length]);
+
+  // HR status per client/group for the board's month: 2 = both halves
+  // HR-verified (or the old monthly verification), 1 = one half, 0 = none.
+  useEffect(() => {
+    if (tab !== "monthly" || !monthlyMonth) return;
+    const period = `${monthlyMonth}-01`;
+    void (async () => {
+      const [{ data: hv }, { data: legacy }] = await Promise.all([
+        supabase.from("attendance_half_verifications").select("client_id, category, hr_verified_at").eq("period_month", period),
+        supabase.from("attendance_month_verifications").select("client_id, category").eq("period_month", period),
+      ]);
+      const m = new Map<string, 0 | 1 | 2>();
+      for (const r of (hv ?? []) as { client_id: string | null; category: string | null; hr_verified_at: string | null }[]) {
+        if (!r.hr_verified_at) continue;
+        const k = r.client_id ?? `cat:${r.category}`;
+        m.set(k, Math.min(2, (m.get(k) ?? 0) + 1) as 0 | 1 | 2);
+      }
+      for (const r of (legacy ?? []) as { client_id: string | null; category: string | null }[]) {
+        m.set(r.client_id ?? `cat:${r.category}`, 2);
+      }
+      setMonthlyStatus(m);
+    })();
+  }, [tab, monthlyMonth]);
+
   const clientOptions = useMemo(() => {
     const m = new Map<string, string>();
     for (const r of rows) m.set(r.client_id, r.client_name);
@@ -779,8 +826,11 @@ export default function AttendanceBoard() {
         title="Attendance"
         subtitle="Daily board by client/site — presume present, enter only exceptions, confirm per site"
         actions={
-          <input type="date" value={date} onChange={(e) => { if (isIsoDate(e.target.value)) setDate(e.target.value); }}
-            className="px-3 py-2 border border-border bg-card rounded-md text-sm text-foreground" />
+          // The day picker drives the Daily board only; the Monthly board has its own month.
+          tab === "monthly" ? undefined : (
+            <input type="date" value={date} onChange={(e) => { if (isIsoDate(e.target.value)) setDate(e.target.value); }}
+              className="px-3 py-2 border border-border bg-card rounded-md text-sm text-foreground" />
+          )
         }
       />
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8 space-y-4">
@@ -1069,30 +1119,37 @@ export default function AttendanceBoard() {
             1st/2nd-half views and HR verification (0493/0494). The same board
             the per-client "Monthly Board" buttons open as a pop-up. */}
         {tab === "monthly" && (() => {
-          const chosen = monthlyClient || clientOptions[0]?.[0] || "";
-          const name = clientOptions.find(([id]) => id === chosen)?.[1] ?? "";
+          const chosen = monthlyClient || monthlyScopes[0]?.id || "";
+          const name = monthlyScopes.find((c) => c.id === chosen)?.name ?? "";
+          const STATUS = [
+            { label: "Nothing Verified", cls: "bg-warning-50 text-warning-800 border-warning-200" },
+            { label: "Half Month Verified", cls: "bg-brand-50 text-brand-800 border-brand-200" },
+            { label: "Full Month Verified", cls: "bg-success-50 text-success-700 border-success-200" },
+          ] as const;
+          const badge = (id: string) => {
+            const st = STATUS[monthlyStatus.get(id) ?? 0];
+            return <span className={`inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] ${st.cls}`}>{st.label}</span>;
+          };
           return (
             <div className="space-y-3">
               <div className="bg-card border border-border rounded-lg p-3 flex flex-col sm:flex-row gap-2 sm:items-center">
                 <span className="text-sm text-muted-foreground">Client / group</span>
-                <ThemedSelect
+                <ClientFilterSelect
+                  clients={monthlyScopes}
                   value={chosen}
-                  onChange={(e) => setMonthlyClient(e.target.value)}
-                  className="px-3 py-2 border border-border bg-card rounded-md text-sm sm:w-72"
-                >
-                  {clientOptions.map(([id, n]) => <option key={id} value={id}>{n}</option>)}
-                </ThemedSelect>
+                  onChange={(v) => { if (v) setMonthlyClient(v); }}
+                  hideAll
+                  renderBadge={(c) => badge(c.id)}
+                  buttonClassName="sm:w-80"
+                />
+                {chosen && badge(chosen)}
                 <span className="text-xs text-muted-foreground sm:ml-auto">
-                  HR verifies here. Ops verifies on the Attendance Run.
+                  Status is HR verification for the month shown. Ops verifies on the Attendance Run.
                 </span>
               </div>
-              {loading ? (
+              {monthlyScopes.length === 0 ? (
                 <div className="bg-card border border-border rounded-lg px-4 py-10 text-center text-muted-foreground">
                   <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading…
-                </div>
-              ) : !chosen ? (
-                <div className="bg-card border border-border rounded-lg px-4 py-10 text-center text-sm text-muted-foreground">
-                  No clients with attendance on the selected day.
                 </div>
               ) : (
                 <AttendanceSheetModal
@@ -1104,6 +1161,8 @@ export default function AttendanceBoard() {
                   canHrVerify={canHrVerify}
                   currentUserId={profile?.id ?? null}
                   currentUserRole={profile?.role ?? null}
+                  initialMonth={monthlyMonth || undefined}
+                  onMonthChange={setMonthlyMonth}
                 />
               )}
             </div>

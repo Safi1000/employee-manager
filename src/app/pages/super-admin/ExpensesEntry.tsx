@@ -2,11 +2,11 @@
 // full Expenses page. Someone who can only REQUEST an expense gets their own
 // requests and the Request Expense form — not a ledger they cannot read.
 
-import { lazy } from "react";
+import { lazyPage } from "../../lib/lazyPage";
 import { useAuth, hasPermission } from "../../lib/auth";
 
-const Expenses = lazy(() => import("./Expenses"));
-const MyExpenseRequestsPage = lazy(() => import("../../components/ExpenseRequests"));
+const Expenses = lazyPage(() => import("./Expenses"));
+const MyExpenseRequestsPage = lazyPage(() => import("../../components/ExpenseRequests"));
 
 export default function ExpensesEntry() {
   const { profile } = useAuth();

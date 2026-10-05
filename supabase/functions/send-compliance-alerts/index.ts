@@ -21,6 +21,9 @@
 //      is exactly backwards: past its end and still active is the urgent case.
 //   3. Invoice reminders on every odd day (0358's cadence), naming the clients
 //      whose previous month has no primary invoice. Added by 0362.
+//   4. Attendance reminders on the same odd days (0497): every ended half-month
+//      of this month or last that is not HR-verified, or is HR-verified and
+//      still waiting on Ops. Same "keep arriving until done" rule as invoices.
 //
 // Source 2 used to read clients.contract_end. That column is unset on every
 // client here, while the real end dates live on the contracts table — so the
@@ -65,7 +68,7 @@ type AlertItem = {
   category: string;
   daysRemaining: number;
   priority?: string | null;
-  source: "important_date" | "contract_end" | "invoice_reminder";
+  source: "important_date" | "contract_end" | "invoice_reminder" | "attendance_reminder";
 };
 
 /** A threshold notice that must be recorded — but only once the email is away. */
@@ -262,9 +265,43 @@ async function collectAlerts(
     });
   }
 
+  // ── 4. Attendance reminders — same cadence as invoices (0497) ─────────────
+  //
+  // attendance_reminder_items() decides the day by the invoice predicate, so
+  // this arm cannot send on a day the invoice arm would not. A half is
+  // reminded about from the day after it ends until Ops has verified it;
+  // "days overdue" is counted from the half's last day.
+  const { data: attRem, error: attErr } = await db.rpc("attendance_reminder_items", {
+    p_company_id: companyId,
+    p_date: today,
+  });
+  if (attErr) {
+    console.error(`attendance_reminder_items failed company=${companyId}:`, attErr.message);
+  }
+  for (const r of (attRem ?? []) as Array<
+    { period_month: string; half: number; scope_name: string; stage: string; reason: string }
+  >) {
+    alerts.push({
+      title: `${r.scope_name} — attendance ${r.reason}`,
+      category: r.stage === "hr" ? "Attendance · HR" : "Attendance · Ops",
+      // Overdue since the half ended: the 1st half ends mid-month, the 2nd at month end.
+      daysRemaining: -Math.max(1, diffDaysUTC(today, halfEndOf(r.period_month, r.half))),
+      priority: "high",
+      source: "attendance_reminder",
+    });
+  }
+
   // Most urgent first.
   alerts.sort((a, b) => a.daysRemaining - b.daysRemaining);
   return { alerts, toLog };
+}
+
+// Last day of half 1 or 2 of a month, by the exact-halves rule (attendance_half_of, 0493).
+function halfEndOf(periodMonth: string, half: number): string {
+  const [y, m] = periodMonth.slice(0, 10).split("-").map(Number);
+  const dim = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const day = half === 1 ? Math.floor(dim / 2) : dim;
+  return `${y}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
 // Colours the "Due" cell to the same bands the calendar uses: 3 days or less

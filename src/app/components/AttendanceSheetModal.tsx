@@ -12,7 +12,11 @@ import BoardVerificationBar, { type HalfInfo, type HalfVerification } from "./Bo
 import { buildAttendanceRows, buildRelieverRows, loadSheetEmployees, loadSiteByGuard, loadConfirmationGate } from "../lib/attendanceSheet";
 import { exportAttendance, deriveAttendanceShifts, shiftAbbr, type AttendanceEmployeeRow } from "../lib/excel";
 
-const todayMonth = () => new Date().toISOString().slice(0, 7);
+const previousMonth = () => {
+  const d = new Date();
+  const p = new Date(d.getFullYear(), d.getMonth() - 1, 1);
+  return `${p.getFullYear()}-${String(p.getMonth() + 1).padStart(2, "0")}`;
+};
 
 // Frozen left columns (Ser. / Name / Desg. / Emp #) — fixed widths + cumulative
 // left offsets so they stick in place while the day columns scroll horizontally.
@@ -62,7 +66,7 @@ type OverrideRow = {
 
 export default function AttendanceSheetModal({
   clientId, clientName, siteId, siteName, companyId, canHrVerify = false,
-  currentUserId = null, currentUserRole = null, onClose, inline = false, initialMonth,
+  currentUserId = null, currentUserRole = null, onClose, inline = false, initialMonth, onMonthChange,
 }: {
   clientId: string;
   clientName: string;
@@ -79,8 +83,12 @@ export default function AttendanceSheetModal({
   inline?: boolean;
   /** YYYY-MM to open on (the Attendance Run passes its month). Defaults to this month. */
   initialMonth?: string;
+  /** Told whenever the board's month changes (the Monthly tab labels its client list by it). */
+  onMonthChange?: (month: string) => void;
 }) {
-  const [month, setMonth] = useState(initialMonth ?? todayMonth());
+  // Opens on the PREVIOUS month — the one being closed and verified (asked 2026-10-05).
+  const [month, setMonth] = useState(initialMonth ?? previousMonth());
+  useEffect(() => { onMonthChange?.(month); }, [month]); // eslint-disable-line react-hooks/exhaustive-deps
   // What the grid shows: the whole month (default), or one half (0493). HR's
   // verify button acts on what is shown — a half, or both halves in one go.
   const [view, setView] = useState<"month" | 1 | 2>("month");

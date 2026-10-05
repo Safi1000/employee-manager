@@ -24,11 +24,13 @@ import { isSeparatedState } from "../../lib/employmentWindow";
 
 // Default to the previous month — payroll is processed after a month ends (in
 // August you disburse July's salary). Matches Payroll Management's default.
+// Built from LOCAL parts: toISOString() is UTC, and local midnight on the 1st
+// in Pakistan (UTC+5) is still the previous day in UTC, so it used to land two
+// months back.
 const monthNow = () => {
   const d = new Date();
-  d.setDate(1);
-  d.setMonth(d.getMonth() - 1);
-  return d.toISOString().slice(0, 7);
+  const p = new Date(d.getFullYear(), d.getMonth() - 1, 1);
+  return `${p.getFullYear()}-${String(p.getMonth() + 1).padStart(2, "0")}`;
 };
 const fmtMonth = (ym: string) => {
   const [y, m] = ym.split("-").map(Number);
@@ -70,10 +72,24 @@ export default function PayrollRun() {
   // write is not yet under backend RLS (see 0313 recommendation) — FE-only.
   const canApprovePayroll = hasPermission(profile, "payroll.approve");
   const { regionId } = useRegion();
-  const [month, setMonth] = useState(monthNow());
+  // Where you were — month, tab, search, the open client and the scroll — is
+  // kept across navigation, so checking a figure on another page and coming
+  // back does not mean re-opening everything (asked 2026-10-05). Each embedded
+  // payroll keeps its own open employee (PayrollManagement, keyed per scope).
+  // sessionStorage: kept while this browser tab is open, so a fresh visit still
+  // opens on the previous month. A convenience, never a source of truth.
+  const RUN_STATE_KEY = "payrollRun.state.v1";
+  const saved = useMemo(() => {
+    try {
+      return (JSON.parse(sessionStorage.getItem(RUN_STATE_KEY) || "null") ?? {}) as {
+        month?: string; tab?: "draft" | "review" | "finance_verify"; expanded?: string | null; search?: string; scrollTop?: number;
+      };
+    } catch { return {}; }
+  }, []);
+  const [month, setMonth] = useState(saved.month ?? monthNow());
   const period = `${month}-01`;
 
-  const [tab, setTab] = useState<"draft" | "review" | "finance_verify">("draft");
+  const [tab, setTab] = useState<"draft" | "review" | "finance_verify">(saved.tab ?? "draft");
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -84,11 +100,32 @@ export default function PayrollRun() {
   const [phaseByKey, setPhaseByKey] = useState<Map<string, Phase>>(new Map());
   const [financeVerified, setFinanceVerified] = useState<Set<string>>(new Set()); // permanently Finance Verified keys
   const [financeVerifiedAt, setFinanceVerifiedAt] = useState<Map<string, string>>(new Map()); // key → Finance verified timestamp
-  const [expanded, setExpanded] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(saved.expanded ?? null);
   // One search box across all three tabs. A client does not stop being the thing
   // you are looking for because it has moved from Draft to Review, and retyping
   // the name per tab is the kind of friction that makes people stop filtering.
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(saved.search ?? "");
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollTopRef = useRef<number>(saved.scrollTop ?? 0);
+  const scrollRestored = useRef(false);
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(RUN_STATE_KEY, JSON.stringify({ month, tab, expanded, search, scrollTop: scrollTopRef.current }));
+    } catch { /* storage unavailable: nothing is lost but the convenience */ }
+  }, [month, tab, expanded, search]);
+  // Put the scroll back once the page has content. The open client's payroll
+  // loads a moment later and grows the page, so try again shortly after.
+  useEffect(() => {
+    if (loading || scrollRestored.current) return;
+    scrollRestored.current = true;
+    const target = scrollTopRef.current;
+    if (!target) return;
+    const put = () => { if (scrollRef.current) scrollRef.current.scrollTop = target; };
+    requestAnimationFrame(put);
+    const t1 = setTimeout(put, 700);
+    const t2 = setTimeout(put, 1800);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [loading]);
   // Per-scope export rows, and the text each scope can be found by. Both are
   // built from the same employee+payslip read, so the sheet you export is the
   // roster the search matched.
@@ -564,7 +601,16 @@ export default function PayrollRun() {
   return (
     <>
       <Header title="Payroll Run" subtitle="Draft → Review → Finance Verify, per client & staff group" />
-      <div className="flex-1 overflow-y-auto px-4 md:px-8 pb-6">
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto px-4 md:px-8 pb-6"
+        onScroll={(e) => {
+          scrollTopRef.current = e.currentTarget.scrollTop;
+          try {
+            sessionStorage.setItem(RUN_STATE_KEY, JSON.stringify({ month, tab, expanded, search, scrollTop: scrollTopRef.current }));
+          } catch { /* ignore */ }
+        }}
+      >
         {/* Tabs, filters and (on Review) the KPI cards stay pinned while the
             client list scrolls under them (asked 2026-10-05). */}
         <div className="sticky top-0 z-20 -mx-4 md:-mx-8 px-4 md:px-8 pt-6 pb-4 mb-2 bg-background border-b border-border/60">

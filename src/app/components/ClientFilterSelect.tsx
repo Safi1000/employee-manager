@@ -1,3 +1,4 @@
+import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, ChevronDown, X } from "lucide-react";
 import type { Client } from "../lib/supabase";
@@ -20,6 +21,10 @@ type Props<T extends ClientLike> = {
   // Width utility for the trigger button. Defaults to the standalone "md:w-56";
   // pass "w-full" to let it fill a grid/flex cell instead.
   buttonClassName?: string;
+  /** Optional per-row badge (e.g. a verification status), shown after the name. */
+  renderBadge?: (c: T) => React.ReactNode;
+  /** Leave out the "All" choice — for pickers where one client must be chosen. */
+  hideAll?: boolean;
 };
 
 // Combobox: typing filters; click a match to select; clear button to reset.
@@ -33,6 +38,8 @@ export default function ClientFilterSelect<T extends ClientLike = Client>({
   filterFn,
   className = "",
   buttonClassName = "md:w-56",
+  renderBadge,
+  hideAll = false,
 }: Props<T>) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -95,7 +102,7 @@ export default function ClientFilterSelect<T extends ClientLike = Client>({
         <span className={`flex-1 truncate ${value === allValue ? "text-slate-500" : "text-slate-900"}`}>
           {selectedLabel}
         </span>
-        {value !== allValue && (
+        {value !== allValue && !hideAll && (
           <span
             role="button"
             tabIndex={0}
@@ -125,13 +132,15 @@ export default function ClientFilterSelect<T extends ClientLike = Client>({
             />
           </div>
           <div className="max-h-64 overflow-y-auto py-1">
-            <button
-              type="button"
-              onClick={() => select(allValue)}
-              className={`w-full text-left px-3 py-1.5 text-sm hover:bg-slate-50 ${value === allValue ? "bg-brand-50 text-brand-700" : "text-slate-700"}`}
-            >
-              {allLabel}
-            </button>
+            {!hideAll && (
+              <button
+                type="button"
+                onClick={() => select(allValue)}
+                className={`w-full text-left px-3 py-1.5 text-sm hover:bg-slate-50 ${value === allValue ? "bg-brand-50 text-brand-700" : "text-slate-700"}`}
+              >
+                {allLabel}
+              </button>
+            )}
             {extraOption && (
               <button
                 type="button"
@@ -155,6 +164,7 @@ export default function ClientFilterSelect<T extends ClientLike = Client>({
                 {c.client_code && (
                   <span className="text-xs text-slate-500 ml-2 font-mono">{c.client_code}</span>
                 )}
+                {renderBadge && <span className="ml-2">{renderBadge(c)}</span>}
               </button>
             ))}
           </div>

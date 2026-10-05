@@ -45,9 +45,10 @@ type Scope = {
   frozen: boolean;
 };
 
-const thisMonth = () => {
+const previousMonth = () => {
   const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const p = new Date(d.getFullYear(), d.getMonth() - 1, 1);
+  return `${p.getFullYear()}-${String(p.getMonth() + 1).padStart(2, "0")}`;
 };
 
 const when = (iso: string) =>
@@ -68,7 +69,8 @@ export default function AttendanceRun() {
   const canOps = hasPermission(profile, "attendance.ops_verify");
   const canHr = hasPermission(profile, "attendance.hr_verify");
 
-  const [month, setMonth] = useState(thisMonth());
+  // Opens on the previous month — the one being verified (asked 2026-10-05).
+  const [month, setMonth] = useState(previousMonth());
   const [tab, setTab] = useState<"review" | "verified">("review");
   const [scopes, setScopes] = useState<Scope[]>([]);
   const [loading, setLoading] = useState(true);

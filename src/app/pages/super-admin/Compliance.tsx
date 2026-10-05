@@ -26,6 +26,7 @@ import {
   type RecurringFrequency,
 } from "../../lib/supabase";
 import { describeAlert, alertCategoryLabel, alertTierLabel } from "../../lib/alertText";
+import { useAuth } from "../../lib/auth";
 
 type RaisedAlert = {
   id: string;
@@ -149,6 +150,15 @@ const milestoneLabel = (days: number): string => {
   return `${days} days left (2-week notice)`;
 };
 
+/** An ended half-month not yet verified (0497, attendance_unverified_halves). */
+type AttendanceAlert = {
+  key: string;
+  scope_name: string;
+  stage: "hr" | "ops";
+  reason: string;
+  half_end: string;
+};
+
 type ContractEndAlert = {
   id: string;
   contract_id: string;
@@ -163,6 +173,12 @@ export default function Compliance() {
   const [dates, setDates] = useState<ImportantDate[]>([]);
   const [recurring, setRecurring] = useState<RecurringAlert[]>([]);
   const [contractAlerts, setContractAlerts] = useState<ContractEndAlert[]>([]);
+  const { profile, company } = useAuth();
+  const companyId = profile?.view_as_company ?? profile?.company_id ?? company?.id ?? null;
+  // Attendance halves that ended and are not yet HR- or Ops-verified. The email
+  // repeats these on every odd day, like the invoice reminders; here they show
+  // every day until Ops verifies the half.
+  const [attendanceAlerts, setAttendanceAlerts] = useState<AttendanceAlert[]>([]);
   // Raised alerts, from the alerts table. NOT filtered by category: this panel
   // is the in-app delivery channel for the alerting mechanism as a whole, so a
   // control wired tomorrow appears here without anyone editing this file. The
@@ -268,6 +284,16 @@ export default function Compliance() {
       };
     });
     setContractAlerts(synth);
+    if (companyId) {
+      const { data: att } = await supabase.rpc("attendance_unverified_halves", { p_company_id: companyId });
+      setAttendanceAlerts(((att ?? []) as any[]).map((r) => ({
+        key: `att-${r.period_month}-${r.half}-${r.client_id ?? r.category}`,
+        scope_name: r.scope_name,
+        stage: r.stage,
+        reason: r.reason,
+        half_end: r.half_end,
+      })));
+    }
     setLoading(false);
   };
 
@@ -322,6 +348,16 @@ export default function Compliance() {
         source: ImportantDate;
       }
     | {
+        kind: "attendance";
+        id: string;
+        title: string;
+        category: string;
+        priority: CompliancePriority;
+        due_date: string;
+        daysRemaining: number;
+        notes: string | null;
+      }
+    | {
         kind: "contract_end";
         id: string;
         title: string;
@@ -372,12 +408,24 @@ export default function Compliance() {
                   : "2-week notice: contract ends in a fortnight.",
         contract_id: c.contract_id,
       }));
-    return [...fromDates, ...fromContracts].sort(
+    const fromAttendance: ActiveAlertItem[] = attendanceAlerts.map((a) => ({
+      kind: "attendance",
+      id: a.key,
+      title: `${a.scope_name} — attendance ${a.reason}`,
+      category: "Attendance",
+      priority: "high",
+      due_date: a.half_end,
+      daysRemaining: dayDiff(a.half_end),
+      notes: a.stage === "hr"
+        ? "HR verifies it on the Attendance page's Monthly board."
+        : "Waiting in Review on the Attendance Run for Ops.",
+    }));
+    return [...fromDates, ...fromContracts, ...fromAttendance].sort(
       (a, b) =>
         priorityRank(b.priority) - priorityRank(a.priority) ||
         a.daysRemaining - b.daysRemaining,
     );
-  }, [datesWithDays, contractAlerts]);
+  }, [datesWithDays, contractAlerts, attendanceAlerts]);
 
   const metrics = useMemo(() => {
     const upcomingDates = datesWithDays.filter((d) => d.daysRemaining >= 0).length;
@@ -1094,6 +1142,11 @@ export default function Compliance() {
                           {d.kind === "contract_end" && (
                             <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] bg-brand-50 text-brand-700">
                               Auto · Contract
+                            </span>
+                          )}
+                          {d.kind === "attendance" && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] bg-brand-50 text-brand-700">
+                              Auto · Attendance
                             </span>
                           )}
                         </div>

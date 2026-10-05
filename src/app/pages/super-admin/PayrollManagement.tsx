@@ -159,10 +159,15 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
 
   // Item 1: remember the selected period + payslip across navigation so the user
   // resumes where they left off. Scoped so reliever and main payroll don't clash.
-  const selStoreKey = `payroll.selection.${relieversOnly ? "reliever" : "main"}.v1`;
+  // Embedded in the Payroll Run, each client/group keeps its own open employee.
+  const selStoreKey = runInline
+    ? `payroll.selection.run.${clientScopeId ?? `cat:${categoryScope ?? ""}`}.v1`
+    : `payroll.selection.${relieversOnly ? "reliever" : "main"}.v1`;
   const readSel = (): { period?: string; id?: string | null } => {
     try {
-      return JSON.parse(localStorage.getItem(selStoreKey) || "null") ?? {};
+      // sessionStorage (2026-10-05): kept for this tab's session, so a fresh
+      // visit opens on the previous month rather than wherever you last were.
+      return JSON.parse(sessionStorage.getItem(selStoreKey) || "null") ?? {};
     } catch {
       return {};
     }
@@ -324,7 +329,9 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   const [periodOptions, setPeriodOptions] = useState<string[]>([currentPeriod, previousPeriod]);
   const [selectedPeriod, setSelectedPeriod] = useState(() => readSel().period ?? previousPeriod);
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Restored from the last visit (asked 2026-10-05): the employee whose
+  // breakdown was open is open again when you come back.
+  const [selectedId, setSelectedId] = useState<string | null>(() => readSel().id ?? null);
   const [salaryDraft, setSalaryDraft] = useState("");
   const [salarySaving, setSalarySaving] = useState(false);
   const [salaryMsg, setSalaryMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -704,7 +711,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   // Item 1: persist the period + selected payslip so navigation resumes here.
   useEffect(() => {
     try {
-      localStorage.setItem(selStoreKey, JSON.stringify({ period: selectedPeriod, id: selectedId }));
+      sessionStorage.setItem(selStoreKey, JSON.stringify({ period: selectedPeriod, id: selectedId }));
     } catch {
       /* ignore quota / privacy errors */
     }

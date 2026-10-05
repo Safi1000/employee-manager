@@ -373,6 +373,7 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
       { key: "attendance.backdate", label: "Backdate attendance past the marking cutoff" },
       { key: "attendance.hr_verify", label: "HR-verify a half-month of attendance (first stage)" },
       { key: "attendance.ops_verify", label: "OPS-verify a half-month of attendance (after HR)" },
+      { key: "attendance.run_view", label: "View the Attendance Run (Review / Ops Verify)" },
     ],
   },
   {

@@ -1,4 +1,4 @@
-import { lazy } from "react";
+import { lazyPage, RouteErrorScreen } from "./lib/lazyPage";
 import { createBrowserRouter, Navigate } from "react-router";
 // Every screen is its own chunk, fetched the first time it is visited. Before
 // this the whole app — ~60 pages, jsPDF, xlsx, the landing site — was one
@@ -7,72 +7,72 @@ import { createBrowserRouter, Navigate } from "react-router";
 // user re-downloaded it. Login stays eager: it is the first thing shown.
 // The Suspense boundaries live in App.tsx and the two layouts' <Outlet />, so
 // a chunk fetch shows a spinner inside the shell, not a blank page.
-const RoleSelection = lazy(() => import("./pages/RoleSelection"));
+const RoleSelection = lazyPage(() => import("./pages/RoleSelection"));
 import Login from "./pages/Login";
-const Signup = lazy(() => import("./pages/Signup"));
-const SignupComplete = lazy(() => import("./pages/SignupComplete"));
+const Signup = lazyPage(() => import("./pages/Signup"));
+const SignupComplete = lazyPage(() => import("./pages/SignupComplete"));
 import RequireAuth from "./components/RequireAuth";
 import RequirePermission from "./components/RequirePermission";
 import PublicAnalytics from "./components/PublicAnalytics";
 import SuperAdminLayout from "./layouts/SuperAdminLayout";
 import SuperSuperAdminLayout from "./layouts/SuperSuperAdminLayout";
 
-const Dashboard = lazy(() => import("./pages/super-admin/Dashboard"));
-const UserManagement = lazy(() => import("./pages/super-admin/UserManagement"));
-const EmployeeManagement = lazy(() => import("./pages/super-admin/EmployeeManagement"));
-const EmployeeAssignments = lazy(() => import("./pages/super-admin/EmployeeAssignments"));
-const AttendanceManagement = lazy(() => import("./pages/super-admin/AttendanceManagement"));
-const AttendanceBoard = lazy(() => import("./pages/super-admin/AttendanceBoard"));
-const PayrollManagement = lazy(() => import("./pages/super-admin/PayrollManagement"));
-const PayrollRun = lazy(() => import("./pages/super-admin/PayrollRun"));
-const AttendanceRun = lazy(() => import("./pages/super-admin/AttendanceRun"));
-const PayrollAdjustments = lazy(() => import("./pages/super-admin/PayrollAdjustments"));
-const LeaveBalances = lazy(() => import("./pages/super-admin/LeaveBalances"));
+const Dashboard = lazyPage(() => import("./pages/super-admin/Dashboard"));
+const UserManagement = lazyPage(() => import("./pages/super-admin/UserManagement"));
+const EmployeeManagement = lazyPage(() => import("./pages/super-admin/EmployeeManagement"));
+const EmployeeAssignments = lazyPage(() => import("./pages/super-admin/EmployeeAssignments"));
+const AttendanceManagement = lazyPage(() => import("./pages/super-admin/AttendanceManagement"));
+const AttendanceBoard = lazyPage(() => import("./pages/super-admin/AttendanceBoard"));
+const PayrollManagement = lazyPage(() => import("./pages/super-admin/PayrollManagement"));
+const PayrollRun = lazyPage(() => import("./pages/super-admin/PayrollRun"));
+const AttendanceRun = lazyPage(() => import("./pages/super-admin/AttendanceRun"));
+const PayrollAdjustments = lazyPage(() => import("./pages/super-admin/PayrollAdjustments"));
+const LeaveBalances = lazyPage(() => import("./pages/super-admin/LeaveBalances"));
 import TabHub from "./pages/super-admin/_TabHub";
-const Accounting = lazy(() => import("./pages/super-admin/Accounting"));
-const FinancialReports = lazy(() => import("./pages/super-admin/FinancialReports"));
-const ExpensesEntry = lazy(() => import("./pages/super-admin/ExpensesEntry"));
-const Invoices = lazy(() => import("./pages/super-admin/Invoices"));
-const Cashflow = lazy(() => import("./pages/super-admin/CashFlow"));
-const ComplianceHub = lazy(() => import("./pages/super-admin/ComplianceHub"));
-const Documents = lazy(() => import("./pages/super-admin/Documents"));
-const Settings = lazy(() => import("./pages/super-admin/Settings"));
-const Tasks = lazy(() => import("./pages/super-admin/Tasks"));
-const Performance = lazy(() => import("./pages/super-admin/Performance"));
-const Clients = lazy(() => import("./pages/super-admin/Clients"));
-const Contracts = lazy(() => import("./pages/super-admin/Contracts"));
-const SitesStrength = lazy(() => import("./pages/super-admin/SitesStrength"));
-const Licences = lazy(() => import("./pages/super-admin/Licences"));
-const Roster = lazy(() => import("./pages/super-admin/Roster"));
-const Incidents = lazy(() => import("./pages/super-admin/Incidents"));
-const ChartOfAccounts = lazy(() => import("./pages/super-admin/ChartOfAccounts"));
-const PeriodClose = lazy(() => import("./pages/super-admin/PeriodClose"));
-const AuditLog = lazy(() => import("./pages/super-admin/AuditLog"));
-const Partners = lazy(() => import("./pages/super-admin/Partners"));
-const PartnershipRun = lazy(() => import("./pages/super-admin/PartnershipRun"));
-const ProjectFinancing = lazy(() => import("./pages/super-admin/ProjectFinancing"));
-const Treasury = lazy(() => import("./pages/super-admin/Treasury"));
-const FieldOps = lazy(() => import("./pages/super-admin/FieldOps"));
-const ComplianceCases = lazy(() => import("./pages/super-admin/ComplianceCases"));
-const Assets = lazy(() => import("./pages/super-admin/Assets"));
-const Alerts = lazy(() => import("./pages/super-admin/Alerts"));
-const Governance = lazy(() => import("./pages/super-admin/Governance"));
-const Receivables = lazy(() => import("./pages/super-admin/Receivables"));
-const OpeningBalances = lazy(() => import("./pages/super-admin/OpeningBalances"));
-const RegionalScorecard = lazy(() => import("./pages/super-admin/RegionalScorecard"));
-const ClientRelationships = lazy(() => import("./pages/super-admin/ClientRelationships"));
+const Accounting = lazyPage(() => import("./pages/super-admin/Accounting"));
+const FinancialReports = lazyPage(() => import("./pages/super-admin/FinancialReports"));
+const ExpensesEntry = lazyPage(() => import("./pages/super-admin/ExpensesEntry"));
+const Invoices = lazyPage(() => import("./pages/super-admin/Invoices"));
+const Cashflow = lazyPage(() => import("./pages/super-admin/CashFlow"));
+const ComplianceHub = lazyPage(() => import("./pages/super-admin/ComplianceHub"));
+const Documents = lazyPage(() => import("./pages/super-admin/Documents"));
+const Settings = lazyPage(() => import("./pages/super-admin/Settings"));
+const Tasks = lazyPage(() => import("./pages/super-admin/Tasks"));
+const Performance = lazyPage(() => import("./pages/super-admin/Performance"));
+const Clients = lazyPage(() => import("./pages/super-admin/Clients"));
+const Contracts = lazyPage(() => import("./pages/super-admin/Contracts"));
+const SitesStrength = lazyPage(() => import("./pages/super-admin/SitesStrength"));
+const Licences = lazyPage(() => import("./pages/super-admin/Licences"));
+const Roster = lazyPage(() => import("./pages/super-admin/Roster"));
+const Incidents = lazyPage(() => import("./pages/super-admin/Incidents"));
+const ChartOfAccounts = lazyPage(() => import("./pages/super-admin/ChartOfAccounts"));
+const PeriodClose = lazyPage(() => import("./pages/super-admin/PeriodClose"));
+const AuditLog = lazyPage(() => import("./pages/super-admin/AuditLog"));
+const Partners = lazyPage(() => import("./pages/super-admin/Partners"));
+const PartnershipRun = lazyPage(() => import("./pages/super-admin/PartnershipRun"));
+const ProjectFinancing = lazyPage(() => import("./pages/super-admin/ProjectFinancing"));
+const Treasury = lazyPage(() => import("./pages/super-admin/Treasury"));
+const FieldOps = lazyPage(() => import("./pages/super-admin/FieldOps"));
+const ComplianceCases = lazyPage(() => import("./pages/super-admin/ComplianceCases"));
+const Assets = lazyPage(() => import("./pages/super-admin/Assets"));
+const Alerts = lazyPage(() => import("./pages/super-admin/Alerts"));
+const Governance = lazyPage(() => import("./pages/super-admin/Governance"));
+const Receivables = lazyPage(() => import("./pages/super-admin/Receivables"));
+const OpeningBalances = lazyPage(() => import("./pages/super-admin/OpeningBalances"));
+const RegionalScorecard = lazyPage(() => import("./pages/super-admin/RegionalScorecard"));
+const ClientRelationships = lazyPage(() => import("./pages/super-admin/ClientRelationships"));
 // Consolidation restructure — merged / renamed homes.
-const AssetsIssuance = lazy(() => import("./pages/super-admin/AssetsIssuance"));
-const AccountingCore = lazy(() => import("./pages/super-admin/AccountingCore"));
-const AccessGovernance = lazy(() => import("./pages/super-admin/AccessGovernance"));
-const MyProfile = lazy(() => import("./pages/super-admin/MyProfile"));
-const DailyReports = lazy(() => import("./pages/super-admin/DailyReports"));
-const IncidentsHub = lazy(() => import("./pages/super-admin/IncidentsHub"));
+const AssetsIssuance = lazyPage(() => import("./pages/super-admin/AssetsIssuance"));
+const AccountingCore = lazyPage(() => import("./pages/super-admin/AccountingCore"));
+const AccessGovernance = lazyPage(() => import("./pages/super-admin/AccessGovernance"));
+const MyProfile = lazyPage(() => import("./pages/super-admin/MyProfile"));
+const DailyReports = lazyPage(() => import("./pages/super-admin/DailyReports"));
+const IncidentsHub = lazyPage(() => import("./pages/super-admin/IncidentsHub"));
 
-const Billing = lazy(() => import("./pages/super-admin/Billing"));
+const Billing = lazyPage(() => import("./pages/super-admin/Billing"));
 
-const Companies = lazy(() => import("./pages/super-super-admin/Companies"));
-const CompanyDetail = lazy(() => import("./pages/super-super-admin/CompanyDetail"));
+const Companies = lazyPage(() => import("./pages/super-super-admin/Companies"));
+const CompanyDetail = lazyPage(() => import("./pages/super-super-admin/CompanyDetail"));
 
 const guard = (perms: string[], el: React.ReactNode) => (
   <RequirePermission any={perms}>{el}</RequirePermission>
@@ -95,10 +95,12 @@ export const router = createBrowserRouter([
   // tenant, client or employee — from reaching Google. See PublicAnalytics.
   {
     element: <PublicAnalytics />,
+    errorElement: <RouteErrorScreen />,
     children: publicRoutes,
   },
   {
     path: "/super-super-admin",
+    errorElement: <RouteErrorScreen />,
     element: (
       <RequireAuth roles={["super_super_admin"]}>
         <SuperSuperAdminLayout />
@@ -111,6 +113,7 @@ export const router = createBrowserRouter([
   },
   {
     path: "/super-admin",
+    errorElement: <RouteErrorScreen />,
     element: (
       <RequireAuth roles={["super_admin", "hr", "accounting", "ops_manager", "ops_director", "finance_director"]}>
         <SuperAdminLayout />
@@ -154,7 +157,7 @@ export const router = createBrowserRouter([
       // superset (super_admin/SSA pass implicitly).
       { path: "assignments", element: guard(["assignments.view", "employees.edit"], <EmployeeAssignments />) },
       { path: "attendance", element: guard(["attendance.view", "attendance.edit"], <AttendanceBoard />) },
-      { path: "attendance-run", element: guard(["attendance.view", "attendance.ops_verify", "attendance.hr_verify"], <AttendanceRun />) },
+      { path: "attendance-run", element: guard(["attendance.run_view", "attendance.ops_verify"], <AttendanceRun />) },
       // Month calendar retained as a CORRECTION-only Timesheet (§8.8), reached
       // from the guard's record (History tab), not the daily flow.
       { path: "attendance/timesheet", element: guard(["attendance.view", "attendance.edit"], <AttendanceManagement />) },
