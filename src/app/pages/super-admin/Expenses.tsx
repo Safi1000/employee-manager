@@ -1,7 +1,7 @@
 import ThemedSelect from "../../components/ThemedSelect";
 import CategoryPicker from "../../components/CategoryPicker";
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Search, Upload, AlertCircle, X, Loader2, Trash2, Download, Pencil, Paperclip } from "lucide-react";
+import { Plus, Search, Upload, AlertCircle, X, Loader2, Trash2, Download, Pencil, Paperclip, CheckCheck } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
@@ -10,7 +10,7 @@ import MobileCardList from "../../components/MobileCardList";
 import ExportButton from "../../components/ExportButton";
 import ClientFilterSelect from "../../components/ClientFilterSelect";
 import { exportExpenses, exportAdvances } from "../../lib/excel";
-import { formatDate } from "../../lib/date";
+import { formatDate, formatDateTime } from "../../lib/date";
 import { useFocusTarget, useFocusRow, FOCUS_ROW_CLASS } from "../../lib/focus";
 import {
   PieChart,
@@ -54,6 +54,9 @@ type ExpenseRow = Expense & {
   vendor_name: string | null;
   bank_name: string | null;
   expense_by_name: string | null;
+  /** Who approved it. Stamped by the database from the approving account
+   *  (0492); falls back to the joined profile where the viewer can read it. */
+  approved_by_name: string | null;
 };
 
 type AdvanceRow = Advance & {
@@ -592,7 +595,7 @@ export default function Expenses() {
           withRegion(
             supabase
               .from("expenses")
-              .select("*, category:category_id(name), client:client_id(name), vendor:vendor_id(name), bank:bank_account_id(bank_name), expense_by_emp:expense_by(full_name)")
+              .select("*, category:category_id(name), client:client_id(name), vendor:vendor_id(name), bank:bank_account_id(bank_name), expense_by_emp:expense_by(full_name), approver:profiles!expenses_approved_by_fkey(full_name, email)")
               .order("expense_date", { ascending: false })
               .order("created_at", { ascending: false }),
             regionId,
@@ -624,6 +627,10 @@ export default function Expenses() {
         vendor_name: e.vendor?.name ?? null,
         bank_name: e.bank?.bank_name ?? null,
         expense_by_name: e.expense_by_emp?.full_name ?? null,
+        approved_by_name:
+          e.approved_by_name ??
+          (e.approver ? e.approver.full_name || e.approver.email : null) ??
+          (e.approved_by && e.approved_by === profile?.id ? profile?.full_name ?? null : null),
       }))
     );
     setCategories((catRes.data ?? []) as ExpenseCategory[]);
@@ -795,6 +802,32 @@ export default function Expenses() {
       return true;
     });
   }, [expenses, search, monthFilter, categoryFilter, clientFilter, modeFilter, expenseByFilter]);
+
+  // Pending / Approved split of the list. The category totals above it stay on
+  // `filtered` (both states) — the tabs change what you work through, not what
+  // was spent.
+  const [approvalView, setApprovalView] = useState<"pending" | "approved">("pending");
+  const pendingRows = useMemo(() => filtered.filter((e) => !e.approved_at), [filtered]);
+  const approvedRows = useMemo(() => filtered.filter((e) => !!e.approved_at), [filtered]);
+  const shown = approvalView === "pending" ? pendingRows : approvedRows;
+
+  // Bulk approval selection — pending rows only, and only ones still visible:
+  // a row filtered out of view must not be approved by a click the approver
+  // made while looking at something else.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const selectedRows = useMemo(
+    () => pendingRows.filter((e) => selectedIds.has(e.id)),
+    [pendingRows, selectedIds],
+  );
+  const allShownSelected = pendingRows.length > 0 && selectedRows.length === pendingRows.length;
+  const toggleSelected = (id: string) =>
+    setSelectedIds((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  const toggleSelectAll = () =>
+    setSelectedIds(allShownSelected ? new Set() : new Set(pendingRows.map((e) => e.id)));
 
   // Last 18 months of options + "All" for the month select.
   // Bounded by the ledger's own start, not by a fixed count of months back
@@ -1484,6 +1517,44 @@ export default function Expenses() {
     if (apErr) { setApprovalError(apErr.message); return; }
     setApprovalTarget(null);
     await loadAll();
+  };
+
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
+  const [bulkError, setBulkError] = useState<string | null>(null);
+
+  /**
+   * Approve every selected expense in one statement. This is a SET write, so
+   * RLS or a concurrent approval can make it touch fewer rows than asked
+   * without raising — the returned ids are compared against the request and
+   * any shortfall is reported by name rather than passing as success.
+   */
+  const confirmBulkApproval = async () => {
+    const ids = selectedRows.map((e) => e.id);
+    if (ids.length === 0) return;
+    setBulkSubmitting(true);
+    setBulkError(null);
+    const { data, error: apErr } = await supabase
+      .from("expenses")
+      .update({ approved_at: new Date().toISOString(), approved_by: profile?.id ?? null })
+      .in("id", ids)
+      .is("approved_at", null)
+      .select("id");
+    setBulkSubmitting(false);
+    if (apErr) { setBulkError(apErr.message); return; }
+    const done = new Set((data ?? []).map((r: { id: string }) => r.id));
+    const missed = selectedRows.filter((e) => !done.has(e.id));
+    await loadAll();
+    if (missed.length > 0) {
+      setSelectedIds(new Set(missed.map((e) => e.id)));
+      setBulkError(
+        `${done.size} of ${ids.length} approved. ${missed.length} could not be approved — already approved by someone else, or outside what your account may approve: ` +
+          missed.map((e) => `${formatDate(e.expense_date)} ${e.category_name ?? ""} PKR ${Number(e.amount).toLocaleString()}`).join("; "),
+      );
+      return;
+    }
+    setSelectedIds(new Set());
+    setBulkOpen(false);
   };
 
   const openEdit = (expense: ExpenseRow) => {
@@ -2480,14 +2551,74 @@ export default function Expenses() {
             </div>
           </div>
 
+          {/* Pending / Approved. Pending is where the work is, so it opens first. */}
+          <div className="px-6 pt-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="inline-flex rounded-md border border-slate-200 p-0.5 bg-slate-50">
+              {([
+                { key: "pending", label: "Pending", rows: pendingRows },
+                { key: "approved", label: "Approved", rows: approvedRows },
+              ] as const).map((t) => (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => { setApprovalView(t.key); setSelectedIds(new Set()); }}
+                  className={`px-4 py-1.5 rounded text-sm transition-colors ${
+                    approvalView === t.key ? "bg-white shadow-sm text-slate-900" : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  {t.label}
+                  <span className={`ml-2 inline-flex items-center justify-center min-w-[1.5rem] px-1.5 rounded-full text-[11px] ${
+                    t.key === "pending" ? "bg-warning-100 text-warning-800" : "bg-success-100 text-success-800"
+                  }`}>
+                    {t.rows.length}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <span className="text-xs text-slate-500 tabular-nums">
+              PKR {shown.reduce((sum, e) => sum + Number(e.amount), 0).toLocaleString()} in this view
+            </span>
+          </div>
+
+          {approvalView === "pending" && canApproveExpenses && selectedRows.length > 0 && (
+            <div className="mx-6 mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-brand-200 bg-brand-50 px-4 py-2">
+              <span className="text-sm text-brand-900">
+                {selectedRows.length} selected · PKR{" "}
+                {selectedRows.reduce((sum, e) => sum + Number(e.amount), 0).toLocaleString()}
+              </span>
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>Clear</Button>
+                <Button variant="primary" size="sm" onClick={() => { setBulkError(null); setBulkOpen(true); }}>
+                  <CheckCheck className="w-4 h-4 mr-1.5" strokeWidth={1.75} />
+                  Approve {selectedRows.length}
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* Phone: one card per expense. Recording and checking spend is the
               most common thing anyone does on this page away from a desk. */}
+          <div className="h-3 md:hidden" />
           <MobileCardList
-            rows={loading ? [] : filtered}
+            rows={loading ? [] : shown}
             loading={loading}
-            empty='No expenses yet. Tap "Add Expense" to create one.'
+            empty={approvalView === "pending" ? "Nothing waiting for approval." : "No approved expenses match the filters."}
             rowKey={(exp) => exp.id}
-            title={(exp) => exp.category_name ?? "—"}
+            title={(exp) => (
+              <span className="flex items-center gap-2">
+                {approvalView === "pending" && canApproveExpenses && (
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4 rounded border-slate-300"
+                    checked={selectedIds.has(exp.id)}
+                    onChange={() => toggleSelected(exp.id)}
+                    onClick={(e) => e.stopPropagation()}
+                    aria-label="Select for approval"
+                  />
+                )}
+                {exp.category_name ?? "—"}
+              </span>
+            )}
             subtitle={(exp) => `${formatDate(exp.expense_date)} · ${exp.client_name ?? "Office"}`}
             badge={(exp) => (
               <span
@@ -2510,6 +2641,14 @@ export default function Expenses() {
               },
               { label: "Expense By", value: (exp) => exp.expense_by_name ?? "—" },
               { label: "Description", full: true, value: (exp) => exp.description ?? "—" },
+              ...(approvalView === "approved"
+                ? [{
+                    label: "Approved by",
+                    full: true,
+                    value: (exp: ExpenseRow) =>
+                      `${exp.approved_by_name ?? "Unknown"}${exp.approved_at ? ` · ${formatDateTime(exp.approved_at)}` : ""}`,
+                  }]
+                : []),
             ]}
             actions={(exp) => (
               <>
@@ -2540,6 +2679,21 @@ export default function Expenses() {
             <table className="w-full">
               <thead className="sticky top-0 z-10 bg-white">
                 <tr className="border-b border-slate-200">
+                  {approvalView === "pending" && canApproveExpenses && (
+                    <th className="pl-4 py-3 w-8">
+                      <input
+                        type="checkbox"
+                        className="w-4 h-4 rounded border-slate-300"
+                        checked={allShownSelected}
+                        ref={(el) => {
+                          if (el) el.indeterminate = selectedRows.length > 0 && !allShownSelected;
+                        }}
+                        onChange={toggleSelectAll}
+                        aria-label="Select all pending expenses"
+                        title="Select all pending expenses in view"
+                      />
+                    </th>
+                  )}
                   <th className="text-left px-4 py-3 text-xs text-slate-500">Date</th>
                   <th className="text-left px-4 py-3 text-xs text-slate-500">Category</th>
                   <th className="text-left px-4 py-3 text-xs text-slate-500">Client</th>
@@ -2547,34 +2701,50 @@ export default function Expenses() {
                   <th className="text-left px-4 py-3 text-xs text-slate-500">Amount</th>
                   <th className="text-left px-4 py-3 text-xs text-slate-500">Mode</th>
                   <th className="text-left px-4 py-3 text-xs text-slate-500">Expense By</th>
+                  {approvalView === "approved" && (
+                    <th className="text-left px-4 py-3 text-xs text-slate-500">Approved By</th>
+                  )}
                   <th className="text-left px-4 py-3 text-xs text-slate-500">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
                 {loading && (
                   <tr>
-                    <td colSpan={8} className="px-6 py-10 text-center text-slate-500">
+                    <td colSpan={9} className="px-6 py-10 text-center text-slate-500">
                       <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
                       Loading…
                     </td>
                   </tr>
                 )}
-                {!loading && filtered.length === 0 && (
+                {!loading && shown.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="px-6 py-10 text-center text-slate-500 text-sm">
-                      No expenses yet. Click "Add Expense" to create one.
+                    <td colSpan={9} className="px-6 py-10 text-center text-slate-500 text-sm">
+                      {approvalView === "pending"
+                        ? "Nothing waiting for approval."
+                        : "No approved expenses match the filters."}
                     </td>
                   </tr>
                 )}
                 {!loading &&
-                  filtered.map((exp) => (
+                  shown.map((exp) => (
                     <tr
                       key={exp.id}
                       ref={exp.id === focusExpense ? focusExpenseRow : undefined}
                       className={`hover:bg-slate-50 transition-colors ${
                         exp.id === focusExpense ? FOCUS_ROW_CLASS : ""
-                      }`}
+                      } ${selectedIds.has(exp.id) ? "bg-brand-50/60" : ""}`}
                     >
+                      {approvalView === "pending" && canApproveExpenses && (
+                        <td className="pl-4 py-3 w-8">
+                          <input
+                            type="checkbox"
+                            className="w-4 h-4 rounded border-slate-300"
+                            checked={selectedIds.has(exp.id)}
+                            onChange={() => toggleSelected(exp.id)}
+                            aria-label="Select for approval"
+                          />
+                        </td>
+                      )}
                       <td className="px-4 py-3 text-sm text-slate-600">{formatDate(exp.expense_date)}</td>
                       <td className="px-4 py-3 text-sm text-slate-900">{exp.category_name ?? "—"}</td>
                       <td className="px-4 py-3 text-sm text-slate-700">
@@ -2602,7 +2772,7 @@ export default function Expenses() {
                         {/* Approval is a REVIEW state, separate from payable_status,
                             which answers payment. Both can show at once. */}
                         {exp.approved_at && (
-                          <span className="ml-1 inline-flex items-center px-2 py-0.5 rounded text-xs bg-success-50 text-success-700" title={`Approved ${exp.approved_at.slice(0, 10)} — locked against edits`}>
+                          <span className="ml-1 inline-flex items-center px-2 py-0.5 rounded text-xs bg-success-50 text-success-700" title={`Approved by ${exp.approved_by_name ?? "unknown"} on ${formatDateTime(exp.approved_at)} — locked against edits`}>
                             Approved
                           </span>
                         )}
@@ -2625,6 +2795,14 @@ export default function Expenses() {
                       <td className="px-4 py-3 text-sm text-slate-700">
                         {exp.expense_by_name ?? <span className="text-slate-400">—</span>}
                       </td>
+                      {approvalView === "approved" && (
+                        <td className="px-4 py-3 text-sm">
+                          <span className="text-slate-800">{exp.approved_by_name ?? <span className="text-slate-400">Unknown</span>}</span>
+                          {exp.approved_at && (
+                            <span className="block text-[11px] text-slate-500">{formatDateTime(exp.approved_at)}</span>
+                          )}
+                        </td>
+                      )}
                       <td className="px-4 py-3 flex gap-1">
                         <Button variant="ghost" size="sm" onClick={() => openView(exp)}>
                           View
@@ -3417,6 +3595,75 @@ export default function Expenses() {
         onDismissError={() => setApprovalError(null)}
       />
 
+      {/* Bulk approval. Same principle as the single dialog: every figure being
+          approved is on screen when the button is pressed. */}
+      <Modal
+        isOpen={bulkOpen}
+        onClose={() => { if (!bulkSubmitting) setBulkOpen(false); }}
+        title={`Approve ${selectedRows.length} expense${selectedRows.length === 1 ? "" : "s"}`}
+        size="lg"
+        error={bulkError}
+        onDismissError={() => setBulkError(null)}
+        footer={
+          <div className="flex items-center gap-3">
+            <Button
+              variant="primary"
+              size="md"
+              className="flex-1"
+              disabled={bulkSubmitting || selectedRows.length === 0}
+              onClick={confirmBulkApproval}
+            >
+              {bulkSubmitting ? (
+                <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Approving…</>
+              ) : (
+                <>Approve {selectedRows.length} · PKR {selectedRows.reduce((sum, e) => sum + Number(e.amount), 0).toLocaleString()}</>
+              )}
+            </Button>
+            <Button variant="secondary" size="md" disabled={bulkSubmitting} onClick={() => setBulkOpen(false)}>
+              Cancel
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-slate-600">
+            Approved expenses are locked against editing and deletion. They will be recorded as approved by{" "}
+            <span className="text-slate-900">{profile?.full_name || profile?.email || "your account"}</span>.
+          </p>
+          {(() => {
+            const noReceipt = selectedRows.filter((e) => !(e.drive_view_url || (e as { receipt_path?: string | null }).receipt_path)).length;
+            return noReceipt > 0 ? (
+              <p className="flex items-start gap-2 text-xs text-warning-800 bg-warning-50 border border-warning-200 rounded-md px-3 py-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                {noReceipt} of these {noReceipt === 1 ? "has" : "have"} no receipt attached.
+              </p>
+            ) : null;
+          })()}
+          <div className="max-h-[320px] overflow-auto border border-slate-200 rounded-md">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-slate-50">
+                <tr className="text-xs text-slate-500">
+                  <th className="text-left px-3 py-2 font-normal">Date</th>
+                  <th className="text-left px-3 py-2 font-normal">Category</th>
+                  <th className="text-left px-3 py-2 font-normal">Description</th>
+                  <th className="text-right px-3 py-2 font-normal">Amount</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {selectedRows.map((e) => (
+                  <tr key={e.id}>
+                    <td className="px-3 py-1.5 text-slate-600 whitespace-nowrap">{formatDate(e.expense_date)}</td>
+                    <td className="px-3 py-1.5 text-slate-800">{e.category_name ?? "—"}</td>
+                    <td className="px-3 py-1.5 text-slate-600 max-w-[220px] truncate">{e.description ?? "—"}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums text-slate-900">PKR {Number(e.amount).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </Modal>
+
       {/* ---- Fixed expense template: add / edit ---- */}
       <Modal
         isOpen={isFixedFormOpen}
@@ -3838,6 +4085,17 @@ export default function Expenses() {
               <div>
                 <p className="text-slate-500 mb-1">Payment Mode</p>
                 <p className="text-slate-900">{selected.payment_mode}</p>
+              </div>
+              <div>
+                <p className="text-slate-500 mb-1">Approval</p>
+                {selected.approved_at ? (
+                  <p className="text-success-700">
+                    Approved by {selected.approved_by_name ?? "unknown"}
+                    <span className="block text-xs text-slate-500">{formatDateTime(selected.approved_at)}</span>
+                  </p>
+                ) : (
+                  <p className="text-warning-700">Pending approval</p>
+                )}
               </div>
               {/* 0401. Somebody looking at one expense should not have to leave
                   it to find out it was split. Read from the same function the
