@@ -19,6 +19,7 @@ import { useAuth } from "../../lib/auth";
 import { pickDocument, takePhoto } from "../../lib/files";
 import { daysBetween, fmtShort } from "../../lib/format";
 import { COMPLIANCE_CATEGORIES } from "../../lib/web/supabase";
+import { alertCategoryLabel, alertTierLabel, describeAlert } from "../../lib/web/alertText";
 import { useTheme } from "../../theme/ThemeProvider";
 
 const label = (s: string) => s.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
@@ -86,7 +87,7 @@ function Calendar({ onEditDate, onEditRec }: { onEditDate: (x: { id: string; f: 
         </Card>
       </Section>
       <Section title="Raised alerts" count={alerts.length}>
-        {alerts.length ? <ListCard>{alerts.map((a, i) => <Row key={a.id} last={i === alerts.length - 1} title={a.message} meta={fmtShort(String(a.created_at).slice(0, 10))} right={<Badge label={a.tier} tone={a.tier === "blocking" ? "danger" : "warning"} small />} />)}</ListCard> : <T v="small" muted>No open alerts.</T>}
+        {alerts.length ? <ListCard>{alerts.map((a, i) => <Row key={a.id} last={i === alerts.length - 1} title={describeAlert(a).title} subtitle={[describeAlert(a).figures, describeAlert(a).detail].filter(Boolean).join(" · ") || alertCategoryLabel(String(a.category))} meta={fmtShort(String(a.created_at).slice(0, 10))} right={<Badge label={alertTierLabel(a.tier)} tone={a.tier === "blocking" ? "danger" : "warning"} small />} />)}</ListCard> : <T v="small" muted>No open alerts.</T>}
       </Section>
       {ending.length > 0 && (
         <Section title="Contracts ending within 60 days" count={ending.length}>
@@ -408,18 +409,18 @@ export function Alerts() {
     <Screen eyebrow="Compliance" title="Alerts">
       <Section title="Open alerts" count={data.alerts.length} style={{ marginTop: 0 }}>
         {data.alerts.map((a) => (
-          <RecordCard key={a.id} title={a.message} subtitle={fmtShort(String(a.created_at).slice(0, 10))} accent={a.tier === "blocking" ? "danger" : "warning"} badge={<Badge label={a.tier} tone={a.tier === "blocking" ? "danger" : "warning"} small />}
+          <RecordCard key={a.id} title={describeAlert(a).title} subtitle={[describeAlert(a).figures, describeAlert(a).detail, `${alertCategoryLabel(String(a.category))} · ${fmtShort(String(a.created_at).slice(0, 10))}`].filter(Boolean).join("\n")} accent={a.tier === "blocking" ? "danger" : "warning"} badge={<Badge label={alertTierLabel(a.tier)} tone={a.tier === "blocking" ? "danger" : "warning"} small />}
             actions={[{ label: a.tier === "blocking" ? "Override" : "Acknowledge", onPress: () => { if (a.tier === "blocking") { setReason(""); setOverride(a); } else void act(() => acknowledgeAlert(a.id, false, ""), "Acknowledged"); } }]} />
         ))}
         {data.alerts.length === 0 && <Empty title="No open alerts" />}
       </Section>
       <Section title="Live warnings" count={data.warnings.length}>
-        {data.warnings.length ? <ListCard>{data.warnings.map((w, i) => <Row key={i} last={i === data.warnings.length - 1} title={w.message} subtitle={label(String(w.category))} />)}</ListCard> : <T v="small" muted>No live warnings.</T>}
+        {data.warnings.length ? <ListCard>{data.warnings.map((w, i) => <Row key={i} last={i === data.warnings.length - 1} title={describeAlert(w).title} subtitle={alertCategoryLabel(String(w.category))} />)}</ListCard> : <T v="small" muted>No live warnings.</T>}
       </Section>
       <Section title="Dashboard summary" count={data.dashboard.length}>
-        {data.dashboard.length ? <ListCard>{data.dashboard.map((d, i) => <Row key={i} last={i === data.dashboard.length - 1} title={d.message} subtitle={label(String(d.category))} />)}</ListCard> : <T v="small" muted>Nothing to surface.</T>}
+        {data.dashboard.length ? <ListCard>{data.dashboard.map((d, i) => <Row key={i} last={i === data.dashboard.length - 1} title={describeAlert(d).title} subtitle={alertCategoryLabel(String(d.category))} />)}</ListCard> : <T v="small" muted>Nothing to surface.</T>}
       </Section>
-      <Sheet open={!!override} onClose={() => setOverride(null)} title="Override blocking alert" subtitle={override?.message}
+      <Sheet open={!!override} onClose={() => setOverride(null)} title="Override blocking alert" subtitle={override ? describeAlert(override).title : undefined}
         footer={<Button label="Override" variant="danger" full disabled={!reason.trim()} onPress={async () => { if (await act(() => acknowledgeAlert(override.id, true, reason), "Alert overridden")) setOverride(null); }} />}>
         <Input label="Override reason" required value={reason} onChangeText={setReason} multiline />
       </Sheet>

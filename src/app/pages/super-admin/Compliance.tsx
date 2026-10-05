@@ -25,6 +25,7 @@ import {
   type RecurringAlert,
   type RecurringFrequency,
 } from "../../lib/supabase";
+import { describeAlert, alertCategoryLabel, alertTierLabel } from "../../lib/alertText";
 
 type RaisedAlert = {
   id: string;
@@ -817,15 +818,22 @@ export default function Compliance() {
                     : a.tier === "warning"
                       ? "bg-warning-50 text-warning-700 border-warning-200"
                       : "bg-slate-50 text-slate-600 border-slate-200";
+                const text = describeAlert(a);
                 return (
                   <div key={a.id} className="px-6 py-3 flex items-start gap-3 text-sm">
                     <span className={`px-2 py-0.5 rounded-md text-[11px] border shrink-0 ${tone}`}>
-                      {a.tier}
+                      {alertTierLabel(a.tier)}
                     </span>
                     <div className="flex-1 min-w-0">
-                      <p className="text-slate-800">{a.message}</p>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        {String(a.category).replace(/_/g, " ")} · first seen {formatDate(a.created_at.slice(0, 10))}
+                      <p className="text-slate-800">{text.title}</p>
+                      {text.figures && (
+                        <p className="text-xs text-slate-700 mt-0.5">{text.figures}</p>
+                      )}
+                      {text.detail && (
+                        <p className="text-xs text-slate-500 mt-0.5">{text.detail}</p>
+                      )}
+                      <p className="text-[11px] text-slate-400 mt-1">
+                        {alertCategoryLabel(a.category)} · first seen {formatDate(a.created_at.slice(0, 10))}
                         {/* seen_count is the dedupe counter (0295). "Still true
                             after 47 runs" is a different statement from "true",
                             and it is the one that decides whether to act. */}

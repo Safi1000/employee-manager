@@ -3,6 +3,7 @@ import Header from "../../components/Header";
 import Button from "../../components/Button";
 import { useAuth } from "../../lib/auth";
 import { supabase } from "../../lib/supabase";
+import { describeAlert, alertCategoryLabel, alertTierLabel } from "../../lib/alertText";
 
 // §21 Alert Engine — three tiers. Persisted blocking/warning alerts with an
 // acknowledge/override trail, plus the live warning and dashboard signals
@@ -64,17 +65,25 @@ export default function Alerts() {
         <section>
           <h3 className="text-sm text-slate-900 mb-2">Open alerts (blocking / warning)</h3>
           <div className="border border-slate-200 rounded-md divide-y divide-slate-100">
-            {alerts.map((a) => (
-              <div key={a.id} className="flex items-center justify-between px-3 py-2 text-sm">
-                <div className="flex items-center gap-2">
-                  <span className={`px-2 py-0.5 rounded-md text-xs border ${TIER[a.tier] ?? ""}`}>{a.tier}</span>
-                  <span className="text-slate-700">{a.message}</span>
+            {alerts.map((a) => {
+              const text = describeAlert(a);
+              return (
+              <div key={a.id} className="flex items-start justify-between gap-3 px-3 py-2 text-sm">
+                <div className="flex items-start gap-2 min-w-0">
+                  <span className={`px-2 py-0.5 rounded-md text-xs border shrink-0 ${TIER[a.tier] ?? ""}`}>{alertTierLabel(a.tier)}</span>
+                  <div className="min-w-0">
+                    <p className="text-slate-700">{text.title}</p>
+                    {text.figures && <p className="text-xs text-slate-700 mt-0.5">{text.figures}</p>}
+                    {text.detail && <p className="text-xs text-slate-500 mt-0.5">{text.detail}</p>}
+                    <p className="text-[11px] text-slate-400 mt-0.5">{alertCategoryLabel(a.category)}</p>
+                  </div>
                 </div>
                 <Button variant="secondary" size="sm" disabled={busy} onClick={() => ack(a.id, a.tier === "blocking")}>
                   {a.tier === "blocking" ? "Override" : "Acknowledge"}
                 </Button>
               </div>
-            ))}
+              );
+            })}
             {alerts.length === 0 && <p className="px-3 py-3 text-sm text-slate-500">No open alerts.</p>}
           </div>
         </section>
@@ -84,8 +93,8 @@ export default function Alerts() {
           <div className="border border-slate-200 rounded-md divide-y divide-slate-100">
             {warnings.map((w, i) => (
               <div key={i} className="px-3 py-2 text-sm text-slate-700 flex items-center gap-2">
-                <span className={`px-2 py-0.5 rounded-md text-xs border ${TIER.warning}`}>{String(w.category).replace(/_/g, " ")}</span>
-                {w.message}
+                <span className={`px-2 py-0.5 rounded-md text-xs border ${TIER.warning}`}>{alertCategoryLabel(w.category)}</span>
+                {describeAlert(w).title}
               </div>
             ))}
             {warnings.length === 0 && <p className="px-3 py-3 text-sm text-slate-500">No live warnings.</p>}
@@ -97,8 +106,8 @@ export default function Alerts() {
           <div className="border border-slate-200 rounded-md divide-y divide-slate-100">
             {dashboard.map((d, i) => (
               <div key={i} className="px-3 py-2 text-sm text-slate-600 flex items-center gap-2">
-                <span className={`px-2 py-0.5 rounded-md text-xs border ${TIER.dashboard}`}>{String(d.category).replace(/_/g, " ")}</span>
-                {d.message}
+                <span className={`px-2 py-0.5 rounded-md text-xs border ${TIER.dashboard}`}>{alertCategoryLabel(d.category)}</span>
+                {describeAlert(d).title}
               </div>
             ))}
             {dashboard.length === 0 && <p className="px-3 py-3 text-sm text-slate-500">Nothing to surface.</p>}

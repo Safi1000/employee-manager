@@ -1,6 +1,6 @@
 import ThemedSelect from "./ThemedSelect";
 import { useEffect, useState } from "react";
-import { Plus, Loader2, AlertCircle, X, Trash2, FileText, Upload } from "lucide-react";
+import { Plus, Loader2, AlertCircle, X, Trash2, FileText, Upload, CalendarX, TrendingUp, Info } from "lucide-react";
 import Button from "./Button";
 import Modal from "./Modal";
 import AddendumTable from "./AddendumTable";
@@ -134,6 +134,317 @@ const fromContract = (c: Contract): ContractFormState => ({
   status: c.status,
   termination_date: c.termination_date ?? "",
 });
+
+const STATUS_CHOICES: {
+  value: ContractStatus;
+  hint: string;
+  dot: string;
+  selectedCls: string;
+}[] = [
+  { value: "draft", hint: "Not signed yet", dot: "bg-slate-400", selectedCls: "border-slate-400 bg-slate-50 ring-1 ring-slate-300" },
+  { value: "active", hint: "Running and billable", dot: "bg-success-500", selectedCls: "border-success-400 bg-success-50 ring-1 ring-success-300" },
+  { value: "expired", hint: "Reached its end date", dot: "bg-warning-500", selectedCls: "border-warning-400 bg-warning-50 ring-1 ring-warning-300" },
+  { value: "terminated", hint: "Ended before its term", dot: "bg-danger-500", selectedCls: "border-danger-400 bg-danger-50 ring-1 ring-danger-300" },
+];
+
+// Date helpers on YYYY-MM-DD strings, in local time — a contract date is a
+// calendar day, not an instant.
+const isoOf = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const parseIso = (iso: string) => {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d);
+};
+const todayIso = () => isoOf(new Date());
+const addDaysIso = (iso: string, n: number) => {
+  const d = parseIso(iso);
+  d.setDate(d.getDate() + n);
+  return isoOf(d);
+};
+const addYearsIso = (iso: string, n: number) => {
+  const d = parseIso(iso);
+  d.setFullYear(d.getFullYear() + n);
+  return isoOf(d);
+};
+const endOfMonthIso = (iso: string) => {
+  const d = parseIso(iso);
+  return isoOf(new Date(d.getFullYear(), d.getMonth() + 1, 0));
+};
+const daysFromTo = (a: string, b: string) =>
+  Math.round((parseIso(b).getTime() - parseIso(a).getTime()) / 86_400_000);
+const monthName = (iso: string) =>
+  parseIso(iso).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+const pkr = (n: number) => `PKR ${Math.round(n).toLocaleString()}`;
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
+
+/**
+ * Terminating a contract: when it ends, and what that does. Billing is the one
+ * consequence the app enforces (InvoiceGenerate's periodInContractWindow bills
+ * up to and including the termination month, never after), so it is stated in
+ * those terms. Nothing reassigns or separates the guards on it — said here so
+ * nobody assumes it happens.
+ */
+function TerminationPanel({
+  form,
+  wasTerminated,
+  onDate,
+  onCancel,
+}: {
+  form: ContractFormState;
+  wasTerminated: boolean;
+  onDate: (iso: string) => void;
+  onCancel: () => void;
+}) {
+  const today = todayIso();
+  const notice = Number(form.notice_period_days) || 0;
+  const presets: { label: string; date: string }[] = [
+    { label: "Today", date: today },
+    { label: "End of this month", date: endOfMonthIso(today) },
+    ...(notice > 0 ? [{ label: `After ${notice}-day notice`, date: addDaysIso(today, notice) }] : []),
+    ...(!form.is_infinite && form.end_date ? [{ label: "On scheduled end date", date: form.end_date }] : []),
+  ];
+  const d = form.termination_date;
+  const beforeStart = !!d && !!form.start_date && d < form.start_date;
+  const rel = d ? daysFromTo(today, d) : 0;
+  const vsEnd = d && !form.is_infinite && form.end_date ? daysFromTo(d, form.end_date) : null;
+
+  return (
+    <div className="col-span-full rounded-md border border-danger-200 bg-danger-50/60 p-3 space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-2">
+          <CalendarX className="w-4 h-4 mt-0.5 text-danger-600 shrink-0" strokeWidth={1.75} />
+          <div>
+            <p className="text-sm font-medium text-danger-800">
+              {wasTerminated ? "This contract is terminated" : "Terminate this contract"}
+            </p>
+            <p className="text-[11px] text-danger-700/80">
+              Pick the last day the contract is in force. Nothing changes until you save.
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="text-xs text-slate-600 hover:text-slate-900 underline underline-offset-2 shrink-0"
+        >
+          {wasTerminated ? "Reinstate as active" : "Don't terminate"}
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,220px)_1fr] gap-3 items-start">
+        <div>
+          <label className="block text-xs text-slate-600 mb-1">Termination date *</label>
+          <input
+            required
+            type="date"
+            min={form.start_date || undefined}
+            value={d}
+            onChange={(e) => onDate(e.target.value)}
+            className={`w-full px-3 py-2 border rounded-md text-sm bg-white ${
+              beforeStart ? "border-danger-400" : "border-slate-200"
+            }`}
+          />
+        </div>
+        <div>
+          <span className="block text-xs text-slate-600 mb-1">Quick pick</span>
+          <div className="flex flex-wrap gap-1.5">
+            {presets.map((p) => (
+              <button
+                key={p.label}
+                type="button"
+                onClick={() => onDate(p.date)}
+                className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
+                  d === p.date
+                    ? "border-danger-400 bg-white text-danger-800"
+                    : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                }`}
+              >
+                {p.label}
+                <span className="text-slate-400"> · {formatDate(p.date)}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {beforeStart ? (
+        <p className="flex items-start gap-1.5 text-xs text-danger-700">
+          <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+          This is before the contract's start date ({formatDate(form.start_date)}).
+        </p>
+      ) : d ? (
+        <ul className="text-xs text-slate-700 space-y-1 border-t border-danger-200/70 pt-2">
+          <li>
+            <span className="text-slate-500">Takes effect: </span>
+            {rel === 0 ? "today" : rel > 0 ? `in ${plural(rel, "day")}` : `${plural(-rel, "day")} ago`}
+            {vsEnd != null && vsEnd > 0 && (
+              <span className="text-slate-500">
+                {" "}· {plural(vsEnd, "day")} before the scheduled end ({formatDate(form.end_date)})
+              </span>
+            )}
+          </li>
+          <li>
+            <span className="text-slate-500">Billing: </span>
+            months up to and including <strong className="font-medium">{monthName(d)}</strong> can
+            still be invoiced; later months are blocked.
+          </li>
+          <li>
+            <span className="text-slate-500">Guards: </span>
+            not moved automatically — reassign or separate anyone still posted here.
+          </li>
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+const ESCALATION_PRESETS = ["5", "7.5", "10", "15"];
+
+/**
+ * Annual escalation. The percentage is recorded on the contract and carried
+ * into a renewal (renew_contract, 0202) — it does NOT change any rate by
+ * itself. The projection shows what the rates would become at each
+ * anniversary so the figure can be checked against the agreement, and the
+ * note says how the raise is actually made: a Rate Change addendum.
+ */
+function EscalationPanel({
+  pct,
+  onPct,
+  locked,
+  startDate,
+  endDate,
+  monthlyValue,
+}: {
+  pct: string;
+  onPct: (v: string) => void;
+  locked: boolean;
+  startDate: string;
+  endDate: string;
+  monthlyValue: number;
+}) {
+  const rate = Number(pct) || 0;
+  const today = todayIso();
+  // Anniversaries from the start date: the next one still ahead, and up to
+  // three in total, stopping at the end date when there is one.
+  const steps: { date: string; year: number; value: number }[] = [];
+  if (rate > 0 && startDate) {
+    for (let n = 1; steps.length < 3 && n <= 50; n += 1) {
+      const date = addYearsIso(startDate, n);
+      if (endDate && date > endDate) break;
+      if (date < today) continue;
+      steps.push({ date, year: n + 1, value: monthlyValue * Math.pow(1 + rate / 100, n) });
+    }
+  }
+  const next = steps[0];
+
+  return (
+    <div className="col-span-full rounded-md border border-slate-200 p-3">
+      <div className="flex items-center gap-2 mb-2">
+        <TrendingUp className="w-4 h-4 text-brand-600" strokeWidth={1.75} />
+        <span className="text-sm text-slate-800">Annual escalation</span>
+        {locked && (
+          <span className="ml-auto text-[11px] text-slate-500">Locked while active — change by addendum</span>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative w-28">
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            disabled={locked}
+            value={pct}
+            onChange={(e) => onPct(e.target.value)}
+            className="w-full pl-3 pr-7 py-2 border border-slate-200 rounded-md text-sm tabular-nums"
+            placeholder="0"
+            aria-label="Annual escalation percent"
+          />
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">%</span>
+        </div>
+        <button
+          type="button"
+          disabled={locked}
+          onClick={() => onPct("")}
+          className={`px-2.5 py-1 rounded-full text-xs border ${
+            rate === 0 ? "border-brand-400 bg-brand-50 text-brand-800" : "border-slate-200 text-slate-600 hover:border-slate-300"
+          }`}
+        >
+          None
+        </button>
+        {ESCALATION_PRESETS.map((p) => (
+          <button
+            key={p}
+            type="button"
+            disabled={locked}
+            onClick={() => onPct(p)}
+            className={`px-2.5 py-1 rounded-full text-xs border tabular-nums ${
+              rate === Number(p)
+                ? "border-brand-400 bg-brand-50 text-brand-800"
+                : "border-slate-200 text-slate-600 hover:border-slate-300"
+            }`}
+          >
+            {p}%
+          </button>
+        ))}
+      </div>
+
+      {rate > 0 && (
+        <div className="mt-3">
+          {!startDate ? (
+            <p className="text-xs text-slate-500">Set a start date to see when the increases fall.</p>
+          ) : steps.length === 0 ? (
+            <p className="text-xs text-slate-500">
+              No anniversary falls before the contract ends, so this rate never applies.
+            </p>
+          ) : (
+            <>
+              <p className="text-xs text-slate-700 mb-2">
+                Next increase on <strong className="font-medium">{formatDate(next.date)}</strong>
+                {" "}({plural(daysFromTo(today, next.date), "day")} away)
+                {monthlyValue > 0 && (
+                  <> — monthly value {pkr(monthlyValue)} → {pkr(next.value)}</>
+                )}
+              </p>
+              {monthlyValue > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-slate-500">
+                        <th className="text-left font-normal py-1 pr-3">From</th>
+                        <th className="text-left font-normal py-1 pr-3">Contract year</th>
+                        <th className="text-right font-normal py-1 pr-3">Monthly value</th>
+                        <th className="text-right font-normal py-1">Increase</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 tabular-nums">
+                      {steps.map((s, i) => {
+                        const prev = i === 0 ? monthlyValue * Math.pow(1 + rate / 100, s.year - 2) : steps[i - 1].value;
+                        return (
+                          <tr key={s.date}>
+                            <td className="py-1 pr-3 text-slate-700">{formatDate(s.date)}</td>
+                            <td className="py-1 pr-3 text-slate-700">Year {s.year}</td>
+                            <td className="py-1 pr-3 text-right text-slate-800">{pkr(s.value)}</td>
+                            <td className="py-1 text-right text-success-700">+{pkr(s.value - prev)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+          <p className="mt-2 flex items-start gap-1.5 text-[11px] text-slate-500">
+            <Info className="w-3.5 h-3.5 mt-px shrink-0" />
+            Rates do not rise on their own. On each anniversary, add a Rate Change addendum with the new
+            rates. Figures are based on the current contract lines and compound yearly.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // The category a fresh line starts on, given the contract's type.
 const defaultCategoryFor = (type: ContractType): ContractLineCategory =>
@@ -835,6 +1146,10 @@ export default function ContractEditorModal({
       setError("A termination date is required when the contract status is Terminated.");
       return;
     }
+    if (form.status === "terminated" && form.start_date && form.termination_date < form.start_date) {
+      setError("The termination date can't be before the contract's start date.");
+      return;
+    }
     // Reject injection-shaped input in the free-text fields (renewal terms +
     // each contract line's label/notes).
     if (hasInjectionPattern(form.renewal_terms)) {
@@ -1007,32 +1322,50 @@ export default function ContractEditorModal({
               ))}
             </ThemedSelect>
           </div>
-          <div>
+          {/* Status as four labelled choices rather than a dropdown: the
+              difference between Expired and Terminated is the thing people get
+              wrong, so each says what it means. */}
+          <div className="col-span-full">
             <label className="block text-sm text-slate-700 mb-1">Status</label>
-            <ThemedSelect
-              value={form.status}
-              onChange={(e) => setForm({ ...form, status: e.target.value as ContractStatus })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-            >
-              {(["active", "expired", "terminated", "draft"] as const).map((s) => (
-                <option key={s} value={s}>{CONTRACT_STATUS_LABEL[s]}</option>
-              ))}
-            </ThemedSelect>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {STATUS_CHOICES.map((s) => {
+                const selected = form.status === s.value;
+                return (
+                  <button
+                    key={s.value}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => setForm({ ...form, status: s.value })}
+                    className={`text-left px-3 py-2 rounded-md border transition-colors ${
+                      selected ? s.selectedCls : "border-slate-200 hover:bg-slate-50"
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5 text-sm text-slate-800">
+                      <span className={`w-2 h-2 rounded-full ${s.dot}`} />
+                      {CONTRACT_STATUS_LABEL[s.value]}
+                    </span>
+                    <span className="block text-[11px] text-slate-500 mt-0.5">{s.hint}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Only asked for when it applies — a date field on a contract that is
               still running has nothing to record. */}
           {form.status === "terminated" && (
-            <div>
-              <label className="block text-sm text-slate-700 mb-1">Termination Date *</label>
-              <input
-                required
-                type="date"
-                value={form.termination_date}
-                onChange={(e) => setForm({ ...form, termination_date: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-              />
-            </div>
+            <TerminationPanel
+              form={form}
+              wasTerminated={contract?.status === "terminated"}
+              onDate={(d) => setForm({ ...form, termination_date: d })}
+              onCancel={() =>
+                setForm({
+                  ...form,
+                  status: contract && contract.status !== "terminated" ? contract.status : "active",
+                  termination_date: "",
+                })
+              }
+            />
           )}
 
           <div>
@@ -1589,19 +1922,6 @@ export default function ContractEditorModal({
               />
             </div>
             <div>
-              <label className="block text-xs text-slate-500 mb-1">Annual Escalation %</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                disabled={termsLocked}
-                value={form.annual_escalation_pct}
-                onChange={(e) => setForm({ ...form, annual_escalation_pct: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm"
-                placeholder="e.g. 10"
-              />
-            </div>
-            <div>
               <label className="flex items-center gap-2 text-sm text-slate-700 mb-1">
                 <input
                   type="checkbox"
@@ -1623,6 +1943,14 @@ export default function ContractEditorModal({
                 />
               )}
             </div>
+            <EscalationPanel
+              pct={form.annual_escalation_pct}
+              onPct={(v) => setForm({ ...form, annual_escalation_pct: v })}
+              locked={termsLocked}
+              startDate={form.start_date}
+              endDate={form.is_infinite ? "" : form.end_date}
+              monthlyValue={totalValue}
+            />
             <div className="col-span-full">
               <label className="block text-xs text-slate-500 mb-1">Renewal Terms</label>
               <textarea
