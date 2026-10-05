@@ -196,7 +196,8 @@ export const router = createBrowserRouter([
       // Partnership Run — draft / review / post. The database has been able to
       // do this since 0361; nothing could reach it until now.
       { path: "partnership-run", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit"], <PartnershipRun />) },
-      { path: "expenses", element: guard(["expenses.view", "expenses.edit", "expenses.request"], <ExpensesEntry />) },
+      // Everyone (0496): requesting is open; ExpensesEntry shows the ledger only to expenses.view/edit.
+      { path: "expenses", element: <ExpensesEntry /> },
       { path: "invoices", element: guard(["invoices.view", "invoices.edit"], <Invoices />) },
       { path: "cashflow", element: guard(["cashflow.view"], <Cashflow />) },
       { path: "treasury", element: guard(["banks.view", "reports.view", "cashflow.view"], <Treasury />) },

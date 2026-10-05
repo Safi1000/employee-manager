@@ -57,7 +57,6 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
     { key: "expenses.view", label: "View expenses & advances" },
     { key: "expenses.edit", label: "Add / edit expenses & advances" },
     { key: "expenses.approve", label: "Sign off expenses / approve requests" },
-    { key: "expenses.request", label: "Request an expense" },
   ] },
   { label: "Invoices", items: [
     { key: "invoices.view", label: "View invoices" },

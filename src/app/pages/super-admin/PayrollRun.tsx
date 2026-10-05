@@ -564,8 +564,11 @@ export default function PayrollRun() {
   return (
     <>
       <Header title="Payroll Run" subtitle="Draft → Review → Finance Verify, per client & staff group" />
-      <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6">
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+      <div className="flex-1 overflow-y-auto px-4 md:px-8 pb-6">
+        {/* Tabs, filters and (on Review) the KPI cards stay pinned while the
+            client list scrolls under them (asked 2026-10-05). */}
+        <div className="sticky top-0 z-20 -mx-4 md:-mx-8 px-4 md:px-8 pt-6 pb-4 mb-2 bg-background border-b border-border/60">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="inline-flex items-center rounded-lg bg-slate-100 dark:bg-slate-800 p-0.5">
             {TABS.map((t) => (
               <button key={t.key} type="button" onClick={() => setTab(t.key)}
@@ -615,6 +618,28 @@ export default function PayrollRun() {
               </Button>
             )}
           </div>
+        </div>
+        {!loading && tab === "review" && (<>
+                {/* Summary cards — scoped to the expanded client, else all Review
+                    clients. Review doesn't disburse, so we show what's payable:
+                    Total Salaries (net) and Total Advance. */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                  <div className="bg-card p-5 rounded-xl border border-border border-l-4 border-l-success-500">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Total Salaries</p>
+                    <p className="text-2xl font-semibold tabular-nums text-success-700 dark:text-success-500" style={{ fontFamily: "var(--font-display)" }}>
+                      PKR {(reviewCardTotals.disbursed + reviewCardTotals.notDisbursed).toLocaleString()}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">{reviewCardTotals.disbursedCount + reviewCardTotals.notDisbursedCount} payslip{reviewCardTotals.disbursedCount + reviewCardTotals.notDisbursedCount === 1 ? "" : "s"}</p>
+                  </div>
+                  <div className="bg-card p-5 rounded-xl border border-border border-l-4 border-l-danger-500">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Total Advance</p>
+                    <p className="text-2xl font-semibold tabular-nums text-danger-700 dark:text-danger-500" style={{ fontFamily: "var(--font-display)" }}>
+                      PKR {reviewCardTotals.advance.toLocaleString()}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">for {fmtMonth(month)}{expanded ? "" : " · all Review clients"}</p>
+                  </div>
+                </div>
+        </>)}
         </div>
 
         {err && (
@@ -671,25 +696,6 @@ export default function PayrollRun() {
             {/* ── REVIEW ── */}
             {tab === "review" && (
               <div className="space-y-3">
-                {/* Summary cards — scoped to the expanded client, else all Review
-                    clients. Review doesn't disburse, so we show what's payable:
-                    Total Salaries (net) and Total Advance. */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-2">
-                  <div className="bg-card p-5 rounded-xl border border-border border-l-4 border-l-success-500">
-                    <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Total Salaries</p>
-                    <p className="text-2xl font-semibold tabular-nums text-success-700 dark:text-success-500" style={{ fontFamily: "var(--font-display)" }}>
-                      PKR {(reviewCardTotals.disbursed + reviewCardTotals.notDisbursed).toLocaleString()}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">{reviewCardTotals.disbursedCount + reviewCardTotals.notDisbursedCount} payslip{reviewCardTotals.disbursedCount + reviewCardTotals.notDisbursedCount === 1 ? "" : "s"}</p>
-                  </div>
-                  <div className="bg-card p-5 rounded-xl border border-border border-l-4 border-l-danger-500">
-                    <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Total Advance</p>
-                    <p className="text-2xl font-semibold tabular-nums text-danger-700 dark:text-danger-500" style={{ fontFamily: "var(--font-display)" }}>
-                      PKR {reviewCardTotals.advance.toLocaleString()}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">for {fmtMonth(month)}{expanded ? "" : " · all Review clients"}</p>
-                  </div>
-                </div>
                 {reviewScopes.length === 0 && (
                   <p className="text-sm text-muted-foreground py-8 text-center">
                     {search.trim()

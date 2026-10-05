@@ -1,4 +1,4 @@
-// Expense requests (0495). Someone with expenses.request asks for an expense
+// Expense requests (0495/0496). Anyone signed in asks for an expense
 // and leaves a note; someone with expenses.approve approves it or rejects it
 // with a reply note. An approved request is then recorded as an ordinary
 // expense through the normal Add Expense form (prefilled from the request) and
@@ -309,7 +309,7 @@ export function ExpenseRequestsList({
 // ── Page for people who can request but not see the expense ledger ───────────
 export default function MyExpenseRequestsPage() {
   const { profile } = useAuth();
-  const canRequest = hasPermission(profile, "expenses.request");
+  const canRequest = !!profile;
   const canApprove = hasPermission(profile, "expenses.approve");
   const [requests, setRequests] = useState<ExpenseRequest[]>([]);
   const [loading, setLoading] = useState(true);

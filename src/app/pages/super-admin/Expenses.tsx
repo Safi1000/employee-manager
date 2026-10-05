@@ -350,8 +350,9 @@ export default function Expenses() {
   // a lock nobody can open is not a control. A permission, never a role
   // literal — asking the role instead was the cause of three defects this week.
   const canApproveExpenses = hasPermission(profile, "expenses.approve");
-  // 0495: ask for an expense; approvers approve or reject it with a note.
-  const canRequestExpenses = hasPermission(profile, "expenses.request");
+  // 0495/0496: anyone signed in may ask for an expense; expenses.approve holders
+  // approve or reject it with a note.
+  const canRequestExpenses = !!profile;
   const [requests, setRequests] = useState<ExpenseRequest[]>([]);
   const [requestsLoading, setRequestsLoading] = useState(true);
   const [requestOpen, setRequestOpen] = useState(false);
