@@ -39,26 +39,15 @@ import { CHART_TT, CHART_GRID, CHART_LEGEND, CHART_ANIM, CHART_COLORS } from "..
 import { hasPermission, useAuth } from "../../lib/auth";
 import { supabase, fetchAllRows } from "../../lib/supabase";
 import { useRegion, withRegion } from "../../lib/region";
-
-type BankRow = { id: string; bank_name: string; balance: number };
-type TopClientRow = { id: string; name: string; revenue: number };
-type AttendancePoint = { date: string; label: string; present: number; absent: number; leave: number };
-// One row of the compliance alerts panel, straight off compliance_upcoming.
-// days_remaining is SIGNED and computed by the view — negative is overdue. It
-// is never clamped at zero here: the panel used to render Math.max(0, …), so an
-// item three weeks late displayed as "today". See TENANT_GUARD_REPORT.md 9.11.
-type AlertRow = {
-  id: string;
-  title: string;
-  due_date: string;
-  category: string;
-  priority: string;
-  days_remaining: number;
-};
-type ExpensePieRow = { name: string; value: number };
-type ContractEndingRow = { id: string; code: string; client_name: string; end_date: string; days_left: number };
-type IncidentRow = { id: string; code: string; severity: string; category: string; occurred_at: string; status: string };
-type RecentPaymentRow = { id: string; client_name: string; amount: number; payment_date: string };
+import {
+  type AlertRow, type AttendancePoint, type BankRow, type ContractEndingRow, type DashData,
+  type ExpensePieRow, type IncidentRow, type RecentPaymentRow, type TopClientRow,
+  compact, currency, deltaLabel, monthLabel,
+} from "./dashboard/shared";
+import DesignSwitcher, { type DesignId, readDesign, saveDesign } from "./dashboard/DesignSwitcher";
+import WatchtowerDesign from "./dashboard/WatchtowerDesign";
+import LedgerDesign from "./dashboard/LedgerDesign";
+import AuroraDesign from "./dashboard/AuroraDesign";
 
 const PIE_COLORS = CHART_COLORS;
 
@@ -86,25 +75,12 @@ const toAlertRows = (data: unknown): AlertRow[] =>
     days_remaining: r.days_remaining,
   }));
 
-const currency = (n: number) => `PKR ${Math.round(n).toLocaleString("en-PK")}`;
-const compact = (n: number) => {
-  if (Math.abs(n) >= 1_000_000) return `PKR ${(n / 1_000_000).toFixed(1)}M`;
-  if (Math.abs(n) >= 1_000) return `PKR ${(n / 1_000).toFixed(0)}K`;
-  return `PKR ${Math.round(n).toLocaleString("en-PK")}`;
-};
-
 const monthRange = (offset: number) => {
   const d = new Date();
   const start = new Date(d.getFullYear(), d.getMonth() + offset, 1);
   const end = new Date(d.getFullYear(), d.getMonth() + offset + 1, 0);
   const iso = (x: Date) => x.toISOString().slice(0, 10);
   return { start: iso(start), end: iso(end) };
-};
-
-const monthLabel = (offset: number) => {
-  const d = new Date();
-  const x = new Date(d.getFullYear(), d.getMonth() + offset, 1);
-  return x.toLocaleDateString(undefined, { month: "short", year: "numeric" });
 };
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -117,14 +93,6 @@ const daysAheadIso = (n: number) => {
   const d = new Date();
   d.setDate(d.getDate() + n);
   return d.toISOString().slice(0, 10);
-};
-
-const deltaLabel = (curr: number, prev: number): { value: string; positive: boolean } => {
-  if (prev === 0 && curr === 0) return { value: "no change", positive: true };
-  if (prev === 0) return { value: "new this month", positive: true };
-  const pct = ((curr - prev) / Math.abs(prev)) * 100;
-  const sign = pct >= 0 ? "+" : "";
-  return { value: `${sign}${pct.toFixed(0)}% vs ${monthLabel(-1)}`, positive: pct >= 0 };
 };
 
 const PRIORITY_COLOR: Record<string, string> = {
@@ -169,6 +137,9 @@ export default function SuperAdminDashboard() {
     !can.compliance && !can.employees && !can.attendance && !can.expenses &&
     !can.payroll && !can.accounting && !can.reports && !can.contracts &&
     !can.roster && !can.incidents;
+
+  const [design, setDesignState] = useState<DesignId>(readDesign);
+  const setDesign = (id: DesignId) => { setDesignState(id); saveDesign(id); };
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -717,8 +688,44 @@ export default function SuperAdminDashboard() {
     return dated.sort((a, b) => b.at.localeCompare(a.at)).map((d) => d.item);
   }, [recentPayments, recentIncidents, alerts]);
 
+  const switcher = <DesignSwitcher value={design} onChange={setDesign} />;
+
+  if (design !== "classic") {
+    if (loading) {
+      return (
+        <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+          <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading dashboard…
+          {switcher}
+        </div>
+      );
+    }
+    const data: DashData = {
+      can, show, nothingToShow, branchScopeNote,
+      companyName: company?.name ?? "Bastion",
+      userName: profile?.full_name ?? "",
+      employeeCount, attendanceTodayPct, attendanceYesterdayPct,
+      expensesMtd, expensesPrev, payrollMtd, payrollPrev,
+      banks, totalBankBalance, topClients, attendanceTrend, alerts,
+      activeContracts, openIncidents, licencesExpiring, licencesOverdue,
+      expensesPie, contractsEnding, recentIncidents, recentPayments,
+      periodClosedThisMonth, lastClosedMonth, feedItems,
+    };
+    return (
+      <>
+        {error && (
+          <div className="p-3 bg-danger-50 text-danger-700 border-b border-danger-200 text-sm">{error}</div>
+        )}
+        {design === "watchtower" && <WatchtowerDesign d={data} />}
+        {design === "ledger" && <LedgerDesign d={data} />}
+        {design === "aurora" && <AuroraDesign d={data} />}
+        {switcher}
+      </>
+    );
+  }
+
   return (
     <>
+      {switcher}
       <Header
         title="Dashboard"
         subtitle={`Financial overview — ${new Date().toLocaleDateString(undefined, {
