@@ -56,6 +56,9 @@ type ExpenseRow = Expense & {
   vendor_name: string | null;
   bank_name: string | null;
   expense_by_name: string | null;
+  /** The custodian cash_location's own name, joined on the row — resolves even
+   *  when that location is no longer the person's active one. */
+  custodian_location_name: string | null;
   /** Who approved it. Stamped by the database from the approving account
    *  (0492); falls back to the joined profile where the viewer can read it. */
   approved_by_name: string | null;
@@ -436,6 +439,12 @@ export default function Expenses() {
     () => new Map(custodians.filter((c) => c.locationId).map((c) => [c.locationId!, c.fullName])),
     [custodians],
   );
+  // Who paid a cash expense: the custodian's person name, else the stamped
+  // location's own name. Null only when the row carries no custodian at all.
+  const expensePaidBy = (e: ExpenseRow): string | null =>
+    e.custodian_location_id
+      ? custodianNameByLocation.get(e.custodian_location_id) ?? e.custodian_location_name ?? null
+      : null;
   const [expenseCustodianId, setExpenseCustodianId] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -611,7 +620,7 @@ export default function Expenses() {
           withRegion(
             supabase
               .from("expenses")
-              .select("*, category:category_id(name), client:client_id(name), vendor:vendor_id(name), bank:bank_account_id(bank_name), expense_by_emp:expense_by(full_name), approver:profiles!expenses_approved_by_fkey(full_name, email)")
+              .select("*, category:category_id(name), client:client_id(name), vendor:vendor_id(name), bank:bank_account_id(bank_name), expense_by_emp:expense_by(full_name), custodian:custodian_location_id(name), approver:profiles!expenses_approved_by_fkey(full_name, email)")
               .order("expense_date", { ascending: false })
               .order("created_at", { ascending: false }),
             regionId,
@@ -643,6 +652,7 @@ export default function Expenses() {
         vendor_name: e.vendor?.name ?? null,
         bank_name: e.bank?.bank_name ?? null,
         expense_by_name: e.expense_by_emp?.full_name ?? null,
+        custodian_location_name: e.custodian?.name ?? null,
         approved_by_name:
           e.approved_by_name ??
           (e.approver ? e.approver.full_name || e.approver.email : null) ??
@@ -2707,6 +2717,7 @@ export default function Expenses() {
                 value: (exp) => <span className="tabular-nums">PKR {Number(exp.amount).toLocaleString()}</span>,
               },
               { label: "Expense By", value: (exp) => exp.expense_by_name ?? "—" },
+              { label: "Paid By", value: (exp) => expensePaidBy(exp) ?? "—" },
               { label: "Description", full: true, value: (exp) => exp.description ?? "—" },
               ...(approvalView === "approved"
                 ? [{
@@ -2768,6 +2779,7 @@ export default function Expenses() {
                   <th className="text-left px-4 py-3 text-xs text-slate-500">Amount</th>
                   <th className="text-left px-4 py-3 text-xs text-slate-500">Mode</th>
                   <th className="text-left px-4 py-3 text-xs text-slate-500">Expense By</th>
+                  <th className="text-left px-4 py-3 text-xs text-slate-500">Paid By</th>
                   {approvalView === "approved" && (
                     <th className="text-left px-4 py-3 text-xs text-slate-500">Signed Off By</th>
                   )}
@@ -2777,7 +2789,7 @@ export default function Expenses() {
               <tbody className="divide-y divide-slate-200">
                 {loading && (
                   <tr>
-                    <td colSpan={9} className="px-6 py-10 text-center text-slate-500">
+                    <td colSpan={10} className="px-6 py-10 text-center text-slate-500">
                       <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
                       Loading…
                     </td>
@@ -2785,7 +2797,7 @@ export default function Expenses() {
                 )}
                 {!loading && shown.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="px-6 py-10 text-center text-slate-500 text-sm">
+                    <td colSpan={10} className="px-6 py-10 text-center text-slate-500 text-sm">
                       {approvalView === "pending"
                         ? "Nothing waiting for sign-off."
                         : "No signed-off expenses match the filters."}
@@ -2861,6 +2873,9 @@ export default function Expenses() {
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-700">
                         {exp.expense_by_name ?? <span className="text-slate-400">—</span>}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-700">
+                        {expensePaidBy(exp) ?? <span className="text-slate-400">—</span>}
                       </td>
                       {approvalView === "approved" && (
                         <td className="px-4 py-3 text-sm">
@@ -4164,6 +4179,14 @@ export default function Expenses() {
               <div>
                 <p className="text-slate-500 mb-1">Payment Mode</p>
                 <p className="text-slate-900">{selected.payment_mode}</p>
+              </div>
+              <div>
+                <p className="text-slate-500 mb-1">Expense By</p>
+                <p className="text-slate-900">{selected.expense_by_name ?? "—"}</p>
+              </div>
+              <div>
+                <p className="text-slate-500 mb-1">Paid By</p>
+                <p className="text-slate-900">{expensePaidBy(selected) ?? "—"}</p>
               </div>
               <div>
                 <p className="text-slate-500 mb-1">Approval</p>
