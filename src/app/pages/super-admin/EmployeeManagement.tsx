@@ -1176,8 +1176,11 @@ export default function EmployeeManagement() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    // CNIC is deliberately NOT searched here: matching on the query's digits
-    // made "RLS-003" pull in every guard whose CNIC contained "003".
+    // CNIC is matched only when the query is purely a number (digits, dashes,
+    // spaces — a CNIC has no letters) and only from the START of the CNIC:
+    // "35202" finds 3520246642343, "4664" does not. Matching any digits
+    // anywhere made "RLS-003" pull in every guard whose CNIC contained "003".
+    const cnicQuery = /^[\d\s-]+$/.test(q) ? q.replace(/\D/g, "") : "";
     return employees.filter((e) => {
       if (
         q &&
@@ -1187,7 +1190,8 @@ export default function EmployeeManagement() {
         // paper files still resolve to the guard.
         !(e.legacy_code ?? "").toLowerCase().includes(q) &&
         !displayCodeFor(e).toLowerCase().includes(q) &&
-        !(e.phone ?? "").toLowerCase().includes(q)
+        !(e.phone ?? "").toLowerCase().includes(q) &&
+        !(cnicQuery.length > 0 && (e.cnic_number ?? "").replace(/\D/g, "").startsWith(cnicQuery))
       )
         return false;
       if (clientFilter !== "all" && e.client_id !== clientFilter) return false;
@@ -2505,7 +2509,7 @@ export default function EmployeeManagement() {
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search by name, phone, or employee ID..."
+                  placeholder="Search by name, CNIC, phone, or employee ID..."
                   className="w-full pl-10 pr-4 py-2 border border-border rounded-md text-sm bg-input-background focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500"
                 />
               </div>
