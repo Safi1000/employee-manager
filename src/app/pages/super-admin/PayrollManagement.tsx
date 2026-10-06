@@ -1,7 +1,7 @@
 import ThemedSelect from "../../components/ThemedSelect";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Search, Download, AlertCircle, X, Loader2, SlidersHorizontal, ChevronDown, ChevronRight, MapPin, Building2, Lock, Check } from "lucide-react";
+import { Search, Download, AlertCircle, X, Loader2, SlidersHorizontal, ChevronDown, ChevronRight, MapPin, Building2, Lock, Check, Copy, Eye } from "lucide-react";
 // jsPDF (381 KB) and xlsx (288 KB) are loaded at the click, not with the page:
 // every screen with an Export or PDF button was paying for both on open.
 import Header from "../../components/Header";
@@ -391,6 +391,16 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
 
   const [isPayslipModalOpen, setIsPayslipModalOpen] = useState(false);
   const [payslipData, setPayslipData] = useState<RowState | null>(null);
+  // Bank details popup (View button on the roster) and which account number
+  // was just copied, so the copy icon can flip to a tick for a moment.
+  const [bankViewRow, setBankViewRow] = useState<RowState | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const copyText = (key: string, text: string | null | undefined) => {
+    if (!text) return;
+    void navigator.clipboard?.writeText(text);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey((k) => (k === key ? null : k)), 1500);
+  };
 
   useEffect(() => {
     const opts: string[] = [];
@@ -616,7 +626,8 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
           .select(
             "id, company_id, employee_code, guard_code, display_number, full_name, phone, " +
             "client_id, branch_id, contract_id, contract_line_id, category, shift, status, lifecycle_state, " +
-            "base_salary, per_day_salary, allowance, bank_name, join_date, last_working_day, termination_date, exit_date, " +
+            "base_salary, per_day_salary, allowance, bank_name, account_title, bank_account, bank_branch_code, iban, " +
+            "cnic_number, father_or_husband_name, designation, current_address, join_date, last_working_day, termination_date, exit_date, " +
             "eligible_for_rehire, assignment_effective_from, assignment_effective_to, opening_leaves, opening_leaves_month, created_at, " +
             "client:client_id(name)",
           )
@@ -1218,7 +1229,10 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   // Columns actually rendered, for the header colSpan. Base four are Employee /
   // Attendance / Base / Net; afterNet adds the select box, and the full
   // (non-inline) table adds Client, Status and Actions.
-  const bodyColCount = 4 + (afterNet ? 1 : 0) + (runInline ? 0 : 3);
+  // Bank Name / Account Title / Account No. / View are shown everywhere except
+  // Payroll Run's Review step (throughNet), where nobody is being paid yet.
+  const showBank = !throughNet;
+  const bodyColCount = 4 + (afterNet ? 1 : 0) + (runInline ? 0 : 3) + (showBank ? 4 : 0);
   // Left padding for a person row, by how deep it sits. Indentation is what
   // makes the tree readable as a tree; without it a client header and the people
   // under it are the same shape and the nesting is invisible.
@@ -2867,6 +2881,10 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                       <th className="text-left px-4 py-3 text-xs text-slate-500">Attendance</th>
                       <th className="text-left px-4 py-3 text-xs text-slate-500">Base</th>
                       <th className="text-left px-4 py-3 text-xs text-slate-500">Net Salary</th>
+                      {showBank && <th className="text-left px-4 py-3 text-xs text-slate-500">Bank Name</th>}
+                      {showBank && <th className="text-left px-4 py-3 text-xs text-slate-500">Account Title</th>}
+                      {showBank && <th className="text-left px-4 py-3 text-xs text-slate-500">Account No.</th>}
+                      {showBank && <th className="px-4 py-3"></th>}
                       {!runInline && <th className="text-left px-4 py-3 text-xs text-slate-500">Status</th>}
                       {!runInline && <th className="text-left px-4 py-3 text-xs text-slate-500">Actions</th>}
                     </tr>
@@ -2874,7 +2892,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                   <tbody>
                     {loading && (
                       <tr>
-                        <td colSpan={8} className="px-6 py-10 text-center text-slate-500">
+                        <td colSpan={bodyColCount} className="px-6 py-10 text-center text-slate-500">
                           <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
                           Loading…
                         </td>
@@ -2882,7 +2900,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                     )}
                     {!loading && filtered.length === 0 && (
                       <tr>
-                        <td colSpan={8} className="px-6 py-10 text-center text-slate-500 text-sm">
+                        <td colSpan={bodyColCount} className="px-6 py-10 text-center text-slate-500 text-sm">
                           No employees match the current filters.
                         </td>
                       </tr>
@@ -3084,6 +3102,51 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                 );
                               })()}
                             </td>
+                            {showBank && (
+                              <>
+                                <td className="px-4 py-3 text-sm text-slate-700">
+                                  {e.bank_name ?? <span className="text-slate-400">—</span>}
+                                </td>
+                                <td className="px-4 py-3 text-sm text-slate-700">
+                                  {e.account_title ?? <span className="text-slate-400">—</span>}
+                                </td>
+                                <td className="px-4 py-3 text-sm text-slate-700" onClick={(ev) => ev.stopPropagation()}>
+                                  {e.bank_account ? (
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="font-mono whitespace-nowrap">{e.bank_account}</span>
+                                      <button
+                                        type="button"
+                                        title="Copy account number"
+                                        aria-label="Copy account number"
+                                        onClick={() => copyText(`acct-${e.id}`, e.bank_account)}
+                                        className="flex-shrink-0 p-0.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-200"
+                                      >
+                                        {copiedKey === `acct-${e.id}` ? (
+                                          <Check className="w-3.5 h-3.5 text-success-600" strokeWidth={2} />
+                                        ) : (
+                                          <Copy className="w-3.5 h-3.5" strokeWidth={1.5} />
+                                        )}
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-400">—</span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-3">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={(ev: React.MouseEvent) => {
+                                      ev.stopPropagation();
+                                      setBankViewRow(row);
+                                    }}
+                                  >
+                                    <Eye className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
+                                    View
+                                  </Button>
+                                </td>
+                              </>
+                            )}
                             {!runInline && (
                             <td className="px-4 py-3">
                               {/* §28.1: Status + Disbursed merged into a single chip. The
@@ -3128,7 +3191,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                           </tr>
                           {runInline && selectedId === e.id && (
                             <tr>
-                              <td colSpan={afterNet ? 5 : 4} className="px-4 pb-4 pt-0 bg-accent/10 border-b border-border">
+                              <td colSpan={bodyColCount} className="px-4 pb-4 pt-0 bg-accent/10 border-b border-border">
                                 {/* Salary Calculation is portaled in here, directly under the row. */}
                                 <div ref={hostRefCb} />
                               </td>
@@ -3779,6 +3842,81 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         </div>
         </div>
       </div>
+
+      <Modal
+        isOpen={!!bankViewRow}
+        onClose={() => setBankViewRow(null)}
+        title="Employee & Bank Details"
+        size="lg"
+      >
+        {bankViewRow && (() => {
+          const r = bankViewRow;
+          const e = r.employee;
+          const paidFrom = r.bank_account_id ? banks.find((b) => b.id === r.bank_account_id) : undefined;
+          const section = (heading: string, items: [string, string | null | undefined, boolean?][]) => (
+            <div>
+              <h4 className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500 mb-2">{heading}</h4>
+              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                {items.map(([label, val, copyable]) => (
+                  <div key={label} className="min-w-0">
+                    <dt className="text-xs text-slate-500">{label}</dt>
+                    <dd className="flex items-center gap-1.5 text-slate-900">
+                      <span className={`break-all ${copyable ? "font-mono" : ""}`}>{val || <span className="text-slate-400">—</span>}</span>
+                      {copyable && val && (
+                        <button
+                          type="button"
+                          title={`Copy ${label.toLowerCase()}`}
+                          aria-label={`Copy ${label.toLowerCase()}`}
+                          onClick={() => copyText(`view-${label}`, val)}
+                          className="flex-shrink-0 p-0.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-200"
+                        >
+                          {copiedKey === `view-${label}` ? (
+                            <Check className="w-3.5 h-3.5 text-success-600" strokeWidth={2} />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" strokeWidth={1.5} />
+                          )}
+                        </button>
+                      )}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          );
+          return (
+            <div className="space-y-6">
+              {section("Employee", [
+                ["Name", e.full_name],
+                ["Code", empDisplay(e)],
+                ["Guard Code", e.guard_code ?? e.employee_code],
+                ["Father / Husband Name", e.father_or_husband_name],
+                ["CNIC", e.cnic_number, true],
+                ["Phone", e.phone, true],
+                ["Designation", e.designation],
+                ["Client", e.client_name],
+                ["Status", lifecycleStatusLabel(e)],
+                ["Join Date", e.join_date],
+                ["Current Address", e.current_address],
+              ])}
+              {section("Bank", [
+                ["Bank Name", e.bank_name],
+                ["Account Title", e.account_title, true],
+                ["Account Number", e.bank_account, true],
+                ["Branch Code", e.bank_branch_code, true],
+                ["IBAN", e.iban, true],
+              ])}
+              {section(`Salary — ${formatPeriod(r.period_month)}`, [
+                ["Base Salary", `PKR ${r.base_salary.toLocaleString()}`],
+                ["Net Salary", `PKR ${r.net_salary.toLocaleString()}`],
+                ["Amount Paid", `PKR ${Math.round(r.amount_paid || 0).toLocaleString()}`],
+                ["Status", `${r.status}${r.disbursed ? " · Disbursed" : ""}`],
+                ["Payment Mode", r.payment_mode],
+                ["Paid From", paidFrom ? `${paidFrom.bank_name} · ${paidFrom.account_number}` : null],
+              ])}
+            </div>
+          );
+        })()}
+      </Modal>
 
       <Modal
         isOpen={isPayslipModalOpen}
