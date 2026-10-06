@@ -1088,8 +1088,9 @@ export function CashCustodyPanel({ onReady, onSummary }: {
                 <ThemedSelect value={transferForm.from_location_id} onChange={(e) => setTransferForm({ ...transferForm, from_location_id: e.target.value })}
                   className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
                   <option value="">Select…</option>
-                  {locations.filter((l) => l.is_active && l.location_type !== "BANK" && l.custodian_employee_id).map((l) => (
-                    <option key={l.id} value={l.id}>{staffName(l.custodian_employee_id)} — holds {fmt(heldCash(l))}</option>
+                  {/* Same list as To: every active custodian, staff or partner. */}
+                  {locations.filter((l) => l.is_active && l.location_type !== "BANK" && (l.custodian_employee_id || l.custodian_partner_id)).map((l) => (
+                    <option key={l.id} value={l.id}>{staffName(l.custodian_employee_id ?? l.custodian_partner_id)} — holds {fmt(heldCash(l))}</option>
                   ))}
                 </ThemedSelect>
               )}
