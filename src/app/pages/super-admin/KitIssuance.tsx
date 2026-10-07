@@ -18,7 +18,7 @@ import { ArrowRightLeft, Boxes, Loader2, MapPin, PackageOpen, Undo2, User, Users
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
-import ThemedSelect from "../../components/ThemedSelect";
+import Picker from "./_assetsPicker";
 import StatCard from "../../components/StatCard";
 import Badge from "../../components/Badge";
 import Tabs from "../../components/Tabs";
@@ -171,6 +171,21 @@ export default function KitIssuance() {
     const code = codeIndex.byId.get(id);
     return code ? `${name} · ${code}` : name;
   };
+  // Guards for a picker: name, client code underneath, and how much kit he
+  // already holds on the right.
+  const heldBy = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const h of holdings) if (h.holder_employee_id) m.set(h.holder_employee_id, (m.get(h.holder_employee_id) ?? 0) + 1);
+    return m;
+  }, [holdings]);
+  const guardOptions = (exclude?: string | null) => emps
+    .filter((e) => e.id !== exclude)
+    .map((e) => ({
+      value: e.id,
+      label: e.full_name,
+      sub: codeIndex.byId.get(e.id) ?? e.guard_code ?? undefined,
+      meta: heldBy.get(e.id) ? `holds ${heldBy.get(e.id)}` : undefined,
+    }));
   const shown = useMemo(() => filtered.filter((h) =>
     who === "all" ? true : who === "guard" ? !!h.holder_employee_id : !h.holder_employee_id),
   [filtered, who]);
@@ -313,11 +328,16 @@ export default function KitIssuance() {
           <div className="space-y-6">
             <FormSection step={1} title="What">
               <FormField label="Item" required>
-                <ThemedSelect value={iss.item_type_id}
-                  onChange={(e) => setIss({ ...iss, item_type_id: e.target.value, size: "", serial: "" })}>
-                  <option value="">Pick an item…</option>
-                  {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </ThemedSelect>
+                <Picker
+                  value={iss.item_type_id}
+                  onChange={(v) => setIss({ ...iss, item_type_id: v, size: "", serial: "" })}
+                  placeholder="Pick an item…"
+                  searchPlaceholder="Search items…"
+                  options={types.map((t) => {
+                    const left = stock.filter((r) => r.item_type_id === t.id).reduce((a, r) => a + Number(r.quantity || 0), 0);
+                    return { value: t.id, label: t.name, meta: left > 0 ? `${left} in store` : "none in store" };
+                  })}
+                />
               </FormField>
               {iss.item_type_id && (
                 availableFor.length === 0 ? (
@@ -360,21 +380,23 @@ export default function KitIssuance() {
               />
               {target === "guard" ? (
                 <FormField label="Guard" required>
-                  <ThemedSelect value={iss.to_employee}
-                    onChange={(e) => setIss({ ...iss, to_employee: e.target.value, site_id: "" })}>
-                    <option value="">Pick a guard…</option>
-                    {emps.map((e) => <option key={e.id} value={e.id}>{empLabel(e.id)}</option>)}
-                  </ThemedSelect>
+                  <Picker
+                    value={iss.to_employee}
+                    onChange={(v) => setIss({ ...iss, to_employee: v, site_id: "" })}
+                    placeholder="Pick a guard…"
+                    searchPlaceholder="Search name or code…"
+                    options={guardOptions()}
+                  />
                 </FormField>
               ) : (
                 <FormField label="Site" required>
-                  <ThemedSelect value={iss.site_id}
-                    onChange={(e) => setIss({ ...iss, site_id: e.target.value, to_employee: "" })}>
-                    <option value="">Pick a site…</option>
-                    {sites.map((s) => (
-                      <option key={s.id} value={s.id}>{s.name}{clientName.get(s.client_id) ? ` — ${clientName.get(s.client_id)}` : ""}</option>
-                    ))}
-                  </ThemedSelect>
+                  <Picker
+                    value={iss.site_id}
+                    onChange={(v) => setIss({ ...iss, site_id: v, to_employee: "" })}
+                    placeholder="Pick a site…"
+                    searchPlaceholder="Search site or client…"
+                    options={sites.map((s) => ({ value: s.id, label: s.name, sub: clientName.get(s.client_id) ?? undefined }))}
+                  />
                 </FormField>
               )}
             </FormSection>
@@ -435,12 +457,13 @@ export default function KitIssuance() {
             {act.kind === "handover" ? (
               <>
                 <FormField label="To guard" required>
-                  <ThemedSelect value={actForm.to_employee}
-                    onChange={(e) => setActForm({ ...actForm, to_employee: e.target.value })}>
-                    <option value="">Pick a guard…</option>
-                    {emps.filter((e) => e.id !== act.h.holder_employee_id)
-                         .map((e) => <option key={e.id} value={e.id}>{empLabel(e.id)}</option>)}
-                  </ThemedSelect>
+                  <Picker
+                    value={actForm.to_employee}
+                    onChange={(v) => setActForm({ ...actForm, to_employee: v })}
+                    placeholder="Pick a guard…"
+                    searchPlaceholder="Search name or code…"
+                    options={guardOptions(act.h.holder_employee_id)}
+                  />
                 </FormField>
                 <Hint tone="info">
                   Nothing is posted — the client already absorbed the cost at first issue. The condition

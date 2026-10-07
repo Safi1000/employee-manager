@@ -1,4 +1,4 @@
-import ThemedSelect from "../../components/ThemedSelect";
+import Picker from "./_assetsPicker";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle, Building2, Calculator, Car, Crosshair, Fuel, Landmark, Plus, TrendingDown, Wallet,
@@ -426,10 +426,17 @@ function VehicleLogDialog({ companyId, vehicles, run, busy, err, onDismissError,
       <div className="space-y-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <FormField label="Vehicle" required>
-            <ThemedSelect value={vid} onChange={(e) => setVid(e.target.value)}>
-              <option value="">Pick a vehicle…</option>
-              {vehicles.map((v) => <option key={v.id} value={v.id}>{v.registration_no}{v.make ? ` — ${v.make} ${v.model ?? ""}` : ""}</option>)}
-            </ThemedSelect>
+            <Picker
+              value={vid}
+              onChange={setVid}
+              placeholder="Pick a vehicle…"
+              searchPlaceholder="Search registration…"
+              options={vehicles.map((v) => ({
+                value: v.id,
+                label: v.registration_no,
+                sub: [v.make, v.model].filter(Boolean).join(" ") || undefined,
+              }))}
+            />
           </FormField>
           <FormField label="Date" required>
             <input type="date" className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} />
@@ -483,10 +490,17 @@ function AmmoDialog({ weapons, run, busy, err, onDismissError, onClose }: Dialog
       }>
       <div className="space-y-4">
         <FormField label="Weapon" required>
-          <ThemedSelect value={wid} onChange={(e) => setWid(e.target.value)}>
-            <option value="">Pick a weapon…</option>
-            {weapons.map((w) => <option key={w.id} value={w.id}>{w.item_type}{w.serial_number ? ` #${w.serial_number}` : ""}</option>)}
-          </ThemedSelect>
+          <Picker
+            value={wid}
+            onChange={setWid}
+            placeholder="Pick a weapon…"
+            searchPlaceholder="Search weapon or serial…"
+            options={weapons.map((w) => ({
+              value: w.id,
+              label: w.item_type,
+              sub: w.serial_number ? `Serial ${w.serial_number}` : undefined,
+            }))}
+          />
         </FormField>
         {weapons.length === 0 && <Hint tone="warning">No weapons on record to count against.</Hint>}
         <div className="grid grid-cols-2 gap-4">

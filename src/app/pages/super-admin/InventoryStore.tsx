@@ -23,7 +23,7 @@ import {
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
-import ThemedSelect from "../../components/ThemedSelect";
+import Picker from "./_assetsPicker";
 import StatCard from "../../components/StatCard";
 import Badge from "../../components/Badge";
 import Tabs from "../../components/Tabs";
@@ -848,12 +848,18 @@ export default function InventoryStore() {
                       </div>
                       <div className="grid grid-cols-2 sm:grid-cols-12 gap-3">
                         <FormField label="Item" className="col-span-2 sm:col-span-5">
-                          <ThemedSelect value={l.item_type_id}
-                            onChange={(e) => setLine(i, { item_type_id: e.target.value })}>
-                            <option value="">Pick an item…</option>
-                            {types.filter((x) => x.issuable && x.active)
-                              .map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-                          </ThemedSelect>
+                          <Picker
+                            value={l.item_type_id}
+                            onChange={(v) => setLine(i, { item_type_id: v })}
+                            placeholder="Pick an item…"
+                            searchPlaceholder="Search items…"
+                            options={types.filter((x) => x.issuable && x.active).map((x) => ({
+                              value: x.id,
+                              label: x.name,
+                              sub: `${x.category[0].toUpperCase()}${x.category.slice(1)} · ${x.serialised ? "individually" : x.sized ? "by size" : "by count"}`,
+                              meta: `${stock.filter((r) => r.item_type_id === x.id).reduce((a, r) => a + r.quantity, 0)} in store`,
+                            }))}
+                          />
                         </FormField>
                         {t?.sized && (
                           <FormField label="Size" className="sm:col-span-2">
