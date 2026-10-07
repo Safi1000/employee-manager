@@ -14,16 +14,23 @@
 // at, never against new, so he is not fined for wear that was already there.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowRightLeft, Loader2, PackageOpen, Undo2 } from "lucide-react";
+import { ArrowRightLeft, Boxes, Loader2, MapPin, PackageOpen, Undo2, User, Users } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import ThemedSelect from "../../components/ThemedSelect";
+import StatCard from "../../components/StatCard";
+import Badge from "../../components/Badge";
+import Tabs from "../../components/Tabs";
+import ResponsiveTable, { type Column } from "../../components/ResponsiveTable";
 import { supabase, friendlyDbError } from "../../lib/supabase";
 import { useAuth, hasPermission } from "../../lib/auth";
 import { formatDate } from "../../lib/date";
-
-const FIELD = "w-full px-3 py-2 border border-border rounded-md text-sm bg-background";
+import { useEmployeeCodeIndex } from "../../lib/employeeCodes";
+import {
+  ChoiceCards, FormField, FormSection, Hint, ModalFooter, Notice, PageBody, Panel, Pills,
+  SearchBox, SubjectCard, inputCls,
+} from "./_assetsKit";
 const CONDITIONS = ["new", "good", "fair", "rough", "unusable"] as const;
 
 type Holding = {
@@ -155,246 +162,320 @@ export default function KitIssuance() {
     load();
   };
 
+  // ── Presentation state ──
+  const codeIndex = useEmployeeCodeIndex();
+  const [who, setWho] = useState<"all" | "guard" | "site">("all");
+  const [target, setTarget] = useState<"guard" | "site">("guard");
+  const empLabel = (id: string) => {
+    const name = empName.get(id) ?? "—";
+    const code = codeIndex.byId.get(id);
+    return code ? `${name} · ${code}` : name;
+  };
+  const shown = useMemo(() => filtered.filter((h) =>
+    who === "all" ? true : who === "guard" ? !!h.holder_employee_id : !h.holder_employee_id),
+  [filtered, who]);
+  const unitsOut = useMemo(() => holdings.reduce((a, h) => a + Number(h.outstanding_qty || 0), 0), [holdings]);
+  const guardsHolding = useMemo(
+    () => new Set(holdings.map((h) => h.holder_employee_id).filter(Boolean)).size, [holdings]);
+  const sitesHolding = useMemo(
+    () => new Set(holdings.filter((h) => !h.holder_employee_id).map((h) => h.holder_site_id).filter(Boolean)).size, [holdings]);
+  const closeIssue = () => { setIssueOpen(false); setErr(null); };
+  const closeAct = () => { setAct(null); setErr(null); };
+  const stockKey = `${iss.size}|${iss.grade}|${iss.serial}`;
+  const picked = availableFor.find((r) => `${r.size ?? ""}|${r.grade}|${r.serial_number ?? ""}` === stockKey);
+
+  const cols: Column<Holding>[] = [
+    { key: "item", header: "Item", primary: true, cell: (h) => (
+      <div>
+        <div className="font-medium">{typeName.get(h.item_type_id) ?? "—"}</div>
+        {[h.size, h.grade, h.serial_number].some(Boolean) && (
+          <div className="text-[11px] text-muted-foreground">{[h.size, h.grade, h.serial_number].filter(Boolean).join(" · ")}</div>
+        )}
+      </div>
+    ) },
+    { key: "holder", header: "Held by", cell: (h) => h.holder_employee_id ? (
+      <div className="flex items-center gap-1.5 min-w-0">
+        <User className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+        <span className="truncate">{empName.get(h.holder_employee_id) ?? "—"}</span>
+        {codeIndex.byId.get(h.holder_employee_id) && (
+          <span className="font-mono text-[11px] text-muted-foreground">{codeIndex.byId.get(h.holder_employee_id)}</span>
+        )}
+      </div>
+    ) : (
+      <div className="flex items-center gap-1.5 text-muted-foreground">
+        <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
+        <span className="truncate">{siteName.get(h.holder_site_id ?? "") ?? "Site"}</span>
+      </div>
+    ) },
+    { key: "client", header: "Client", hideOnMobile: true, cell: (h) =>
+      <span className="text-muted-foreground">{h.client_id ? clientName.get(h.client_id) ?? "—" : "—"}</span> },
+    { key: "qty", header: "Qty", className: "text-right tabular-nums", cell: (h) => h.outstanding_qty },
+    { key: "issued", header: "Issued", cell: (h) => formatDate(h.issued_on) },
+    { key: "cond", header: "Taken on at", cell: (h) => <ConditionBadge c={h.opening_condition} /> },
+    { key: "last", header: "Last event", hideOnMobile: true, cell: (h) => (
+      <span className="text-muted-foreground"><span className="capitalize">{h.last_event}</span> · {formatDate(h.last_event_date)}</span>
+    ) },
+  ];
+
   return (
     <>
       <Header
         title="Issuance"
         subtitle="Who holds what, and the condition they took it on at"
         actions={canEdit ? (
-          <Button variant="primary" size="md" onClick={() => setIssueOpen(true)}>
-            <PackageOpen className="w-4 h-4 mr-1.5" /> Issue kit
+          <Button variant="primary" size="md" onClick={() => { setErr(null); setIssueOpen(true); }}>
+            <PackageOpen className="w-4 h-4" /> Issue kit
           </Button>
         ) : undefined}
       />
 
-      <div className="flex-1 overflow-y-auto px-4 md:px-8 py-4 space-y-4">
-        {err && (
-          <div className="p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">{err}</div>
-        )}
-        <input className={FIELD + " max-w-sm"} placeholder="Search guard, item or serial…"
-               value={q} onChange={(e) => setQ(e.target.value)} />
+      <PageBody>
+        {err && !issueOpen && !act && <Notice kind="error" onClose={() => setErr(null)}>{err}</Notice>}
 
-        {loading && <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />}
-
-        <div className="bg-card border border-border rounded-md overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-muted/40 border-b border-border">
-                <tr>
-                  {["Item", "Held by", "Client", "Qty", "Issued", "Taken on at", "Last event", ""].map((h) => (
-                    <th key={h} className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {filtered.length === 0 && !loading && (
-                  <tr><td colSpan={8} className="px-4 py-8 text-center text-sm text-muted-foreground">
-                    Nothing is out. Kit issued from the store appears here until it is returned.
-                  </td></tr>
-                )}
-                {filtered.map((h) => (
-                  <tr key={h.issue_id}>
-                    <td className="px-4 py-2 text-sm">
-                      {typeName.get(h.item_type_id) ?? "—"}
-                      <span className="block text-xs text-muted-foreground">
-                        {[h.size, h.grade, h.serial_number].filter(Boolean).join(" · ")}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2 text-sm">
-                      {h.holder_employee_id
-                        ? empName.get(h.holder_employee_id) ?? "—"
-                        : <span className="text-muted-foreground">{siteName.get(h.holder_site_id ?? "") ?? "Site"}</span>}
-                    </td>
-                    <td className="px-4 py-2 text-sm text-muted-foreground">
-                      {h.client_id ? clientName.get(h.client_id) ?? "—" : "—"}
-                    </td>
-                    <td className="px-4 py-2 text-sm tabular-nums">{h.outstanding_qty}</td>
-                    <td className="px-4 py-2 text-sm">{formatDate(h.issued_on)}</td>
-                    <td className="px-4 py-2 text-sm capitalize">{h.opening_condition}</td>
-                    <td className="px-4 py-2 text-sm text-muted-foreground capitalize">
-                      {h.last_event} · {formatDate(h.last_event_date)}
-                    </td>
-                    <td className="px-4 py-2 flex gap-1">
-                      {canEdit && (
-                        <>
-                          <Button variant="ghost" size="sm"
-                                  onClick={() => { setAct({ kind: "return", h }); setActForm({ condition: "good", to_employee: "", quantity: String(h.outstanding_qty), notes: "" }); }}>
-                            <Undo2 className="w-3.5 h-3.5 mr-1" /> Return
-                          </Button>
-                          {h.holder_employee_id && (
-                            <Button variant="ghost" size="sm"
-                                    onClick={() => { setAct({ kind: "handover", h }); setActForm({ condition: "good", to_employee: "", quantity: "", notes: "" }); }}>
-                              <ArrowRightLeft className="w-3.5 h-3.5 mr-1" /> Handover
-                            </Button>
-                          )}
-                        </>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+          <StatCard title="Issuances out" value={holdings.length} icon={PackageOpen} tone="brand" />
+          <StatCard title="Units out" value={unitsOut.toLocaleString()} icon={Boxes} tone="info" />
+          <StatCard title="Guards holding kit" value={guardsHolding} icon={Users} tone="success" />
+          <StatCard title="Sites holding kit" value={sitesHolding} icon={MapPin} tone="neutral" />
         </div>
-      </div>
+
+        <Panel
+          icon={ArrowRightLeft}
+          title="Kit out"
+          description="Issue sends kit from the store; Return brings it back; Handover passes it guard to guard at the same site without touching the store or charging the client again."
+          flush
+        >
+          <div className="flex flex-col md:flex-row md:items-center gap-3 px-4 md:px-5 py-3 border-b border-border">
+            <SearchBox value={q} onChange={setQ} placeholder="Search guard, item or serial…" />
+            <Tabs<"all" | "guard" | "site">
+              size="sm"
+              value={who}
+              onChange={setWho}
+              items={[
+                { value: "all", label: "All", count: filtered.length },
+                { value: "guard", label: "Guards", count: filtered.filter((h) => !!h.holder_employee_id).length },
+                { value: "site", label: "Sites", count: filtered.filter((h) => !h.holder_employee_id).length },
+              ]}
+            />
+          </div>
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+              <Loader2 className="w-4 h-4 animate-spin" /> Loading issuances…
+            </div>
+          ) : (
+            <div className="p-3 md:p-2">
+              <ResponsiveTable
+                columns={cols}
+                rows={shown}
+                rowKey={(h) => h.issue_id}
+                empty={holdings.length === 0
+                  ? "Nothing is out. Kit issued from the store appears here until it is returned."
+                  : "Nothing matches this search."}
+                actions={canEdit ? (h) => (
+                  <div className="inline-flex gap-1">
+                    <Button variant="ghost" size="sm"
+                            onClick={() => { setErr(null); setAct({ kind: "return", h }); setActForm({ condition: "good", to_employee: "", quantity: String(h.outstanding_qty), notes: "" }); }}>
+                      <Undo2 className="w-3.5 h-3.5" /> Return
+                    </Button>
+                    {h.holder_employee_id && (
+                      <Button variant="ghost" size="sm"
+                              onClick={() => { setErr(null); setAct({ kind: "handover", h }); setActForm({ condition: "good", to_employee: "", quantity: "", notes: "" }); }}>
+                        <ArrowRightLeft className="w-3.5 h-3.5" /> Handover
+                      </Button>
+                    )}
+                  </div>
+                ) : undefined}
+              />
+            </div>
+          )}
+        </Panel>
+      </PageBody>
 
       {/* ---- ISSUE ---- */}
       {issueOpen && (
-        <Modal isOpen onClose={() => setIssueOpen(false)} title="Issue kit" size="md">
-          <div className="space-y-3">
-            <div>
-              <label className="block text-sm mb-1">Item *</label>
-              <ThemedSelect value={iss.item_type_id}
-                onChange={(e) => setIss({ ...iss, item_type_id: e.target.value, size: "", serial: "" })}>
-                <option value="">Pick an item…</option>
-                {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-              </ThemedSelect>
-            </div>
-
-            {iss.item_type_id && (
-              <div>
-                <label className="block text-sm mb-1">From stock *</label>
-                <ThemedSelect
-                  value={`${iss.size}|${iss.grade}|${iss.serial}`}
-                  onChange={(e) => {
-                    const [size, grade, serial] = e.target.value.split("|");
-                    setIss({ ...iss, size, grade, serial });
-                  }}>
-                  <option value="||">Pick…</option>
-                  {availableFor.map((r) => (
-                    <option key={r.id} value={`${r.size ?? ""}|${r.grade}|${r.serial_number ?? ""}`}>
-                      {[r.size, r.grade, r.serial_number].filter(Boolean).join(" · ")} — {r.quantity} available
-                    </option>
-                  ))}
-                </ThemedSelect>
-                {availableFor.length === 0 && (
-                  <p className="text-[11px] text-warning-700 mt-1">
-                    None of this item is in the store. Record a purchase first.
-                  </p>
-                )}
-              </div>
-            )}
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm mb-1">To guard</label>
-                <ThemedSelect value={iss.to_employee}
-                  onChange={(e) => setIss({ ...iss, to_employee: e.target.value, site_id: "" })}>
-                  <option value="">—</option>
-                  {emps.map((e) => <option key={e.id} value={e.id}>{e.full_name}</option>)}
-                </ThemedSelect>
-              </div>
-              <div>
-                <label className="block text-sm mb-1">…or to a site</label>
-                <ThemedSelect value={iss.site_id}
-                  onChange={(e) => setIss({ ...iss, site_id: e.target.value, to_employee: "" })}>
-                  <option value="">—</option>
-                  {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </ThemedSelect>
-              </div>
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              Consumables go to a guard and carry the client from his current deployment.
-              Weapons and vehicles go to a client site.
-            </p>
-
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className="block text-sm mb-1">Quantity *</label>
-                <input className={FIELD} type="number" min={1} value={iss.quantity}
-                       onChange={(e) => setIss({ ...iss, quantity: e.target.value })} />
-              </div>
-              <div>
-                <label className="block text-sm mb-1">Condition *</label>
-                <ThemedSelect value={iss.condition}
-                  onChange={(e) => setIss({ ...iss, condition: e.target.value })}>
-                  {CONDITIONS.map((c) => <option key={c} value={c}>{c}</option>)}
-                </ThemedSelect>
-              </div>
-              <div>
-                <label className="block text-sm mb-1">Date *</label>
-                <input className={FIELD} type="date" value={iss.event_date}
-                       onChange={(e) => setIss({ ...iss, event_date: e.target.value })} />
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2">
-              <Button variant="ghost" onClick={() => setIssueOpen(false)}>Cancel</Button>
+        <Modal
+          isOpen
+          onClose={closeIssue}
+          title="Issue kit"
+          size="md"
+          error={err}
+          onDismissError={() => setErr(null)}
+          footer={
+            <ModalFooter summary={picked ? <>{picked.quantity} in store</> : undefined}>
+              <Button variant="ghost" onClick={closeIssue}>Cancel</Button>
               <Button onClick={doIssue}
                       disabled={busy || !iss.item_type_id || (!iss.to_employee && !iss.site_id)}>
-                {busy ? "Issuing…" : "Issue"}
+                {busy ? "Issuing…" : "Issue kit"}
               </Button>
-            </div>
+            </ModalFooter>
+          }
+        >
+          <div className="space-y-6">
+            <FormSection step={1} title="What">
+              <FormField label="Item" required>
+                <ThemedSelect value={iss.item_type_id}
+                  onChange={(e) => setIss({ ...iss, item_type_id: e.target.value, size: "", serial: "" })}>
+                  <option value="">Pick an item…</option>
+                  {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </ThemedSelect>
+              </FormField>
+              {iss.item_type_id && (
+                availableFor.length === 0 ? (
+                  <Hint tone="warning">None of this item is in the store. Record a purchase first.</Hint>
+                ) : (
+                  <FormField label="From stock" required>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {availableFor.map((r) => {
+                        const key = `${r.size ?? ""}|${r.grade}|${r.serial_number ?? ""}`;
+                        const active = key === stockKey;
+                        return (
+                          <button key={r.id} type="button"
+                                  onClick={() => setIss({ ...iss, size: r.size ?? "", grade: r.grade, serial: r.serial_number ?? "" })}
+                                  className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left transition-colors ${
+                                    active ? "border-brand-500 bg-brand-500/10 ring-1 ring-brand-500/40" : "border-border hover:bg-accent"
+                                  }`}>
+                            <span className="text-sm">
+                              {[r.size, r.serial_number].filter(Boolean).join(" · ") || "Standard"}
+                              <span className="ml-1.5"><Badge tone={r.grade === "new" ? "success" : "neutral"} className="capitalize">{r.grade}</Badge></span>
+                            </span>
+                            <span className="text-xs text-muted-foreground tabular-nums">{r.quantity} left</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </FormField>
+                )
+              )}
+            </FormSection>
+
+            <FormSection step={2} title="To whom">
+              <ChoiceCards<"guard" | "site">
+                columns={2}
+                value={target}
+                onChange={(v) => { setTarget(v); setIss({ ...iss, to_employee: "", site_id: "" }); }}
+                options={[
+                  { value: "guard", label: "A guard", sub: "Consumables — carries the client of his current deployment" },
+                  { value: "site", label: "A client site", sub: "Weapons and vehicles" },
+                ]}
+              />
+              {target === "guard" ? (
+                <FormField label="Guard" required>
+                  <ThemedSelect value={iss.to_employee}
+                    onChange={(e) => setIss({ ...iss, to_employee: e.target.value, site_id: "" })}>
+                    <option value="">Pick a guard…</option>
+                    {emps.map((e) => <option key={e.id} value={e.id}>{empLabel(e.id)}</option>)}
+                  </ThemedSelect>
+                </FormField>
+              ) : (
+                <FormField label="Site" required>
+                  <ThemedSelect value={iss.site_id}
+                    onChange={(e) => setIss({ ...iss, site_id: e.target.value, to_employee: "" })}>
+                    <option value="">Pick a site…</option>
+                    {sites.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}{clientName.get(s.client_id) ? ` — ${clientName.get(s.client_id)}` : ""}</option>
+                    ))}
+                  </ThemedSelect>
+                </FormField>
+              )}
+            </FormSection>
+
+            <FormSection step={3} title="Details">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <FormField label="Quantity" required>
+                  <input className={inputCls} type="number" min={1} value={iss.quantity}
+                         onChange={(e) => setIss({ ...iss, quantity: e.target.value })} />
+                </FormField>
+                <FormField label="Date" required>
+                  <input className={inputCls} type="date" value={iss.event_date}
+                         onChange={(e) => setIss({ ...iss, event_date: e.target.value })} />
+                </FormField>
+              </div>
+              <FormField label="Condition it leaves in" required
+                         hint="Becomes his opening condition — he is judged against this, never against new.">
+                <Pills value={iss.condition} onChange={(c) => setIss({ ...iss, condition: c })} options={CONDITIONS} />
+              </FormField>
+              <FormField label="Note">
+                <input className={inputCls} value={iss.notes} placeholder="Optional"
+                       onChange={(e) => setIss({ ...iss, notes: e.target.value })} />
+              </FormField>
+            </FormSection>
           </div>
         </Modal>
       )}
 
       {/* ---- RETURN / HANDOVER ---- */}
       {act && (
-        <Modal isOpen onClose={() => setAct(null)}
-               title={act.kind === "return" ? "Return to store" : "Handover to another guard"} size="sm">
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              {typeName.get(act.h.item_type_id)} · {act.h.outstanding_qty} outstanding
-              {act.h.holder_employee_id ? ` · held by ${empName.get(act.h.holder_employee_id) ?? ""}` : ""}
-            </p>
+        <Modal
+          isOpen
+          onClose={closeAct}
+          title={act.kind === "return" ? "Return to store" : "Hand over to another guard"}
+          size="sm"
+          error={err}
+          onDismissError={() => setErr(null)}
+          footer={
+            <ModalFooter>
+              <Button variant="ghost" onClick={closeAct}>Cancel</Button>
+              <Button onClick={doAct}
+                      disabled={busy || (act.kind === "handover" && !actForm.to_employee)}>
+                {busy ? "Saving…" : act.kind === "return" ? "Return to store" : "Hand over"}
+              </Button>
+            </ModalFooter>
+          }
+        >
+          <div className="space-y-5">
+            <SubjectCard
+              title={typeName.get(act.h.item_type_id) ?? "—"}
+              meta={<>
+                {[act.h.size, act.h.grade, act.h.serial_number].filter(Boolean).join(" · ")}
+                {act.h.holder_employee_id ? <> · held by {empLabel(act.h.holder_employee_id)}</> : null}
+              </>}
+              aside={<Badge tone="brand">{act.h.outstanding_qty} out</Badge>}
+            />
 
             {act.kind === "handover" ? (
               <>
-                <div>
-                  <label className="block text-sm mb-1">To guard *</label>
+                <FormField label="To guard" required>
                   <ThemedSelect value={actForm.to_employee}
                     onChange={(e) => setActForm({ ...actForm, to_employee: e.target.value })}>
                     <option value="">Pick a guard…</option>
                     {emps.filter((e) => e.id !== act.h.holder_employee_id)
-                         .map((e) => <option key={e.id} value={e.id}>{e.full_name}</option>)}
+                         .map((e) => <option key={e.id} value={e.id}>{empLabel(e.id)}</option>)}
                   </ThemedSelect>
-                </div>
-                <p className="text-[11px] text-muted-foreground">
-                  Nothing is posted. The client already absorbed the cost at first issue, and
-                  the condition below becomes the receiving guard's opening condition — he is
-                  not judged on wear that was already there.
-                </p>
+                </FormField>
+                <Hint tone="info">
+                  Nothing is posted — the client already absorbed the cost at first issue. The condition
+                  below becomes the receiving guard's opening condition.
+                </Hint>
               </>
             ) : (
-              <div>
-                <label className="block text-sm mb-1">Quantity</label>
-                <input className={FIELD} type="number" min={1} max={act.h.outstanding_qty}
+              <FormField label="Quantity returning" hint={`Up to ${act.h.outstanding_qty}.`}>
+                <input className={inputCls} type="number" min={1} max={act.h.outstanding_qty}
                        value={actForm.quantity}
                        onChange={(e) => setActForm({ ...actForm, quantity: e.target.value })} />
-              </div>
+              </FormField>
             )}
 
-            <div>
-              <label className="block text-sm mb-1">Condition *</label>
-              <ThemedSelect value={actForm.condition}
-                onChange={(e) => setActForm({ ...actForm, condition: e.target.value })}>
-                {CONDITIONS.map((c) => <option key={c} value={c}>{c}</option>)}
-              </ThemedSelect>
-              {act.kind === "return" && actForm.condition === "unusable" && (
-                <p className="text-[11px] text-warning-700 mt-1">
-                  Unusable kit does not go back on the shelf — it is written off rather than
-                  counted as stock.
-                </p>
-              )}
-            </div>
+            <FormField label="Condition" required>
+              <Pills value={actForm.condition} onChange={(c) => setActForm({ ...actForm, condition: c })} options={CONDITIONS} />
+            </FormField>
+            {act.kind === "return" && actForm.condition === "unusable" && (
+              <Hint tone="warning">
+                Unusable kit does not go back on the shelf — it is written off rather than counted as stock.
+              </Hint>
+            )}
 
-            <div>
-              <label className="block text-sm mb-1">Note</label>
-              <input className={FIELD} value={actForm.notes}
+            <FormField label="Note">
+              <input className={inputCls} value={actForm.notes} placeholder="Optional"
                      onChange={(e) => setActForm({ ...actForm, notes: e.target.value })} />
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2">
-              <Button variant="ghost" onClick={() => setAct(null)}>Cancel</Button>
-              <Button onClick={doAct}
-                      disabled={busy || (act.kind === "handover" && !actForm.to_employee)}>
-                {busy ? "Saving…" : act.kind === "return" ? "Return" : "Hand over"}
-              </Button>
-            </div>
+            </FormField>
           </div>
         </Modal>
       )}
     </>
   );
+}
+
+function ConditionBadge({ c }: { c: string }) {
+  const t = c === "new" || c === "good" ? "success" : c === "fair" ? "info" : c === "rough" ? "warning" : c === "unusable" ? "danger" : "neutral";
+  return <Badge tone={t} className="capitalize">{c}</Badge>;
 }

@@ -16,17 +16,25 @@
 
 import { useEmployeeCodeIndex } from "../../lib/employeeCodes";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Package, Loader2, Trash2, ClipboardList } from "lucide-react";
+import {
+  Plus, Package, Loader2, Trash2, ClipboardList, ShoppingCart, Wallet, Boxes, Tags,
+  ShieldCheck, ShieldOff, CalendarClock, Pencil,
+} from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import ThemedSelect from "../../components/ThemedSelect";
+import StatCard from "../../components/StatCard";
+import Badge from "../../components/Badge";
+import Tabs from "../../components/Tabs";
+import ResponsiveTable, { type Column } from "../../components/ResponsiveTable";
 import { supabase, friendlyDbError } from "../../lib/supabase";
 import { useAuth, hasPermission } from "../../lib/auth";
-
-const FIELD =
-  "w-full px-3 py-2 border border-border rounded-md text-sm bg-background";
-const money = (n: unknown) => Number(n ?? 0).toLocaleString();
+import { formatDate } from "../../lib/date";
+import {
+  ChoiceCards, FormField, FormSection, Hint, ModalFooter, Notice, PageBody, Panel, PasteCount,
+  PastePreview, Pills, SearchBox, ToggleCard, inputCls, money, textareaCls,
+} from "./_assetsKit";
 
 const CATEGORIES = ["uniform", "kit", "ammunition", "weapon", "vehicle", "office"] as const;
 type Category = (typeof CATEGORIES)[number];
@@ -389,6 +397,70 @@ export default function InventoryStore() {
   const setLine = (i: number, patch: Partial<PurchaseLine>) =>
     setBuy((b) => ({ ...b, lines: b.lines.map((l, j) => (j === i ? { ...l, ...patch } : l)) }));
 
+
+  // ── Presentation state (filters only) ──
+  const [q, setQ] = useState("");
+  const [cat, setCat] = useState<"all" | Category>("all");
+  const anyModal = typeOpen || buyOpen || openingOpen || catalogueOpen;
+  const closeType = () => { setTypeOpen(false); setEditingType(null); setErr(null); };
+
+  const unitsHeld = useMemo(() => stock.reduce((a, r) => a + r.quantity, 0), [stock]);
+  const presentCats = useMemo(
+    () => CATEGORIES.filter((c) => stock.some((r) => typeById.get(r.item_type_id)?.category === c)),
+    [stock, typeById]);
+  const shownStock = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return stock.filter((r) => {
+      const t = typeById.get(r.item_type_id);
+      if (cat !== "all" && t?.category !== cat) return false;
+      if (!needle) return true;
+      return (t?.name ?? "").toLowerCase().includes(needle)
+        || (r.serial_number ?? "").toLowerCase().includes(needle)
+        || (r.size ?? "").toLowerCase().includes(needle);
+    });
+  }, [stock, typeById, q, cat]);
+  // Footer of the table below: the sum of the rows it shows (CLAUDE.md's one
+  // stated exception), so a filter can never make it contradict its rows.
+  const shownValue = useMemo(
+    () => shownStock.reduce((a, r) => a + r.quantity * Number(r.unit_actual_cost), 0), [shownStock]);
+  const purchaseTotal = buy.lines.reduce(
+    (a, l) => a + Number(l.quantity || 0) * Number(l.unit_actual_cost || 0), 0);
+
+  const stockCols: Column<StockRow>[] = [
+    { key: "item", header: "Item", primary: true, cell: (r) => {
+      const t = typeById.get(r.item_type_id);
+      return (
+        <div>
+          <div className="font-medium">{t?.name ?? "—"}</div>
+          <div className="text-[11px] text-muted-foreground capitalize">{t?.category ?? ""}</div>
+        </div>
+      );
+    } },
+    { key: "size", header: "Size", cell: (r) => r.size ?? <span className="text-muted-foreground">—</span> },
+    { key: "grade", header: "Grade", cell: (r) => (
+      <Badge tone={r.grade === "new" ? "success" : "neutral"} className="capitalize">{r.grade}</Badge>
+    ) },
+    { key: "serial", header: "Serial", hideOnMobile: true, cell: (r) =>
+      r.serial_number ? <span className="font-mono text-xs">{r.serial_number}</span> : <span className="text-muted-foreground">—</span> },
+    { key: "qty", header: "Qty", className: "text-right tabular-nums", cell: (r) => r.quantity },
+    { key: "each", header: "Actual each", className: "text-right tabular-nums", cell: (r) => money(r.unit_actual_cost) },
+    { key: "value", header: "Value", className: "text-right tabular-nums font-medium",
+      cell: (r) => money(r.quantity * Number(r.unit_actual_cost)) },
+  ];
+
+  const typeCols: Column<ItemType>[] = [
+    { key: "name", header: "Item", primary: true, cell: (t) => <span className="font-medium">{t.name}</span> },
+    { key: "cat", header: "Category", cell: (t) => <span className="capitalize">{t.category}</span> },
+    { key: "tracked", header: "Tracked", cell: (t) => t.issuable
+      ? <Badge tone="success">Stock</Badge> : <Badge tone="neutral">Office expense</Badge> },
+    { key: "actual", header: "Actual", className: "text-right tabular-nums", cell: (t) => money(t.actual_cost) },
+    { key: "repl", header: "Replacement", className: "text-right tabular-nums", cell: (t) => money(t.replacement_cost) },
+    { key: "life", header: "Life", className: "tabular-nums", cell: (t) => `${t.useful_life_months} mo` },
+    { key: "shape", header: "Counted", cell: (t) => (
+      <span className="text-muted-foreground">{t.serialised ? "Individually" : t.sized ? "By size" : "By count"}</span>
+    ) },
+  ];
+
   return (
     <>
       <Header
@@ -397,507 +469,438 @@ export default function InventoryStore() {
         actions={canEdit ? (
           <>
             <Button variant="secondary" size="md"
-                    onClick={() => { setEditingType(null); setNt(blankType); setTypeOpen(true); }}>
-              <Plus className="w-4 h-4 mr-1.5" /> Item type
+                    onClick={() => { setEditingType(null); setNt(blankType); setErr(null); setTypeOpen(true); }}>
+              <Plus className="w-4 h-4" /> Item type
             </Button>
-            <Button variant="secondary" size="md" onClick={() => setCatalogueOpen(true)}>
-              <ClipboardList className="w-4 h-4 mr-1.5" /> Paste item types
+            <Button variant="secondary" size="md" onClick={() => { setErr(null); setCatalogueOpen(true); }}>
+              <ClipboardList className="w-4 h-4" /> Paste item types
             </Button>
             {batches === 0 && (
-              <Button variant="secondary" size="md" onClick={() => setOpeningOpen(true)}>
-                <ClipboardList className="w-4 h-4 mr-1.5" /> Opening stocktake
+              <Button variant="secondary" size="md" onClick={() => { setErr(null); setOpeningOpen(true); }}>
+                <ClipboardList className="w-4 h-4" /> Opening stocktake
               </Button>
             )}
-            <Button variant="primary" size="md" onClick={() => setBuyOpen(true)}>
-              <Package className="w-4 h-4 mr-1.5" /> Record purchase
+            <Button variant="primary" size="md" onClick={() => { setErr(null); setBuyOpen(true); }}>
+              <ShoppingCart className="w-4 h-4" /> Record purchase
             </Button>
           </>
         ) : undefined}
       />
 
-      <div className="flex-1 overflow-y-auto px-4 md:px-8 py-4 space-y-6">
-        {err && (
-          <div className="p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">
-            {err}
-          </div>
-        )}
-        {notice && (
-          <div className="p-3 bg-success-50 text-success-700 border border-success-200 rounded-md text-sm">
-            {notice}
-          </div>
-        )}
-        {loading && <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />}
+      <PageBody>
+        {err && !anyModal && <Notice kind="error" onClose={() => setErr(null)}>{err}</Notice>}
+        {notice && <Notice kind="success" onClose={() => setNotice(null)}>{notice}</Notice>}
+
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+          <StatCard title="Stock value" value={`PKR ${money(heldValue)}`} icon={Wallet} tone="brand" />
+          <StatCard title="Units in store" value={money(unitsHeld)} icon={Boxes} tone="info" />
+          <StatCard title="Item types" value={types.length} icon={Tags} tone="neutral" />
+          <StatCard
+            title="Kit required"
+            value={settings?.kit_required_from ? formatDate(settings.kit_required_from) : "Off"}
+            icon={settings?.kit_required_from ? ShieldCheck : ShieldOff}
+            tone={settings?.kit_required_from ? "success" : "warning"}
+          />
+        </div>
 
         {/* ---- WHEN THE RULE STARTS ---- */}
         {canEdit && settings && (
-          <div className="bg-card border border-border rounded-md px-4 py-3">
-            <h3 className="text-sm font-medium">Kit is required from</h3>
-            <p className="text-xs text-muted-foreground mt-0.5 mb-2">
-              A deployment starting on or after this date needs an open issuance, and the
-              check reports only from here. Leave it empty until the stocktake is in: 323
-              guards are deployed with kit that predates any of this, and a rule that
-              refused all of them on its first day is a rule somebody turns off.
-            </p>
-            <div className="flex items-end gap-2">
-              <input className={FIELD + " max-w-[12rem]"} type="date" value={kitFrom}
+          <Panel
+            icon={CalendarClock}
+            tone={settings.kit_required_from ? "success" : "warning"}
+            title="Kit is required from"
+            description="A deployment starting on or after this date needs an open issuance, and the check reports only from here. Leave it empty until the stocktake is in — 323 guards are deployed with kit that predates any of this."
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              <input className={inputCls + " sm:max-w-[13rem]"} type="date" value={kitFrom}
                      onChange={(e) => setKitFrom(e.target.value)} />
-              <Button variant="secondary" size="sm" disabled={busy} onClick={saveKitFrom}>
-                {busy ? "Saving…" : "Save"}
+              <Button variant="secondary" size="md" disabled={busy} onClick={saveKitFrom}>
+                {busy ? "Saving…" : "Save date"}
               </Button>
-              <span className="text-xs text-muted-foreground pb-2">
-                {settings.kit_required_from
-                  ? `In force from ${settings.kit_required_from}.`
-                  : "Not in force — nothing is refused and nothing is reported."}
-              </span>
+              {settings.kit_required_from
+                ? <Badge tone="success">In force from {formatDate(settings.kit_required_from)}</Badge>
+                : <Badge tone="warning">Not in force — nothing is refused or reported</Badge>}
             </div>
-          </div>
+          </Panel>
         )}
 
         {/* ---- STOCK ON HAND ---- */}
-        <div className="bg-card border border-border rounded-md overflow-hidden">
-          <div className="px-4 py-3 border-b border-border">
-            <h3 className="text-sm font-medium">Stock on hand</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              New and used are separate stock of the same item. Issued kit is not here —
-              it is on the Issuance tab, derived from the movement log.
-            </p>
+        <Panel
+          icon={Package}
+          title="Stock on hand"
+          description="New and used are separate stock of the same item. Issued kit is not here — it is on the Issuance tab."
+          flush
+        >
+          <div className="flex flex-col md:flex-row md:items-center gap-3 px-4 md:px-5 py-3 border-b border-border">
+            <SearchBox value={q} onChange={setQ} placeholder="Search item, size or serial…" />
+            {presentCats.length > 1 && (
+              <Tabs<"all" | Category>
+                size="sm"
+                value={cat}
+                onChange={setCat}
+                items={[{ value: "all", label: "All" }, ...presentCats.map((c) => ({ value: c, label: <span className="capitalize">{c}</span> }))]}
+              />
+            )}
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-muted/40 border-b border-border">
-                <tr>
-                  {["Item", "Size", "Grade", "Serial", "Qty", "Actual (each)", "Value"].map((h) => (
-                    <th key={h} className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {stock.length === 0 && !loading && (
-                  <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-muted-foreground">
-                    Nothing in the store yet. Record a purchase, or enter the opening stocktake.
-                  </td></tr>
-                )}
-                {stock.map((r) => {
-                  const t = typeById.get(r.item_type_id);
-                  return (
-                    <tr key={r.id}>
-                      <td className="px-4 py-2 text-sm">{t?.name ?? "—"}</td>
-                      <td className="px-4 py-2 text-sm">{r.size ?? "—"}</td>
-                      <td className="px-4 py-2 text-sm capitalize">{r.grade}</td>
-                      <td className="px-4 py-2 text-sm font-mono text-xs">{r.serial_number ?? "—"}</td>
-                      <td className="px-4 py-2 text-sm tabular-nums">{r.quantity}</td>
-                      <td className="px-4 py-2 text-sm tabular-nums">{money(r.unit_actual_cost)}</td>
-                      <td className="px-4 py-2 text-sm tabular-nums">
-                        {money(r.quantity * Number(r.unit_actual_cost))}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-              <tfoot className="bg-muted/40 border-t border-border">
-                <tr>
-                  <td colSpan={6} className="px-4 py-2 text-sm text-right text-muted-foreground">
-                    On the balance sheet, at actual cost
-                  </td>
-                  <td className="px-4 py-2 text-sm font-medium tabular-nums">PKR {money(heldValue)}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </div>
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+              <Loader2 className="w-4 h-4 animate-spin" /> Loading stock…
+            </div>
+          ) : (
+            <div className="p-3 md:p-2">
+              <ResponsiveTable
+                columns={stockCols}
+                rows={shownStock}
+                rowKey={(r) => r.id}
+                empty={stock.length === 0
+                  ? "Nothing in the store yet. Record a purchase, or enter the opening stocktake."
+                  : "No stock matches this search."}
+              />
+              {shownStock.length > 0 && (
+                <div className="flex items-center justify-between gap-3 mt-2 px-3 py-2.5 rounded-lg bg-muted/50 text-sm">
+                  <span className="text-muted-foreground">
+                    {cat === "all" && !q ? "On the balance sheet, at actual cost" : "Value of the rows shown, at actual cost"}
+                  </span>
+                  <span className="font-semibold tabular-nums">PKR {money(shownValue)}</span>
+                </div>
+              )}
+            </div>
+          )}
+        </Panel>
 
         {/* ---- THE CATALOGUE ---- */}
-        <div className="bg-card border border-border rounded-md overflow-hidden">
-          <div className="px-4 py-3 border-b border-border">
-            <h3 className="text-sm font-medium">Item types</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Set once. Issuable decides whether something is tracked at all — there is no
-              value threshold, because one would let three uniforms skip inventory while
-              two hundred did not.
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Replacement cost and useful life can be corrected later. A correction changes
-              what a <em>future</em> clearance suggests. A fine already assessed keeps the
-              figure it was assessed at — it is stored on the clearance, not read back from
-              here.
-            </p>
+        <Panel
+          icon={Tags}
+          tone="info"
+          title="Item types"
+          description="Set once. Tracked decides whether something is stock at all. A corrected replacement cost or life changes future clearances only — a fine already assessed keeps its figure."
+          flush
+        >
+          <div className="p-3 md:p-2">
+            <ResponsiveTable
+              columns={typeCols}
+              rows={types}
+              rowKey={(t) => t.id}
+              empty="No item types yet. Everything issued to a guard or a site needs one."
+              actions={canEdit ? (t) => (
+                <Button variant="ghost" size="sm" onClick={() => editType(t)}>
+                  <Pencil className="w-3.5 h-3.5" /> Edit
+                </Button>
+              ) : undefined}
+            />
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-muted/40 border-b border-border">
-                <tr>
-                  {["Item", "Category", "Tracked", "Actual", "Replacement", "Life", "Shape", ""].map((h) => (
-                    <th key={h} className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {types.map((t) => (
-                  <tr key={t.id}>
-                    <td className="px-4 py-2 text-sm">{t.name}</td>
-                    <td className="px-4 py-2 text-sm capitalize">{t.category}</td>
-                    <td className="px-4 py-2 text-sm">
-                      {t.issuable
-                        ? <span className="text-success-700">Stock</span>
-                        : <span className="text-muted-foreground">Office expense</span>}
-                    </td>
-                    <td className="px-4 py-2 text-sm tabular-nums">{money(t.actual_cost)}</td>
-                    <td className="px-4 py-2 text-sm tabular-nums">{money(t.replacement_cost)}</td>
-                    <td className="px-4 py-2 text-sm">{t.useful_life_months} mo</td>
-                    <td className="px-4 py-2 text-sm text-muted-foreground">
-                      {t.serialised ? "Individually" : t.sized ? "By size" : "By count"}
-                    </td>
-                    <td className="px-4 py-2 text-right">
-                      {canEdit && (
-                        <Button variant="ghost" size="sm" onClick={() => editType(t)}>Edit</Button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-                {types.length === 0 && !loading && (
-                  <tr><td colSpan={8} className="px-4 py-8 text-center text-sm text-muted-foreground">
-                    No item types yet. Everything issued to a guard or a site needs one.
-                  </td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
+        </Panel>
+      </PageBody>
 
-      {/* ---- NEW ITEM TYPE ---- */}
+      {/* ---- NEW / CORRECT ITEM TYPE ---- */}
       {typeOpen && (
-        <Modal isOpen onClose={() => { setTypeOpen(false); setEditingType(null); }}
-               title={editingType ? "Correct item type" : "New item type"} size="sm">
-          <div className="space-y-3">
+        <Modal
+          isOpen
+          onClose={closeType}
+          title={editingType ? "Correct item type" : "New item type"}
+          size="md"
+          error={err}
+          onDismissError={() => setErr(null)}
+          footer={
+            <ModalFooter>
+              <Button variant="ghost" onClick={closeType}>Cancel</Button>
+              <Button onClick={addType} disabled={busy || !nt.name.trim()}>
+                {busy ? "Saving…" : editingType ? "Save correction" : "Add item type"}
+              </Button>
+            </ModalFooter>
+          }
+        >
+          <div className="space-y-6">
             {editingType && (
-              <p className="text-xs text-muted-foreground">
-                A corrected replacement cost or useful life changes what a future clearance
-                suggests. Fines already assessed keep the figure they were assessed at.
-                Category and shape are fixed once the type exists.
-              </p>
+              <Hint tone="info">
+                A corrected replacement cost or useful life changes what a future clearance suggests.
+                Fines already assessed keep the figure they were assessed at. Category, tracking and
+                how it is counted are fixed once the type exists.
+              </Hint>
             )}
-            <div>
-              <label className="block text-sm mb-1">Name *</label>
-              <input className={FIELD} value={nt.name}
-                     onChange={(e) => setNt({ ...nt, name: e.target.value })} />
-            </div>
-            <div>
-              <label className="block text-sm mb-1">Category *</label>
-              <ThemedSelect value={nt.category} disabled={!!editingType}
-                onChange={(e) => setNt({ ...nt, category: e.target.value as Category })}>
-                {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-              </ThemedSelect>
-            </div>
-            <label className="flex items-start gap-2 text-sm">
-              <input type="checkbox" className="mt-0.5" checked={nt.issuable} disabled={!!editingType}
-                     onChange={(e) => setNt({ ...nt, issuable: e.target.checked })} />
-              <span>
-                Issued to a guard or a site
-                <span className="block text-xs text-muted-foreground">
-                  On — it is stock and every movement is tracked. Off — it is an office
-                  expense (stationery, tea, printer paper) and never touches inventory.
-                </span>
-              </span>
-            </label>
+
+            <FormSection step={1} title="What it is">
+              <FormField label="Name" required>
+                <input className={inputCls} value={nt.name} autoFocus placeholder="e.g. Summer shirt"
+                       onChange={(e) => setNt({ ...nt, name: e.target.value })} />
+              </FormField>
+              <FormField label="Category" required>
+                <ChoiceCards<Category>
+                  columns={3}
+                  disabled={!!editingType}
+                  value={nt.category}
+                  onChange={(c) => setNt({ ...nt, category: c, issuable: c === "office" ? false : nt.issuable })}
+                  options={CATEGORIES.map((c) => ({ value: c, label: c[0].toUpperCase() + c.slice(1) }))}
+                />
+              </FormField>
+              <ToggleCard
+                checked={nt.issuable}
+                disabled={!!editingType}
+                onChange={(v) => setNt({ ...nt, issuable: v })}
+                title="Issued to a guard or a site"
+                sub="On — it is stock and every movement is tracked. Off — an office expense (stationery, tea, paper) that never touches inventory."
+              />
+            </FormSection>
+
             {nt.issuable && (
               <>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-sm mb-1">Replacement cost *</label>
-                    <input className={FIELD} type="number" min={0} value={nt.replacement_cost}
-                           onChange={(e) => setNt({ ...nt, replacement_cost: e.target.value })} />
-                    <p className="text-[11px] text-muted-foreground mt-1">
-                      What ONE costs to replace. A bulk discount does not reduce it — fines read this.
-                      Actual cost comes from purchases and is not typed here.
-                    </p>
+                <FormSection step={2} title="What it costs">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <FormField label="Replacement cost (PKR)" required
+                               hint="What ONE costs to replace. A bulk discount does not reduce it — fines read this. Actual cost comes from purchases.">
+                      <input className={inputCls} type="number" min={0} value={nt.replacement_cost}
+                             onChange={(e) => setNt({ ...nt, replacement_cost: e.target.value })} />
+                    </FormField>
+                    <FormField label="Useful life (months)" required
+                               hint="Pro-rates the fine on kit returned unusable.">
+                      <input className={inputCls} type="number" min={1} value={nt.useful_life_months}
+                             onChange={(e) => setNt({ ...nt, useful_life_months: e.target.value })} />
+                    </FormField>
                   </div>
-                  <div>
-                    <label className="block text-sm mb-1">Useful life (months) *</label>
-                    <input className={FIELD} type="number" min={1} value={nt.useful_life_months}
-                           onChange={(e) => setNt({ ...nt, useful_life_months: e.target.value })} />
-                  </div>
-                </div>
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-2 text-sm">
-                    <input type="radio" disabled={!!editingType} checked={nt.sized && !nt.serialised}
-                           onChange={() => setNt({ ...nt, sized: true, serialised: false })} />
-                    By size
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input type="radio" disabled={!!editingType} checked={!nt.sized && !nt.serialised}
-                           onChange={() => setNt({ ...nt, sized: false, serialised: false })} />
-                    By count
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input type="radio" disabled={!!editingType} checked={nt.serialised}
-                           onChange={() => setNt({ ...nt, sized: false, serialised: true })} />
-                    Individually (serial + licence)
-                  </label>
-                </div>
+                </FormSection>
+
+                <FormSection step={3} title="How it is counted">
+                  <ChoiceCards<"size" | "count" | "serial">
+                    disabled={!!editingType}
+                    value={nt.serialised ? "serial" : nt.sized ? "size" : "count"}
+                    onChange={(v) => setNt({ ...nt, sized: v === "size", serialised: v === "serial" })}
+                    options={[
+                      { value: "size", label: "By size", sub: "Uniforms, boots — stock per size" },
+                      { value: "count", label: "By count", sub: "Torches, whistles — one pool" },
+                      { value: "serial", label: "Individually", sub: "Weapons — serial and licence each" },
+                    ]}
+                  />
+                </FormSection>
               </>
             )}
-            <div className="flex justify-end gap-2 pt-2">
-              <Button variant="ghost" onClick={() => { setTypeOpen(false); setEditingType(null); }}>Cancel</Button>
-              <Button onClick={addType} disabled={busy || !nt.name.trim()}>
-                {busy ? "Saving…" : editingType ? "Save correction" : "Add"}
-              </Button>
-            </div>
           </div>
         </Modal>
       )}
 
       {/* ---- PASTE ITEM TYPES ---- */}
       {catalogueOpen && (
-        <Modal isOpen onClose={() => setCatalogueOpen(false)} title="Paste item types" size="lg">
-          <div className="space-y-3">
-            <label className="block text-sm mb-1">
-              Paste from the spreadsheet — Name · Category · Replacement cost · Useful life (months) · Shape
-            </label>
-            <textarea className={FIELD + " font-mono text-xs h-40"}
-                      placeholder={"Summer shirt\tuniform\t1450\t12\tsize\nTorch\tkit\t900\t24\tcount\nPistol 9mm\tweapon\t68000\t120\tserial"}
-                      value={cataloguePaste}
-                      onChange={(e) => setCataloguePaste(e.target.value)} />
-            <p className="text-[11px] text-muted-foreground">
-              Category is one of {CATEGORIES.join(", ")}. Shape is <em>size</em>, <em>count</em> or{" "}
-              <em>serial</em>. Replacement cost is what one costs to replace today, undiscounted — fines
-              read it. Useful life pro-rates a fine on kit returned unusable. Actual cost is not typed
-              here; it comes from what was paid.
-            </p>
+        <Modal
+          isOpen
+          onClose={() => { setCatalogueOpen(false); setErr(null); }}
+          title="Paste item types"
+          size="lg"
+          error={err}
+          onDismissError={() => setErr(null)}
+          footer={
+            <ModalFooter summary={<PasteCount total={catalogueRows.length} bad={catalogueBad} noun="type" />}>
+              <Button variant="ghost" onClick={() => { setCatalogueOpen(false); setErr(null); }}>Cancel</Button>
+              <Button onClick={submitCatalogue}
+                      disabled={busy || catalogueRows.length === 0 || catalogueBad > 0}>
+                {busy ? "Adding…" : "Add item types"}
+              </Button>
+            </ModalFooter>
+          }
+        >
+          <div className="space-y-5">
+            <FormSection step={1} title="Paste from the spreadsheet">
+              <ColumnChips cols={["Name", "Category", "Replacement cost", "Useful life (months)", "Shape"]} />
+              <textarea className={textareaCls + " h-36"}
+                        placeholder={"Summer shirt\tuniform\t1450\t12\tsize\nTorch\tkit\t900\t24\tcount\nPistol 9mm\tweapon\t68000\t120\tserial"}
+                        value={cataloguePaste}
+                        onChange={(e) => setCataloguePaste(e.target.value)} />
+              <Hint>
+                Category is one of {CATEGORIES.join(", ")}. Shape is <em>size</em>, <em>count</em> or <em>serial</em>.
+                Replacement cost is today's undiscounted price — fines read it. Actual cost is not typed here;
+                it comes from what was paid.
+              </Hint>
+            </FormSection>
             {catalogueRows.length > 0 && (
-              <div className="overflow-x-auto max-h-64 border border-border rounded-md">
-                <table className="w-full">
-                  <thead className="bg-muted/40 border-b border-border sticky top-0">
-                    <tr>
-                      {["Name", "Category", "Replacement", "Life", "Shape"].map((h) => (
-                        <th key={h} className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {catalogueRows.map((r, i) => (
-                      <tr key={i} className={r.error ? "bg-danger-50/50" : undefined}>
-                        {r.error ? (
-                          <td colSpan={5} className="px-3 py-2 text-sm text-danger-700">Line {i + 1}: {r.error}</td>
-                        ) : (
-                          <>
-                            <td className="px-3 py-2 text-sm">{r.name}</td>
-                            <td className="px-3 py-2 text-sm capitalize">{r.category}</td>
-                            <td className="px-3 py-2 text-sm tabular-nums">{money(r.cost)}</td>
-                            <td className="px-3 py-2 text-sm">{r.life} mo</td>
-                            <td className="px-3 py-2 text-sm">{r.shape}</td>
-                          </>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <FormSection step={2} title="Check before adding">
+                <PastePreview
+                  rows={catalogueRows}
+                  headers={["Name", "Category", "Replacement", "Life", "Shape"]}
+                  cells={(r) => [r.name, <span className="capitalize">{r.category}</span>,
+                    <span className="tabular-nums">{money(r.cost)}</span>, `${r.life} mo`, r.shape]}
+                />
+              </FormSection>
             )}
-            <div className="flex items-center justify-between pt-2 border-t border-border">
-              <span className="text-sm">
-                {catalogueRows.length} type{catalogueRows.length === 1 ? "" : "s"}
-                {catalogueBad > 0 && <span className="text-danger-700"> · {catalogueBad} need fixing</span>}
-              </span>
-              <div className="flex gap-2">
-                <Button variant="ghost" onClick={() => setCatalogueOpen(false)}>Cancel</Button>
-                <Button onClick={submitCatalogue}
-                        disabled={busy || catalogueRows.length === 0 || catalogueBad > 0}>
-                  {busy ? "Adding…" : "Add item types"}
-                </Button>
-              </div>
-            </div>
           </div>
         </Modal>
       )}
 
       {/* ---- OPENING STOCKTAKE ---- */}
       {openingOpen && (
-        <Modal isOpen onClose={() => setOpeningOpen(false)} title="Opening stocktake" size="lg">
-          <div className="space-y-3">
-            <p className="text-xs text-muted-foreground">
-              Everything held at actual cost, plus everything already out against the guards
-              holding it. It posts once, as an opening balance: the inventory accounts are
-              debited and Opening Balance Equity takes the other side. Kit entered against a
-              guard is marked as already costed, so a year of historic issuance does not land
-              on this month's client profitability.
-            </p>
-
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className="block text-sm mb-1">As of *</label>
-                <input className={FIELD} type="date" value={opening.as_of}
-                       onChange={(e) => setOpening({ ...opening, as_of: e.target.value })} />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm mb-1">
-                Paste from the spreadsheet — {OPENING_COLS.join(" · ")}
-              </label>
-              <textarea className={FIELD + " font-mono text-xs h-40"}
-                        placeholder={"Summer shirt\tL\tnew\t\t120\t1450\nPistol 9mm\t\tnew\tAB-1123\t1\t68000\tGGS-00241"}
+        <Modal
+          isOpen
+          onClose={() => { setOpeningOpen(false); setErr(null); }}
+          title="Opening stocktake"
+          size="lg"
+          error={err}
+          onDismissError={() => setErr(null)}
+          footer={
+            <ModalFooter summary={
+              <PasteCount total={openingRows.length} bad={openingBad} noun="line"
+                extra={<span className="font-medium text-foreground">PKR {money(openingRows.reduce((a, r) => a + r.qty * r.cost, 0))}</span>} />
+            }>
+              <Button variant="ghost" onClick={() => { setOpeningOpen(false); setErr(null); }}>Cancel</Button>
+              <Button onClick={submitOpening}
+                      disabled={busy || openingRows.length === 0 || openingBad > 0}>
+                {busy ? "Posting…" : "Post opening stocktake"}
+              </Button>
+            </ModalFooter>
+          }
+        >
+          <div className="space-y-5">
+            <Hint tone="info">
+              Everything held at actual cost, plus everything already out against the guards holding it.
+              It posts once, as an opening balance: inventory is debited and Opening Balance Equity takes
+              the other side. Kit entered against a guard is marked as already costed, so historic issuance
+              does not land on this month's client profitability.
+            </Hint>
+            <FormSection step={1} title="As of">
+              <input className={inputCls + " sm:max-w-[13rem]"} type="date" value={opening.as_of}
+                     onChange={(e) => setOpening({ ...opening, as_of: e.target.value })} />
+            </FormSection>
+            <FormSection step={2} title="Paste from the spreadsheet">
+              <ColumnChips cols={OPENING_COLS} />
+              <textarea className={textareaCls + " h-36"}
+                        placeholder={"Summer shirt\tL\tnew\t\t120\t1450\nPistol 9mm\t\tnew\tAB-1123\t1\t68000\tHMC-024"}
                         value={opening.paste}
                         onChange={(e) => setOpening({ ...opening, paste: e.target.value })} />
-              <p className="text-[11px] text-muted-foreground mt-1">
-                Tab or comma separated, one line per item. Leave the guard code blank for
-                anything sitting in the store. Grade is <em>new</em> or <em>used</em>. Serial
-                is only for items tracked individually.
-              </p>
-            </div>
-
+              <Hint>
+                Tab or comma separated, one line per item. Leave the guard code blank for anything in the
+                store — either his client code or his permanent code works. Grade is <em>new</em> or <em>used</em>;
+                serial only for items tracked individually.
+              </Hint>
+            </FormSection>
             {openingRows.length > 0 && (
-              <div className="overflow-x-auto max-h-64 border border-border rounded-md">
-                <table className="w-full">
-                  <thead className="bg-muted/40 border-b border-border sticky top-0">
-                    <tr>
-                      {["Item", "Size", "Grade", "Serial", "Qty", "Actual each", "Held by", "Value"]
-                        .map((h) => (
-                          <th key={h} className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">{h}</th>
-                        ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {openingRows.map((r, i) => (
-                      <tr key={i} className={r.error ? "bg-danger-50/50" : undefined}>
-                        {r.error ? (
-                          <td colSpan={8} className="px-3 py-2 text-sm text-danger-700">
-                            Line {i + 1}: {r.error}
-                          </td>
-                        ) : (
-                          <>
-                            <td className="px-3 py-2 text-sm">{r.itemName}</td>
-                            <td className="px-3 py-2 text-sm">{r.size || "—"}</td>
-                            <td className="px-3 py-2 text-sm capitalize">{r.grade}</td>
-                            <td className="px-3 py-2 text-sm font-mono text-xs">{r.serial || "—"}</td>
-                            <td className="px-3 py-2 text-sm tabular-nums">{r.qty}</td>
-                            <td className="px-3 py-2 text-sm tabular-nums">{money(r.cost)}</td>
-                            <td className="px-3 py-2 text-sm">{r.guardCode || "Store"}</td>
-                            <td className="px-3 py-2 text-sm tabular-nums">{money(r.qty * r.cost)}</td>
-                          </>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <FormSection step={3} title="Check before posting">
+                <PastePreview
+                  rows={openingRows}
+                  headers={["Item", "Size", "Grade", "Serial", "Qty", "Each", "Held by", "Value"]}
+                  cells={(r) => [r.itemName, r.size || "—", <span className="capitalize">{r.grade}</span>,
+                    <span className="font-mono text-xs">{r.serial || "—"}</span>,
+                    <span className="tabular-nums">{r.qty}</span>, <span className="tabular-nums">{money(r.cost)}</span>,
+                    r.guardCode || <Badge tone="neutral">Store</Badge>,
+                    <span className="tabular-nums font-medium">{money(r.qty * r.cost)}</span>]}
+                />
+              </FormSection>
             )}
-
-            <div className="flex items-center justify-between pt-2 border-t border-border">
-              <span className="text-sm">
-                {openingRows.length} line{openingRows.length === 1 ? "" : "s"}
-                {openingBad > 0
-                  ? <span className="text-danger-700"> · {openingBad} need fixing</span>
-                  : <> · PKR {money(openingRows.reduce((a, r) => a + r.qty * r.cost, 0))}</>}
-              </span>
-              <div className="flex gap-2">
-                <Button variant="ghost" onClick={() => setOpeningOpen(false)}>Cancel</Button>
-                <Button onClick={submitOpening}
-                        disabled={busy || openingRows.length === 0 || openingBad > 0}>
-                  {busy ? "Posting…" : "Post opening stocktake"}
-                </Button>
-              </div>
-            </div>
           </div>
         </Modal>
       )}
 
       {/* ---- RECORD PURCHASE ---- */}
       {buyOpen && (
-        <Modal isOpen onClose={() => setBuyOpen(false)} title="Record a purchase" size="lg">
-          <div className="space-y-3">
-            <p className="text-xs text-muted-foreground">
-              Capitalised into inventory at actual cost. Buying 200 uniforms does not touch
-              the profit and loss — the cost reaches it when the kit is issued, on the client
-              it was issued to.
-            </p>
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className="block text-sm mb-1">Date *</label>
-                <input className={FIELD} type="date" value={buy.purchase_date}
-                       onChange={(e) => setBuy({ ...buy, purchase_date: e.target.value })} />
-              </div>
-              <div>
-                <label className="block text-sm mb-1">Paid by *</label>
-                <ThemedSelect value={buy.payment_mode}
-                  onChange={(e) => setBuy({ ...buy, payment_mode: e.target.value })}>
-                  {["Payable", "Cash", "Bank", "Cheque"].map((m) => <option key={m} value={m}>{m}</option>)}
-                </ThemedSelect>
-              </div>
-              <div>
-                <label className="block text-sm mb-1">Description</label>
-                <input className={FIELD} value={buy.description}
-                       onChange={(e) => setBuy({ ...buy, description: e.target.value })} />
-              </div>
-            </div>
+        <Modal
+          isOpen
+          onClose={() => { setBuyOpen(false); setErr(null); }}
+          title="Record a purchase"
+          size="lg"
+          error={err}
+          onDismissError={() => setErr(null)}
+          footer={
+            <ModalFooter summary={<>Total <span className="font-semibold text-foreground tabular-nums">PKR {money(purchaseTotal)}</span></>}>
+              <Button variant="ghost" onClick={() => { setBuyOpen(false); setErr(null); }}>Cancel</Button>
+              <Button onClick={submitPurchase} disabled={busy}>
+                {busy ? "Posting…" : "Record purchase"}
+              </Button>
+            </ModalFooter>
+          }
+        >
+          <div className="space-y-6">
+            <Hint tone="info">
+              Capitalised into inventory at actual cost — buying 200 uniforms does not touch profit and loss.
+              The cost reaches it when the kit is issued, on the client it was issued to.
+            </Hint>
 
-            {buy.lines.map((l, i) => {
-              const t = typeById.get(l.item_type_id);
-              return (
-                <div key={i} className="grid grid-cols-12 gap-2 items-end border border-border rounded-md p-2">
-                  <div className="col-span-4">
-                    <label className="block text-xs mb-1">Item</label>
-                    <ThemedSelect value={l.item_type_id}
-                      onChange={(e) => setLine(i, { item_type_id: e.target.value })}>
-                      <option value="">Pick an item…</option>
-                      {types.filter((x) => x.issuable && x.active)
-                        .map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-                    </ThemedSelect>
-                  </div>
-                  {t?.sized && (
-                    <div className="col-span-2">
-                      <label className="block text-xs mb-1">Size</label>
-                      <input className={FIELD} value={l.size}
-                             onChange={(e) => setLine(i, { size: e.target.value })} />
+            <FormSection step={1} title="The purchase">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <FormField label="Date" required>
+                  <input className={inputCls} type="date" value={buy.purchase_date}
+                         onChange={(e) => setBuy({ ...buy, purchase_date: e.target.value })} />
+                </FormField>
+                <FormField label="Description">
+                  <input className={inputCls} value={buy.description} placeholder="Supplier, invoice no…"
+                         onChange={(e) => setBuy({ ...buy, description: e.target.value })} />
+                </FormField>
+              </div>
+              <FormField label="Paid by" required>
+                <Pills value={buy.payment_mode} onChange={(m) => setBuy({ ...buy, payment_mode: m })}
+                       options={["Payable", "Cash", "Bank", "Cheque"]} />
+              </FormField>
+            </FormSection>
+
+            <FormSection step={2} title="What was bought">
+              <div className="space-y-2">
+                {buy.lines.map((l, i) => {
+                  const t = typeById.get(l.item_type_id);
+                  const lineTotal = Number(l.quantity || 0) * Number(l.unit_actual_cost || 0);
+                  return (
+                    <div key={i} className="rounded-lg border border-border bg-muted/30 p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Line {i + 1}</span>
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm tabular-nums font-medium">PKR {money(lineTotal)}</span>
+                          {buy.lines.length > 1 && (
+                            <button type="button" aria-label="Remove line"
+                                    className="p-1 rounded text-muted-foreground hover:text-danger-600 hover:bg-danger-50"
+                                    onClick={() => setBuy((b) => ({ ...b, lines: b.lines.filter((_, j) => j !== i) }))}>
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-12 gap-3">
+                        <FormField label="Item" className="col-span-2 sm:col-span-5">
+                          <ThemedSelect value={l.item_type_id}
+                            onChange={(e) => setLine(i, { item_type_id: e.target.value })}>
+                            <option value="">Pick an item…</option>
+                            {types.filter((x) => x.issuable && x.active)
+                              .map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                          </ThemedSelect>
+                        </FormField>
+                        {t?.sized && (
+                          <FormField label="Size" className="sm:col-span-2">
+                            <input className={inputCls} value={l.size}
+                                   onChange={(e) => setLine(i, { size: e.target.value })} />
+                          </FormField>
+                        )}
+                        {t?.serialised && (
+                          <FormField label="Serial" className="sm:col-span-3">
+                            <input className={inputCls} value={l.serial_number}
+                                   onChange={(e) => setLine(i, { serial_number: e.target.value })} />
+                          </FormField>
+                        )}
+                        <FormField label="Qty" className="sm:col-span-2">
+                          <input className={inputCls} type="number" min={1} value={l.quantity}
+                                 onChange={(e) => setLine(i, { quantity: e.target.value })} />
+                        </FormField>
+                        <FormField label="Actual cost each" className={t?.sized || t?.serialised ? "sm:col-span-3" : "sm:col-span-5"}>
+                          <input className={inputCls} type="number" min={0} value={l.unit_actual_cost}
+                                 onChange={(e) => setLine(i, { unit_actual_cost: e.target.value })} />
+                        </FormField>
+                      </div>
                     </div>
-                  )}
-                  {t?.serialised && (
-                    <div className="col-span-3">
-                      <label className="block text-xs mb-1">Serial</label>
-                      <input className={FIELD} value={l.serial_number}
-                             onChange={(e) => setLine(i, { serial_number: e.target.value })} />
-                    </div>
-                  )}
-                  <div className="col-span-2">
-                    <label className="block text-xs mb-1">Qty</label>
-                    <input className={FIELD} type="number" min={1} value={l.quantity}
-                           onChange={(e) => setLine(i, { quantity: e.target.value })} />
-                  </div>
-                  <div className="col-span-3">
-                    <label className="block text-xs mb-1">Actual cost each</label>
-                    <input className={FIELD} type="number" min={0} value={l.unit_actual_cost}
-                           onChange={(e) => setLine(i, { unit_actual_cost: e.target.value })} />
-                  </div>
-                  <div className="col-span-1">
-                    <button type="button" className="p-2 text-muted-foreground hover:text-danger-600"
-                            onClick={() => setBuy((b) => ({ ...b, lines: b.lines.filter((_, j) => j !== i) }))}>
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-
-            <Button variant="ghost" size="sm"
-                    onClick={() => setBuy((b) => ({ ...b, lines: [...b.lines, { ...emptyLine }] }))}>
-              <Plus className="w-4 h-4 mr-1" /> Add line
-            </Button>
-
-            <div className="flex items-center justify-between pt-2 border-t border-border">
-              <span className="text-sm text-muted-foreground">
-                Total PKR {money(buy.lines.reduce(
-                  (a, l) => a + Number(l.quantity || 0) * Number(l.unit_actual_cost || 0), 0))}
-              </span>
-              <div className="flex gap-2">
-                <Button variant="ghost" onClick={() => setBuyOpen(false)}>Cancel</Button>
-                <Button onClick={submitPurchase} disabled={busy}>
-                  {busy ? "Posting…" : "Record purchase"}
-                </Button>
+                  );
+                })}
               </div>
-            </div>
+              <Button variant="secondary" size="sm"
+                      onClick={() => setBuy((b) => ({ ...b, lines: [...b.lines, { ...emptyLine }] }))}>
+                <Plus className="w-4 h-4" /> Add line
+              </Button>
+            </FormSection>
           </div>
         </Modal>
       )}
     </>
+  );
+}
+
+/** The expected paste columns, in order, as chips. */
+function ColumnChips({ cols }: { cols: string[] }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {cols.map((c, i) => (
+        <span key={c} className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/50 px-2 py-0.5 text-[11px] text-muted-foreground">
+          <span className="font-semibold text-foreground">{i + 1}</span> {c}
+        </span>
+      ))}
+    </div>
   );
 }

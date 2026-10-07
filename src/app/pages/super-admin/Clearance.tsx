@@ -18,25 +18,27 @@
 
 import { useEmployeeCodeIndex } from "../../lib/employeeCodes";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Loader2, Printer, ShieldCheck } from "lucide-react";
+import { AlertTriangle, ClipboardCheck, Loader2, PenLine, Printer, ShieldCheck, Wallet } from "lucide-react";
 import Header from "../../components/Header";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
-import ThemedSelect from "../../components/ThemedSelect";
+import StatCard from "../../components/StatCard";
+import Badge from "../../components/Badge";
+import ResponsiveTable, { type Column } from "../../components/ResponsiveTable";
 import { supabase, friendlyDbError } from "../../lib/supabase";
 import { useAuth, hasPermission } from "../../lib/auth";
 import { formatDate } from "../../lib/date";
 import { brandingFromCompany } from "../../lib/pdfBranding";
 import { generateClearanceCertificatePdf } from "../../lib/clearanceCertificatePdf";
 
-const FIELD = "w-full px-3 py-2 border border-border rounded-md text-sm bg-background";
-const money = (n: unknown) => Number(n ?? 0).toLocaleString();
+import {
+  ChoiceCards, FormField, Hint, ModalFooter, Notice, PageBody, Panel, SubjectCard, inputCls, money,
+} from "./_assetsKit";
 const OUTCOMES = [
   { v: "returned_reusable", l: "Returned — reusable" },
   { v: "returned_unusable", l: "Returned — unusable" },
   { v: "not_returned", l: "Not returned" },
 ] as const;
-const CONDITIONS = ["new", "good", "fair", "rough", "unusable"] as const;
 
 type Pending = {
   id: string; full_name: string; guard_code: string | null;
@@ -197,217 +199,213 @@ export default function Clearance() {
     load();
   };
 
+  // ── Presentation ──
+  const awaitingSig = queue.filter((r) => !r.signed_at && !r.dues_released).length;
+  const readyToRelease = queue.filter((r) => r.signed_at && !r.dues_released).length;
+  const released = queue.filter((r) => r.dues_released).length;
+  const daysOpen = (p: Pending) => p.last_working_day
+    ? Math.floor((Date.now() - new Date(p.last_working_day).getTime()) / 86400000) : 0;
+  const closeOpen = () => { setOpen(null); setErr(null); };
+  const assessed = open ? open.items.filter((i) => i.outcome).length : 0;
+  const totalFine = open ? open.items.reduce((a, i) => a + Number(i.fine || 0), 0) : 0;
+
+  const opsCols: Column<Pending>[] = [
+    { key: "guard", header: "Guard", primary: true, cell: (p) => <span className="font-medium">{p.full_name}</span> },
+    { key: "code", header: "Code", cell: (p) =>
+      <span className="font-mono text-xs">{codeIndex.byId.get(p.id) ?? p.guard_code ?? "—"}</span> },
+    { key: "state", header: "Separation", cell: (p) => <Badge tone="neutral" className="capitalize">{p.lifecycle_state}</Badge> },
+    { key: "lwd", header: "Last working day", cell: (p) => p.last_working_day ? formatDate(p.last_working_day) : "—" },
+    { key: "open", header: "Open for", cell: (p) => {
+      const d = daysOpen(p);
+      return <Badge tone={d > 30 ? "danger" : d > 7 ? "warning" : "neutral"}>{d} days</Badge>;
+    } },
+  ];
+
+  const finCols: Column<any>[] = [
+    { key: "guard", header: "Guard", primary: true, cell: (r) => <span className="font-medium">{r.full_name}</span> },
+    { key: "covers", header: "Covers to", cell: (r) => r.covers_to ? formatDate(r.covers_to) : "—" },
+    { key: "kit", header: "Kit outcome", cell: (r) => <span className="text-muted-foreground">{r.kit_summary ?? "—"}</span> },
+    { key: "fine", header: "Fine", className: "text-right tabular-nums", cell: (r) => money(r.kit_fine_total) },
+    { key: "wo", header: "Written off", className: "text-right tabular-nums", cell: (r) => Number(r.fine_written_off ?? 0) > 0
+      ? <span className="text-danger-700 dark:text-danger-500">{money(r.fine_written_off)}</span>
+      : <span className="text-muted-foreground">—</span> },
+    { key: "und", header: "Undisbursed", className: "text-right tabular-nums", cell: (r) => money(r.undisbursed_salary) },
+    { key: "status", header: "Status", cell: (r) => r.dues_released
+      ? <Badge tone="success">Released{r.dues_released_on ? ` ${formatDate(r.dues_released_on)}` : ""}</Badge>
+      : r.signed_at
+        ? <Badge tone="info">Signed {formatDate(r.signed_at)}</Badge>
+        : <Badge tone="warning">Awaiting signature</Badge> },
+  ];
+
   return (
     <>
       <Header title="Clearance" subtitle="Operations assesses the kit; finance settles the dues" />
 
-      <div className="flex-1 overflow-y-auto px-4 md:px-8 py-4 space-y-6">
-        {err && (
-          <div className="p-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">{err}</div>
-        )}
-        {notice && (
-          <div className="p-3 bg-success-50 text-success-700 border border-success-200 rounded-md text-sm">{notice}</div>
-        )}
-        {loading && <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />}
+      <PageBody>
+        {err && !open && <Notice kind="error" onClose={() => setErr(null)}>{err}</Notice>}
+        {notice && <Notice kind="success" onClose={() => setNotice(null)}>{notice}</Notice>}
+
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+          <StatCard title="Waiting on operations" value={notCleared.length} icon={AlertTriangle} tone={notCleared.length ? "warning" : "neutral"} />
+          <StatCard title="Awaiting signature" value={awaitingSig} icon={PenLine} tone="info" />
+          <StatCard title="Ready to release" value={readyToRelease} icon={Wallet} tone="brand" />
+          <StatCard title="Dues released" value={released} icon={ShieldCheck} tone="success" />
+        </div>
 
         {/* ---- STAGE 1 ---- */}
-        <div className="bg-card border border-border rounded-md overflow-hidden">
-          <div className="px-4 py-3 border-b border-border flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-warning-700" />
-            <div>
-              <h3 className="text-sm font-medium">Not cleared — Operations</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Finance cannot see a guard until ops has cleared him, so a separation left
-                here has nobody owed and nobody chasing, and his kit is out there.
-              </p>
+        <Panel
+          icon={AlertTriangle}
+          tone="warning"
+          title={<>Stage 1 · Not cleared — Operations</>}
+          description="Finance cannot see a guard until operations has cleared him, so a separation left here has nobody owed, nobody chasing, and his kit still out."
+          flush
+        >
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+              <Loader2 className="w-4 h-4 animate-spin" /> Loading…
             </div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-muted/40 border-b border-border">
-                <tr>
-                  {["Guard", "Code", "Last working day", "Open for", ""].map((h) => (
-                    <th key={h} className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {notCleared.length === 0 && !loading && (
-                  <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-muted-foreground">
-                    Nobody is waiting on operations.
-                  </td></tr>
-                )}
-                {notCleared.map((p) => {
-                  const days = p.last_working_day
-                    ? Math.floor((Date.now() - new Date(p.last_working_day).getTime()) / 86400000) : 0;
-                  return (
-                    <tr key={p.id} className="bg-warning-50/40">
-                      <td className="px-4 py-2 text-sm">{p.full_name}</td>
-                      <td className="px-4 py-2 text-sm font-mono text-xs">{codeIndex.byId.get(p.id) ?? p.guard_code ?? "—"}</td>
-                      <td className="px-4 py-2 text-sm">
-                        {p.last_working_day ? formatDate(p.last_working_day) : "—"}
-                      </td>
-                      <td className="px-4 py-2 text-sm tabular-nums">{days} days</td>
-                      <td className="px-4 py-2">
-                        {canOps && (
-                          <Button variant="secondary" size="sm" disabled={busy}
-                                  onClick={() => openAssessment(p)}>
-                            Assess kit
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+          ) : (
+            <div className="p-3 md:p-2">
+              <ResponsiveTable
+                columns={opsCols}
+                rows={notCleared}
+                rowKey={(p) => p.id}
+                empty="Nobody is waiting on operations."
+                actions={canOps ? (p) => (
+                  <Button variant="secondary" size="sm" disabled={busy} onClick={() => { setErr(null); openAssessment(p); }}>
+                    <ClipboardCheck className="w-3.5 h-3.5" /> Assess kit
+                  </Button>
+                ) : undefined}
+              />
+            </div>
+          )}
+        </Panel>
 
         {/* ---- STAGE 2 ---- */}
-        <div className="bg-card border border-border rounded-md overflow-hidden">
-          <div className="px-4 py-3 border-b border-border flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-success-700" />
-            <div>
-              <h3 className="text-sm font-medium">Cleared by operations — Finance</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                The outcome only. Payment waits on a wet signature: the certificate prints, he
-                signs it, someone records it here, and only then can the money go out.
-              </p>
-            </div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-muted/40 border-b border-border">
-                <tr>
-                  {["Guard", "Covers to", "Kit outcome", "Fine", "Written off", "Undisbursed", "Signed", ""].map((h) => (
-                    <th key={h} className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {queue.length === 0 && !loading && (
-                  <tr><td colSpan={8} className="px-4 py-8 text-center text-sm text-muted-foreground">
-                    Nothing has been cleared by operations yet.
-                  </td></tr>
+        <Panel
+          icon={ShieldCheck}
+          tone="success"
+          title={<>Stage 2 · Cleared by operations — Finance</>}
+          description="The outcome only. Payment waits on a wet signature: print the certificate, he signs it, record it here, and only then can the money go out."
+          flush
+        >
+          {!loading && (
+            <div className="p-3 md:p-2">
+              <ResponsiveTable
+                columns={finCols}
+                rows={queue}
+                rowKey={(r) => r.certificate_id}
+                empty="Nothing has been cleared by operations yet."
+                actions={(r) => (
+                  <div className="inline-flex flex-wrap justify-end gap-1">
+                    <Button variant="ghost" size="sm" onClick={() => printCertificate(r)}>
+                      <Printer className="w-3.5 h-3.5" /> Certificate
+                    </Button>
+                    {canFin && !r.signed_at && (
+                      <Button variant="secondary" size="sm" disabled={busy}
+                              onClick={() => recordSignature(r.certificate_id)}>
+                        <PenLine className="w-3.5 h-3.5" /> Record signature
+                      </Button>
+                    )}
+                    {canFin && r.signed_at && !r.dues_released && (
+                      <Button size="sm" disabled={busy} onClick={() => releaseDues(r.certificate_id)}>
+                        <Wallet className="w-3.5 h-3.5" /> Release dues
+                      </Button>
+                    )}
+                  </div>
                 )}
-                {queue.map((r) => (
-                  <tr key={r.certificate_id}>
-                    <td className="px-4 py-2 text-sm">{r.full_name}</td>
-                    <td className="px-4 py-2 text-sm">{r.covers_to ? formatDate(r.covers_to) : "—"}</td>
-                    <td className="px-4 py-2 text-sm text-muted-foreground">{r.kit_summary ?? "—"}</td>
-                    <td className="px-4 py-2 text-sm tabular-nums">{money(r.kit_fine_total)}</td>
-                    <td className="px-4 py-2 text-sm tabular-nums">
-                      {Number(r.fine_written_off ?? 0) > 0
-                        ? <span className="text-danger-700">{money(r.fine_written_off)}</span>
-                        : <span className="text-muted-foreground">—</span>}
-                    </td>
-                    <td className="px-4 py-2 text-sm tabular-nums">{money(r.undisbursed_salary)}</td>
-                    <td className="px-4 py-2 text-sm">
-                      {r.signed_at
-                        ? <span className="text-success-700">{formatDate(r.signed_at)}</span>
-                        : <span className="text-muted-foreground">Awaiting</span>}
-                    </td>
-                    <td className="px-4 py-2">
-                      <div className="flex items-center gap-1 justify-end">
-                        <Button variant="ghost" size="sm" onClick={() => printCertificate(r)}>
-                          <Printer className="w-3.5 h-3.5 mr-1" /> Certificate
-                        </Button>
-                        {canFin && !r.signed_at && (
-                          <Button variant="ghost" size="sm" disabled={busy}
-                                  onClick={() => recordSignature(r.certificate_id)}>
-                            Record signature
-                          </Button>
-                        )}
-                        {canFin && r.signed_at && !r.dues_released && (
-                          <Button size="sm" disabled={busy}
-                                  onClick={() => releaseDues(r.certificate_id)}>
-                            Release dues
-                          </Button>
-                        )}
-                        {r.dues_released && (
-                          <span className="text-xs text-success-700 px-2">
-                            Released {r.dues_released_on ? formatDate(r.dues_released_on) : ""}
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
+              />
+            </div>
+          )}
+        </Panel>
+      </PageBody>
 
       {/* ---- THE ASSESSMENT ---- */}
       {open && (
-        <Modal isOpen onClose={() => setOpen(null)}
-               title={`Assess kit — ${open.emp.full_name}`} size="lg">
-          <div className="space-y-3">
+        <Modal
+          isOpen
+          onClose={closeOpen}
+          title={`Assess kit — ${open.emp.full_name}`}
+          size="lg"
+          error={err}
+          onDismissError={() => setErr(null)}
+          footer={
+            <ModalFooter summary={
+              <>
+                {open.items.length > 0 && <>{assessed} of {open.items.length} assessed · </>}
+                Total fine <span className="font-semibold text-foreground tabular-nums">PKR {money(totalFine)}</span>
+              </>
+            }>
+              <Button variant="ghost" onClick={closeOpen}>Close</Button>
+              <Button onClick={clearOps} disabled={busy || open.items.some((i) => !i.outcome)}>
+                {busy ? "Clearing…" : "Clear (Operations)"}
+              </Button>
+            </ModalFooter>
+          }
+        >
+          <div className="space-y-4">
+            <SubjectCard
+              title={open.emp.full_name}
+              meta={<>
+                {codeIndex.byId.get(open.emp.id) ?? open.emp.guard_code ?? "—"}
+                {open.emp.last_working_day ? <> · last day {formatDate(open.emp.last_working_day)}</> : null}
+              </>}
+              aside={<Badge tone="neutral" className="capitalize">{open.emp.lifecycle_state}</Badge>}
+            />
+
             {open.items.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                He holds no kit on record. Clearing him now records that — it does not invent
-                an issuance that never happened.
-              </p>
+              <Hint tone="info">
+                He holds no kit on record. Clearing him now records that — it does not invent an
+                issuance that never happened.
+              </Hint>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-muted/40 border-b border-border">
-                    <tr>
-                      {["Item", "Qty", "Taken on at", "Outcome", "Suggested", "Fine charged"].map((h) => (
-                        <th key={h} className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {open.items.map((it) => (
-                      <tr key={it.id}>
-                        <td className="px-3 py-2 text-sm">
+              <div className="space-y-3">
+                {open.items.map((it) => (
+                  <div key={it.id} className={`rounded-lg border p-3 md:p-4 space-y-3 ${it.outcome ? "border-border bg-card" : "border-warning-200 bg-warning-50/40"}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold">
                           {typeName.get(it.item_type_id) ?? "—"}
-                          {it.size ? <span className="text-muted-foreground"> · {it.size}</span> : null}
-                        </td>
-                        <td className="px-3 py-2 text-sm tabular-nums">{it.quantity}</td>
-                        <td className="px-3 py-2 text-sm capitalize">{it.opening_condition}</td>
-                        <td className="px-3 py-2">
-                          <ThemedSelect value={it.outcome ?? ""}
-                            onChange={(e) => setOutcome(it, e.target.value)}>
-                            <option value="">—</option>
-                            {OUTCOMES.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}
-                          </ThemedSelect>
-                        </td>
-                        <td className="px-3 py-2 text-sm tabular-nums text-muted-foreground">
-                          {money(it.suggested_fine)}
-                        </td>
-                        <td className="px-3 py-2">
-                          <input className={FIELD + " w-28"} type="number" min={0} value={it.fine}
+                          {it.size ? <span className="text-muted-foreground font-normal"> · {it.size}</span> : null}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          Qty {it.quantity} · taken on at <span className="capitalize">{it.opening_condition}</span>
+                        </div>
+                      </div>
+                      {!it.outcome && <Badge tone="warning">Not assessed</Badge>}
+                    </div>
+                    <ChoiceCards<string>
+                      value={it.outcome}
+                      onChange={(v) => setOutcome(it, v)}
+                      options={OUTCOMES.map((o) => ({
+                        value: o.v, label: o.l,
+                        tone: o.v === "returned_reusable" ? "success" : o.v === "returned_unusable" ? "warning" : "danger",
+                        sub: o.v === "returned_reusable" ? "Back to stock, no fine"
+                          : o.v === "returned_unusable" ? "Written off, fine pro-rated by life left"
+                          : "Full replacement cost",
+                      }))}
+                    />
+                    {it.outcome && (
+                      <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+                        <div className="text-xs text-muted-foreground sm:pb-2.5">
+                          Suggested <span className="font-medium text-foreground tabular-nums">PKR {money(it.suggested_fine)}</span>
+                        </div>
+                        <FormField label="Fine charged (PKR)" className="sm:ml-auto sm:w-48">
+                          <input className={inputCls + " text-right tabular-nums"} type="number" min={0} value={it.fine}
                                  onChange={(e) => overrideFine(it, e.target.value)} />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                        </FormField>
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
 
-            <p className="text-[11px] text-muted-foreground">
-              The fine is suggested, never imposed — every figure is overridable, and the
-              suggestion is already adjusted for the condition he received the item in.
-              Clearing him locks his attendance: nothing can be recorded against him afterwards.
-            </p>
-
-            <div className="flex items-center justify-between pt-2 border-t border-border">
-              <span className="text-sm">
-                Total fine PKR {money(open.items.reduce((a, i) => a + Number(i.fine || 0), 0))}
-              </span>
-              <div className="flex gap-2">
-                <Button variant="ghost" onClick={() => setOpen(null)}>Close</Button>
-                <Button onClick={clearOps}
-                        disabled={busy || open.items.some((i) => !i.outcome)}>
-                  {busy ? "Clearing…" : "Clear (Operations)"}
-                </Button>
-              </div>
-            </div>
+            <Hint>
+              The fine is suggested, never imposed — every figure can be changed, and the suggestion is
+              already adjusted for the condition he received the item in. Clearing him locks his
+              attendance: nothing can be recorded against him afterwards.
+            </Hint>
           </div>
         </Modal>
       )}
