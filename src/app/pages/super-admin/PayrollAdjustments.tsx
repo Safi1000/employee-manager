@@ -11,6 +11,7 @@
 // quietly stops existing, so the open list leads and the ledger
 // check no_adjustment_quietly_stops_existing watches the same rows nightly.
 
+import { useEmployeeCodeIndex } from "../../lib/employeeCodes";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import Header from "../../components/Header";
@@ -30,6 +31,7 @@ const monthLabel = (d: string) => new Date(d + "T00:00:00").toLocaleString("en",
 type Row = PayrollAdjustment & { full_name: string; guard_code: string | null; settled_period: string | null };
 
 export default function PayrollAdjustments() {
+  const codeIndex = useEmployeeCodeIndex();
   const { profile, company } = useAuth();
   const canAdjust = hasPermission(profile, "payroll.adjust");
 
@@ -132,7 +134,7 @@ export default function PayrollAdjustments() {
             <tr key={r.id}>
               <td className="px-4 py-2 text-sm">
                 {r.full_name}
-                {r.guard_code && <span className="text-muted-foreground font-mono text-xs"> {r.guard_code}</span>}
+                {(codeIndex.byId.get(r.employee_id) ?? r.guard_code) && <span className="text-muted-foreground font-mono text-xs"> {codeIndex.byId.get(r.employee_id) ?? r.guard_code}</span>}
                 {(repeat.get(r.employee_id) ?? 0) > 1 && (
                   <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-warning-50 text-warning-700 border border-warning-200"
                         title="This guard has been corrected more than once — look at the site">

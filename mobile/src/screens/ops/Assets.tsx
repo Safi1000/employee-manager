@@ -369,7 +369,7 @@ function Clearance() {
               <HStack>
                 <View style={{ flex: 1 }}>
                   <T v="bodyStrong">{p.full_name}</T>
-                  <T v="small" muted>{p.guard_code ?? "—"} · last day {p.last_working_day ? fmtDate(p.last_working_day) : "—"} · open {days} days</T>
+                  <T v="small" muted>{db.employees.find((x) => x.id === p.id)?.code ?? p.guard_code ?? "—"} · last day {p.last_working_day ? fmtDate(p.last_working_day) : "—"} · open {days} days</T>
                 </View>
                 {canOps && <Button size="sm" variant="secondary" label="Assess kit" disabled={busy} onPress={async () => {
                   setBusy(true); setSheetErr(null);

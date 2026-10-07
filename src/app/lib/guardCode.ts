@@ -27,3 +27,17 @@ export function guardPermanentCode(e: {
 }): string {
   return e.guard_code ?? e.employee_code ?? "";
 }
+
+// Swap every permanent code (guard_code / employee_code) in free text for the
+// employee's client display code. Text the database writes — bank and cash
+// history, journal memos — names an employee by the permanent code (GGS-…);
+// the screen shows the code of the client he works for. Whole tokens only, so
+// a code that is a prefix of another is never half-replaced. Rows written in
+// the past are relabelled too, because the swap happens on read.
+export function relabelEmployeeCodes(
+  text: string | null | undefined,
+  byPermanent: Map<string, string>,
+): string {
+  if (!text || byPermanent.size === 0) return text ?? "";
+  return text.replace(/[A-Za-z0-9][A-Za-z0-9-]*[A-Za-z0-9]/g, (tok) => byPermanent.get(tok) ?? tok);
+}

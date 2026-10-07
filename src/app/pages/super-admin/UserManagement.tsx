@@ -1,3 +1,4 @@
+import { useEmployeeCodeIndex } from "../../lib/employeeCodes";
 import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useState } from "react";
 import { Plus, Search, Loader2, UserPlus, Pencil, Trash2, KeyRound } from "lucide-react";
@@ -73,6 +74,7 @@ function PermissionCheckboxes({
 }
 
 export default function UserManagement() {
+  const codeIndex = useEmployeeCodeIndex();
   const { profile, company } = useAuth();
   const [users, setUsers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -217,7 +219,7 @@ export default function UserManagement() {
               const taken = !!takenBy && emp.id !== (selfId ?? "__none__");
               return (
                 <option key={emp.id} value={emp.id} disabled={taken}>
-                  {emp.employee_code ? `${emp.employee_code} · ` : ""}{emp.full_name}
+                  {(codeIndex.byId.get(emp.id) ?? emp.employee_code) ? `${codeIndex.byId.get(emp.id) ?? emp.employee_code} · ` : ""}{emp.full_name}
                   {taken ? ` — already linked to ${takenBy}` : ""}
                 </option>
               );

@@ -9,6 +9,7 @@
 // warning_number is assigned by the DB, and rescinding is a soft flag (the row
 // stays, struck through) rather than a delete — the history of a rescinded
 // warning is exactly what makes the next one defensible.
+import { useEmployeeCodeIndex } from "../lib/employeeCodes";
 import { useCallback, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import Modal from "./Modal";
@@ -32,6 +33,7 @@ export default function DisciplinaryWarningsModal({
   guard: WarningTarget;
   onClose: () => void;
 }) {
+  const codeIndex = useEmployeeCodeIndex();
   const [warnings, setWarnings] = useState<DisciplinaryWarning[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -86,7 +88,7 @@ export default function DisciplinaryWarningsModal({
     >
       <div className="space-y-3">
         <p className="text-sm text-slate-600">
-          {guard.employee_code} ·{" "}
+          {codeIndex.byId.get(guard.id) ?? guard.employee_code} ·{" "}
           <span className={activeWarnings >= 3 ? "text-danger-700 font-medium" : "text-slate-700"}>
             {activeWarnings}/3 active
           </span>

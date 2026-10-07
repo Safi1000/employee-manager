@@ -24,6 +24,7 @@ import {
   type ContractLine,
   type ContractAddendum,
   type Invoice,
+  type InvoiceRecord,
   type InvoiceLine,
   type InvoiceTax,
   type ClientInvoiceGroup,
@@ -70,9 +71,34 @@ type Draft = {
 
 type StatusFilter = "all" | "pending" | "cleared";
 
-// A rendered row is either an already-generated invoice or a draftable contract.
+// Invoice tab (0499): the receivable is just these five things — no lines,
+// taxes or carried balance. The total is prefilled from the detailed
+// calculation (or the saved detailed record) and stays editable.
+type SimpleDraft = {
+  contractId: string;
+  contractCode: string;
+  client: Client;
+  invoiceNumber: string;
+  invoiceDate: string;
+  periodStart: string;
+  periodEnd: string;
+  total: string;
+  status: "Pending" | "Cleared";
+};
+type SimpleBlob = Partial<Pick<SimpleDraft, "invoiceNumber" | "invoiceDate" | "periodStart" | "periodEnd" | "total">>;
+const serializeSimple = (d: SimpleDraft): SimpleBlob => ({
+  invoiceNumber: d.invoiceNumber,
+  invoiceDate: d.invoiceDate,
+  periodStart: d.periodStart,
+  periodEnd: d.periodEnd,
+  total: d.total,
+});
+
+// A rendered row is an already-generated invoice (Invoice tab), an already-saved
+// detailed record (Detailed record tab), or a draftable contract.
 type Row =
   | { kind: "existing"; key: string; client: Client; contract: Contract; invoice: Invoice }
+  | { kind: "record"; key: string; client: Client; contract: Contract; record: InvoiceRecord }
   | { kind: "draft"; key: string; client: Client; contract: Contract };
 
 // Comma-tolerant: "100,000" (typed or pasted) must parse to 100000, not NaN→0.
@@ -185,7 +211,13 @@ const serializeDraft = (d: Draft): DraftBlob => ({
 });
 const applyBlob = (d: Draft, blob: DraftBlob | undefined): Draft => (blob ? { ...d, ...blob } : d);
 
-export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) {
+// mode "invoice": the receivable — number, date, period, one total (0499).
+// mode "record":  the detailed document, saved to invoice_records for the
+//                 company's own record. Never an invoice, never a receivable.
+export default function InvoiceGenerate({ onPosted, mode }: { onPosted: () => void; mode: "invoice" | "record" }) {
+  const isInvoiceMode = mode === "invoice";
+  // Each tab keeps its own draft row per (contract, period) — 0499's `kind`.
+  const draftKind = isInvoiceMode ? "simple" : "detailed";
   const { company, profile } = useAuth();
   // Posting invoices is gated on invoices.edit (super_admin + SSA implicit).
   // Backend RLS (0310) enforces invoice writes; this hides the control.
@@ -196,6 +228,7 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
   const [sites, setSites] = useState<Site[]>([]);
   const [addendums, setAddendums] = useState<ContractAddendum[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [records, setRecords] = useState<InvoiceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
@@ -216,20 +249,24 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
   // A ref (not state): it's written synchronously on every edit and read on the
   // next rebuild, and must never itself trigger a re-render/rebuild loop.
   const savedData = useRef<Map<string, DraftBlob>>(new Map());
+  // Invoice tab: its own drafts and persisted blobs, same keying as above.
+  const [simpleDrafts, setSimpleDrafts] = useState<Record<string, SimpleDraft>>({});
+  const simpleSaved = useRef<Map<string, SimpleBlob>>(new Map());
   // Debounced DB autosave bookkeeping: which keys changed, and the pending timer.
   const dirtyKeys = useRef<Set<string>>(new Set());
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadData = async () => {
     setLoading(true);
-    const [cliRes, conRes, lineRes, siteRes, addRes, invRes, drfRes] = await Promise.all([
+    const [cliRes, conRes, lineRes, siteRes, addRes, invRes, drfRes, recRes] = await Promise.all([
       supabase.from("clients").select("*").order("name"),
       supabase.from("contracts").select("*"),
       supabase.from("contract_lines").select("*"),
       supabase.from("sites").select("*"),
       supabase.from("contract_addendums").select("*"),
       supabase.from("invoices").select("*"),
-      supabase.from("invoice_generation_drafts").select("contract_id, period, data, cleared"),
+      supabase.from("invoice_generation_drafts").select("contract_id, period, data, cleared, kind"),
+      supabase.from("invoice_records").select("*"),
     ]);
     setClients((cliRes.data ?? []) as Client[]);
     setContracts((conRes.data ?? []) as Contract[]);
@@ -237,13 +274,16 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
     setSites((siteRes.data ?? []) as Site[]);
     setAddendums((addRes.data ?? []) as ContractAddendum[]);
     setInvoices((invRes.data ?? []) as Invoice[]);
-    const drfRows = (drfRes.data ?? []) as { contract_id: string; period: string; data: DraftBlob | null; cleared: boolean }[];
-    savedData.current = new Map(
+    setRecords((recRes.data ?? []) as InvoiceRecord[]);
+    const drfRows = (drfRes.data ?? []) as { contract_id: string; period: string; data: Record<string, unknown> | null; cleared: boolean; kind: string }[];
+    const blobsOf = (kind: string) =>
       drfRows
-        .filter((r) => r.data && Object.keys(r.data).length > 0)
-        .map((r) => [`${r.contract_id}|${r.period}`, r.data as DraftBlob]),
-    );
-    setClearedKeys(new Set(drfRows.filter((r) => r.cleared).map((r) => `${r.contract_id}|${r.period}`)));
+        .filter((r) => r.kind === kind && r.data && Object.keys(r.data).length > 0)
+        .map((r) => [`${r.contract_id}|${r.period}`, r.data] as [string, Record<string, unknown>]);
+    // Detailed blobs load in both tabs: the Invoice tab prefills its total from them.
+    savedData.current = new Map(blobsOf("detailed") as [string, DraftBlob][]);
+    simpleSaved.current = new Map(blobsOf("simple") as [string, SimpleBlob][]);
+    setClearedKeys(new Set(drfRows.filter((r) => r.kind === draftKind && r.cleared).map((r) => `${r.contract_id}|${r.period}`)));
     setLoading(false);
   };
 
@@ -461,7 +501,12 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
   // dedupe for the generation path.
   useEffect(() => {
     if (loading) return;
-    const taken = new Set(invoices.map((i) => i.invoice_number.trim().toLowerCase()));
+    // Numbers are unique within their own kind: invoices against invoices,
+    // records against records.
+    const taken = new Set(
+      (isInvoiceMode ? invoices.map((i) => i.invoice_number) : records.map((r) => r.invoice_number))
+        .map((n) => n.trim().toLowerCase()),
+    );
     const next: Record<string, Draft> = {};
     for (const client of groupClients) {
       const clientContracts = contracts.filter((c) => c.client_id === client.id && isInvoiceableContract(c));
@@ -472,9 +517,14 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
         // not make the contract look already-invoiced, or the month's primary
         // could never be drafted -- and a supplementary adjusts a primary, so
         // one existing without the other is precisely the gap to surface.
-        const already = invoices.some((i) => i.contract_id === con.id && invoiceMonth(i) === period && (i.invoice_kind ?? "primary") === "primary");
+        const primary = invoices.find((i) => i.contract_id === con.id && invoiceMonth(i) === period && (i.invoice_kind ?? "primary") === "primary");
+        const already = isInvoiceMode
+          ? !!primary
+          : records.some((r) => r.contract_id === con.id && r.period === period);
         if (already) continue;
         const d = buildDraft(client, con, taken);
+        // A record for a month already invoiced carries that invoice's number.
+        if (d && !isInvoiceMode && primary) d.invoiceNumber = primary.invoice_number;
         if (d) {
           // Overlay any previously-typed values (0340) so grid cells, remit,
           // notes, override, dates and line items survive remount — then seed
@@ -489,7 +539,34 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
     }
     setDrafts(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, period, group, regionId, clients, contracts, lines, addendums, invoices, clearedKeys]);
+  }, [loading, period, group, regionId, clients, contracts, lines, addendums, invoices, records, clearedKeys]);
+
+  // Invoice tab: one simple draft per detailed draft, total prefilled from the
+  // saved detailed record if there is one, else from the detailed calculation.
+  useEffect(() => {
+    if (!isInvoiceMode) return;
+    const next: Record<string, SimpleDraft> = {};
+    for (const [id, d] of Object.entries(drafts)) {
+      const key = `${id}|${period}`;
+      const rec = records.find((r) => r.contract_id === id && r.period === period);
+      const f = figures(d);
+      const base: SimpleDraft = {
+        contractId: id,
+        contractCode: d.contractCode,
+        client: d.client,
+        invoiceNumber: rec?.invoice_number ?? d.invoiceNumber,
+        invoiceDate: d.invoiceDate,
+        periodStart: d.periodStart,
+        periodEnd: d.periodEnd,
+        total: String(rec?.data?.currentAmount ?? f.totalDue - f.carried),
+        status: "Pending",
+      };
+      const blob = simpleSaved.current.get(key);
+      next[id] = { ...base, ...(blob ?? {}), status: clearedKeys.has(key) ? "Cleared" : "Pending" };
+    }
+    setSimpleDrafts(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isInvoiceMode, drafts, records, period, clearedKeys]);
 
   // The full filterable row set: existing invoices + draftable contracts, then
   // narrowed by the Status filter.
@@ -498,26 +575,34 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
     for (const client of groupClients) {
       const clientContracts = contracts.filter((c) => c.client_id === client.id && isInvoiceableContract(c));
       for (const con of clientContracts) {
-        const existing = invoices.find((i) => i.contract_id === con.id && invoiceMonth(i) === period && (i.invoice_kind ?? "primary") === "primary");
-        if (existing) {
-          out.push({ kind: "existing", key: con.id, client, contract: con, invoice: existing });
-        } else if (drafts[con.id]) {
-          out.push({ kind: "draft", key: con.id, client, contract: con });
+        if (isInvoiceMode) {
+          const existing = invoices.find((i) => i.contract_id === con.id && invoiceMonth(i) === period && (i.invoice_kind ?? "primary") === "primary");
+          if (existing) out.push({ kind: "existing", key: con.id, client, contract: con, invoice: existing });
+          else if (simpleDrafts[con.id]) out.push({ kind: "draft", key: con.id, client, contract: con });
+        } else {
+          const record = records.find((r) => r.contract_id === con.id && r.period === period);
+          if (record) out.push({ kind: "record", key: con.id, client, contract: con, record });
+          else if (drafts[con.id]) out.push({ kind: "draft", key: con.id, client, contract: con });
         }
       }
     }
     return out.filter((r) => {
       if (statusFilter === "all") return true;
-      // A posted invoice is "cleared" when fully paid; a draft is "cleared" once
-      // the user has marked it ready to post. Both honour the same filter.
-      const cleared = r.kind === "existing" ? isCleared(r.invoice) : drafts[r.key]?.status === "Cleared";
+      // A posted invoice is "cleared" when fully paid; a saved record counts as
+      // cleared; a draft is "cleared" once the user has marked it ready to post.
+      const cleared =
+        r.kind === "existing" ? isCleared(r.invoice)
+        : r.kind === "record" ? true
+        : (isInvoiceMode ? simpleDrafts[r.key]?.status : drafts[r.key]?.status) === "Cleared";
       return statusFilter === "cleared" ? cleared : !cleared;
     });
-  }, [groupClients, contracts, invoices, drafts, period, statusFilter]);
+  }, [isInvoiceMode, groupClients, contracts, invoices, records, drafts, simpleDrafts, period, statusFilter]);
 
   const draftRows = rows.filter((r) => r.kind === "draft");
-  const existingRows = rows.filter((r) => r.kind === "existing");
-  const clearedCount = Object.values(drafts).filter((d) => d.status === "Cleared").length;
+  const existingRows = rows.filter((r) => r.kind !== "draft");
+  const clearedCount = isInvoiceMode
+    ? Object.values(simpleDrafts).filter((d) => d.status === "Cleared").length
+    : Object.values(drafts).filter((d) => d.status === "Cleared").length;
 
   const contractById = useMemo(() => new Map(contracts.map((c) => [c.id, c])), [contracts]);
 
@@ -578,25 +663,25 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
     const keys = [...dirtyKeys.current];
     dirtyKeys.current.clear();
     for (const key of keys) {
-      const blob = savedData.current.get(key);
+      const blob = draftKind === "simple" ? simpleSaved.current.get(key) : savedData.current.get(key);
       if (!blob) continue;
       const [contractId, per] = key.split("|");
       const { data: upd, error: e } = await supabase
         .from("invoice_generation_drafts")
         .update({ data: blob, updated_at: new Date().toISOString() })
-        .eq("contract_id", contractId).eq("period", per).select("id");
+        .eq("contract_id", contractId).eq("period", per).eq("kind", draftKind).select("id");
       if (e || (upd && upd.length > 0)) continue;
       const { error: insE } = await supabase
         .from("invoice_generation_drafts")
-        .insert({ contract_id: contractId, period: per, data: blob });
+        .insert({ contract_id: contractId, period: per, kind: draftKind, data: blob });
       // A racing insert (e.g. Clear created the row) — just re-apply the data.
       if (insE && /duplicate key/i.test(insE.message)) {
         await supabase.from("invoice_generation_drafts")
           .update({ data: blob, updated_at: new Date().toISOString() })
-          .eq("contract_id", contractId).eq("period", per);
+          .eq("contract_id", contractId).eq("period", per).eq("kind", draftKind);
       }
     }
-  }, []);
+  }, [draftKind]);
 
   const scheduleSave = (key: string) => {
     dirtyKeys.current.add(key);
@@ -622,6 +707,17 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
     const key = `${contractId}|${period}`;
     savedData.current.set(key, serializeDraft(nextD));
     setDrafts((prev) => (prev[contractId] ? { ...prev, [contractId]: nextD } : prev));
+    scheduleSave(key);
+  };
+
+  // Invoice tab's equivalent of patchDraft.
+  const patchSimple = (contractId: string, patch: Partial<SimpleDraft>) => {
+    const cur = simpleDrafts[contractId];
+    if (!cur) return;
+    const nextD = { ...cur, ...patch };
+    const key = `${contractId}|${period}`;
+    simpleSaved.current.set(key, serializeSimple(nextD));
+    setSimpleDrafts((prev) => (prev[contractId] ? { ...prev, [contractId]: nextD } : prev));
     scheduleSave(key);
   };
 
@@ -682,16 +778,18 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
     });
     // update-or-insert the flag; a fresh draft may have no row yet, so carry its
     // current edits into the insert so nothing is lost.
-    const blob = savedData.current.get(key) ?? (drafts[contractId] ? serializeDraft(drafts[contractId]) : {});
+    const blob = isInvoiceMode
+      ? simpleSaved.current.get(key) ?? (simpleDrafts[contractId] ? serializeSimple(simpleDrafts[contractId]) : {})
+      : savedData.current.get(key) ?? (drafts[contractId] ? serializeDraft(drafts[contractId]) : {});
     const { data: upd, error: updErr } = await supabase
       .from("invoice_generation_drafts")
       .update({ cleared: willClear, updated_at: new Date().toISOString() })
-      .eq("contract_id", contractId).eq("period", period).select("id");
+      .eq("contract_id", contractId).eq("period", period).eq("kind", draftKind).select("id");
     let e = updErr;
     if (!updErr && (!upd || upd.length === 0)) {
       const { error: insE } = await supabase
         .from("invoice_generation_drafts")
-        .insert({ contract_id: contractId, period, cleared: willClear, data: blob });
+        .insert({ contract_id: contractId, period, kind: draftKind, cleared: willClear, data: blob });
       e = insE && !/duplicate key/i.test(insE.message) ? insE : null;
     }
     // Surface a real failure and roll the optimistic change back.
@@ -710,32 +808,41 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
     }
   };
 
-  // Post a single cleared draft: insert the invoice (with contract_id), its
-  // lines and taxes, then generate the PDF. Throws on any failure so the batch
-  // can stop and report which client. Shared by "Generate All Cleared".
-  const postDraft = async (d: Draft) => {
+  // Distinct site names across a contract's lines → "(HO, BP-2, BP-3)".
+  const contractLocations = (contractId: string | null) => {
+    const conLines = lines.filter((l) => l.contract_id === contractId);
+    const siteName = new Map(sites.map((s) => [s.id, s.name]));
+    return [
+      ...new Set(
+        conLines
+          .map((l) => (l.site_id ? siteName.get(l.site_id) : null))
+          .filter((n): n is string => !!n),
+      ),
+    ].join(", ");
+  };
+
+  // Detailed record tab: build the full document from a cleared draft, save its
+  // snapshot to invoice_records and download the PDF. NOT an invoice — nothing
+  // is inserted into invoices, so no journal posts and no receivable exists.
+  const postRecord = async (d: Draft) => {
     const f = figures(d);
     const isVariable = (d.client.invoice_group ?? "FIXED") === "VARIABLE";
     const remit: RemitAccount | null = (d.client.remit_accounts ?? [])[d.remitIndex] ?? null;
-    // Variable: the manual grid is the invoice's line data; total auto-sums the
-    // fixed Amount column (gross, before withholding).
+    // Variable: the manual grid is the document's line data; total auto-sums the
+    // fixed Amount column.
     const variableGrid: VariableGrid | null = isVariable
       ? { columns: d.variableColumns, rows: d.variableRows, total: variableAmountTotal(d) }
       : null;
-    const invoiceAmount = f.subtotal + f.addedTotal; // current-period gross
-    const insertRow = {
+    const invoice = {
+      id: "",
+      company_id: company?.id ?? "",
       client_id: d.client.id,
       contract_id: d.contractId,
       invoice_number: d.invoiceNumber.trim(),
       invoice_date: d.invoiceDate || today(),
-      invoice_amount: invoiceAmount,
-      // 0316: withholding_tax is NOT written. It was a duplicate of
-      // tax_withheld_total on the same row, and it was the copy that reduced
-      // receivable balances (Accounting.tsx, invoicePdf.ts) — which A1 forbids.
-      // tax_withheld_total keeps the DOCUMENT figure, so the printed invoice is
-      // unchanged; only the balance-bearing copy is gone.
+      invoice_amount: f.subtotal + f.addedTotal,
       amount_received: 0,
-      status: "Unpaid" as const,
+      status: "Unpaid",
       notes: d.notes.trim() || null,
       period_start: d.periodStart,
       period_end: d.periodEnd,
@@ -751,22 +858,10 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
       invoice_group: group,
       variable_grid: variableGrid,
       generated: true,
-    };
-    const { data: ins, error: insErr } = await supabase.from("invoices").insert(insertRow).select().single();
-    if (insErr) {
-      // The DB unique index surfaces a duplicate here as a friendly message.
-      const dup = /uq_invoice_contract_month|duplicate key/i.test(insErr.message);
-      throw new Error(
-        dup
-          ? `${d.client.name} (${d.contractCode}): an invoice for this contract already exists for ${period}.`
-          : `${d.client.name} (${d.invoiceNumber}): ${insErr.message}`,
-      );
-    }
-    const invoice = ins as Invoice;
+    } as unknown as Invoice;
     // Keep the per-line amounts consistent with the prorated subtotal above.
     const factor = prorationFactor(d.periodStart, d.periodEnd);
     const lineRows = d.lines.map((l, i) => ({
-      invoice_id: invoice.id,
       category: l.category,
       label: l.label,
       quantity: Math.floor(num(l.quantity)),
@@ -774,13 +869,8 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
       amount: proratedAmount(l.quantity, l.unit_rate, factor),
       taxable: l.taxable,
       sort_order: i,
-    }));
-    if (lineRows.length) {
-      const { error: lErr } = await supabase.from("invoice_lines").insert(lineRows);
-      if (lErr) throw lErr;
-    }
+    })) as InvoiceLine[];
     const taxRows = f.computed.map((t, i) => ({
-      invoice_id: invoice.id,
       name: t.name,
       rate: t.rate,
       base: t.base,
@@ -788,45 +878,115 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
       component: t.component ?? null,
       amount: t.amount,
       sort_order: i,
-    }));
-    if (taxRows.length) {
-      const { error: tErr } = await supabase.from("invoice_taxes").insert(taxRows);
-      if (tErr) throw tErr;
+    })) as InvoiceTax[];
+    const locations = contractLocations(d.contractId);
+    const { error: recErr } = await supabase.from("invoice_records").insert({
+      client_id: d.client.id,
+      contract_id: d.contractId,
+      period,
+      invoice_number: invoice.invoice_number,
+      invoice_date: invoice.invoice_date,
+      period_start: d.periodStart,
+      period_end: d.periodEnd,
+      invoice_group: group,
+      total_due: f.totalDue,
+      data: { invoice, lines: lineRows, taxes: taxRows, locations, currentAmount: f.totalDue - f.carried },
+    });
+    if (recErr) {
+      const dup = /duplicate key/i.test(recErr.message);
+      throw new Error(
+        dup
+          ? `${d.client.name} (${d.contractCode}): a detailed record for this contract already exists for ${period}.`
+          : `${d.client.name} (${d.invoiceNumber}): ${recErr.message}`,
+      );
     }
     // Change 5: persist this Variable client's column STRUCTURE (headers only) so
-    // next month's invoice opens with the same layout. Values are never saved here.
+    // next month's document opens with the same layout. Values are never saved here.
     if (isVariable) {
       await supabase.from("clients").update({ variable_columns: d.variableColumns }).eq("id", d.client.id);
     }
-    // Template is auto-selected by the client's invoice_group inside
-    // generateInvoiceDocument. Pass the contract + its lines so SLA can read the
-    // cost build-up and the Fixed/Variable tables render per-contract.
-    // Distinct site names across this contract's lines → "(HO, BP-2, BP-3)".
-    const conLines = lines.filter((l) => l.contract_id === d.contractId);
-    const siteName = new Map(sites.map((s) => [s.id, s.name]));
-    const locations = [
-      ...new Set(
-        conLines
-          .map((l) => (l.site_id ? siteName.get(l.site_id) : null))
-          .filter((n): n is string => !!n),
-      ),
-    ].join(", ");
     generateInvoiceDocument({
       invoice,
       client: d.client,
       company: company ?? null,
       contract: contracts.find((c) => c.id === d.contractId) ?? null,
       locations,
-      contractLines: conLines,
-      invoiceLines: lineRows.map((l) => ({ ...l }) as InvoiceLine),
-      taxes: taxRows.map((t) => ({ ...t }) as InvoiceTax),
+      contractLines: lines.filter((l) => l.contract_id === d.contractId),
+      invoiceLines: lineRows,
+      taxes: taxRows,
     });
   };
 
-  // Batch-post every currently Cleared draft into an Unpaid invoice + PDF.
+  // Invoice tab: post one cleared simple draft as a real Unpaid invoice —
+  // number, date, period and one total. No lines, no taxes, no carried balance;
+  // the whole total is revenue (0499, DECIDED). Then the total-only PDF.
+  const postSimple = async (s: SimpleDraft) => {
+    const total = num(s.total);
+    const { data: ins, error: insErr } = await supabase.from("invoices").insert({
+      client_id: s.client.id,
+      contract_id: s.contractId,
+      invoice_number: s.invoiceNumber.trim(),
+      invoice_date: s.invoiceDate || today(),
+      invoice_amount: total,
+      amount_received: 0,
+      status: "Unpaid" as const,
+      period_start: s.periodStart,
+      period_end: s.periodEnd,
+      subtotal: total,
+      tax_added_total: 0,
+      tax_withheld_total: 0,
+      previous_balance: 0,
+      total_due: total,
+      amount_in_words: amountInWords(total),
+      financial_year: financialYearLabel(`${period}-01`),
+      invoice_group: group,
+      generated: true,
+      total_only: true,
+    }).select().single();
+    if (insErr) {
+      const dup = /uq_invoice_contract_month|duplicate key/i.test(insErr.message);
+      throw new Error(
+        dup
+          ? `${s.client.name} (${s.contractCode}): an invoice for this contract already exists for ${period}.`
+          : `${s.client.name} (${s.invoiceNumber}): ${insErr.message}`,
+      );
+    }
+    generateInvoiceDocument({ invoice: ins as Invoice, client: s.client, company: company ?? null });
+  };
+
+  // Re-download a saved detailed record from its snapshot.
+  const downloadRecord = (rec: InvoiceRecord) => {
+    if (!rec.data?.invoice) return;
+    generateInvoiceDocument({
+      invoice: rec.data.invoice,
+      client: clients.find((c) => c.id === rec.client_id) ?? null,
+      company: company ?? null,
+      contract: contracts.find((c) => c.id === rec.contract_id) ?? null,
+      locations: rec.data.locations,
+      contractLines: lines.filter((l) => l.contract_id === rec.contract_id),
+      invoiceLines: rec.data.lines ?? [],
+      taxes: rec.data.taxes ?? [],
+    });
+  };
+
+  // A record is only a document: deleting it moves no money and lets the
+  // contract be drafted again for this period.
+  const deleteRecord = async (rec: InvoiceRecord) => {
+    if (!window.confirm(`Delete detailed record ${rec.invoice_number}? This does not affect any invoice.`)) return;
+    const { error: e } = await supabase.from("invoice_records").delete().eq("id", rec.id);
+    if (e) { setError(e.message); return; }
+    await loadData();
+  };
+
+  // Batch-post every currently Cleared draft: real invoices on the Invoice tab,
+  // detailed records on the Detailed record tab.
   const generateAllCleared = async () => {
-    const cleared = Object.values(drafts).filter((d) => d.status === "Cleared");
-    if (cleared.length === 0) {
+    const clearedSimple = Object.values(simpleDrafts).filter((d) => d.status === "Cleared");
+    const clearedDetailed = Object.values(drafts).filter((d) => d.status === "Cleared");
+    const batch = isInvoiceMode
+      ? clearedSimple.map((s) => ({ contractId: s.contractId, contractCode: s.contractCode, name: s.client.name, number: s.invoiceNumber }))
+      : clearedDetailed.map((d) => ({ contractId: d.contractId, contractCode: d.contractCode, name: d.client.name, number: d.invoiceNumber }));
+    if (batch.length === 0) {
       setError("Clear at least one draft first.");
       return;
     }
@@ -834,27 +994,45 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
     setResult(null);
 
     // Up-front guards so nothing is written if any draft is invalid.
-    const existingNumbers = new Set(invoices.map((i) => i.invoice_number.trim().toLowerCase()));
+    if (isInvoiceMode) {
+      for (const s of clearedSimple) {
+        if (!(num(s.total) > 0)) { setError(`${s.client.name}: enter a total amount.`); return; }
+        if (!s.periodStart || !s.periodEnd) { setError(`${s.client.name}: enter the period start and end.`); return; }
+      }
+    } else {
+      for (const d of clearedDetailed) {
+        if (figures(d).overridden && !d.overrideReason.trim()) {
+          setError(`${d.client.name}: an override total needs a reason.`);
+          return;
+        }
+      }
+    }
+    const existingNumbers = new Set(
+      (isInvoiceMode ? invoices.map((i) => i.invoice_number) : records.map((r) => r.invoice_number))
+        .map((n) => n.trim().toLowerCase()),
+    );
     const seenInBatch = new Set<string>();
-    for (const d of cleared) {
-      const f = figures(d);
-      if (f.overridden && !d.overrideReason.trim()) {
-        setError(`${d.client.name}: an override total needs a reason.`);
+    for (const b of batch) {
+      const key = b.number.trim().toLowerCase();
+      if (!key) {
+        setError(`${b.name}: enter an invoice number.`);
         return;
       }
-      const key = d.invoiceNumber.trim().toLowerCase();
       if (existingNumbers.has(key)) {
-        setError(`${d.client.name} (${d.invoiceNumber}): that invoice number already exists.`);
+        setError(`${b.name} (${b.number}): that ${isInvoiceMode ? "invoice" : "record"} number already exists.`);
         return;
       }
       if (seenInBatch.has(key)) {
-        setError(`Invoice number ${d.invoiceNumber} is used by more than one draft in this batch.`);
+        setError(`Number ${b.number} is used by more than one draft in this batch.`);
         return;
       }
       seenInBatch.add(key);
-      // Mirrors the DB rule (uq_invoice_contract_month): one per contract/period.
-      if (invoices.some((i) => i.contract_id === d.contractId && invoiceMonth(i) === period)) {
-        setError(`${d.client.name} (${d.contractCode}): this contract already has an invoice for ${period}.`);
+      // Mirrors the DB rules: one invoice / one record per contract and period.
+      const done = isInvoiceMode
+        ? invoices.some((i) => i.contract_id === b.contractId && invoiceMonth(i) === period)
+        : records.some((r) => r.contract_id === b.contractId && r.period === period);
+      if (done) {
+        setError(`${b.name} (${b.contractCode}): this contract already has ${isInvoiceMode ? "an invoice" : "a detailed record"} for ${period}.`);
         return;
       }
     }
@@ -862,21 +1040,26 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
     setGenerating(true);
     let posted = 0;
     try {
-      for (const d of cleared) {
-        await postDraft(d);
-        posted++;
+      if (isInvoiceMode) {
+        for (const s of clearedSimple) { await postSimple(s); posted++; }
+      } else {
+        for (const d of clearedDetailed) { await postRecord(d); posted++; }
       }
-      // The posted contracts now have real invoices and drop out of the draft
-      // list; remove their persisted draft rows (flag + data) so the table
-      // doesn't accrue stale rows (0340). loadData() below re-reads savedData.
+      // The posted contracts drop out of this tab's draft list; remove their
+      // persisted draft rows (flag + data) so the table doesn't accrue stale
+      // rows (0340). Only this tab's kind — the other tab's draft is untouched.
       await supabase.from("invoice_generation_drafts").delete()
-        .in("contract_id", cleared.map((d) => d.contractId)).eq("period", period);
-      setResult(`Posted ${posted} invoice${posted === 1 ? "" : "s"} as Unpaid and generated PDFs.`);
+        .in("contract_id", batch.map((b) => b.contractId)).eq("period", period).eq("kind", draftKind);
+      setResult(
+        isInvoiceMode
+          ? `Posted ${posted} invoice${posted === 1 ? "" : "s"} as Unpaid and generated PDFs.`
+          : `Saved ${posted} detailed record${posted === 1 ? "" : "s"} and generated PDFs. No receivable was created.`,
+      );
       await loadData();
-      onPosted();
+      if (isInvoiceMode) onPosted();
     } catch (err: any) {
       setError(
-        `${err.message ?? String(err)}${posted > 0 ? ` (${posted} already posted before this)` : ""}`,
+        `${err.message ?? String(err)}${posted > 0 ? ` (${posted} already saved before this)` : ""}`,
       );
       await loadData();
     } finally {
@@ -904,7 +1087,14 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
       {/* Pre-contract / out-of-window invoices already in the system — flagged for
           MANUAL review. This tab does not delete them (remove them on the Invoices
           tab after checking). Independent of the selected period/group. */}
-      {outOfWindowInvoices.length > 0 && (
+      {/* Which tab this is — the two must never be confused. */}
+      <div className="text-xs text-slate-500">
+        {isInvoiceMode
+          ? "The invoice the client is billed: invoice number, date, period and one total. Posting creates an Unpaid receivable."
+          : "Detailed breakdown for your own record only. Saving it creates no invoice and no receivable."}
+      </div>
+
+      {isInvoiceMode && outOfWindowInvoices.length > 0 && (
         <div className="border border-warning-300 bg-warning-50 rounded-lg p-4">
           <div className="flex items-start gap-2">
             <AlertCircle className="w-4 h-4 mt-0.5 text-warning-700 shrink-0" />
@@ -988,7 +1178,7 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
         </div>
         <div className="ml-auto flex items-center gap-3">
           <span className="text-sm text-slate-500">
-            {existingRows.length} invoiced · {draftRows.length} to generate · {clearedCount} cleared
+            {existingRows.length} {isInvoiceMode ? "invoiced" : "recorded"} · {draftRows.length} to generate · {clearedCount} cleared
           </span>
           <Button
             variant="primary"
@@ -998,7 +1188,7 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
             title={!canEditInvoices ? "You don't have permission to generate invoices" : undefined}
           >
             {generating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileDown className="w-4 h-4 mr-2" />}
-            Generate All Cleared
+            {isInvoiceMode ? "Generate All Cleared" : "Save All Cleared as Records"}
           </Button>
         </div>
       </div>
@@ -1017,6 +1207,33 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
 
       {/* Already-generated invoices for the period (read-only summary). */}
       {existingRows.map((r) => {
+        if (r.kind === "record") {
+          const rec = r.record;
+          return (
+            <div key={`rec-${r.key}`} className="bg-white border border-slate-200 rounded-lg p-4 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-slate-900 truncate">{r.client.name}</div>
+                <div className="text-xs text-slate-500 font-mono">
+                  {r.contract.contract_code} · {rec.invoice_number}
+                </div>
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                <div className="text-sm font-semibold text-slate-900 tabular-nums">
+                  PKR {Number(rec.total_due).toLocaleString()}
+                </div>
+                <span className="text-xs px-2 py-0.5 rounded-md border bg-slate-50 text-slate-600 border-slate-200">Recorded</span>
+                <Button variant="secondary" size="sm" onClick={() => downloadRecord(rec)}>
+                  <FileDown className="w-3.5 h-3.5 mr-1" /> PDF
+                </Button>
+                {canEditInvoices && (
+                  <button onClick={() => deleteRecord(rec)} title="Delete record" className="text-danger-600 hover:bg-danger-50 rounded p-1">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        }
         if (r.kind !== "existing") return null;
         const inv = r.invoice;
         const cleared = isCleared(inv);
@@ -1047,7 +1264,70 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
       })}
 
       {/* Draftable contracts (no invoice yet this period). */}
-      {draftRows.map((r) => {
+      {isInvoiceMode && draftRows.map((r) => {
+        const s = simpleDrafts[r.key];
+        if (!s) return null;
+        return (
+          <div key={`simple-${r.key}`} className="bg-white border border-slate-200 rounded-lg p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-medium text-slate-900">{s.client.name}</div>
+                <div className="text-xs text-slate-500 font-mono">
+                  {s.client.client_code} · contract {s.contractCode}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`text-xs px-2 py-0.5 rounded-md border ${s.status === "Cleared" ? "bg-success-50 text-success-700 border-success-200" : "bg-warning-50 text-warning-700 border-warning-200"}`}>
+                  {s.status}
+                </span>
+                <Button
+                  variant={s.status === "Cleared" ? "secondary" : "primary"}
+                  size="sm"
+                  disabled={generating}
+                  onClick={() => toggleCleared(s.contractId)}
+                >
+                  {s.status === "Cleared" ? "Reopen" : "Clear"}
+                </Button>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">Invoice #</label>
+                <input
+                  value={s.invoiceNumber}
+                  onChange={(e) => patchSimple(s.contractId, { invoiceNumber: e.target.value })}
+                  className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">Invoice date</label>
+                <input type="date" value={s.invoiceDate} onChange={(e) => patchSimple(s.contractId, { invoiceDate: e.target.value })} className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">Period start</label>
+                <input type="date" value={s.periodStart} onChange={(e) => patchSimple(s.contractId, { periodStart: e.target.value })} className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">Period end</label>
+                <input type="date" value={s.periodEnd} onChange={(e) => patchSimple(s.contractId, { periodEnd: e.target.value })} className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">Total amount</label>
+                <input
+                  value={s.total}
+                  inputMode="decimal"
+                  onChange={(e) => patchSimple(s.contractId, { total: e.target.value })}
+                  onBlur={(e) => patchSimple(s.contractId, { total: formatGrouped(e.target.value) })}
+                  className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm text-right tabular-nums"
+                />
+              </div>
+            </div>
+            <div className="text-[11px] italic text-slate-500">{amountInWords(num(s.total))}</div>
+          </div>
+        );
+      })}
+
+      {!isInvoiceMode && draftRows.map((r) => {
         const d = drafts[r.key];
         if (!d) return null;
         const f = figures(d);

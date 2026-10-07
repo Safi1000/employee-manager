@@ -4,6 +4,7 @@ import { driveUpload, PickedFile, q, rpc, sb } from "./core";
 import { fetchAllRows, invoiceOutstanding } from "../../lib/web/supabase";
 import { loadCustodianOptions, type CustodianOption } from "../../lib/web/custodian";
 import { validateBankAccount, validateIban } from "../../lib/web/validation";
+import { guardDisplayCode, relabelEmployeeCodes } from "../../lib/web/guardCode";
 
 export type AccountingData = Awaited<ReturnType<typeof loadAccounting>>;
 
@@ -25,11 +26,21 @@ export async function loadAccounting(companyId: string, withBalances: boolean) {
     q<any[]>(s.from("vendor_payments").select("*").order("paid_on", { ascending: false }).order("created_at", { ascending: false })),
     q<any[]>(s.from("cash_locations").select("*").eq("company_id", companyId).order("name")),
   ]);
-  const [transactions, invoices, payments] = await Promise.all([
+  const [txRows, invoices, payments, codeEmps] = await Promise.all([
     fetchAllRows<any>(() => s.from("bank_transactions").select("*").order("created_at", { ascending: false }) as any),
     fetchAllRows<any>(() => s.from("invoices").select("*").order("invoice_date", { ascending: false }) as any),
     fetchAllRows<any>(() => s.from("invoice_payments").select("id, client_id, invoice_id, amount, withholding_amount, payment_date, payment_mode, bank_account_id, custodian_location_id, cheque_id, notes").order("payment_date", { ascending: false }) as any),
+    fetchAllRows<any>(() => s.from("employees").select("id, client_id, display_number, guard_code, employee_code").order("id") as any),
   ]);
+  // History text names employees by the permanent code (GGS-…); show the code of
+  // the client each one works for instead, old rows included (as on the web).
+  const prefixOf = new Map(clients.map((c) => [c.id, c.employee_id_prefix ?? null]));
+  const byPermanent = new Map<string, string>();
+  for (const e of codeEmps) {
+    const code = guardDisplayCode(e, e.client_id ? prefixOf.get(e.client_id) ?? null : null);
+    for (const perm of [e.guard_code, e.employee_code]) if (perm && perm !== code) byPermanent.set(perm, code);
+  }
+  const transactions = txRows.map((t) => (t.description ? { ...t, description: relabelEmployeeCodes(t.description, byPermanent) } : t));
   const custodians: CustodianOption[] = await loadCustodianOptions(companyId, withBalances).catch(() => []);
 
   const linkedSums = new Map<string, number>();

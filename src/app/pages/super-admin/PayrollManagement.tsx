@@ -176,8 +176,9 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
 
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
-  // Client-prefixed display code for user-facing ID displays (permanent GGS code
-  // is kept in immutable accounting/journal descriptions + payslip filenames).
+  // Client-prefixed display code — what an employee is known by everywhere,
+  // including the bank/cash history text and payslip filenames written here.
+  // The permanent GGS code is shown only as the secondary line.
   const empDisplay = (emp: { client_id?: string | null; display_number?: number | null; guard_code?: string | null; employee_code?: string | null }) =>
     guardDisplayCode(emp, clients.find((c) => c.id === emp.client_id)?.employee_id_prefix ?? null);
   const [contracts, setContracts] = useState<Contract[]>([]);
@@ -213,13 +214,15 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   type LeaveSummary = { present_days: number; tier: number; quota: number; earned: number; lost: number; opening: number; available: number; taken: number; unpaid: number; closing: number };
   const [leaveSummary, setLeaveSummary] = useState<Map<string, LeaveSummary>>(new Map());
   const [adjOpen, setAdjOpen] = useState(false);
-  const [adjForm, setAdjForm] = useState({ amount: "", reason: "", settlement: "carry_forward" as "pay_now" | "carry_forward" });
+  // amount is the CHANGE only (never the resulting total), typed unsigned; kind
+  // supplies the sign — increment adds to what he is owed, fine takes it away.
+  const [adjForm, setAdjForm] = useState({ amount: "", kind: null as "increment" | "fine" | null, reason: "", settlement: "carry_forward" as "pay_now" | "carry_forward" });
   const [adjErr, setAdjErr] = useState<string | null>(null);
   const raiseAdjustment = async (payslipId: string) => {
     setAdjErr(null);
     const { error } = await supabase.rpc("raise_payroll_adjustment", {
       p_payslip_id: payslipId,
-      p_amount: Number(adjForm.amount),
+      p_amount: (adjForm.kind === "fine" ? -1 : 1) * Math.abs(Number(adjForm.amount)),
       p_reason: adjForm.reason.trim(),
       p_settlement: adjForm.settlement,
     });
@@ -1819,8 +1822,8 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       // moves a balance any more — and there is no manual claim-and-rollback dance.
       const payDesc =
         row.payment_mode === "Cash"
-          ? `${pay < 0 ? "Reverse payroll (cash)" : "Payroll (cash)"} ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`
-          : `${pay < 0 ? "Reverse payroll" : "Payroll"} ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`;
+          ? `${pay < 0 ? "Reverse payroll (cash)" : "Payroll (cash)"} ${formatPeriod(row.period_month)} · ${empDisplay(row.employee)} ${row.employee.full_name}`
+          : `${pay < 0 ? "Reverse payroll" : "Payroll"} ${formatPeriod(row.period_month)} · ${empDisplay(row.employee)} ${row.employee.full_name}`;
       const { error: rpcErr } = await supabase.rpc("disburse_payslip", {
         p_payslip_id: payslipId,
         p_expected_paid: already,
@@ -1964,7 +1967,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         // on it and this batch must not pay against figures it no longer has.
         if (Math.round(Number((up as { amount_paid: number }).amount_paid)) !== already) {
           throw new Error(
-            `${row.employee.full_name ?? row.employee.employee_code} was paid in another tab while this batch was running — reload and disburse the rest.`,
+            `${row.employee.full_name ?? empDisplay(row.employee)} was paid in another tab while this batch was running — reload and disburse the rest.`,
           );
         }
         // Claim + money in ONE transaction (0458): the same CAS update the bulk
@@ -1984,12 +1987,12 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
           p_disbursed_at: bulkDisburseIso,
           p_description:
             bulkMode === "Cash"
-              ? `Payroll (cash) ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`
-              : `Payroll ${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`,
+              ? `Payroll (cash) ${formatPeriod(row.period_month)} · ${empDisplay(row.employee)} ${row.employee.full_name}`
+              : `Payroll ${formatPeriod(row.period_month)} · ${empDisplay(row.employee)} ${row.employee.full_name}`,
         });
         if (rpcErr) {
           if (/PAYSLIP_STALE/.test(rpcErr.message)) continue;
-          throw new Error(`${row.employee.employee_code} ${row.employee.full_name}: ${rpcErr.message}`);
+          throw new Error(`${empDisplay(row.employee)} ${row.employee.full_name}: ${rpcErr.message}`);
         }
         done++;
       }
@@ -2103,7 +2106,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     }
     line("Status", row.status);
     line("Disbursed", row.disbursed ? "Yes" : "No");
-    doc.save(`payslip_${row.employee.employee_code}_${row.period_month}.pdf`);
+    doc.save(`payslip_${empDisplay(row.employee)}_${row.period_month}.pdf`);
   };
 
   const isCurrent = selectedPeriod === currentPeriod;
@@ -3639,7 +3642,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                         </ul>
                       )}
                       {canAdjust && selectedRow.payslip_id && (
-                        <Button variant="secondary" size="sm" onClick={() => { setAdjForm({ amount: "", reason: "", settlement: "carry_forward" }); setAdjOpen(true); }}>
+                        <Button variant="secondary" size="sm" onClick={() => { setAdjForm({ amount: "", kind: null, reason: "", settlement: "carry_forward" }); setAdjOpen(true); }}>
                           Raise adjustment
                         </Button>
                       )}
@@ -4310,13 +4313,25 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
               Corrects the {formatPeriod(selectedRow.period_month)} payslip without rewriting it. The cost
               posts today, in the current open period — always, even when {formatPeriod(selectedRow.period_month)} is still
               open, so the same correction lands in the same month whenever it is raised. The payslip's own period
-              is kept on the record for reference. Positive if he is owed, negative if he owes.
+              is kept on the record for reference.
             </p>
             {adjErr && <div className="p-2 bg-danger-50 text-danger-700 border border-danger-200 rounded text-sm">{adjErr}</div>}
+            <div className="flex items-center gap-4">
+              {(["increment", "fine"] as const).map((k) => (
+                <label key={k} className="flex items-center gap-1.5 text-sm text-slate-700 cursor-pointer">
+                  <input type="checkbox" checked={adjForm.kind === k}
+                         onChange={(e) => setAdjForm({ ...adjForm, kind: e.target.checked ? k : null })} />
+                  {k === "increment" ? "Increment" : "Fine"}
+                </label>
+              ))}
+            </div>
             <div>
-              <label className="block text-xs text-slate-500 mb-1">Amount (signed)</label>
-              <input type="number" className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
-                     value={adjForm.amount} onChange={(e) => setAdjForm({ ...adjForm, amount: e.target.value })} />
+              <label className="block text-xs text-slate-500 mb-1">
+                {adjForm.kind === "fine" ? "Fine amount" : adjForm.kind === "increment" ? "Increment amount" : "Amount"}
+                {" "}— only the amount being {adjForm.kind === "fine" ? "deducted" : "added"}, not the new total
+              </label>
+              <input type="number" min="0" className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                     value={adjForm.amount} onChange={(e) => setAdjForm({ ...adjForm, amount: e.target.value.replace(/^-/, "") })} />
             </div>
             <div>
               <label className="block text-xs text-slate-500 mb-1">Reason</label>
@@ -4333,7 +4348,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setAdjOpen(false)}>Back</Button>
               <Button onClick={() => raiseAdjustment(selectedRow.payslip_id!)}
-                      disabled={!Number(adjForm.amount) || !adjForm.reason.trim()}>Raise</Button>
+                      disabled={!adjForm.kind || !Number(adjForm.amount) || !adjForm.reason.trim()}>Raise</Button>
             </div>
           </div>
         </Modal>

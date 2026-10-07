@@ -12,6 +12,7 @@
 //     the day after the last working day; prior attendance stays intact.
 //   · assess_clearance is snapshotted afterwards so the exit-clearance panel
 //     reflects the outstanding dues as they stood at separation.
+import { useEmployeeCodeIndex } from "../lib/employeeCodes";
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import Modal from "./Modal";
@@ -48,6 +49,7 @@ export default function FireGuardModal({
     eligible_for_rehire: boolean;
   }) => void | Promise<void>;
 }) {
+  const codeIndex = useEmployeeCodeIndex();
   const [gates, setGates] = useState<ExitGates | null>(null);
   const [gatesLoading, setGatesLoading] = useState(true);
   const [reason, setReason] = useState("");
@@ -143,7 +145,7 @@ export default function FireGuardModal({
         <p className="text-sm text-slate-600">
           Separating{" "}
           <span className="text-slate-900 font-medium">{guard.full_name}</span>{" "}
-          ({guard.employee_code}). The effective date is the day the separation
+          ({codeIndex.byId.get(guard.id) ?? guard.employee_code}). The effective date is the day the separation
           takes effect — their last working day is the day before it, and the post
           is free from the effective date on. Prior attendance stays intact.
         </p>

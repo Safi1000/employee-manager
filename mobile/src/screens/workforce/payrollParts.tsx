@@ -99,7 +99,8 @@ export function PayslipPanel({ ws, row, mode, onChanged }: { ws: Workspace; row:
   const [dateOpen, setDateOpen] = useState(false);
   const [payDate, setPayDate] = useState(todayIso());
   const [adjOpen, setAdjOpen] = useState(false);
-  const [adj, setAdj] = useState({ amount: "", reason: "", settlement: "carry_forward" as "pay_now" | "carry_forward" });
+  // amount is the CHANGE only, unsigned; kind supplies the sign (fine deducts).
+  const [adj, setAdj] = useState({ amount: "", kind: null as "increment" | "fine" | null, reason: "", settlement: "carry_forward" as "pay_now" | "carry_forward" });
   const [adjErr, setAdjErr] = useState<string | null>(null);
   const ls = pd.leaveSummary.get(id);
   const periodAdj = pd.periodAdj.get(id) ?? [];
@@ -269,7 +270,7 @@ export function PayslipPanel({ ws, row, mode, onChanged }: { ws: Workspace; row:
               <Ledger key={a.id} label={`${a.reason} · ${a.settlement === "pay_now" ? "pay now" : "next payslip"} · ${a.status}`} value={`${a.amount > 0 ? "+" : ""}${a.amount.toLocaleString()}`} tone={a.amount < 0 ? "danger" : "success"} />
             ))}
             {can("payroll.adjust") && row.payslip_id && (
-              <Button size="sm" variant="secondary" label="Raise adjustment" style={{ marginTop: 8 }} onPress={() => { setAdj({ amount: "", reason: "", settlement: "carry_forward" }); setAdjErr(null); setAdjOpen(true); }} />
+              <Button size="sm" variant="secondary" label="Raise adjustment" style={{ marginTop: 8 }} onPress={() => { setAdj({ amount: "", kind: null, reason: "", settlement: "carry_forward" }); setAdjErr(null); setAdjOpen(true); }} />
             )}
           </Card>
         </Section>
@@ -338,12 +339,16 @@ export function PayslipPanel({ ws, row, mode, onChanged }: { ws: Workspace; row:
       </Sheet>
 
       <Sheet open={adjOpen} onClose={() => setAdjOpen(false)} title={`Raise adjustment — ${row.employee.full_name}`} error={adjErr}
-        footer={<><Button label="Cancel" variant="secondary" full onPress={() => setAdjOpen(false)} /><Button label="Raise" full disabled={!adj.amount || !adj.reason.trim()} onPress={async () => {
+        footer={<><Button label="Cancel" variant="secondary" full onPress={() => setAdjOpen(false)} /><Button label="Raise" full disabled={!adj.kind || !Number(adj.amount) || !adj.reason.trim()} onPress={async () => {
           setAdjErr(null);
-          try { await raiseAdjustment(row.payslip_id!, adj.amount, adj.reason, adj.settlement); setAdjOpen(false); await done(); toast("Adjustment raised"); }
+          try { await raiseAdjustment(row.payslip_id!, String((adj.kind === "fine" ? -1 : 1) * Math.abs(Number(adj.amount))), adj.reason, adj.settlement); setAdjOpen(false); await done(); toast("Adjustment raised"); }
           catch (e) { setAdjErr(err(e)); }
         }} /></>}>
-        <Input label="Amount (negative to recover)" keyboardType="numbers-and-punctuation" value={adj.amount} onChangeText={(s) => setAdj({ ...adj, amount: s })} />
+        <HStack gap={16}>
+          <Checkbox value={adj.kind === "increment"} onChange={(v) => setAdj({ ...adj, kind: v ? "increment" : null })} label="Increment" />
+          <Checkbox value={adj.kind === "fine"} onChange={(v) => setAdj({ ...adj, kind: v ? "fine" : null })} label="Fine" />
+        </HStack>
+        <Input label={`${adj.kind === "fine" ? "Fine" : adj.kind === "increment" ? "Increment" : ""} amount — only the amount ${adj.kind === "fine" ? "deducted" : "added"}, not the new total`.trim()} keyboardType="numeric" value={adj.amount} onChangeText={(s) => setAdj({ ...adj, amount: s.replace(/-/g, "") })} />
         <Input label="Reason" required multiline value={adj.reason} onChangeText={(s) => setAdj({ ...adj, reason: s })} />
         <Select label="Settlement" value={adj.settlement} onChange={(s) => setAdj({ ...adj, settlement: s as "pay_now" | "carry_forward" })}
           options={[{ value: "carry_forward", label: "Next payslip" }, { value: "pay_now", label: "Pay now (settled from Adjustments)" }]} />

@@ -1,3 +1,4 @@
+import { guardDisplayCode } from "../../lib/guardCode";
 import ThemedSelect from "../../components/ThemedSelect";
 import CategoryPicker from "../../components/CategoryPicker";
 import { useEffect, useMemo, useState } from "react";
@@ -411,6 +412,9 @@ export default function Expenses() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  // The code an employee is known by: his client's prefix, not the permanent GGS code.
+  const empCode = (e: { client_id?: string | null; display_number?: number | null; guard_code?: string | null; employee_code?: string | null }) =>
+    guardDisplayCode(e, clients.find((c) => c.id === e.client_id)?.employee_id_prefix ?? null);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [banks, setBanks] = useState<BankAccount[]>([]);
   const [cheques, setCheques] = useState<Cheque[]>([]);
@@ -700,11 +704,17 @@ export default function Expenses() {
       }
     }
     setEmployees((empRes.data ?? []) as Employee[]);
+    const cliPrefix = new Map(((cliRes.data ?? []) as Client[]).map((c) => [c.id, c.employee_id_prefix ?? null]));
+    const empById = new Map(((empRes.data ?? []) as Employee[]).map((e) => [e.id, e]));
     setAdvances(
       (advData ?? []).map((a: any) => ({
         ...a,
         employee_name: a.employee?.full_name ?? "—",
-        employee_code: a.employee?.employee_code ?? "",
+        // Client display code (e.g. HMC-024), falling back to the permanent code.
+        employee_code: (() => {
+          const e = empById.get(a.employee_id);
+          return e ? guardDisplayCode(e, e.client_id ? cliPrefix.get(e.client_id) ?? null : null) : a.employee?.employee_code ?? "";
+        })(),
         client_name: a.client?.name ?? null,
         bank_name: a.bank?.bank_name ?? null,
       }))
@@ -790,6 +800,7 @@ export default function Expenses() {
         (e) =>
           e.full_name.toLowerCase().includes(q) ||
           e.employee_code.toLowerCase().includes(q) ||
+          empCode(e).toLowerCase().includes(q) ||
           (e.phone ?? "").toLowerCase().includes(q)
       );
     }
@@ -805,6 +816,7 @@ export default function Expenses() {
         (e) =>
           e.full_name.toLowerCase().includes(q) ||
           e.employee_code.toLowerCase().includes(q) ||
+          empCode(e).toLowerCase().includes(q) ||
           (e.phone ?? "").toLowerCase().includes(q)
       );
     }
@@ -4530,7 +4542,7 @@ export default function Expenses() {
               <div className="text-sm">
                 <div className="text-slate-900">{selectedEmp.full_name}</div>
                 <div className="text-xs text-slate-500 font-mono">
-                  {selectedEmp.employee_code}
+                  {empCode(selectedEmp)}
                   {selectedEmp.phone ? ` · ${selectedEmp.phone}` : ""}
                 </div>
               </div>
@@ -4570,7 +4582,7 @@ export default function Expenses() {
                     >
                       <div className="text-slate-900">{emp.full_name}</div>
                       <div className="text-xs text-slate-500 font-mono">
-                        {emp.employee_code}
+                        {empCode(emp)}
                         {emp.phone ? ` · ${emp.phone}` : ""}
                       </div>
                     </button>

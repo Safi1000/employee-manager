@@ -1,3 +1,5 @@
+import { loadEmployeeCodeIndex } from "../../lib/employeeCodes";
+import { relabelEmployeeCodes } from "../../lib/guardCode";
 import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useState } from "react";
 import { Pencil, Trash2, AlertCircle, X, Loader2, Wallet, Building2 } from "lucide-react";
@@ -371,6 +373,10 @@ export function CashCustodyPanel({ onReady, onSummary }: {
           cashIn: drawing ? 0 : amt, cashOut: drawing ? amt : 0,
         });
       }
+      // Text written with the permanent employee code (GGS-…) shows the code of
+      // the client he works for instead — advances, payroll and bank history alike.
+      const codeIdx = await loadEmployeeCodeIndex().catch(() => null);
+      if (codeIdx) for (const r of raw) r.detail = relabelEmployeeCodes(r.detail, codeIdx.byPermanent);
       // Running held-cash per custodian (seed with each custodian's opening
       // balance), oldest→newest, so each row shows Before → After like the bank log.
       raw.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.id < b.id ? -1 : 1));

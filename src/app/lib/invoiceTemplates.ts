@@ -835,6 +835,36 @@ function renderVariableManual(input: InvoiceDocInput): jsPDF {
   return doc;
 }
 
+// ── TOTAL-ONLY (0499, Generate ▸ Invoice) — number, date, period and one total.
+// No lines, no taxes, no previous balance, no notes: nothing else is printed.
+function renderTotalOnly(input: InvoiceDocInput): jsPDF {
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const ctx: Ctx = {
+    doc,
+    pageW: doc.internal.pageSize.getWidth(),
+    pageH: doc.internal.pageSize.getHeight(),
+    margin: 45,
+    invoice: input.invoice,
+    client: input.client,
+    company: input.company,
+    settings: mergeSettings(input.company),
+  };
+  drawWatermark(ctx);
+  let y = drawHeader(ctx, ctx.margin);
+  y = drawRefTitleDate(ctx, y);
+  y = drawClientBlock(ctx, y + 10);
+  const { pageW, invoice } = ctx;
+  const width = 340;
+  y = drawKvTable(ctx, (pageW - width) / 2, y + 18, width, 130, [
+    ["Period start", longDate(invoice.period_start)],
+    ["Period end", longDate(invoice.period_end)],
+    ["Total amount", `PKR ${fixedMoney(Number(invoice.total_due ?? invoice.invoice_amount ?? 0))}`],
+  ]);
+  y = drawWordsLine(ctx, y + 6, "Amount in words is");
+  drawSignatureAndFooter(ctx, y);
+  return doc;
+}
+
 /**
  * Render + download the correct template for this invoice, chosen by the
  * client's invoice_group. FIXED/unknown → Fixed, SLA → SLA, VARIABLE → manual grid
@@ -843,8 +873,9 @@ function renderVariableManual(input: InvoiceDocInput): jsPDF {
 export function generateInvoiceDocument(input: InvoiceDocInput): jsPDF {
   const group = input.client?.invoice_group ?? "FIXED";
   const hasGrid = !!input.invoice.variable_grid && (input.invoice.variable_grid.columns?.length ?? 0) > 0;
-  const doc =
-    group === "SLA"
+  const doc = input.invoice.total_only
+    ? renderTotalOnly(input)
+    : group === "SLA"
       ? renderSla(input)
       : group === "VARIABLE" && hasGrid
         ? renderVariableManual(input)

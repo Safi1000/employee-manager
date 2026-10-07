@@ -11,6 +11,7 @@
 // guard, with a reason, through set_leave_quota_override(). Who, when and why
 // are shown beside it.
 
+import { useEmployeeCodeIndex } from "../../lib/employeeCodes";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import Header from "../../components/Header";
@@ -36,6 +37,7 @@ type LedgerRow = {
 type Lost = { employee_id: string; full_name: string; opening: number; would_earn: number; banked: number; lost: number };
 
 export default function LeaveBalances() {
+  const codeIndex = useEmployeeCodeIndex();
   const { company, profile } = useAuth();
   const canEdit = hasPermission(profile, "payroll.edit");
 
@@ -110,7 +112,7 @@ export default function LeaveBalances() {
   }, [company?.id, lostPeriod]);
 
   const guardOptions = useMemo(() => guards.map((g) => (
-    <option key={g.id} value={g.id}>{g.full_name}{g.guard_code ? ` · ${g.guard_code}` : ""}</option>
+    <option key={g.id} value={g.id}>{g.full_name}{(codeIndex.byId.get(g.id) ?? g.guard_code) ? ` · ${codeIndex.byId.get(g.id) ?? g.guard_code}` : ""}</option>
   )), [guards]);
 
   return (

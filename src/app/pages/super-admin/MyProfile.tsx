@@ -1,3 +1,4 @@
+import { useEmployeeCodeIndex } from "../../lib/employeeCodes";
 import { useEffect, useMemo, useState } from "react";
 import {
   Loader2,
@@ -157,6 +158,7 @@ function Section({ title, count, children }: { title: string; count?: number; ch
 }
 
 export default function MyProfile() {
+  const codeIndex = useEmployeeCodeIndex();
   const { profile, company } = useAuth();
   const employeeId = profile?.employee_id ?? null;
 
@@ -337,7 +339,7 @@ export default function MyProfile() {
                     {emp.full_name}
                   </h2>
                   <p className="text-xs font-mono text-muted-foreground">
-                    {emp.employee_code ?? emp.guard_code ?? "—"}
+                    {codeIndex.byId.get(emp.id) ?? emp.employee_code ?? emp.guard_code ?? "—"}
                   </p>
                   <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-2 text-sm">
                     {[

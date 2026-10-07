@@ -67,7 +67,7 @@ export default function MyProfile() {
               <Avatar name={e.full_name} size={52} />
               <View style={{ flex: 1 }}>
                 <T v="h3">{e.full_name}</T>
-                <T v="mono" muted style={{ fontSize: 12 }}>{e.guard_code ?? e.employee_code}{e.department ? ` · ${e.department}` : ""}</T>
+                <T v="mono" muted style={{ fontSize: 12 }}>{db.employees.find((x) => x.id === e.id)?.code ?? e.guard_code ?? e.employee_code}{e.department ? ` · ${e.department}` : ""}</T>
               </View>
               <Badge label={e.status} dot />
             </View>

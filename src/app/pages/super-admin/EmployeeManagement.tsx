@@ -1445,7 +1445,7 @@ export default function EmployeeManagement() {
 
   const handleDelete = async (emp: EmployeeRow) => {
     const confirmed = window.confirm(
-      `Delete ${emp.full_name} (${emp.employee_code})? This will permanently remove the employee and all their uploaded documents.`
+      `Delete ${emp.full_name} (${displayCodeFor(emp)})? This will permanently remove the employee and all their uploaded documents.`
     );
     if (!confirmed) return;
     setError(null);
@@ -1606,8 +1606,8 @@ export default function EmployeeManagement() {
       if (dup) {
         // A duplicate is a conflict, not an omission — it blocks either way.
         const msg = isFired(dup)
-          ? `This CNIC already belongs to ${dup.full_name} (${dup.employee_code}), who was separated. Use Rehire instead of adding a duplicate.`
-          : `This CNIC is already registered to ${dup.full_name} (${dup.employee_code}). Duplicate CNICs are not allowed.`;
+          ? `This CNIC already belongs to ${dup.full_name} (${displayCodeFor(dup)}), who was separated. Use Rehire instead of adding a duplicate.`
+          : `This CNIC is already registered to ${dup.full_name} (${displayCodeFor(dup)}). Duplicate CNICs are not allowed.`;
         errs.cnic_number = msg;
         blocking.cnic_number = msg;
       }

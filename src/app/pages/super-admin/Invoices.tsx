@@ -170,6 +170,8 @@ export default function Invoices() {
   const [error, setError] = useState<string | null>(null);
 
   const [tab, setTab] = usePageState<"ledger" | "generate">("Invoices.tab", "ledger");
+  // Generate ▸ Invoice (the receivable, total only) | Detailed record (own record, 0499).
+  const [genMode, setGenMode] = usePageState<"invoice" | "record">("Invoices.generateMode", "invoice");
   const [clientFilter, setClientFilter] = usePageState<string>("Invoices.clientFilter", "");
   const [monthFilter, setMonthFilter] = usePageState<string>("Invoices.monthFilter", "all");
 
@@ -967,7 +969,26 @@ export default function Invoices() {
           ))}
         </div>
 
-        {tab === "generate" && canEditInvoices && <InvoiceGenerate onPosted={loadAll} />}
+        {tab === "generate" && canEditInvoices && (
+          <>
+            <div className="inline-flex mb-4 rounded-md border border-slate-200 bg-white p-0.5">
+              {(["invoice", "record"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setGenMode(m)}
+                  className={`px-3 py-1.5 text-sm rounded ${
+                    genMode === m ? "bg-brand-500 text-white font-medium" : "text-slate-600 hover:text-slate-800"
+                  }`}
+                >
+                  {m === "invoice" ? "Invoice" : "Detailed record"}
+                </button>
+              ))}
+            </div>
+            {/* Keyed by mode: each tab has its own drafts, so it remounts fresh. */}
+            <InvoiceGenerate key={genMode} mode={genMode} onPosted={loadAll} />
+          </>
+        )}
 
 
         {tab === "ledger" && (

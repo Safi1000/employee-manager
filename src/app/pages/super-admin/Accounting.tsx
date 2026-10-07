@@ -1,3 +1,5 @@
+import { loadEmployeeCodeIndex, useEmployeeCodeIndex } from "../../lib/employeeCodes";
+import { relabelEmployeeCodes } from "../../lib/guardCode";
 import ThemedSelect from "../../components/ThemedSelect";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
@@ -97,6 +99,7 @@ const payableDisplayStatus = (row: PayableRow): PayableDisplayStatus => {
 };
 
 export default function Accounting() {
+  const codeIndex = useEmployeeCodeIndex();
   const { profile, company } = useAuth();
   // Every treasury write here used to omit company_id, which produced
   //   'null value in column "company_id" of relation "treasury"'
@@ -1027,7 +1030,14 @@ export default function Accounting() {
     // 0390: the treasury row id is no longer held. Nothing in this screen
     // writes that row any more — set_cash_opening_balance() does, by company —
     // and a balance row id kept in component state is an invitation to.
-    setTransactions(txRows);
+    // History text names employees by the permanent code (GGS-…); show the
+    // code of the client each one works for instead, old rows included.
+    const codeIdx = await loadEmployeeCodeIndex().catch(() => null);
+    setTransactions(
+      codeIdx
+        ? txRows.map((t) => ({ ...t, description: t.description ? relabelEmployeeCodes(t.description, codeIdx.byPermanent) : t.description }))
+        : txRows,
+    );
     setPayables((payablesRes.data ?? []) as PayableRow[]);
     const [paidRes, vpRes] = await Promise.all([
       supabase.from("payable_outstanding").select("expense_id, paid_amount").gt("paid_amount", 0),
@@ -2990,7 +3000,7 @@ export default function Accounting() {
                                   const [psR, exR, advR, ipR] = await Promise.all([
                                     supabase
                                       .from("payslips")
-                                      .select("id, net_salary, period_month, employee:employee_id(full_name, employee_code)")
+                                      .select("id, net_salary, period_month, employee_id, employee:employee_id(full_name, employee_code)")
                                       .eq("cheque_id", c.id),
                                     supabase
                                       .from("expenses")
@@ -2998,7 +3008,7 @@ export default function Accounting() {
                                       .eq("cheque_id", c.id),
                                     supabase
                                       .from("advances")
-                                      .select("id, amount, advance_date, employee:employee_id(full_name, employee_code), client:client_id(name)")
+                                      .select("id, amount, advance_date, employee_id, employee:employee_id(full_name, employee_code), client:client_id(name)")
                                       .eq("cheque_id", c.id),
                                     supabase
                                       .from("invoice_payments")
@@ -3009,7 +3019,7 @@ export default function Accounting() {
                                   for (const p of (psR.data ?? []) as any[]) {
                                     items.push({
                                       kind: "Payslip",
-                                      description: `${p.employee?.employee_code ?? ""} ${p.employee?.full_name ?? ""} · ${String(p.period_month ?? "").slice(0, 7)}`,
+                                      description: `${codeIndex.byId.get(p.employee_id) ?? p.employee?.employee_code ?? ""} ${p.employee?.full_name ?? ""} · ${String(p.period_month ?? "").slice(0, 7)}`,
                                       amount: Number(p.net_salary ?? 0),
                                       date: String(p.period_month ?? "").slice(0, 10),
                                     });
@@ -3025,7 +3035,7 @@ export default function Accounting() {
                                   for (const a of (advR.data ?? []) as any[]) {
                                     items.push({
                                       kind: "Advance",
-                                      description: `${a.employee?.employee_code ?? ""} ${a.employee?.full_name ?? ""}${a.client?.name ? ` · ${a.client.name}` : ""}`,
+                                      description: `${codeIndex.byId.get(a.employee_id) ?? a.employee?.employee_code ?? ""} ${a.employee?.full_name ?? ""}${a.client?.name ? ` · ${a.client.name}` : ""}`,
                                       amount: Number(a.amount ?? 0),
                                       date: a.advance_date,
                                     });

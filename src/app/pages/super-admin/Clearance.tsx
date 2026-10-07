@@ -16,6 +16,7 @@
 // stage-gate exception in CLAUDE.md: one key would let one person assess the kit
 // and release the money.
 
+import { useEmployeeCodeIndex } from "../../lib/employeeCodes";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Loader2, Printer, ShieldCheck } from "lucide-react";
 import Header from "../../components/Header";
@@ -51,6 +52,7 @@ type KitItem = {
 };
 
 export default function Clearance() {
+  const codeIndex = useEmployeeCodeIndex();
   const { profile, company } = useAuth();
   const canOps = hasPermission(profile, "clearance.ops");
   const canFin = hasPermission(profile, "clearance.finance");
@@ -241,7 +243,7 @@ export default function Clearance() {
                   return (
                     <tr key={p.id} className="bg-warning-50/40">
                       <td className="px-4 py-2 text-sm">{p.full_name}</td>
-                      <td className="px-4 py-2 text-sm font-mono text-xs">{p.guard_code ?? "—"}</td>
+                      <td className="px-4 py-2 text-sm font-mono text-xs">{codeIndex.byId.get(p.id) ?? p.guard_code ?? "—"}</td>
                       <td className="px-4 py-2 text-sm">
                         {p.last_working_day ? formatDate(p.last_working_day) : "—"}
                       </td>

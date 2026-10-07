@@ -12,7 +12,7 @@ import { q, rpc, sb } from "./core";
 import {
   amountInWords, computeInvoiceTaxes, CONTRACT_LINE_CATEGORY_LABEL, DEFAULT_INVOICE_SETTINGS, DEFAULT_VARIABLE_COLUMNS, effectiveCommittedByCategory,
   effectiveContractEnd, effectiveRateByLine, financialYearLabel,
-  type Client, type ClientInvoiceGroup, type Contract, type ContractAddendum, type ContractLine, type Invoice, type InvoiceLine, type InvoiceTax,
+  type Client, type ClientInvoiceGroup, type Contract, type ContractAddendum, type ContractLine, type Invoice, type InvoiceLine, type InvoiceRecord, type InvoiceTax,
   type RemitAccount, type VariableGrid,
 } from "../../lib/web/supabase";
 
@@ -24,8 +24,16 @@ export type Draft = {
   overrideTotal: string; overrideReason: string; previousBalance: number; includePreviousBalance: boolean; status: "Pending" | "Cleared";
 };
 export type StatusFilter = "all" | "pending" | "cleared";
+// 0499 Invoice tab: the receivable is number, date, period and one total.
+export type SimpleDraft = {
+  contractId: string; contractCode: string; client: Client; invoiceNumber: string; invoiceDate: string; periodStart: string; periodEnd: string;
+  total: string; status: "Pending" | "Cleared";
+};
+type SimpleBlob = Partial<Pick<SimpleDraft, "invoiceNumber" | "invoiceDate" | "periodStart" | "periodEnd" | "total">>;
+const serializeSimple = (d: SimpleDraft): SimpleBlob => ({ invoiceNumber: d.invoiceNumber, invoiceDate: d.invoiceDate, periodStart: d.periodStart, periodEnd: d.periodEnd, total: d.total });
 export type GenRow =
   | { kind: "existing"; key: string; client: Client; contract: Contract; invoice: Invoice }
+  | { kind: "record"; key: string; client: Client; contract: Contract; record: InvoiceRecord }
   | { kind: "draft"; key: string; client: Client; contract: Contract };
 
 export const num = (s: string) => Number(String(s).replace(/,/g, "").trim()) || 0;
@@ -60,7 +68,15 @@ const serializeDraft = (d: Draft): DraftBlob => ({
 });
 const applyBlob = (d: Draft, blob: DraftBlob | undefined): Draft => (blob ? { ...d, ...blob } : d);
 
-export function useInvoiceGenerator(company: any | null, regionId: string | null = null) {
+// mode "invoice": the receivable (total only). mode "record": the detailed
+// document, saved to invoice_records for the company's own record — never an
+// invoice, never a receivable (0499).
+export function useInvoiceGenerator(company: any | null, regionId: string | null = null, mode: "invoice" | "record" = "invoice") {
+  const isInvoiceMode = mode === "invoice";
+  const draftKind = isInvoiceMode ? "simple" : "detailed";
+  const [records, setRecords] = useState<InvoiceRecord[]>([]);
+  const [simpleDrafts, setSimpleDrafts] = useState<Record<string, SimpleDraft>>({});
+  const simpleSaved = useRef<Map<string, SimpleBlob>>(new Map());
   const [clients, setClients] = useState<Client[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [lines, setLines] = useState<ContractLine[]>([]);
@@ -78,19 +94,23 @@ export function useInvoiceGenerator(company: any | null, regionId: string | null
 
   const loadData = useCallback(async () => {
     setLoading(true);
-    const [cli, con, lin, add, inv, drf] = await Promise.all([
+    const [cli, con, lin, add, inv, drf, rec] = await Promise.all([
       q<Client[]>(sb().from("clients").select("*").order("name")),
       q<Contract[]>(sb().from("contracts").select("*")),
       q<ContractLine[]>(sb().from("contract_lines").select("*")),
       q<ContractAddendum[]>(sb().from("contract_addendums").select("*")),
       q<Invoice[]>(sb().from("invoices").select("*")),
-      q<any[]>(sb().from("invoice_generation_drafts").select("contract_id, period, data, cleared")),
+      q<any[]>(sb().from("invoice_generation_drafts").select("contract_id, period, data, cleared, kind")),
+      q<InvoiceRecord[]>(sb().from("invoice_records" as never).select("*")),
     ]);
-    setClients(cli); setContracts(con); setLines(lin); setAddendums(add); setInvoices(inv);
-    savedData.current = new Map(drf.filter((r) => r.data && Object.keys(r.data).length > 0).map((r) => [`${r.contract_id}|${r.period}`, r.data as DraftBlob]));
-    setClearedKeys(new Set(drf.filter((r) => r.cleared).map((r) => `${r.contract_id}|${r.period}`)));
+    setClients(cli); setContracts(con); setLines(lin); setAddendums(add); setInvoices(inv); setRecords(rec);
+    const blobsOf = (kind: string) => drf.filter((r) => r.kind === kind && r.data && Object.keys(r.data).length > 0).map((r) => [`${r.contract_id}|${r.period}`, r.data] as [string, any]);
+    // Detailed blobs load in both modes: the Invoice tab prefills its total from them.
+    savedData.current = new Map(blobsOf("detailed"));
+    simpleSaved.current = new Map(blobsOf("simple"));
+    setClearedKeys(new Set(drf.filter((r) => r.kind === draftKind && r.cleared).map((r) => `${r.contract_id}|${r.period}`)));
     setLoading(false);
-  }, []);
+  }, [draftKind]);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- load-on-change, as the web screen does
   useEffect(() => { void loadData(); }, [loadData]);
 
@@ -196,14 +216,18 @@ export function useInvoiceGenerator(company: any | null, regionId: string | null
 
   useEffect(() => {
     if (loading) return;
-    const taken = new Set(invoices.map((i) => i.invoice_number.trim().toLowerCase()));
+    // Numbers are unique within their own kind: invoices vs invoices, records vs records.
+    const taken = new Set((isInvoiceMode ? invoices.map((i) => i.invoice_number) : records.map((r) => r.invoice_number)).map((n) => n.trim().toLowerCase()));
     const next: Record<string, Draft> = {};
     for (const client of groupClients) {
       for (const con of contracts.filter((c) => c.client_id === client.id && isInvoiceableContract(c))) {
         if (!periodInContractWindow(con, period, addendums.filter((a) => a.contract_id === con.id))) continue;
         // 0357: primaries only.
-        if (invoices.some((i) => i.contract_id === con.id && invoiceMonth(i) === period && (i.invoice_kind ?? "primary") === "primary")) continue;
+        const primary = invoices.find((i) => i.contract_id === con.id && invoiceMonth(i) === period && (i.invoice_kind ?? "primary") === "primary");
+        if (isInvoiceMode ? primary : records.some((r) => r.contract_id === con.id && r.period === period)) continue;
         const d = buildDraft(client, con, taken);
+        // A record for a month already invoiced carries that invoice's number.
+        if (d && !isInvoiceMode && primary) d.invoiceNumber = primary.invoice_number;
         if (d) {
           const withBlob = applyBlob(d, savedData.current.get(`${con.id}|${period}`));
           taken.add(withBlob.invoiceNumber.trim().toLowerCase());
@@ -215,23 +239,30 @@ export function useInvoiceGenerator(company: any | null, regionId: string | null
     // eslint-disable-next-line react-hooks/set-state-in-effect -- load-on-change, as the web screen does
     setDrafts(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, period, group, groupClients, contracts, lines, addendums, invoices, clearedKeys, buildDraft]);
+  }, [loading, period, group, groupClients, contracts, lines, addendums, invoices, records, clearedKeys, buildDraft]);
 
   const rows = useMemo<GenRow[]>(() => {
     const out: GenRow[] = [];
     for (const client of groupClients) {
       for (const con of contracts.filter((c) => c.client_id === client.id && isInvoiceableContract(c))) {
-        const existing = invoices.find((i) => i.contract_id === con.id && invoiceMonth(i) === period && (i.invoice_kind ?? "primary") === "primary");
-        if (existing) out.push({ kind: "existing", key: con.id, client, contract: con, invoice: existing });
-        else if (drafts[con.id]) out.push({ kind: "draft", key: con.id, client, contract: con });
+        if (isInvoiceMode) {
+          const existing = invoices.find((i) => i.contract_id === con.id && invoiceMonth(i) === period && (i.invoice_kind ?? "primary") === "primary");
+          if (existing) out.push({ kind: "existing", key: con.id, client, contract: con, invoice: existing });
+          else if (simpleDrafts[con.id]) out.push({ kind: "draft", key: con.id, client, contract: con });
+        } else {
+          const record = records.find((r) => r.contract_id === con.id && r.period === period);
+          if (record) out.push({ kind: "record", key: con.id, client, contract: con, record });
+          else if (drafts[con.id]) out.push({ kind: "draft", key: con.id, client, contract: con });
+        }
       }
     }
     return out.filter((r) => {
       if (statusFilter === "all") return true;
-      const cleared = r.kind === "existing" ? isCleared(r.invoice) : drafts[r.key]?.status === "Cleared";
+      const cleared = r.kind === "existing" ? isCleared(r.invoice) : r.kind === "record" ? true
+        : (isInvoiceMode ? simpleDrafts[r.key]?.status : drafts[r.key]?.status) === "Cleared";
       return statusFilter === "cleared" ? cleared : !cleared;
     });
-  }, [groupClients, contracts, invoices, drafts, period, statusFilter]);
+  }, [isInvoiceMode, groupClients, contracts, invoices, records, drafts, simpleDrafts, period, statusFilter]);
 
   const outOfWindowInvoices = useMemo(() => {
     const byId = new Map(contracts.map((c) => [c.id, c]));
@@ -270,18 +301,49 @@ export function useInvoiceGenerator(company: any | null, regionId: string | null
     const keys = [...dirtyKeys.current];
     dirtyKeys.current.clear();
     for (const key of keys) {
-      const blob = savedData.current.get(key);
+      const blob = draftKind === "simple" ? simpleSaved.current.get(key) : savedData.current.get(key);
       if (!blob) continue;
       const [contractId, per] = key.split("|");
-      const { data: upd, error: e } = await sb().from("invoice_generation_drafts").update({ data: blob, updated_at: new Date().toISOString() } as never).eq("contract_id", contractId!).eq("period", per!).select("id");
+      const { data: upd, error: e } = await sb().from("invoice_generation_drafts").update({ data: blob, updated_at: new Date().toISOString() } as never).eq("contract_id", contractId!).eq("period", per!).eq("kind" as never, draftKind as never).select("id");
       if (e || (upd && upd.length > 0)) continue;
-      const { error: insE } = await sb().from("invoice_generation_drafts").insert({ contract_id: contractId, period: per, data: blob } as never);
+      const { error: insE } = await sb().from("invoice_generation_drafts").insert({ contract_id: contractId, period: per, kind: draftKind, data: blob } as never);
       if (insE && /duplicate key/i.test(insE.message)) {
-        await sb().from("invoice_generation_drafts").update({ data: blob, updated_at: new Date().toISOString() } as never).eq("contract_id", contractId!).eq("period", per!);
+        await sb().from("invoice_generation_drafts").update({ data: blob, updated_at: new Date().toISOString() } as never).eq("contract_id", contractId!).eq("period", per!).eq("kind" as never, draftKind as never);
       }
     }
-  }, []);
+  }, [draftKind]);
   useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current); void flushSaves(); }, [flushSaves]);
+
+  // Invoice tab: one simple draft per detailed draft, total prefilled from the
+  // saved detailed record if there is one, else from the detailed calculation.
+  useEffect(() => {
+    if (!isInvoiceMode) return;
+    const next: Record<string, SimpleDraft> = {};
+    for (const [id, d] of Object.entries(drafts)) {
+      const key = `${id}|${period}`;
+      const rec = records.find((r) => r.contract_id === id && r.period === period);
+      const f = figures(d);
+      const base: SimpleDraft = {
+        contractId: id, contractCode: d.contractCode, client: d.client, invoiceNumber: rec?.invoice_number ?? d.invoiceNumber, invoiceDate: today(),
+        periodStart: d.periodStart, periodEnd: d.periodEnd, total: String(rec?.data?.currentAmount ?? f.totalDue - f.carried), status: "Pending",
+      };
+      next[id] = { ...base, ...(simpleSaved.current.get(key) ?? {}), status: clearedKeys.has(key) ? "Cleared" : "Pending" };
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- derived drafts, as the web screen does
+    setSimpleDrafts(next);
+  }, [isInvoiceMode, drafts, records, period, clearedKeys, figures]);
+
+  const patchSimple = (contractId: string, patch: Partial<SimpleDraft>) => {
+    const cur = simpleDrafts[contractId];
+    if (!cur) return;
+    const nextD = { ...cur, ...patch };
+    const key = `${contractId}|${period}`;
+    simpleSaved.current.set(key, serializeSimple(nextD));
+    setSimpleDrafts((prev) => (prev[contractId] ? { ...prev, [contractId]: nextD } : prev));
+    dirtyKeys.current.add(key);
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => { void flushSaves(); }, 700);
+  };
 
   const patchDraft = (contractId: string, patch: Partial<Draft>) => {
     const cur = drafts[contractId];
@@ -308,62 +370,108 @@ export function useInvoiceGenerator(company: any | null, regionId: string | null
   const toggleCleared = async (contractId: string) => {
     const key = `${contractId}|${period}`;
     const willClear = !clearedKeys.has(key);
-    const blob = savedData.current.get(key) ?? (drafts[contractId] ? serializeDraft(drafts[contractId]!) : {});
-    const { data: upd, error: updErr } = await sb().from("invoice_generation_drafts").update({ cleared: willClear, updated_at: new Date().toISOString() } as never).eq("contract_id", contractId).eq("period", period).select("id");
+    const blob = isInvoiceMode
+      ? simpleSaved.current.get(key) ?? (simpleDrafts[contractId] ? serializeSimple(simpleDrafts[contractId]!) : {})
+      : savedData.current.get(key) ?? (drafts[contractId] ? serializeDraft(drafts[contractId]!) : {});
+    const { data: upd, error: updErr } = await sb().from("invoice_generation_drafts").update({ cleared: willClear, updated_at: new Date().toISOString() } as never).eq("contract_id", contractId).eq("period", period).eq("kind" as never, draftKind as never).select("id");
     if (updErr) throw new Error(updErr.message);
     if (!upd || upd.length === 0) {
-      const { error: insE } = await sb().from("invoice_generation_drafts").insert({ contract_id: contractId, period, cleared: willClear, data: blob } as never);
+      const { error: insE } = await sb().from("invoice_generation_drafts").insert({ contract_id: contractId, period, kind: draftKind, cleared: willClear, data: blob } as never);
       if (insE && !/duplicate key/i.test(insE.message)) throw new Error(insE.message);
     }
     setClearedKeys((prev) => { const n = new Set(prev); if (willClear) n.add(key); else n.delete(key); return n; });
   };
 
-  const postDraft = async (d: Draft) => {
+  // Detailed record: snapshot saved to invoice_records. NOT an invoice — no
+  // journal, no receivable. The PDF is one tap away on the record's card.
+  const postRecord = async (d: Draft) => {
     const f = figures(d);
     const isVariable = (d.client.invoice_group ?? "FIXED") === "VARIABLE";
     const remit: RemitAccount | null = (d.client.remit_accounts ?? [])[d.remitIndex] ?? null;
     const variableGrid: VariableGrid | null = isVariable ? { columns: d.variableColumns, rows: d.variableRows, total: variableAmountTotal(d) } : null;
-    const { data: ins, error: insErr } = await sb().from("invoices").insert({
-      client_id: d.client.id, contract_id: d.contractId, invoice_number: d.invoiceNumber.trim(), invoice_date: today(), invoice_amount: f.subtotal + f.addedTotal,
+    const invoice = {
+      id: "", client_id: d.client.id, contract_id: d.contractId, invoice_number: d.invoiceNumber.trim(), invoice_date: today(), invoice_amount: f.subtotal + f.addedTotal,
       amount_received: 0, status: "Unpaid", notes: d.notes.trim() || null, period_start: d.periodStart, period_end: d.periodEnd, subtotal: f.subtotal,
       tax_added_total: f.addedTotal, tax_withheld_total: f.withheldTotal, previous_balance: f.carried, total_due: f.totalDue, amount_in_words: amountInWords(f.totalDue),
       remit_account: remit, override_reason: f.overridden ? d.overrideReason.trim() : null, financial_year: financialYearLabel(`${period}-01`),
       invoice_group: group, variable_grid: variableGrid, generated: true,
-    } as never).select().single();
+    } as unknown as Invoice;
+    const lineRows = d.lines.map((l, i) => ({ category: l.category, label: l.label, quantity: Math.floor(num(l.quantity)), unit_rate: num(l.unit_rate), amount: num(l.quantity) * num(l.unit_rate), taxable: l.taxable, sort_order: i }));
+    const taxRows = f.computed.map((t, i) => ({ name: t.name, rate: t.rate, base: t.base, direction: t.direction, component: t.component ?? null, amount: t.amount, sort_order: i }));
+    const { error: recErr } = await sb().from("invoice_records" as never).insert({
+      client_id: d.client.id, contract_id: d.contractId, period, invoice_number: invoice.invoice_number, invoice_date: invoice.invoice_date,
+      period_start: d.periodStart, period_end: d.periodEnd, invoice_group: group, total_due: f.totalDue,
+      data: { invoice, lines: lineRows, taxes: taxRows, currentAmount: f.totalDue - f.carried },
+    } as never);
+    if (recErr) {
+      const dup = /duplicate key/i.test(recErr.message);
+      throw new Error(dup ? `${d.client.name} (${d.contractCode}): a detailed record for this contract already exists for ${period}.` : `${d.client.name} (${d.invoiceNumber}): ${recErr.message}`);
+    }
+    if (isVariable) await sb().from("clients").update({ variable_columns: d.variableColumns } as never).eq("id", d.client.id);
+  };
+
+  // Invoice tab: a real Unpaid invoice with one total — no lines, no taxes, no
+  // carried balance; the whole total is revenue (0499, DECIDED).
+  const postSimple = async (sd: SimpleDraft) => {
+    const total = num(sd.total);
+    const { error: insErr } = await sb().from("invoices").insert({
+      client_id: sd.client.id, contract_id: sd.contractId, invoice_number: sd.invoiceNumber.trim(), invoice_date: sd.invoiceDate || today(), invoice_amount: total,
+      amount_received: 0, status: "Unpaid", period_start: sd.periodStart, period_end: sd.periodEnd, subtotal: total, tax_added_total: 0, tax_withheld_total: 0,
+      previous_balance: 0, total_due: total, amount_in_words: amountInWords(total), financial_year: financialYearLabel(`${period}-01`),
+      invoice_group: group, generated: true, total_only: true,
+    } as never);
     if (insErr) {
       const dup = /uq_invoice_contract_month|duplicate key/i.test(insErr.message);
-      throw new Error(dup ? `${d.client.name} (${d.contractCode}): an invoice for this contract already exists for ${period}.` : `${d.client.name} (${d.invoiceNumber}): ${insErr.message}`);
+      throw new Error(dup ? `${sd.client.name} (${sd.contractCode}): an invoice for this contract already exists for ${period}.` : `${sd.client.name} (${sd.invoiceNumber}): ${insErr.message}`);
     }
-    const invoice = ins as Invoice;
-    const lineRows = d.lines.map((l, i) => ({ invoice_id: invoice.id, category: l.category, label: l.label, quantity: Math.floor(num(l.quantity)), unit_rate: num(l.unit_rate), amount: num(l.quantity) * num(l.unit_rate), taxable: l.taxable, sort_order: i }));
-    if (lineRows.length) await q(sb().from("invoice_lines").insert(lineRows as never));
-    const taxRows = f.computed.map((t, i) => ({ invoice_id: invoice.id, name: t.name, rate: t.rate, base: t.base, direction: t.direction, component: t.component ?? null, amount: t.amount, sort_order: i }));
-    if (taxRows.length) await q(sb().from("invoice_taxes").insert(taxRows as never));
-    if (isVariable) await sb().from("clients").update({ variable_columns: d.variableColumns } as never).eq("id", d.client.id);
+  };
+
+  /** deleteRecord(): a record is only a document — deleting it moves no money. */
+  const deleteRecord = async (rec: InvoiceRecord) => {
+    const { error } = await sb().from("invoice_records" as never).delete().eq("id" as never, rec.id as never);
+    if (error) throw new Error(error.message);
+    await loadData();
   };
 
   /** generateAllCleared(): every guard up front, then post in order; stops and reports on the first failure. */
   const generateAllCleared = async (): Promise<string> => {
-    const cleared = Object.values(drafts).filter((d) => d.status === "Cleared");
-    if (cleared.length === 0) throw new Error("Clear at least one draft first.");
-    const existingNumbers = new Set(invoices.map((i) => i.invoice_number.trim().toLowerCase()));
+    const clearedSimple = Object.values(simpleDrafts).filter((d) => d.status === "Cleared");
+    const clearedDetailed = Object.values(drafts).filter((d) => d.status === "Cleared");
+    const batch = isInvoiceMode
+      ? clearedSimple.map((x) => ({ contractId: x.contractId, contractCode: x.contractCode, name: x.client.name, number: x.invoiceNumber }))
+      : clearedDetailed.map((x) => ({ contractId: x.contractId, contractCode: x.contractCode, name: x.client.name, number: x.invoiceNumber }));
+    if (batch.length === 0) throw new Error("Clear at least one draft first.");
+    if (isInvoiceMode) {
+      for (const x of clearedSimple) {
+        if (!(num(x.total) > 0)) throw new Error(`${x.client.name}: enter a total amount.`);
+        if (!x.periodStart || !x.periodEnd) throw new Error(`${x.client.name}: enter the period start and end.`);
+      }
+    } else {
+      for (const d of clearedDetailed) if (figures(d).overridden && !d.overrideReason.trim()) throw new Error(`${d.client.name}: an override total needs a reason.`);
+    }
+    const existingNumbers = new Set((isInvoiceMode ? invoices.map((i) => i.invoice_number) : records.map((r) => r.invoice_number)).map((n) => n.trim().toLowerCase()));
     const seen = new Set<string>();
-    for (const d of cleared) {
-      const f = figures(d);
-      if (f.overridden && !d.overrideReason.trim()) throw new Error(`${d.client.name}: an override total needs a reason.`);
-      const key = d.invoiceNumber.trim().toLowerCase();
-      if (existingNumbers.has(key)) throw new Error(`${d.client.name} (${d.invoiceNumber}): that invoice number already exists.`);
-      if (seen.has(key)) throw new Error(`Invoice number ${d.invoiceNumber} is used by more than one draft in this batch.`);
+    for (const b of batch) {
+      const key = b.number.trim().toLowerCase();
+      if (!key) throw new Error(`${b.name}: enter an invoice number.`);
+      if (existingNumbers.has(key)) throw new Error(`${b.name} (${b.number}): that ${isInvoiceMode ? "invoice" : "record"} number already exists.`);
+      if (seen.has(key)) throw new Error(`Number ${b.number} is used by more than one draft in this batch.`);
       seen.add(key);
-      if (invoices.some((i) => i.contract_id === d.contractId && invoiceMonth(i) === period)) throw new Error(`${d.client.name} (${d.contractCode}): this contract already has an invoice for ${period}.`);
+      const done = isInvoiceMode
+        ? invoices.some((i) => i.contract_id === b.contractId && invoiceMonth(i) === period)
+        : records.some((r) => r.contract_id === b.contractId && r.period === period);
+      if (done) throw new Error(`${b.name} (${b.contractCode}): this contract already has ${isInvoiceMode ? "an invoice" : "a detailed record"} for ${period}.`);
     }
     let posted = 0;
     try {
-      for (const d of cleared) { await postDraft(d); posted++; }
-      await sb().from("invoice_generation_drafts").delete().in("contract_id", cleared.map((d) => d.contractId)).eq("period", period);
-      return `Posted ${posted} invoice${posted === 1 ? "" : "s"} as Unpaid. Download each PDF from the invoice list.`;
+      if (isInvoiceMode) { for (const x of clearedSimple) { await postSimple(x); posted++; } }
+      else { for (const d of clearedDetailed) { await postRecord(d); posted++; } }
+      await sb().from("invoice_generation_drafts").delete().in("contract_id", batch.map((b) => b.contractId)).eq("period", period).eq("kind" as never, draftKind as never);
+      return isInvoiceMode
+        ? `Posted ${posted} invoice${posted === 1 ? "" : "s"} as Unpaid. Download each PDF from the invoice list.`
+        : `Saved ${posted} detailed record${posted === 1 ? "" : "s"}. No receivable was created.`;
     } catch (err) {
-      throw new Error(`${err instanceof Error ? err.message : String(err)}${posted > 0 ? ` (${posted} already posted before this)` : ""}`);
+      throw new Error(`${err instanceof Error ? err.message : String(err)}${posted > 0 ? ` (${posted} already saved before this)` : ""}`);
     } finally {
       await loadData();
     }
@@ -372,5 +480,6 @@ export function useInvoiceGenerator(company: any | null, regionId: string | null
   return {
     loading, period, setPeriod, group, setGroup, statusFilter, setStatusFilter, drafts, rows, outOfWindowInvoices,
     figures, patchDraft, grid, toggleCleared, generateAllCleared, reload: loadData, contracts, lines,
+    isInvoiceMode, simpleDrafts, patchSimple, deleteRecord, clients,
   };
 }

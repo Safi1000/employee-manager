@@ -13,6 +13,7 @@ import {
   recordPayment, removeInvoiceAttachment, setInvoiceStatus, suggestedWithholding, updateInvoice,
 } from "../../data/api/invoices";
 import { num, useInvoiceGenerator } from "../../data/api/invoiceGenerator";
+import { downloadRecordPdf } from "../../data/api/invoices";
 import { loadBranding, resetBranding } from "../../data/api/exports";
 import { q, rpc, sb, type PickedFile } from "../../data/api/core";
 import { useAuth } from "../../lib/auth";
@@ -35,6 +36,7 @@ export default function Invoices() {
   const { regionId } = useRegion();
   const { toast } = useOverlay();
   const [tab, setTab] = useState<"ledger" | "generate">("ledger");
+  const [genMode, setGenMode] = useState<"invoice" | "record">("invoice");
   const [client, setClient] = useState("");
   const [status, setStatus] = useState("all");
   const [month, setMonth] = useState("");
@@ -95,7 +97,13 @@ export default function Invoices() {
         </>
       )}
 
-      {tab === "generate" && canEdit && <Generate />}
+      {tab === "generate" && canEdit && (
+        <>
+          {/* Invoice = the receivable, total only. Detailed record = own record, never a receivable (0499). */}
+          <Chips value={genMode} onChange={setGenMode} items={[{ key: "invoice", label: "Invoice" }, { key: "record", label: "Detailed record" }]} />
+          <Generate key={genMode} mode={genMode} />
+        </>
+      )}
 
       {payFor && <RecordPaymentSheet invoice={payFor} onClose={() => setPayFor(null)} />}
       {form && <InvoiceFormSheet invoice={form === "new" ? null : form} onClose={() => setForm(null)} />}
@@ -105,19 +113,21 @@ export default function Invoices() {
 }
 
 /** Generate tab: drafts per contract for the period, Clear, then post all cleared. */
-function Generate() {
+function Generate({ mode }: { mode: "invoice" | "record" }) {
   const t = useTheme();
   const { db, act } = useDB();
   const { toast } = useOverlay();
   const [company, setCompany] = useState<any | null>(null);
   useEffect(() => { loadBranding(db.company.id).then((b) => setCompany(b.company)).catch(() => setCompany({})); }, [db.company.id]);
   const { regionId } = useRegion();
-  const g = useInvoiceGenerator(company, regionId);
+  const g = useInvoiceGenerator(company, regionId, mode);
+  const { confirm } = useOverlay();
   const [open, setOpen] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const clearedCount = Object.values(g.drafts).filter((d) => d.status === "Cleared").length;
+  const clearedCount = Object.values(g.isInvoiceMode ? g.simpleDrafts : g.drafts).filter((d) => d.status === "Cleared").length;
   if (g.loading || !company) return <ActivityIndicator color={t.brand[500]} style={{ marginTop: 30 }} />;
-  const d = open ? g.drafts[open] : null;
+  const d = open && !g.isInvoiceMode ? g.drafts[open] : null;
+  const sd = open && g.isInvoiceMode ? g.simpleDrafts[open] : null;
   const f = d ? g.figures(d) : null;
   return (
     <>
@@ -126,9 +136,38 @@ function Generate() {
         <View style={{ flex: 1.3 }}><Select label="Invoice group" value={g.group} onChange={(v) => g.setGroup(v as typeof g.group)} options={SELECTABLE_INVOICE_GROUPS.map((x) => ({ value: x, label: CLIENT_INVOICE_GROUP_LABEL[x] }))} /></View>
       </HStack>
       <Chips value={g.statusFilter} onChange={g.setStatusFilter} items={[{ key: "all", label: "All" }, { key: "pending", label: "Pending" }, { key: "cleared", label: "Cleared" }]} />
-      {g.outOfWindowInvoices.length > 0 && <Banner tone="warning" title={`${g.outOfWindowInvoices.length} invoice(s) outside their contract window`} sub={g.outOfWindowInvoices.slice(0, 4).map((x) => `${x.clientName} ${x.inv.invoice_number}`).join(" · ")} />}
+      <T v="small" muted style={{ marginBottom: 6 }}>
+        {g.isInvoiceMode
+          ? "The invoice the client is billed: number, date, period and one total. Posting creates an Unpaid receivable."
+          : "Detailed breakdown for your own record only. Saving creates no invoice and no receivable."}
+      </T>
+      {g.isInvoiceMode && g.outOfWindowInvoices.length > 0 && <Banner tone="warning" title={`${g.outOfWindowInvoices.length} invoice(s) outside their contract window`} sub={g.outOfWindowInvoices.slice(0, 4).map((x) => `${x.clientName} ${x.inv.invoice_number}`).join(" · ")} />}
       <View style={{ height: 10 }} />
       {g.rows.map((r) => {
+        if (r.kind === "record") {
+          const rec = r.record;
+          return <RecordCard key={r.key} title={r.client.name} subtitle={`${r.contract.contract_code} · ${rec.invoice_number}`} badge={<Badge label="Recorded" tone="neutral" small />}
+            fields={[{ label: "Total due", value: pkr(Number(rec.total_due)), mono: true }]}
+            actions={[
+              { label: "PDF", icon: FileDown, onPress: () => { downloadRecordPdf(rec, r.client, r.contract, db.company.id).catch((e) => toast(err(e), "danger")); } },
+              { label: "Delete", icon: Trash2, onPress: async () => {
+                if (!(await confirm({ title: `Delete record ${rec.invoice_number}?`, message: "This does not affect any invoice.", confirmLabel: "Delete", tone: "danger" }))) return;
+                g.deleteRecord(rec).catch((e) => toast(err(e), "danger"));
+              } },
+            ]} />;
+        }
+        if (r.kind === "draft" && g.isInvoiceMode) {
+          const x = g.simpleDrafts[r.key]!;
+          return (
+            <RecordCard key={r.key} title={r.client.name} subtitle={`${r.contract.contract_code} · ${x.invoiceNumber}`}
+              badge={<Badge label={x.status === "Cleared" ? "Cleared" : "Draft"} tone={x.status === "Cleared" ? "success" : "info"} small />}
+              fields={[{ label: "Period", value: `${fmtShort(x.periodStart)} – ${fmtShort(x.periodEnd)}` }, { label: "Total", value: pkr(num(x.total)), mono: true }]}
+              actions={[
+                { label: "Edit", icon: Pencil, onPress: () => setOpen(r.key) },
+                { label: x.status === "Cleared" ? "Reopen" : "Mark cleared", icon: CheckCircle2, onPress: () => { g.toggleCleared(r.key).catch((e) => toast(err(e), "danger")); } },
+              ]} />
+          );
+        }
         if (r.kind === "existing") {
           return <RecordCard key={r.key} title={r.client.name} subtitle={`${r.contract.contract_code} · ${r.invoice.invoice_number}`} badge={<Badge label={r.invoice.status} tone={statusTone(r.invoice.status)} small />}
             fields={[{ label: "Total due", value: pkr(Number(r.invoice.total_due ?? r.invoice.invoice_amount)), mono: true }]} />;
@@ -146,13 +185,26 @@ function Generate() {
         );
       })}
       {g.rows.length === 0 && <Empty title="Nothing to generate" sub="Every contract in this group already has an invoice for the period." />}
-      <Button label={`Generate ${clearedCount} cleared`} full style={{ marginTop: 10 }} loading={busy} disabled={!clearedCount} onPress={async () => {
+      <Button label={g.isInvoiceMode ? `Generate ${clearedCount} cleared` : `Save ${clearedCount} cleared as records`} full style={{ marginTop: 10 }} loading={busy} disabled={!clearedCount} onPress={async () => {
         setBusy(true);
         let msg = "";
         const ok = await act(async () => { msg = await g.generateAllCleared(); });
         setBusy(false);
         if (ok) toast(msg);
       }} />
+
+      {sd && open && (
+        <Sheet open onClose={() => setOpen(null)} title={`${sd.client.name} — ${sd.contractCode}`}>
+          <Input label="Invoice number" value={sd.invoiceNumber} onChangeText={(v) => g.patchSimple(open, { invoiceNumber: v })} />
+          <Input label="Invoice date" value={sd.invoiceDate} onChangeText={(v) => g.patchSimple(open, { invoiceDate: v })} placeholder="YYYY-MM-DD" />
+          <HStack gap={10}>
+            <Input style={{ flex: 1 }} label="Period start" value={sd.periodStart} onChangeText={(v) => g.patchSimple(open, { periodStart: v })} />
+            <Input style={{ flex: 1 }} label="Period end" value={sd.periodEnd} onChangeText={(v) => g.patchSimple(open, { periodEnd: v })} />
+          </HStack>
+          <Input label="Total amount" amount value={sd.total} onChangeText={(v) => g.patchSimple(open, { total: v })} />
+          <T v="small" muted>Edits save automatically as a draft.</T>
+        </Sheet>
+      )}
 
       {d && f && open && (
         <Sheet open onClose={() => setOpen(null)} title={`${d.client.name} — ${d.contractCode}`} subtitle={`${fmtShort(d.periodStart)} – ${fmtShort(d.periodEnd)}`} full>

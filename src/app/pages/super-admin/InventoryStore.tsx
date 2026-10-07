@@ -14,6 +14,7 @@
 // never touches inventory. There is no value threshold — one would let three
 // uniforms skip inventory while two hundred did not.
 
+import { useEmployeeCodeIndex } from "../../lib/employeeCodes";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, Package, Loader2, Trash2, ClipboardList } from "lucide-react";
 import Header from "../../components/Header";
@@ -159,6 +160,7 @@ export default function InventoryStore() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const [guards, setGuards] = useState<{ id: string; guard_code: string | null }[]>([]);
+  const codeIndex = useEmployeeCodeIndex();
   const [settings, setSettings] = useState<{ kit_required_from: string | null } | null>(null);
   const [batches, setBatches] = useState<number>(0);
   const [opening, setOpening] = useState({
@@ -331,9 +333,15 @@ export default function InventoryStore() {
     load();
   };
 
-  const guardByCode = useMemo(
-    () => new Map(guards.filter((g) => g.guard_code)
-      .map((g) => [g.guard_code!.toUpperCase(), g.id])), [guards]);
+  // A pasted code may be the permanent one or the client code he is known by.
+  const guardByCode = useMemo(() => {
+    const m = new Map(guards.filter((g) => g.guard_code).map((g) => [g.guard_code!.toUpperCase(), g.id]));
+    for (const g of guards) {
+      const code = codeIndex.byId.get(g.id);
+      if (code) m.set(code.toUpperCase(), g.id);
+    }
+    return m;
+  }, [guards, codeIndex.byId]);
 
   const openingRows = useMemo(
     () => parseOpening(opening.paste, types, guardByCode),

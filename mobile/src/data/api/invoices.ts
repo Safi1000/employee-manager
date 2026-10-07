@@ -132,3 +132,11 @@ export async function downloadInvoicePdf(inv: { id: string; raw?: any }, clientR
   const full = await q<any>(sb().from("invoices").select("*").eq("id", inv.id).single());
   generateInvoiceDocument({ invoice: full, client: clientRaw ?? null, company, contract: contractRaw ?? null, contractLines: cls, invoiceLines: lines, taxes } as never);
 }
+
+/** downloadRecordPdf(): re-render a saved detailed record (0499) from its snapshot. Not an invoice. */
+export async function downloadRecordPdf(rec: { contract_id: string | null; data: any }, clientRaw: any, contractRaw: any, companyId: string) {
+  if (!rec.data?.invoice) throw new Error("This record has no saved document.");
+  const { company } = await loadBranding(companyId);
+  const cls = rec.contract_id ? await q<any[]>(sb().from("contract_lines").select("*").eq("contract_id", rec.contract_id)) : [];
+  generateInvoiceDocument({ invoice: rec.data.invoice, client: clientRaw ?? null, company, contract: contractRaw ?? null, locations: rec.data.locations, contractLines: cls, invoiceLines: rec.data.lines ?? [], taxes: rec.data.taxes ?? [] } as never);
+}

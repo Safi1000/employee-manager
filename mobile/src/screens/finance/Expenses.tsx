@@ -38,6 +38,7 @@ function useExpenses(month: string) {
 }
 
 export default function Expenses() {
+  const { db } = useDB();
   const t = useTheme();
   const { can } = useAuth();
   const { toast } = useOverlay();
@@ -58,7 +59,7 @@ export default function Expenses() {
     const bankName = (id: string | null) => data.banks.find((b) => b.id === id)?.bank_name;
     const run = tab === "advances"
       ? exportAdvances(data.advances.map((a) => ({
-        date: a.advance_date, employee: `${a.employee?.guard_code ?? a.employee?.employee_code ?? ""} ${a.employee?.full_name ?? ""}`.trim(), client: a.client?.name ?? "",
+        date: a.advance_date, employee: `${db.employees.find((x) => x.id === a.employee_id)?.code ?? a.employee?.guard_code ?? a.employee?.employee_code ?? ""} ${a.employee?.full_name ?? ""}`.trim(), client: a.client?.name ?? "",
         amount: Number(a.amount), mode: a.payment_mode === "Bank" && bankName(a.bank_account_id) ? `Bank · ${bankName(a.bank_account_id)}` : a.payment_mode, remarks: a.notes ?? "",
       })), `Advances ${today}.xlsx`)
       : tab === "fixed"

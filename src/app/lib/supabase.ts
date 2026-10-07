@@ -2278,8 +2278,37 @@ export type Invoice = {
   // which use invoice_lines instead. { columns, rows (string cells), total }.
   variable_grid?: VariableGrid | null;
   generated?: boolean;
+  // 0499: issued from Generate ▸ Invoice — number, date, period, one total.
+  total_only?: boolean;
   created_at?: string;
   updated_at?: string;
+};
+
+// 0499: a detailed invoice document kept for the company's own record
+// (Generate ▸ Detailed record). Not a receivable — never posts, never a balance.
+export type InvoiceRecord = {
+  id: string;
+  company_id?: string;
+  branch_id?: string | null;
+  client_id: string;
+  contract_id: string | null;
+  period: string;
+  invoice_number: string;
+  invoice_date: string;
+  period_start: string | null;
+  period_end: string | null;
+  invoice_group: ClientInvoiceGroup | null;
+  total_due: number;
+  data: {
+    invoice?: Invoice;
+    lines?: InvoiceLine[];
+    taxes?: InvoiceTax[];
+    locations?: string;
+    // The current period's amount (total due less any carried balance) —
+    // what the Invoice tab prefills its total from.
+    currentAmount?: number;
+  };
+  created_at?: string;
 };
 
 export type InvoiceLine = {

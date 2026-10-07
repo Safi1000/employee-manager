@@ -573,7 +573,7 @@ export async function settlePayment(base: PayrollBase, companyId: string | null,
       .upsert(buildPayslipPayload({ ...row, amount_paid: already }) as never, { onConflict: "employee_id,period_month" })
       .select("id, amount_paid").single());
     if (Math.round(Number(up.amount_paid)) !== already) return { ok: false, message: "This payslip changed on another device — reloading.", reload: true };
-    const label = `${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`;
+    const label = `${formatPeriod(row.period_month)} · ${empDisplay(base, row.employee)} ${row.employee.full_name}`;
     const payDesc = row.payment_mode === "Cash"
       ? `${pay < 0 ? "Reverse payroll (cash)" : "Payroll (cash)"} ${label}`
       : `${pay < 0 ? "Reverse payroll" : "Payroll"} ${label}`;
@@ -632,9 +632,9 @@ export async function bulkDisburse(base: PayrollBase, companyId: string | null, 
         .upsert(buildPayslipPayload({ ...row, payment_mode: opts.mode, bank_account_id: opts.mode === "Bank" ? opts.bankId : null, amount_paid: already }) as never, { onConflict: "employee_id,period_month" })
         .select("id, amount_paid").single());
       if (Math.round(Number(up.amount_paid)) !== already) {
-        throw new Error(`${row.employee.full_name ?? row.employee.employee_code} was paid on another device while this batch was running — reload and disburse the rest.`);
+        throw new Error(`${row.employee.full_name ?? empDisplay(base, row.employee)} was paid on another device while this batch was running — reload and disburse the rest.`);
       }
-      const label = `${formatPeriod(row.period_month)} · ${row.employee.employee_code} ${row.employee.full_name}`;
+      const label = `${formatPeriod(row.period_month)} · ${empDisplay(base, row.employee)} ${row.employee.full_name}`;
       const { error: rpcErr } = await sb().rpc("disburse_payslip" as never, {
         p_payslip_id: up.id, p_expected_paid: already, p_target_paid: net, p_payment_mode: opts.mode,
         p_bank_account_id: opts.mode === "Bank" ? opts.bankId : null, p_cheque_id: null,
@@ -643,7 +643,7 @@ export async function bulkDisburse(base: PayrollBase, companyId: string | null, 
       } as never);
       if (rpcErr) {
         if (/PAYSLIP_STALE/.test(rpcErr.message)) continue;
-        throw new Error(`${row.employee.employee_code} ${row.employee.full_name}: ${rpcErr.message}`);
+        throw new Error(`${empDisplay(base, row.employee)} ${row.employee.full_name}: ${rpcErr.message}`);
       }
       done++;
     }
@@ -718,7 +718,7 @@ export function downloadPayslipPdf(base: PayrollBase, pd: PayrollPeriod, row: Ro
   }
   line("Status", row.status);
   line("Disbursed", row.disbursed ? "Yes" : "No");
-  return savePdf(doc, `payslip_${row.employee.employee_code}_${row.period_month}.pdf`);
+  return savePdf(doc, `payslip_${empDisplay(base, row.employee)}_${row.period_month}.pdf`);
 }
 
 // ------------------------------------------------- Payroll page shell (FV only)

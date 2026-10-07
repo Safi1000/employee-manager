@@ -116,6 +116,8 @@ export type InvoiceStructureSettings = {
   company_prefix?: string;
   // Brand accent colour (hex) for header/footer rules on the PDF.
   brand_color?: string;
+  // Free-text footer line printed centered beneath the contact lines.
+  footer_note?: string;
   // Watermark: a separate faded mark (base64 data URL), a toggle, and opacity.
   watermark_url?: string;
   show_watermark?: boolean;
@@ -130,6 +132,7 @@ export const DEFAULT_INVOICE_SETTINGS: InvoiceStructureSettings = {
   sla_tax_columns: [],
   company_prefix: "",
   brand_color: "",
+  footer_note: "",
   watermark_url: "",
   show_watermark: false,
   watermark_opacity: 0.1,
@@ -372,7 +375,7 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
       { key: "attendance.bulk_mark", label: "Bulk-mark attendance per employee (calendar)" },
       { key: "attendance.backdate", label: "Backdate attendance past the marking cutoff" },
       { key: "attendance.hr_verify", label: "HR-verify a half-month of attendance (first stage)" },
-      { key: "attendance.ops_verify", label: "OPS-verify a half-month of attendance (after HR)" },
+      { key: "attendance.ops_verify", label: "OPS-verify a half-month of attendance (after HR) on the Attendance Run" },
       { key: "attendance.run_view", label: "View the Attendance Run (Review / Ops Verify)" },
     ],
   },
@@ -2243,8 +2246,37 @@ export type Invoice = {
   // which use invoice_lines instead. { columns, rows (string cells), total }.
   variable_grid?: VariableGrid | null;
   generated?: boolean;
+  // 0499: issued from Generate ▸ Invoice — number, date, period, one total.
+  total_only?: boolean;
   created_at?: string;
   updated_at?: string;
+};
+
+// 0499: a detailed invoice document kept for the company's own record
+// (Generate ▸ Detailed record). Not a receivable — never posts, never a balance.
+export type InvoiceRecord = {
+  id: string;
+  company_id?: string;
+  branch_id?: string | null;
+  client_id: string;
+  contract_id: string | null;
+  period: string;
+  invoice_number: string;
+  invoice_date: string;
+  period_start: string | null;
+  period_end: string | null;
+  invoice_group: ClientInvoiceGroup | null;
+  total_due: number;
+  data: {
+    invoice?: Invoice;
+    lines?: InvoiceLine[];
+    taxes?: InvoiceTax[];
+    locations?: string;
+    // The current period's amount (total due less any carried balance) —
+    // what the Invoice tab prefills its total from.
+    currentAmount?: number;
+  };
+  created_at?: string;
 };
 
 export type InvoiceLine = {
