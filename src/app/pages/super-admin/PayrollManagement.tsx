@@ -216,13 +216,20 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   const [adjOpen, setAdjOpen] = useState(false);
   // amount is the CHANGE only (never the resulting total), typed unsigned; kind
   // supplies the sign — increment adds to what he is owed, fine takes it away.
-  const [adjForm, setAdjForm] = useState({ amount: "", kind: null as "increment" | "fine" | null, reason: "", settlement: "carry_forward" as "pay_now" | "carry_forward" });
+  // A fine is either a number of days at his per-day salary, or a typed amount.
+  const [adjForm, setAdjForm] = useState({ amount: "", kind: null as "increment" | "fine" | null, fineBy: "days" as "days" | "amount", days: "", reason: "", settlement: "carry_forward" as "pay_now" | "carry_forward" });
+  // The unsigned amount the adjustment will carry: days × per-day salary for a
+  // fine by days, otherwise what was typed.
+  const adjAmount = (perDay: number | null | undefined) =>
+    adjForm.kind === "fine" && adjForm.fineBy === "days"
+      ? Math.round(Math.abs(Number(adjForm.days || 0)) * Number(perDay ?? 0))
+      : Math.abs(Number(adjForm.amount || 0));
   const [adjErr, setAdjErr] = useState<string | null>(null);
-  const raiseAdjustment = async (payslipId: string) => {
+  const raiseAdjustment = async (payslipId: string, perDay: number | null) => {
     setAdjErr(null);
     const { error } = await supabase.rpc("raise_payroll_adjustment", {
       p_payslip_id: payslipId,
-      p_amount: (adjForm.kind === "fine" ? -1 : 1) * Math.abs(Number(adjForm.amount)),
+      p_amount: (adjForm.kind === "fine" ? -1 : 1) * adjAmount(perDay),
       p_reason: adjForm.reason.trim(),
       p_settlement: adjForm.settlement,
     });
@@ -3642,7 +3649,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                         </ul>
                       )}
                       {canAdjust && selectedRow.payslip_id && (
-                        <Button variant="secondary" size="sm" onClick={() => { setAdjForm({ amount: "", kind: null, reason: "", settlement: "carry_forward" }); setAdjOpen(true); }}>
+                        <Button variant="secondary" size="sm" onClick={() => { setAdjForm({ amount: "", kind: null, fineBy: "days", days: "", reason: "", settlement: "carry_forward" }); setAdjOpen(true); }}>
                           Raise adjustment
                         </Button>
                       )}
@@ -4325,14 +4332,43 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                 </label>
               ))}
             </div>
-            <div>
-              <label className="block text-xs text-slate-500 mb-1">
-                {adjForm.kind === "fine" ? "Fine amount" : adjForm.kind === "increment" ? "Increment amount" : "Amount"}
-                {" "}— only the amount being {adjForm.kind === "fine" ? "deducted" : "added"}, not the new total
-              </label>
-              <input type="number" min="0" className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
-                     value={adjForm.amount} onChange={(e) => setAdjForm({ ...adjForm, amount: e.target.value.replace(/^-/, "") })} />
-            </div>
+            {adjForm.kind === "fine" && (
+              <div className="flex items-center gap-4">
+                {([["days", "By days"], ["amount", "Custom amount"]] as const).map(([v, l]) => (
+                  <label key={v} className="flex items-center gap-1.5 text-sm text-slate-700 cursor-pointer">
+                    <input type="radio" name="fineBy" checked={adjForm.fineBy === v}
+                           onChange={() => setAdjForm({ ...adjForm, fineBy: v })} />
+                    {l}
+                  </label>
+                ))}
+              </div>
+            )}
+            {adjForm.kind === "fine" && adjForm.fineBy === "days" ? (
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">Number of days</label>
+                <input type="number" min="0" step="0.5" className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                       value={adjForm.days} onChange={(e) => setAdjForm({ ...adjForm, days: e.target.value.replace(/^-/, "") })} />
+                {selectedRow.per_day_salary ? (
+                  <p className="mt-1 text-xs text-slate-600">
+                    {Number(adjForm.days || 0)} day{Number(adjForm.days) === 1 ? "" : "s"} × PKR {Number(selectedRow.per_day_salary).toLocaleString()} per day
+                    {" "}= <span className="font-medium text-danger-700">fine of PKR {adjAmount(selectedRow.per_day_salary).toLocaleString()}</span>
+                  </p>
+                ) : (
+                  <p className="mt-1 text-xs text-warning-700">
+                    No per-day salary for this month (no rate or no attendance). Use a custom amount instead.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">
+                  {adjForm.kind === "fine" ? "Fine amount" : adjForm.kind === "increment" ? "Increment amount" : "Amount"}
+                  {" "}— only the amount being {adjForm.kind === "fine" ? "deducted" : "added"}, not the new total
+                </label>
+                <input type="number" min="0" className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
+                       value={adjForm.amount} onChange={(e) => setAdjForm({ ...adjForm, amount: e.target.value.replace(/^-/, "") })} />
+              </div>
+            )}
             <div>
               <label className="block text-xs text-slate-500 mb-1">Reason</label>
               <input className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
@@ -4347,8 +4383,8 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
             </div>
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setAdjOpen(false)}>Back</Button>
-              <Button onClick={() => raiseAdjustment(selectedRow.payslip_id!)}
-                      disabled={!adjForm.kind || !Number(adjForm.amount) || !adjForm.reason.trim()}>Raise</Button>
+              <Button onClick={() => raiseAdjustment(selectedRow.payslip_id!, selectedRow.per_day_salary)}
+                      disabled={!adjForm.kind || !adjAmount(selectedRow.per_day_salary) || !adjForm.reason.trim()}>Raise</Button>
             </div>
           </div>
         </Modal>

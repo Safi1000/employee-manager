@@ -100,7 +100,11 @@ export function PayslipPanel({ ws, row, mode, onChanged }: { ws: Workspace; row:
   const [payDate, setPayDate] = useState(todayIso());
   const [adjOpen, setAdjOpen] = useState(false);
   // amount is the CHANGE only, unsigned; kind supplies the sign (fine deducts).
-  const [adj, setAdj] = useState({ amount: "", kind: null as "increment" | "fine" | null, reason: "", settlement: "carry_forward" as "pay_now" | "carry_forward" });
+  // A fine is either a number of days at his per-day salary, or a typed amount.
+  const [adj, setAdj] = useState({ amount: "", kind: null as "increment" | "fine" | null, fineBy: "days" as "days" | "amount", days: "", reason: "", settlement: "carry_forward" as "pay_now" | "carry_forward" });
+  const adjAmount = adj.kind === "fine" && adj.fineBy === "days"
+    ? Math.round(Math.abs(Number(adj.days || 0)) * Number(row.per_day_salary ?? 0))
+    : Math.abs(Number(adj.amount || 0));
   const [adjErr, setAdjErr] = useState<string | null>(null);
   const ls = pd.leaveSummary.get(id);
   const periodAdj = pd.periodAdj.get(id) ?? [];
@@ -270,7 +274,7 @@ export function PayslipPanel({ ws, row, mode, onChanged }: { ws: Workspace; row:
               <Ledger key={a.id} label={`${a.reason} · ${a.settlement === "pay_now" ? "pay now" : "next payslip"} · ${a.status}`} value={`${a.amount > 0 ? "+" : ""}${a.amount.toLocaleString()}`} tone={a.amount < 0 ? "danger" : "success"} />
             ))}
             {can("payroll.adjust") && row.payslip_id && (
-              <Button size="sm" variant="secondary" label="Raise adjustment" style={{ marginTop: 8 }} onPress={() => { setAdj({ amount: "", kind: null, reason: "", settlement: "carry_forward" }); setAdjErr(null); setAdjOpen(true); }} />
+              <Button size="sm" variant="secondary" label="Raise adjustment" style={{ marginTop: 8 }} onPress={() => { setAdj({ amount: "", kind: null, fineBy: "days", days: "", reason: "", settlement: "carry_forward" }); setAdjErr(null); setAdjOpen(true); }} />
             )}
           </Card>
         </Section>
@@ -339,16 +343,31 @@ export function PayslipPanel({ ws, row, mode, onChanged }: { ws: Workspace; row:
       </Sheet>
 
       <Sheet open={adjOpen} onClose={() => setAdjOpen(false)} title={`Raise adjustment — ${row.employee.full_name}`} error={adjErr}
-        footer={<><Button label="Cancel" variant="secondary" full onPress={() => setAdjOpen(false)} /><Button label="Raise" full disabled={!adj.kind || !Number(adj.amount) || !adj.reason.trim()} onPress={async () => {
+        footer={<><Button label="Cancel" variant="secondary" full onPress={() => setAdjOpen(false)} /><Button label="Raise" full disabled={!adj.kind || !adjAmount || !adj.reason.trim()} onPress={async () => {
           setAdjErr(null);
-          try { await raiseAdjustment(row.payslip_id!, String((adj.kind === "fine" ? -1 : 1) * Math.abs(Number(adj.amount))), adj.reason, adj.settlement); setAdjOpen(false); await done(); toast("Adjustment raised"); }
+          try { await raiseAdjustment(row.payslip_id!, String((adj.kind === "fine" ? -1 : 1) * adjAmount), adj.reason, adj.settlement); setAdjOpen(false); await done(); toast("Adjustment raised"); }
           catch (e) { setAdjErr(err(e)); }
         }} /></>}>
         <HStack gap={16}>
           <Checkbox value={adj.kind === "increment"} onChange={(v) => setAdj({ ...adj, kind: v ? "increment" : null })} label="Increment" />
           <Checkbox value={adj.kind === "fine"} onChange={(v) => setAdj({ ...adj, kind: v ? "fine" : null })} label="Fine" />
         </HStack>
-        <Input label={`${adj.kind === "fine" ? "Fine" : adj.kind === "increment" ? "Increment" : ""} amount — only the amount ${adj.kind === "fine" ? "deducted" : "added"}, not the new total`.trim()} keyboardType="numeric" value={adj.amount} onChangeText={(s) => setAdj({ ...adj, amount: s.replace(/-/g, "") })} />
+        {adj.kind === "fine" && (
+          <HStack gap={16}>
+            <Checkbox value={adj.fineBy === "days"} onChange={() => setAdj({ ...adj, fineBy: "days" })} label="By days" />
+            <Checkbox value={adj.fineBy === "amount"} onChange={() => setAdj({ ...adj, fineBy: "amount" })} label="Custom amount" />
+          </HStack>
+        )}
+        {adj.kind === "fine" && adj.fineBy === "days" ? (
+          <>
+            <Input label="Number of days" keyboardType="decimal-pad" value={adj.days} onChangeText={(s) => setAdj({ ...adj, days: s.replace(/-/g, "") })} />
+            {row.per_day_salary
+              ? <Ledger label={`${Number(adj.days || 0)} day(s) × ${pkr(Number(row.per_day_salary))}`} value={`Fine ${pkr(adjAmount)}`} strong />
+              : <T v="small" muted>No per-day salary for this month. Use a custom amount instead.</T>}
+          </>
+        ) : (
+          <Input label={`${adj.kind === "fine" ? "Fine" : adj.kind === "increment" ? "Increment" : ""} amount — only the amount ${adj.kind === "fine" ? "deducted" : "added"}, not the new total`.trim()} keyboardType="numeric" value={adj.amount} onChangeText={(s) => setAdj({ ...adj, amount: s.replace(/-/g, "") })} />
+        )}
         <Input label="Reason" required multiline value={adj.reason} onChangeText={(s) => setAdj({ ...adj, reason: s })} />
         <Select label="Settlement" value={adj.settlement} onChange={(s) => setAdj({ ...adj, settlement: s as "pay_now" | "carry_forward" })}
           options={[{ value: "carry_forward", label: "Next payslip" }, { value: "pay_now", label: "Pay now (settled from Adjustments)" }]} />
