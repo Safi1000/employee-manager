@@ -82,7 +82,7 @@ export default function ThemedSelect({
       const el = btnRef.current;
       if (!el) return;
       const r = el.getBoundingClientRect();
-      const estHeight = Math.min(opts.length * 36 + 8, 264);
+      const estHeight = Math.min(opts.length * 42 + 12, 288);
       const spaceBelow = window.innerHeight - r.bottom;
       const up = spaceBelow < estHeight + 8 && r.top > spaceBelow;
       setPos({
@@ -134,6 +134,13 @@ export default function ThemedSelect({
   // off-view with opacity 0 instead. The `relative` wrapper anchors the bubble
   // to the control; width is forwarded so `w-full` selects still stretch.
   const stretch = className.split(/\s+/).includes("w-full");
+  // Most call sites pass no sizing at all (241 of 285 when this was added),
+  // which left the trigger with no padding — text jammed against the border.
+  // Give it the same height and padding as a text input unless the caller sets
+  // its own; a caller that does is left exactly as it was.
+  const hasPad = /(^|\s)p[xylrtb]?-/.test(className);
+  const hasHeight = /(^|\s)(min-)?h-/.test(className);
+  const sizing = `${hasPad ? "" : "px-3 py-2"} ${hasHeight ? "" : "min-h-10"}`;
 
   return (
     <span className={`relative ${stretch ? "block w-full" : "inline-block"}`}>
@@ -146,7 +153,7 @@ export default function ThemedSelect({
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => !disabled && setOpen((o) => !o)}
-        className={`inline-flex items-center justify-between gap-2 bg-input-background border border-border rounded-md text-sm text-foreground transition-colors hover:border-brand-500/50 focus:outline-none focus:ring-2 focus:ring-brand-500/50 disabled:opacity-50 disabled:cursor-not-allowed ${
+        className={`inline-flex items-center justify-between gap-3 ${sizing} bg-input-background border border-border rounded-lg text-sm text-foreground transition-colors hover:border-brand-500/50 focus:outline-none focus:ring-2 focus:ring-brand-500/50 disabled:opacity-50 disabled:cursor-not-allowed ${
           open ? "border-brand-500/60 ring-2 ring-brand-500/40" : ""
         } ${className}`}
       >
@@ -198,10 +205,10 @@ export default function ThemedSelect({
               bottom: pos.up ? window.innerHeight - pos.top : undefined,
               left: pos.left,
               minWidth: pos.width,
-              maxWidth: Math.max(pos.width, 280),
+              maxWidth: Math.max(pos.width, 360),
               zIndex: 9999,
             }}
-            className="max-h-64 overflow-y-auto rounded-lg border border-border bg-popover py-1 shadow-xl shadow-black/20 animate-[feed-slide-in_0.14s_ease-out]"
+            className="max-h-72 overflow-y-auto rounded-xl border border-border bg-popover p-1.5 shadow-xl shadow-black/20 animate-[feed-slide-in_0.14s_ease-out]"
           >
             {opts.map((o, i) => {
               const active = o.value === currentValue;
@@ -213,7 +220,7 @@ export default function ThemedSelect({
                   aria-selected={active}
                   disabled={o.disabled}
                   onClick={() => pick(o.value)}
-                  className={`flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm transition-colors disabled:opacity-40 ${
+                  className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors disabled:opacity-40 ${
                     active
                       ? "bg-brand-500/15 text-brand-700 dark:text-brand-500 font-medium"
                       : "text-foreground hover:bg-accent"

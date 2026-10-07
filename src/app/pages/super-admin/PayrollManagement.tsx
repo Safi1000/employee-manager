@@ -4376,7 +4376,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
             </div>
             <div>
               <label className="block text-xs text-slate-500 mb-1">Settles</label>
-              <ThemedSelect value={adjForm.settlement} onChange={(e) => setAdjForm({ ...adjForm, settlement: e.target.value as any })}>
+              <ThemedSelect className="w-full" value={adjForm.settlement} onChange={(e) => setAdjForm({ ...adjForm, settlement: e.target.value as any })}>
                 <option value="carry_forward">On the next payslip, as its own line</option>
                 <option value="pay_now">Now — cash or bank, from the Adjustments tab</option>
               </ThemedSelect>
