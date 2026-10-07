@@ -1,3 +1,4 @@
+import ReversalDialog from "../../components/ReversalDialog";
 import ThemedSelect from "../../components/ThemedSelect";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -225,6 +226,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       ? Math.round(Math.abs(Number(adjForm.days || 0)) * Number(perDay ?? 0))
       : Math.abs(Number(adjForm.amount || 0));
   const [adjErr, setAdjErr] = useState<string | null>(null);
+  const [reverseFor, setReverseFor] = useState<string | null>(null);
   const raiseAdjustment = async (payslipId: string, perDay: number | null) => {
     setAdjErr(null);
     const { error } = await supabase.rpc("raise_payroll_adjustment", {
@@ -249,6 +251,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   const [cashBalance, setCashBalance] = useState(0);
   const { profile } = useAuth();
   const canAdjust = hasPermission(profile, "payroll.adjust");
+  const canReverse = hasPermission(profile, "reversals.execute");
   // Custodian held cash and bank balances are "View bank accounts & cash custody"
   // (banks.view) data. Payroll is reachable on payroll.* alone, so without
   // banks.view those FIGURES stay hidden — the user still picks who pays / which
@@ -3653,6 +3656,12 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                           Raise adjustment
                         </Button>
                       )}
+                      {/* 0503: undo a wrong disbursement (wrong bank, paid twice). */}
+                      {canReverse && selectedRow.payslip_id && (selectedRow.disbursed || (selectedRow.amount_paid ?? 0) > 0) && (
+                        <Button variant="secondary" size="sm" onClick={() => setReverseFor(selectedRow.payslip_id!)}>
+                          Reverse disbursement
+                        </Button>
+                      )}
                     </div>
                   )}
 
@@ -4313,6 +4322,13 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
           );
         })()}
       </Modal>
+      {reverseFor && (
+        <ReversalDialog
+          kind="payslip_disbursement"
+          id={reverseFor}
+          onClose={() => { setReverseFor(null); void loadPeriodData(selectedPeriod); }}
+        />
+      )}
       {adjOpen && selectedRow?.payslip_id && (
         <Modal isOpen onClose={() => setAdjOpen(false)} title={`Raise adjustment — ${selectedRow.employee.full_name}`} size="sm">
           <div className="space-y-3">

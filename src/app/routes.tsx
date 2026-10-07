@@ -48,6 +48,7 @@ const Incidents = lazyPage(() => import("./pages/super-admin/Incidents"));
 const ChartOfAccounts = lazyPage(() => import("./pages/super-admin/ChartOfAccounts"));
 const PeriodClose = lazyPage(() => import("./pages/super-admin/PeriodClose"));
 const AuditLog = lazyPage(() => import("./pages/super-admin/AuditLog"));
+const Reversals = lazyPage(() => import("./pages/super-admin/Reversals"));
 const Partners = lazyPage(() => import("./pages/super-admin/Partners"));
 const PartnershipRun = lazyPage(() => import("./pages/super-admin/PartnershipRun"));
 const ProjectFinancing = lazyPage(() => import("./pages/super-admin/ProjectFinancing"));
@@ -149,6 +150,8 @@ export const router = createBrowserRouter([
       { path: "general-ledger", element: <Navigate to="/super-admin/accounting-core?tab=journal" replace /> },
       { path: "period-close", element: guard(["period_close.manage"], <PeriodClose />) },
       { path: "audit-log", element: <RequireAuth roles={["super_super_admin", "super_admin"]}><AuditLog /></RequireAuth> },
+      // 0502-0506: undo a recorded action.
+      { path: "reversals", element: guard(["reversals.execute"], <Reversals />) },
       { path: "employees", element: guard(["employees.view", "employees.edit"], <EmployeeManagement />) },
       // Assignments & Pay: employees grouped under their client, so posting and
       // pay can be edited for one guard or the whole client at once.

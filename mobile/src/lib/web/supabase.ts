@@ -508,6 +508,8 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
       { key: "settings.edit", label: "Edit settings" },
       { key: "users.manage", label: "Create / edit other users" },
       { key: "audit_log.view", label: "View audit log" },
+      // 0502: the Reversals page. Mirrored in public.permission_keys.
+      { key: "reversals.execute", label: "Reverse recorded actions (Reversals page)" },
     ],
   },
 ];

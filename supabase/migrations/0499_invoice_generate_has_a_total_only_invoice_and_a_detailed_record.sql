@@ -128,3 +128,15 @@ create policy perm_write_del on public.invoice_records as restrictive for delete
   using (public.has_perm('invoices.edit'));
 
 grant select, insert, delete on public.invoice_records to authenticated;
+
+-- Tenant guard assertion (scripts/migration-template.sql).
+do $$
+declare v_n int; v_who text;
+begin
+  select count(*), string_agg(g.function_name || '.' || g.parameter_name, ', ')
+    into v_n, v_who
+    from public.tenant_guard_gaps() g;
+  if v_n <> 0 then
+    raise exception '0499 REFUSED: tenant_guard_gaps() reports % gap(s): %', v_n, v_who;
+  end if;
+end $$;

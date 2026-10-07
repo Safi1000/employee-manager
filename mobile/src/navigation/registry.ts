@@ -62,6 +62,7 @@ export const NAV: NavItem[] = [
 
   { href: "/access-governance", title: "Access & Governance", group: "Admin", icon: UserCog, roles: ["super_admin"], blurb: "Users & approvals" },
   { href: "/audit-log", title: "Audit Log", group: "Admin", icon: History, roles: ["super_admin"], blurb: "Who changed what" },
+  { href: "/reversals", title: "Reversals", group: "Admin", icon: History, perms: ["reversals.execute"], blurb: "Undo a recorded action" },
   { href: "/settings", title: "Settings", group: "Admin", icon: Settings, perms: ["settings.view", "settings.edit"], blurb: "Company, regions, appearance" },
   { href: "/billing", title: "Plan & Billing", group: "Admin", icon: FileText, perms: ["settings.view", "settings.edit"], blurb: "Plan & AI credit" },
 

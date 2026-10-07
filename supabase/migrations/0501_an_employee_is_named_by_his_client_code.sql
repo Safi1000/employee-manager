@@ -60,3 +60,15 @@ as $function$
 $function$;
 
 grant execute on function public.describe_advance(uuid, uuid) to authenticated;
+
+-- Tenant guard assertion (scripts/migration-template.sql).
+do $$
+declare v_n int; v_who text;
+begin
+  select count(*), string_agg(g.function_name || '.' || g.parameter_name, ', ')
+    into v_n, v_who
+    from public.tenant_guard_gaps() g;
+  if v_n <> 0 then
+    raise exception '0501 REFUSED: tenant_guard_gaps() reports % gap(s): %', v_n, v_who;
+  end if;
+end $$;

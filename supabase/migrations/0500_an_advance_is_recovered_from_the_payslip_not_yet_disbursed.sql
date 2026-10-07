@@ -83,3 +83,15 @@ comment on function public.employee_advance_outstanding(date) is
 
 revoke execute on function public.employee_advance_outstanding(date) from public, anon;
 grant execute on function public.employee_advance_outstanding(date) to authenticated;
+
+-- Tenant guard assertion (scripts/migration-template.sql).
+do $$
+declare v_n int; v_who text;
+begin
+  select count(*), string_agg(g.function_name || '.' || g.parameter_name, ', ')
+    into v_n, v_who
+    from public.tenant_guard_gaps() g;
+  if v_n <> 0 then
+    raise exception '0500 REFUSED: tenant_guard_gaps() reports % gap(s): %', v_n, v_who;
+  end if;
+end $$;

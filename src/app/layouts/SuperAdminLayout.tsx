@@ -36,6 +36,7 @@ import {
   BookOpen,
   Lock,
   History,
+  RotateCcw,
   Users2,
   UserRound,
   Play,
@@ -110,6 +111,7 @@ export default function SuperAdminLayout() {
   const CHART_OF_ACCOUNTS: LinkDef = { to: "/super-admin/chart-of-accounts", label: "Chart of Accounts", icon: BookOpen, perms: ["coa.view", "reports.view"] };
   const PERIOD_CLOSE: LinkDef = { to: "/super-admin/period-close", label: "Period Close", icon: Lock, perms: ["period_close.manage", "reports.view"] };
   const AUDIT_LOG: LinkDef = { to: "/super-admin/audit-log", label: "Audit Log", icon: History, roles: ["super_super_admin", "super_admin"] };
+  const REVERSALS: LinkDef = { to: "/super-admin/reversals", label: "Reversals", icon: RotateCcw, perms: ["reversals.execute"] };
   const PARTNERS: LinkDef = { to: "/super-admin/partners", label: "Partner Accounts", icon: Users2, perms: ["banks.view", "receivables.view", "payables.view", "accounting.edit"] };
   // The partnership RUN — drafting, reviewing and posting a month — as opposed
   // to the partnership REPORT, which reads one back.
@@ -306,6 +308,7 @@ export default function SuperAdminLayout() {
     // TASKS moved to Overview, beneath Dashboard.
     ACCESS_GOVERNANCE,
     AUDIT_LOG,
+    REVERSALS,
     SETTINGS,
     BILLING,
   ]);

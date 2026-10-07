@@ -1,3 +1,4 @@
+import ReversalDialog from "../../components/ReversalDialog";
 import ThemedSelect from "../../components/ThemedSelect";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -6,6 +7,7 @@ import {
   X,
   Loader2,
   Trash2,
+  RotateCcw,
   Pencil,
   FileText,
   Download,
@@ -143,6 +145,8 @@ export default function Invoices() {
   // Create / edit invoices & payments — gated on invoices.edit (super_admin + SSA
   // implicit). Backend RLS + record_invoice_payment guard enforce it; hide controls.
   const canEditInvoices = hasPermission(profile, "invoices.edit");
+  const canReverse = hasPermission(profile, "reversals.execute");
+  const [reversePayment, setReversePayment] = useState<string | null>(null);
   // Every treasury write here used to omit company_id, which produced
   //   'null value in column "company_id" of relation "treasury"'
   // when setting cash in hand.
@@ -1439,6 +1443,18 @@ export default function Invoices() {
                             >
                               <Pencil className="w-3.5 h-3.5" strokeWidth={1.5} />
                             </button>
+                            {/* 0503: a reversal keeps the receipt and the reason on record;
+                                Delete stays for a receipt typed in by mistake. */}
+                            {canReverse && (
+                              <button
+                                type="button"
+                                onClick={() => setReversePayment(p.id)}
+                                className="p-1 rounded text-warning-700 hover:bg-warning-50"
+                                title="Reverse payment (kept on record with a reason)"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" strokeWidth={1.5} />
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={() => handleDeletePayment(p)}
@@ -1848,6 +1864,17 @@ export default function Invoices() {
           </div>
         </form>
       </Modal>
+      {reversePayment && (
+        <ReversalDialog
+          kind="invoice_payment"
+          id={reversePayment}
+          onClose={async () => {
+            setReversePayment(null);
+            await loadAll();
+            if (editInvoice) await loadPaymentsFor(editInvoice.id);
+          }}
+        />
+      )}
     </>
   );
 }

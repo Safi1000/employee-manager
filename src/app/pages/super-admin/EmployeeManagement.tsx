@@ -1,3 +1,4 @@
+import ReversalDialog from "../../components/ReversalDialog";
 import ThemedSelect from "../../components/ThemedSelect";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
@@ -835,6 +836,7 @@ export default function EmployeeManagement() {
   // Add / edit / delete employees is gated on employees.edit (super_admin + SSA
   // implicit). Backend RLS (0310) enforces it; this hides the controls.
   const canEditEmployees = hasPermission(profile, "employees.edit");
+  const canReverse = hasPermission(profile, "reversals.execute");
   const { regionId, loading: regionLoading } = useRegion();
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -842,6 +844,21 @@ export default function EmployeeManagement() {
   const [contractLines, setContractLines] = useState<ContractLine[]>([]);
   // Phase 7 §9: rehire. (Separation lives on Assignments & Pay.)
   const [rehireTarget, setRehireTarget] = useState<EmployeeRow | null>(null);
+  // 0503: undo a wrong firing. A full undo needs the snapshot 0502 takes at
+  // the exit; an exit recorded before that gets the partial (legacy) undo.
+  const [undoExit, setUndoExit] = useState<{ kind: string; id: string } | null>(null);
+  const openUndoExit = async (employeeId: string) => {
+    const { data } = await supabase
+      .from("employee_state_snapshots")
+      .select("id, kind, taken_at")
+      .eq("employee_id", employeeId)
+      .order("taken_at", { ascending: false })
+      .limit(1);
+    const latest = (data ?? [])[0] as { id: string; kind: string } | undefined;
+    setUndoExit(latest && latest.kind === "separation"
+      ? { kind: "separation", id: latest.id }
+      : { kind: "separation_legacy", id: employeeId });
+  };
   // Which employee's "Incomplete" badge was clicked — the modal lists exactly
   // which required fields that record is short.
   const [incompleteTarget, setIncompleteTarget] = useState<EmployeeRow | null>(null);
@@ -2248,6 +2265,11 @@ export default function EmployeeManagement() {
                       Rehire
                     </Button>
                   )}
+                  {isFired(employee) && canReverse && (
+                    <Button variant="ghost" size="sm" onClick={() => openUndoExit(employee.id)}>
+                      Undo exit
+                    </Button>
+                  )}
                   {/* Hiring opens the FULL employee form; the record is only
                       promoted once every required field is filled. */}
                   {isCandidate(employee) && (
@@ -2392,6 +2414,11 @@ export default function EmployeeManagement() {
                                 onClick={() => setRehireTarget(employee)}
                               >
                                 Rehire
+                              </Button>
+                            )}
+                            {isFired(employee) && canReverse && (
+                              <Button variant="ghost" size="sm" onClick={() => openUndoExit(employee.id)}>
+                                Undo exit
                               </Button>
                             )}
                             {isCandidate(employee) && (
@@ -3276,6 +3303,13 @@ export default function EmployeeManagement() {
         </Modal>
       )}
 
+      {undoExit && (
+        <ReversalDialog
+          kind={undoExit.kind}
+          id={undoExit.id}
+          onClose={() => { setUndoExit(null); void loadData(); }}
+        />
+      )}
       {rehireTarget && (
         <RehireModal
           guard={rehireTarget}
