@@ -18,6 +18,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { adminClient, json, preflight, stripeClient } from "../_shared/billing.ts";
 import { GUARD_BUFFER } from "../_shared/pricing.ts";
+import { breachedPasswordError } from "../_shared/password.ts";
 
 Deno.serve(async (req) => {
   const pre = preflight(req);
@@ -34,6 +35,8 @@ Deno.serve(async (req) => {
 
   if (!token) return json({ error: "token_required" }, 400);
   if (password.length < 8) return json({ error: "password_too_short" }, 400);
+  const breached = await breachedPasswordError(password, "signup-complete");
+  if (breached) return json({ error: breached }, 400);
 
   const admin = adminClient();
 

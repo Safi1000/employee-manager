@@ -173,11 +173,16 @@ function Attachments() {
       {busy && <ActivityIndicator />}
       <ListCard>
         {state.items.map((a, i) => {
-          const href = a.kind === "link" ? a.url : a.storage_path ? attachmentUrl(a.storage_path) : null;
+          const path = a.storage_path as string | null;
+          const href = a.kind === "link" ? a.url : null;
           return (
             <Row key={a.id} last={i === state.items.length - 1} left={a.kind === "link" ? <Link2 size={16} color={t.mutedFg} /> : <Paperclip size={16} color={t.mutedFg} />}
               title={a.title ?? a.file_name ?? a.url} meta={`${a.kind}${a.size_bytes ? ` · ${Math.round(a.size_bytes / 1024)} KB` : ""} · ${fmtShort(String(a.created_at).slice(0, 10))}`}
-              onPress={href ? () => Linking.openURL(href).catch(() => toast("Couldn't open it", "danger")) : undefined}
+              onPress={href || path ? async () => {
+                const url = href ?? (path ? await attachmentUrl(path) : null);
+                if (url) Linking.openURL(url).catch(() => toast("Couldn't open it", "danger"));
+                else toast("Couldn't open it", "danger");
+              } : undefined}
               right={isAdmin || a.created_by === profile?.id ? <IconBtn icon={Trash2} size={32} tone="danger" label="Remove" onPress={async () => {
                 if (!(await confirm({ title: "Remove this item?", confirmLabel: "Remove", tone: "danger" }))) return;
                 try { await removeAttachment(a); await load(); } catch (e) { toast(err(e), "danger"); }

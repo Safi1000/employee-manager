@@ -40,6 +40,7 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { isServiceRole } from "../_shared/caller.ts";
 
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -434,6 +435,10 @@ Deno.serve(async (req) => {
     const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     let onlyUser: string | undefined;
+    // A full run mails every company. Only the hourly cron (service role, via
+    // invoke_send_task_alerts) may start one; before the 2026-10-08 audit any
+    // holder of the public anon key could.
+    if (!isTest && !isServiceRole(req)) return json({ error: "unauthorized" }, 401);
     if (isTest) {
       // A test sends only to the caller. Without this, anyone who could reach
       // the function with ?test=1 could mail the entire company.

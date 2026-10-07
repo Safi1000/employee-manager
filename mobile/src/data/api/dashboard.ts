@@ -99,7 +99,12 @@ export async function loadDashboard(regionId: string | null) {
 export type DashboardData = Awaited<ReturnType<typeof loadDashboard>>;
 
 // ------------------------------------------------------------------ Attachments
-export const attachmentUrl = (path: string) => (/^(https?:|data:)/.test(path) ? path : sb().storage.from(DASHBOARD_ATTACHMENTS_BUCKET).getPublicUrl(path).data.publicUrl);
+// The bucket is private (0508): stored files open through a short-lived signed URL.
+export async function attachmentUrl(path: string): Promise<string | null> {
+  if (/^(https?:|data:)/.test(path)) return path;
+  const { data } = await sb().storage.from(DASHBOARD_ATTACHMENTS_BUCKET).createSignedUrl(path, 3600);
+  return data?.signedUrl ?? null;
+}
 export async function loadAttachments() {
   const { data, error } = await sb().from("dashboard_attachments").select("*").order("created_at", { ascending: false });
   if (error) {

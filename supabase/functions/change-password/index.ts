@@ -1,5 +1,6 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { breachedPasswordError } from '../_shared/password.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -53,6 +54,8 @@ Deno.serve(async (req) => {
   if (!newPassword || newPassword.length < 8) {
     return json({ error: 'password_must_be_at_least_8_characters' }, 400);
   }
+  const breached = await breachedPasswordError(newPassword, 'change-password');
+  if (breached) return json({ error: breached }, 400);
 
   // === CASE 1: Self-service password change ===
   if (!targetUserId || targetUserId === callerId) {

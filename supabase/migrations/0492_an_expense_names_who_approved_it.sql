@@ -14,7 +14,7 @@
 --
 -- The trigger is SECURITY INVOKER on purpose: the only profile it reads is the
 -- caller's own (self_read), and a service-role caller (fixed-expense instance
--- path, cron) can read all of them.
+-- path, cron) can read all of them
 
 alter table public.expenses
   add column if not exists approved_by_name text;

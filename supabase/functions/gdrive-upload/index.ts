@@ -26,6 +26,7 @@
 // function reuses the same three secrets.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { actsFor, resolveCaller } from "../_shared/caller.ts";
 
 const CLIENT_ID = Deno.env.get("GOOGLE_OAUTH_CLIENT_ID");
 const CLIENT_SECRET = Deno.env.get("GOOGLE_OAUTH_CLIENT_SECRET");
@@ -273,8 +274,10 @@ async function uploadFile(
   parentFolderId: string,
   file: File,
   fileName: string,
+  companyId: string,
 ): Promise<{ id: string; webViewLink: string }> {
-  const metadata = { name: fileName, parents: [parentFolderId] };
+  // The company tag is what gdrive-delete checks before it deletes anything.
+  const metadata = { name: fileName, parents: [parentFolderId], appProperties: { company_id: companyId } };
   const boundary = `-------employee-manager-${crypto.randomUUID()}`;
   const enc = new TextEncoder();
   const head = enc.encode(
@@ -336,8 +339,10 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
-  const auth = req.headers.get("Authorization");
-  if (!auth?.startsWith("Bearer ")) return json({ error: "unauthorized" }, 401);
+  // A signed-in user with a profile — the anon key is a valid JWT too, so the
+  // gateway's verify_jwt alone let anyone upload (2026-10-08 audit).
+  const caller = await resolveCaller(req);
+  if (!caller) return json({ error: "unauthorized" }, 401);
 
   const missing: string[] = [];
   if (!CLIENT_ID) missing.push("GOOGLE_OAUTH_CLIENT_ID");
@@ -376,6 +381,7 @@ Deno.serve(async (req) => {
   }
   if (!companyId) return json({ error: "company_id_required" }, 400);
   if (!companyName) return json({ error: "company_name_required" }, 400);
+  if (!actsFor(caller, companyId)) return json({ error: "wrong_company" }, 403);
 
   // employees/contracts require an entity to bucket the file under.
   const needsEntity = category === "employees" || category === "contracts";
@@ -425,7 +431,7 @@ Deno.serve(async (req) => {
     }
 
     const finalName = docType ? `${docType}_${file.name}` : file.name;
-    const uploaded = await uploadFile(token, parentFolderId, file, finalName);
+    const uploaded = await uploadFile(token, parentFolderId, file, finalName, companyId);
     await makeAnyoneReader(token, uploaded.id);
 
     return json({

@@ -280,6 +280,7 @@ const FN_ERROR_MESSAGES: Record<string, string> = {
   branch_company_mismatch: "The selected branch belongs to another company.",
   email_and_password_required: "Email and password are required.",
   password_too_short: "Password must be at least 8 characters.",
+  password_breached: "That password has appeared in a public data breach. Choose a different one.",
   invalid_role: "Invalid role.",
 };
 

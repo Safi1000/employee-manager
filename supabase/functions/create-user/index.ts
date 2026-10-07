@@ -9,6 +9,7 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { breachedPasswordError } from "../_shared/password.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -68,6 +69,8 @@ Deno.serve(async (req) => {
 
   if (!email || !password) return json({ error: "email_and_password_required" }, 400);
   if (password.length < 8) return json({ error: "password_too_short" }, 400);
+  const breached = await breachedPasswordError(password, "create-user");
+  if (breached) return json({ error: breached }, 400);
   if (!["super_admin", "hr", "accounting"].includes(role)) return json({ error: "invalid_role" }, 400);
   if (!company_id) return json({ error: "company_id_required" }, 400);
 

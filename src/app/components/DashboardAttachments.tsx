@@ -40,10 +40,9 @@ const hostOf = (u?: string | null): string => {
   }
 };
 
-const publicUrl = (path: string): string =>
-  /^(https?:|data:)/.test(path)
-    ? path
-    : supabase.storage.from(DASHBOARD_ATTACHMENTS_BUCKET).getPublicUrl(path).data.publicUrl;
+// The bucket is private (0508): a stored file is opened through a short-lived
+// signed URL, fetched for the whole list at load, never a public one.
+const isExternal = (path: string) => /^(https?:|data:)/.test(path);
 
 export default function DashboardAttachments() {
   const { company, profile } = useAuth();
@@ -60,6 +59,8 @@ export default function DashboardAttachments() {
   const [linkTitle, setLinkTitle] = useState("");
   const [savingLink, setSavingLink] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [signed, setSigned] = useState<Record<string, string>>({});
+  const fileUrl = (path: string): string | null => (isExternal(path) ? path : signed[path] ?? null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = async () => {
@@ -73,7 +74,15 @@ export default function DashboardAttachments() {
       if (/does not exist|relation|schema cache|not find the table/i.test(e.message)) setNotReady(true);
       else setError(e.message);
     } else {
-      setItems((data ?? []) as Attachment[]);
+      const rows = (data ?? []) as Attachment[];
+      const paths = rows.map((r) => r.storage_path).filter((p): p is string => !!p && !isExternal(p));
+      const map: Record<string, string> = {};
+      if (paths.length) {
+        const { data: urls } = await supabase.storage.from(DASHBOARD_ATTACHMENTS_BUCKET).createSignedUrls(paths, 3600);
+        for (const u of urls ?? []) if (u.path && u.signedUrl) map[u.path] = u.signedUrl;
+      }
+      setSigned(map);
+      setItems(rows);
       setNotReady(false);
     }
     setLoading(false);
@@ -156,7 +165,7 @@ export default function DashboardAttachments() {
   };
 
   const open = (a: Attachment) => {
-    const href = a.kind === "link" ? a.url : a.storage_path ? publicUrl(a.storage_path) : null;
+    const href = a.kind === "link" ? a.url : a.storage_path ? fileUrl(a.storage_path) : null;
     if (href) window.open(href, "_blank", "noopener");
   };
 
@@ -277,8 +286,8 @@ export default function DashboardAttachments() {
                 >
                   <button type="button" onClick={() => open(a)} className="block w-full text-left">
                     <div className="aspect-[4/3] bg-secondary flex items-center justify-center overflow-hidden">
-                      {a.kind === "image" && a.storage_path ? (
-                        <img src={publicUrl(a.storage_path)} alt={label} className="w-full h-full object-cover" loading="lazy" />
+                      {a.kind === "image" && a.storage_path && fileUrl(a.storage_path) ? (
+                        <img src={fileUrl(a.storage_path) ?? undefined} alt={label} className="w-full h-full object-cover" loading="lazy" />
                       ) : a.kind === "link" ? (
                         <Link2 className="w-7 h-7 text-brand-500" strokeWidth={1.5} />
                       ) : a.kind === "image" ? (
