@@ -111,7 +111,8 @@ function Generate() {
   const { toast } = useOverlay();
   const [company, setCompany] = useState<any | null>(null);
   useEffect(() => { loadBranding(db.company.id).then((b) => setCompany(b.company)).catch(() => setCompany({})); }, [db.company.id]);
-  const g = useInvoiceGenerator(company);
+  const { regionId } = useRegion();
+  const g = useInvoiceGenerator(company, regionId);
   const [open, setOpen] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const clearedCount = Object.values(g.drafts).filter((d) => d.status === "Cleared").length;

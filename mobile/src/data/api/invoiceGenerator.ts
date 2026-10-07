@@ -60,7 +60,7 @@ const serializeDraft = (d: Draft): DraftBlob => ({
 });
 const applyBlob = (d: Draft, blob: DraftBlob | undefined): Draft => (blob ? { ...d, ...blob } : d);
 
-export function useInvoiceGenerator(company: any | null) {
+export function useInvoiceGenerator(company: any | null, regionId: string | null = null) {
   const [clients, setClients] = useState<Client[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [lines, setLines] = useState<ContractLine[]>([]);
@@ -94,7 +94,10 @@ export function useInvoiceGenerator(company: any | null) {
   // eslint-disable-next-line react-hooks/set-state-in-effect -- load-on-change, as the web screen does
   useEffect(() => { void loadData(); }, [loadData]);
 
-  const groupClients = useMemo(() => clients.filter((c) => (c.invoice_group ?? "FIXED") === group), [clients, group]);
+  // Region selector: only the selected region's clients are drafted/listed; invoices
+  // still load company-wide so numbering dedupes against every taken number.
+  const regionClients = useMemo(() => (regionId ? clients.filter((c) => c.branch_id === regionId) : clients), [clients, regionId]);
+  const groupClients = useMemo(() => regionClients.filter((c) => (c.invoice_group ?? "FIXED") === group), [regionClients, group]);
 
   const [billingPeriods, setBillingPeriods] = useState<Map<string, { start: string; end: string }>>(new Map());
   useEffect(() => {
@@ -212,7 +215,7 @@ export function useInvoiceGenerator(company: any | null) {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- load-on-change, as the web screen does
     setDrafts(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, period, group, clients, contracts, lines, addendums, invoices, clearedKeys, buildDraft]);
+  }, [loading, period, group, groupClients, contracts, lines, addendums, invoices, clearedKeys, buildDraft]);
 
   const rows = useMemo<GenRow[]>(() => {
     const out: GenRow[] = [];
@@ -237,10 +240,12 @@ export function useInvoiceGenerator(company: any | null) {
       if (!inv.contract_id) continue;
       const con = byId.get(inv.contract_id);
       if (!con || periodInContractWindow(con, invoiceMonth(inv), addendums.filter((a) => a.contract_id === con.id))) continue;
-      out.push({ inv, con, clientName: clients.find((c) => c.id === con.client_id)?.name ?? "—" });
+      const client = regionClients.find((c) => c.id === con.client_id);
+      if (!client) continue; // outside the selected region
+      out.push({ inv, con, clientName: client.name });
     }
     return out.sort((a, b) => (invoiceMonth(a.inv) < invoiceMonth(b.inv) ? -1 : 1));
-  }, [invoices, contracts, clients, addendums]);
+  }, [invoices, contracts, regionClients, addendums]);
 
   const variableAmountTotal = (d: Draft) => {
     const c = d.variableColumns.length - 1;

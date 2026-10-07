@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, AlertCircle, X, CheckCircle2, FileDown, Plus, Trash2, FileText } from "lucide-react";
 import Button from "./Button";
 import { useAuth, hasPermission } from "../lib/auth";
+import { useRegion } from "../lib/region";
 import { generateInvoiceDocument } from "../lib/invoiceTemplates";
 import {
   supabase,
@@ -250,9 +251,17 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
     loadData();
   }, []);
 
+  // Region selector: only the selected region's clients are drafted/listed.
+  // Everything else (contracts, invoices) still loads company-wide so invoice
+  // numbering dedupes against every number already taken.
+  const { regionId } = useRegion();
+  const regionClients = useMemo(
+    () => (regionId ? clients.filter((c) => c.branch_id === regionId) : clients),
+    [clients, regionId],
+  );
   const groupClients = useMemo(
-    () => clients.filter((c) => (c.invoice_group ?? "FIXED") === group),
-    [clients, group],
+    () => regionClients.filter((c) => (c.invoice_group ?? "FIXED") === group),
+    [regionClients, group],
   );
 
   // 0436: the period an invoice covers comes from the contract's BILLING CYCLE,
@@ -480,7 +489,7 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
     }
     setDrafts(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, period, group, clients, contracts, lines, addendums, invoices, clearedKeys]);
+  }, [loading, period, group, regionId, clients, contracts, lines, addendums, invoices, clearedKeys]);
 
   // The full filterable row set: existing invoices + draftable contracts, then
   // narrowed by the Status filter.
@@ -523,11 +532,12 @@ export default function InvoiceGenerate({ onPosted }: { onPosted: () => void }) 
       const con = contractById.get(inv.contract_id);
       if (!con) continue;
       if (periodInContractWindow(con, invoiceMonth(inv), addendums.filter((a) => a.contract_id === con.id))) continue;
-      const clientName = clients.find((c) => c.id === con.client_id)?.name ?? "—";
-      out.push({ inv, con, clientName });
+      const client = regionClients.find((c) => c.id === con.client_id);
+      if (!client) continue; // outside the selected region
+      out.push({ inv, con, clientName: client.name });
     }
     return out.sort((a, b) => (invoiceMonth(a.inv) < invoiceMonth(b.inv) ? -1 : 1));
-  }, [invoices, contractById, clients, addendums]);
+  }, [invoices, contractById, regionClients, addendums]);
 
   // Sum of the Amount column (the locked last column) across all grid rows.
   const variableAmountTotal = (d: Draft) => {
