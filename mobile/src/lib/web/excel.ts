@@ -945,7 +945,7 @@ function exportAttendanceImpl(opts: {
     "=",
     "not markable on this date — fired / terminated / resigned, before joining, or outside the contract dates",
   ]);
-  data.push(["pay days", "=", "total present + allowed leaves - excessive leaves"]);
+  data.push(["pay days", "=", "total present + double duties + allowed leaves - excessive leaves"]);
 
   // Roll-call of everyone whose employment ended, with the date — so the sheet
   // answers "why did this guard stop appearing?" without a second lookup.

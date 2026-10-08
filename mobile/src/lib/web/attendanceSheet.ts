@@ -401,7 +401,8 @@ export async function buildAttendanceRows(opts: {
       contract,
       emp.client_id ? clientById.get(emp.client_id) : null,
     );
-    const payDays = p + Math.min(l, allowed);
+    // Each double duty adds its extra shift once on top of the day present.
+    const payDays = p + dd + Math.min(l, allowed);
     return {
       serial: idx + 1,
       empId: emp.id,

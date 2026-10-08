@@ -705,7 +705,7 @@ export default function AttendanceSheetModal({
           {!loading && !err && rows.length > 0 && (
             <div className="mt-3 text-[11px] text-muted-foreground space-y-0.5">
               {shifts.map((c) => <span key={c} className="inline-block mr-3">{shiftAbbr(c)} = {c} shift</span>)}
-              <div>P / A / L = present / absent / leave · X = not markable (separated / before joining / off-contract) · pay days = presents + allowed leaves − excess</div>
+              <div>P / A / L = present / absent / leave · X = not markable (separated / before joining / off-contract) · pay days = presents + double duties + allowed leaves − excess</div>
               <div>
                 <span className="inline-block align-middle rounded-sm bg-brand-50 dark:bg-brand-900/20 px-1 mr-1">P<sup className="text-[8px] font-semibold text-brand-600 dark:text-brand-400">R</sup></span>
                 = reliever day (the guard covered as a reliever that day) — gaps in a reliever segment are expected and never block verification.

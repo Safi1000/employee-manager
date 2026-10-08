@@ -1107,7 +1107,8 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         emp.client_id ? clientById.get(emp.client_id) : null,
       );
       const countableLeaves = Math.min(l, allowed);
-      const payDays = p + countableLeaves;
+      // Each double duty adds its extra shift once on top of the day present.
+      const payDays = p + dd + countableLeaves;
       return {
         serial: idx + 1,
         name: emp.full_name,
