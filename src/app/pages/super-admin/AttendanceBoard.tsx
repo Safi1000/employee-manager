@@ -154,7 +154,44 @@ type ClientShift = {
    * are filtered on their guards' own branch instead.
    */
   branch_id: string | null;
+  /**
+   * "No site wise" view: the site rows this one combines. Marking is unchanged —
+   * attendance is written per guard — and Confirm writes one confirmation per
+   * part, so each site stays confirmed exactly as it would be site by site.
+   */
+  parts?: ClientShift[];
 };
+
+/**
+ * One client's site rows folded into a single roster for the "No site wise"
+ * view. Counts add up; the row reads confirmed only once every site is.
+ */
+function combineSites(rows: ClientShift[]): ClientShift {
+  const first = rows[0];
+  const roster: RosterGuard[] = [];
+  const seen = new Set<string>();
+  const marks = new Map<string, { status: Status; absent_reason: AbsentReason | null }>();
+  const reported = new Map<string, string | null>();
+  for (const r of rows) {
+    for (const g of r.roster) if (!seen.has(g.guard_id)) { roster.push(g); seen.add(g.guard_id); }
+    for (const [k, v] of r.marks) marks.set(k, v);
+    for (const [k, v] of r.reported) reported.set(k, v);
+  }
+  return {
+    ...first,
+    key: `${first.client_id}|all-sites`,
+    site_id: "",
+    site_name: "All sites",
+    group_key: `${first.client_id}|all-sites`,
+    contracted: rows.reduce((n, r) => n + r.contracted, 0),
+    contract_shifts: [...new Set(rows.flatMap((r) => r.contract_shifts))],
+    roster,
+    marks,
+    reported,
+    confirmation: rows.every((r) => r.confirmation) ? first.confirmation : null,
+    parts: rows,
+  };
+}
 
 type Vacancy = {
   id: string;
@@ -209,6 +246,9 @@ export default function AttendanceBoard() {
   // Controls added onto the board (alongside the Phase 6 model, not replacing it).
   const [clientFilter, setClientFilter] = usePageState<string>("AttendanceBoard.clientFilter", "all");
   const [search, setSearch] = usePageState("AttendanceBoard.search", "");
+  // Site wise: client → site → roster. No site wise: client → one roster of
+  // every site's guards together. Presentation only (asked 2026-10-08).
+  const [siteWise, setSiteWise] = usePageState<boolean>("AttendanceBoard.siteWise", true);
   // Bulk Mark by Employee (calendar) — same permission gate as the Relievers tab.
   const canBulk = hasPermission(profile, "attendance.bulk_mark");
   const canOpsVerify = hasPermission(profile, "attendance.ops_verify");
@@ -775,9 +815,16 @@ export default function AttendanceBoard() {
       byClient.set(r.client_id, c);
     }
     return [...byClient.values()]
-      .map((c) => ({ ...c, sites: [...c.sites.values()] }))
+      .map((c) => {
+        const sites = [...c.sites.values()];
+        if (siteWise || sites.length < 2) return { ...c, sites };
+        return {
+          ...c,
+          sites: [{ siteId: "__all__", siteName: "All sites", shifts: [combineSites(sites.flatMap((st) => st.shifts))] }],
+        };
+      })
       .sort((a, b) => a.clientName.localeCompare(b.clientName));
-  }, [visibleRows]);
+  }, [visibleRows, siteWise]);
 
   const summary = useMemo(() => {
     let confirmed = 0, onGround = 0, exceptions = 0, awaiting = 0;
@@ -873,6 +920,21 @@ export default function AttendanceBoard() {
                   placeholder={clientFilter === "all" ? "Search guards by name or ID…" : "Search within this client…"}
                   className="w-full pl-10 pr-3 py-2 border border-border bg-card rounded-md text-sm text-foreground"
                 />
+              </div>
+              <div className="inline-flex rounded-md border border-border overflow-hidden shrink-0" role="group" aria-label="Group by site">
+                {([[true, "Site wise"], [false, "No site wise"]] as const).map(([v, label]) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => setSiteWise(v)}
+                    aria-pressed={siteWise === v}
+                    className={`px-3 py-2 text-sm whitespace-nowrap transition-colors ${
+                      siteWise === v ? "bg-brand-600 text-white" : "bg-card text-foreground hover:bg-accent"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
               {canBulk && (
                 <Button size="sm" variant="secondary" onClick={() => setBulkOpen(true)}>
@@ -1305,6 +1367,20 @@ function ShiftDrillModal({
     // rostered scheduled_shift is always included so the default stays selectable
     // even where a site's shift_definitions are not fully seeded.
     let cancelled = false;
+    const partSites = (shift.parts ?? []).map((p) => p.site_id).filter(Boolean);
+    if (partSites.length > 0) {
+      supabase
+        .from("shift_definitions")
+        .select("shift_code, start_time")
+        .in("site_id", partSites)
+        .order("start_time", { ascending: true })
+        .then(({ data }) => {
+          if (cancelled) return;
+          const codes = [...new Set((data ?? []).map((r: any) => r.shift_code as string))];
+          setSiteShifts(codes.length ? codes : shift.contract_shifts ?? []);
+        });
+      return () => { cancelled = true; };
+    }
     if (!shift.site_id) {
       // No site to read shift_definitions from, so the contract's own
       // day/night/evening split states what this client runs — and it is the
@@ -1330,7 +1406,7 @@ function ShiftDrillModal({
         setSiteShifts(union);
       });
     return () => { cancelled = true; };
-  }, [shift.site_id, shift.shift_code]);
+  }, [shift.site_id, shift.shift_code, shift.parts]);
 
   const setMark = (id: string, status: Status | "present", reason: AbsentReason | null = null) => {
     setMarks((prev) => {
@@ -1438,17 +1514,17 @@ function ShiftDrillModal({
       // (0195). Without it two tenants confirming office staff on one date
       // collide, and the loser's ON CONFLICT lands on a row RLS hides from it:
       // "new row violates row-level security policy (USING expression)".
-      const groupKey = shift.group_key;
+      // A combined "No site wise" row confirms each of its sites.
       const { error: cErr } = await supabase.from("attendance_confirmations").upsert(
-        {
+        (shift.parts ?? [shift]).map((part) => ({
           company_id: company?.id ?? null,
-          group_key: groupKey,
-          category: shift.synthetic ? shift.client_id.replace(/^cat:/, "") : null,
-          client_id: shift.synthetic ? null : shift.client_id,
-          site_id: shift.synthetic ? null : shift.site_id,
-          shift_code: shift.shift_code,
+          group_key: part.group_key,
+          category: part.synthetic ? part.client_id.replace(/^cat:/, "") : null,
+          client_id: part.synthetic ? null : part.client_id,
+          site_id: part.synthetic ? null : part.site_id,
+          shift_code: part.shift_code,
           attendance_date: date, supervisor_name: supervisor.trim(), source,
-        },
+        })),
         // Must match the unique index, which is scoped by company_id (filled by
         // the fill_company_id BEFORE-INSERT trigger, so it isn't in the payload).
         { onConflict: "company_id,group_key,shift_code,attendance_date" },
