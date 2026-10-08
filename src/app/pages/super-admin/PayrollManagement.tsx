@@ -227,8 +227,26 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       : Math.abs(Number(adjForm.amount || 0));
   const [adjErr, setAdjErr] = useState<string | null>(null);
   const [reverseFor, setReverseFor] = useState<string | null>(null);
+  // A fine on a payslip that has NOT been disbursed is not a correction — the
+  // month is still being worked out, so it simply comes off that month's salary
+  // as Deductions (asked 2026-10-08). The edit goes through the same recompute
+  // as a typed deduction; the effect further down saves the recomputed row once
+  // it reflects the new figure. Only a disbursed payslip takes an adjustment.
+  const [pendingFineSave, setPendingFineSave] = useState<{ employeeId: string; deductions: number } | null>(null);
   const raiseAdjustment = async (payslipId: string, perDay: number | null) => {
     setAdjErr(null);
+    if (adjForm.kind === "fine" && selectedRow && !selectedRow.disbursed) {
+      const amount = adjAmount(perDay);
+      const deductions = Math.round(Number(selectedRow.deductions ?? 0) + amount);
+      const line = `Fine PKR ${amount.toLocaleString()} — ${adjForm.reason.trim()}`;
+      updateEdit(selectedRow.employee.id, {
+        deductions,
+        notes: selectedRow.notes ? `${selectedRow.notes}\n${line}` : line,
+      });
+      setPendingFineSave({ employeeId: selectedRow.employee.id, deductions });
+      setAdjOpen(false);
+      return;
+    }
     const { error } = await supabase.rpc("raise_payroll_adjustment", {
       p_payslip_id: payslipId,
       p_amount: (adjForm.kind === "fine" ? -1 : 1) * adjAmount(perDay),
@@ -1509,6 +1527,24 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       .upsert(buildPayslipPayload(row), { onConflict: "employee_id,period_month" });
     if (upErr) throw upErr;
   };
+
+  // Saves a fine taken off an undisbursed payslip (raiseAdjustment) once the
+  // recomputed row carries it, so final/net/tax are written with it.
+  useEffect(() => {
+    if (!pendingFineSave) return;
+    const row = rows.find((r) => r.employee.id === pendingFineSave.employeeId);
+    if (!row || Math.round(row.deductions) !== pendingFineSave.deductions) return;
+    setPendingFineSave(null);
+    (async () => {
+      try {
+        await savePayslip(row);
+        await loadPeriodData(selectedPeriod);
+      } catch (e: any) {
+        setError(friendlyError(e));
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingFineSave, rows]);
 
   /**
    * 0391. Keeps a single "advance" row carrying this period's overpayment
@@ -4332,12 +4368,19 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       {adjOpen && selectedRow?.payslip_id && (
         <Modal isOpen onClose={() => setAdjOpen(false)} title={`Raise adjustment — ${selectedRow.employee.full_name}`} size="sm">
           <div className="space-y-3">
+            {adjForm.kind === "fine" && !selectedRow.disbursed ? (
+            <p className="text-xs text-slate-500">
+              The {formatPeriod(selectedRow.period_month)} salary has not been disbursed, so the fine comes straight off it —
+              it is added to this payslip's Deductions and its reason to the payslip note. Nothing goes to the Adjustments tab.
+            </p>
+            ) : (
             <p className="text-xs text-slate-500">
               Corrects the {formatPeriod(selectedRow.period_month)} payslip without rewriting it. The cost
               posts today, in the current open period — always, even when {formatPeriod(selectedRow.period_month)} is still
               open, so the same correction lands in the same month whenever it is raised. The payslip's own period
               is kept on the record for reference.
             </p>
+            )}
             {adjErr && <div className="p-2 bg-danger-50 text-danger-700 border border-danger-200 rounded text-sm">{adjErr}</div>}
             <div className="flex items-center gap-4">
               {(["increment", "fine"] as const).map((k) => (
@@ -4390,6 +4433,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
               <input className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
                      value={adjForm.reason} onChange={(e) => setAdjForm({ ...adjForm, reason: e.target.value })} />
             </div>
+            {!(adjForm.kind === "fine" && !selectedRow.disbursed) && (
             <div>
               <label className="block text-xs text-slate-500 mb-1">Settles</label>
               <ThemedSelect className="w-full" value={adjForm.settlement} onChange={(e) => setAdjForm({ ...adjForm, settlement: e.target.value as any })}>
@@ -4397,6 +4441,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                 <option value="pay_now">Now — cash or bank, from the Adjustments tab</option>
               </ThemedSelect>
             </div>
+            )}
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setAdjOpen(false)}>Back</Button>
               <Button onClick={() => raiseAdjustment(selectedRow.payslip_id!, selectedRow.per_day_salary)}

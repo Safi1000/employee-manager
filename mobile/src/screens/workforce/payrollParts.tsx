@@ -125,6 +125,21 @@ export function PayslipPanel({ ws, row, mode, onChanged }: { ws: Workspace; row:
   const bankLabel = (b: any) => (ws.canViewBanking ? `${b.bank_name} · ${b.account_number} (PKR ${Number(b.balance).toLocaleString()})` : `${b.bank_name} · ${b.account_number}`);
   const custLabel = (c: { fullName: string; held: number }) => (ws.canViewBanking ? `${c.fullName} — holds PKR ${Math.round(c.held).toLocaleString()}` : c.fullName);
 
+  // A fine on an undisbursed payslip comes straight off that month's salary as
+  // Deductions; only a disbursed payslip takes an adjustment. Saved once the
+  // recomputed row carries the new deduction.
+  const [pendingFine, setPendingFine] = useState<number | null>(null);
+  const fineOffSalary = adj.kind === "fine" && !row.disbursed;
+  useEffect(() => {
+    if (pendingFine == null || Math.round(row.deductions) !== pendingFine) return;
+    setPendingFine(null);
+    (async () => {
+      try { await saveRow(row); ws.clearEdit(id); await done(); toast("Fine deducted from salary"); }
+      catch (e) { toast(err(e), "danger"); }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingFine, row]);
+
   const save = async () => {
     setBusy(true);
     try { await saveRow(row); ws.clearEdit(id); await done(); toast("Payslip saved"); }
@@ -345,6 +360,14 @@ export function PayslipPanel({ ws, row, mode, onChanged }: { ws: Workspace; row:
       <Sheet open={adjOpen} onClose={() => setAdjOpen(false)} title={`Raise adjustment — ${row.employee.full_name}`} error={adjErr}
         footer={<><Button label="Cancel" variant="secondary" full onPress={() => setAdjOpen(false)} /><Button label="Raise" full disabled={!adj.kind || !adjAmount || !adj.reason.trim()} onPress={async () => {
           setAdjErr(null);
+          if (fineOffSalary) {
+            const deductions = Math.round(Number(row.deductions || 0) + adjAmount);
+            const line = `Fine PKR ${adjAmount.toLocaleString()} — ${adj.reason.trim()}`;
+            edit({ deductions, notes: row.notes ? `${row.notes}\n${line}` : line });
+            setPendingFine(deductions);
+            setAdjOpen(false);
+            return;
+          }
           try { await raiseAdjustment(row.payslip_id!, String((adj.kind === "fine" ? -1 : 1) * adjAmount), adj.reason, adj.settlement); setAdjOpen(false); await done(); toast("Adjustment raised"); }
           catch (e) { setAdjErr(err(e)); }
         }} /></>}>
@@ -369,8 +392,12 @@ export function PayslipPanel({ ws, row, mode, onChanged }: { ws: Workspace; row:
           <Input label={`${adj.kind === "fine" ? "Fine" : adj.kind === "increment" ? "Increment" : ""} amount — only the amount ${adj.kind === "fine" ? "deducted" : "added"}, not the new total`.trim()} keyboardType="numeric" value={adj.amount} onChangeText={(s) => setAdj({ ...adj, amount: s.replace(/-/g, "") })} />
         )}
         <Input label="Reason" required multiline value={adj.reason} onChangeText={(s) => setAdj({ ...adj, reason: s })} />
-        <Select label="Settlement" value={adj.settlement} onChange={(s) => setAdj({ ...adj, settlement: s as "pay_now" | "carry_forward" })}
-          options={[{ value: "carry_forward", label: "Next payslip" }, { value: "pay_now", label: "Pay now (settled from Adjustments)" }]} />
+        {fineOffSalary ? (
+          <T v="small" muted>Salary for {formatPeriod(row.period_month)} is not disbursed yet, so the fine is taken off it as Deductions. Nothing goes to Adjustments.</T>
+        ) : (
+          <Select label="Settlement" value={adj.settlement} onChange={(s) => setAdj({ ...adj, settlement: s as "pay_now" | "carry_forward" })}
+            options={[{ value: "carry_forward", label: "Next payslip" }, { value: "pay_now", label: "Pay now (settled from Adjustments)" }]} />
+        )}
       </Sheet>
     </View>
   );
