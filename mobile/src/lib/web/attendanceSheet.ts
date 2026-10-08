@@ -189,6 +189,31 @@ export async function loadSheetEmployees(opts: {
     .sort((a, b) => a.full_name.localeCompare(b.full_name));
 }
 
+/**
+ * Each employee's OWN leave allowance for one month — the same figure payroll
+ * pays leave against (PayrollManagement), so pay days on the board and paid days
+ * on the payslip agree:
+ *   1. a one-month override for that employee (employee_leave_overrides), else
+ *   2. their earned balance, opening + earned (leave_period_summary, 0438 —
+ *      empty before September 2026).
+ * Employees with neither are absent from the map and the caller falls back to
+ * the contract/client allowance. Only a whole calendar month has an allowance;
+ * a range that is not one returns an empty map.
+ */
+export async function loadIndividualAllowedLeaves(start: string, end: string, empIds: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (empIds.length === 0 || !start.endsWith("-01") || end.slice(0, 7) !== start.slice(0, 7)) return out;
+  const [lsRes, ovRes] = await Promise.all([
+    supabase.rpc("leave_period_summary", { p_period_start: start }),
+    supabase.from("employee_leave_overrides").select("employee_id, allowed_leaves").eq("period_month", start).in("employee_id", empIds),
+  ]);
+  if (lsRes.error) throw new Error(lsRes.error.message);
+  if (ovRes.error) throw new Error(ovRes.error.message);
+  for (const r of (lsRes.data ?? []) as { employee_id: string; available: number }[]) out.set(r.employee_id, Number(r.available));
+  for (const r of (ovRes.data ?? []) as { employee_id: string; allowed_leaves: number }[]) out.set(r.employee_id, Number(r.allowed_leaves));
+  return out;
+}
+
 export async function buildAttendanceRows(opts: {
   // The window, given as EITHER a month or an explicit inclusive range. The
   // Monthly Board passes a month; the Attendance board's client-range export
@@ -373,6 +398,7 @@ export async function buildAttendanceRows(opts: {
 
   const clientById = new Map(clients.map((c) => [c.id, c]));
   const contractById = new Map(contracts.map((c) => [c.id, c]));
+  const individualAllowed = await loadIndividualAllowedLeaves(monthStart, monthEnd, empIds);
 
   const rows: AttendanceEmployeeRow[] = roster.map((emp, idx) => {
     const dayMap = byEmp.get(emp.id) ?? new Map<number, { sym: string; ws: string; ovr: boolean }>();
@@ -397,7 +423,7 @@ export async function buildAttendanceRows(opts: {
       else if (sym === "L") l += 1;
       shiftByDay.push((cell?.ws ?? resolveShift(emp.id, iso)) || "day");
     }
-    const allowed = resolveAllowedLeaves(
+    const allowed = individualAllowed.get(emp.id) ?? resolveAllowedLeaves(
       contract,
       emp.client_id ? clientById.get(emp.client_id) : null,
     );
@@ -415,6 +441,7 @@ export async function buildAttendanceRows(opts: {
       presents: p,
       absents: a,
       leaves: l,
+      allowedLeaves: allowed,
       doubleDuties: dd,
       payDays,
       separationNote: separationNote(emp),

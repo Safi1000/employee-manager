@@ -226,7 +226,8 @@ export default function MonthlyBoard() {
                 <View style={{ flexDirection: "row", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
                   <Badge small label={`P ${row.presents}`} tone="success" />
                   <Badge small label={`A ${row.absents}`} tone="danger" />
-                  <Badge small label={`L ${row.leaves}`} tone="warning" />
+                  {row.allowedLeaves != null && <Badge small label={`Allowed L ${row.allowedLeaves}`} tone="neutral" />}
+                  <Badge small label={`L taken ${row.leaves}`} tone="warning" />
                   <Badge small label={`DD ${row.doubleDuties}`} tone="info" />
                   <Badge small label={`Pay days ${row.payDays}`} tone="neutral" />
                 </View>

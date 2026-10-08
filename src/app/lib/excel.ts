@@ -771,6 +771,9 @@ export type AttendanceEmployeeRow = {
   presents: number;
   absents: number;
   leaves: number;
+  /** This employee's own leave allowance for the month (payroll's figure).
+   *  Absent on reliever coverage rows, which are paid per day. */
+  allowedLeaves?: number;
   /** Days the guard worked TWO shifts. Counted inside `presents` as well — a
    *  double-duty day is still one day present; this is the extra duty on top. */
   doubleDuties: number;
@@ -857,13 +860,13 @@ function exportAttendanceImpl(opts: {
   for (let d = 0; d < daysInMonth; d += 1) {
     headers1.push(dayLabels[d], ...Array(S - 1).fill("")); // each day spans its shifts
   }
-  headers1.push("Presents", "Absents", "Leaves", "Double Duty", "Pay Days");
+  headers1.push("Presents", "Absents", "Allowed Leaves", "Leaves Taken", "Double Duty", "Pay Days");
 
   const headers2: any[] = ["", "", "", ""];
   for (let d = 0; d < daysInMonth; d += 1) {
     for (const c of shifts) headers2.push(shiftAbbr(c));
   }
-  headers2.push("", "", "", "", "");
+  headers2.push("", "", "", "", "", "");
 
   const data: any[][] = [];
   data.push([DEFAULT_COMPANY]);
@@ -902,7 +905,7 @@ function exportAttendanceImpl(opts: {
       if (status === "L") totalLeavesByDay[i][si] += 1;
       if (status === "A") totalAbsentsByDay[i][si] += 1;
     }
-    r.push(row.presents, row.absents, row.leaves, row.doubleDuties, row.payDays);
+    r.push(row.presents, row.absents, row.allowedLeaves ?? "", row.leaves, row.doubleDuties, row.payDays);
     data.push(r);
   }
 
@@ -910,22 +913,23 @@ function exportAttendanceImpl(opts: {
   const totalRow = (
     label: string,
     src: number[][],
-    final: { p: number; a: number; l: number; dd: number; pd: number } | null,
+    final: { p: number; a: number; al: number; l: number; dd: number; pd: number } | null,
   ) => {
     const r: any[] = [label, "", "", ""];
     for (const perShift of src) for (const v of perShift) r.push(v);
-    if (final) r.push(final.p, final.a, final.l, final.dd, final.pd);
-    else r.push("", "", "", "", "");
+    if (final) r.push(final.p, final.a, final.al, final.l, final.dd, final.pd);
+    else r.push("", "", "", "", "", "");
     return r;
   };
 
   const sumP = rows.reduce((s, r) => s + r.presents, 0);
   const sumA = rows.reduce((s, r) => s + r.absents, 0);
+  const sumAL = rows.reduce((s, r) => s + (r.allowedLeaves ?? 0), 0);
   const sumL = rows.reduce((s, r) => s + r.leaves, 0);
   const sumDD = rows.reduce((s, r) => s + r.doubleDuties, 0);
   const sumPD = rows.reduce((s, r) => s + r.payDays, 0);
 
-  data.push(totalRow("Total Presents", totalPresentsByDay, { p: sumP, a: sumA, l: sumL, dd: sumDD, pd: sumPD }));
+  data.push(totalRow("Total Presents", totalPresentsByDay, { p: sumP, a: sumA, al: sumAL, l: sumL, dd: sumDD, pd: sumPD }));
   data.push(totalRow("Total Leaves", totalLeavesByDay, null));
   data.push(totalRow("Total Absents", totalAbsentsByDay, null));
 
@@ -943,7 +947,7 @@ function exportAttendanceImpl(opts: {
     "=",
     "not markable on this date — fired / terminated / resigned, before joining, or outside the contract dates",
   ]);
-  data.push(["pay days", "=", "total present + double duties + allowed leaves - excessive leaves"]);
+  data.push(["pay days", "=", "total present + double duties + leaves taken (counted only up to allowed leaves)"]);
 
   // Roll-call of everyone whose employment ended, with the date — so the sheet
   // answers "why did this guard stop appearing?" without a second lookup.
@@ -956,7 +960,7 @@ function exportAttendanceImpl(opts: {
 
   const ws = XLSX.utils.aoa_to_sheet(data);
   // Title merges
-  const totalCols = 4 + daysInMonth * S + 4;
+  const totalCols = 4 + daysInMonth * S + 6;
   mergeCell(ws, 0, 0, 0, totalCols - 1);
   mergeCell(ws, 1, 0, 1, totalCols - 1);
   // Day-number header merges (the day's shift columns share the day number cell)
@@ -967,7 +971,7 @@ function exportAttendanceImpl(opts: {
   }
   const widths = [6, 28, 8, 14];
   for (let i = 0; i < daysInMonth; i += 1) for (let c = 0; c < S; c += 1) widths.push(4);
-  widths.push(10, 10, 10, 10);
+  widths.push(10, 10, 10, 10, 10, 10);
   setColWidths(ws, widths);
 
   const wb = XLSX.utils.book_new();

@@ -391,6 +391,7 @@ export default function AttendanceSheetModal({
       P, L, A, grand,
       sumP: assigned.reduce((s, r) => s + (viewCounts.get(r)?.p ?? 0), 0),
       sumA: assigned.reduce((s, r) => s + (viewCounts.get(r)?.a ?? 0), 0),
+      sumAL: assigned.reduce((s, r) => s + (r.allowedLeaves ?? 0), 0),
       sumL: assigned.reduce((s, r) => s + (viewCounts.get(r)?.l ?? 0), 0),
       sumDD: assigned.reduce((s, r) => s + (viewCounts.get(r)?.dd ?? 0), 0),
       sumPD: assigned.reduce((s, r) => s + r.payDays, 0),
@@ -421,7 +422,7 @@ export default function AttendanceSheetModal({
       )}
       {final
         ? final.map((v, i) => <td key={i} className="border border-border px-1 py-0.5 text-center tabular-nums font-medium">{v}</td>)
-        : Array(5).fill(0).map((_, i) => <td key={i} className="border border-border" />)}
+        : Array(6).fill(0).map((_, i) => <td key={i} className="border border-border" />)}
     </>
   );
 
@@ -574,7 +575,7 @@ export default function AttendanceSheetModal({
                   {days.map((d) => (
                     <th key={d} colSpan={S} style={stickyHead(0)} className="sticky z-30 border border-border px-1 py-1 text-center tabular-nums bg-secondary">{d}</th>
                   ))}
-                  {["Presents", "Absents", "Leaves", "Double Duty", view === "month" ? "Pay Days" : "Month Pay Days"].map((h) => (
+                  {["Presents", "Absents", "Allowed Leaves", "Leaves Taken", "Double Duty", view === "month" ? "Pay Days" : "Month Pay Days"].map((h) => (
                     <th key={h} rowSpan={2} style={stickyHead(0)} className="sticky z-30 border border-border px-1.5 py-1 text-center whitespace-nowrap bg-secondary">{h}</th>
                   ))}
                 </tr>
@@ -677,6 +678,7 @@ export default function AttendanceSheetModal({
                     })}
                     <td className="border border-border px-1.5 py-0.5 text-center tabular-nums">{viewCounts.get(row)?.p ?? 0}</td>
                     <td className="border border-border px-1.5 py-0.5 text-center tabular-nums">{viewCounts.get(row)?.a ?? 0}</td>
+                    <td className="border border-border px-1.5 py-0.5 text-center tabular-nums">{row.allowedLeaves ?? ""}</td>
                     <td className="border border-border px-1.5 py-0.5 text-center tabular-nums">{viewCounts.get(row)?.l ?? 0}</td>
                     <td className="border border-border px-1.5 py-0.5 text-center tabular-nums">{viewCounts.get(row)?.dd || ""}</td>
                     <td className="border border-border px-1.5 py-0.5 text-center tabular-nums font-medium">{row.payDays}</td>
@@ -684,7 +686,7 @@ export default function AttendanceSheetModal({
                 ))}
                 <tr className="bg-secondary/60 font-medium">
                   <td colSpan={4} style={{ left: 0, width: LEAD_TOTAL, minWidth: LEAD_TOTAL, maxWidth: LEAD_TOTAL }} className="sticky left-0 z-10 bg-secondary border border-border border-r-2 px-2 py-0.5">Total Presents</td>
-                  {totalRowCells(totals.P, [String(totals.sumP), String(totals.sumA), String(totals.sumL), String(totals.sumDD), String(totals.sumPD)])}
+                  {totalRowCells(totals.P, [String(totals.sumP), String(totals.sumA), String(totals.sumAL), String(totals.sumL), String(totals.sumDD), String(totals.sumPD)])}
                 </tr>
                 <tr className="bg-secondary/40">
                   <td colSpan={4} style={{ left: 0, width: LEAD_TOTAL, minWidth: LEAD_TOTAL, maxWidth: LEAD_TOTAL }} className="sticky left-0 z-10 bg-secondary border border-border border-r-2 px-2 py-0.5">Total Leaves</td>
@@ -705,7 +707,7 @@ export default function AttendanceSheetModal({
           {!loading && !err && rows.length > 0 && (
             <div className="mt-3 text-[11px] text-muted-foreground space-y-0.5">
               {shifts.map((c) => <span key={c} className="inline-block mr-3">{shiftAbbr(c)} = {c} shift</span>)}
-              <div>P / A / L = present / absent / leave · X = not markable (separated / before joining / off-contract) · pay days = presents + double duties + allowed leaves − excess</div>
+              <div>P / A / L = present / absent / leave · X = not markable (separated / before joining / off-contract) · allowed leaves = this employee's own allowance for the month (as payroll uses it) · pay days = presents + double duties + leaves taken, counted only up to allowed leaves</div>
               <div>
                 <span className="inline-block align-middle rounded-sm bg-brand-50 dark:bg-brand-900/20 px-1 mr-1">P<sup className="text-[8px] font-semibold text-brand-600 dark:text-brand-400">R</sup></span>
                 = reliever day (the guard covered as a reliever that day) — gaps in a reliever segment are expected and never block verification.

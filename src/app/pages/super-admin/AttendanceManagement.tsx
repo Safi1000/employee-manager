@@ -12,6 +12,7 @@ import BulkMarkByEmployeeModal from "../../components/BulkMarkByEmployeeModal";
 // every screen with an Export or PDF button was paying for both on open.
 import type { AttendanceEmployeeRow } from "../../lib/excel";
 import { loadShiftResolver, type ShiftResolver } from "../../lib/shiftOnDate";
+import { loadIndividualAllowedLeaves } from "../../lib/attendanceSheet";
 import {
   supabase,
   fetchAllRows,
@@ -1074,6 +1075,14 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
     const monthRoster = filteredEmployees.filter(
       (emp) => !hiddenFromAttendance(emp, monthStart),
     );
+    // Each employee's own allowance for the month, as payroll uses it.
+    let individualAllowed = new Map<string, number>();
+    try {
+      individualAllowed = await loadIndividualAllowedLeaves(monthStart, monthEnd, monthRoster.map((e) => e.id));
+    } catch (err: any) {
+      setError(err.message ?? String(err));
+      return;
+    }
 
     const rows: AttendanceEmployeeRow[] = monthRoster.map((emp, idx) => {
       const dayMap = byEmp.get(emp.id) ?? new Map<number, { sym: string; ws: string }>();
@@ -1102,7 +1111,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         const ws = cell?.ws ?? resolveShift(emp.id, iso);
         shiftByDay.push(ws || "day");
       }
-      const allowed = resolveAllowedLeaves(
+      const allowed = individualAllowed.get(emp.id) ?? resolveAllowedLeaves(
         emp.contract_id ? contractById.get(emp.contract_id) : null,
         emp.client_id ? clientById.get(emp.client_id) : null,
       );
@@ -1122,6 +1131,7 @@ export default function AttendanceManagement({ relieversOnly = false }: Attendan
         presents: p,
         absents: a,
         leaves: l,
+        allowedLeaves: allowed,
         doubleDuties: dd,
         payDays,
         separationNote: separationNoteFor(emp),

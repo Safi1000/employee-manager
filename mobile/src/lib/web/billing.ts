@@ -119,6 +119,7 @@ export const BILLING_ERRORS: Record<string, string> = {
   token_expired: "That signup link has expired. Start again and your card will not be charged twice.",
   already_claimed: "This signup has already been completed. Sign in instead.",
   password_too_short: "Password must be at least 8 characters.",
+  password_breached: "That password has appeared in a public data breach. Choose a different one.",
   no_subscription: "No active subscription on this company.",
   no_stripe_customer: "This company has no Stripe customer — it was created by hand.",
   below_current_headcount: "You already have more guards than that. Remove them first, or pick a higher number.",
