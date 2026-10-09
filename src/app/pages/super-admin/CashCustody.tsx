@@ -183,7 +183,7 @@ export function CashCustodyPanel({ onReady, onSummary }: {
         supabase.from("invoice_payments").select("id, amount, custodian_location_id, payment_date, clients:client_id(name)").eq("payment_mode", "Cash").not("custodian_location_id", "is", null),
         supabase.from("expenses").select("id, amount, custodian_location_id, expense_date, description").not("custodian_location_id", "is", null),
         supabase.from("cheques").select("id, amount, custodian_location_id, cheque_date, cheque_number").eq("cheque_type", "cash").eq("status", "cleared").not("custodian_location_id", "is", null),
-        supabase.from("bank_transactions").select("id, cash_delta, reference_id, description, created_at").eq("kind", "withdraw_to_cash").not("reference_id", "is", null),
+        supabase.from("bank_transactions").select("id, cash_delta, reference_id, description, created_at, bank_account_id").eq("kind", "withdraw_to_cash").not("reference_id", "is", null),
         // Payroll cash payments handed out by a custodian (reference_id = custodian
         // cash_location, cash_delta negative). Shows as "Cash paid" in the ledger.
         supabase.from("bank_transactions").select("id, cash_delta, reference_id, description, created_at").eq("kind", "payroll").not("reference_id", "is", null),
@@ -287,6 +287,12 @@ export function CashCustodyPanel({ onReady, onSummary }: {
             : l.name,
         );
       }
+      // "Askari Bank · 03410420001645" — the bank a row moved money to or from.
+      const bankById = new Map(((bnks ?? []) as BankAccountLite[]).map((b) => [b.id, b]));
+      const bankLabel = (id: string | null | undefined) => {
+        const b = id ? bankById.get(id) : undefined;
+        return b ? `${b.bank_name}${b.account_number ? ` · ${b.account_number}` : ""}` : "bank";
+      };
       const raw: Omit<LedgerEntry, "before" | "after">[] = [];
       for (const t of (tx ?? []) as CustodyTransfer[]) {
         const toCustodian = t.to_location_id != null && custodianLocIds.has(t.to_location_id);
@@ -342,14 +348,15 @@ export function CashCustodyPanel({ onReady, onSummary }: {
         if (!dp.cash_location_id || !custodianLocIds.has(dp.cash_location_id)) continue;
         raw.push({
           id: `d-${dp.id}`, date: dp.deposit_date, locationId: dp.cash_location_id, employeeId: empByLoc.get(dp.cash_location_id) ?? null,
-          kind: "cash_to_bank", detail: `Bank deposit — slip #${dp.slip_number}`, cashIn: 0, cashOut: Number(dp.amount),
+          kind: "cash_to_bank", detail: `Bank deposit — slip #${dp.slip_number} → ${bankLabel(dp.bank_account_id)}`, cashIn: 0, cashOut: Number(dp.amount),
         });
       }
       for (const w of (bankWd ?? []) as any[]) {
         if (!w.reference_id || !custodianLocIds.has(w.reference_id)) continue;
         raw.push({
           id: `w-${w.id}`, date: String(w.created_at ?? "").slice(0, 10), locationId: w.reference_id, employeeId: empByLoc.get(w.reference_id) ?? null,
-          kind: "bank_to_cash", detail: w.description || "Bank withdrawal to cash", cashIn: Number(w.cash_delta ?? 0), cashOut: 0,
+          kind: "bank_to_cash",
+          detail: `From ${bankLabel(w.bank_account_id)}${w.description && !/^(Cash withdrawn to custodian|Withdraw from )/.test(w.description) ? ` — ${w.description}` : ""}`, cashIn: Number(w.cash_delta ?? 0), cashOut: 0,
         });
       }
       // Payroll cash paid out by a custodian (cash_delta negative = paid, positive = reversal).

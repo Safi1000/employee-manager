@@ -2425,7 +2425,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" strokeWidth={1.5} />
                 <input
-                  type="search"
+                  type="text"
                   value={fvSearch}
                   onChange={(e) => setFvSearch(e.target.value)}
                   placeholder="Search client, group or employee…"

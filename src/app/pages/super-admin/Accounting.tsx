@@ -5537,7 +5537,18 @@ function HistoryBody({
                     </td>
                     <td className="px-3 py-2 text-xs text-slate-700">{kindLabel[t.kind]}</td>
                     <td className="px-3 py-2 text-xs text-slate-700">
-                      {ad !== 0 && bank ? bank.bank_name : cd !== 0 ? "Cash" : "—"}
+                      {bank ? (
+                        <>
+                          <div className="font-medium text-slate-900">{bank.bank_name}</div>
+                          <div className="font-mono text-slate-500">{bank.account_number}</div>
+                          {(bank.branch_name || bank.branch_code) && (
+                            <div className="text-slate-400">
+                              {[bank.branch_name, bank.branch_code].filter(Boolean).join(" · ")}
+                            </div>
+                          )}
+                          {cd !== 0 && <div className="text-slate-500">↔ Cash</div>}
+                        </>
+                      ) : cd !== 0 ? "Cash" : "—"}
                     </td>
                     <td className="px-3 py-2 text-xs text-right font-mono">
                       {ad !== 0 && (
