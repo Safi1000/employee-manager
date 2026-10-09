@@ -103,6 +103,23 @@ const daysInMonth = (periodMonth: string) => {
   return new Date(y, m, 0).getDate();
 };
 
+// A fine on an undisbursed payslip is folded into Deductions and recorded as a
+// "Fine PKR X — reason" line in its notes (raiseAdjustment). Reading those
+// lines back lets the payslip itemise the fine instead of hiding it in the
+// Deductions total.
+const finesFromNotes = (notes: string | null | undefined) => {
+  const out: { amount: number; reason: string }[] = [];
+  for (const m of (notes ?? "").matchAll(/^Fine PKR ([\d,]+) — (.*)$/gm)) {
+    out.push({ amount: Number(m[1].replace(/,/g, "")), reason: m[2].trim() });
+  }
+  return out;
+};
+
+// Net 0 means nothing is left to pay, so the row is treated as disbursed:
+// green, and sunk with the paid rows.
+const isPaidOrZero = (r: { disbursed?: boolean | null; net_salary: number }) =>
+  !!r.disbursed || Math.round(r.net_salary || 0) === 0;
+
 type PayrollManagementProps = {
   relieversOnly?: boolean;
   // Embed mode for the Payroll Run page: scope the roster to one client, force a
@@ -1073,12 +1090,13 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
     });
   }, [rows, search, shiftFilter, clientFilter, clientScopeId, categoryScope, siteFilter, siteByGuard, statusFilter, disbursedFilter, empTab, categoryFilter, employeeAddlBranches, relieversOnly, branches]);
 
-  // Undisbursed on top, disbursed sunk to the bottom, so the rows still needing
-  // payment are always in view. A stable sort keys ONLY on disbursed status, so
-  // the existing order (name / employee id) is preserved within each group, and a
-  // row moves down the instant it is marked disbursed — no refresh.
+  // Undisbursed on top, disbursed (or net 0 — nothing to pay) sunk to the
+  // bottom, so the rows still needing payment are always in view. A stable sort
+  // keys ONLY on settled status, so the existing order (name / employee id) is
+  // preserved within each group, and a row moves down the instant it is marked
+  // disbursed — no refresh.
   const sortedRows = useMemo(
-    () => [...filtered].sort((a, b) => Number(!!a.disbursed) - Number(!!b.disbursed)),
+    () => [...filtered].sort((a, b) => Number(isPaidOrZero(a)) - Number(isPaidOrZero(b))),
     [filtered],
   );
 
@@ -2126,7 +2144,14 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
       line("Per Day Salary", `PKR ${Number(row.per_day_salary).toLocaleString()}`);
     line("Earned (Per Day × Paid Days)", `PKR ${Math.round((row.per_day_salary ?? 0) * row.effective_present_days).toLocaleString()}`);
     line("Bonus", `PKR ${row.bonus.toLocaleString()}`);
-    line("Deductions", `PKR ${row.deductions.toLocaleString()}`);
+    {
+      const fines = finesFromNotes(row.notes);
+      const fined = fines.reduce((s, f) => s + f.amount, 0);
+      for (const f of fines) line(`Fine${f.reason ? ` — ${f.reason}` : ""}`, `− PKR ${f.amount.toLocaleString()}`);
+      const other = Math.max(0, Math.round(row.deductions) - fined);
+      if (fines.length === 0) line("Deductions", `PKR ${row.deductions.toLocaleString()}`);
+      else if (other > 0) line("Other Deductions", `− PKR ${other.toLocaleString()}`);
+    }
     if (row.allowance > 0) line("Allowance", `+ PKR ${Math.round(row.allowance).toLocaleString()}`);
     y += 4;
     doc.setFontSize(12);
@@ -3024,7 +3049,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                 ? FOCUS_ROW_CLASS
                                 : selectedId === e.id
                                 ? "bg-brand-500/10"
-                                : afterNet && row.disbursed
+                                : isPaidOrZero(row)
                                   ? "bg-success-50 dark:bg-success-900/15 hover:bg-success-100 dark:hover:bg-success-900/25"
                                   : "hover:bg-accent/50"
                             }`}
@@ -3064,7 +3089,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                                 >
                                   {lifecycleStatusLabel(e)}
                                 </span>
-                                {afterNet && row.disbursed && (
+                                {isPaidOrZero(row) && (
                                   <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-success-100 text-success-800 dark:bg-success-900/30 dark:text-success-400">
                                     <Check className="w-3 h-3" strokeWidth={2.5} /> Disbursed
                                   </span>
@@ -4084,10 +4109,27 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                   <span className="text-slate-600">Bonus</span>
                   <span className="text-success-600">+ PKR {payslipData.bonus.toLocaleString()}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600">Deductions</span>
-                  <span className="text-danger-600">− PKR {payslipData.deductions.toLocaleString()}</span>
-                </div>
+                {(() => {
+                  const fines = finesFromNotes(payslipData.notes);
+                  const fined = fines.reduce((s, f) => s + f.amount, 0);
+                  const other = Math.max(0, Math.round(payslipData.deductions) - fined);
+                  return (
+                    <>
+                      {fines.map((f, i) => (
+                        <div key={i} className="flex justify-between gap-3">
+                          <span className="text-slate-600">Fine{f.reason ? ` — ${f.reason}` : ""}</span>
+                          <span className="text-danger-600 whitespace-nowrap">− PKR {f.amount.toLocaleString()}</span>
+                        </div>
+                      ))}
+                      {(fines.length === 0 || other > 0) && (
+                        <div className="flex justify-between">
+                          <span className="text-slate-600">{fines.length ? "Other Deductions" : "Deductions"}</span>
+                          <span className="text-danger-600">− PKR {(fines.length ? other : payslipData.deductions).toLocaleString()}</span>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
                 {payslipData.allowance > 0 && (
                   <div className="flex justify-between">
                     <span className="text-slate-600">Allowance</span>
