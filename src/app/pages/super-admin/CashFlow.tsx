@@ -81,9 +81,10 @@ type CashStatementRow = {
   payments: { id: string; date: string; amount: number; mode: string | null }[];
 };
 
-/** One row of public.client_statement_loaded, asked on the cash basis. */
+/** One row of public.client_statement_loaded, asked on the cash basis.
+ *  client_id is null on the one HEAD OFFICE - UNALLOCATED row (0514). */
 type LoadedStatement = {
-  client_id: string;
+  client_id: string | null;
   branch_id: string | null;
   region_name: string;
   revenue: number;
@@ -322,7 +323,7 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
       setLoadedStatements((loadedRes.data ?? []) as LoadedStatement[]);
       const ro = new Map<string, number>();
       for (const r of ((loadedRevRes.data ?? []) as LoadedStatement[])) {
-        ro.set(r.client_id, Number(r.regional_overhead) || 0);
+        if (r.client_id) ro.set(r.client_id, Number(r.regional_overhead) || 0);
       }
       setRevOverheadByClient(ro);
       setLoadingStatements(false);
@@ -409,6 +410,17 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
     [cashStatementRows, branchFilter],
   );
 
+  // 0514. HEAD OFFICE - UNALLOCATED: the statement's one row with no client —
+  // head-office cost paid and held at head office rather than apportioned.
+  // Read, never derived; shown whenever Head Office is in view, and part of the
+  // cards because they total the rows shown.
+  const hoUnallocated = useMemo(() => {
+    const r = loadedStatements.find((s) => s.client_id == null);
+    if (!r) return null;
+    if (branchFilter !== "all" && r.branch_id !== branchFilter) return null;
+    return { hoShare: Number(r.ho_share) || 0, net: Number(r.net) || 0 };
+  }, [loadedStatements, branchFilter]);
+
   const statementTotals = useMemo(() => {
     let received = 0, payroll = 0, exp = 0, regional = 0, ho = 0, net = 0;
     for (const r of statementRowsForBranch) {
@@ -419,8 +431,9 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
       ho += r.hoShare;
       net += r.netCash;
     }
+    if (hoUnallocated) { ho += hoUnallocated.hoShare; net += hoUnallocated.net; }
     return { received, payroll, expenses: exp, regional, ho, net };
-  }, [statementRowsForBranch]);
+  }, [statementRowsForBranch, hoUnallocated]);
 
   // Apply the period filter to a list.
   const inPeriod = useMemo(() => {
@@ -640,7 +653,13 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
             // columns still add up to netIncome.
             otherExpenses: r.expensesPaid + r.regionalOverhead + r.hoShare,
             netIncome: r.netCash,
-          })),
+          })).concat(hoUnallocated ? [{
+            client: "Head office — unallocated",
+            totalReceivable: 0,
+            payrollExpenses: 0,
+            otherExpenses: hoUnallocated.hoShare,
+            netIncome: hoUnallocated.net,
+          }] : []),
           formatPeriod(statementPeriod),
           `Client Statement (Cash) ${formatPeriod(statementPeriod)}.xlsx`,
         )
@@ -698,6 +717,7 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
             onPeriodChange={setStatementPeriod}
             loading={loading || loadingStatements}
             onView={setSelectedStatement}
+            hoUnallocated={hoUnallocated}
             bare={embedded}
             branches={branches}
             branchFilter={branchFilter}
@@ -988,9 +1008,11 @@ export default function Cashflow({ embedded = false }: { embedded?: boolean } = 
  */
 function ClientStatementsTab({
   rows, totals, period, periodOptions, onPeriodChange, loading, onView, bare = false,
-  branches, branchFilter, onBranchChange, exportSlot,
+  branches, branchFilter, onBranchChange, exportSlot, hoUnallocated = null,
 }: {
   rows: CashStatementRow[];
+  /** 0514. Head-office cost held at head office this period, if in view. */
+  hoUnallocated?: { hoShare: number; net: number } | null;
   totals: { received: number; payroll: number; expenses: number; regional: number; ho: number; net: number };
   period: string;
   periodOptions: string[];
@@ -1130,6 +1152,24 @@ function ClientStatementsTab({
                 </td>
               </tr>
             ))}
+            {!loading && hoUnallocated && (
+              <tr className="bg-slate-50">
+                <td className="px-6 py-4 text-sm text-slate-900">
+                  <div>Head office — unallocated</div>
+                  <div className="text-xs text-slate-500">Paid by head office, not apportioned to clients</div>
+                </td>
+                <td className="px-6 py-4 text-sm text-slate-400 text-right">—</td>
+                <td className="px-6 py-4 text-sm text-slate-400 text-right">—</td>
+                <td className="px-6 py-4 text-sm text-slate-400 text-right">—</td>
+                <td className="px-6 py-4 text-sm text-slate-400 text-right">—</td>
+                <td className="px-6 py-4 text-sm text-right">
+                  <span className={hoUnallocated.net >= 0 ? "text-success-600" : "text-danger-600"}>
+                    {currency(hoUnallocated.net)}
+                  </span>
+                </td>
+                <td className="px-6 py-4" />
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

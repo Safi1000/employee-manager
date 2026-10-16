@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, CalendarClock, Loader2 } from "lucide-react";
 import Button from "./Button";
 import ThemedSelect from "./ThemedSelect";
+import HeadOfficeApportionmentPanel from "./HeadOfficeApportionmentPanel";
 import { supabase } from "../lib/supabase";
 
 /**
@@ -308,6 +309,10 @@ export default function PartnershipPolicyPanel({
           )}
         </div>
       )}
+
+      {/* 0514. The third company-wide setting, with its own save: it moves money
+          between partners, so it carries its own price and confirmation. */}
+      <HeadOfficeApportionmentPanel companyId={companyId} period={period} canEdit={canEdit} onSaved={onSaved} />
     </section>
   );
 }

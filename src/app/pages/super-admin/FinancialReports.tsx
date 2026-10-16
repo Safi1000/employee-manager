@@ -50,7 +50,10 @@ type ClientStatementRow = Client & {
 
 /** One row of public.client_statement_loaded. */
 type LoadedStatement = {
-  client_id: string;
+  /** null on the one HEAD OFFICE - UNALLOCATED row (0514). */
+  client_id: string | null;
+  client_name?: string;
+  branch_id?: string | null;
   revenue: number;
   direct_payroll: number;
   direct_expenses: number;
@@ -525,6 +528,17 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
     });
   }, [clients, invoices, loadedStatements, statementBranchFilter]);
 
+  // 0514. HEAD OFFICE - UNALLOCATED: the statement's one row with no client —
+  // head-office cost held at head office rather than apportioned. Read from the
+  // RPC, never derived; shown whenever its region (Head Office) is in view, and
+  // part of the footer because the footer is the sum of the rows displayed.
+  const hoUnallocated = useMemo(() => {
+    const r = loadedStatements.find((s) => s.client_id == null);
+    if (!r) return null;
+    if (statementBranchFilter !== "all" && r.branch_id !== statementBranchFilter) return null;
+    return r;
+  }, [loadedStatements, statementBranchFilter]);
+
   const statementTotals = useMemo(() => {
     let invoiced = 0;
     let payroll = 0;
@@ -540,8 +554,12 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
       ho += r.ho_share;
       income += r.total_income;
     }
+    if (hoUnallocated) {
+      ho += Number(hoUnallocated.ho_share) || 0;
+      income += Number(hoUnallocated.net) || 0;
+    }
     return { invoiced, payroll, expenses: exp, regional, ho, income };
-  }, [clientStatementRows]);
+  }, [clientStatementRows, hoUnallocated]);
 
   const viewFullStatement = (client: ClientStatementRow) => {
     setSelectedClient(client);
@@ -602,7 +620,13 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
             // columns still add up to netIncome.
             otherExpenses: r.expenses + r.regional_overhead + r.ho_share,
             netIncome: r.total_income,
-          })),
+          })).concat(hoUnallocated ? [{
+            client: "Head office — unallocated",
+            totalReceivable: 0,
+            payrollExpenses: 0,
+            otherExpenses: Number(hoUnallocated.ho_share) || 0,
+            netIncome: Number(hoUnallocated.net) || 0,
+          }] : []),
           formatPeriod(statementPeriod),
           `Client Statement ${formatPeriod(statementPeriod)}.xlsx`,
         )
@@ -1084,6 +1108,26 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
                           </td>
                         </tr>
                       ))}
+                    {!loadingClients && hoUnallocated && (
+                      <tr className="bg-slate-50">
+                        <td className="px-6 py-4 text-sm text-slate-900">
+                          <div>Head office — unallocated</div>
+                          <div className="text-xs text-slate-500">
+                            Held at head office, not apportioned to clients
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-slate-400 text-right">—</td>
+                        <td className="px-6 py-4 text-sm text-slate-400 text-right">—</td>
+                        <td className="px-6 py-4 text-sm text-slate-400 text-right">—</td>
+                        <td className="px-6 py-4 text-sm text-slate-400 text-right">—</td>
+                        <td className="px-6 py-4 text-sm text-right">
+                          <span className={Number(hoUnallocated.net) >= 0 ? "text-success-600" : "text-danger-600"}>
+                            PKR {Number(hoUnallocated.net).toLocaleString()}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4" />
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>

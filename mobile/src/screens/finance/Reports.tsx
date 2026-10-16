@@ -11,7 +11,7 @@ import { Banner, Button, Card, Chips, Empty, HStack, IconBtn, Input, Ledger, Lis
 import { useDB } from "../../data/store";
 import { todayIso } from "../../data/api/core";
 import {
-  allocatedHoFor, cashStatement, CashData, clearClientShare, deletePartner, deletePartnerEntry, loadCashClientStatements, loadCashflow, loadClientStatements, loadCover,
+  allocatedHoFor, cashStatement, CashData, loadHoApportionment, setHoApportionment, clearClientShare, deletePartner, deletePartnerEntry, loadCashClientStatements, loadCashflow, loadClientStatements, loadCover,
   loadEntryOptions, loadPartnershipReport, loadPl, loadRegionalPerformance, monthKeys, monthName, partnerClientBreakdown, partnerLedger, plFigures, postingDeadline,
   previousMonthKey, recordPartnerEntry, savePolicy, setClientShare, submitPartnerForm,
 } from "../../data/api/finance";
@@ -362,6 +362,7 @@ export function PartnershipReport() {
       {error && <Banner tone="danger" title={error} />}
       {!data && !error && <ActivityIndicator style={{ marginTop: 16 }} />}
       {data && <PolicyPanel companyId={companyId} period={period} canEdit={canEdit} settings={data.settings} onSaved={load} />}
+      {data && <HoApportionmentPanel companyId={companyId} period={period} canEdit={canEdit} onSaved={load} />}
       {data && (
         <>
           <Button icon={Plus} label="Add partner" style={{ marginVertical: 10 }} onPress={() => setForm("new")} />
@@ -424,6 +425,47 @@ function PolicyPanel({ companyId, period, canEdit, settings, onSaved }: { compan
           setBusy(true);
           try { await savePolicy(companyId, basis, dayNum); toast("Policy saved."); onSaved(); } catch (e) { toast(err(e), "danger"); } finally { setBusy(false); }
         }} />}
+      </Card>
+    </Section>
+  );
+}
+
+/** 0514. Head-office cost: apportioned to the regions, or held at head office.
+ *  The price — every partner both ways — is shown before anything saves. */
+function HoApportionmentPanel({ companyId, period, canEdit, onSaved }: { companyId: string; period: string; canEdit: boolean; onSaved: () => void }) {
+  const t = useTheme();
+  const { toast, confirm } = useOverlay();
+  const [data, setData] = useState<Awaited<ReturnType<typeof loadHoApportionment>> | null>(null);
+  const [target, setTarget] = useState<"on" | "off">("off");
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(async () => {
+    try { const d = await loadHoApportionment(companyId, period); setData(d); setTarget(d.on ? "on" : "off"); } catch (e) { toast(err(e), "danger"); }
+  }, [companyId, period]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { void load(); }, [load]);
+  const changing = data != null && (target === "on") !== data.on;
+  const fmt = (v: any) => (v == null ? "—" : cur(Number(v)));
+  const sgn = (v: any) => (v == null ? "—" : `${Number(v) > 0 ? "+" : ""}${cur(Number(v))}`);
+  return (
+    <Section title="Head-office cost" hint={`Apportioned to the regions by revenue, or held at head office as a named unallocated line. ${monthName(period)} is currently ${data ? (data.on ? "apportioned" : "held at head office") : "…"}.`}>
+      <Card>
+        <Select label={`From ${monthName(period)}`} value={target} onChange={(v) => canEdit && setTarget(v as "on" | "off")} options={[{ value: "off", label: "Held at head office (unallocated)" }, { value: "on", label: "Apportioned to regions by revenue" }]} />
+        <T v="small" muted style={{ marginTop: 6 }}>What it does to each partner&apos;s share for {monthName(period)}:</T>
+        {(data?.impact ?? []).map((r) => (
+          <View key={r.partner_id} style={{ marginTop: 6 }}>
+            <T v="bodyStrong">{r.partner_name} <T v="small" muted>{r.row_kind === "EQUITY_PARTNER" ? "equity" : "regional"}</T></T>
+            <T v="small" muted>Apportioned {fmt(r.apportioned)} · Held {fmt(r.held)} · <T v="small" color={Number(r.difference) > 0 ? t.tone("success").text : Number(r.difference) < 0 ? t.tone("danger").text : t.mutedFg}>{sgn(r.difference)}</T></T>
+          </View>
+        ))}
+        {data && data.impact.length === 0 && <T v="small" muted>No partners share profit in this month.</T>}
+        {canEdit && changing && <Input label="Reason (required)" value={reason} onChangeText={setReason} />}
+        {canEdit && changing && <Button style={{ marginTop: 8 }} label={busy ? "Saving…" : "Review and save"} disabled={busy || reason.trim() === ""} onPress={async () => {
+          const lines = (data?.impact ?? []).map((r) => `${r.partner_name}: ${fmt(target === "on" ? r.held : r.apportioned)} → ${fmt(target === "on" ? r.apportioned : r.held)}`).join("\n");
+          if (!(await confirm({ title: `${target === "on" ? "Apportion" : "Hold"} head-office cost from ${monthName(period)}?`, message: `This moves money between partners from ${monthName(period)} onward. For ${monthName(period)}:\n\n${lines}`, confirmLabel: "Confirm and save" }))) return;
+          setBusy(true);
+          try { await setHoApportionment(companyId, period, target === "on", reason.trim()); setReason(""); toast("Head-office setting saved."); await load(); onSaved(); } catch (e) { toast(err(e), "danger"); } finally { setBusy(false); }
+        }} />}
+        {(data?.history ?? []).length > 0 && <T v="small" muted style={{ marginTop: 8 }}>{(data?.history ?? []).map((h) => `From ${monthName(String(h.effective_month).slice(0, 7))}: ${h.apportion ? "apportioned" : "held"} — ${h.reason}`).join("\n")}</T>}
       </Card>
     </Section>
   );

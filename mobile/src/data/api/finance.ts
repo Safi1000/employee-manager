@@ -339,15 +339,27 @@ export async function loadCashClientStatements(d: CashData, period: string) {
     expensesBy.set(e.client_id, (expensesBy.get(e.client_id) ?? 0) + Number(e.amount ?? 0));
   }
   const byId = new Map(((loaded ?? []) as any[]).map((r) => [r.client_id, r]));
-  return d.clients.map((c) => {
+  // 0514. HEAD OFFICE - UNALLOCATED: the statement's one row with no client.
+  // Read from the RPC and appended in the same shape, so the branch filter,
+  // the totals and the export carry it like any other row — never dropped.
+  const ho = ((loaded ?? []) as any[]).find((r) => r.client_id == null);
+  const hoRow = ho ? [{
+    isHoUnallocated: true,
+    client: { id: "ho-unallocated", name: "Head office — unallocated", client_code: "", branch_id: ho.branch_id ?? null } as any,
+    received: 0, payrollPaid: 0, expensesPaid: 0, regionalOverhead: 0, hoShare: Number(ho.ho_share) || 0,
+    netCash: Number(ho.net) || 0, branchId: (ho.branch_id ?? null) as string | null, regionName: "Head Office",
+    payments: [] as { id: string; date: string; amount: number; mode: string | null }[],
+  }] : [];
+  return [...d.clients.map((c) => {
     const l = byId.get(c.id);
     return {
+      isHoUnallocated: false,
       client: c, received: Number(l?.revenue ?? receivedBy.get(c.id) ?? 0), payrollPaid: Number(l?.direct_payroll ?? payroll.get(c.id) ?? 0),
       expensesPaid: Number(l?.direct_expenses ?? expensesBy.get(c.id) ?? 0), regionalOverhead: revOverhead.get(c.id) ?? 0, hoShare: Number(l?.ho_share ?? 0),
       netCash: Number(l?.net ?? 0), branchId: (l?.branch_id ?? c.branch_id ?? null) as string | null, regionName: (l?.region_name ?? "Unassigned") as string,
       payments: (paymentsBy.get(c.id) ?? []).sort((a, b) => b.date.localeCompare(a.date)),
     };
-  });
+  }), ...hoRow];
 }
 
 // ------------------------------------------------------------ Financial reports
@@ -404,14 +416,23 @@ export async function loadClientStatements(period: string) {
     rpc<any[]>("client_statement_loaded", { p_start: start, p_end: end, p_basis: "revenue" }),
   ]);
   const byId = new Map(((loaded ?? []) as any[]).map((r) => [r.client_id, r]));
-  return clients.map((c) => {
+  // 0514. HEAD OFFICE - UNALLOCATED, appended in the same shape (see above).
+  const ho = ((loaded ?? []) as any[]).find((r) => r.client_id == null);
+  const hoRow = ho ? [{
+    isHoUnallocated: true,
+    id: "ho-unallocated", name: "Head office — unallocated", client_code: "", branch_id: ho.branch_id ?? null,
+    total_invoiced: 0, payroll_expense: 0, expenses: 0, regional_overhead: 0, ho_share: Number(ho.ho_share) || 0,
+    total_income: Number(ho.net) || 0, invoices: [] as any[],
+  }] : [];
+  return [...clients.map((c) => {
     const l = byId.get(c.id);
     return {
+      isHoUnallocated: false,
       ...c, total_invoiced: Number(l?.revenue ?? 0), payroll_expense: Number(l?.direct_payroll ?? 0), expenses: Number(l?.direct_expenses ?? 0),
       regional_overhead: Number(l?.regional_overhead ?? 0), ho_share: Number(l?.ho_share ?? 0), total_income: Number(l?.net ?? 0),
       invoices: invoices.filter((i) => i.client_id === c.id).sort((a, b) => (a.invoice_date < b.invoice_date ? 1 : -1)),
     };
-  });
+  }), ...hoRow];
 }
 /** RegionalPerformance load(). */
 export async function loadRegionalPerformance(companyId: string, period: string, basis: "revenue" | "cash") {
@@ -494,6 +515,19 @@ export async function savePolicy(companyId: string, basis: "cash" | "revenue", d
   if (error) throw new Error(error.message);
   if ((data ?? []).length === 0) await q(sb().from("finance_settings").insert({ company_id: companyId, ...patch } as never));
 }
+/** 0514. Head-office apportionment for a month: its mode (ho_apportioned), the
+ *  setting's history, and the price — every partner apportioned vs held
+ *  (ho_apportionment_impact). All read, nothing derived here. */
+export async function loadHoApportionment(companyId: string, period: string) {
+  const [on, history, impact] = await Promise.all([
+    rpc<boolean>("ho_apportioned", { p_company_id: companyId, p_month: `${period}-01` }),
+    q<any[]>(sb().from("ho_apportionment_settings").select("id, effective_month, apportion, reason, set_at").eq("company_id", companyId).order("effective_month", { ascending: false })),
+    rpc<any[]>("ho_apportionment_impact", { p_company_id: companyId, p_period: `${period}-01` }),
+  ]);
+  return { on: Boolean(on), history: (history ?? []) as any[], impact: (impact ?? []) as any[] };
+}
+export const setHoApportionment = (companyId: string, period: string, apportion: boolean, reason: string) =>
+  rpc("set_ho_apportionment", { p_company_id: companyId, p_effective_month: `${period}-01`, p_apportion: apportion, p_reason: reason });
 export const postingDeadline = async (companyId: string, period: string) => (((await rpc<any[]>("partnership_posting_deadline", { p_company_id: companyId, p_period: `${period}-01` })) ?? []) as any[])[0] ?? null;
 export const partnerClientBreakdown = async (partnerId: string, period: string) =>
   ((await rpc<any[]>("partner_client_breakdown", { p_partner_id: partnerId, p_start: `${period}-01`, p_end: lastOfMonthKey(period) })) ?? []) as any[];

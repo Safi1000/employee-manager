@@ -1,3 +1,11 @@
+# SCOPE RULE (2026-10-16). Every count in this file names its company scope:
+# "GGS 14", "SHAYAN_A 5", "ALL 19" — never a bare "14". The list below has one
+# line per (company, check), so a count can be taken per company or across all
+# and is always labelled which. Before this rule the notes above said "same 14
+# names" while the list was a distinct-name union across companies; a later
+# snapshot taken across both companies (19) was then read against a GGS-only
+# count (14) as five new reds. Nothing had turned red. Diff by (company, check).
+#
 # Prod red set (crm-design mmkfpnshxjcyijhuydgr) captured before applying 0449
 # on 2026-09-16. Distinct failing ledger_checks() names across all companies.
 # Diff this list by NAME after the apply — 0449 must not turn any new check red.
@@ -57,16 +65,38 @@
 # the frontend (custodian.ts → ensure_custodian_location) is deployed, or first-use
 # custodian create breaks for a payroll/expenses user who lacks accounting.edit.
 # payslips figure-write routing is a separate pass (its own migration).
-alert_delivery_is_healthy
-ar_control_equals_open_invoices
-bank_control_equals_bank_accounts
-bank_per_account_gl_equals_operational
-cash_control_equals_cash_locations
-cash_forecast_clears_the_floor
-cash_per_location_gl_equals_operational
-every_control_is_invoked
-no_definer_function_crosses_a_branch
-no_negative_custodian_balance
-no_stale_prepaid_balance
-payroll_accrual_matches_attendance
-salaries_payable_equals_undisbursed_net_pay
+#
+# 0513 (revenue_month_is_service_month_and_two_controls_see_what_they_measure)
+# and the 0476 ledger backfill, applied 2026-10-16. Before: GGS 14, SHAYAN_A 5,
+# ALL 19. After: GGS 14, SHAYAN_A 5, ALL 19 — no (company, check) turned red.
+# Values moved: GGS payroll_accrual_matches_attendance 170 -> 18.
+# GGS migration_ledger_matches_repo stays 1 but changes subject: 0476 cleared;
+# 0513 reads "recorded, no repo file" until the manifest fetch sees it after push.
+# Digests: 0513 914350d77727aafacae0b2dec71f2208, 0476 067ccd343bbd3821f8f0c575c33099c4.
+#
+# 0514 (head_office_is_one_pool_one_driver_one_switch_and_accrual_expense_is_the_gl)
+# applied 2026-10-16. Before: GGS 14, SHAYAN_A 5, ALL 19. After: GGS 14, SHAYAN_A 5,
+# ALL 19 — no (company, check) turned red. Values moved: migration_ledger_matches_repo
+# 1 -> 2 on GGS and on SHAYAN_A (the check is company-independent): 0513 and 0514 are
+# recorded with no repo file until pushed. Digest 59fb0c39379863632915377ec24f1d6d.
+#
+# Format: <company> <check_name> <difference>. Current as of 2026-10-16 after 0514.
+GGS       ar_control_equals_open_invoices                -33919712
+GGS       bank_control_equals_bank_accounts              -7357119.23
+GGS       bank_per_account_gl_equals_operational         4
+GGS       cash_control_equals_cash_locations             274317
+GGS       cash_forecast_clears_the_floor                 1
+GGS       cash_per_location_gl_equals_operational        4
+GGS       cash_pl_agrees_with_partnership                1
+GGS       every_control_is_invoked                       11
+GGS       migration_ledger_matches_repo                  2
+GGS       no_definer_function_crosses_a_branch           15
+GGS       no_negative_custodian_balance                  4
+GGS       no_stale_prepaid_balance                       6
+GGS       payroll_accrual_matches_attendance             18
+GGS       revenue_recognised_in_service_month            9
+SHAYAN_A  alert_delivery_is_healthy                      1
+SHAYAN_A  every_control_is_invoked                       11
+SHAYAN_A  migration_ledger_matches_repo                  2
+SHAYAN_A  monthly_ledger_run_is_current                  1
+SHAYAN_A  no_definer_function_crosses_a_branch           15
