@@ -4575,7 +4575,11 @@ export default function Expenses() {
                       key={emp.id}
                       type="button"
                       onClick={() => {
-                        setState({ ...state, employee_id: emp.id });
+                        setState({
+                          ...state,
+                          employee_id: emp.id,
+                          client_id: state.client_id || emp.client_id || "",
+                        });
                         setEmpQuery("");
                       }}
                       className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 border-b border-slate-100 last:border-b-0"
