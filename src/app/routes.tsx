@@ -31,6 +31,7 @@ const LeaveBalances = lazyPage(() => import("./pages/super-admin/LeaveBalances")
 import TabHub from "./pages/super-admin/_TabHub";
 const Accounting = lazyPage(() => import("./pages/super-admin/Accounting"));
 const FinancialReports = lazyPage(() => import("./pages/super-admin/FinancialReports"));
+const PartnershipReport = lazyPage(() => import("./pages/super-admin/PartnershipReport"));
 const ExpensesEntry = lazyPage(() => import("./pages/super-admin/ExpensesEntry"));
 const Invoices = lazyPage(() => import("./pages/super-admin/Invoices"));
 const Cashflow = lazyPage(() => import("./pages/super-admin/CashFlow"));
@@ -191,14 +192,12 @@ export const router = createBrowserRouter([
       { path: "relievers/attendance", element: <Navigate to="/super-admin/relievers" replace /> },
       { path: "relievers/payroll", element: guard(["payroll.view", "payroll.edit"], <PayrollManagement relieversOnly />) },
       { path: "accounting", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit"], <Accounting />) },
-      // Distinct `key` per route: both render the same FinancialReports, so
-      // without it React reuses one instance across the two paths and the
-      // activeTab state leaks (Financial Reports would show the Partnership tab
-      // and vice versa). The key forces a fresh mount per page.
+      // Financial Reports, rebuilt (Overview, Client profit, Statements,
+      // Ledgers, Scenarios). The Partnership Report below is a separate page.
       { path: "reports", element: guard(["reports.view"], <FinancialReports key="reports" />) },
       // Partnership Report is its own page under Finance now, not a tab of
       // Financial Reports. Same component, pinned to that one report.
-      { path: "partnership-report", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit"], <FinancialReports key="partnership" standalone="partnership" />) },
+      { path: "partnership-report", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit"], <PartnershipReport key="partnership" standalone="partnership" />) },
       // Partnership Run — draft / review / post. The database has been able to
       // do this since 0361; nothing could reach it until now.
       { path: "partnership-run", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit"], <PartnershipRun />) },
