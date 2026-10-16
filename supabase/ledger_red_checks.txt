@@ -80,7 +80,13 @@
 # 1 -> 2 on GGS and on SHAYAN_A (the check is company-independent): 0513 and 0514 are
 # recorded with no repo file until pushed. Digest 59fb0c39379863632915377ec24f1d6d.
 #
-# Format: <company> <check_name> <difference>. Current as of 2026-10-16 after 0514.
+# 0515 (head_office_is_switched_per_region_and_a_profit_share_is_never_a_cost)
+# applied 2026-10-16. Before: GGS 14, SHAYAN_A 5, ALL 19. After: GGS 14, SHAYAN_A 5,
+# ALL 19 — no (company, check) turned red. Values moved: migration_ledger_matches_repo
+# 2 -> 3 on GGS and SHAYAN_A (0513, 0514, 0515 recorded, not yet pushed).
+# Digest 3fe67d3996b2f76b69e202d5e75f34f0.
+#
+# Format: <company> <check_name> <difference>. Current as of 2026-10-16 after 0515.
 GGS       ar_control_equals_open_invoices                -33919712
 GGS       bank_control_equals_bank_accounts              -7357119.23
 GGS       bank_per_account_gl_equals_operational         4
@@ -89,7 +95,7 @@ GGS       cash_forecast_clears_the_floor                 1
 GGS       cash_per_location_gl_equals_operational        4
 GGS       cash_pl_agrees_with_partnership                1
 GGS       every_control_is_invoked                       11
-GGS       migration_ledger_matches_repo                  2
+GGS       migration_ledger_matches_repo                  3
 GGS       no_definer_function_crosses_a_branch           15
 GGS       no_negative_custodian_balance                  4
 GGS       no_stale_prepaid_balance                       6
@@ -97,6 +103,6 @@ GGS       payroll_accrual_matches_attendance             18
 GGS       revenue_recognised_in_service_month            9
 SHAYAN_A  alert_delivery_is_healthy                      1
 SHAYAN_A  every_control_is_invoked                       11
-SHAYAN_A  migration_ledger_matches_repo                  2
+SHAYAN_A  migration_ledger_matches_repo                  3
 SHAYAN_A  monthly_ledger_run_is_current                  1
 SHAYAN_A  no_definer_function_crosses_a_branch           15

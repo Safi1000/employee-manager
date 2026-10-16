@@ -515,19 +515,20 @@ export async function savePolicy(companyId: string, basis: "cash" | "revenue", d
   if (error) throw new Error(error.message);
   if ((data ?? []).length === 0) await q(sb().from("finance_settings").insert({ company_id: companyId, ...patch } as never));
 }
-/** 0514. Head-office apportionment for a month: its mode (ho_apportioned), the
- *  setting's history, and the price — every partner apportioned vs held
- *  (ho_apportionment_impact). All read, nothing derived here. */
+/** 0514/0515. Head-office apportionment for a month, per region: each region's
+ *  mode (ho_region_modes) and the setting's history. Read, nothing derived. */
 export async function loadHoApportionment(companyId: string, period: string) {
-  const [on, history, impact] = await Promise.all([
-    rpc<boolean>("ho_apportioned", { p_company_id: companyId, p_month: `${period}-01` }),
-    q<any[]>(sb().from("ho_apportionment_settings").select("id, effective_month, apportion, reason, set_at").eq("company_id", companyId).order("effective_month", { ascending: false })),
-    rpc<any[]>("ho_apportionment_impact", { p_company_id: companyId, p_period: `${period}-01` }),
+  const [modes, history] = await Promise.all([
+    rpc<any[]>("ho_region_modes", { p_company_id: companyId, p_month: `${period}-01` }),
+    q<any[]>(sb().from("ho_apportionment_settings").select("id, branch_id, effective_month, apportion, reason").eq("company_id", companyId).order("effective_month", { ascending: false })),
   ]);
-  return { on: Boolean(on), history: (history ?? []) as any[], impact: (impact ?? []) as any[] };
+  return { modes: (modes ?? []) as any[], history: (history ?? []) as any[] };
 }
-export const setHoApportionment = (companyId: string, period: string, apportion: boolean, reason: string) =>
-  rpc("set_ho_apportionment", { p_company_id: companyId, p_effective_month: `${period}-01`, p_apportion: apportion, p_reason: reason });
+/** The price of one change: every partner as set and as proposed (ho_switch_impact). */
+export const hoSwitchImpact = async (companyId: string, period: string, branchId: string | null, apportion: boolean) =>
+  ((await rpc<any[]>("ho_switch_impact", { p_company_id: companyId, p_period: `${period}-01`, p_branch_id: branchId, p_apportion: apportion })) ?? []) as any[];
+export const setHoApportionment = (companyId: string, period: string, branchId: string | null, apportion: boolean, reason: string) =>
+  rpc("set_ho_apportionment", { p_company_id: companyId, p_effective_month: `${period}-01`, p_apportion: apportion, p_reason: reason, p_branch_id: branchId });
 export const postingDeadline = async (companyId: string, period: string) => (((await rpc<any[]>("partnership_posting_deadline", { p_company_id: companyId, p_period: `${period}-01` })) ?? []) as any[])[0] ?? null;
 export const partnerClientBreakdown = async (partnerId: string, period: string) =>
   ((await rpc<any[]>("partner_client_breakdown", { p_partner_id: partnerId, p_start: `${period}-01`, p_end: lastOfMonthKey(period) })) ?? []) as any[];
