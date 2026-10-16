@@ -109,27 +109,42 @@
 # moved migration_ledger_matches_repo 4 -> 5 on both companies until the nightly
 # repo fetch sees it. Current: GGS 18, SHAYAN_A 5, ALL 23.
 #
-# Format: <company> <check_name> <difference>. Current as of 2026-10-16 after 0516.
-GGS       ar_control_equals_open_invoices                -33919712
+# Between 0516 and 0518, by data, not by any migration: GGS no_advance_booked_as_expense
+# went GREEN (1 -> 0); every_billed_client_carries_cost 11 -> 10; no_payroll_booked_as_expense
+# 6 -> 5; no_negative_custodian_balance 4 -> 3. So GGS was 17, not 18, before 0518.
+#
+# 0518 (a_prepaid_release_follows_its_expense) applied 2026-10-17, recorded 20261016225202,
+# authorised by name. Before: GGS 17, SHAYAN_A 5, ALL 22. After: GGS 18, SHAYAN_A 5, ALL 23.
+# Moved, all expected: prepaid_released_matches_schedule NEW — GGS red 7 (five expenses
+# entered in October for service already past, never yet released; they release at the
+# 1 Nov run), SHAYAN_A green 0; no_stale_prepaid_balance GGS 6 -> 5 (Nova's 30,000 corrected:
+# August 5900 fell by exactly 30,000); checks_evaluated 44 -> 45 on both, passing;
+# migration_ledger_matches_repo 5 -> 6 on both until 0518 is pushed and fetched;
+# trial_balance_debits_equal_credits gross debits +315,030 (the reversal and the re-release),
+# still passing. Nothing else moved. Recorded SQL digest = file digest
+# (sha256 135ab418d04e55864064546d82ee956eaf1d01ad3a6b657ee48f2e5936ff3ecf).
+#
+# Format: <company> <check_name> <difference>. Current as of 2026-10-17 after 0518.
+GGS       ar_control_equals_open_invoices                -33919712.00
 GGS       bank_control_equals_bank_accounts              -7357119.23
 GGS       bank_per_account_gl_equals_operational         4
-GGS       cash_control_equals_cash_locations             274317
+GGS       cash_control_equals_cash_locations             274317.00
 GGS       cash_forecast_clears_the_floor                 1
 GGS       cash_per_location_gl_equals_operational        4
 GGS       cash_pl_agrees_with_partnership                1
-GGS       every_billed_client_carries_cost               11
+GGS       every_billed_client_carries_cost               10
 GGS       every_control_is_invoked                       11
 GGS       invoices_fall_inside_their_contract            1
-GGS       migration_ledger_matches_repo                  5
-GGS       no_advance_booked_as_expense                   1
+GGS       migration_ledger_matches_repo                  6
 GGS       no_definer_function_crosses_a_branch           15
-GGS       no_negative_custodian_balance                  4
-GGS       no_payroll_booked_as_expense                   6
-GGS       no_stale_prepaid_balance                       6
+GGS       no_negative_custodian_balance                  3
+GGS       no_payroll_booked_as_expense                   5
+GGS       no_stale_prepaid_balance                       5
 GGS       payroll_accrual_matches_attendance             18
+GGS       prepaid_released_matches_schedule              7
 GGS       revenue_recognised_in_service_month            9
 SHAYAN_A  alert_delivery_is_healthy                      1
 SHAYAN_A  every_control_is_invoked                       11
-SHAYAN_A  migration_ledger_matches_repo                  5
+SHAYAN_A  migration_ledger_matches_repo                  6
 SHAYAN_A  monthly_ledger_run_is_current                  1
 SHAYAN_A  no_definer_function_crosses_a_branch           15
