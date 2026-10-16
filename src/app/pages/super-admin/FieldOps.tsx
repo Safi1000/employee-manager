@@ -37,6 +37,11 @@ import { usePageState } from "../../lib/pageState";
 //     LIST: several tasks a day, each general or assigned to one ACTIVE OFFICE
 //     STAFF employee (the database refuses anyone else, not just the picker).
 //
+// 0517 made Next Day Tasks and Other Updates PER REGION: each region writes its
+// own, and "All regions" shows one block per region. Rows written before 0517
+// carry no region; they are shown read-only under "All regions (before the
+// split)" and are not guessed into one (DECIDED).
+//
 // The Attendance Report tab reads the PREVIOUS day, deliberately: the day being
 // reported on has not been confirmed yet when the report goes out, so the
 // attendance that CAN be vouched for is yesterday's. Clients nobody confirmed
@@ -62,7 +67,18 @@ const shiftDay = (iso: string, days: number) => {
 };
 
 type ClientRow = { id: string; name: string; branch_id: string | null };
-type TaskRow = { id: string; title: string; assignee_employee_id: string | null; sort_order: number };
+type TaskRow = {
+  id: string;
+  title: string;
+  assignee_employee_id: string | null;
+  sort_order: number;
+  /** The region (0517); null only on rows written before the split. */
+  branch_id: string | null;
+};
+/** Map key for the region-less rows written before 0517. */
+const BEFORE_SPLIT = "";
+const BEFORE_SPLIT_LABEL = "All regions (before the split)";
+const TASK_COLS = "id, title, assignee_employee_id, sort_order, branch_id";
 type StaffRow = { id: string; full_name: string; employee_code: string | null };
 type Tab = "reports" | "attendance";
 
@@ -127,10 +143,10 @@ export default function FieldOps() {
   const [clients, setClients] = useState<ClientRow[]>([]);
   /** client_id -> details, for the selected day. */
   const [details, setDetails] = useState<Map<string, string>>(new Map());
-  /** The day's "Other Updates" — one note for the whole report (0475). */
-  const [otherUpdates, setOtherUpdates] = useState("");
-  const [otherSaving, setOtherSaving] = useState(false);
-  const [otherSavedAt, setOtherSavedAt] = useState<number | undefined>(undefined);
+  /** region id (BEFORE_SPLIT for pre-0517 rows) -> the day's "Other Updates". */
+  const [otherUpdates, setOtherUpdates] = useState<Map<string, string>>(new Map());
+  const [otherSaving, setOtherSaving] = useState<Set<string>>(new Set());
+  const [otherSavedAt, setOtherSavedAt] = useState<Map<string, number>>(new Map());
   /** client_id -> "no report" flag, for the selected day. */
   const [noReport, setNoReport] = useState<Set<string>>(new Set());
   /** The day's Next Day Tasks, in the order they were added. */
@@ -171,7 +187,7 @@ export default function FieldOps() {
         .eq("report_date", date),
       supabase
         .from("daily_report_tasks")
-        .select("id, title, assignee_employee_id, sort_order")
+        .select(TASK_COLS)
         .eq("company_id", companyId)
         .eq("report_date", date)
         .order("sort_order")
@@ -185,10 +201,9 @@ export default function FieldOps() {
         .order("full_name"),
       supabase
         .from("daily_report_day_notes")
-        .select("other_updates")
+        .select("branch_id, other_updates")
         .eq("company_id", companyId)
-        .eq("report_date", date)
-        .maybeSingle(),
+        .eq("report_date", date),
     ]);
     if (cli.error) { setErr(cli.error.message); setLoading(false); return; }
     if (rep.error) { setErr(rep.error.message); setLoading(false); return; }
@@ -206,8 +221,15 @@ export default function FieldOps() {
       new Set(((rep.data ?? []) as any[]).filter((r) => r.no_report).map((r) => r.client_id as string)),
     );
     if (dayRes.error) setErr(dayRes.error.message);
-    setOtherUpdates(((dayRes.data as { other_updates: string | null } | null)?.other_updates ?? "") as string);
-    setOtherSavedAt(undefined);
+    setOtherUpdates(
+      new Map(
+        ((dayRes.data ?? []) as { branch_id: string | null; other_updates: string | null }[]).map((r) => [
+          r.branch_id ?? BEFORE_SPLIT,
+          r.other_updates ?? "",
+        ]),
+      ),
+    );
+    setOtherSavedAt(new Map());
     if (taskRes.error) setErr(taskRes.error.message);
     setTasks((taskRes.data ?? []) as TaskRow[]);
     setStaff((staffRes.data ?? []) as StaffRow[]);
@@ -276,45 +298,48 @@ export default function FieldOps() {
   };
 
   /**
-   * Save the day's Other Updates (0475) — one row per (company, day) in
-   * daily_report_day_notes, written on blur like the client boxes.
+   * Save one region's Other Updates (0517) — one row per (company, day, region)
+   * in daily_report_day_notes, written on blur like the client boxes.
    */
-  const saveOtherUpdates = async (value: string) => {
+  const saveOtherUpdates = async (branchId: string, value: string) => {
     if (locked) return;
-    setOtherSaving(true);
+    setOtherSaving((prev) => new Set(prev).add(branchId));
     setErr(null);
     const { data: userData } = await supabase.auth.getUser();
     const { error } = await supabase.from("daily_report_day_notes").upsert(
       {
         company_id: companyId,
         report_date: date,
+        branch_id: branchId,
         other_updates: value.trim() || null,
         updated_by: userData.user?.id ?? null,
       },
-      { onConflict: "company_id,report_date" },
+      { onConflict: "company_id,report_date,branch_id" },
     );
-    setOtherSaving(false);
+    setOtherSaving((prev) => { const n = new Set(prev); n.delete(branchId); return n; });
     if (error) { setErr(error.message); return; }
-    setOtherSavedAt(Date.now());
+    setOtherSavedAt((prev) => new Map(prev).set(branchId, Date.now()));
   };
 
-  const addTask = async (title: string, assignee: string | null) => {
+  const addTask = async (branchId: string, title: string, assignee: string | null) => {
     if (locked) return false;
     const text = title.trim();
     if (!text) return false;
     setErr(null);
+    const regionTasks = tasks.filter((t) => t.branch_id === branchId);
     const { data: userData } = await supabase.auth.getUser();
     const { data, error } = await supabase
       .from("daily_report_tasks")
       .insert({
         company_id: companyId,
         report_date: date,
+        branch_id: branchId,
         title: text,
         assignee_employee_id: assignee,
-        sort_order: tasks.length ? Math.max(...tasks.map((t) => t.sort_order)) + 1 : 0,
+        sort_order: regionTasks.length ? Math.max(...regionTasks.map((t) => t.sort_order)) + 1 : 0,
         updated_by: userData.user?.id ?? null,
       })
-      .select("id, title, assignee_employee_id, sort_order")
+      .select(TASK_COLS)
       .single();
     if (error) { setErr(error.message); return false; }
     setTasks((prev) => [...prev, data as TaskRow]);
@@ -360,6 +385,26 @@ export default function FieldOps() {
     [regionFilter, regions],
   );
 
+  /**
+   * The blocks of Next Day Tasks / Other Updates the page shows and the PDF
+   * prints (0517): the filtered region, or every region under "All regions".
+   * The pre-0517 region-less rows get their own read-only block, and only on a
+   * day that has some — new days never will.
+   */
+  const regionBlocks = useMemo(() => {
+    const blocks: { key: string; label: string; beforeSplit: boolean }[] = regions
+      .filter((r) => !r.is_head_office && (!regionFilter || r.id === regionFilter))
+      .map((r) => ({ key: r.id, label: r.name, beforeSplit: false }));
+    const hasBeforeSplit =
+      tasks.some((t) => t.branch_id === null) || (otherUpdates.get(BEFORE_SPLIT) ?? "").trim().length > 0;
+    if (hasBeforeSplit) blocks.push({ key: BEFORE_SPLIT, label: BEFORE_SPLIT_LABEL, beforeSplit: true });
+    return blocks;
+  }, [regions, regionFilter, tasks, otherUpdates]);
+  const tasksOf = useCallback(
+    (key: string) => tasks.filter((t) => (t.branch_id ?? BEFORE_SPLIT) === key),
+    [tasks],
+  );
+
   /** The attendance summary, cut to the same region as the client list. */
   const visibleAttendance = useMemo<AttendanceSummary | null>(() => {
     if (!attendance) return null;
@@ -403,8 +448,11 @@ export default function FieldOps() {
   const exportPdf = async () => {
     generateDailyOperationsReportPdf(company, date, rowsForPdf, {
       regionLabel,
-      nextDayTasks: tasks.map((t) => ({ title: t.title, assignee: staffName(t.assignee_employee_id) })),
-      otherUpdates,
+      regionSections: regionBlocks.map((blk) => ({
+        label: blk.label,
+        nextDayTasks: tasksOf(blk.key).map((t) => ({ title: t.title, assignee: staffName(t.assignee_employee_id) })),
+        otherUpdates: otherUpdates.get(blk.key) ?? null,
+      })),
       attendance: visibleAttendance,
     });
     setBusy(true);
@@ -510,29 +558,36 @@ export default function FieldOps() {
 
           {tab === "reports" ? (
             <>
-              {/* Next Day Tasks belong to the DAY, not to a client, so they sit
-                  above the table. Several per day; each general or assigned to
-                  an active office-staff member (0461). */}
-              <NextDayTasks
-                tasks={tasks}
-                staff={staff}
-                locked={locked}
-                loading={loading}
-                staffName={staffName}
-                onAdd={addTask}
-                onUpdate={updateTask}
-                onDelete={deleteTask}
-              />
-
-              <OtherUpdates
-                value={otherUpdates}
-                locked={locked}
-                loading={loading}
-                saving={otherSaving}
-                savedAt={otherSavedAt}
-                onChange={setOtherUpdates}
-                onCommit={saveOtherUpdates}
-              />
+              {/* Next Day Tasks and Other Updates belong to the DAY and the
+                  REGION (0517), not to a client, so they sit above the table —
+                  one block per region. Tasks: several per day, each general or
+                  assigned to an active office-staff member (0461). */}
+              {regionBlocks.map((blk) => (
+                <div key={blk.key || "before-split"} className="space-y-2">
+                  {(regionBlocks.length > 1 || blk.beforeSplit) && (
+                    <h3 className="text-sm font-semibold text-foreground pt-1">{blk.label}</h3>
+                  )}
+                  <NextDayTasks
+                    tasks={tasksOf(blk.key)}
+                    staff={staff}
+                    locked={locked || blk.beforeSplit}
+                    loading={loading}
+                    staffName={staffName}
+                    onAdd={(title, assignee) => addTask(blk.key, title, assignee)}
+                    onUpdate={updateTask}
+                    onDelete={deleteTask}
+                  />
+                  <OtherUpdates
+                    value={otherUpdates.get(blk.key) ?? ""}
+                    locked={locked || blk.beforeSplit}
+                    loading={loading}
+                    saving={otherSaving.has(blk.key)}
+                    savedAt={otherSavedAt.get(blk.key)}
+                    onChange={(v) => setOtherUpdates((prev) => new Map(prev).set(blk.key, v))}
+                    onCommit={(v) => saveOtherUpdates(blk.key, v)}
+                  />
+                </div>
+              ))}
 
               <p className="text-xs text-muted-foreground">
                 {formatDate(date)} · {visibleClients.length} active client
@@ -820,9 +875,9 @@ function DetailsRow({
 }
 
 /**
- * The day's Other Updates (0475): one box for the whole report, like the Next
- * Day Tasks — not one per client. Keeps its own "last saved" value so a blur
- * with nothing changed writes nothing.
+ * One region's Other Updates for the day (0475, per region since 0517) — not one
+ * per client. Keeps its own "last saved" value so a blur with nothing changed
+ * writes nothing.
  */
 function OtherUpdates({
   value, locked, loading, saving, savedAt, onChange, onCommit,

@@ -9,7 +9,7 @@ import { Badge, Banner, Button, Card, HStack, IconBtn, ListCard, Row, Section, T
 import { TODAY } from "../../data/seed";
 import { useDB } from "../../data/store";
 import {
-  addDayTask, deleteDayTask, exportDailyReport, loadReportAttendance, loadReportDay, regionCut, ReportDay, saveClientNote, saveOtherUpdates, updateDayTask,
+  addDayTask, BEFORE_SPLIT, BEFORE_SPLIT_LABEL, blockKey, deleteDayTask, exportDailyReport, loadReportAttendance, loadReportDay, regionCut, ReportDay, saveClientNote, saveOtherUpdates, updateDayTask,
 } from "../../data/api/dailyReports";
 import type { AttendanceSummary } from "../../lib/web/attendanceSummary";
 import { useAuth } from "../../lib/auth";
@@ -20,29 +20,32 @@ import { fonts, radius } from "../../theme/tokens";
 
 /**
  * Daily Reports (web FieldOps): one note per active client per day, the day's
- * Other Updates and Next Day Tasks, exported as the branded PDF. Only TODAY is
- * writable (web: locked = !isToday || !roster.edit); past days are read-only.
+ * Other Updates and Next Day Tasks PER REGION (0517), exported as the branded
+ * PDF. Only TODAY is writable (web: locked = !isToday || !roster.edit); past
+ * days are read-only. Pre-0517 region-less rows show read-only under their own
+ * "before the split" block, as on the web.
  */
 export default function DailyReports() {
   const t = useTheme();
   const router = useRouter();
   const { db, act } = useDB();
   const { can, canAny } = useAuth();
-  const { regionId, label: regionLabel } = useRegion();
+  const { regionId, label: regionLabel, regions } = useRegion();
   const { toast } = useOverlay();
   const [date, setDate] = useState(TODAY);
   const [day, setDay] = useState<ReportDay | null>(null);
   const [att, setAtt] = useState<AttendanceSummary | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [other, setOther] = useState<string | null>(null);
-  const [newTask, setNewTask] = useState("");
-  const [newAssignee, setNewAssignee] = useState("");
+  /** Per region block: unsaved Other Updates, and the add-task draft. */
+  const [other, setOther] = useState<Record<string, string>>({});
+  const [newTask, setNewTask] = useState<Record<string, string>>({});
+  const [newAssignee, setNewAssignee] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const locked = date !== TODAY || !can("roster.edit");
   const clients = useMemo(() => db.clients.filter((c) => c.status === "active" && inRegion(regionId, c.branch_id)), [db.clients, regionId]);
 
   const load = useCallback(async () => {
-    setDay(null); setAtt(null); setDrafts({}); setOther(null);
+    setDay(null); setAtt(null); setDrafts({}); setOther({});
     try {
       const [d, a] = await Promise.all([loadReportDay(db.company.id, date), loadReportAttendance(db.company.id, date).catch(() => null)]);
       setDay(d); setAtt(a);
@@ -61,6 +64,16 @@ export default function DailyReports() {
 
   const written = day ? clients.filter((c) => !day.noReport.has(c.id) && (day.details.get(c.id) ?? "").trim()).length : 0;
   const visibleAtt = att ? regionCut(att, regionId) : null;
+  // One block per region in view; the pre-0517 block only on a day that has some.
+  const blocks = useMemo(() => {
+    const out: { key: string; label: string; beforeSplit: boolean }[] = regions
+      .filter((b) => b.kind === "regional" && inRegion(regionId, b.id))
+      .map((b) => ({ key: b.id, label: b.name, beforeSplit: false }));
+    if (day && (day.tasks.some((x) => x.branch_id === null) || (day.otherUpdates.get(BEFORE_SPLIT) ?? "").trim())) {
+      out.push({ key: BEFORE_SPLIT, label: BEFORE_SPLIT_LABEL, beforeSplit: true });
+    }
+    return out;
+  }, [regions, regionId, day]);
   const staffName = (id: string | null) => (id ? day?.staff.find((x) => x.id === id)?.full_name ?? "Former staff" : "Unassigned");
 
   return (
@@ -70,7 +83,7 @@ export default function DailyReports() {
       title="Daily Reports"
       subtitle={day ? `${written} of ${clients.length} clients written for ${fmtShort(date)}` : undefined}
       actions={<IconBtn icon={FileDown} label="Export PDF" onPress={() => day && run(() => exportDailyReport({
-        companyId: db.company.id, date, regionLabel: regionId ? regionLabel : null, clients, day, attendance: visibleAtt,
+        companyId: db.company.id, date, regionLabel: regionId ? regionLabel : null, clients, day, attendance: visibleAtt, blocks,
       }), "Daily report exported")} />}
       sticky={
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
@@ -140,45 +153,58 @@ export default function DailyReports() {
             );
           })}
 
-          <Section title="Other updates" hint="One note for the whole report.">
-            <Card>
-              <TextInput multiline editable={!locked} value={other ?? day.otherUpdates} onChangeText={setOther} placeholder={locked ? "None." : "Anything that isn't about one client…"} placeholderTextColor={t.mutedFg}
-                style={{ minHeight: 70, color: t.fg, fontFamily: fonts.body, fontSize: 16, lineHeight: 22, textAlignVertical: "top", backgroundColor: t.input, borderRadius: radius.lg, borderWidth: 1, borderColor: t.border, padding: 12 }} />
-              {!locked && other !== null && other !== day.otherUpdates && (
-                <View style={{ marginTop: 10, flexDirection: "row", justifyContent: "flex-end" }}>
-                  <Button size="sm" label="Save" icon={Check} loading={busy} onPress={() => { void run(() => saveOtherUpdates(db.company.id, date, other), "Saved"); }} />
-                </View>
-              )}
-            </Card>
-          </Section>
+          {blocks.map((blk) => {
+            const ro = locked || blk.beforeSplit;
+            const tasks = day.tasks.filter((x) => blockKey(x.branch_id) === blk.key);
+            const savedOther = day.otherUpdates.get(blk.key) ?? "";
+            const draftOther = other[blk.key];
+            const titled = blocks.length > 1 || blk.beforeSplit;
+            return (
+              <React.Fragment key={blk.key || "before-split"}>
+                <Section title={titled ? `Other updates · ${blk.label}` : "Other updates"} hint="One note for this region's report.">
+                  <Card>
+                    <TextInput multiline editable={!ro} value={draftOther ?? savedOther} onChangeText={(v) => setOther((x) => ({ ...x, [blk.key]: v }))} placeholder={ro ? "None." : "Anything that isn't about one client…"} placeholderTextColor={t.mutedFg}
+                      style={{ minHeight: 70, color: t.fg, fontFamily: fonts.body, fontSize: 16, lineHeight: 22, textAlignVertical: "top", backgroundColor: t.input, borderRadius: radius.lg, borderWidth: 1, borderColor: t.border, padding: 12 }} />
+                    {!ro && draftOther !== undefined && draftOther !== savedOther && (
+                      <View style={{ marginTop: 10, flexDirection: "row", justifyContent: "flex-end" }}>
+                        <Button size="sm" label="Save" icon={Check} loading={busy} onPress={() => { void run(() => saveOtherUpdates(db.company.id, date, blk.key, draftOther), "Saved"); }} />
+                      </View>
+                    )}
+                  </Card>
+                </Section>
 
-          <Section title="Next day tasks" count={day.tasks.length}>
-            <ListCard>
-              {day.tasks.map((x, i) => locked ? (
-                <Row key={x.id} last={i === day.tasks.length - 1} title={x.title} subtitle={staffName(x.assignee_employee_id)} />
-              ) : (
-                <View key={x.id} style={{ padding: 12, gap: 8, borderBottomWidth: 1, borderBottomColor: t.border }}>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                    <T v="bodyStrong" style={{ flex: 1 }}>{x.title}</T>
-                    <Pressable hitSlop={8} onPress={() => { void run(() => deleteDayTask(x.id)); }}><Trash2 size={16} color={t.mutedFg} /></Pressable>
-                  </View>
-                  <Select compact clearable label="Assignee" value={x.assignee_employee_id ?? ""} placeholder="Unassigned"
-                    onChange={(v) => { void run(() => updateDayTask(x.id, { assignee_employee_id: v || null })); }}
-                    options={day.staff.map((s) => ({ value: s.id, label: s.full_name, sub: s.employee_code }))} />
-                </View>
-              ))}
-              {!locked && (
-                <View style={{ padding: 12, gap: 8 }}>
-                  <TextInput value={newTask} onChangeText={setNewTask} placeholder="Add a task for tomorrow" placeholderTextColor={t.mutedFg}
-                    style={{ color: t.fg, fontFamily: fonts.body, fontSize: 15, backgroundColor: t.input, borderRadius: radius.md, borderWidth: 1, borderColor: t.border, paddingHorizontal: 12, height: 44 }} />
-                  <Select compact clearable label="Assignee" value={newAssignee} onChange={setNewAssignee} placeholder="Unassigned" options={day.staff.map((s) => ({ value: s.id, label: s.full_name, sub: s.employee_code }))} />
-                  <Button size="sm" label="Add task" icon={Plus} disabled={!newTask.trim()} onPress={async () => {
-                    if (await run(() => addDayTask(db.company.id, date, newTask, newAssignee || null, day.tasks))) { setNewTask(""); setNewAssignee(""); }
-                  }} />
-                </View>
-              )}
-            </ListCard>
-          </Section>
+                <Section title={titled ? `Next day tasks · ${blk.label}` : "Next day tasks"} count={tasks.length}>
+                  <ListCard>
+                    {tasks.map((x, i) => ro ? (
+                      <Row key={x.id} last={i === tasks.length - 1} title={x.title} subtitle={staffName(x.assignee_employee_id)} />
+                    ) : (
+                      <View key={x.id} style={{ padding: 12, gap: 8, borderBottomWidth: 1, borderBottomColor: t.border }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                          <T v="bodyStrong" style={{ flex: 1 }}>{x.title}</T>
+                          <Pressable hitSlop={8} onPress={() => { void run(() => deleteDayTask(x.id)); }}><Trash2 size={16} color={t.mutedFg} /></Pressable>
+                        </View>
+                        <Select compact clearable label="Assignee" value={x.assignee_employee_id ?? ""} placeholder="Unassigned"
+                          onChange={(v) => { void run(() => updateDayTask(x.id, { assignee_employee_id: v || null })); }}
+                          options={day.staff.map((s) => ({ value: s.id, label: s.full_name, sub: s.employee_code }))} />
+                      </View>
+                    ))}
+                    {!ro && (
+                      <View style={{ padding: 12, gap: 8 }}>
+                        <TextInput value={newTask[blk.key] ?? ""} onChangeText={(v) => setNewTask((x) => ({ ...x, [blk.key]: v }))} placeholder="Add a task for tomorrow" placeholderTextColor={t.mutedFg}
+                          style={{ color: t.fg, fontFamily: fonts.body, fontSize: 15, backgroundColor: t.input, borderRadius: radius.md, borderWidth: 1, borderColor: t.border, paddingHorizontal: 12, height: 44 }} />
+                        <Select compact clearable label="Assignee" value={newAssignee[blk.key] ?? ""} onChange={(v) => setNewAssignee((x) => ({ ...x, [blk.key]: v }))} placeholder="Unassigned" options={day.staff.map((s) => ({ value: s.id, label: s.full_name, sub: s.employee_code }))} />
+                        <Button size="sm" label="Add task" icon={Plus} disabled={!(newTask[blk.key] ?? "").trim()} onPress={async () => {
+                          if (await run(() => addDayTask(db.company.id, date, blk.key, newTask[blk.key] ?? "", newAssignee[blk.key] || null, tasks))) {
+                            setNewTask((x) => ({ ...x, [blk.key]: "" })); setNewAssignee((x) => ({ ...x, [blk.key]: "" }));
+                          }
+                        }} />
+                      </View>
+                    )}
+                  </ListCard>
+                </Section>
+              </React.Fragment>
+            );
+          })}
         </>
       )}
 

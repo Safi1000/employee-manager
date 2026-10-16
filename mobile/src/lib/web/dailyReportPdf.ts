@@ -8,15 +8,15 @@ import { describeUnconfirmed, type AttendanceSummary } from "./attendanceSummary
 import { brandingFromCompany, drawBrandedHeader, drawBrandedFooter, hexToRgb } from "./pdfBranding";
 
 // Daily Operations Report: one line per client for a given day, carrying whatever
-// was written in that client's Details box. The day's Other Updates (0475) — one
-// note for the whole report — prints once, under the Next Day Tasks. The per-post version (required vs
+// was written in that client's Details box. Next Day Tasks and Other Updates are
+// recorded per REGION (0517) and print as one block per region, at the head. The per-post version (required vs
 // present strength, silent-post alerting, exception notes) was dropped — the
 // report is now a client-by-client written note, not a headcount reconciliation.
 // Uses the shared branded jsPDF engine — no new library.
 //
 // Three things the page supplies and this file prints:
-//   * the day's Next Day Tasks (each general or assigned), at the head, because
-//     they are read before the detail;
+//   * each region's Next Day Tasks (each general or assigned) and Other
+//     Updates, at the head, because they are read before the detail;
 //   * the clients WITH a note first and the "No report" ones underneath, so the
 //     reader reaches the substance without scrolling past the silence;
 //   * an attendance summary for the PREVIOUS day, since the day being reported
@@ -41,13 +41,21 @@ export type DailyReportRow = {
   no_report?: boolean;
 };
 
+export type DailyReportRegionSection = {
+  label: string;
+  nextDayTasks: { title: string; assignee: string | null }[];
+  otherUpdates: string | null;
+};
+
 export type DailyReportPdfOptions = {
   /** Region the page was filtered to when the PDF was produced, or null for all. */
   regionLabel?: string | null;
-  /** The day's Next Day Tasks; `assignee` null = a general task. */
-  nextDayTasks?: { title: string; assignee: string | null }[];
-  /** The day's Other Updates — one note for the whole report (0475). */
-  otherUpdates?: string | null;
+  /**
+   * The day's Next Day Tasks and Other Updates, one entry per region (0517), in
+   * print order. `assignee` null = a general task. The label is printed above
+   * the region's boxes only when there is more than one region to tell apart.
+   */
+  regionSections?: DailyReportRegionSection[];
   /** Previous day's attendance, already filtered to the same region. */
   attendance?: AttendanceSummary | null;
 };
@@ -87,9 +95,8 @@ export function generateDailyOperationsReportPdf(
   );
   y += 7;
 
-  // ── Next Day Task ─────────────────────────────────────────────────────────
-  const tasks = (options.nextDayTasks ?? []).filter((t) => t.title.trim());
-  if (tasks.length > 0) {
+  // ── Next Day Tasks and Other Updates, per region (0517) ────────────────────
+  const drawTasks = (tasks: { title: string; assignee: string | null }[]) => {
     // Each task on its own line(s), numbered, with who it is for. Wrapped per
     // task so a long one indents under its own number instead of the margin.
     const ASSIGNEE_W = 48;
@@ -129,11 +136,9 @@ export function generateDailyOperationsReportPdf(
     });
     doc.setFont("helvetica", "normal");
     y += boxH + 6;
-  }
+  };
 
-  // ── Other Updates (the day's, once) ───────────────────────────────────────
-  const other = (options.otherUpdates ?? "").trim();
-  if (other) {
+  const drawOther = (other: string) => {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
     const lines = doc.splitTextToSize(other, CONTENT_W - 6) as string[];
@@ -151,6 +156,28 @@ export function generateDailyOperationsReportPdf(
     doc.setTextColor(15, 23, 42);
     lines.forEach((ln, i) => doc.text(ln, MARGIN + 3, y + 9.5 + i * LINE_H));
     y += boxH + 6;
+  };
+
+  // A region with nothing written prints nothing, as before the split.
+  const sections = (options.regionSections ?? [])
+    .map((sec) => ({
+      label: sec.label,
+      tasks: sec.nextDayTasks.filter((t) => t.title.trim()),
+      other: (sec.otherUpdates ?? "").trim(),
+    }))
+    .filter((sec) => sec.tasks.length > 0 || sec.other);
+  const labelled = (options.regionSections ?? []).length > 1;
+  for (const sec of sections) {
+    if (labelled) {
+      ensure(24);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(15, 23, 42);
+      doc.text(sec.label, MARGIN, y + 1);
+      y += 4;
+    }
+    if (sec.tasks.length > 0) drawTasks(sec.tasks);
+    if (sec.other) drawOther(sec.other);
   }
 
   // ── Client notes ──────────────────────────────────────────────────────────
