@@ -95,6 +95,20 @@
 # migration_ledger_matches_repo 3 -> 4 on both (0513-0516 not yet pushed). Canary 44, passing.
 # Digest d85e468e13f488216eb649f7f2da3d34.
 #
+# READ THIS BEFORE THE NUMBERS BELOW. GGS 14 -> 18 after 0516 is NOT a regression.
+# The four GGS checks that went red are 0516's NEW checks, each firing on a real
+# finding of the September 2026 audit that had been found by hand:
+#   every_billed_client_carries_cost      11  Lahore's six, Bank of AJK, three small; Premier Sales (cost, no billing)
+#   no_payroll_booked_as_expense           6  Berger's three salary rows, Nova 142,515, "remaining salary", Shaban
+#   no_advance_booked_as_expense           1  the 5,000 to Muhammad Shaban
+#   invoices_fall_inside_their_contract    1  Waheed: invoiced for Sep 2026, contract starts 9 Oct 2026
+# No pre-existing check turned red. They clear when the data is fixed (Lahore
+# backfill, reclassifying the pay rows, Waheed's dates), never by editing a check.
+#
+# Since: 0517 (another session, daily reports per region, applied 18:26 16 Oct)
+# moved migration_ledger_matches_repo 4 -> 5 on both companies until the nightly
+# repo fetch sees it. Current: GGS 18, SHAYAN_A 5, ALL 23.
+#
 # Format: <company> <check_name> <difference>. Current as of 2026-10-16 after 0516.
 GGS       ar_control_equals_open_invoices                -33919712
 GGS       bank_control_equals_bank_accounts              -7357119.23
@@ -106,7 +120,7 @@ GGS       cash_pl_agrees_with_partnership                1
 GGS       every_billed_client_carries_cost               11
 GGS       every_control_is_invoked                       11
 GGS       invoices_fall_inside_their_contract            1
-GGS       migration_ledger_matches_repo                  4
+GGS       migration_ledger_matches_repo                  5
 GGS       no_advance_booked_as_expense                   1
 GGS       no_definer_function_crosses_a_branch           15
 GGS       no_negative_custodian_balance                  4
@@ -116,6 +130,6 @@ GGS       payroll_accrual_matches_attendance             18
 GGS       revenue_recognised_in_service_month            9
 SHAYAN_A  alert_delivery_is_healthy                      1
 SHAYAN_A  every_control_is_invoked                       11
-SHAYAN_A  migration_ledger_matches_repo                  4
+SHAYAN_A  migration_ledger_matches_repo                  5
 SHAYAN_A  monthly_ledger_run_is_current                  1
 SHAYAN_A  no_definer_function_crosses_a_branch           15

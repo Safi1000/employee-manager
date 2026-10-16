@@ -2,180 +2,129 @@
 // pass). It is the number that says what unbilled cover costs: MIU is billed for
 // 12 and may man 13, and that 13th only shows up here.
 //
-//   contracted — committed headcount from contract_lines (what the client pays for)
-//   deployed   — distinct guards who actually stood there this month (from marks,
-//                keyed on worked_for_client_id, so relievers count for the client
-//                they covered)
-//   cost       — payroll_cost_by_client(month): salary apportioned by worked days
+// READ, NOT COMPUTED (0516). Every figure comes from client_cover(), which holds
+// the definitions this screen used to compute in the browser:
+//   contracted     committed heads on personnel lines of active guard-deployment contracts
+//   deployed       distinct guards marked present / double duty / relief cover FOR the client
+//   unbilled cover deployed above contracted — cover the company absorbs
+//   payroll cost   the accrual client statement's direct payroll (salary split by days worked)
 //
 // A report, not a control. Nothing here refuses anything; deployed exceeding
 // contracted is expected and is exactly the cost being surfaced.
-import { useEffect, useMemo, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Loader2, Users } from "lucide-react";
 import ExportButton from "../../components/ExportButton";
+import Badge from "../../components/Badge";
 import { exportTable } from "../../lib/excel";
-import { supabase, fetchAllRows, isPersonnelCategory, type ContractLineCategory } from "../../lib/supabase";
+import { supabase } from "../../lib/supabase";
 import { usePageState } from "../../lib/pageState";
+import { Panel, inputCls } from "./_assetsKit";
+import { useCompanyId } from "./reports/kit";
 
 const monthKeyFromDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 const prevMonth = () => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return monthKeyFromDate(d); };
 
-type Row = { client_id: string; client_name: string; contracted: number; deployed: number; cost: number };
+type Row = { client_id: string; client_name: string; contracted: number; deployed: number; unbilled_cover: number; payroll_cost: number };
 
 export default function ContractedVsDeployed() {
+  const companyId = useCompanyId();
   const [month, setMonth] = usePageState("ContractedVsDeployed.month", prevMonth());
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!companyId) return;
     let alive = true;
     (async () => {
       setLoading(true);
       setError(null);
-      const start = `${month}-01`;
-      const [y, m] = month.split("-").map(Number);
-      const end = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
-
-      const [cliRes, conRes, lineRes, costRes] = await Promise.all([
-        supabase.from("clients").select("id, name"),
-        supabase.from("contracts").select("id, client_id, status, contract_type"),
-        supabase.from("contract_lines").select("contract_id, category, committed_count"),
-        supabase.rpc("payroll_cost_by_client", { p_period_month: start }),
-      ]);
-      // Deployed marks can exceed a page, so paginate.
-      const marks = await fetchAllRows<{ worked_for_client_id: string | null; employee_id: string }>(() =>
-        supabase
-          .from("attendance_records")
-          .select("worked_for_client_id, employee_id")
-          .gte("attendance_date", start)
-          .lte("attendance_date", end)
-          .in("status", ["present", "double_duty", "relief_cover"]) as unknown as {
-          range: (from: number, to: number) => Promise<{ data: unknown; error: { message: string } | null }>;
-        },
-      );
+      const { data, error: e } = await supabase.rpc("client_cover", { p_company_id: companyId, p_month: `${month}-01` });
       if (!alive) return;
-
-      const firstErr = cliRes.error || conRes.error || lineRes.error || (costRes.error as any);
-      if (firstErr) { setError(firstErr.message); setLoading(false); return; }
-
-      const clientName = new Map((cliRes.data ?? []).map((c: any) => [c.id, c.name as string]));
-      // Active guard-deployment contracts → their client.
-      const contractClient = new Map<string, string>();
-      for (const k of (conRes.data ?? []) as any[]) {
-        if (k.status === "active" && k.contract_type === "guard_deployment") contractClient.set(k.id, k.client_id);
-      }
-      const contracted = new Map<string, number>();
-      for (const l of (lineRes.data ?? []) as any[]) {
-        const cid = contractClient.get(l.contract_id);
-        if (!cid || !isPersonnelCategory(l.category as ContractLineCategory)) continue;
-        contracted.set(cid, (contracted.get(cid) ?? 0) + (Number(l.committed_count) || 0));
-      }
-      const deployedSet = new Map<string, Set<string>>();
-      for (const r of marks) {
-        if (!r.worked_for_client_id) continue;
-        const s = deployedSet.get(r.worked_for_client_id) ?? new Set<string>();
-        s.add(r.employee_id);
-        deployedSet.set(r.worked_for_client_id, s);
-      }
-      const cost = new Map<string, number>();
-      for (const r of (costRes.data ?? []) as any[]) cost.set(r.client_id, Number(r.cost) || 0);
-
-      const ids = new Set<string>([...contracted.keys(), ...deployedSet.keys(), ...cost.keys()]);
-      const out: Row[] = [...ids].map((id) => ({
-        client_id: id,
-        client_name: clientName.get(id) ?? "—",
-        contracted: contracted.get(id) ?? 0,
-        deployed: deployedSet.get(id)?.size ?? 0,
-        cost: cost.get(id) ?? 0,
-      }));
-      out.sort((a, b) => (b.deployed - b.contracted) - (a.deployed - a.contracted) || a.client_name.localeCompare(b.client_name));
-      setRows(out);
+      if (e) { setError(e.message); setLoading(false); return; }
+      setRows(((data ?? []) as Row[]).map((r) => ({ ...r, contracted: Number(r.contracted), deployed: Number(r.deployed),
+        unbilled_cover: Number(r.unbilled_cover), payroll_cost: Number(r.payroll_cost) })));
       setLoading(false);
     })();
     return () => { alive = false; };
-  }, [month]);
+  }, [month, companyId]);
 
-  const totals = useMemo(() => rows.reduce(
-    (t, r) => ({ contracted: t.contracted + r.contracted, deployed: t.deployed + r.deployed, cost: t.cost + r.cost }),
-    { contracted: 0, deployed: 0, cost: 0 },
-  ), [rows]);
+  // Footer: the sum of the rows shown — the one place arithmetic belongs here.
+  const totals = rows.reduce(
+    (t, r) => ({ contracted: t.contracted + r.contracted, deployed: t.deployed + r.deployed, unbilled: t.unbilled + r.unbilled_cover, cost: t.cost + r.payroll_cost }),
+    { contracted: 0, deployed: 0, unbilled: 0, cost: 0 },
+  );
 
   return (
-    <div className="p-6">
-      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h3 className="text-lg text-slate-900 mb-1">Contracted vs Deployed vs Cost</h3>
-          <p className="text-sm text-slate-500">
-            What each client is committed to, who actually stood there, and the payroll it cost. A positive
-            gap is cover carried above the contract — visible here, billed nowhere.
-          </p>
-        </div>
-        <div className="flex items-end gap-2">
-          <label className="text-sm">
-            <span className="block text-xs text-slate-500 mb-1">Month</span>
-            <input type="month" value={month} onChange={(e) => setMonth(e.target.value)}
-              className="px-3 py-2 border border-slate-200 rounded-md text-sm" />
-          </label>
-          <ExportButton
-            onExport={() => exportTable({
-              fileName: `Contracted vs Deployed ${month}.xlsx`,
-              sheetName: "Cover",
-              headers: ["Client", "Contracted", "Deployed", "Gap", "Cost"],
-              rows: rows.map((r) => [r.client_name, r.contracted, r.deployed, r.deployed - r.contracted, r.cost]),
-            })}
-          />
-        </div>
+    <Panel
+      icon={Users}
+      title="Contracted vs deployed vs cost"
+      description="What each client is committed to, who actually stood there, and the payroll it cost. Unbilled cover is strength carried above the contract — visible here, billed nowhere."
+      actions={<>
+        <input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} className={inputCls + " w-auto"} />
+        <ExportButton
+          onExport={() => exportTable({
+            fileName: `Contracted vs Deployed ${month}.xlsx`,
+            sheetName: "Cover",
+            headers: ["Client", "Contracted", "Deployed", "Unbilled cover", "Payroll cost"],
+            rows: rows.map((r) => [r.client_name, r.contracted, r.deployed, r.unbilled_cover, r.payroll_cost]),
+          })}
+        />
+      </>}
+      flush
+    >
+      {/* A figure that changes basis has to say so where it is read, not only in a report. */}
+      <div className="px-4 md:px-5 py-2.5 border-b border-border text-[11px] text-muted-foreground leading-relaxed">
+        <strong className="text-foreground">Basis, since 16 Oct 2026:</strong> every column is read from the database
+        (<code>client_cover()</code>, migration 0516) instead of being computed in this screen. Payroll cost is the accrual
+        client statement's payroll — final salary split across clients by days worked. Measured against the previous
+        computation for August and September 2026: identical totals and no client differing.
       </div>
-
-      {error && <div className="p-3 mb-3 bg-danger-50 text-danger-700 border border-danger-200 rounded-md text-sm">{error}</div>}
-
+      {error && <div className="px-5 py-3 text-sm text-danger-600">{error}</div>}
       {loading ? (
-        <div className="flex items-center gap-2 text-slate-500 text-sm py-10 justify-center">
-          <Loader2 className="w-4 h-4 animate-spin" /> Loading…
-        </div>
+        <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
       ) : rows.length === 0 ? (
-        <div className="text-center text-slate-500 text-sm py-10">No contracted or deployed strength this month.</div>
+        <div className="py-12 text-center text-sm text-muted-foreground">No contracted or deployed strength this month.</div>
       ) : (
-        <div className="overflow-x-auto border border-slate-200 rounded-md">
+        <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead>
-              <tr className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200">
-                <th className="text-left px-4 py-2">Client</th>
-                <th className="text-right px-4 py-2">Contracted</th>
-                <th className="text-right px-4 py-2">Deployed</th>
-                <th className="text-right px-4 py-2">Gap</th>
-                <th className="text-right px-4 py-2">Cost (PKR)</th>
+            <thead className="text-xs text-muted-foreground border-b border-border">
+              <tr>
+                <th className="text-left px-4 md:px-5 py-2.5 font-medium">Client</th>
+                <th className="text-right px-3 py-2.5 font-medium">Contracted</th>
+                <th className="text-right px-3 py-2.5 font-medium">Deployed</th>
+                <th className="text-right px-3 py-2.5 font-medium">Unbilled cover</th>
+                <th className="text-right px-4 md:px-5 py-2.5 font-medium">Payroll cost</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
-              {rows.map((r) => {
-                const gap = r.deployed - r.contracted;
-                return (
-                  <tr key={r.client_id} className="hover:bg-slate-50">
-                    <td className="px-4 py-2 text-slate-800">{r.client_name}</td>
-                    <td className="px-4 py-2 text-right tabular-nums text-slate-600">{r.contracted}</td>
-                    <td className="px-4 py-2 text-right tabular-nums text-slate-600">{r.deployed}</td>
-                    <td className={`px-4 py-2 text-right tabular-nums font-medium ${gap > 0 ? "text-danger-600" : gap < 0 ? "text-slate-400" : "text-slate-500"}`}>
-                      {gap > 0 ? `+${gap}` : gap}
-                    </td>
-                    <td className="px-4 py-2 text-right tabular-nums text-slate-700">{r.cost.toLocaleString()}</td>
-                  </tr>
-                );
-              })}
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.client_id} className="border-t border-border/60 hover:bg-muted/20">
+                  <td className="px-4 md:px-5 py-2">
+                    <span className="text-foreground">{r.client_name}</span>
+                    {r.deployed < r.contracted && <Badge tone="warning" className="ml-2">short-staffed</Badge>}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">{r.contracted}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{r.deployed}</td>
+                  <td className={`px-3 py-2 text-right tabular-nums font-medium ${r.unbilled_cover > 0 ? "text-danger-700 dark:text-danger-500" : "text-muted-foreground"}`}>
+                    {r.unbilled_cover > 0 ? `+${r.unbilled_cover}` : "—"}
+                  </td>
+                  <td className="px-4 md:px-5 py-2 text-right tabular-nums">{r.payroll_cost.toLocaleString()}</td>
+                </tr>
+              ))}
             </tbody>
             <tfoot>
-              <tr className="border-t border-slate-200 bg-slate-50 font-medium text-slate-800">
-                <td className="px-4 py-2">Total</td>
-                <td className="px-4 py-2 text-right tabular-nums">{totals.contracted}</td>
-                <td className="px-4 py-2 text-right tabular-nums">{totals.deployed}</td>
-                <td className="px-4 py-2 text-right tabular-nums">{totals.deployed - totals.contracted > 0 ? `+${totals.deployed - totals.contracted}` : totals.deployed - totals.contracted}</td>
-                <td className="px-4 py-2 text-right tabular-nums">{totals.cost.toLocaleString()}</td>
+              <tr className="border-t-2 border-border font-semibold">
+                <td className="px-4 md:px-5 py-2.5">Total of rows shown</td>
+                <td className="px-3 py-2.5 text-right tabular-nums">{totals.contracted}</td>
+                <td className="px-3 py-2.5 text-right tabular-nums">{totals.deployed}</td>
+                <td className="px-3 py-2.5 text-right tabular-nums">{totals.unbilled > 0 ? `+${totals.unbilled}` : "—"}</td>
+                <td className="px-4 md:px-5 py-2.5 text-right tabular-nums">{totals.cost.toLocaleString()}</td>
               </tr>
             </tfoot>
           </table>
         </div>
       )}
-    </div>
+    </Panel>
   );
 }
