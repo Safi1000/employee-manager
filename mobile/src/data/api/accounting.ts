@@ -2,6 +2,7 @@
 // an RPC, as on the web (0380/0389): nothing here moves a balance itself.
 import { driveUpload, PickedFile, q, rpc, sb } from "./core";
 import { fetchAllRows, invoiceOutstanding } from "../../lib/web/supabase";
+import { invoiceMonth } from "../../lib/web/date";
 import { loadCustodianOptions, type CustodianOption } from "../../lib/web/custodian";
 import { validateBankAccount, validateIban } from "../../lib/web/validation";
 import { guardDisplayCode, relabelEmployeeCodes } from "../../lib/web/guardCode";
@@ -271,7 +272,7 @@ export function statementLedger(client: any, data: AccountingData, month: string
   const start = monthly ? `${month}-01` : null;
   const end = monthly ? (() => { const [y, m] = month.split("-").map(Number); return `${month}-${String(new Date(y!, m!, 0).getDate()).padStart(2, "0")}`; })() : null;
   const inScope = (d: string) => !monthly || (d >= start! && d <= end!);
-  const invMonth = (i: any) => String(i.service_month ?? i.period_start ?? i.invoice_date ?? "").slice(0, 7);
+  const invMonth = invoiceMonth;
   const bankLabel = (id: string | null | undefined) => { const b = id ? data.banks.find((x) => x.id === id) : null; if (!b) return null; const tail = String(b.account_number ?? "").slice(-4); return tail ? `${b.bank_name} ····${tail}` : b.bank_name; };
   const describe = (p: any) => {
     if (p.cheque_id) { const c = data.cheques.find((x) => x.id === p.cheque_id); const on = bankLabel(c?.bank_account_id ?? p.bank_account_id); return c ? `Cheque #${c.cheque_number}${on ? ` · ${on}` : ""}` : `Cheque${on ? ` · ${on}` : ""}`; }

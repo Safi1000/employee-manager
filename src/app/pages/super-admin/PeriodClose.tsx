@@ -81,7 +81,7 @@ export default function PeriodClose() {
         supabase.from("profiles").select("id, full_name, email"),
         supabase
           .from("invoices")
-          .select("invoice_date, period_start")
+          .select("service_month")
           .or(invoicePeriodFilter(startMonth, endMonth)),
         supabase
           .from("invoice_payments")
@@ -132,7 +132,7 @@ export default function PeriodClose() {
       }
       return m;
     };
-    const tInv = tally(((invRes.data ?? []) as { invoice_date: string }[]).map((r) => ({ d: r.invoice_date })));
+    const tInv = tally(((invRes.data ?? []) as { service_month: string }[]).map((r) => ({ d: r.service_month })));
     const tPay = tally(((payRes.data ?? []) as { payment_date: string }[]).map((r) => ({ d: r.payment_date })));
     const tExp = tally(((expRes.data ?? []) as { expense_date: string }[]).map((r) => ({ d: r.expense_date })));
     const tPs  = tally(((psRes.data  ?? []) as { period_month: string }[]).map((r) => ({ d: r.period_month })));

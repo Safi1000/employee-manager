@@ -14,6 +14,7 @@ import {
   setClientOpening, statementLedger, withdrawToCustodian,
 } from "../../data/api/accounting";
 import { loadBranding } from "../../data/api/exports";
+import { invoiceMonth } from "../../lib/web/date";
 import type { PickedFile } from "../../data/api/core";
 import { useAuth } from "../../lib/auth";
 import { pickDocument, takePhoto } from "../../lib/files";
@@ -254,7 +255,7 @@ export function ClientStatement() {
   const ledger = useMemo(() => (c && data ? statementLedger(c, data, month) : null), [c, data, month]);
   if (!data) return <Screen title="Statement"><ActivityIndicator color={t.brand[500]} style={{ marginTop: 30 }} /></Screen>;
   if (!c || !ledger) return <Screen title="Statement"><Empty title="Client not found" /></Screen>;
-  const months = [...new Set(data.invoices.filter((i) => i.client_id === c.id).map((i) => String(i.service_month ?? i.period_start ?? i.invoice_date ?? "").slice(0, 7)))].sort().reverse();
+  const months = [...new Set(data.invoices.filter((i) => i.client_id === c.id).map((i) => invoiceMonth(i)))].sort().reverse();
   return (
     <Screen eyebrow="Client statement" title={c.name} actions={<IconBtn icon={ArrowDownToLine} label="Download" onPress={() => {
       exportClientStatementLedger({

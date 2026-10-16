@@ -4,6 +4,7 @@ import { driveDelete, driveUpload, PickedFile, q, rpc, sb } from "./core";
 import { loadBranding } from "./exports";
 import { generateInvoiceDocument } from "../../lib/web/invoiceTemplates";
 import { validateFreeText, validateInvoiceNumber } from "../../lib/web/validation";
+import { invoiceMonth } from "../../lib/web/date";
 
 export type InvoiceForm = { client_id: string; contract_id: string; invoice_number: string; invoice_date: string; invoice_amount: string; notes: string };
 
@@ -16,7 +17,7 @@ export function invoiceFormError(f: InvoiceForm, invoices: { id: string; raw?: a
   if (!f.invoice_date) return "Select an invoice date.";
   if (f.contract_id) {
     const month = f.invoice_date.slice(0, 7);
-    if (invoices.some((i) => i.id !== excludeId && i.raw?.contract_id === f.contract_id && String(i.raw?.period_start ?? i.raw?.invoice_date ?? "").slice(0, 7) === month)) return "This contract already has an invoice for that month.";
+    if (invoices.some((i) => i.id !== excludeId && i.raw?.contract_id === f.contract_id && invoiceMonth(i.raw ?? {}) === month)) return "This contract already has an invoice for that month.";
   } else if (contracts.some((c) => c.client_id === f.client_id && c.status === "active")) {
     return "Select the contract this invoice bills.";
   }

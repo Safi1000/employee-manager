@@ -446,7 +446,7 @@ export default function Invoices() {
         (i) =>
           i.id !== excludeId &&
           i.contract_id === f.contract_id &&
-          ((i.period_start ?? i.invoice_date) ?? "").slice(0, 7) === month,
+          billingMonth(i) === month,
       );
       if (clash) return "This contract already has an invoice for that month.";
     } else if (f.client_id && contracts.some((c) => c.client_id === f.client_id && c.status === "active")) {

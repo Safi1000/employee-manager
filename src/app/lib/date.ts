@@ -54,25 +54,25 @@ export function formatDateUS(value: string | number | Date | null | undefined): 
  *
  * Invoices carry two dates: period_start/period_end (the service period being
  * billed) and invoice_date (when the paperwork was raised). June's service
- * invoiced on 3 August is June revenue — accrual, not cash — so the PERIOD wins
- * and invoice_date is only a fallback for rows that predate the period columns.
+ * invoiced on 3 August is June revenue — accrual, not cash (A4).
+ *
+ * invoices.service_month is the ONE definition of that month — a generated
+ * column the GL and regional_pl_range (0513) also read. This reads it and
+ * derives nothing, so a row must be fetched with service_month selected.
  *
  * Every month-scoped read of invoices must use this, or the same invoice lands
  * in one month on the Invoices list and another in the P&L.
  */
-export const invoiceMonth = (i: {
-  period_start?: string | null;
-  invoice_date?: string | null;
-}): string => ((i.period_start ?? i.invoice_date) ?? "").slice(0, 7);
+export const invoiceMonth = (i: { service_month?: string | null }): string =>
+  (i.service_month ?? "").slice(0, 7);
 
 /**
- * PostgREST filter selecting invoices whose BILLING month falls in
- * [startIso, endIso]. Expressed as an .or() because the column to test depends
- * on whether period_start is set.
+ * PostgREST filter selecting invoices whose SERVICE month falls in
+ * [startIso, endIso], for use inside .or(). service_month is always the first
+ * of its month, so the start is truncated to its month.
  */
 export const invoicePeriodFilter = (startIso: string, endIso: string): string =>
-  `and(period_start.gte.${startIso},period_start.lte.${endIso}),` +
-  `and(period_start.is.null,invoice_date.gte.${startIso},invoice_date.lte.${endIso})`;
+  `and(service_month.gte.${startIso.slice(0, 7)}-01,service_month.lte.${endIso})`;
 
 /**
  * True only for a complete YYYY-MM-DD that names a real calendar day.

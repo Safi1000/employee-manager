@@ -213,7 +213,7 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
       const [invRes, expRes, catRes, bankRes, treaRes, owedRes] = await Promise.all([
         supabase
           .from("invoices")
-          .select("id, invoice_amount, invoice_date, period_start")
+          .select("id, invoice_amount, invoice_date, period_start, service_month")
           .or(invoicePeriodFilter(start, end)),
         supabase
           .from("expenses")
@@ -282,7 +282,7 @@ export default function FinancialReports({ standalone }: { standalone?: "partner
       const [invRes, psRes, expRes] = await Promise.all([
         supabase
           .from("invoices")
-          .select("invoice_amount, invoice_date, period_start, client:client_id(client_type, branch_id)")
+          .select("invoice_amount, invoice_date, period_start, service_month, client:client_id(client_type, branch_id)")
           .or(invoicePeriodFilter(start, end)),
         supabase
           .from("payslips")

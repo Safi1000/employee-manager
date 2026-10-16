@@ -10,6 +10,7 @@ import type * as seed from "./seed";
 import { supabase } from "../lib/supabase";
 import { addDays, iso } from "../lib/format";
 import { isPkWallet } from "../lib/web/validation";
+import { invoiceMonth } from "../lib/web/date";
 import { loadCustodianOptions } from "../lib/web/custodian";
 import { hasPermission } from "../lib/permissions";
 
@@ -294,7 +295,7 @@ export async function loadLive(profile: { id: string; role: string; permissions?
   }
   const invoices: seed.Invoice[] = invoiceRows.map((i) => ({
     raw: i, id: i.id, number: i.invoice_number ?? "", client_id: i.client_id, contract_id: i.contract_id ?? "",
-    month: String(i.service_month ?? i.period_start ?? i.invoice_date ?? "").slice(0, 7), amount: Number(i.invoice_amount) || 0,
+    month: invoiceMonth(i), amount: Number(i.invoice_amount) || 0,
     date: i.invoice_date ?? "", status: ["Paid", "Partial", "Unpaid", "Overdue"].includes(i.status) ? i.status : "Unpaid",
     attachment: !!(i.drive_file_id || i.attachment_path), notes: i.notes ?? "", payments: paymentsByInvoice.get(i.id) ?? [],
   }));

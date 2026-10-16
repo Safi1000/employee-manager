@@ -34,7 +34,7 @@ export async function loadPeriodClose(): Promise<PeriodRow[]> {
   const [periods, profiles, inv, pay, exp, ps, adv, chq] = await Promise.all([
     q<any[]>(s.from("accounting_periods").select("*")),
     q<any[]>(s.from("profiles").select("id, full_name, email")),
-    q<any[]>(s.from("invoices").select("invoice_date, period_start").or(invoicePeriodFilter(startMonth, endMonth))),
+    q<any[]>(s.from("invoices").select("service_month").or(invoicePeriodFilter(startMonth, endMonth))),
     q<any[]>(s.from("invoice_payments").select("payment_date").gte("payment_date", startMonth).lte("payment_date", endMonth)),
     q<any[]>(s.from("expenses").select("expense_date").gte("expense_date", startMonth).lte("expense_date", endMonth)),
     q<any[]>(s.from("payslips").select("period_month").gte("period_month", startMonth).lte("period_month", endMonth)),
@@ -44,7 +44,7 @@ export async function loadPeriodClose(): Promise<PeriodRow[]> {
   const pMap = new Map(periods.map((p) => [String(p.period_month).slice(0, 7) + "-01", p]));
   const prof = new Map(profiles.map((p) => [p.id, p.full_name ?? p.email ?? p.id]));
   const tally = (ds: (string | null)[]) => { const m = new Map<string, number>(); for (const d of ds) if (d) { const k = `${d.slice(0, 7)}-01`; m.set(k, (m.get(k) ?? 0) + 1); } return m; };
-  const tInv = tally(inv.map((r) => r.invoice_date)), tPay = tally(pay.map((r) => r.payment_date)), tExp = tally(exp.map((r) => r.expense_date));
+  const tInv = tally(inv.map((r) => r.service_month)), tPay = tally(pay.map((r) => r.payment_date)), tExp = tally(exp.map((r) => r.expense_date));
   const tPs = tally(ps.map((r) => r.period_month)), tAdv = tally(adv.map((r) => r.advance_date)), tChq = tally(chq.map((r) => r.cheque_date));
   return monthList.map((iso) => {
     const p = pMap.get(iso);
@@ -354,7 +354,7 @@ export async function loadCashClientStatements(d: CashData, period: string) {
 export async function loadPl(period: string) {
   const start = `${period}-01`, end = lastOfMonthKey(period);
   const [inv, ps, exp] = await Promise.all([
-    q<any[]>(sb().from("invoices").select("invoice_amount, invoice_date, period_start, client:client_id(client_type, branch_id)").or(invoicePeriodFilter(start, end))),
+    q<any[]>(sb().from("invoices").select("invoice_amount, invoice_date, period_start, service_month, client:client_id(client_type, branch_id)").or(invoicePeriodFilter(start, end))),
     q<any[]>(sb().from("payslips").select("final_salary, employee:employee_id(branch_id, category)").eq("period_month", start)),
     q<any[]>(sb().from("expenses").select("amount, expense_date, category_id, client_id, pl_category, category:category_id(name), client:client_id(branch_id)").gte("expense_date", start).lte("expense_date", end)),
   ]);
