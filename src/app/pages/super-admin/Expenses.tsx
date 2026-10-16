@@ -29,6 +29,8 @@ import {
   EXPENSE_RECEIPTS_BUCKET,
   isHardcodedCategory,
   PREPAID_THRESHOLD,
+  STATUTORY_CATEGORY_SCHEME,
+  STATUTORY_SCHEME_LABEL,
   type Expense,
   type ExpenseCategory,
   type ExpensePaymentMode,
@@ -45,6 +47,7 @@ import { useAuth, hasPermission } from "../../lib/auth";
 import { fetchLedgerStart, monthKeysFrom } from "../../lib/monthRange";
 import { loadCustodianOptions, ensureCustodianLocation, type CustodianOption } from "../../lib/custodian";
 import AmountInWords from "../../components/AmountInWords";
+import StatutoryRemitModal, { type StatutoryRemitDefaults } from "../../components/StatutoryRemitModal";
 import { usePageState } from "../../lib/pageState";
 
 const PIE_COLORS = CHART_COLORS;
@@ -355,6 +358,11 @@ export default function Expenses() {
   // a lock nobody can open is not a control. A permission, never a role
   // literal — asking the role instead was the cause of three defects this week.
   const canApproveExpenses = hasPermission(profile, "expenses.approve");
+  // 0520. Paying EOBI / salary tax / PESSI / IESSI is remit_statutory_liability,
+  // which asks accounting.edit — the key paying any liability out of a bank asks.
+  const canRemitStatutory = hasPermission(profile, "accounting.edit");
+  const [remitOpen, setRemitOpen] = useState(false);
+  const [remitDefaults, setRemitDefaults] = useState<StatutoryRemitDefaults | undefined>(undefined);
   // 0495/0496: anyone signed in may ask for an expense; expenses.approve holders
   // approve or reject it with a note.
   const canRequestExpenses = !!profile;
@@ -411,6 +419,9 @@ export default function Expenses() {
   const [advances, setAdvances] = useState<AdvanceRow[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
+  // 0520. The scheme a category pays, or null for an ordinary expense.
+  const statutorySchemeOf = (categoryId: string | null | undefined) =>
+    STATUTORY_CATEGORY_SCHEME[categories.find((c) => c.id === categoryId)?.name ?? ""] ?? null;
   const [clients, setClients] = useState<Client[]>([]);
   // The code an employee is known by: his client's prefix, not the permanent GGS code.
   const empCode = (e: { client_id?: string | null; display_number?: number | null; guard_code?: string | null; employee_code?: string | null }) =>
@@ -1345,6 +1356,10 @@ export default function Expenses() {
     setFormError(null);
     const amount = Number(form.amount);
     if (!form.category_id) { setFormError("Pick a category."); return; }
+    if (statutorySchemeOf(form.category_id)) {
+      setFormError("EOBI, salary tax, PESSI and IESSI are paid with \"Pay a statutory liability\", not added as an expense.");
+      return;
+    }
     if (!amount || amount <= 0 || !form.expense_date) return;
     if (form.payment_mode === "Bank" && !form.bank_account_id) {
       setFormError("Select a bank account for Bank payment.");
@@ -2362,6 +2377,11 @@ export default function Expenses() {
             {activeTab === "expenses" && canEditExpenses && (
               <Button variant="secondary" size="md" onClick={() => setIsVendorModalOpen(true)}>
                 Manage Vendors
+              </Button>
+            )}
+            {activeTab === "expenses" && canRemitStatutory && (
+              <Button variant="secondary" size="md" onClick={() => { setRemitDefaults(undefined); setRemitOpen(true); }}>
+                Pay a statutory liability
               </Button>
             )}
             {activeTab === "expenses" && canRequestExpenses && (
@@ -3656,6 +3676,17 @@ export default function Expenses() {
         })}
       </Modal>
 
+      <StatutoryRemitModal
+        isOpen={remitOpen}
+        onClose={() => setRemitOpen(false)}
+        companyId={treasuryCompanyId}
+        banks={banks}
+        custodians={custodians}
+        branches={branches}
+        defaults={remitDefaults}
+        onDone={() => { void loadAll(); }}
+      />
+
       <Modal
         isOpen={isEditOpen}
         onClose={() => setIsEditOpen(false)}
@@ -4903,7 +4934,45 @@ export default function Expenses() {
                   from PKR 50,000 because eleven entries to move 166 rupees each
                   is more bookkeeping than the accuracy is worth.
 
-              Either way the cash leaves in full today. Only the P&L is spread. */}
+              Either way the cash leaves in full today. Only the P&L is spread.
+
+              0520: NOT for a statutory category. EOBI, salary tax, PESSI and
+              IESSI pay a liability; the database refuses a period on them
+              (refuse_statutory_period), so the choice is not offered. */}
+          {statutorySchemeOf(state.category_id) ? (
+            <div className="col-span-2 border border-brand-200 rounded-md p-3 bg-brand-50 text-sm text-slate-700">
+              <div className="font-medium text-slate-800">
+                {STATUTORY_SCHEME_LABEL[statutorySchemeOf(state.category_id)!]} is paid against what payroll owes, not added as an expense.
+              </div>
+              <p className="text-[11px] text-slate-600 mt-0.5">
+                What was withheld from pay for the month clears its payable; only the part payroll did not accrue becomes
+                cost. Booking it here would count the withheld part as cost a second time and leave the payable owing.
+              </p>
+              {!edit && canRemitStatutory && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="mt-2"
+                  onClick={() => {
+                    setRemitDefaults({
+                      scheme: statutorySchemeOf(state.category_id)!,
+                      amount: state.amount,
+                      paidOn: state.expense_date,
+                      branchId: state.branch_id,
+                    });
+                    onCancel();
+                    setRemitOpen(true);
+                  }}
+                >
+                  Pay a statutory liability instead
+                </Button>
+              )}
+              {!edit && !canRemitStatutory && (
+                <p className="text-[11px] text-slate-600 mt-2">Recording it needs the accounting edit permission. Ask someone who has it.</p>
+              )}
+            </div>
+          ) : (
           <div className="col-span-2 border border-slate-200 rounded-md p-3 bg-slate-50">
             <div className="text-sm font-medium text-slate-800">Which months does this cost belong to?</div>
             <p className="text-[11px] text-slate-500 mt-0.5 mb-2">
@@ -5061,6 +5130,7 @@ export default function Expenses() {
               );
             })()}
           </div>
+          )}
           <div className="col-span-2">
             <label className="block text-sm text-slate-700 mb-1">Payment Mode *</label>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -5303,7 +5373,7 @@ export default function Expenses() {
           </div>
         </div>
         <div className="flex items-center gap-3 pt-4">
-          <Button variant="primary" size="md" className="flex-1" disabled={isSubmitting}>
+          <Button variant="primary" size="md" className="flex-1" disabled={isSubmitting || (!edit && !!statutorySchemeOf(state.category_id))}>
             {isSubmitting ? "Saving…" : submitLabel}
           </Button>
           <Button variant="secondary" size="md" onClick={onCancel}>

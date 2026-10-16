@@ -1237,6 +1237,23 @@ export const HARDCODED_EXPENSE_CATEGORIES = [
   "Taxes",
 ] as const;
 
+/** 0520. Mirrors public.statutory_category_scheme(): these four categories pay
+ *  a statutory liability and are recorded through "Pay a statutory liability"
+ *  (remit_statutory_liability), never as an expense. Change both together. */
+export type StatutoryScheme = "eobi" | "salary_tax" | "pessi" | "iessi";
+export const STATUTORY_CATEGORY_SCHEME: Record<string, StatutoryScheme> = {
+  EOBI: "eobi",
+  Taxes: "salary_tax",
+  PESSI: "pessi",
+  IESSI: "iessi",
+};
+export const STATUTORY_SCHEME_LABEL: Record<StatutoryScheme, string> = {
+  eobi: "EOBI",
+  salary_tax: "Salary tax (FBR)",
+  pessi: "PESSI",
+  iessi: "IESSI",
+};
+
 export const isHardcodedCategory = (name: string) =>
   (HARDCODED_EXPENSE_CATEGORIES as readonly string[]).includes(name);
 
