@@ -1,3 +1,11 @@
+# TIME RULE (2026-10-17). Every capture names its MOMENT as well as its scope:
+# "GGS 18 @ 2026-10-17 05:39:56 PKT", taken from the database's own clock
+# (now() at Asia/Karachi) in the same query as the checks — never "GGS 18" alone.
+# GGS read 17 before 0518 and not the 18 recorded after 0516, because four checks
+# moved on their own between the two captures (data, not a migration). A count
+# without its moment is as misleading as one without its scope; captures before
+# this rule carry only a date.
+#
 # SCOPE RULE (2026-10-16). Every count in this file names its company scope:
 # "GGS 14", "SHAYAN_A 5", "ALL 19" — never a bare "14". The list below has one
 # line per (company, check), so a count can be taken per company or across all
@@ -124,9 +132,32 @@
 # still passing. Nothing else moved. Recorded SQL digest = file digest
 # (sha256 135ab418d04e55864064546d82ee956eaf1d01ad3a6b657ee48f2e5936ff3ecf).
 #
-# Format: <company> <check_name> <difference>. Current as of 2026-10-17 after 0518.
+# 0519–0524, applied 2026-10-17 in that order, each authorised by name. Each red set
+# below is scoped and timestamped (PKT, database clock). "drift" =
+# migration_ledger_matches_repo on both companies, which rises by one per applied
+# migration until 0518–0524 are pushed and the nightly manifest fetch sees them.
+#   0519 the_ledger_cutover_date_is_a_setting (20261017004035)
+#        before GGS 18, SHAYAN_A 5 @ 05:39:56; after GGS 18, SHAYAN_A 5 @ 05:40:50. drift 6 -> 7.
+#   0520 a_statutory_liability_is_remitted_not_expensed (20261017004152)
+#        after GGS 19, SHAYAN_A 5 @ 05:42:58. NEW no_statutory_remittance_booked_as_cost:
+#        GGS red 5 (EOBI 266,500 and 244,200; FBR 41,923 and 27,013; PRA 15,346), SHAYAN_A
+#        green 0. checks_evaluated 45 -> 46, passing. drift 7 -> 8.
+#   0521 an_opening_batch_line_carries_its_party (20261017004325)
+#        after GGS 19, SHAYAN_A 5 @ 05:43:36. drift 8 -> 9. Nothing else.
+#   0522 a_pre_cutover_cost_entered_late_adjusts_the_opening (20261017004402)
+#        after GGS 19, SHAYAN_A 5 @ 05:44:47. drift 9 -> 10. Nothing else.
+#   0523 the_cutover_archive_operational_cash_the_askari_correction_and_the_close (20261017004527)
+#        after GGS 19, SHAYAN_A 5 @ 05:46:21. GGS bank_control_equals_bank_accounts
+#        -7357119.23 -> -7383119.23: the Askari +26,000 correction moved the stored balance,
+#        not the GL, which still holds the August advance until the cutover archives it.
+#        Still red, as expected. drift 10 -> 11.
+#   0524 employer_eobi_is_accrued_at_payroll (20261017004655)
+#        after GGS 19, SHAYAN_A 5 @ 05:47:14. drift 11 -> 12. The setting is EMPTY and
+#        REFUSES payslips that withhold EOBI until it is set.
+#
+# Format: <company> <check_name> <difference>. Captured 2026-10-17 05:47:14 PKT, after 0524.
 GGS       ar_control_equals_open_invoices                -33919712.00
-GGS       bank_control_equals_bank_accounts              -7357119.23
+GGS       bank_control_equals_bank_accounts              -7383119.23
 GGS       bank_per_account_gl_equals_operational         4
 GGS       cash_control_equals_cash_locations             274317.00
 GGS       cash_forecast_clears_the_floor                 1
@@ -135,16 +166,17 @@ GGS       cash_pl_agrees_with_partnership                1
 GGS       every_billed_client_carries_cost               10
 GGS       every_control_is_invoked                       11
 GGS       invoices_fall_inside_their_contract            1
-GGS       migration_ledger_matches_repo                  6
+GGS       migration_ledger_matches_repo                  12
 GGS       no_definer_function_crosses_a_branch           15
 GGS       no_negative_custodian_balance                  3
 GGS       no_payroll_booked_as_expense                   5
 GGS       no_stale_prepaid_balance                       5
+GGS       no_statutory_remittance_booked_as_cost         5
 GGS       payroll_accrual_matches_attendance             18
 GGS       prepaid_released_matches_schedule              7
 GGS       revenue_recognised_in_service_month            9
 SHAYAN_A  alert_delivery_is_healthy                      1
 SHAYAN_A  every_control_is_invoked                       11
-SHAYAN_A  migration_ledger_matches_repo                  6
+SHAYAN_A  migration_ledger_matches_repo                  12
 SHAYAN_A  monthly_ledger_run_is_current                  1
 SHAYAN_A  no_definer_function_crosses_a_branch           15

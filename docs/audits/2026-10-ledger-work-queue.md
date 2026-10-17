@@ -11,38 +11,73 @@ session applies to this database too.
 |---|---|---|
 | `0518_a_prepaid_release_follows_its_expense` | 2026-10-17, recorded 20261016225202 | GGS 17 → 18, SHAYAN_A 5 → 5. `prepaid_released_matches_schedule` new, red 7 at GGS, green at SHAYAN_A; `no_stale_prepaid_balance` 6 → 5 at GGS; `checks_evaluated` 44 → 45 at both. `migration_ledger_matches_repo` 5 → 6 at both until 0518 is pushed and fetched. GGS was 17 before, not 18: `no_advance_booked_as_expense` had gone green since the 16 Oct record. |
 
+All applied 2026-10-17, each authorised by name, recorded SQL = file for each.
+Red sets are scoped AND timestamped (PKT, the database's clock):
+
+| Migration | Recorded | Before | After | Moved |
+|---|---|---|---|---|
+| `0519_the_ledger_cutover_date_is_a_setting` | 20261017004035 | 05:39:56 GGS 18, SHAYAN_A 5 | 05:40:50 GGS 18, SHAYAN_A 5 | drift 6 → 7 (both) |
+| `0520_a_statutory_liability_is_remitted_not_expensed` | 20261017004152 | 05:40:50 | 05:42:58 GGS 19, SHAYAN_A 5 | `no_statutory_remittance_booked_as_cost` NEW: GGS red 5, SHAYAN_A green 0; drift 7 → 8 |
+| `0521_an_opening_batch_line_carries_its_party` | 20261017004325 | 05:42:58 | 05:43:36 GGS 19, SHAYAN_A 5 | drift 8 → 9 |
+| `0522_a_pre_cutover_cost_entered_late_adjusts_the_opening` | 20261017004402 | 05:43:36 | 05:44:47 GGS 19, SHAYAN_A 5 | drift 9 → 10 |
+| `0523_the_cutover_archive_operational_cash_the_askari_correction_and_the_close` | 20261017004527 | 05:44:47 | 05:46:21 GGS 19, SHAYAN_A 5 | GGS `bank_control_equals_bank_accounts` −7,357,119.23 → −7,383,119.23 (the Askari +26,000; still red); drift 10 → 11 |
+| `0524_employer_eobi_is_accrued_at_payroll` | 20261017004655 | 05:46:21 | 05:47:14 GGS 19, SHAYAN_A 5 | drift 11 → 12 |
+
+"drift" = `migration_ledger_matches_repo`, both companies; it clears once
+0518–0524 are pushed and the nightly manifest fetch sees them.
+
+**0524 REFUSES while the employer amount is unset** (DECIDED 2026-10-17): a
+payslip that withholds employee EOBI cannot be created or have its EOBI
+changed until `payroll_statutory_settings.eobi_employer_amount` is set.
+Disbursing, notes and other edits are unaffected. **The October payroll cannot
+be generated for any guard with EOBI withheld until the amount is supplied.**
+
+**The batch's Cr 1160 359,419.53 line is OUT** of
+`2026-08-31-cutover-batch-proposed.csv` (2026-10-17, after 0522 applied). The
+batch is now 656 lines; Opening Balance Equity 28,613,746.23 (it was
+28,254,326.70 with the line).
+
 ## Dated
 
 | When | Item |
 |---|---|
-| **before 2026-11-01 02:20** | "till september 43,000" (service 1 Jul–30 Sep) releases into July and August at the monthly run. PLAN: apply **0519** (cutover date) and **0522** (pre-cutover carry) before then. Dry-run proof: the run then carries 14,489.13 for July and 14,489.13 for August to 3200 dated 15 Oct, releases 14,021.74 to September, and posts nothing on or before 31 Aug. The batch is the fallback only if those two are not applied. |
+| ~~before 2026-11-01 02:20~~ | "till september 43,000": **met by 0519 + 0522 (applied).** The 1 Nov run carries July and August to 3200 dated 15 Oct and releases September; nothing posts on or before 31 Aug. Check the run's output on 1 Nov anyway. |
 
-## Built and dry-run, waiting for authorisation (proposed apply order)
+## AN ORDERING CONFLICT — the Lahore backfill and the cutover
 
-| Order | File | What it does | Red set when dry-run |
-|---|---|---|---|
-| 1 | `0519_the_ledger_cutover_date_is_a_setting` | GGS cutover 31 Aug 2026 as a setting; `ledger_cutover_date`, `ledger_cutover_posted` | nothing moves |
-| 2 | `0520_a_statutory_liability_is_remitted_not_expensed` | 2350 account; `remit_statutory_liability`; enforcement A (no period on a statutory category); enforcement B `no_statutory_remittance_booked_as_cost` | GGS +1 red (5 rows), SHAYAN_A green; canary 45 → 46 |
-| 3 | `0521_an_opening_batch_line_carries_its_party` | `client_id` / `employee_id` on batch lines, passed to the GL | nothing moves |
-| 4 | `0522_a_pre_cutover_cost_entered_late_adjusts_the_opening` | pre-cutover share of a late document → 3200, dated after the cutover | nothing moves |
-| 5 | `0523_the_cutover_archive_operational_cash_the_askari_correction_and_the_close` | archive tables; operational cash after the cutover posts; Askari +26,000; pre-cutover months close without a run | GGS `bank_control_equals_bank_accounts` difference −26,000 (still red); nothing else |
-| — | `0524_employer_eobi_is_accrued_at_payroll` | setting + trigger filling `eobi_employer`; changes nothing until the amount is supplied | prepared only; needs the amount, see below |
+The Lahore backfill is exactly the case 0522 does not cover: August payslips
+entered late. Their accruals post dated in August (the payslip's own month).
 
-The screen side of 0520 (Expenses: "Pay a statutory liability", statutory
-categories routed to it, the timing choice hidden for them) is committed but
-NOT pushed: it calls a function that does not exist on prod until 0520 is
-applied, and it stops statutory categories being added as expenses.
+- If the backfill lands **after the cutover**, its entries itemise August in
+  the GL — the very thing the cutover removes — and once July/August are
+  closed, the period lock refuses them outright.
+- Closing August "later" is not enough: the problem is the cutover's archive,
+  not only the close.
+
+**Recommendation: the Lahore August backfill lands BEFORE the cutover is
+drafted.** Then the cutover archives Lahore's August entries with the rest
+and the opening carries them: Lahore's unpaid August salaries in 2100, by
+guard, computed from the GL like every other line. Order:
+**Lahore roster → Lahore backfill → redraft the batch from the GL → cutover.**
+
+If the roster cannot arrive in time, the alternative is an exception built
+for it: a payslip for a pre-cutover month posts its cost to 3200 and its
+liability to 2100 dated after the cutover — the 0522 rule extended to
+`post_payslip_accrual`, which has many authors and is the payroll's own
+posting. Recommended only if the cutover cannot wait.
+
+**So the cutover now waits on the Lahore roster (Shayan's).**
 
 ## Prepared, waiting on the user
 
 ### Employer EOBI amount (for 0524)
 - **Needed:** the employer EOBI amount per insured guard per month.
 - **Evidence:** the September challan decomposes exactly: 244,200 = 100 guards × 2,442 = 6% of 40,700 → 407 employee + **2,035 employer**. August does not decompose exactly (266,500 / 109 = 2,444.95).
-- **Where it lives:** one company setting (`payroll_statutory_settings.eobi_employer_amount`), not a contract field — the employer contribution is statutory and the same for every insured guard.
+- **Where it lives (0524, APPLIED, empty):** one company setting (`payroll_statutory_settings.eobi_employer_amount`), not a contract field — the employer contribution is statutory and the same for every insured guard.
 - **BUT** "insured" is read as "payroll withholds employee EOBI", and that set (190 in September) is not the challan's set (100). Until the gap below is resolved, filling the amount would accrue employer EOBI for 190 guards while 100 are paid for.
 
 ### The 189-vs-109 / 190-vs-100 gap — money withheld from guards' pay
-Every guard is in [2026-eobi-deductions-aug-sep.csv](2026-eobi-deductions-aug-sep.csv) (379 rows: code, name, client, amount withheld, status, joining date). The same list WITH CNICs, for matching against the challans, is kept outside git (`Desktop\bastion-private\2026-eobi-deductions-aug-sep-WITH-CNIC.csv`): identity numbers are not committed.
+Every guard is listed OUTSIDE git, in `Desktop/bastion-private/` (2026-eobi-deductions-aug-sep-WITH-CNIC.csv and a copy without CNICs; 379 rows: code, name, client, amount withheld, status, joining date). DECIDED 2026-10-17: guard-level EOBI lists and anything carrying CNICs stay out of git (.gitignore).
 - **No employee has an EOBI registration number recorded**, so the system cannot tell who is insured; the challan is the only list.
 - **September:** withheld 76,611 from 190 guards — HMC Taxila 113 × 407, Emaar DHA ISB 71 × 400, Wusat-Emaar 6 × 370. The challan pays 100 × 407 = 40,700 of employee share. **35,911 withheld from 90 guards' pay is not on that challan.**
 - **August:** withheld 73,290 from 189 guards — 112 × 400 (Emaar DHA ISB, HMC Taxila), 77 × 370 (Emaar DHA ISB, Wusat-Emaar). The challan names 109. If its employee share is 400 a head, **at least 29,690 withheld from at least 80 guards is not on it.**

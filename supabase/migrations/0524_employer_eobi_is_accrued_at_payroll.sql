@@ -3,7 +3,7 @@
 --
 -- NUMBER: written as 0524 on 2026-10-17. Claim it against
 -- supabase_migrations.schema_migrations at apply time; rename the FILE if taken.
--- PREPARED, NOT AUTHORISED. Blocked on one fact: the employer amount.
+-- APPROVED 2026-10-17 to create the setting EMPTY; the amount follows separately.
 --
 -- DECIDED 2026-10-17 by the user: accrue employer EOBI at payroll. Recognising
 -- it at payment understates every client's cost by its share of roughly
@@ -23,10 +23,17 @@
 -- override is NOT built: no case for one has been named, and an unused
 -- override is a column nobody fills.
 --
--- WHAT THIS DOES WHILE THE AMOUNT IS NULL: nothing. The trigger leaves
--- eobi_employer at 0, exactly as today, so applying this before the amount is
--- known changes no figure. Supplying the amount is the LAST step, and it is one
--- statement plus a backfill, both below in the comment at the end.
+-- WHAT THIS DOES WHILE THE AMOUNT IS NULL: it REFUSES. DECIDED 2026-10-17 by
+-- the user: "an unset rate that silently accrues nothing is worse than one
+-- that stops payroll and says why." A payslip that withholds employee EOBI
+-- cannot be created, or have its EOBI changed, until the employer amount is
+-- set — the refusal names the setting. Payslips that withhold no EOBI, and
+-- edits to existing payslips that do not touch EOBI (disbursing, notes,
+-- payment mode), are not affected. No existing figure changes on apply.
+-- CONSEQUENCE, stated so it is not discovered at the next run: the October
+-- payroll cannot be generated for any guard who has EOBI withheld until the
+-- amount is supplied. Supplying the amount is one statement plus a backfill,
+-- both in the comment at the end.
 
 create table if not exists public.payroll_statutory_settings (
   company_id           uuid primary key references public.companies(id),
@@ -42,7 +49,7 @@ drop policy if exists ssa_read on public.payroll_statutory_settings;
 create policy ssa_read on public.payroll_statutory_settings
   for select using ((select public.is_ssa_unscoped()));
 comment on table public.payroll_statutory_settings is
-  '0524. Company payroll statutory amounts. eobi_employer_amount: flat PKR per insured employee per month, filled onto every payslip that withholds employee EOBI. NULL = not yet supplied; payroll then accrues no employer EOBI (the state before 0524). Written by migration.';
+  '0524. Company payroll statutory amounts. eobi_employer_amount: flat PKR per insured employee per month, filled onto every payslip that withholds employee EOBI. NULL = not yet supplied; a payslip withholding employee EOBI is then REFUSED, never accrued at zero (DECIDED 2026-10-17). Written by migration.';
 
 insert into public.payroll_statutory_settings (company_id, eobi_employer_amount, decided)
 select c.id, null, 'DECIDED 2026-10-17: accrue employer EOBI at payroll. Amount NOT YET SUPPLIED.'
@@ -64,10 +71,18 @@ begin
      and old.company_id is not distinct from new.company_id then
     return new;
   end if;
+  if coalesce(new.eobi, 0) <= 0 then
+    new.eobi_employer := 0;   -- no employee EOBI withheld: no employer EOBI
+    return new;
+  end if;
   select s.eobi_employer_amount into v_amt
     from public.payroll_statutory_settings s where s.company_id = new.company_id;
-  if v_amt is null then return new; end if;   -- not supplied: leave it as it is
-  new.eobi_employer := case when coalesce(new.eobi, 0) > 0 then v_amt else 0 end;
+  if v_amt is null then
+    -- DECIDED 2026-10-17: refuse, never accrue zero silently.
+    raise exception 'Employer EOBI is not set for this company, so this payslip (which withholds % of employee EOBI) cannot be saved: payroll would accrue no employer EOBI and every client''s cost would be understated. Set payroll_statutory_settings.eobi_employer_amount first. Nothing has been recorded.', new.eobi
+      using errcode = 'P0001';
+  end if;
+  new.eobi_employer := v_amt;
   return new;
 end;
 $function$;

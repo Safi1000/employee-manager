@@ -45,3 +45,8 @@ mobile/dist/
 exports/
 scripts/_service-split-lifted.mjs
 scripts/_attendance-window-lifted.mjs
+
+# Guard-level EOBI and identity lists stay out of git (2026-10-17).
+docs/audits/*eobi-deductions*
+*CNIC*.csv
+*cnic*.csv
