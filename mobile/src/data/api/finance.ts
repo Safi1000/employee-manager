@@ -571,6 +571,6 @@ export async function recordPartnerEntry(companyId: string, partnerId: string, f
     const staff = custodians.find((c) => c.employeeId === f.paidByEmp);
     if (staff) cashLocationId = await ensureCustodianLocation(companyId, staff.employeeId, staff.fullName, staff.kind);
   }
-  await rpc("record_partner_entry", { p_partner_id: partnerId, p_date: f.date, p_type: f.type, p_description: f.note.trim(), p_amount: amt, p_method: f.method, p_bank_account_id: usesBank ? f.bankId : null, p_cash_location_id: cashLocationId });
+  await rpc("record_partner_entry", { p_partner_id: partnerId, p_date: f.date, p_type: f.type, p_description: f.note.trim() || (f.type === "DRAWING" ? "Drawing" : "Contribution"), p_amount: amt, p_method: f.method, p_bank_account_id: usesBank ? f.bankId : null, p_cash_location_id: cashLocationId });
 }
 export const deletePartnerEntry = (entryId: string) => rpc("delete_partner_entry", { p_entry_id: entryId });

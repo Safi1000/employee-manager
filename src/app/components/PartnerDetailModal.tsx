@@ -186,7 +186,9 @@ export default function PartnerDetailModal({
         p_partner_id: partner.id,
         p_date: entryDate,
         p_type: entryType,
-        p_description: entryNote.trim(),
+        // The RPC turns a blank note into NULL and the column is NOT NULL —
+        // default it the way Partners.tsx does.
+        p_description: entryNote.trim() || (entryType === "DRAWING" ? "Drawing" : "Contribution"),
         p_amount: amt,
         p_method: entryMethod,
         p_bank_account_id: usesBank ? bankAccountId : null,
