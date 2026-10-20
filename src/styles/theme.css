@@ -481,3 +481,6 @@ p.font-ledger.whitespace-nowrap {
   font-size: clamp(1rem, 1.45vw, 1.6rem);
   line-height: 1.15;
 }
+
+/* Band tile figures follow the same window scale as page tiles. */
+.band .font-ledger.text-2xl { font-size: clamp(1.05rem, 1.45vw, 1.5rem); }

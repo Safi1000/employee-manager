@@ -339,6 +339,24 @@ export default function Contracts() {
     };
   };
 
+  // Band figures and the renewal runway (2026-10-20 redesign) — read through
+  // deriveContract, the one place this page works out value, headcount and the
+  // effective end date, so the band can never disagree with the rows.
+  const book = (() => {
+    const live = filteredRows.filter((r) => r.status === "active");
+    let value = 0, committed = 0, posted = 0;
+    const runway: { id: string; code: string; client: string; days: number; value: number }[] = [];
+    for (const r of live) {
+      const d = deriveContract(r);
+      value += Number(d.valuePerMonth ?? 0);
+      committed += d.totalCommitted;
+      posted += d.activeGuards;
+      if (d.dleft != null && d.dleft <= 180) runway.push({ id: r.id, code: r.contract_code, client: r.client_name, days: d.dleft, value: Number(d.valuePerMonth ?? 0) });
+    }
+    const needsRenewal = filteredRows.filter((r) => isContractExpired(r, addendumsByContract.get(r.id) ?? [])).length;
+    return { live: live.length, value, committed, posted, runway: runway.sort((a, b) => a.days - b.days), ending60: runway.filter((x) => x.days >= 0 && x.days <= 60).length, needsRenewal };
+  })();
+
   return (
     <>
       <Header
@@ -352,7 +370,45 @@ export default function Contracts() {
             </Button>
           ) : null
         }
-      />
+      >
+        {!loading && (
+          <div className="flex flex-col gap-3">
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5">
+              {[
+                { label: "Live contracts", v: book.live.toLocaleString(), sub: "active today", tone: "text-foreground", on: false, click: () => setStatusFilter("active") },
+                { label: "Contracted value", v: <><span className="cur">PKR</span>{Math.round(book.value).toLocaleString()}</>, sub: "per month, live contracts", tone: "text-foreground", on: false, click: undefined },
+                { label: "Guards", v: `${book.posted} / ${book.committed}`, sub: "posted against committed", tone: book.posted < book.committed ? "text-[#f6d79b]" : "text-[#9ad1a3]", on: false, click: undefined },
+                { label: "Ending in 60 days", v: book.ending60.toLocaleString(), sub: "renew or let go", tone: book.ending60 ? "text-[#f6d79b]" : "text-foreground", on: false, click: undefined },
+                { label: "Needs renewal", v: book.needsRenewal.toLocaleString(), sub: "past their end date", tone: book.needsRenewal ? "text-[#f0a99a]" : "text-[#9ad1a3]", on: statusFilter === "needs_renewal", click: () => setStatusFilter(statusFilter === "needs_renewal" ? "all" : "needs_renewal") },
+              ].map((t) => {
+                const body = (<><span className="lbl">{t.label}</span><span className={`font-ledger text-2xl font-semibold tracking-tight leading-none whitespace-nowrap ${t.tone}`}>{t.v}</span><span className="text-xs text-muted-foreground">{t.sub}</span></>);
+                const cls = `text-left rounded-[14px] border px-4 py-3 flex flex-col gap-1 min-w-0 ${t.on ? "border-brand-500 bg-brand-500/15" : "border-border bg-card"} ${t.click ? "hover:border-brand-500/70" : ""}`;
+                return t.click ? <button key={t.label} type="button" onClick={t.click} className={cls}>{body}</button> : <div key={t.label} className={cls}>{body}</div>;
+              })}
+            </div>
+            {book.runway.length > 0 && (
+              <div className="rounded-[14px] border border-border bg-card px-4 pt-3 pb-2">
+                <div className="flex justify-between gap-2 mb-2"><span className="lbl">Renewal runway · next 6 months</span><span className="text-xs text-muted-foreground">dot size = monthly value · tap to find it</span></div>
+                <div className="relative h-14 mx-2">
+                  <div className="absolute inset-x-0 top-6 h-1 rounded-full bg-muted" />
+                  {[0, 30, 60, 90, 120, 150, 180].map((d) => (
+                    <span key={d} className="absolute top-10 text-[10px] text-muted-foreground -translate-x-1/2" style={{ left: `${(d / 180) * 100}%` }}>{d === 0 ? "Today" : `${d}d`}</span>
+                  ))}
+                  {book.runway.map((x) => {
+                    const sz = 10 + Math.min(16, Math.sqrt(Math.max(1, x.value)) / 40);
+                    return (
+                      <button key={x.id} type="button" onClick={() => setSearch(x.code)} title={`${x.client} · ${x.code} · ${x.days < 0 ? `ended ${-x.days} days ago` : `${x.days} days left`}`}
+                        aria-label={`${x.client}, ${x.days} days left`}
+                        className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[#191a10] hover:scale-125 transition-transform ${x.days < 0 ? "bg-danger-500" : x.days <= 60 ? "bg-brand-500" : "bg-[#9ad1a3]"}`}
+                        style={{ left: `${(Math.max(0, x.days) / 180) * 100}%`, top: 26, width: sz, height: sz }} />
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </Header>
 
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8 space-y-4">
         {error && (
@@ -509,7 +565,7 @@ export default function Contracts() {
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50">
                   <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Code</th>
-                  <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Client</th>
+                  <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase min-w-[15rem]">Client</th>
                   <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Type</th>
                   <th className="text-left px-4 py-3 text-xs text-slate-500 uppercase">Period</th>
                   <th className="text-right px-4 py-3 text-xs text-slate-500 uppercase">Guards (active/allotted)</th>
@@ -546,7 +602,7 @@ export default function Contracts() {
                       <td className="px-4 py-3 text-xs font-mono text-slate-900">{row.contract_code}</td>
                       <td className="px-4 py-3 text-sm text-slate-900">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span>{row.client_name}</span>
+                          <span className="font-semibold text-foreground">{row.client_name}</span>
                           {expired && (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs bg-warning-50 text-warning-800 border border-warning-200">
                               <AlertCircle className="w-3 h-3" /> Needs renewal
