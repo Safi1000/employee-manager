@@ -2400,7 +2400,36 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   if (isPageShell) {
     return (
       <>
-        <Header title="Payroll Management" subtitle="Finance-Verified clients — disburse & mark paid" />
+        <Header
+          title="Payroll Management"
+          subtitle="Finance-Verified clients — disburse & mark paid"
+          actions={
+            <>
+              <ThemedSelect value={selectedPeriod} onChange={(e) => { setSelectedPeriod(e.target.value); setFvExpanded(null); }}
+                aria-label="Payroll month" className="px-3 py-2 border border-border rounded-xl text-sm bg-card min-h-10">
+                {periodOptions.map((p) => <option key={p} value={p}>{formatPeriod(p)}</option>)}
+              </ThemedSelect>
+              <Button
+                variant="secondary"
+                size="md"
+                disabled={fvScopes.length === 0}
+                onClick={() => { setExportPicked(new Set(shellScopes.map((sc) => sc.key))); setExportOpen(true); }}
+              >
+                <Download className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                Export payroll sheets
+              </Button>
+            </>
+          }
+        >
+          {!fvLoading && (
+            <PayrollBand
+              totals={shellCardTotals}
+              clients={shellScopes.length}
+              clientsDone={shellScopes.filter((sc) => shellFullyDisbursed(sc.key)).length}
+              period={formatPeriod(selectedPeriod)}
+            />
+          )}
+        </Header>
         <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6">
           {(focusPayslipMissing ||
             (focusPayslip && !loading && !filtered.some((r) => r.payslip_id === focusPayslip))) && (
@@ -2415,13 +2444,6 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
 
           <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
             <div className="flex flex-wrap items-center gap-3">
-              <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                Month
-                <ThemedSelect value={selectedPeriod} onChange={(e) => { setSelectedPeriod(e.target.value); setFvExpanded(null); }}
-                  className="px-2 py-1.5 border border-border rounded-md text-sm bg-card">
-                  {periodOptions.map((p) => <option key={p} value={p}>{formatPeriod(p)}</option>)}
-                </ThemedSelect>
-              </label>
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" strokeWidth={1.5} />
                 <input
@@ -2440,19 +2462,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                 )}
               </div>
             </div>
-            {/* Standalone export: pick any set of clients and get one workbook.
-                Separate from the per-card button because the common job is "send
-                these six clients' sheets", not "open six cards and click six
-                times". */}
-            <Button
-              variant="secondary"
-              size="md"
-              disabled={fvScopes.length === 0}
-              onClick={() => { setExportPicked(new Set(shellScopes.map((sc) => sc.key))); setExportOpen(true); }}
-            >
-              <Download className="w-4 h-4 mr-2" strokeWidth={1.5} />
-              Export payroll sheets
-            </Button>
+
           </div>
 
           {error && (
@@ -2462,32 +2472,6 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
               <button onClick={() => setError(null)}><X className="w-4 h-4" /></button>
             </div>
           )}
-
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            {/* The whole of which Disbursed + Not Disbursed are the parts — full
-                payroll cost for the month regardless of payment status. Built from
-                the same two figures so it can never disagree with them. */}
-            <div className="bg-card p-4 md:p-5 rounded-2xl border border-border">
-              <p className="lbl mb-1.5">Total Salaries</p>
-              <p className="font-ledger whitespace-nowrap text-2xl font-semibold tracking-tight text-brand-700 dark:text-brand-500"><span className="cur">PKR</span>{(shellCardTotals.disbursed + shellCardTotals.notDisbursed).toLocaleString()}</p>
-              <p className="text-xs text-muted-foreground mt-1">{shellCardTotals.disbursedCount + shellCardTotals.notDisbursedCount} payslip{shellCardTotals.disbursedCount + shellCardTotals.notDisbursedCount === 1 ? "" : "s"}</p>
-            </div>
-            <div className="bg-card p-4 md:p-5 rounded-2xl border border-border">
-              <p className="lbl mb-1.5">Total Disbursed</p>
-              <p className="font-ledger whitespace-nowrap text-2xl font-semibold tracking-tight text-success-700 dark:text-success-500"><span className="cur">PKR</span>{shellCardTotals.disbursed.toLocaleString()}</p>
-              <p className="text-xs text-muted-foreground mt-1">{shellCardTotals.disbursedCount} payslip{shellCardTotals.disbursedCount === 1 ? "" : "s"}</p>
-            </div>
-            <div className="bg-card p-4 md:p-5 rounded-2xl border border-border">
-              <p className="lbl mb-1.5">Total Not Disbursed</p>
-              <p className="font-ledger whitespace-nowrap text-2xl font-semibold tracking-tight text-warning-700 dark:text-warning-500"><span className="cur">PKR</span>{shellCardTotals.notDisbursed.toLocaleString()}</p>
-              <p className="text-xs text-muted-foreground mt-1">{shellCardTotals.notDisbursedCount} payslip{shellCardTotals.notDisbursedCount === 1 ? "" : "s"}</p>
-            </div>
-            <div className="bg-card p-4 md:p-5 rounded-2xl border border-border">
-              <p className="lbl mb-1.5">Total Advance</p>
-              <p className="font-ledger whitespace-nowrap text-2xl font-semibold tracking-tight text-danger-700 dark:text-danger-500"><span className="cur">PKR</span>{shellCardTotals.advance.toLocaleString()}</p>
-              <p className="text-xs text-muted-foreground mt-1">for {formatPeriod(selectedPeriod)}{fvExpanded ? "" : " · all Finance-Verified clients"}</p>
-            </div>
-          </div>
 
           {fvLoading ? (
             <div className="flex items-center justify-center py-20 text-muted-foreground"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…</div>
@@ -2506,7 +2490,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                 const fullyDisbursed = shellFullyDisbursed(s.key);
                 const partiallyDisbursed = !!t && t.disbursedCount > 0 && t.notDisbursedCount > 0;
                 return (
-                  <div key={s.key} className={`relative rounded-xl border overflow-hidden ${fullyDisbursed ? "bg-success-50 dark:bg-success-900/15 border-success-300 dark:border-success-800" : "bg-card border-border"}`}>
+                  <div key={s.key} className={`relative rounded-2xl border overflow-hidden ${fullyDisbursed ? "bg-success-50 dark:bg-success-900/15 border-success-300 dark:border-success-800" : "bg-card border-border"}`}>
                     <button type="button" onClick={() => setFvExpanded(open ? null : s.key)} className="w-full flex items-center gap-2 p-4 pr-24 text-left">
                       <ChevronDown className={`w-4 h-4 shrink-0 text-muted-foreground transition-transform ${open ? "" : "-rotate-90"}`} />
                       <span className={`text-sm font-medium truncate flex-1 ${fullyDisbursed ? "text-success-800 dark:text-success-400" : "text-foreground"}`}>{s.name}</span>
@@ -2520,7 +2504,13 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
                           {t!.disbursedCount}/{done} disbursed
                         </span>
                       )}
-                      <span className="text-xs text-muted-foreground tabular-nums">PKR {(t?.disbursed ?? 0).toLocaleString()} paid</span>
+                      <span className="hidden md:flex flex-col items-end gap-1 w-56">
+                        <span className="font-ledger text-xs text-muted-foreground whitespace-nowrap">PKR {(t?.disbursed ?? 0).toLocaleString()} of {((t?.disbursed ?? 0) + (t?.notDisbursed ?? 0)).toLocaleString()}</span>
+                        <span className="w-full h-1.5 rounded-full bg-muted overflow-hidden" aria-hidden="true">
+                          <span className={`block h-full rounded-full ${fullyDisbursed ? "bg-success-500" : "bg-brand-500"}`} style={{ width: `${done ? ((t?.disbursedCount ?? 0) / done) * 100 : 0}%` }} />
+                        </span>
+                      </span>
+                      <span className="md:hidden text-xs text-muted-foreground tabular-nums">PKR {(t?.disbursed ?? 0).toLocaleString()} paid</span>
                     </button>
                     {/* Sits OUTSIDE the expand button: nesting a button inside a
                         button is invalid HTML and the click would toggle the card
@@ -4493,5 +4483,45 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         </Modal>
       )}
     </>
+  );
+}
+
+
+/** Payroll band: how much of the month's payroll has gone out, and to whom. */
+function PayrollBand({ totals, clients, clientsDone, period }: {
+  totals: { disbursed: number; notDisbursed: number; disbursedCount: number; notDisbursedCount: number; advance: number };
+  clients: number; clientsDone: number; period: string;
+}) {
+  const total = totals.disbursed + totals.notDisbursed;
+  const slips = totals.disbursedCount + totals.notDisbursedCount;
+  const pct = total > 0 ? totals.disbursed / total : 0;
+  const fig = "font-ledger text-2xl font-semibold tracking-tight leading-none whitespace-nowrap";
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-2">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <span className="lbl">{period} · paid out</span>
+          <span className="text-xs text-muted-foreground">{clientsDone} of {clients} clients fully disbursed · {totals.disbursedCount} of {slips} payslips</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="font-display text-3xl font-extrabold tracking-tight">{Math.round(pct * 100)}%</span>
+          <div className="flex-1 h-3 rounded-full bg-muted overflow-hidden"><div className="h-full rounded-full bg-[#9ad1a3]" style={{ width: `${pct * 100}%` }} /></div>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+        {[
+          { label: "Total salaries", v: total, sub: `${slips} payslips`, tone: "text-foreground" },
+          { label: "Disbursed", v: totals.disbursed, sub: `${totals.disbursedCount} payslips`, tone: "text-[#9ad1a3]" },
+          { label: "Still to pay", v: totals.notDisbursed, sub: `${totals.notDisbursedCount} payslips`, tone: totals.notDisbursed ? "text-[#f6d79b]" : "text-[#9ad1a3]" },
+          { label: "Advances", v: totals.advance, sub: "advances for the month", tone: "text-[#f0a99a]" },
+        ].map((t) => (
+          <div key={t.label} className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1">
+            <span className="lbl">{t.label}</span>
+            <span className={`${fig} ${t.tone}`}><span className="cur">PKR</span>{Math.round(t.v).toLocaleString()}</span>
+            <span className="text-xs text-muted-foreground">{t.sub}</span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
