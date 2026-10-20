@@ -1,4 +1,4 @@
-import { ReactNode, useLayoutEffect } from "react";
+import { ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation } from "react-router";
 import { useAuth } from "../lib/auth";
 import { sectionOf } from "../lib/navMeta";
@@ -40,10 +40,29 @@ export default function Header({ title, subtitle, actions, kicker, live, childre
   const claim = hub?.claim;
   useLayoutEffect(() => (claim ? claim() : undefined), [claim]);
 
+  // A band carrying figures (children) folds to its title row once the page
+  // scrolls, so the figures greet you at the top without holding a third of
+  // the screen over a long table. The scroller is whichever element around the
+  // band actually scrolls: the band's parent (Header inside the scroller) or a
+  // sibling (Header above it).
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [folded, setFolded] = useState(false);
+  useEffect(() => {
+    if (!children) return;
+    const el = wrapRef.current;
+    const parent = el?.parentElement;
+    if (!el || !parent) return;
+    const scrolls = (n: Element) => /(auto|scroll)/.test(getComputedStyle(n).overflowY);
+    const targets = [parent, ...Array.from(parent.children).filter((c) => c !== el)].filter(scrolls) as HTMLElement[];
+    const onScroll = () => setFolded(targets.some((t) => t.scrollTop > 48));
+    targets.forEach((t) => t.addEventListener("scroll", onScroll, { passive: true }));
+    return () => targets.forEach((t) => t.removeEventListener("scroll", onScroll));
+  }, [children]);
+
   return (
     // Fully opaque wrapper: the page scroller sits below the band, and in an
     // Android WebView a translucent sticky layer lets the table show through.
-    <div className="page-band sticky top-0 z-20 bg-background px-3 md:px-8 pt-3 md:pt-5 pb-1 md:pb-2 flex-shrink-0">
+    <div ref={wrapRef} className="page-band sticky top-0 z-20 bg-background px-3 md:px-8 pt-3 md:pt-5 pb-1 md:pb-2 flex-shrink-0">
       <div className="band on-dark rounded-2xl md:rounded-[22px] px-4 md:px-7 py-3.5 md:py-5 flex flex-col gap-3 md:gap-4 overflow-hidden">
         {hub && hub.tabs.length > 1 && (
           <div className="-mx-1 overflow-x-auto">
@@ -65,7 +84,11 @@ export default function Header({ title, subtitle, actions, kicker, live, childre
               page headers hold page actions only. */}
           {actions && <div className="flex items-center gap-2 md:gap-2.5 flex-wrap">{actions}</div>}
         </div>
-        {children}
+        {children && (
+          <div className={`grid transition-[grid-template-rows,opacity] duration-200 ${folded ? "grid-rows-[0fr] opacity-0 -mt-3 md:-mt-4" : "grid-rows-[1fr] opacity-100"}`} aria-hidden={folded || undefined}>
+            <div className="min-h-0 overflow-hidden">{children}</div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1254,14 +1254,27 @@ export default function EmployeeManagement() {
     const scope = clientFilter === "all"
       ? employees
       : employees.filter((e) => e.client_id === clientFilter);
-    const active = scope.filter((e) => e.status === "Active").length;
+    const activeRows = scope.filter((e) => e.status === "Active");
+    const active = activeRows.length;
+    const monthKey = new Date().toISOString().slice(0, 7);
     return {
       total: scope.length,
       active,
       inactive: scope.length - active,
       missingKeyFields: scope.filter(isMissingKeyFields).length,
+      // Band figures (2026-10-20 redesign) — every one is a filter the list
+      // already supports, so a tile is a shortcut, never a second definition.
+      incomplete: activeRows.filter((e) => missingRequiredFields(e).length > 0).length,
+      expiredCards: activeRows.filter((e) => isCardExpired(e.cnic_expiry)).length,
+      duplicateCnic: scope.filter((e) => duplicateCnicIds.has(e.id)).length,
+      joinedThisMonth: activeRows.filter((e) => (e.join_date ?? "").startsWith(monthKey)).length,
+      byCategory: {
+        client: activeRows.filter((e) => (e.category ?? "client") === "client").length,
+        office_staff: activeRows.filter((e) => e.category === "office_staff").length,
+        reliever: activeRows.filter((e) => e.category === "reliever").length,
+      },
     };
-  }, [employees, clientFilter]);
+  }, [employees, clientFilter, duplicateCnicIds]);
 
   const countsClientName = useMemo(
     () => (clientFilter === "all" ? null : clients.find((c) => c.id === clientFilter)?.name ?? "Selected client"),
@@ -2285,11 +2298,10 @@ export default function EmployeeManagement() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border bg-slate-50">
-                    <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground border-l-2 border-l-transparent">Employee ID</th>
-                    <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Name</th>
+                    <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground border-l-2 border-l-transparent">Guard</th>
                     <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Phone</th>
                     <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Client / Category</th>
-                    <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Physical Copy</th>
+                    <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">File</th>
                     <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Status</th>
                     <th className="text-left px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground sticky right-0 z-10 bg-slate-50 border-l border-border">Actions</th>
                   </tr>
@@ -2297,7 +2309,7 @@ export default function EmployeeManagement() {
                 <tbody>
                   {loading && (
                     <tr>
-                      <td colSpan={7} className="px-6 py-10 text-center text-slate-500">
+                      <td colSpan={6} className="px-6 py-10 text-center text-slate-500">
                         <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
                         Loading…
                       </td>
@@ -2305,7 +2317,7 @@ export default function EmployeeManagement() {
                   )}
                   {!loading && rows.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="px-6 py-10 text-center text-slate-500 text-sm">
+                      <td colSpan={6} className="px-6 py-10 text-center text-slate-500 text-sm">
                         {emptyText}
                       </td>
                     </tr>
@@ -2323,13 +2335,18 @@ export default function EmployeeManagement() {
                         className="group border-b border-border transition-colors hover:bg-accent"
                         title={incomplete ? `Incomplete profile — missing ${missingRequired.join(", ")}` : "Complete profile"}
                       >
-                        <td className={`px-6 py-3.5 text-sm font-mono border-l-2 ${incomplete ? "border-l-danger-500" : "border-l-transparent"}`}>
-                          <span className={incomplete ? "text-danger-600 dark:text-danger-500" : "text-foreground"}>{displayCodeFor(employee)}</span>
-                          <span className="block text-[11px] text-muted-foreground">{employee.guard_code ?? employee.employee_code}</span>
-                        </td>
-                        <td className="px-6 py-3.5 text-sm text-foreground">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">{employee.full_name}</span>
+                        {/* One cell for the person: initials, name, both codes,
+                            and the flags that need action — the code no longer
+                            wraps onto two lines in a column of its own. */}
+                        <td className={`px-5 py-3 text-sm border-l-2 ${incomplete ? "border-l-danger-500" : "border-l-transparent"}`}>
+                          <div className="flex items-center gap-3 min-w-[16rem]">
+                            <button type="button" onClick={() => openView(employee)} aria-label={`Open ${employee.full_name}`}
+                              className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${incomplete ? "bg-danger-50 text-danger-700 dark:text-danger-500 ring-1 ring-danger-200" : "bg-brand-100 text-brand-700 dark:text-brand-500"}`}>
+                              {employee.full_name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("")}
+                            </button>
+                            <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <button type="button" onClick={() => openView(employee)} className="font-semibold text-foreground hover:underline text-left">{employee.full_name}</button>
                             {incomplete && (
                               <button
                                 type="button"
@@ -2354,11 +2371,19 @@ export default function EmployeeManagement() {
                               </span>
                             )}
                           </div>
+                          <div className="font-ledger text-xs mt-0.5 whitespace-nowrap">
+                            <span className={incomplete ? "text-danger-600 dark:text-danger-500" : "text-foreground"}>{displayCodeFor(employee)}</span>
+                            <span className="text-muted-foreground"> · {employee.guard_code ?? employee.employee_code}</span>
+                          </div>
+                            </div>
+                          </div>
                         </td>
                         <td className="px-6 py-3.5 text-sm text-muted-foreground tabular-nums">{employee.phone ?? "—"}</td>
                         <td className="px-6 py-3.5 text-sm text-muted-foreground">
                           {(employee.category ?? "client") === "client" ? (
-                            employee.client_name ?? "—"
+                            employee.client_name
+                              ? <span className="inline-flex items-center gap-1.5 text-foreground"><span className="w-1.5 h-1.5 rounded-full bg-brand-500 flex-shrink-0" />{employee.client_name}</span>
+                              : "—"
                           ) : (
                             <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs bg-secondary text-secondary-foreground border border-border capitalize">
                               {(employee.category ?? "client").replace("_", " ")}
@@ -2370,8 +2395,9 @@ export default function EmployeeManagement() {
                             cabinet, not about whether the record's fields are
                             filled in (that is the Incomplete badge). */}
                         <td className="px-6 py-3.5">
-                          <span className="text-sm text-muted-foreground">
-                            {employee.physical_copy_present ? "Yes" : "No"}
+                          <span className={`inline-flex items-center gap-1 text-xs font-medium ${employee.physical_copy_present ? "text-success-700 dark:text-success-500" : "text-muted-foreground"}`}
+                            title={employee.physical_copy_present ? "Signed paper file is on hand" : "No paper file on hand"}>
+                            {employee.physical_copy_present ? "On file" : "Not on file"}
                           </span>
                         </td>
                         <td className="px-6 py-3.5">
@@ -2475,7 +2501,23 @@ export default function EmployeeManagement() {
             )}
           </div>
         }
-      />
+      >
+        <EmployeeBand
+          counts={counts}
+          clientName={countsClientName}
+          empTab={empTab}
+          onTab={setEmpTab}
+          flags={{ missing: missingKeyFilter === "missing", incomplete: completenessFilter === "incomplete", expired: expiredCardFilter === "expired", duplicate: dupCnicFilter === "duplicate", inactive: statusFilter === "Inactive" }}
+          onAll={() => { setMissingKeyFilter("all"); setCompletenessFilter("all"); setExpiredCardFilter("all"); setDupCnicFilter("all"); setStatusFilter("all"); setCategoryFilter("all"); }}
+          onMissing={() => setMissingKeyFilter((v) => (v === "missing" ? "all" : "missing"))}
+          onIncomplete={() => setCompletenessFilter((v) => (v === "incomplete" ? "all" : "incomplete"))}
+          onExpired={() => setExpiredCardFilter((v) => (v === "expired" ? "all" : "expired"))}
+          onDuplicate={() => setDupCnicFilter((v) => (v === "duplicate" ? "all" : "duplicate"))}
+          onInactive={() => setStatusFilter((v) => (v === "Inactive" ? "all" : "Inactive"))}
+          onCategory={(c) => setCategoryFilter((v) => (v === c ? "all" : c))}
+          category={categoryFilter}
+        />
+      </Header>
 
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
         {/* Warns before the database refuses the next guard, so hitting the
@@ -2491,43 +2533,7 @@ export default function EmployeeManagement() {
           </div>
         )}
 
-        {/* Headline counts — total registered / active / inactive. Scopes to the
-            selected client when one is chosen (label shows the client name). */}
-        <div className="mb-4 grid grid-cols-2 md:grid-cols-4 gap-3">
-          {[
-            { label: countsClientName ? `${countsClientName} — Registered` : "Registered", value: counts.total, tint: "text-foreground" },
-            { label: "Active", value: counts.active, tint: "text-success-700 dark:text-success-500" },
-            { label: "Inactive", value: counts.inactive, tint: "text-slate-500" },
-          ].map((c) => (
-            <div key={c.label} className="bg-card border border-border rounded-xl px-4 py-3">
-              <div className="text-xs uppercase tracking-wide text-muted-foreground truncate" title={c.label}>{c.label}</div>
-              <div className={`mt-1 text-2xl font-bold ${c.tint}`}>{c.value}</div>
-            </div>
-          ))}
-          {/* Missing mandatory identity fields — click to filter the list down
-              to exactly those records so they can be fixed. */}
-          <button
-            type="button"
-            onClick={() => setMissingKeyFilter((v) => (v === "missing" ? "all" : "missing"))}
-            title="Records missing CNIC and/or Join Date — click to show only these"
-            className={`text-left bg-card border rounded-xl px-4 py-3 transition-colors hover:bg-accent ${
-              missingKeyFilter === "missing" ? "border-danger-500 ring-2 ring-danger-500/30" : "border-border"
-            }`}
-          >
-            <div className="text-xs uppercase tracking-wide text-muted-foreground truncate">
-              No CNIC / Join Date
-            </div>
-            <div
-              className={`mt-1 text-2xl font-bold ${
-                counts.missingKeyFields > 0 ? "text-danger-700 dark:text-danger-500" : "text-success-700 dark:text-success-500"
-              }`}
-            >
-              {counts.missingKeyFields}
-            </div>
-          </button>
-        </div>
-
-        <div className="bg-card rounded-xl border border-border">
+        <div className="bg-card rounded-2xl border border-border overflow-hidden">
           <div className="p-4 border-b border-border">
             <div className="flex items-center gap-2 flex-wrap">
               <div className="flex-1 min-w-[200px] relative">
@@ -2569,26 +2575,6 @@ export default function EmployeeManagement() {
                   : <ArrowUpDown className="w-4 h-4" strokeWidth={1.5} />}
                 {sortDir === "asc" ? "ID 001→high" : sortDir === "desc" ? "ID high→001" : "Sort by ID"}
               </button>
-              <div className="ml-auto flex gap-2 flex-wrap">
-                {([
-                  ["active", "Active"],
-                  ["waitlist", "Waiting List"],
-                  ["terminated", "Terminated"],
-                ] as const).map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setEmpTab(value)}
-                    className={`px-4 py-2 rounded-md text-sm transition-colors ${
-                      empTab === value
-                        ? "bg-foreground text-background font-semibold"
-                        : "text-slate-600 hover:bg-slate-100"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
             </div>
             {filtersOpen && (
               <div className="mt-3 pt-3 border-t border-border flex flex-wrap gap-2">
@@ -6046,6 +6032,107 @@ function FormSection({
         {errorTag}
       </button>
       {open && <div className="px-3 pb-4 pt-3 border-t border-border">{children}</div>}
+    </div>
+  );
+}
+
+/**
+ * The Employees band (2026-10-20 redesign): the roster's headline figures on
+ * the command surface, each one a filter the list already supports — so a tile
+ * is a shortcut into the table, never a second definition of the number. Below
+ * them, the active workforce by category (tap a segment to filter) and how much
+ * of the active roster has a complete profile.
+ */
+function EmployeeBand({
+  counts, clientName, empTab, onTab, flags, onAll, onMissing, onIncomplete, onExpired, onDuplicate, onInactive, onCategory, category,
+}: {
+  counts: {
+    total: number; active: number; inactive: number; missingKeyFields: number; incomplete: number;
+    expiredCards: number; duplicateCnic: number; joinedThisMonth: number;
+    byCategory: { client: number; office_staff: number; reliever: number };
+  };
+  clientName: string | null;
+  empTab: "active" | "waitlist" | "terminated";
+  onTab: (t: "active" | "waitlist" | "terminated") => void;
+  flags: { missing: boolean; incomplete: boolean; expired: boolean; duplicate: boolean; inactive: boolean };
+  onAll: () => void; onMissing: () => void; onIncomplete: () => void; onExpired: () => void; onDuplicate: () => void; onInactive: () => void;
+  onCategory: (c: EmployeeCategory) => void;
+  category: "all" | EmployeeCategory;
+}) {
+  const complete = counts.active > 0 ? (counts.active - counts.incomplete) / counts.active : 1;
+  const segs: { key: EmployeeCategory; label: string; n: number; color: string }[] = [
+    { key: "client", label: "On client sites", n: counts.byCategory.client, color: "#e9a73c" },
+    { key: "reliever", label: "Relievers", n: counts.byCategory.reliever, color: "#7fa3c4" },
+    { key: "office_staff", label: "Office staff", n: counts.byCategory.office_staff, color: "#bdb6a0" },
+  ];
+  const segTotal = Math.max(1, segs.reduce((s, x) => s + x.n, 0));
+  const tile = (on: boolean) =>
+    `text-left rounded-[14px] border px-4 py-3 flex flex-col gap-1 transition-colors min-h-[84px] ${on ? "border-brand-500 bg-brand-500/15" : "border-border bg-card hover:border-brand-500/70"}`;
+  const fig = "font-ledger text-2xl font-semibold tracking-tight leading-none";
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2.5">
+        <button type="button" onClick={onAll} className={tile(false)} title="Clear the tile filters">
+          <span className="lbl truncate">{clientName ? `${clientName} · registered` : "Registered"}</span>
+          <span className={fig}>{counts.total.toLocaleString()}</span>
+          <span className="text-xs text-muted-foreground">{counts.joinedThisMonth} joined this month</span>
+        </button>
+        <button type="button" onClick={() => onTab("active")} className={tile(false)}>
+          <span className="lbl">Active</span>
+          <span className={`${fig} text-[#9ad1a3]`}>{counts.active.toLocaleString()}</span>
+          <span className="text-xs text-muted-foreground">{counts.total ? Math.round((counts.active / counts.total) * 100) : 0}% of registered</span>
+        </button>
+        <button type="button" onClick={onInactive} className={tile(flags.inactive)}>
+          <span className="lbl">Inactive</span>
+          <span className={fig}>{counts.inactive.toLocaleString()}</span>
+          <span className="text-xs text-muted-foreground">left, fired or on leave</span>
+        </button>
+        <button type="button" onClick={onMissing} className={tile(flags.missing)} title="Records missing CNIC and/or Join Date — tap to show only these">
+          <span className="lbl">No CNIC / join date</span>
+          <span className={`${fig} ${counts.missingKeyFields ? "text-[#f0a99a]" : "text-[#9ad1a3]"}`}>{counts.missingKeyFields.toLocaleString()}</span>
+          <span className="text-xs text-muted-foreground">identity or attendance window missing</span>
+        </button>
+        <button type="button" onClick={onExpired} className={tile(flags.expired)}>
+          <span className="lbl">CNIC expired</span>
+          <span className={`${fig} ${counts.expiredCards ? "text-[#f0a99a]" : "text-[#9ad1a3]"}`}>{counts.expiredCards.toLocaleString()}</span>
+          <span className="text-xs text-muted-foreground">active guards</span>
+        </button>
+        <button type="button" onClick={onDuplicate} className={tile(flags.duplicate)}>
+          <span className="lbl">Same CNIC twice</span>
+          <span className={`${fig} ${counts.duplicateCnic ? "text-[#f0a99a]" : "text-[#9ad1a3]"}`}>{counts.duplicateCnic.toLocaleString()}</span>
+          <span className="text-xs text-muted-foreground">records sharing a CNIC</span>
+        </button>
+      </div>
+
+      <div className="flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-6">
+        <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+          <div className="flex justify-between gap-3 text-xs text-muted-foreground"><span className="lbl">Active workforce</span><span className="font-ledger">{counts.active.toLocaleString()}</span></div>
+          <div className="flex h-3 rounded-full overflow-hidden bg-muted">
+            {segs.map((sg) => (
+              <button key={sg.key} type="button" onClick={() => onCategory(sg.key)} title={`${sg.label}: ${sg.n}`} aria-label={`${sg.label}, ${sg.n}`}
+                className={`h-full transition-opacity ${category !== "all" && category !== sg.key ? "opacity-35" : ""}`}
+                style={{ width: `${(sg.n / segTotal) * 100}%`, background: sg.color }} />
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            {segs.map((sg) => (
+              <button key={sg.key} type="button" onClick={() => onCategory(sg.key)} className={`inline-flex items-center gap-1.5 hover:text-foreground ${category === sg.key ? "text-foreground font-semibold" : ""}`}>
+                <span className="w-2.5 h-2.5 rounded-sm" style={{ background: sg.color }} />{sg.label} <span className="font-ledger">{sg.n}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        <button type="button" onClick={onIncomplete} className={`lg:w-72 text-left rounded-[14px] border px-4 py-2.5 flex flex-col gap-1.5 ${flags.incomplete ? "border-brand-500 bg-brand-500/15" : "border-border bg-card hover:border-brand-500/70"}`}>
+          <span className="flex justify-between gap-2"><span className="lbl">Profiles complete</span><span className="font-ledger text-sm font-semibold">{Math.round(complete * 100)}%</span></span>
+          <span className="h-2 rounded-full bg-muted overflow-hidden"><span className="block h-full rounded-full bg-brand-500" style={{ width: `${complete * 100}%` }} /></span>
+          <span className="text-xs text-muted-foreground">{counts.incomplete} active profile{counts.incomplete === 1 ? "" : "s"} still missing details — tap to list</span>
+        </button>
+        <Tabs<"active" | "waitlist" | "terminated">
+          value={empTab}
+          onChange={onTab}
+          items={[{ value: "active", label: "Active" }, { value: "waitlist", label: "Waiting list" }, { value: "terminated", label: "Terminated" }]}
+        />
+      </div>
     </div>
   );
 }
