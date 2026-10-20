@@ -746,7 +746,48 @@ export default function Compliance() {
         title="Compliance Calendar"
         subtitle="Important dates, contract endings and recurring reminders"
         actions={headerActions}
-      />
+      >
+        <div className="flex flex-col gap-3">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+            {[
+              { label: "Critical", v: metrics.critical, sub: "inside the advance-notice window", tone: metrics.critical ? "text-[#f0a99a]" : "text-[#9ad1a3]" },
+              { label: "High priority", v: metrics.high, sub: "inside the advance-notice window", tone: metrics.high ? "text-[#f6d79b]" : "text-[#9ad1a3]" },
+              { label: "Upcoming", v: metrics.upcoming, sub: "today or later", tone: "text-foreground" },
+              { label: "Active alerts", v: metrics.activeAlerts, sub: "raised from due dates", tone: "text-foreground" },
+            ].map((t) => (
+              <div key={t.label} className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1">
+                <span className="lbl">{t.label}</span>
+                <span className={`font-ledger text-2xl font-semibold leading-none ${t.tone}`}>{t.v}</span>
+                <span className="text-xs text-muted-foreground">{t.sub}</span>
+              </div>
+            ))}
+          </div>
+          {/* Guard-data coverage (0306) as four meters: a measurement, not an
+              alert — it goes quiet on its own as the vetting upload lands. */}
+          {coverageTotals && coverageTotals.total > 0 && (
+            <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-2">
+              <div className="flex justify-between gap-2 flex-wrap"><span className="lbl">Guard data coverage · {coverageTotals.total} active or on leave</span><span className="text-xs text-muted-foreground">no adverse result recorded is not the same as none found</span></div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-2">
+                {[
+                  { label: "Police verification", done: coverageTotals.police_cleared, note: `${coverageTotals.police_pending} pending · ${coverageTotals.police_adverse} adverse` },
+                  { label: "NADRA Verisys", done: coverageTotals.nadra_cleared, note: "cleared results on file" },
+                  { label: "CNIC number", done: coverageTotals.cnic_number_recorded, note: "recorded" },
+                  { label: "CNIC expiry", done: coverageTotals.cnic_expiry_recorded, note: "recorded" },
+                ].map((m) => {
+                  const pct = m.done / coverageTotals.total;
+                  return (
+                    <div key={m.label} className="flex flex-col gap-1">
+                      <div className="flex justify-between text-xs"><span>{m.label}</span><span className="font-ledger font-semibold">{Math.round(pct * 100)}%</span></div>
+                      <div className="h-2 rounded-full bg-muted overflow-hidden"><div className={`h-full rounded-full ${pct >= 0.9 ? "bg-[#9ad1a3]" : pct >= 0.5 ? "bg-brand-500" : "bg-[#d4674a]"}`} style={{ width: `${pct * 100}%` }} /></div>
+                      <span className="text-[11px] text-muted-foreground">{m.done} / {coverageTotals.total} · {m.note}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      </Header>
 
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
         {error && (
@@ -756,90 +797,6 @@ export default function Compliance() {
             <button onClick={() => setError(null)}>
               <X className="w-4 h-4" />
             </button>
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-6">
-          <div className="bg-card p-4 md:p-4 rounded-2xl border border-border">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm text-danger-700">Critical Alerts</p>
-              <AlertCircle className="w-5 h-5 text-danger-600" strokeWidth={1.5} />
-            </div>
-            <p className="text-2xl text-danger-700 dark:text-danger-500">{metrics.critical}</p>
-            <p className="text-[11px] text-danger-700/70 mt-1">In advance-notice window</p>
-          </div>
-          <div className="bg-card p-4 md:p-4 rounded-2xl border border-border">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm text-warning-700">High Priority</p>
-              <Bell className="w-5 h-5 text-warning-600" strokeWidth={1.5} />
-            </div>
-            <p className="text-2xl text-warning-700 dark:text-warning-500">{metrics.high}</p>
-            <p className="text-[11px] text-warning-700/70 mt-1">In advance-notice window</p>
-          </div>
-          <div className="bg-card p-4 md:p-4 rounded-2xl border border-border">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm text-brand-700">Upcoming Deadlines</p>
-              <CalendarIcon className="w-5 h-5 text-brand-600" strokeWidth={1.5} />
-            </div>
-            <p className="text-2xl text-brand-700 dark:text-brand-500">{metrics.upcoming}</p>
-            <p className="text-[11px] text-brand-700/70 mt-1">Today or later</p>
-          </div>
-          <div className="bg-card p-4 md:p-4 rounded-2xl border border-border">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm text-success-700">Active Alerts</p>
-              <Bell className="w-5 h-5 text-success-600" strokeWidth={1.5} />
-            </div>
-            <p className="text-2xl text-success-700 dark:text-success-500">{metrics.activeAlerts}</p>
-            <p className="text-[11px] text-success-700/70 mt-1">Auto-derived from due dates</p>
-          </div>
-        </div>
-
-        {/* Guard-data coverage (0306). A measurement, not an alert: it is true
-            of nearly everybody today, so raising it as a warning per employee
-            would be 758 warnings nobody can act on. One band, four numbers.
-            It goes quiet on its own as the vetting upload lands. */}
-        {coverageTotals && (
-          <div className="bg-card rounded-2xl border border-border mb-6">
-            <div className="p-6 border-b border-slate-200">
-              <h3 className="text-base text-slate-900">Guard data coverage</h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                {coverageTotals.total} guards on active or on-leave status. Zero adverse results
-                does not mean zero failures — it means no result has been recorded either way.
-              </p>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-slate-100">
-              {[
-                {
-                  label: "Police verification",
-                  done: coverageTotals.police_cleared,
-                  note: `${coverageTotals.police_pending} pending · ${coverageTotals.police_adverse} adverse`,
-                },
-                {
-                  label: "NADRA Verisys",
-                  done: coverageTotals.nadra_cleared,
-                  note: "cleared results on file",
-                },
-                {
-                  label: "CNIC number",
-                  done: coverageTotals.cnic_number_recorded,
-                  note: "recorded",
-                },
-                {
-                  label: "CNIC expiry",
-                  done: coverageTotals.cnic_expiry_recorded,
-                  note: "recorded — the ledger check reads this",
-                },
-              ].map((m) => (
-                <div key={m.label} className="px-6 py-4">
-                  <p className="text-xs text-slate-500">{m.label}</p>
-                  <p className="text-lg text-slate-900 mt-1">
-                    {m.done}
-                    <span className="text-sm text-slate-400"> / {coverageTotals.total}</span>
-                  </p>
-                  <p className="text-[11px] text-slate-500 mt-0.5">{m.note}</p>
-                </div>
-              ))}
-            </div>
           </div>
         )}
 
