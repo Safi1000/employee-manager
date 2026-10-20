@@ -181,8 +181,19 @@ Status words: **Built** (in this pass) · **Idea** (proposed, not built) ·
 - **Idea** — Audit log "undo" link straight to Reversals for actions that can
   be reversed.
 
-## Sidebar
+## Sidebar → section rail
 
-- **Waiting on your pick** — Options given: a section rail with a flyout, a ⌘K
-  command palette, pinned and recent pages. My recommendation is all three
-  together.
+- **Built** — The 256px sidebar and its broken collapse toggle are gone. A 76px
+  rail holds one icon per section; hover or tap opens a flyout with that
+  section's pages, floating over the page so pages keep their full width.
+- **Built** — ⌘K / Ctrl+K palette (also the search button on the rail): any
+  page, client, guard or invoice; light/dark, change password, sign out.
+  Clients and guards open their list already searched; invoices open focused.
+- **Built** — Pinned pages (pin icon in a flyout or the palette) sit on the
+  rail; the last pages opened show at the foot of every flyout and at the top
+  of the empty palette. Stored per browser.
+- **Built** — Phones keep the drawer, now with search and pinned at the top.
+- **Idea** — Palette actions that start work: "New expense", "Record receipt",
+  "Mark attendance", opening the right form directly.
+- **Idea** — Badges on rail icons (open alerts on Overview, payslips waiting on
+  Workforce, red controls on Finance).
