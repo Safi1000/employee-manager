@@ -635,15 +635,18 @@ export default function EmployeeAssignments() {
   // see reconByClient below. ONE corrected copy, so the band, the totals and
   // the group rows can never disagree (2026-10-20: the totals and the band
   // were reading the raw view and reported 54 contracted against 382 enrolled).
+  const inRegionClientIds = useMemo(() => new Set(clients.map((c) => c.id)), [clients]);
   const reconFixed = useMemo(
     () =>
-      recon.map((r) => {
+      // The view is company-wide; only the clients the region selector let
+      // through count, or the band reads every region's heads (2026-10-20).
+      recon.filter((r) => inRegionClientIds.has(r.client_id)).map((r) => {
         const committed = committedPersonnelByClient.get(r.client_id) ?? 0;
         return committed === 0
           ? r
           : { ...r, contracted_billed_qty: committed, required_on_ground: r.required_on_ground || committed, variance: committed - r.enrolled_active };
       }),
-    [recon, committedPersonnelByClient],
+    [recon, committedPersonnelByClient, inRegionClientIds],
   );
 
   // Committed personnel headcount per SITE — the "required" side of each site
@@ -1240,7 +1243,7 @@ export default function EmployeeAssignments() {
               <div className="flex flex-wrap gap-2.5">
                 <div className="flex-[2_1_320px] rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-2">
                   <div className="flex justify-between gap-2 flex-wrap"><span className="lbl">Strength · enrolled against contracted</span><span className="text-xs text-muted-foreground">{comparable.length} clients with a contracted figure · {totals.sites} sites</span></div>
-                  {noContractQty.length > 0 && <span className="text-xs text-[#f6d79b]">{noContractQty.length} client{noContractQty.length === 1 ? "" : "s"} with {noContractQty.reduce((n, r) => n + r.enrolled_active, 0)} guards enrolled but no contracted quantity — left out of this comparison</span>}
+                  {noContractQty.length > 0 && <span className="text-xs text-[#f6d79b]">{noContractQty.length} client{noContractQty.length === 1 ? "" : "s"} with {(() => { const n = noContractQty.reduce((a, r) => a + r.enrolled_active, 0); return `${n} guard${n === 1 ? "" : "s"}`; })()} enrolled but no contracted quantity — left out of this comparison</span>}
                   <div className="flex items-center gap-3">
                     <span className="font-display text-3xl font-extrabold tracking-tight whitespace-nowrap">{enrolledComparable}<span className="text-lg text-muted-foreground font-semibold"> / {totals.contracted}</span></span>
                     <div className="flex-1 h-3 rounded-full bg-muted overflow-hidden"><div className={`h-full rounded-full ${ratio > 1.05 ? "bg-[#f6d79b]" : "bg-[#9ad1a3]"}`} style={{ width: `${pctFilled * 100}%` }} /></div>
