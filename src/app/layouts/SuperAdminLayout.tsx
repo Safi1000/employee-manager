@@ -108,6 +108,7 @@ export default function SuperAdminLayout() {
   const EXPENSES: LinkDef = { to: "/super-admin/expenses", label: "Expenses & Advances", icon: Receipt };
   const CASHFLOW: LinkDef = { to: "/super-admin/cashflow", label: "Cash Flow", icon: TrendingUp, perms: ["cashflow.view"] };
   const REPORTS: LinkDef = { to: "/super-admin/reports", label: "Financial Reports", icon: FileText, perms: ["reports.view"] };
+  const ACCOUNTANT: LinkDef = { to: "/super-admin/accountant", label: "Accountant", icon: BookOpen, perms: ["accountant.view"] };
   const CHART_OF_ACCOUNTS: LinkDef = { to: "/super-admin/chart-of-accounts", label: "Chart of Accounts", icon: BookOpen, perms: ["coa.view", "reports.view"] };
   const PERIOD_CLOSE: LinkDef = { to: "/super-admin/period-close", label: "Period Close", icon: Lock, perms: ["period_close.manage", "reports.view"] };
   const AUDIT_LOG: LinkDef = { to: "/super-admin/audit-log", label: "Audit Log", icon: History, roles: ["super_super_admin", "super_admin"] };
@@ -264,6 +265,7 @@ export default function SuperAdminLayout() {
     // Cash Flow is now merged into Financial Reports as a top-level tab, so its
     // own nav link is hidden (CASHFLOW LinkDef and the /cashflow route are kept).
     REPORTS,
+    ACCOUNTANT,
     // Its own Finance entry rather than a tab inside Financial Reports: it is a
     // report about partners, not about the P&L, and burying it behind another
     // report's tab strip is what kept it hard to find.

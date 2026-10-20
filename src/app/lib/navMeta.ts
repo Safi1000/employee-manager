@@ -33,6 +33,7 @@ const SECTION_OF: Record<string, string> = {
   "accounting-core": "Finance",
   expenses: "Finance",
   reports: "Finance",
+  accountant: "Finance",
   "partnership-report": "Finance",
   "partnership-run": "Finance",
   "period-close": "Finance",

@@ -511,6 +511,10 @@ export const PERMISSION_GROUPS: { label: string; items: { key: string; label: st
     label: "Reports & Finance",
     items: [
       { key: "reports.view", label: "View financial reports & partnership" },
+      // 2026-10-20 (0526): the Accountant page — every account from the ledger,
+      // the checks, ledgers and scenarios. Granted person by person. Mirrored
+      // in public.permission_keys by 0526.
+      { key: "accountant.view", label: "View the Accountant page (accounts, checks, ledgers, scenarios)" },
       { key: "cashflow.view", label: "View cashflow" },
       { key: "coa.view", label: "View Chart of Accounts & Trial Balance" },
       { key: "period_close.manage", label: "Close / reopen accounting periods" },

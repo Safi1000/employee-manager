@@ -31,6 +31,7 @@ const LeaveBalances = lazyPage(() => import("./pages/super-admin/LeaveBalances")
 import TabHub from "./pages/super-admin/_TabHub";
 const Accounting = lazyPage(() => import("./pages/super-admin/Accounting"));
 const FinancialReports = lazyPage(() => import("./pages/super-admin/FinancialReports"));
+const Accountant = lazyPage(() => import("./pages/super-admin/Accountant"));
 const PartnershipReport = lazyPage(() => import("./pages/super-admin/PartnershipReport"));
 const ExpensesEntry = lazyPage(() => import("./pages/super-admin/ExpensesEntry"));
 const Invoices = lazyPage(() => import("./pages/super-admin/Invoices"));
@@ -195,6 +196,9 @@ export const router = createBrowserRouter([
       // Financial Reports, rebuilt (Overview, Client profit, Statements,
       // Ledgers, Scenarios). The Partnership Report below is a separate page.
       { path: "reports", element: guard(["reports.view"], <FinancialReports key="reports" />) },
+      // 2026-10-20: the accountant's working page, granted per person from
+      // Access & Governance (accountant.view).
+      { path: "accountant", element: guard(["accountant.view"], <Accountant />) },
       // Partnership Report is its own page under Finance now, not a tab of
       // Financial Reports. Same component, pinned to that one report.
       { path: "partnership-report", element: guard(["banks.view", "receivables.view", "payables.view", "accounting.edit"], <PartnershipReport key="partnership" standalone="partnership" />) },
