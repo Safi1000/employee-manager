@@ -1180,7 +1180,72 @@ export default function EmployeeAssignments() {
         title="Assignments & Pay"
         subtitle="Posting, pay and contracted-vs-enrolled strength by client — edit one guard or the whole group"
         actions={<ExportButton onExport={handleExport} label="Export" />}
-      />
+      >
+        {!loading && (() => {
+          // Band (2026-10-20): strength first — how many are enrolled against
+          // what is contracted — then the money and the half-finished postings.
+          // Every figure is read from the reconciliation rows and the roster
+          // this page already loads.
+          const shownRecon = recon.filter((r) => showServicesClients || !servicesOnlyClientIds.has(r.client_id));
+          const under = shownRecon.reduce((n, r) => n + Math.max(0, r.variance), 0);
+          const over = shownRecon.reduce((n, r) => n + Math.max(0, -r.variance), 0);
+          const live = employees.filter((e) => !isSeparatedState(e.lifecycle_state));
+          const monthly = live.reduce((n, e) => n + Number(e.base_salary ?? 0) + Number(e.allowance ?? 0), 0);
+          const noBase = live.filter(missingBase).length, noJoin = live.filter(missingJoin).length;
+          const ratio = totals.contracted ? totals.enrolled / totals.contracted : 0;
+          const pctFilled = Math.min(1, ratio);
+          const gaps = shownRecon.filter((r) => r.variance !== 0).sort((a, b) => Math.abs(b.variance) - Math.abs(a.variance)).slice(0, 10);
+          const maxGap = Math.max(1, ...gaps.map((r) => Math.abs(r.variance)));
+          const fig = "font-ledger text-2xl font-semibold tracking-tight leading-none whitespace-nowrap";
+          return (
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-wrap gap-2.5">
+                <div className="flex-[2_1_320px] rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-2">
+                  <div className="flex justify-between gap-2 flex-wrap"><span className="lbl">Strength · enrolled against contracted</span><span className="text-xs text-muted-foreground">{totals.sites} sites{ratio > 1.05 ? " · more enrolled than contracts bill for" : ""}</span></div>
+                  <div className="flex items-center gap-3">
+                    <span className="font-display text-3xl font-extrabold tracking-tight whitespace-nowrap">{totals.enrolled}<span className="text-lg text-muted-foreground font-semibold"> / {totals.contracted}</span></span>
+                    <div className="flex-1 h-3 rounded-full bg-muted overflow-hidden"><div className={`h-full rounded-full ${ratio > 1.05 ? "bg-[#f6d79b]" : "bg-[#9ad1a3]"}`} style={{ width: `${pctFilled * 100}%` }} /></div>
+                    <span className={`font-ledger text-sm font-semibold ${ratio > 1.05 ? "text-[#f6d79b]" : ""}`}>{Math.round(ratio * 100)}%</span>
+                  </div>
+                </div>
+                <div className="flex-[1_1_150px] rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1">
+                  <span className="lbl">Understaffed</span><span className={`${fig} ${under ? "text-[#f6d79b]" : "text-[#9ad1a3]"}`}>{under}</span><span className="text-xs text-muted-foreground">heads to post</span>
+                </div>
+                <div className="flex-[1_1_150px] rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1">
+                  <span className="lbl">Over-enrolled</span><span className={`${fig} ${over ? "text-[#f0a99a]" : "text-[#9ad1a3]"}`}>{over}</span><span className="text-xs text-muted-foreground">above contract</span>
+                </div>
+                <button type="button" onClick={() => setOnlyMismatch((v) => !v)} className={`flex-[1_1_150px] text-left rounded-[14px] border px-4 py-3 flex flex-col gap-1 ${onlyMismatch ? "border-brand-500 bg-brand-500/15" : "border-border bg-card hover:border-brand-500/70"}`}>
+                  <span className="lbl">Clients mismatched</span><span className={`${fig} ${totals.mismatched ? "text-[#f6d79b]" : "text-[#9ad1a3]"}`}>{totals.mismatched}</span><span className="text-xs text-muted-foreground">{onlyMismatch ? "showing only these" : "tap to show only these"}</span>
+                </button>
+                {canAccounts && (
+                  <div className="flex-[1_1_200px] rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1">
+                    <span className="lbl">Monthly pay on the roster</span><span className={fig}><span className="cur">PKR</span>{Math.round(monthly).toLocaleString()}</span>
+                    <span className={`text-xs ${noBase || noJoin ? "text-[#f0a99a]" : "text-muted-foreground"}`}>{noBase || noJoin ? `${noBase} without a base salary · ${noJoin} without a joining date` : "every posting has pay and a joining date"}</span>
+                  </div>
+                )}
+              </div>
+              {gaps.length > 0 && (
+                <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1.5">
+                  <div className="flex justify-between gap-2 flex-wrap"><span className="lbl">Biggest staffing gaps</span><span className="text-xs text-muted-foreground">left of centre = over-enrolled · right = understaffed · tap to find</span></div>
+                  <div className="grid gap-x-6 gap-y-1 md:grid-cols-2">
+                    {gaps.map((r) => (
+                      <button key={r.client_id} type="button" onClick={() => setSearch(r.client_name)} className="grid grid-cols-[minmax(0,10rem)_minmax(0,1fr)_2.5rem] gap-2 items-center text-xs min-h-7 group text-left">
+                        <span className="truncate group-hover:underline">{r.client_name}</span>
+                        <span className="relative h-2.5 rounded-full bg-muted">
+                          <span className="absolute inset-y-0 left-1/2 w-px bg-border" />
+                          <span className={`absolute inset-y-0 rounded-full ${r.variance > 0 ? "bg-brand-500" : "bg-[#d4674a]"}`}
+                            style={r.variance > 0 ? { left: "50%", width: `${(r.variance / maxGap) * 50}%` } : { right: "50%", width: `${(-r.variance / maxGap) * 50}%` }} />
+                        </span>
+                        <span className={`font-ledger text-right font-semibold ${r.variance > 0 ? "text-[#f6d79b]" : "text-[#f0a99a]"}`}>{r.variance > 0 ? `+${r.variance}` : r.variance}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+      </Header>
 
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
         {error && (
@@ -1197,44 +1262,6 @@ export default function EmployeeAssignments() {
             <button onClick={() => setNotice(null)}><X className="w-4 h-4" /></button>
           </div>
         )}
-
-        <div className="mb-4 flex flex-wrap gap-2">
-          {[
-            { label: "Contracted (billed)", value: totals.contracted, icon: Building2, tint: "text-brand-600 dark:text-brand-500" },
-            { label: "Enrolled (active)", value: totals.enrolled, icon: Users, tint: "text-success-600 dark:text-success-500" },
-            { label: "Sites", value: totals.sites, icon: MapPin, tint: "text-muted-foreground" },
-            {
-              label: "Clients mismatched",
-              value: totals.mismatched,
-              icon: AlertCircle,
-              tint: totals.mismatched > 0 ? "text-warning-600 dark:text-warning-500" : "text-success-600 dark:text-success-500",
-            },
-          ].map((t) => {
-            const onClick = "onClick" in t ? (t.onClick as (() => void) | undefined) : undefined;
-            const body = (
-              <>
-                <t.icon className={`w-4 h-4 shrink-0 ${t.tint}`} strokeWidth={2} />
-                <span className="text-xs uppercase tracking-wide text-muted-foreground">{t.label}</span>
-                <span className="text-base font-semibold tabular-nums text-foreground">{t.value}</span>
-              </>
-            );
-            const cls = "inline-flex items-center gap-2.5 px-3.5 py-2 rounded-lg border border-border bg-card";
-            const title = "hint" in t ? (t.hint as string | undefined) : undefined;
-            return onClick ? (
-              <button
-                key={t.label}
-                type="button"
-                onClick={onClick}
-                title={title}
-                className={`${cls} text-left transition-colors hover:border-brand-500/50 hover:bg-accent`}
-              >
-                {body}
-              </button>
-            ) : (
-              <div key={t.label} title={title} className={cls}>{body}</div>
-            );
-          })}
-        </div>
 
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <div className="relative flex-1 min-w-56">
@@ -1310,7 +1337,7 @@ export default function EmployeeAssignments() {
         )}
 
         <p className="mb-3 text-xs text-muted-foreground">
-          Variance = contracted − enrolled(active). Positive (amber) = understaffed; negative (red) = over-enrolled.
+          Variance = contracted − enrolled (active). Positive = understaffed; negative = over-enrolled.
         </p>
 
         <div className="space-y-3">
