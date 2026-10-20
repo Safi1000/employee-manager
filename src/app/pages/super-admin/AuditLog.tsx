@@ -334,7 +334,53 @@ export default function AuditLog() {
             <RefreshCw className="w-4 h-4 mr-2" /> Refresh
           </Button>
         }
-      />
+      >
+        {entries.length > 0 && (() => {
+          // Band (2026-10-20): who changed what, in what is loaded — the
+          // busiest records and people, and inserts/updates/deletes. Each
+          // record type is a filter.
+          const byTable = new Map<string, number>(), byUser = new Map<string, number>();
+          const byAction = { insert: 0, update: 0, delete: 0 } as Record<string, number>;
+          for (const e of entries) {
+            byTable.set(e.table_name, (byTable.get(e.table_name) ?? 0) + 1);
+            byUser.set(e.changed_by ?? "", (byUser.get(e.changed_by ?? "") ?? 0) + 1);
+            byAction[e.action] = (byAction[e.action] ?? 0) + 1;
+          }
+          const topT = [...byTable.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
+          const topU = [...byUser.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
+          const label = (t: string) => ((TABLE_LABEL as Record<string, string> | null)?.[t] ?? t.replace(/_/g, " "));
+          return (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-2.5">
+              <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-2">
+                <span className="lbl">{entries.length.toLocaleString()} changes loaded</span>
+                <div className="flex h-2.5 rounded-full overflow-hidden bg-muted">
+                  <span className="h-full bg-[#9ad1a3]" style={{ width: `${(byAction.insert / entries.length) * 100}%` }} title={`${byAction.insert} created`} />
+                  <span className="h-full bg-brand-500" style={{ width: `${(byAction.update / entries.length) * 100}%` }} title={`${byAction.update} edited`} />
+                  <span className="h-full bg-[#d4674a]" style={{ width: `${(byAction.delete / entries.length) * 100}%` }} title={`${byAction.delete} deleted`} />
+                </div>
+                <div className="flex gap-3 text-xs text-muted-foreground"><span>{byAction.insert} created</span><span>{byAction.update} edited</span><span className={byAction.delete ? "text-[#f0a99a]" : ""}>{byAction.delete} deleted</span></div>
+              </div>
+              <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1.5">
+                <span className="lbl">Most changed</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {topT.map(([t, n]) => (
+                    <button key={t} type="button" onClick={() => setTableFilter(tableFilter === t ? "all" : (t as AuditedTable))}
+                      className={`text-xs px-2.5 py-1 rounded-lg border ${tableFilter === t ? "border-brand-500 bg-brand-500/15" : "border-border hover:border-brand-500/60"}`}>
+                      {label(t)} <span className="font-ledger font-semibold">{n}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1">
+                <span className="lbl">Busiest people</span>
+                {topU.map(([u, n]) => (
+                  <div key={u || "system"} className="flex justify-between text-xs"><span className="truncate">{userName(u || null)}</span><span className="font-ledger font-semibold">{n}</span></div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+      </Header>
 
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8 space-y-4">
         {error && (

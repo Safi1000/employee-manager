@@ -306,7 +306,40 @@ export default function Tasks() {
             </Button>
           ) : null
         }
-      />
+      >
+        {(() => {
+          // Band (2026-10-20): the board's shape — what is waiting, moving and
+          // done, what is late, and how far through the work the team is.
+          const today = new Date().toISOString().slice(0, 10);
+          const open = filteredTasks.filter((t) => t.status !== "done");
+          const late = open.filter((t) => t.due_date && t.due_date < today).length;
+          const dueToday = open.filter((t) => t.due_date === today).length;
+          const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString();
+          const doneWeek = filteredTasks.filter((t) => t.status === "done" && t.completed_at && t.completed_at >= weekAgo).length;
+          const pct = filteredTasks.length ? columns.done.length / filteredTasks.length : 0;
+          return (
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5">
+              {[
+                { label: "To do", v: columns.todo.length, sub: "waiting to start", tone: "text-foreground" },
+                { label: "In progress", v: columns.in_progress.length, sub: "being worked", tone: "text-[#f6d79b]" },
+                { label: "Late", v: late, sub: dueToday ? `${dueToday} more due today` : "past their due date", tone: late ? "text-[#f0a99a]" : "text-[#9ad1a3]" },
+                { label: "Done this week", v: doneWeek, sub: `${columns.done.length} done in all`, tone: "text-[#9ad1a3]" },
+              ].map((t) => (
+                <div key={t.label} className="rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-1">
+                  <span className="lbl">{t.label}</span><span className={`font-ledger text-2xl font-semibold leading-none ${t.tone}`}>{t.v}</span><span className="text-xs text-muted-foreground">{t.sub}</span>
+                </div>
+              ))}
+              <div className="col-span-2 lg:col-span-1 rounded-[14px] border border-border bg-card px-4 py-3 flex flex-col gap-2 justify-center">
+                <span className="flex justify-between"><span className="lbl">Through the board</span><span className="font-ledger text-sm font-semibold">{Math.round(pct * 100)}%</span></span>
+                <span className="h-2 rounded-full bg-muted overflow-hidden flex">
+                  <span className="h-full bg-[#9ad1a3]" style={{ width: `${pct * 100}%` }} />
+                  <span className="h-full bg-brand-500" style={{ width: `${filteredTasks.length ? (columns.in_progress.length / filteredTasks.length) * 100 : 0}%` }} />
+                </span>
+              </div>
+            </div>
+          );
+        })()}
+      </Header>
 
       <div className="flex-1 overflow-y-auto px-3 py-4 md:p-8">
         {error && (
