@@ -1353,7 +1353,7 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
   useEffect(() => {
     if (!onTotalsRef.current) return;
     let disbursedCount = 0, notDisbursedCount = 0;
-    for (const r of filtered) (Math.round(r.amount_paid || 0) > 0 ? disbursedCount++ : notDisbursedCount++);
+    for (const r of filtered) (Math.round(r.amount_paid || 0) > 0 || Math.round(r.net_salary || 0) <= 0 ? disbursedCount++ : notDisbursedCount++);
     onTotalsRef.current({ ...payrollTotals, disbursedCount, notDisbursedCount });
   }, [payrollTotals, filtered]);
 
@@ -2330,7 +2330,10 @@ export default function PayrollManagement({ relieversOnly = false, clientScopeId
         cur.disbursed += paid;
         cur.notDisbursed += Math.max(0, Math.round(r.net_salary || 0) - paid);
         cur.advance += Math.round(r.advance || 0);
-        if (r.disbursed) cur.disbursedCount += 1; else cur.notDisbursedCount += 1;
+        // A payslip that nets to nothing (a guard who left before earning in
+        // the month) has nothing to disburse: count it as settled, or a client
+        // whose every rupee is paid reads "112/113 disbursed" for ever.
+        if (r.disbursed || Math.round(r.net_salary || 0) <= 0) cur.disbursedCount += 1; else cur.notDisbursedCount += 1;
         totals.set(key, cur);
       }
       if (cancelled) return;
